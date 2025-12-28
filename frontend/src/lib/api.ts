@@ -1,0 +1,669 @@
+import { browser } from '$app/environment';
+import Decimal from 'decimal.js';
+
+const API_BASE = import.meta.env.PUBLIC_API_URL || 'http://localhost:8080';
+
+interface TokenResponse {
+	access_token: string;
+	refresh_token: string;
+	token_type: string;
+	expires_in: number;
+	user: {
+		id: string;
+		email: string;
+		name: string;
+	};
+}
+
+interface ApiError {
+	error: string;
+}
+
+class ApiClient {
+	private accessToken: string | null = null;
+	private refreshToken: string | null = null;
+
+	constructor() {
+		if (browser) {
+			this.accessToken = localStorage.getItem('access_token');
+			this.refreshToken = localStorage.getItem('refresh_token');
+		}
+	}
+
+	setTokens(access: string, refresh: string) {
+		this.accessToken = access;
+		this.refreshToken = refresh;
+		if (browser) {
+			localStorage.setItem('access_token', access);
+			localStorage.setItem('refresh_token', refresh);
+		}
+	}
+
+	clearTokens() {
+		this.accessToken = null;
+		this.refreshToken = null;
+		if (browser) {
+			localStorage.removeItem('access_token');
+			localStorage.removeItem('refresh_token');
+		}
+	}
+
+	get isAuthenticated(): boolean {
+		return !!this.accessToken;
+	}
+
+	private async request<T>(
+		method: string,
+		path: string,
+		body?: unknown,
+		skipAuth = false
+	): Promise<T> {
+		const headers: Record<string, string> = {
+			'Content-Type': 'application/json'
+		};
+
+		if (!skipAuth && this.accessToken) {
+			headers['Authorization'] = `Bearer ${this.accessToken}`;
+		}
+
+		const response = await fetch(`${API_BASE}${path}`, {
+			method,
+			headers,
+			body: body ? JSON.stringify(body) : undefined
+		});
+
+		// Handle token refresh on 401
+		if (response.status === 401 && this.refreshToken && !skipAuth) {
+			const refreshed = await this.refreshAccessToken();
+			if (refreshed) {
+				return this.request(method, path, body, false);
+			}
+			throw new Error('Session expired. Please log in again.');
+		}
+
+		const data = await response.json();
+
+		if (!response.ok) {
+			throw new Error((data as ApiError).error || 'Request failed');
+		}
+
+		return this.parseDecimals(data) as T;
+	}
+
+	private parseDecimals(obj: unknown): unknown {
+		if (typeof obj === 'string' && /^-?\d+(\.\d+)?$/.test(obj)) {
+			return new Decimal(obj);
+		}
+		if (Array.isArray(obj)) {
+			return obj.map((item) => this.parseDecimals(item));
+		}
+		if (obj !== null && typeof obj === 'object') {
+			const result: Record<string, unknown> = {};
+			for (const [key, value] of Object.entries(obj)) {
+				result[key] = this.parseDecimals(value);
+			}
+			return result;
+		}
+		return obj;
+	}
+
+	private async refreshAccessToken(): Promise<boolean> {
+		try {
+			const data = await this.request<{ access_token: string }>(
+				'POST',
+				'/api/v1/auth/refresh',
+				{ refresh_token: this.refreshToken },
+				true
+			);
+			this.accessToken = data.access_token;
+			if (browser) {
+				localStorage.setItem('access_token', data.access_token);
+			}
+			return true;
+		} catch {
+			this.clearTokens();
+			return false;
+		}
+	}
+
+	// Auth endpoints
+	async register(email: string, password: string, name: string) {
+		return this.request<{ id: string; email: string; name: string }>(
+			'POST',
+			'/api/v1/auth/register',
+			{ email, password, name },
+			true
+		);
+	}
+
+	async login(email: string, password: string, tenantId?: string): Promise<TokenResponse> {
+		const data = await this.request<TokenResponse>(
+			'POST',
+			'/api/v1/auth/login',
+			{ email, password, tenant_id: tenantId },
+			true
+		);
+		this.setTokens(data.access_token, data.refresh_token);
+		return data;
+	}
+
+	logout() {
+		this.clearTokens();
+	}
+
+	// User endpoints
+	async getCurrentUser() {
+		return this.request<{ id: string; email: string; name: string; created_at: string }>(
+			'GET',
+			'/api/v1/me'
+		);
+	}
+
+	async getMyTenants() {
+		return this.request<TenantMembership[]>('GET', '/api/v1/me/tenants');
+	}
+
+	// Tenant endpoints
+	async createTenant(name: string, slug: string, settings?: TenantSettings) {
+		return this.request<Tenant>('POST', '/api/v1/tenants', { name, slug, settings });
+	}
+
+	async getTenant(tenantId: string) {
+		return this.request<Tenant>('GET', `/api/v1/tenants/${tenantId}`);
+	}
+
+	// Account endpoints
+	async listAccounts(tenantId: string, activeOnly = false) {
+		const query = activeOnly ? '?active_only=true' : '';
+		return this.request<Account[]>('GET', `/api/v1/tenants/${tenantId}/accounts${query}`);
+	}
+
+	async createAccount(tenantId: string, data: CreateAccountRequest) {
+		return this.request<Account>('POST', `/api/v1/tenants/${tenantId}/accounts`, data);
+	}
+
+	async getAccount(tenantId: string, accountId: string) {
+		return this.request<Account>('GET', `/api/v1/tenants/${tenantId}/accounts/${accountId}`);
+	}
+
+	// Journal entry endpoints
+	async getJournalEntry(tenantId: string, entryId: string) {
+		return this.request<JournalEntry>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/journal-entries/${entryId}`
+		);
+	}
+
+	async createJournalEntry(tenantId: string, data: CreateJournalEntryRequest) {
+		return this.request<JournalEntry>('POST', `/api/v1/tenants/${tenantId}/journal-entries`, data);
+	}
+
+	async postJournalEntry(tenantId: string, entryId: string) {
+		return this.request<{ status: string }>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/journal-entries/${entryId}/post`
+		);
+	}
+
+	async voidJournalEntry(tenantId: string, entryId: string, reason: string) {
+		return this.request<JournalEntry>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/journal-entries/${entryId}/void`,
+			{ reason }
+		);
+	}
+
+	// Report endpoints
+	async getTrialBalance(tenantId: string, asOfDate?: string) {
+		const query = asOfDate ? `?as_of_date=${asOfDate}` : '';
+		return this.request<TrialBalance>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/reports/trial-balance${query}`
+		);
+	}
+
+	async getAccountBalance(tenantId: string, accountId: string, asOfDate?: string) {
+		const query = asOfDate ? `?as_of_date=${asOfDate}` : '';
+		return this.request<{ account_id: string; as_of_date: string; balance: Decimal }>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/reports/account-balance/${accountId}${query}`
+		);
+	}
+
+	// Contact endpoints
+	async listContacts(tenantId: string, filter?: ContactFilter) {
+		const params = new URLSearchParams();
+		if (filter?.type) params.set('type', filter.type);
+		if (filter?.active_only) params.set('active_only', 'true');
+		if (filter?.search) params.set('search', filter.search);
+		const query = params.toString() ? `?${params.toString()}` : '';
+		return this.request<Contact[]>('GET', `/api/v1/tenants/${tenantId}/contacts${query}`);
+	}
+
+	async createContact(tenantId: string, data: CreateContactRequest) {
+		return this.request<Contact>('POST', `/api/v1/tenants/${tenantId}/contacts`, data);
+	}
+
+	async getContact(tenantId: string, contactId: string) {
+		return this.request<Contact>('GET', `/api/v1/tenants/${tenantId}/contacts/${contactId}`);
+	}
+
+	async updateContact(tenantId: string, contactId: string, data: UpdateContactRequest) {
+		return this.request<Contact>('PUT', `/api/v1/tenants/${tenantId}/contacts/${contactId}`, data);
+	}
+
+	async deleteContact(tenantId: string, contactId: string) {
+		return this.request<{ status: string }>(
+			'DELETE',
+			`/api/v1/tenants/${tenantId}/contacts/${contactId}`
+		);
+	}
+
+	// Invoice endpoints
+	async listInvoices(tenantId: string, filter?: InvoiceFilter) {
+		const params = new URLSearchParams();
+		if (filter?.type) params.set('type', filter.type);
+		if (filter?.status) params.set('status', filter.status);
+		if (filter?.contact_id) params.set('contact_id', filter.contact_id);
+		if (filter?.from_date) params.set('from_date', filter.from_date);
+		if (filter?.to_date) params.set('to_date', filter.to_date);
+		if (filter?.search) params.set('search', filter.search);
+		const query = params.toString() ? `?${params.toString()}` : '';
+		return this.request<Invoice[]>('GET', `/api/v1/tenants/${tenantId}/invoices${query}`);
+	}
+
+	async createInvoice(tenantId: string, data: CreateInvoiceRequest) {
+		return this.request<Invoice>('POST', `/api/v1/tenants/${tenantId}/invoices`, data);
+	}
+
+	async getInvoice(tenantId: string, invoiceId: string) {
+		return this.request<Invoice>('GET', `/api/v1/tenants/${tenantId}/invoices/${invoiceId}`);
+	}
+
+	async sendInvoice(tenantId: string, invoiceId: string) {
+		return this.request<{ status: string }>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/invoices/${invoiceId}/send`
+		);
+	}
+
+	async voidInvoice(tenantId: string, invoiceId: string) {
+		return this.request<{ status: string }>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/invoices/${invoiceId}/void`
+		);
+	}
+
+	// Payment endpoints
+	async listPayments(tenantId: string, filter?: PaymentFilter) {
+		const params = new URLSearchParams();
+		if (filter?.type) params.set('type', filter.type);
+		if (filter?.contact_id) params.set('contact_id', filter.contact_id);
+		if (filter?.from_date) params.set('from_date', filter.from_date);
+		if (filter?.to_date) params.set('to_date', filter.to_date);
+		const query = params.toString() ? `?${params.toString()}` : '';
+		return this.request<Payment[]>('GET', `/api/v1/tenants/${tenantId}/payments${query}`);
+	}
+
+	async createPayment(tenantId: string, data: CreatePaymentRequest) {
+		return this.request<Payment>('POST', `/api/v1/tenants/${tenantId}/payments`, data);
+	}
+
+	async getPayment(tenantId: string, paymentId: string) {
+		return this.request<Payment>('GET', `/api/v1/tenants/${tenantId}/payments/${paymentId}`);
+	}
+
+	async allocatePayment(tenantId: string, paymentId: string, invoiceId: string, amount: string) {
+		return this.request<{ status: string }>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/payments/${paymentId}/allocate`,
+			{ invoice_id: invoiceId, amount }
+		);
+	}
+
+	async getUnallocatedPayments(tenantId: string, type: 'RECEIVED' | 'MADE' = 'RECEIVED') {
+		return this.request<Payment[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/payments/unallocated?type=${type}`
+		);
+	}
+}
+
+// Types
+export interface Tenant {
+	id: string;
+	name: string;
+	slug: string;
+	schema_name: string;
+	settings: TenantSettings;
+	is_active: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface TenantSettings {
+	default_currency: string;
+	country_code: string;
+	timezone: string;
+	date_format: string;
+	decimal_sep: string;
+	thousands_sep: string;
+	fiscal_year_start_month: number;
+	vat_number?: string;
+	reg_code?: string;
+	address?: string;
+	email?: string;
+	phone?: string;
+	logo?: string;
+}
+
+export interface TenantMembership {
+	tenant: Tenant;
+	role: string;
+	is_default: boolean;
+}
+
+export interface Account {
+	id: string;
+	tenant_id: string;
+	code: string;
+	name: string;
+	account_type: 'ASSET' | 'LIABILITY' | 'EQUITY' | 'REVENUE' | 'EXPENSE';
+	parent_id?: string;
+	is_active: boolean;
+	is_system: boolean;
+	description?: string;
+	created_at: string;
+}
+
+export interface CreateAccountRequest {
+	code: string;
+	name: string;
+	account_type: Account['account_type'];
+	parent_id?: string;
+	description?: string;
+}
+
+export interface JournalEntry {
+	id: string;
+	tenant_id: string;
+	entry_number: string;
+	entry_date: string;
+	description: string;
+	reference?: string;
+	source_type?: string;
+	source_id?: string;
+	status: 'DRAFT' | 'POSTED' | 'VOIDED';
+	lines: JournalEntryLine[];
+	posted_at?: string;
+	posted_by?: string;
+	voided_at?: string;
+	voided_by?: string;
+	void_reason?: string;
+	created_at: string;
+	created_by: string;
+}
+
+export interface JournalEntryLine {
+	id: string;
+	account_id: string;
+	account?: Account;
+	description?: string;
+	debit_amount: Decimal;
+	credit_amount: Decimal;
+	currency: string;
+	exchange_rate: Decimal;
+	base_debit: Decimal;
+	base_credit: Decimal;
+}
+
+export interface CreateJournalEntryRequest {
+	entry_date: string;
+	description: string;
+	reference?: string;
+	source_type?: string;
+	source_id?: string;
+	lines: {
+		account_id: string;
+		description?: string;
+		debit_amount: string;
+		credit_amount: string;
+		currency?: string;
+		exchange_rate?: string;
+	}[];
+}
+
+export interface TrialBalance {
+	tenant_id: string;
+	as_of_date: string;
+	generated_at: string;
+	accounts: AccountBalance[];
+	total_debits: Decimal;
+	total_credits: Decimal;
+	is_balanced: boolean;
+}
+
+export interface AccountBalance {
+	account_id: string;
+	account_code: string;
+	account_name: string;
+	account_type: Account['account_type'];
+	debit_balance: Decimal;
+	credit_balance: Decimal;
+	net_balance: Decimal;
+}
+
+// Contact types
+export type ContactType = 'CUSTOMER' | 'SUPPLIER' | 'BOTH';
+
+export interface Contact {
+	id: string;
+	tenant_id: string;
+	code?: string;
+	name: string;
+	contact_type: ContactType;
+	reg_code?: string;
+	vat_number?: string;
+	email?: string;
+	phone?: string;
+	address_line1?: string;
+	address_line2?: string;
+	city?: string;
+	postal_code?: string;
+	country_code: string;
+	payment_terms_days: number;
+	credit_limit?: Decimal;
+	default_account_id?: string;
+	is_active: boolean;
+	notes?: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface CreateContactRequest {
+	code?: string;
+	name: string;
+	contact_type: ContactType;
+	reg_code?: string;
+	vat_number?: string;
+	email?: string;
+	phone?: string;
+	address_line1?: string;
+	address_line2?: string;
+	city?: string;
+	postal_code?: string;
+	country_code?: string;
+	payment_terms_days?: number;
+	credit_limit?: string;
+	default_account_id?: string;
+	notes?: string;
+}
+
+export interface UpdateContactRequest {
+	name?: string;
+	reg_code?: string;
+	vat_number?: string;
+	email?: string;
+	phone?: string;
+	address_line1?: string;
+	address_line2?: string;
+	city?: string;
+	postal_code?: string;
+	country_code?: string;
+	payment_terms_days?: number;
+	credit_limit?: string;
+	default_account_id?: string;
+	notes?: string;
+	is_active?: boolean;
+}
+
+export interface ContactFilter {
+	type?: ContactType;
+	active_only?: boolean;
+	search?: string;
+}
+
+// Invoice types
+export type InvoiceType = 'SALES' | 'PURCHASE' | 'CREDIT_NOTE';
+export type InvoiceStatus = 'DRAFT' | 'SENT' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'VOIDED';
+
+export interface Invoice {
+	id: string;
+	tenant_id: string;
+	invoice_number: string;
+	invoice_type: InvoiceType;
+	contact_id: string;
+	contact?: Contact;
+	issue_date: string;
+	due_date: string;
+	currency: string;
+	exchange_rate: Decimal;
+	subtotal: Decimal;
+	vat_amount: Decimal;
+	total: Decimal;
+	base_subtotal: Decimal;
+	base_vat_amount: Decimal;
+	base_total: Decimal;
+	amount_paid: Decimal;
+	status: InvoiceStatus;
+	reference?: string;
+	notes?: string;
+	lines: InvoiceLine[];
+	journal_entry_id?: string;
+	einvoice_sent_at?: string;
+	einvoice_id?: string;
+	created_at: string;
+	created_by: string;
+	updated_at: string;
+}
+
+export interface InvoiceLine {
+	id: string;
+	tenant_id: string;
+	invoice_id: string;
+	line_number: number;
+	description: string;
+	quantity: Decimal;
+	unit?: string;
+	unit_price: Decimal;
+	discount_percent: Decimal;
+	vat_rate: Decimal;
+	line_subtotal: Decimal;
+	line_vat: Decimal;
+	line_total: Decimal;
+	account_id?: string;
+	product_id?: string;
+}
+
+export interface CreateInvoiceRequest {
+	invoice_type: InvoiceType;
+	contact_id: string;
+	issue_date: string;
+	due_date: string;
+	currency?: string;
+	exchange_rate?: string;
+	reference?: string;
+	notes?: string;
+	lines: CreateInvoiceLineRequest[];
+}
+
+export interface CreateInvoiceLineRequest {
+	description: string;
+	quantity: string;
+	unit?: string;
+	unit_price: string;
+	discount_percent?: string;
+	vat_rate: string;
+	account_id?: string;
+	product_id?: string;
+}
+
+export interface InvoiceFilter {
+	type?: InvoiceType;
+	status?: InvoiceStatus;
+	contact_id?: string;
+	from_date?: string;
+	to_date?: string;
+	search?: string;
+}
+
+// Payment types
+export type PaymentType = 'RECEIVED' | 'MADE';
+
+export interface Payment {
+	id: string;
+	tenant_id: string;
+	payment_number: string;
+	payment_type: PaymentType;
+	contact_id?: string;
+	payment_date: string;
+	amount: Decimal;
+	currency: string;
+	exchange_rate: Decimal;
+	base_amount: Decimal;
+	payment_method?: string;
+	bank_account?: string;
+	reference?: string;
+	notes?: string;
+	allocations: PaymentAllocation[];
+	journal_entry_id?: string;
+	created_at: string;
+	created_by: string;
+}
+
+export interface PaymentAllocation {
+	id: string;
+	tenant_id: string;
+	payment_id: string;
+	invoice_id: string;
+	amount: Decimal;
+	created_at: string;
+}
+
+export interface CreatePaymentRequest {
+	payment_type: PaymentType;
+	contact_id?: string;
+	payment_date: string;
+	amount: string;
+	currency?: string;
+	exchange_rate?: string;
+	payment_method?: string;
+	bank_account?: string;
+	reference?: string;
+	notes?: string;
+	allocations?: AllocationRequest[];
+}
+
+export interface AllocationRequest {
+	invoice_id: string;
+	amount: string;
+}
+
+export interface PaymentFilter {
+	type?: PaymentType;
+	contact_id?: string;
+	from_date?: string;
+	to_date?: string;
+}
+
+export const api = new ApiClient();

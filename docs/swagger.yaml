@@ -1,0 +1,1826 @@
+definitions:
+  github_com_openaccounting_openaccounting_internal_accounting.Account:
+    properties:
+      account_type:
+        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.AccountType'
+      code:
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      is_system:
+        type: boolean
+      name:
+        type: string
+      parent_id:
+        type: string
+      tenant_id:
+        type: string
+    type: object
+  github_com_openaccounting_openaccounting_internal_accounting.AccountBalance:
+    properties:
+      account_code:
+        type: string
+      account_id:
+        type: string
+      account_name:
+        type: string
+      account_type:
+        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.AccountType'
+      credit_balance:
+        type: number
+      debit_balance:
+        type: number
+      net_balance:
+        type: number
+    type: object
+  github_com_openaccounting_openaccounting_internal_accounting.AccountType:
+    enum:
+    - ASSET
+    - LIABILITY
+    - EQUITY
+    - REVENUE
+    - EXPENSE
+    type: string
+    x-enum-varnames:
+    - AccountTypeAsset
+    - AccountTypeLiability
+    - AccountTypeEquity
+    - AccountTypeRevenue
+    - AccountTypeExpense
+  github_com_openaccounting_openaccounting_internal_accounting.CreateAccountRequest:
+    properties:
+      account_type:
+        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.AccountType'
+      code:
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+      parent_id:
+        type: string
+    type: object
+  github_com_openaccounting_openaccounting_internal_accounting.CreateJournalEntryLineReq:
+    properties:
+      account_id:
+        type: string
+      credit_amount:
+        type: number
+      currency:
+        type: string
+      debit_amount:
+        type: number
+      description:
+        type: string
+      exchange_rate:
+        type: number
+    type: object
+  github_com_openaccounting_openaccounting_internal_accounting.CreateJournalEntryRequest:
+    properties:
+      description:
+        type: string
+      entry_date:
+        type: string
+      lines:
+        items:
+          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.CreateJournalEntryLineReq'
+        type: array
+      reference:
+        type: string
+      source_id:
+        type: string
+      source_type:
+        type: string
+    type: object
+  github_com_openaccounting_openaccounting_internal_accounting.JournalEntry:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      entry_date:
+        type: string
+      entry_number:
+        type: string
+      id:
+        type: string
+      lines:
+        items:
+          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.JournalEntryLine'
+        type: array
+      posted_at:
+        type: string
+      posted_by:
+        type: string
+      reference:
+        type: string
+      source_id:
+        type: string
+      source_type:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.JournalEntryStatus'
+      tenant_id:
+        type: string
+      void_reason:
+        type: string
+      voided_at:
+        type: string
+      voided_by:
+        type: string
+    type: object
+  github_com_openaccounting_openaccounting_internal_accounting.JournalEntryLine:
+    properties:
+      account:
+        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.Account'
+      account_id:
+        type: string
+      base_credit:
+        type: number
+      base_debit:
+        type: number
+      credit_amount:
+        type: number
+      currency:
+        type: string
+      debit_amount:
+        type: number
+      description:
+        type: string
+      exchange_rate:
+        type: number
+      id:
+        type: string
+      journal_entry_id:
+        type: string
+      tenant_id:
+        type: string
+    type: object
+  github_com_openaccounting_openaccounting_internal_accounting.JournalEntryStatus:
+    enum:
+    - DRAFT
+    - POSTED
+    - VOIDED
+    type: string
+    x-enum-varnames:
+    - StatusDraft
+    - StatusPosted
+    - StatusVoided
+  github_com_openaccounting_openaccounting_internal_accounting.TrialBalance:
+    properties:
+      accounts:
+        items:
+          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.AccountBalance'
+        type: array
+      as_of_date:
+        type: string
+      generated_at:
+        type: string
+      is_balanced:
+        type: boolean
+      tenant_id:
+        type: string
+      total_credits:
+        type: number
+      total_debits:
+        type: number
+    type: object
+  github_com_openaccounting_openaccounting_internal_contacts.Contact:
+    properties:
+      address_line1:
+        type: string
+      address_line2:
+        type: string
+      city:
+        type: string
+      code:
+        type: string
+      contact_type:
+        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_contacts.ContactType'
+      country_code:
+        type: string
+      created_at:
+        type: string
+      credit_limit:
+        type: number
+      default_account_id:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      notes:
+        type: string
+      payment_terms_days:
+        type: integer
+      phone:
+        type: string
+      postal_code:
+        type: string
+      reg_code:
+        type: string
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      vat_number:
+        type: string
+    type: object
+  github_com_openaccounting_openaccounting_internal_contacts.ContactType:
+    enum:
+    - CUSTOMER
+    - SUPPLIER
+    - BOTH
+    type: string
+    x-enum-varnames:
+    - ContactTypeCustomer
+    - ContactTypeSupplier
+    - ContactTypeBoth
+  github_com_openaccounting_openaccounting_internal_contacts.CreateContactRequest:
+    properties:
+      address_line1:
+        type: string
+      address_line2:
+        type: string
+      city:
+        type: string
+      code:
+        type: string
+      contact_type:
+        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_contacts.ContactType'
+      country_code:
+        type: string
+      credit_limit:
+        type: number
+      default_account_id:
+        type: string
+      email:
+        type: string
+      name:
+        type: string
+      notes:
+        type: string
+      payment_terms_days:
+        type: integer
+      phone:
+        type: string
+      postal_code:
+        type: string
+      reg_code:
+        type: string
+      vat_number:
+        type: string
+    type: object
+  github_com_openaccounting_openaccounting_internal_contacts.UpdateContactRequest:
+    properties:
+      address_line1:
+        type: string
+      address_line2:
+        type: string
+      city:
+        type: string
+      country_code:
+        type: string
+      credit_limit:
+        type: number
+      default_account_id:
+        type: string
+      email:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      notes:
+        type: string
+      payment_terms_days:
+        type: integer
+      phone:
+        type: string
+      postal_code:
+        type: string
+      reg_code:
+        type: string
+      vat_number:
+        type: string
+    type: object
+  github_com_openaccounting_openaccounting_internal_invoicing.CreateInvoiceLineRequest:
+    properties:
+      account_id:
+        type: string
+      description:
+        type: string
+      discount_percent:
+        type: number
+      product_id:
+        type: string
+      quantity:
+        type: number
+      unit:
+        type: string
+      unit_price:
+        type: number
+      vat_rate:
+        type: number
+    type: object
+  github_com_openaccounting_openaccounting_internal_invoicing.CreateInvoiceRequest:
+    properties:
+      contact_id:
+        type: string
+      currency:
+        type: string
+      due_date:
+        type: string
+      exchange_rate:
+        type: number
+      invoice_type:
+        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_invoicing.InvoiceType'
+      issue_date:
+        type: string
+      lines:
+        items:
+          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_invoicing.CreateInvoiceLineRequest'
+        type: array
+      notes:
+        type: string
+      reference:
+        type: string
+    type: object
+  github_com_openaccounting_openaccounting_internal_invoicing.Invoice:
+    properties:
+      amount_paid:
+        type: number
+      base_subtotal:
+        type: number
+      base_total:
+        type: number
+      base_vat_amount:
+        type: number
+      contact:
+        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_contacts.Contact'
+      contact_id:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      currency:
+        type: string
+      due_date:
+        type: string
+      einvoice_id:
+        type: string
+      einvoice_sent_at:
+        type: string
+      exchange_rate:
+        type: number
+      id:
+        type: string
+      invoice_number:
+        type: string
+      invoice_type:
+        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_invoicing.InvoiceType'
+      issue_date:
+        type: string
+      journal_entry_id:
+        type: string
+      lines:
+        items:
+          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_invoicing.InvoiceLine'
+        type: array
+      notes:
+        type: string
+      reference:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_invoicing.InvoiceStatus'
+      subtotal:
+        type: number
+      tenant_id:
+        type: string
+      total:
+        type: number
+      updated_at:
+        type: string
+      vat_amount:
+        type: number
+    type: object
+  github_com_openaccounting_openaccounting_internal_invoicing.InvoiceLine:
+    properties:
+      account_id:
+        type: string
+      description:
+        type: string
+      discount_percent:
+        type: number
+      id:
+        type: string
+      invoice_id:
+        type: string
+      line_number:
+        type: integer
+      line_subtotal:
+        type: number
+      line_total:
+        type: number
+      line_vat:
+        type: number
+      product_id:
+        type: string
+      quantity:
+        type: number
+      tenant_id:
+        type: string
+      unit:
+        type: string
+      unit_price:
+        type: number
+      vat_rate:
+        type: number
+    type: object
+  github_com_openaccounting_openaccounting_internal_invoicing.InvoiceStatus:
+    enum:
+    - DRAFT
+    - SENT
+    - PARTIALLY_PAID
+    - PAID
+    - OVERDUE
+    - VOIDED
+    type: string
+    x-enum-varnames:
+    - StatusDraft
+    - StatusSent
+    - StatusPartiallyPaid
+    - StatusPaid
+    - StatusOverdue
+    - StatusVoided
+  github_com_openaccounting_openaccounting_internal_invoicing.InvoiceType:
+    enum:
+    - SALES
+    - PURCHASE
+    - CREDIT_NOTE
+    type: string
+    x-enum-varnames:
+    - InvoiceTypeSales
+    - InvoiceTypePurchase
+    - InvoiceTypeCreditNote
+  github_com_openaccounting_openaccounting_internal_payments.AllocationRequest:
+    properties:
+      amount:
+        type: number
+      invoice_id:
+        type: string
+    type: object
+  github_com_openaccounting_openaccounting_internal_payments.CreatePaymentRequest:
+    properties:
+      allocations:
+        items:
+          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_payments.AllocationRequest'
+        type: array
+      amount:
+        type: number
+      bank_account:
+        type: string
+      contact_id:
+        type: string
+      currency:
+        type: string
+      exchange_rate:
+        type: number
+      notes:
+        type: string
+      payment_date:
+        type: string
+      payment_method:
+        type: string
+      payment_type:
+        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_payments.PaymentType'
+      reference:
+        type: string
+    type: object
+  github_com_openaccounting_openaccounting_internal_payments.Payment:
+    properties:
+      allocations:
+        items:
+          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_payments.PaymentAllocation'
+        type: array
+      amount:
+        type: number
+      bank_account:
+        type: string
+      base_amount:
+        type: number
+      contact_id:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      currency:
+        type: string
+      exchange_rate:
+        type: number
+      id:
+        type: string
+      journal_entry_id:
+        type: string
+      notes:
+        type: string
+      payment_date:
+        type: string
+      payment_method:
+        type: string
+      payment_number:
+        type: string
+      payment_type:
+        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_payments.PaymentType'
+      reference:
+        type: string
+      tenant_id:
+        type: string
+    type: object
+  github_com_openaccounting_openaccounting_internal_payments.PaymentAllocation:
+    properties:
+      amount:
+        type: number
+      created_at:
+        type: string
+      id:
+        type: string
+      invoice_id:
+        type: string
+      payment_id:
+        type: string
+      tenant_id:
+        type: string
+    type: object
+  github_com_openaccounting_openaccounting_internal_payments.PaymentType:
+    enum:
+    - RECEIVED
+    - MADE
+    type: string
+    x-enum-varnames:
+    - PaymentTypeReceived
+    - PaymentTypeMade
+  github_com_openaccounting_openaccounting_internal_tenant.Tenant:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      schema_name:
+        type: string
+      settings:
+        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_tenant.TenantSettings'
+      slug:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_openaccounting_openaccounting_internal_tenant.TenantSettings:
+    properties:
+      address:
+        type: string
+      country_code:
+        type: string
+      date_format:
+        type: string
+      decimal_sep:
+        type: string
+      default_currency:
+        type: string
+      email:
+        type: string
+      fiscal_year_start_month:
+        description: 1-12
+        type: integer
+      logo:
+        type: string
+      phone:
+        type: string
+      reg_code:
+        type: string
+      thousands_sep:
+        type: string
+      timezone:
+        type: string
+      vat_number:
+        type: string
+    type: object
+info:
+  contact: {}
+paths:
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate user and get JWT tokens
+      parameters:
+      - description: Login credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            email:
+              type: string
+            password:
+              type: string
+            tenant_id:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              access_token:
+                type: string
+              expires_in:
+                type: integer
+              refresh_token:
+                type: string
+              token_type:
+                type: string
+              user:
+                type: object
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      summary: User login
+      tags:
+      - Auth
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Exchange refresh token for new access token
+      parameters:
+      - description: Refresh token
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            refresh_token:
+              type: string
+            tenant_id:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              access_token:
+                type: string
+              expires_in:
+                type: integer
+              token_type:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      summary: Refresh access token
+      tags:
+      - Auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Create a new user account
+      parameters:
+      - description: Registration details
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            email:
+              type: string
+            name:
+              type: string
+            password:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            properties:
+              email:
+                type: string
+              id:
+                type: string
+              name:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      summary: Register new user
+      tags:
+      - Auth
+  /me:
+    get:
+      description: Get the currently authenticated user's profile
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              created_at:
+                type: string
+              email:
+                type: string
+              id:
+                type: string
+              name:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get current user
+      tags:
+      - Users
+  /me/tenants:
+    get:
+      description: Get all tenants the current user is a member of
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              properties:
+                role:
+                  type: string
+                tenant_id:
+                  type: string
+                tenant_name:
+                  type: string
+              type: object
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List user's tenants
+      tags:
+      - Users
+  /tenants:
+    post:
+      consumes:
+      - application/json
+      description: Create a new tenant organization
+      parameters:
+      - description: Tenant details
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            name:
+              type: string
+            settings:
+              type: object
+            slug:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_tenant.Tenant'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create tenant
+      tags:
+      - Tenants
+  /tenants/{tenantID}:
+    get:
+      description: Get tenant details by ID
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_tenant.Tenant'
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get tenant
+      tags:
+      - Tenants
+  /tenants/{tenantID}/accounts:
+    get:
+      description: Get all accounts (chart of accounts) for a tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Filter for active accounts only
+        in: query
+        name: active_only
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.Account'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List accounts
+      tags:
+      - Accounts
+    post:
+      consumes:
+      - application/json
+      description: Create a new account in the chart of accounts
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Account details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.CreateAccountRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.Account'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create account
+      tags:
+      - Accounts
+  /tenants/{tenantID}/accounts/{accountID}:
+    get:
+      description: Get account details by ID
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Account ID
+        in: path
+        name: accountID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.Account'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get account
+      tags:
+      - Accounts
+  /tenants/{tenantID}/contacts:
+    get:
+      description: Get all contacts (customers/suppliers) for a tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Filter for active contacts only
+        in: query
+        name: active_only
+        type: boolean
+      - description: Filter by contact type (CUSTOMER, SUPPLIER, BOTH)
+        in: query
+        name: type
+        type: string
+      - description: Search by name or email
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_contacts.Contact'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List contacts
+      tags:
+      - Contacts
+    post:
+      consumes:
+      - application/json
+      description: Create a new contact (customer/supplier)
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Contact details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_contacts.CreateContactRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_contacts.Contact'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create contact
+      tags:
+      - Contacts
+  /tenants/{tenantID}/contacts/{contactID}:
+    delete:
+      description: Deactivate a contact (soft delete)
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Contact ID
+        in: path
+        name: contactID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete contact
+      tags:
+      - Contacts
+    get:
+      description: Get contact details by ID
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Contact ID
+        in: path
+        name: contactID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_contacts.Contact'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get contact
+      tags:
+      - Contacts
+    put:
+      consumes:
+      - application/json
+      description: Update contact details
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Contact ID
+        in: path
+        name: contactID
+        required: true
+        type: string
+      - description: Updated contact details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_contacts.UpdateContactRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_contacts.Contact'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update contact
+      tags:
+      - Contacts
+  /tenants/{tenantID}/invoices:
+    get:
+      description: Get all invoices for a tenant with optional filtering
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Filter by invoice type (SALES, PURCHASE)
+        in: query
+        name: type
+        type: string
+      - description: Filter by status (DRAFT, SENT, PAID, PARTIALLY_PAID, VOID)
+        in: query
+        name: status
+        type: string
+      - description: Filter by contact ID
+        in: query
+        name: contact_id
+        type: string
+      - description: Filter from date (YYYY-MM-DD)
+        in: query
+        name: from_date
+        type: string
+      - description: Filter to date (YYYY-MM-DD)
+        in: query
+        name: to_date
+        type: string
+      - description: Search by invoice number
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_invoicing.Invoice'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List invoices
+      tags:
+      - Invoices
+    post:
+      consumes:
+      - application/json
+      description: Create a new sales or purchase invoice
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Invoice details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_invoicing.CreateInvoiceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_invoicing.Invoice'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create invoice
+      tags:
+      - Invoices
+  /tenants/{tenantID}/invoices/{invoiceID}:
+    get:
+      description: Get invoice details by ID
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Invoice ID
+        in: path
+        name: invoiceID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_invoicing.Invoice'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get invoice
+      tags:
+      - Invoices
+  /tenants/{tenantID}/invoices/{invoiceID}/send:
+    post:
+      description: Mark an invoice as sent to the customer
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Invoice ID
+        in: path
+        name: invoiceID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Send invoice
+      tags:
+      - Invoices
+  /tenants/{tenantID}/invoices/{invoiceID}/void:
+    post:
+      description: Void an invoice (cannot be undone)
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Invoice ID
+        in: path
+        name: invoiceID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Void invoice
+      tags:
+      - Invoices
+  /tenants/{tenantID}/journal-entries:
+    post:
+      consumes:
+      - application/json
+      description: Create a new double-entry journal entry
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Journal entry details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.CreateJournalEntryRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.JournalEntry'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create journal entry
+      tags:
+      - Journal Entries
+  /tenants/{tenantID}/journal-entries/{entryID}:
+    get:
+      description: Get journal entry details by ID
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Journal Entry ID
+        in: path
+        name: entryID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.JournalEntry'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get journal entry
+      tags:
+      - Journal Entries
+  /tenants/{tenantID}/journal-entries/{entryID}/post:
+    post:
+      description: Post a draft journal entry to finalize it
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Journal Entry ID
+        in: path
+        name: entryID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Post journal entry
+      tags:
+      - Journal Entries
+  /tenants/{tenantID}/journal-entries/{entryID}/void:
+    post:
+      consumes:
+      - application/json
+      description: Void a posted journal entry (creates reversal)
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Journal Entry ID
+        in: path
+        name: entryID
+        required: true
+        type: string
+      - description: Void reason
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            reason:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.JournalEntry'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Void journal entry
+      tags:
+      - Journal Entries
+  /tenants/{tenantID}/payments:
+    get:
+      description: Get all payments for a tenant with optional filtering
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Filter by payment type (RECEIVED, MADE)
+        in: query
+        name: type
+        type: string
+      - description: Filter by contact ID
+        in: query
+        name: contact_id
+        type: string
+      - description: Filter from date (YYYY-MM-DD)
+        in: query
+        name: from_date
+        type: string
+      - description: Filter to date (YYYY-MM-DD)
+        in: query
+        name: to_date
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_payments.Payment'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List payments
+      tags:
+      - Payments
+    post:
+      consumes:
+      - application/json
+      description: Record a new payment received or made
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Payment details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_payments.CreatePaymentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_payments.Payment'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create payment
+      tags:
+      - Payments
+  /tenants/{tenantID}/payments/{paymentID}:
+    get:
+      description: Get payment details by ID
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Payment ID
+        in: path
+        name: paymentID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_payments.Payment'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get payment
+      tags:
+      - Payments
+  /tenants/{tenantID}/payments/{paymentID}/allocate:
+    post:
+      consumes:
+      - application/json
+      description: Allocate a payment amount to an invoice
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Payment ID
+        in: path
+        name: paymentID
+        required: true
+        type: string
+      - description: Allocation details
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            amount:
+              type: string
+            invoice_id:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Allocate payment
+      tags:
+      - Payments
+  /tenants/{tenantID}/payments/unallocated:
+    get:
+      description: Get payments with remaining unallocated amounts
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Filter by type (RECEIVED, MADE)
+        in: query
+        name: type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_payments.Payment'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get unallocated payments
+      tags:
+      - Payments
+  /tenants/{tenantID}/reports/account-balance/{accountID}:
+    get:
+      description: Get the balance of a specific account as of a date
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Account ID
+        in: path
+        name: accountID
+        required: true
+        type: string
+      - description: As of date (YYYY-MM-DD)
+        in: query
+        name: as_of_date
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              account_id:
+                type: string
+              as_of_date:
+                type: string
+              balance:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get account balance
+      tags:
+      - Reports
+  /tenants/{tenantID}/reports/trial-balance:
+    get:
+      description: Get trial balance report as of a specific date
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: As of date (YYYY-MM-DD)
+        in: query
+        name: as_of_date
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.TrialBalance'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get trial balance
+      tags:
+      - Reports
+swagger: "2.0"
