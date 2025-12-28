@@ -1,0 +1,1099 @@
+openapi: 3.0.3
+info:
+  title: Open Accounting API
+  description: |
+    Open-source, multi-tenant accounting software API.
+
+    ## Features
+    - Multi-tenant with schema-per-tenant isolation
+    - Double-entry bookkeeping
+    - Contacts management (customers/suppliers)
+    - Invoicing with VAT calculations
+    - Payment tracking and allocation
+    - Financial reporting (Trial Balance, Account Balances)
+
+    ## Authentication
+    All authenticated endpoints require a JWT Bearer token in the Authorization header:
+    ```
+    Authorization: Bearer <token>
+    ```
+
+    Tokens are obtained via the `/auth/login` endpoint and can be refreshed via `/auth/refresh`.
+  version: 1.0.0
+  contact:
+    name: Open Accounting Team
+    url: https://github.com/openaccounting/openaccounting
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Development server
+
+tags:
+  - name: Auth
+    description: Authentication endpoints
+  - name: Users
+    description: User profile management
+  - name: Tenants
+    description: Multi-tenant organization management
+  - name: Accounts
+    description: Chart of Accounts management
+  - name: Journal Entries
+    description: Double-entry bookkeeping transactions
+  - name: Contacts
+    description: Customer and supplier management
+  - name: Invoices
+    description: Sales and purchase invoicing
+  - name: Payments
+    description: Payment tracking and allocation
+  - name: Reports
+    description: Financial reports and balances
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    Tenant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        schema_name:
+          type: string
+        settings:
+          $ref: '#/components/schemas/TenantSettings'
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    TenantSettings:
+      type: object
+      properties:
+        default_currency:
+          type: string
+          example: EUR
+        country_code:
+          type: string
+          example: EE
+        timezone:
+          type: string
+          example: Europe/Tallinn
+        vat_number:
+          type: string
+        reg_code:
+          type: string
+
+    Account:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          example: "1100"
+        name:
+          type: string
+          example: Cash and Bank
+        account_type:
+          type: string
+          enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE]
+        parent_id:
+          type: string
+          format: uuid
+        is_active:
+          type: boolean
+        is_system:
+          type: boolean
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    Contact:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+        contact_type:
+          type: string
+          enum: [CUSTOMER, SUPPLIER, BOTH]
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        vat_number:
+          type: string
+        address_line1:
+          type: string
+        city:
+          type: string
+        postal_code:
+          type: string
+        country_code:
+          type: string
+        payment_terms_days:
+          type: integer
+        credit_limit:
+          type: string
+          format: decimal
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    Invoice:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        invoice_number:
+          type: string
+          example: INV-00001
+        invoice_type:
+          type: string
+          enum: [SALES, PURCHASE, CREDIT_NOTE]
+        contact_id:
+          type: string
+          format: uuid
+        issue_date:
+          type: string
+          format: date
+        due_date:
+          type: string
+          format: date
+        currency:
+          type: string
+          example: EUR
+        subtotal:
+          type: string
+          format: decimal
+        vat_amount:
+          type: string
+          format: decimal
+        total:
+          type: string
+          format: decimal
+        amount_paid:
+          type: string
+          format: decimal
+        status:
+          type: string
+          enum: [DRAFT, SENT, PARTIALLY_PAID, PAID, OVERDUE, VOIDED]
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvoiceLine'
+        created_at:
+          type: string
+          format: date-time
+
+    InvoiceLine:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        line_number:
+          type: integer
+        description:
+          type: string
+        quantity:
+          type: string
+          format: decimal
+        unit_price:
+          type: string
+          format: decimal
+        vat_rate:
+          type: string
+          format: decimal
+        discount_percent:
+          type: string
+          format: decimal
+        line_subtotal:
+          type: string
+          format: decimal
+        line_vat:
+          type: string
+          format: decimal
+        line_total:
+          type: string
+          format: decimal
+
+    Payment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        payment_number:
+          type: string
+          example: PMT-00001
+        payment_type:
+          type: string
+          enum: [RECEIVED, MADE]
+        contact_id:
+          type: string
+          format: uuid
+        payment_date:
+          type: string
+          format: date
+        amount:
+          type: string
+          format: decimal
+        currency:
+          type: string
+        payment_method:
+          type: string
+        reference:
+          type: string
+        allocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentAllocation'
+        created_at:
+          type: string
+          format: date-time
+
+    PaymentAllocation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        invoice_id:
+          type: string
+          format: uuid
+        amount:
+          type: string
+          format: decimal
+
+    JournalEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        entry_number:
+          type: string
+        entry_date:
+          type: string
+          format: date
+        description:
+          type: string
+        status:
+          type: string
+          enum: [DRAFT, POSTED, VOIDED]
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/JournalEntryLine'
+        created_at:
+          type: string
+          format: date-time
+
+    JournalEntryLine:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        account_id:
+          type: string
+          format: uuid
+        description:
+          type: string
+        debit_amount:
+          type: string
+          format: decimal
+        credit_amount:
+          type: string
+          format: decimal
+
+    TrialBalance:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        as_of_date:
+          type: string
+          format: date
+        accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountBalance'
+        total_debits:
+          type: string
+          format: decimal
+        total_credits:
+          type: string
+          format: decimal
+        is_balanced:
+          type: boolean
+
+    AccountBalance:
+      type: object
+      properties:
+        account_id:
+          type: string
+          format: uuid
+        account_code:
+          type: string
+        account_name:
+          type: string
+        account_type:
+          type: string
+        debit_balance:
+          type: string
+          format: decimal
+        credit_balance:
+          type: string
+          format: decimal
+        net_balance:
+          type: string
+          format: decimal
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, name]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+                name:
+                  type: string
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login and get access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                tenant_id:
+                  type: string
+                  format: uuid
+                  description: Optional tenant to scope the token
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  refresh_token:
+                    type: string
+                  token_type:
+                    type: string
+                    example: Bearer
+                  expires_in:
+                    type: integer
+                    example: 900
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token:
+                  type: string
+                tenant_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  token_type:
+                    type: string
+                  expires_in:
+                    type: integer
+
+  /me:
+    get:
+      tags: [Users]
+      summary: Get current user profile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  /me/tenants:
+    get:
+      tags: [Users]
+      summary: List user's tenant memberships
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of tenant memberships
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    tenant:
+                      $ref: '#/components/schemas/Tenant'
+                    role:
+                      type: string
+                    is_default:
+                      type: boolean
+
+  /tenants:
+    post:
+      tags: [Tenants]
+      summary: Create a new tenant/organization
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, slug]
+              properties:
+                name:
+                  type: string
+                slug:
+                  type: string
+                  pattern: '^[a-z0-9][a-z0-9-]*[a-z0-9]$'
+                settings:
+                  $ref: '#/components/schemas/TenantSettings'
+      responses:
+        '201':
+          description: Tenant created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+
+  /tenants/{tenantID}:
+    get:
+      tags: [Tenants]
+      summary: Get tenant details
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tenantID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Tenant details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+
+  /tenants/{tenantID}/accounts:
+    get:
+      tags: [Accounts]
+      summary: List chart of accounts
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tenantID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: active_only
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: List of accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Account'
+    post:
+      tags: [Accounts]
+      summary: Create a new account
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tenantID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, name, account_type]
+              properties:
+                code:
+                  type: string
+                name:
+                  type: string
+                account_type:
+                  type: string
+                  enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE]
+                parent_id:
+                  type: string
+                  format: uuid
+                description:
+                  type: string
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+
+  /tenants/{tenantID}/contacts:
+    get:
+      tags: [Contacts]
+      summary: List contacts
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tenantID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [CUSTOMER, SUPPLIER, BOTH]
+        - name: active_only
+          in: query
+          schema:
+            type: boolean
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of contacts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Contact'
+    post:
+      tags: [Contacts]
+      summary: Create a new contact
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tenantID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                contact_type:
+                  type: string
+                  enum: [CUSTOMER, SUPPLIER, BOTH]
+                email:
+                  type: string
+                phone:
+                  type: string
+                vat_number:
+                  type: string
+                address_line1:
+                  type: string
+                city:
+                  type: string
+                postal_code:
+                  type: string
+                country_code:
+                  type: string
+                payment_terms_days:
+                  type: integer
+      responses:
+        '201':
+          description: Contact created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contact'
+
+  /tenants/{tenantID}/invoices:
+    get:
+      tags: [Invoices]
+      summary: List invoices
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tenantID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [SALES, PURCHASE, CREDIT_NOTE]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [DRAFT, SENT, PARTIALLY_PAID, PAID, OVERDUE, VOIDED]
+        - name: contact_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: from_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to_date
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: List of invoices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Invoice'
+    post:
+      tags: [Invoices]
+      summary: Create a new invoice
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tenantID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contact_id, lines]
+              properties:
+                invoice_type:
+                  type: string
+                  enum: [SALES, PURCHASE, CREDIT_NOTE]
+                contact_id:
+                  type: string
+                  format: uuid
+                issue_date:
+                  type: string
+                  format: date
+                due_date:
+                  type: string
+                  format: date
+                currency:
+                  type: string
+                reference:
+                  type: string
+                notes:
+                  type: string
+                lines:
+                  type: array
+                  items:
+                    type: object
+                    required: [description, quantity, unit_price, vat_rate]
+                    properties:
+                      description:
+                        type: string
+                      quantity:
+                        type: string
+                      unit_price:
+                        type: string
+                      vat_rate:
+                        type: string
+                      discount_percent:
+                        type: string
+      responses:
+        '201':
+          description: Invoice created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+
+  /tenants/{tenantID}/invoices/{invoiceID}/send:
+    post:
+      tags: [Invoices]
+      summary: Mark invoice as sent
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tenantID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: invoiceID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Invoice sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+
+  /tenants/{tenantID}/payments:
+    get:
+      tags: [Payments]
+      summary: List payments
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tenantID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [RECEIVED, MADE]
+        - name: contact_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of payments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Payment'
+    post:
+      tags: [Payments]
+      summary: Record a new payment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tenantID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payment_type, amount]
+              properties:
+                payment_type:
+                  type: string
+                  enum: [RECEIVED, MADE]
+                contact_id:
+                  type: string
+                  format: uuid
+                payment_date:
+                  type: string
+                  format: date
+                amount:
+                  type: string
+                currency:
+                  type: string
+                payment_method:
+                  type: string
+                reference:
+                  type: string
+                allocations:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      invoice_id:
+                        type: string
+                        format: uuid
+                      amount:
+                        type: string
+      responses:
+        '201':
+          description: Payment recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+
+  /tenants/{tenantID}/payments/{paymentID}/allocate:
+    post:
+      tags: [Payments]
+      summary: Allocate payment to invoice
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tenantID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: paymentID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [invoice_id, amount]
+              properties:
+                invoice_id:
+                  type: string
+                  format: uuid
+                amount:
+                  type: string
+      responses:
+        '200':
+          description: Payment allocated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+
+  /tenants/{tenantID}/reports/trial-balance:
+    get:
+      tags: [Reports]
+      summary: Get trial balance
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tenantID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: as_of_date
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Trial balance report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrialBalance'
+
+  /tenants/{tenantID}/journal-entries:
+    post:
+      tags: [Journal Entries]
+      summary: Create a journal entry
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tenantID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entry_date, description, lines]
+              properties:
+                entry_date:
+                  type: string
+                  format: date
+                description:
+                  type: string
+                reference:
+                  type: string
+                lines:
+                  type: array
+                  minItems: 2
+                  items:
+                    type: object
+                    required: [account_id]
+                    properties:
+                      account_id:
+                        type: string
+                        format: uuid
+                      description:
+                        type: string
+                      debit_amount:
+                        type: string
+                      credit_amount:
+                        type: string
+      responses:
+        '201':
+          description: Journal entry created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JournalEntry'

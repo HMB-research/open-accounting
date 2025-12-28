@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=postgres://openaccounting:openaccounting@db:5432/openaccounting?sslmode=disable
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["/app/migrate", "-db", "postgres://openaccounting:openaccounting@db:5432/openaccounting?sslmode=disable", "-path", "/app/migrations", "-direction", "up"]
+    environment:
+      - DATABASE_URL=postgres://openaccounting:openaccounting@db:5432/openaccounting?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=openaccounting
+      - POSTGRES_PASSWORD=openaccounting
+      - POSTGRES_DB=openaccounting
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openaccounting -d openaccounting"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
