@@ -2,6 +2,7 @@
 	import { page } from '$app/stores';
 	import { api, type Payment, type PaymentType, type Contact, type Invoice } from '$lib/api';
 	import Decimal from 'decimal.js';
+	import * as m from '$lib/paraglide/messages.js';
 
 	let payments = $state<Payment[]>([]);
 	let contacts = $state<Contact[]>([]);
@@ -100,22 +101,26 @@
 		}
 	}
 
-	const typeLabels: Record<PaymentType, string> = {
-		RECEIVED: 'Payment Received',
-		MADE: 'Payment Made'
-	};
+	function getTypeLabel(type: PaymentType): string {
+		switch (type) {
+			case 'RECEIVED': return m.payments_paymentReceived();
+			case 'MADE': return m.payments_paymentMade();
+		}
+	}
 
 	const typeBadgeClass: Record<PaymentType, string> = {
 		RECEIVED: 'badge-received',
 		MADE: 'badge-made'
 	};
 
-	const methodLabels: Record<string, string> = {
-		BANK_TRANSFER: 'Bank Transfer',
-		CASH: 'Cash',
-		CARD: 'Card',
-		OTHER: 'Other'
-	};
+	function getMethodLabel(method: string): string {
+		switch (method) {
+			case 'BANK_TRANSFER': return m.payments_bankTransfer();
+			case 'CASH': return m.payments_cash();
+			case 'CARD': return m.payments_card();
+			default: return m.payments_other();
+		}
+	}
 
 	function formatCurrency(value: Decimal | number | string): string {
 		const num = typeof value === 'object' && 'toFixed' in value ? value.toNumber() : Number(value);
@@ -146,15 +151,15 @@
 </script>
 
 <svelte:head>
-	<title>Payments - Open Accounting</title>
+	<title>{m.payments_title()} - Open Accounting</title>
 </svelte:head>
 
 <div class="container">
 	<div class="page-header">
-		<h1>Payments</h1>
+		<h1>{m.payments_title()}</h1>
 		<div class="page-actions">
 			<button class="btn btn-primary" onclick={() => (showCreatePayment = true)}>
-				+ New Payment
+				+ {m.payments_newPayment()}
 			</button>
 		</div>
 	</div>
@@ -162,9 +167,9 @@
 	<div class="filters card">
 		<div class="filter-row">
 			<select class="input" bind:value={filterType} onchange={handleFilter}>
-				<option value="">All Payments</option>
-				<option value="RECEIVED">Received</option>
-				<option value="MADE">Made</option>
+				<option value="">{m.payments_allPayments()}</option>
+				<option value="RECEIVED">{m.payments_received()}</option>
+				<option value="MADE">{m.payments_made()}</option>
 			</select>
 		</div>
 	</div>
@@ -174,10 +179,10 @@
 	{/if}
 
 	{#if isLoading}
-		<p>Loading payments...</p>
+		<p>{m.common_loading()}</p>
 	{:else if payments.length === 0}
 		<div class="empty-state card">
-			<p>No payments found. Record your first payment to get started.</p>
+			<p>{m.payments_noPayments()} {m.payments_createFirst()}</p>
 		</div>
 	{:else}
 		<div class="card">
@@ -185,14 +190,14 @@
 				<table class="table table-mobile-cards">
 					<thead>
 						<tr>
-							<th>Number</th>
-							<th>Type</th>
-							<th class="hide-mobile">Contact</th>
-							<th>Date</th>
-							<th class="hide-mobile">Method</th>
-							<th>Amount</th>
-							<th class="hide-mobile">Unallocated</th>
-							<th class="hide-mobile">Reference</th>
+							<th>{m.payments_number()}</th>
+							<th>{m.accounts_accountType()}</th>
+							<th class="hide-mobile">{m.payments_contact()}</th>
+							<th>{m.common_date()}</th>
+							<th class="hide-mobile">{m.payments_method()}</th>
+							<th>{m.common_amount()}</th>
+							<th class="hide-mobile">{m.payments_unallocated()}</th>
+							<th class="hide-mobile">{m.payments_reference()}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -202,12 +207,12 @@
 								<td class="number" data-label="Number">{payment.payment_number}</td>
 								<td data-label="Type">
 									<span class="badge {typeBadgeClass[payment.payment_type]}">
-										{typeLabels[payment.payment_type]}
+										{getTypeLabel(payment.payment_type)}
 									</span>
 								</td>
 								<td class="hide-mobile" data-label="Contact">{getContactName(payment.contact_id)}</td>
 								<td data-label="Date">{formatDate(payment.payment_date)}</td>
-								<td class="hide-mobile" data-label="Method">{methodLabels[payment.payment_method || 'OTHER'] || payment.payment_method}</td>
+								<td class="hide-mobile" data-label="Method">{getMethodLabel(payment.payment_method || 'OTHER')}</td>
 								<td class="amount" data-label="Amount">{formatCurrency(payment.amount)}</td>
 								<td class="amount hide-mobile" class:unallocated-warning={unallocated.greaterThan(0)} data-label="Unallocated">
 									{formatCurrency(unallocated)}
@@ -227,20 +232,20 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div class="modal-backdrop" onclick={() => (showCreatePayment = false)} role="presentation">
 		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-payment-title" tabindex="-1">
-			<h2 id="create-payment-title">Record Payment</h2>
+			<h2 id="create-payment-title">{m.payments_recordPayment()}</h2>
 			<form onsubmit={createPayment}>
 				<div class="form-row">
 					<div class="form-group">
-						<label class="label" for="type">Payment Type</label>
+						<label class="label" for="type">{m.payments_paymentType()}</label>
 						<select class="input" id="type" bind:value={newType}>
-							<option value="RECEIVED">Payment Received</option>
-							<option value="MADE">Payment Made</option>
+							<option value="RECEIVED">{m.payments_paymentReceived()}</option>
+							<option value="MADE">{m.payments_paymentMade()}</option>
 						</select>
 					</div>
 					<div class="form-group">
-						<label class="label" for="contact">Contact</label>
+						<label class="label" for="contact">{m.payments_contact()}</label>
 						<select class="input" id="contact" bind:value={newContactId}>
-							<option value="">No contact</option>
+							<option value="">{m.payments_noContact()}</option>
 							{#each contacts as contact}
 								<option value={contact.id}>{contact.name}</option>
 							{/each}
@@ -250,11 +255,11 @@
 
 				<div class="form-row">
 					<div class="form-group">
-						<label class="label" for="date">Payment Date</label>
+						<label class="label" for="date">{m.payments_paymentDate()}</label>
 						<input class="input" type="date" id="date" bind:value={newPaymentDate} required />
 					</div>
 					<div class="form-group">
-						<label class="label" for="amount">Amount *</label>
+						<label class="label" for="amount">{m.common_amount()} *</label>
 						<input
 							class="input"
 							type="number"
@@ -269,33 +274,33 @@
 
 				<div class="form-row">
 					<div class="form-group">
-						<label class="label" for="method">Payment Method</label>
+						<label class="label" for="method">{m.payments_method()}</label>
 						<select class="input" id="method" bind:value={newMethod}>
-							<option value="BANK_TRANSFER">Bank Transfer</option>
-							<option value="CASH">Cash</option>
-							<option value="CARD">Card</option>
-							<option value="OTHER">Other</option>
+							<option value="BANK_TRANSFER">{m.payments_bankTransfer()}</option>
+							<option value="CASH">{m.payments_cash()}</option>
+							<option value="CARD">{m.payments_card()}</option>
+							<option value="OTHER">{m.payments_other()}</option>
 						</select>
 					</div>
 					<div class="form-group">
-						<label class="label" for="reference">Reference</label>
+						<label class="label" for="reference">{m.payments_reference()}</label>
 						<input
 							class="input"
 							type="text"
 							id="reference"
 							bind:value={newReference}
-							placeholder="Bank reference"
+							placeholder={m.payments_bankReference()}
 						/>
 					</div>
 				</div>
 
 				{#if unpaidInvoices.length > 0}
 					<div class="allocations-section">
-						<h3>Allocate to Invoices</h3>
+						<h3>{m.payments_allocateToInvoices()}</h3>
 						{#each selectedInvoices as allocation, i}
 							<div class="allocation-row">
 								<select class="input" bind:value={allocation.invoice_id}>
-									<option value="">Select invoice...</option>
+									<option value="">{m.payments_selectInvoice()}</option>
 									{#each unpaidInvoices as invoice}
 										<option value={invoice.id}>
 											{invoice.invoice_number} - {formatCurrency(invoice.total)}
@@ -308,7 +313,7 @@
 									step="0.01"
 									min="0"
 									bind:value={allocation.amount}
-									placeholder="Amount"
+									placeholder={m.common_amount()}
 								/>
 								<button
 									type="button"
@@ -320,27 +325,27 @@
 							</div>
 						{/each}
 						<button type="button" class="btn btn-secondary btn-small" onclick={addInvoiceAllocation}>
-							+ Add Invoice
+							+ {m.payments_addInvoice()}
 						</button>
 					</div>
 				{/if}
 
 				<div class="form-group">
-					<label class="label" for="notes">Notes</label>
+					<label class="label" for="notes">{m.invoices_notes()}</label>
 					<textarea
 						class="input"
 						id="notes"
 						bind:value={newNotes}
 						rows="2"
-						placeholder="Additional notes..."
+						placeholder={m.invoices_additionalNotes()}
 					></textarea>
 				</div>
 
 				<div class="modal-actions">
 					<button type="button" class="btn btn-secondary" onclick={() => (showCreatePayment = false)}>
-						Cancel
+						{m.common_cancel()}
 					</button>
-					<button type="submit" class="btn btn-primary">Record Payment</button>
+					<button type="submit" class="btn btn-primary">{m.payments_recordPayment()}</button>
 				</div>
 			</form>
 		</div>

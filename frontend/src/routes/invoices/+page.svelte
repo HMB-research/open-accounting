@@ -2,6 +2,7 @@
 	import { page } from '$app/stores';
 	import { api, type Invoice, type InvoiceType, type InvoiceStatus, type Contact } from '$lib/api';
 	import Decimal from 'decimal.js';
+	import * as m from '$lib/paraglide/messages.js';
 
 	let invoices = $state<Invoice[]>([]);
 	let contacts = $state<Contact[]>([]);
@@ -151,20 +152,24 @@
 		}
 	}
 
-	const typeLabels: Record<InvoiceType, string> = {
-		SALES: 'Sales Invoice',
-		PURCHASE: 'Purchase Invoice',
-		CREDIT_NOTE: 'Credit Note'
-	};
+	function getTypeLabel(type: InvoiceType): string {
+		switch (type) {
+			case 'SALES': return m.invoices_salesInvoice();
+			case 'PURCHASE': return m.invoices_purchaseInvoice();
+			case 'CREDIT_NOTE': return m.invoices_creditNote();
+		}
+	}
 
-	const statusLabels: Record<InvoiceStatus, string> = {
-		DRAFT: 'Draft',
-		SENT: 'Sent',
-		PARTIALLY_PAID: 'Partial',
-		PAID: 'Paid',
-		OVERDUE: 'Overdue',
-		VOIDED: 'Voided'
-	};
+	function getStatusLabel(status: InvoiceStatus): string {
+		switch (status) {
+			case 'DRAFT': return m.invoices_draft();
+			case 'SENT': return m.invoices_sent();
+			case 'PARTIALLY_PAID': return m.invoices_partial();
+			case 'PAID': return m.invoices_paid();
+			case 'OVERDUE': return m.invoices_overdue();
+			case 'VOIDED': return m.invoices_voided();
+		}
+	}
 
 	const statusClass: Record<InvoiceStatus, string> = {
 		DRAFT: 'badge-draft',
@@ -189,15 +194,15 @@
 </script>
 
 <svelte:head>
-	<title>Invoices - Open Accounting</title>
+	<title>{m.invoices_title()} - Open Accounting</title>
 </svelte:head>
 
 <div class="container">
 	<div class="page-header">
-		<h1>Invoices</h1>
+		<h1>{m.invoices_title()}</h1>
 		<div class="page-actions">
 			<button class="btn btn-primary" onclick={() => (showCreateInvoice = true)}>
-				+ New Invoice
+				+ {m.invoices_newInvoice()}
 			</button>
 		</div>
 	</div>
@@ -205,18 +210,18 @@
 	<div class="filters card">
 		<div class="filter-row">
 			<select class="input" bind:value={filterType} onchange={handleFilter}>
-				<option value="">All Types</option>
-				<option value="SALES">Sales Invoices</option>
-				<option value="PURCHASE">Purchase Invoices</option>
-				<option value="CREDIT_NOTE">Credit Notes</option>
+				<option value="">{m.common_filter()} - {m.invoices_title()}</option>
+				<option value="SALES">{m.invoices_salesInvoice()}</option>
+				<option value="PURCHASE">{m.invoices_purchaseInvoice()}</option>
+				<option value="CREDIT_NOTE">{m.invoices_creditNote()}</option>
 			</select>
 			<select class="input" bind:value={filterStatus} onchange={handleFilter}>
-				<option value="">All Statuses</option>
-				<option value="DRAFT">Draft</option>
-				<option value="SENT">Sent</option>
-				<option value="PARTIALLY_PAID">Partially Paid</option>
-				<option value="PAID">Paid</option>
-				<option value="OVERDUE">Overdue</option>
+				<option value="">{m.common_filter()} - {m.common_status()}</option>
+				<option value="DRAFT">{m.invoices_draft()}</option>
+				<option value="SENT">{m.invoices_sent()}</option>
+				<option value="PARTIALLY_PAID">{m.invoices_partial()}</option>
+				<option value="PAID">{m.invoices_paid()}</option>
+				<option value="OVERDUE">{m.invoices_overdue()}</option>
 			</select>
 		</div>
 	</div>
@@ -226,10 +231,10 @@
 	{/if}
 
 	{#if isLoading}
-		<p>Loading invoices...</p>
+		<p>{m.common_loading()}</p>
 	{:else if invoices.length === 0}
 		<div class="empty-state card">
-			<p>No invoices found. Create your first invoice to get started.</p>
+			<p>{m.invoices_noInvoices()} {m.invoices_createFirst()}</p>
 		</div>
 	{:else}
 		<div class="card">
@@ -237,28 +242,28 @@
 				<table class="table table-mobile-cards">
 					<thead>
 						<tr>
-							<th>Number</th>
-							<th class="hide-mobile">Type</th>
-							<th>Contact</th>
-							<th class="hide-mobile">Issue Date</th>
-							<th>Due Date</th>
-							<th>Total</th>
-							<th>Status</th>
-							<th>Actions</th>
+							<th>{m.invoices_invoiceNumber()}</th>
+							<th class="hide-mobile">{m.accounts_accountType()}</th>
+							<th>{m.invoices_customer()}</th>
+							<th class="hide-mobile">{m.invoices_issueDate()}</th>
+							<th>{m.invoices_dueDate()}</th>
+							<th>{m.common_total()}</th>
+							<th>{m.common_status()}</th>
+							<th>{m.common_actions()}</th>
 						</tr>
 					</thead>
 					<tbody>
 						{#each invoices as invoice}
 							<tr>
 								<td class="number" data-label="Number">{invoice.invoice_number}</td>
-								<td class="hide-mobile" data-label="Type">{typeLabels[invoice.invoice_type]}</td>
+								<td class="hide-mobile" data-label="Type">{getTypeLabel(invoice.invoice_type)}</td>
 								<td data-label="Contact">{invoice.contact?.name || '-'}</td>
 								<td class="hide-mobile" data-label="Issue Date">{formatDate(invoice.issue_date)}</td>
 								<td data-label="Due Date">{formatDate(invoice.due_date)}</td>
 								<td class="amount" data-label="Total">{formatCurrency(invoice.total)}</td>
 								<td data-label="Status">
 									<span class="badge {statusClass[invoice.status]}">
-										{statusLabels[invoice.status]}
+										{getStatusLabel(invoice.status)}
 									</span>
 								</td>
 								<td class="actions actions-cell">
@@ -271,7 +276,7 @@
 									</button>
 									{#if invoice.status === 'DRAFT'}
 										<button class="btn btn-small" onclick={() => sendInvoice(invoice.id)}>
-											Send
+											{m.invoices_send()}
 										</button>
 									{/if}
 								</td>
@@ -289,22 +294,22 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div class="modal-backdrop" onclick={() => (showCreateInvoice = false)} role="presentation">
 		<div class="modal modal-large card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-invoice-title" tabindex="-1">
-			<h2 id="create-invoice-title">Create Invoice</h2>
+			<h2 id="create-invoice-title">{m.invoices_newInvoice()}</h2>
 			<form onsubmit={createInvoice}>
 				<div class="form-row">
 					<div class="form-group">
-						<label class="label" for="type">Invoice Type</label>
+						<label class="label" for="type">{m.accounts_accountType()}</label>
 						<select class="input" id="type" bind:value={newType}>
-							<option value="SALES">Sales Invoice</option>
-							<option value="PURCHASE">Purchase Invoice</option>
-							<option value="CREDIT_NOTE">Credit Note</option>
+							<option value="SALES">{m.invoices_salesInvoice()}</option>
+							<option value="PURCHASE">{m.invoices_purchaseInvoice()}</option>
+							<option value="CREDIT_NOTE">{m.invoices_creditNote()}</option>
 						</select>
 					</div>
 					<div class="form-group">
-						<label class="label" for="contact">Contact *</label>
+						<label class="label" for="contact">{m.invoices_customer()} *</label>
 						<select class="input" id="contact" bind:value={newContactId} required>
-							<option value="">Select contact...</option>
-							{#each contacts as contact}
+							<option value="">{m.invoices_selectContact()}</option>
+							{#each contacts as contact (contact.id)}
 								<option value={contact.id}>{contact.name}</option>
 							{/each}
 						</select>
@@ -313,15 +318,15 @@
 
 				<div class="form-row">
 					<div class="form-group">
-						<label class="label" for="issue-date">Issue Date</label>
+						<label class="label" for="issue-date">{m.invoices_issueDate()}</label>
 						<input class="input" type="date" id="issue-date" bind:value={newIssueDate} required />
 					</div>
 					<div class="form-group">
-						<label class="label" for="due-date">Due Date</label>
+						<label class="label" for="due-date">{m.invoices_dueDate()}</label>
 						<input class="input" type="date" id="due-date" bind:value={newDueDate} required />
 					</div>
 					<div class="form-group">
-						<label class="label" for="reference">Reference</label>
+						<label class="label" for="reference">{m.payments_reference()}</label>
 						<input
 							class="input"
 							type="text"
@@ -333,16 +338,16 @@
 				</div>
 
 				<div class="lines-section">
-					<h3>Invoice Lines</h3>
+					<h3>{m.invoices_lineItems()}</h3>
 					<table class="lines-table">
 						<thead>
 							<tr>
-								<th>Description</th>
-								<th>Qty</th>
-								<th>Unit Price</th>
-								<th>VAT %</th>
-								<th>Discount %</th>
-								<th>Total</th>
+								<th>{m.common_description()}</th>
+								<th>{m.invoices_qty()}</th>
+								<th>{m.invoices_unitPrice()}</th>
+								<th>{m.invoices_vat()} %</th>
+								<th>{m.invoices_discount()} %</th>
+								<th>{m.common_total()}</th>
 								<th></th>
 							</tr>
 						</thead>
@@ -355,7 +360,7 @@
 											type="text"
 											bind:value={line.description}
 											required
-											placeholder="Product or service"
+											placeholder={m.invoices_productOrService()}
 										/>
 									</td>
 									<td>
@@ -412,31 +417,31 @@
 						</tbody>
 						<tfoot>
 							<tr>
-								<td colspan="5" style="text-align: right;"><strong>Total:</strong></td>
+								<td colspan="5" style="text-align: right;"><strong>{m.common_total()}:</strong></td>
 								<td class="amount"><strong>{formatCurrency(calculateTotal())}</strong></td>
 								<td></td>
 							</tr>
 						</tfoot>
 					</table>
-					<button type="button" class="btn btn-secondary" onclick={addLine}>+ Add Line</button>
+					<button type="button" class="btn btn-secondary" onclick={addLine}>+ {m.invoices_addLine()}</button>
 				</div>
 
 				<div class="form-group">
-					<label class="label" for="notes">Notes</label>
+					<label class="label" for="notes">{m.invoices_notes()}</label>
 					<textarea
 						class="input"
 						id="notes"
 						bind:value={newNotes}
 						rows="2"
-						placeholder="Additional notes..."
+						placeholder={m.invoices_additionalNotes()}
 					></textarea>
 				</div>
 
 				<div class="modal-actions">
 					<button type="button" class="btn btn-secondary" onclick={() => (showCreateInvoice = false)}>
-						Cancel
+						{m.common_cancel()}
 					</button>
-					<button type="submit" class="btn btn-primary">Create Invoice</button>
+					<button type="submit" class="btn btn-primary">{m.invoices_newInvoice()}</button>
 				</div>
 			</form>
 		</div>
