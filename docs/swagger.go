@@ -14,7 +14,7 @@ package docs
 // @description - Financial reporting (Trial Balance, Account Balances)
 
 // @contact.name Open Accounting Team
-// @contact.url https://github.com/openaccounting/openaccounting
+// @contact.url https://github.com/HMB-research/open-accounting
 // @contact.email support@openaccounting.io
 
 // @license.name MIT

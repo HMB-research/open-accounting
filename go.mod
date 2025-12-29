@@ -1,4 +1,4 @@
-module github.com/openaccounting/openaccounting
+module github.com/HMB-research/open-accounting
 
 go 1.24.0
 

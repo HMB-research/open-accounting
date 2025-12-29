@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 
-	"github.com/openaccounting/openaccounting/internal/accounting"
+	"github.com/HMB-research/open-accounting/internal/accounting"
 )
 
 // Service provides invoicing operations

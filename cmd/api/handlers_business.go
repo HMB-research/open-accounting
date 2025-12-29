@@ -9,15 +9,15 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/shopspring/decimal"
 
-	"github.com/openaccounting/openaccounting/internal/auth"
-	"github.com/openaccounting/openaccounting/internal/banking"
-	"github.com/openaccounting/openaccounting/internal/contacts"
-	"github.com/openaccounting/openaccounting/internal/email"
-	"github.com/openaccounting/openaccounting/internal/invoicing"
-	"github.com/openaccounting/openaccounting/internal/payments"
-	"github.com/openaccounting/openaccounting/internal/payroll"
-	"github.com/openaccounting/openaccounting/internal/recurring"
-	"github.com/openaccounting/openaccounting/internal/tenant"
+	"github.com/HMB-research/open-accounting/internal/auth"
+	"github.com/HMB-research/open-accounting/internal/banking"
+	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/email"
+	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/payments"
+	"github.com/HMB-research/open-accounting/internal/payroll"
+	"github.com/HMB-research/open-accounting/internal/recurring"
+	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
 // =============================================================================

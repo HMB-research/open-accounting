@@ -16,8 +16,8 @@ import (
 	"github.com/johnfercher/maroto/v2/pkg/props"
 	"github.com/shopspring/decimal"
 
-	"github.com/openaccounting/openaccounting/internal/invoicing"
-	"github.com/openaccounting/openaccounting/internal/tenant"
+	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
 // PDFSettings holds PDF-specific configuration for a tenant
