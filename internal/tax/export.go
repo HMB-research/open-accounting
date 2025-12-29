@@ -9,25 +9,25 @@ import (
 
 // KMDXML represents the Estonian e-MTA KMD XML format
 type KMDXML struct {
-	XMLName    xml.Name `xml:"KMD"`
-	RegNr      string   `xml:"maksukohustuslane>regNr"`
-	Period     string   `xml:"periood"`
-	Row1Base   string   `xml:"rida1,omitempty"`
-	Row1Tax    string   `xml:"rida1Km,omitempty"`
-	Row2Base   string   `xml:"rida2,omitempty"`
-	Row2Tax    string   `xml:"rida2Km,omitempty"`
-	Row21Base  string   `xml:"rida21,omitempty"`
-	Row21Tax   string   `xml:"rida21Km,omitempty"`
-	Row3       string   `xml:"rida3,omitempty"`
-	Row31      string   `xml:"rida31,omitempty"`
-	Row4       string   `xml:"rida4,omitempty"`
-	Row5       string   `xml:"rida5,omitempty"`
-	Row6       string   `xml:"rida6,omitempty"`
-	Row7       string   `xml:"rida7,omitempty"`
-	Row8       string   `xml:"rida8,omitempty"`  // Total output VAT
-	Row9       string   `xml:"rida9,omitempty"`  // Total input VAT
-	Row10      string   `xml:"rida10,omitempty"` // VAT payable
-	Row11      string   `xml:"rida11,omitempty"` // VAT refundable
+	XMLName   xml.Name `xml:"KMD"`
+	RegNr     string   `xml:"maksukohustuslane>regNr"`
+	Period    string   `xml:"periood"`
+	Row1Base  string   `xml:"rida1,omitempty"`
+	Row1Tax   string   `xml:"rida1Km,omitempty"`
+	Row2Base  string   `xml:"rida2,omitempty"`
+	Row2Tax   string   `xml:"rida2Km,omitempty"`
+	Row21Base string   `xml:"rida21,omitempty"`
+	Row21Tax  string   `xml:"rida21Km,omitempty"`
+	Row3      string   `xml:"rida3,omitempty"`
+	Row31     string   `xml:"rida31,omitempty"`
+	Row4      string   `xml:"rida4,omitempty"`
+	Row5      string   `xml:"rida5,omitempty"`
+	Row6      string   `xml:"rida6,omitempty"`
+	Row7      string   `xml:"rida7,omitempty"`
+	Row8      string   `xml:"rida8,omitempty"`  // Total output VAT
+	Row9      string   `xml:"rida9,omitempty"`  // Total input VAT
+	Row10     string   `xml:"rida10,omitempty"` // VAT payable
+	Row11     string   `xml:"rida11,omitempty"` // VAT refundable
 }
 
 // ExportKMDToXML exports a KMD declaration to Estonian e-MTA XML format
