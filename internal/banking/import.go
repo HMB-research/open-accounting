@@ -486,7 +486,8 @@ func FormatAmount(amount decimal.Decimal, decimals int32) string {
 
 	// Add thousands separators
 	intPart := parts[0]
-	var result []byte
+	// Pre-allocate: original length + estimated separators (length/3)
+	result := make([]byte, 0, len(intPart)+(len(intPart)/3))
 	for i, c := range intPart {
 		if i > 0 && (len(intPart)-i)%3 == 0 {
 			result = append(result, ',')
