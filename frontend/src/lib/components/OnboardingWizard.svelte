@@ -29,7 +29,7 @@
 	// Step 3: First Contact (optional)
 	let contactName = $state('');
 	let contactEmail = $state('');
-	let contactType = $state<'customer' | 'vendor'>('customer');
+	let contactType = $state<'CUSTOMER' | 'SUPPLIER'>('CUSTOMER');
 
 	const totalSteps = 4;
 
@@ -241,7 +241,7 @@
 					<p class="step-description">Add a customer or vendor to get started. You can skip this step.</p>
 
 					<div class="contact-type-selector">
-						<button type="button" class="type-btn" class:active={contactType === 'customer'} onclick={() => (contactType = 'customer')}>
+						<button type="button" class="type-btn" class:active={contactType === 'CUSTOMER'} onclick={() => (contactType = 'CUSTOMER')}>
 							<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 								<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
 								<circle cx="9" cy="7" r="4" />
@@ -250,19 +250,19 @@
 							</svg>
 							<span>Customer</span>
 						</button>
-						<button type="button" class="type-btn" class:active={contactType === 'vendor'} onclick={() => (contactType = 'vendor')}>
+						<button type="button" class="type-btn" class:active={contactType === 'SUPPLIER'} onclick={() => (contactType = 'SUPPLIER')}>
 							<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 								<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" />
 								<path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" />
 								<path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" />
 							</svg>
-							<span>Vendor</span>
+							<span>Supplier</span>
 						</button>
 					</div>
 
 					<div class="form-grid">
 						<div class="form-group">
-							<label class="label" for="contactName">{contactType === 'customer' ? 'Customer' : 'Vendor'} Name</label>
+							<label class="label" for="contactName">{contactType === 'CUSTOMER' ? 'Customer' : 'Supplier'} Name</label>
 							<input class="input" type="text" id="contactName" bind:value={contactName} placeholder="Company or person name" />
 						</div>
 						<div class="form-group">
