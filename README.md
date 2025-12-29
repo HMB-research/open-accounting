@@ -30,15 +30,15 @@ Open-source accounting software with double-entry bookkeeping, invoicing, invent
 ### One-Line Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/openaccounting/openaccounting/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/HMB-research/open-accounting/main/install.sh | bash
 ```
 
 ### Manual Setup
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/openaccounting/openaccounting.git
-cd openaccounting
+git clone https://github.com/HMB-research/open-accounting.git
+cd open-accounting
 ```
 
 2. Start with Docker Compose:

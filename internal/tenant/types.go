@@ -32,6 +32,12 @@ type TenantSettings struct {
 	Email           string `json:"email,omitempty"`
 	Phone           string `json:"phone,omitempty"`
 	Logo            string `json:"logo,omitempty"`
+
+	// PDF/Invoice settings
+	PDFPrimaryColor string `json:"pdf_primary_color,omitempty"`
+	PDFFooterText   string `json:"pdf_footer_text,omitempty"`
+	BankDetails     string `json:"bank_details,omitempty"`
+	InvoiceTerms    string `json:"invoice_terms,omitempty"`
 }
 
 // DefaultSettings returns default tenant settings for Estonia

@@ -18,10 +18,15 @@ import (
 
 	_ "github.com/openaccounting/openaccounting/docs"
 	"github.com/openaccounting/openaccounting/internal/accounting"
+	"github.com/openaccounting/openaccounting/internal/analytics"
 	"github.com/openaccounting/openaccounting/internal/auth"
+	"github.com/openaccounting/openaccounting/internal/banking"
 	"github.com/openaccounting/openaccounting/internal/contacts"
+	"github.com/openaccounting/openaccounting/internal/email"
 	"github.com/openaccounting/openaccounting/internal/invoicing"
 	"github.com/openaccounting/openaccounting/internal/payments"
+	"github.com/openaccounting/openaccounting/internal/pdf"
+	"github.com/openaccounting/openaccounting/internal/recurring"
 	"github.com/openaccounting/openaccounting/internal/tenant"
 )
 
@@ -62,6 +67,11 @@ func main() {
 	contactsService := contacts.NewService(pool)
 	invoicingService := invoicing.NewService(pool, accountingService)
 	paymentsService := payments.NewService(pool, invoicingService)
+	pdfService := pdf.NewService()
+	analyticsService := analytics.NewService(pool)
+	recurringService := recurring.NewService(pool, invoicingService)
+	emailService := email.NewService(pool)
+	bankingService := banking.NewService(pool)
 
 	// Create handlers
 	handlers := &Handlers{
@@ -71,6 +81,11 @@ func main() {
 		contactsService:   contactsService,
 		invoicingService:  invoicingService,
 		paymentsService:   paymentsService,
+		pdfService:        pdfService,
+		analyticsService:  analyticsService,
+		recurringService:  recurringService,
+		emailService:      emailService,
+		bankingService:    bankingService,
 	}
 
 	// Setup router
@@ -215,6 +230,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/invoices", h.ListInvoices)
 				r.Post("/invoices", h.CreateInvoice)
 				r.Get("/invoices/{invoiceID}", h.GetInvoice)
+				r.Get("/invoices/{invoiceID}/pdf", h.GetInvoicePDF)
 				r.Post("/invoices/{invoiceID}/send", h.SendInvoice)
 				r.Post("/invoices/{invoiceID}/void", h.VoidInvoice)
 
@@ -228,6 +244,61 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				// Reports
 				r.Get("/reports/trial-balance", h.GetTrialBalance)
 				r.Get("/reports/account-balance/{accountID}", h.GetAccountBalance)
+
+				// Analytics
+				r.Get("/analytics/dashboard", h.GetDashboardSummary)
+				r.Get("/analytics/revenue-expense", h.GetRevenueExpenseChart)
+				r.Get("/analytics/cash-flow", h.GetCashFlowChart)
+				r.Get("/reports/aging/receivables", h.GetReceivablesAging)
+				r.Get("/reports/aging/payables", h.GetPayablesAging)
+
+				// Recurring Invoices
+				r.Get("/recurring-invoices", h.ListRecurringInvoices)
+				r.Post("/recurring-invoices", h.CreateRecurringInvoice)
+				r.Post("/recurring-invoices/from-invoice/{invoiceID}", h.CreateRecurringInvoiceFromInvoice)
+				r.Post("/recurring-invoices/generate-due", h.GenerateDueRecurringInvoices)
+				r.Get("/recurring-invoices/{recurringID}", h.GetRecurringInvoice)
+				r.Put("/recurring-invoices/{recurringID}", h.UpdateRecurringInvoice)
+				r.Delete("/recurring-invoices/{recurringID}", h.DeleteRecurringInvoice)
+				r.Post("/recurring-invoices/{recurringID}/pause", h.PauseRecurringInvoice)
+				r.Post("/recurring-invoices/{recurringID}/resume", h.ResumeRecurringInvoice)
+				r.Post("/recurring-invoices/{recurringID}/generate", h.GenerateRecurringInvoice)
+
+				// Email Settings
+				r.Get("/settings/smtp", h.GetSMTPConfig)
+				r.Put("/settings/smtp", h.UpdateSMTPConfig)
+				r.Post("/settings/smtp/test", h.TestSMTP)
+				r.Get("/email-templates", h.ListEmailTemplates)
+				r.Put("/email-templates/{templateType}", h.UpdateEmailTemplate)
+				r.Get("/email-log", h.GetEmailLog)
+
+				// Email Actions (linked to invoices/payments)
+				r.Post("/invoices/{invoiceID}/email", h.EmailInvoice)
+				r.Post("/payments/{paymentID}/email-receipt", h.EmailPaymentReceipt)
+
+				// Bank Accounts
+				r.Get("/bank-accounts", h.ListBankAccounts)
+				r.Post("/bank-accounts", h.CreateBankAccount)
+				r.Get("/bank-accounts/{accountID}", h.GetBankAccount)
+				r.Put("/bank-accounts/{accountID}", h.UpdateBankAccount)
+				r.Delete("/bank-accounts/{accountID}", h.DeleteBankAccount)
+
+				// Bank Transactions
+				r.Get("/bank-accounts/{accountID}/transactions", h.ListBankTransactions)
+				r.Post("/bank-accounts/{accountID}/import", h.ImportBankTransactions)
+				r.Get("/bank-accounts/{accountID}/import-history", h.GetImportHistory)
+				r.Get("/bank-transactions/{transactionID}", h.GetBankTransaction)
+				r.Get("/bank-transactions/{transactionID}/suggestions", h.GetMatchSuggestions)
+				r.Post("/bank-transactions/{transactionID}/match", h.MatchBankTransaction)
+				r.Post("/bank-transactions/{transactionID}/unmatch", h.UnmatchBankTransaction)
+				r.Post("/bank-transactions/{transactionID}/create-payment", h.CreatePaymentFromTransaction)
+
+				// Bank Reconciliation
+				r.Get("/bank-accounts/{accountID}/reconciliations", h.ListReconciliations)
+				r.Post("/bank-accounts/{accountID}/reconciliation", h.CreateReconciliation)
+				r.Get("/reconciliations/{reconciliationID}", h.GetReconciliation)
+				r.Post("/reconciliations/{reconciliationID}/complete", h.CompleteReconciliation)
+				r.Post("/bank-accounts/{accountID}/auto-match", h.AutoMatchTransactions)
 			})
 		})
 	})
