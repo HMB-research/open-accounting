@@ -1,202 +1,279 @@
 # Open Accounting
 
-🇪🇪 **Made in Estonia**
+🇪🇪 **Made in Estonia** | Open-source accounting software for modern businesses
 
 [![CI](https://github.com/HMB-research/open-accounting/actions/workflows/ci.yml/badge.svg)](https://github.com/HMB-research/open-accounting/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/HMB-research/open-accounting/branch/main/graph/badge.svg)](https://codecov.io/gh/HMB-research/open-accounting)
 [![Go Report Card](https://goreportcard.com/badge/github.com/HMB-research/open-accounting)](https://goreportcard.com/report/github.com/HMB-research/open-accounting)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)](https://go.dev/)
-[![GitHub stars](https://img.shields.io/github/stars/HMB-research/open-accounting?style=social)](https://github.com/HMB-research/open-accounting/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/HMB-research/open-accounting?style=social)](https://github.com/HMB-research/open-accounting/network/members)
-[![GitHub issues](https://img.shields.io/github/issues/HMB-research/open-accounting)](https://github.com/HMB-research/open-accounting/issues)
-[![GitHub pull requests](https://img.shields.io/github/issues-pr/HMB-research/open-accounting)](https://github.com/HMB-research/open-accounting/pulls)
 
-> **Warning**
-> This project is currently under active development and is not yet ready for production use. APIs may change without notice, and features may be incomplete or unstable. We welcome contributions and feedback!
+> **⚠️ Development Status**
+> This project is under active development and not yet production-ready. APIs may change, and features may be incomplete. Contributions and feedback welcome!
 
-Open-source accounting software with double-entry bookkeeping, invoicing, inventory management, and payroll support.
+---
 
-## Features
+## What is Open Accounting?
 
-- **Double-Entry Bookkeeping**: Complete general ledger with immutable journal entries
-- **Multi-Tenant**: Schema-per-tenant isolation for secure multi-company support
-- **Multi-Currency**: Support for multiple currencies with exchange rate tracking
-- **Chart of Accounts**: Hierarchical account structure with 5 account types
-- **Financial Reports**: Trial balance, balance sheet, income statement
-- **VAT/Tax Support**: Date-aware VAT rates for EU compliance
-- **Estonian Tax Compliance**: KMD (VAT declaration) generation with e-MTA XML export
-- **REST API**: Full-featured JSON API for integration
+Open Accounting is a **self-hosted, multi-tenant accounting platform** designed for small to medium businesses, accountants managing multiple clients, and SaaS builders who need embedded accounting. Built with modern technologies and focused on **Estonian/EU compliance**, it provides:
 
-## Quick Start
+- **True Double-Entry Bookkeeping** — Immutable journal entries with full audit trail
+- **Multi-Company Support** — One installation serves multiple businesses with complete data isolation
+- **Role-Based Access** — Owner, Admin, Accountant, and Viewer roles with granular permissions
+- **Estonian Tax Compliance** — KMD (VAT) declarations with e-MTA XML export
+- **Modern Stack** — Go backend, SvelteKit frontend, PostgreSQL database
 
-### One-Line Install
+---
+
+## ✨ Features
+
+### Core Accounting
+| Feature | Description |
+|---------|-------------|
+| **Chart of Accounts** | Hierarchical 5-type account structure (Asset, Liability, Equity, Revenue, Expense) |
+| **Journal Entries** | Draft → Posted → Void workflow with reversal entries |
+| **Multi-Currency** | Support for multiple currencies with exchange rate tracking |
+| **Trial Balance** | Real-time balance reports as of any date |
+| **VAT Tracking** | Date-aware VAT rates for proper EU compliance |
+
+### Business Operations
+| Feature | Description |
+|---------|-------------|
+| **Invoicing** | Sales and purchase invoices with line items and VAT |
+| **Contacts** | Customer and supplier management |
+| **Payments** | Payment recording with invoice allocation |
+| **PDF Generation** | Professional invoice PDFs with customizable branding |
+| **Recurring Invoices** | Automated invoice generation on schedule |
+
+### Banking & Reconciliation
+| Feature | Description |
+|---------|-------------|
+| **Bank Accounts** | Track multiple bank accounts per company |
+| **Transaction Import** | CSV import for bank statements |
+| **Auto-Matching** | Intelligent matching of transactions to payments |
+| **Reconciliation** | Full bank reconciliation workflow |
+
+### Multi-Tenant & Security
+| Feature | Description |
+|---------|-------------|
+| **Tenant Isolation** | Schema-per-tenant for complete data separation |
+| **User Management** | Invite users, assign roles, manage permissions |
+| **JWT Authentication** | Secure token-based authentication |
+| **RBAC** | Role-based access control with permission checks |
+
+### Estonian Compliance
+| Feature | Description |
+|---------|-------------|
+| **KMD Declaration** | Automated VAT declaration generation |
+| **e-MTA Export** | XML format compatible with Estonian Tax Board |
+| **Estonian Defaults** | Pre-configured for Estonian accounting standards |
+
+---
+
+## 🛠 Technology Stack
+
+| Layer | Technology |
+|-------|------------|
+| **Backend** | Go 1.22+, Chi router, pgx/v5 |
+| **Frontend** | SvelteKit 2, Svelte 5, TypeScript |
+| **Database** | PostgreSQL 16+ |
+| **Auth** | JWT with access/refresh tokens |
+| **API Docs** | Swagger/OpenAPI |
+| **Container** | Docker, Docker Compose |
+
+---
+
+## 🚀 Quick Start
+
+### Docker (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/HMB-research/open-accounting/main/install.sh | bash
-```
-
-### Manual Setup
-
-1. Clone the repository:
-```bash
+# Clone and start
 git clone https://github.com/HMB-research/open-accounting.git
 cd open-accounting
-```
-
-2. Start with Docker Compose:
-```bash
 docker-compose up -d
-```
 
-3. Run database migrations:
-```bash
+# Run migrations
 docker-compose run --rm migrate
+
+# Access the app
+# API: http://localhost:8080
+# Frontend: http://localhost:5173
+# Swagger: http://localhost:8080/swagger/
 ```
-
-4. Access the API at http://localhost:8080
-
-## Development
-
-### Prerequisites
-
-- Go 1.22+
-- Node.js 22+
-- PostgreSQL 16+
-- Docker & Docker Compose
 
 ### Local Development
 
 ```bash
+# Prerequisites: Go 1.22+, Node.js 22+, PostgreSQL 16+
+
 # Start database
 docker-compose up -d db
 
-# Run migrations
+# Set environment
 export DATABASE_URL="postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable"
+
+# Run migrations
 go run ./cmd/migrate -db "$DATABASE_URL" -path migrations -direction up
 
-# Run API server
+# Start API (terminal 1)
 go run ./cmd/api
 
-# In another terminal, start frontend
-cd frontend
-npm install
-npm run dev
+# Start frontend (terminal 2)
+cd frontend && npm install && npm run dev
 ```
 
-### Available Make Commands
+---
 
-```bash
-make help          # Show all available commands
-make build         # Build all binaries
-make test          # Run tests
-make docker-up     # Start Docker containers
-make dev           # Start development environment
-make migrate-up    # Run database migrations
-```
-
-## API Endpoints
-
-### Authentication
-- `POST /api/v1/auth/register` - Register new user
-- `POST /api/v1/auth/login` - Login and get tokens
-- `POST /api/v1/auth/refresh` - Refresh access token
-
-### User
-- `GET /api/v1/me` - Get current user
-- `GET /api/v1/me/tenants` - List user's organizations
-
-### Tenants
-- `POST /api/v1/tenants` - Create organization
-- `GET /api/v1/tenants/{id}` - Get organization
-
-### Accounts
-- `GET /api/v1/tenants/{id}/accounts` - List accounts
-- `POST /api/v1/tenants/{id}/accounts` - Create account
-- `GET /api/v1/tenants/{id}/accounts/{accountId}` - Get account
-
-### Journal Entries
-- `GET /api/v1/tenants/{id}/journal-entries/{entryId}` - Get entry
-- `POST /api/v1/tenants/{id}/journal-entries` - Create entry
-- `POST /api/v1/tenants/{id}/journal-entries/{entryId}/post` - Post entry
-- `POST /api/v1/tenants/{id}/journal-entries/{entryId}/void` - Void entry
-
-### Contacts
-- `GET /api/v1/tenants/{id}/contacts` - List contacts
-- `POST /api/v1/tenants/{id}/contacts` - Create contact
-- `GET /api/v1/tenants/{id}/contacts/{contactId}` - Get contact
-- `PUT /api/v1/tenants/{id}/contacts/{contactId}` - Update contact
-- `DELETE /api/v1/tenants/{id}/contacts/{contactId}` - Delete contact
-
-### Invoices
-- `GET /api/v1/tenants/{id}/invoices` - List invoices
-- `POST /api/v1/tenants/{id}/invoices` - Create invoice
-- `GET /api/v1/tenants/{id}/invoices/{invoiceId}` - Get invoice
-- `POST /api/v1/tenants/{id}/invoices/{invoiceId}/send` - Send invoice
-- `POST /api/v1/tenants/{id}/invoices/{invoiceId}/void` - Void invoice
-
-### Payments
-- `GET /api/v1/tenants/{id}/payments` - List payments
-- `POST /api/v1/tenants/{id}/payments` - Create payment
-- `GET /api/v1/tenants/{id}/payments/{paymentId}` - Get payment
-- `POST /api/v1/tenants/{id}/payments/{paymentId}/allocate` - Allocate to invoice
-- `GET /api/v1/tenants/{id}/payments/unallocated` - Get unallocated payments
-
-### Reports
-- `GET /api/v1/tenants/{id}/reports/trial-balance` - Trial balance
-- `GET /api/v1/tenants/{id}/reports/account-balance/{accountId}` - Account balance
-
-### Tax (Estonian KMD)
-- `POST /api/v1/tenants/{id}/tax/kmd` - Generate KMD declaration
-- `GET /api/v1/tenants/{id}/tax/kmd` - List KMD declarations
-- `GET /api/v1/tenants/{id}/tax/kmd/{year}/{month}/xml` - Export KMD to e-MTA XML
-
-### API Documentation
-- `GET /swagger/` - Interactive Swagger UI
-- `GET /swagger/doc.json` - OpenAPI specification
-
-## Architecture
+## 📁 Project Structure
 
 ```
 open-accounting/
 ├── cmd/
-│   ├── api/          # HTTP API server
-│   └── migrate/      # Database migration tool
+│   ├── api/              # HTTP API server (main application)
+│   └── migrate/          # Database migration CLI tool
+│
 ├── internal/
-│   ├── accounting/   # Core accounting (accounts, journal entries)
-│   ├── auth/         # JWT authentication
-│   ├── contacts/     # Customer/supplier management
-│   ├── invoicing/    # Sales and purchase invoices
-│   ├── payments/     # Payment recording and allocation
-│   ├── tax/          # Estonian tax compliance (KMD)
-│   └── tenant/       # Multi-tenant management
-├── migrations/       # SQL migrations
-├── frontend/         # SvelteKit frontend
-├── docs/             # OpenAPI/Swagger documentation
-└── deploy/           # Deployment configurations
+│   ├── accounting/       # Core: accounts, journal entries, trial balance
+│   ├── analytics/        # Dashboard metrics and reporting
+│   ├── auth/             # JWT authentication & RBAC middleware
+│   ├── banking/          # Bank accounts, transactions, reconciliation
+│   ├── contacts/         # Customer and supplier management
+│   ├── email/            # Email notifications and templates
+│   ├── invoicing/        # Sales and purchase invoices
+│   ├── payments/         # Payment recording and allocation
+│   ├── pdf/              # PDF generation for invoices
+│   ├── recurring/        # Recurring invoice automation
+│   ├── tax/              # Estonian KMD/VAT compliance
+│   └── tenant/           # Multi-tenant management, users, invitations
+│
+├── migrations/           # SQL database migrations
+├── frontend/             # SvelteKit web application
+├── docs/                 # OpenAPI/Swagger documentation
+└── deploy/               # Deployment configurations
 ```
 
-## Configuration
+---
 
-Environment variables:
+## 🔌 API Overview
+
+Full API documentation available at `/swagger/` when running the server.
+
+### Authentication
+```
+POST /api/v1/auth/register     # Create account
+POST /api/v1/auth/login        # Get tokens
+POST /api/v1/auth/refresh      # Refresh access token
+```
+
+### User & Organization
+```
+GET  /api/v1/me                # Current user profile
+GET  /api/v1/me/tenants        # User's organizations
+POST /api/v1/tenants           # Create organization
+```
+
+### Accounting (requires tenant context)
+```
+GET/POST   /api/v1/tenants/{id}/accounts          # Chart of accounts
+GET/POST   /api/v1/tenants/{id}/journal-entries   # Journal entries
+POST       /api/v1/tenants/{id}/journal-entries/{id}/post
+POST       /api/v1/tenants/{id}/journal-entries/{id}/void
+```
+
+### Business Operations
+```
+GET/POST   /api/v1/tenants/{id}/contacts          # Customers/suppliers
+GET/POST   /api/v1/tenants/{id}/invoices          # Invoices
+GET/POST   /api/v1/tenants/{id}/payments          # Payments
+GET        /api/v1/tenants/{id}/invoices/{id}/pdf # Download PDF
+```
+
+### User Management
+```
+GET/POST   /api/v1/tenants/{id}/invitations       # Invite users
+GET/DELETE /api/v1/tenants/{id}/users             # Manage members
+PUT        /api/v1/tenants/{id}/users/{id}/role   # Change roles
+```
+
+### Reports & Analytics
+```
+GET /api/v1/tenants/{id}/reports/trial-balance
+GET /api/v1/tenants/{id}/analytics/dashboard
+GET /api/v1/tenants/{id}/reports/aging/receivables
+```
+
+### Estonian Tax
+```
+POST /api/v1/tenants/{id}/tax/kmd                 # Generate KMD
+GET  /api/v1/tenants/{id}/tax/kmd/{year}/{month}/xml  # Export XML
+```
+
+---
+
+## ⚙️ Configuration
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | Required |
-| `PORT` | API server port | 8080 |
-| `JWT_SECRET` | JWT signing key | Required for production |
-| `ALLOWED_ORIGINS` | CORS allowed origins | localhost:5173,localhost:3000 |
+| `DATABASE_URL` | PostgreSQL connection string | *Required* |
+| `PORT` | API server port | `8080` |
+| `JWT_SECRET` | JWT signing key | *Required in production* |
+| `ALLOWED_ORIGINS` | CORS allowed origins | `localhost:5173,localhost:3000` |
 
-## Contributing
+---
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+## 🗺 Roadmap
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+### Implemented ✅
+- [x] Double-entry bookkeeping with journal entries
+- [x] Multi-tenant architecture with schema isolation
+- [x] User authentication and RBAC
+- [x] Invoicing with PDF generation
+- [x] Payment recording and allocation
+- [x] Bank transaction import and reconciliation
+- [x] Estonian KMD/VAT compliance
+- [x] User invitation system
 
-## License
+### In Progress 🚧
+- [ ] Dashboard analytics with charts
+- [ ] Email notifications
+- [ ] Recurring invoice automation
 
-MIT License - see [LICENSE](LICENSE) file for details.
+### Planned 📋
+- [ ] Balance sheet and income statement reports
+- [ ] E-invoice support (Peppol)
+- [ ] Inventory management
+- [ ] Payroll module
+- [ ] Mobile-responsive frontend
+- [ ] API rate limiting
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+```bash
+# Development workflow
+git checkout -b feature/your-feature
+make test                    # Run tests
+make lint                    # Check code style
+git commit -m "feat: your feature"
+git push origin feature/your-feature
+# Open a Pull Request
+```
+
+---
+
+## 📄 License
+
+MIT License — see [LICENSE](LICENSE) for details.
+
+---
+
+## 💖 Support
+
+If you find this project useful, consider supporting its development:
+
+[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=github)](https://github.com/sponsors/HMB-research)
+[![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-ff5f5f?logo=ko-fi)](https://ko-fi.com/tsopic)
