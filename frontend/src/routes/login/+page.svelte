@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api';
+	import * as m from '$lib/paraglide/messages.js';
+	import LanguageSelector from '$lib/components/LanguageSelector.svelte';
 
 	let email = $state('');
 	let password = $state('');
@@ -28,14 +30,17 @@
 </script>
 
 <svelte:head>
-	<title>{isRegister ? 'Register' : 'Login'} - Open Accounting</title>
+	<title>{isRegister ? m.auth_register() : m.auth_login()} - Open Accounting</title>
 </svelte:head>
 
 <div class="login-page">
 	<div class="login-card card">
-		<h1>{isRegister ? 'Create Account' : 'Welcome Back'}</h1>
+		<div class="language-top">
+			<LanguageSelector />
+		</div>
+		<h1>{isRegister ? m.auth_register() : m.auth_welcomeBack()}</h1>
 		<p class="subtitle">
-			{isRegister ? 'Start managing your finances' : 'Sign in to your account'}
+			{isRegister ? m.auth_register() : m.auth_signInPrompt()}
 		</p>
 
 		{#if error}
@@ -45,7 +50,7 @@
 		<form onsubmit={handleSubmit}>
 			{#if isRegister}
 				<div class="form-group">
-					<label class="label" for="name">Name</label>
+					<label class="label" for="name">{m.common_name()}</label>
 					<input
 						class="input"
 						type="text"
@@ -58,7 +63,7 @@
 			{/if}
 
 			<div class="form-group">
-				<label class="label" for="email">Email</label>
+				<label class="label" for="email">{m.auth_email()}</label>
 				<input
 					class="input"
 					type="email"
@@ -70,7 +75,7 @@
 			</div>
 
 			<div class="form-group">
-				<label class="label" for="password">Password</label>
+				<label class="label" for="password">{m.auth_password()}</label>
 				<input
 					class="input"
 					type="password"
@@ -84,25 +89,25 @@
 
 			<button class="btn btn-primary btn-full" type="submit" disabled={isLoading}>
 				{#if isLoading}
-					Loading...
+					{m.common_loading()}
 				{:else if isRegister}
-					Create Account
+					{m.auth_register()}
 				{:else}
-					Sign In
+					{m.auth_login()}
 				{/if}
 			</button>
 		</form>
 
 		<p class="toggle-mode">
 			{#if isRegister}
-				Already have an account?
+				{m.auth_hasAccount()}
 				<button class="link-btn" type="button" onclick={() => (isRegister = false)}>
-					Sign in
+					{m.auth_login()}
 				</button>
 			{:else}
-				Don't have an account?
+				{m.auth_noAccount()}
 				<button class="link-btn" type="button" onclick={() => (isRegister = true)}>
-					Create one
+					{m.auth_register()}
 				</button>
 			{/if}
 		</p>
@@ -121,6 +126,13 @@
 	.login-card {
 		width: 100%;
 		max-width: 400px;
+		position: relative;
+	}
+
+	.language-top {
+		position: absolute;
+		top: 1rem;
+		right: 1rem;
 	}
 
 	h1 {

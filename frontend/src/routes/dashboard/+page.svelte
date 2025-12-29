@@ -10,6 +10,7 @@
 	import { Chart, registerables } from 'chart.js';
 	import Decimal from 'decimal.js';
 	import OnboardingWizard from '$lib/components/OnboardingWizard.svelte';
+	import * as m from '$lib/paraglide/messages.js';
 
 	Chart.register(...registerables);
 
@@ -178,14 +179,14 @@
 </script>
 
 <svelte:head>
-	<title>Dashboard - Open Accounting</title>
+	<title>{m.dashboard_title()} - Open Accounting</title>
 </svelte:head>
 
 <div class="container">
 	<div class="header">
-		<h1>Dashboard</h1>
+		<h1>{m.dashboard_title()}</h1>
 		<button class="btn btn-primary" onclick={() => (showCreateTenant = true)}>
-			+ New Organization
+			+ {m.dashboard_newOrganization()}
 		</button>
 	</div>
 
@@ -194,13 +195,13 @@
 	{/if}
 
 	{#if isLoading}
-		<p>Loading...</p>
+		<p>{m.common_loading()}</p>
 	{:else if tenants.length === 0}
 		<div class="card empty-state">
-			<h2>Welcome to Open Accounting!</h2>
-			<p>Create your first organization to get started.</p>
+			<h2>{m.dashboard_welcome()}</h2>
+			<p>{m.dashboard_createFirst()}</p>
 			<button class="btn btn-primary" onclick={() => (showCreateTenant = true)}>
-				Create Organization
+				{m.dashboard_createOrganization()}
 			</button>
 		</div>
 	{:else}
@@ -226,31 +227,31 @@
 			{#if summary}
 				<div class="summary-grid">
 					<div class="summary-card">
-						<div class="summary-label">Revenue</div>
+						<div class="summary-label">{m.dashboard_revenue()}</div>
 						<div class="summary-value positive">{formatCurrency(summary.total_revenue)}</div>
 						<div class="summary-change" class:positive={Number(summary.revenue_change) >= 0} class:negative={Number(summary.revenue_change) < 0}>
-							{formatPercent(summary.revenue_change)} vs last month
+							{formatPercent(summary.revenue_change)} {m.dashboard_vsLastMonth()}
 						</div>
 					</div>
 					<div class="summary-card">
-						<div class="summary-label">Expenses</div>
+						<div class="summary-label">{m.dashboard_expenses()}</div>
 						<div class="summary-value negative">{formatCurrency(summary.total_expenses)}</div>
 						<div class="summary-change" class:positive={Number(summary.expenses_change) < 0} class:negative={Number(summary.expenses_change) >= 0}>
-							{formatPercent(summary.expenses_change)} vs last month
+							{formatPercent(summary.expenses_change)} {m.dashboard_vsLastMonth()}
 						</div>
 					</div>
 					<div class="summary-card">
-						<div class="summary-label">Net Income</div>
+						<div class="summary-label">{m.dashboard_netIncome()}</div>
 						<div class="summary-value" class:positive={Number(summary.net_income) >= 0} class:negative={Number(summary.net_income) < 0}>
 							{formatCurrency(summary.net_income)}
 						</div>
 					</div>
 					<div class="summary-card">
-						<div class="summary-label">Receivables</div>
+						<div class="summary-label">{m.dashboard_receivables()}</div>
 						<div class="summary-value">{formatCurrency(summary.total_receivables)}</div>
 						{#if Number(summary.overdue_receivables) > 0}
 							<div class="summary-change negative">
-								{formatCurrency(summary.overdue_receivables)} overdue
+								{formatCurrency(summary.overdue_receivables)} {m.dashboard_overdue()}
 							</div>
 						{/if}
 					</div>
@@ -258,29 +259,29 @@
 
 				<!-- Invoice Status -->
 				<div class="invoice-status card">
-					<h3>Invoice Status</h3>
+					<h3>{m.dashboard_invoiceStatus()}</h3>
 					<div class="status-row">
 						<div class="status-item">
 							<span class="status-count">{summary.draft_invoices}</span>
-							<span class="status-label">Draft</span>
+							<span class="status-label">{m.dashboard_draft()}</span>
 						</div>
 						<div class="status-item">
 							<span class="status-count">{summary.pending_invoices}</span>
-							<span class="status-label">Pending</span>
+							<span class="status-label">{m.dashboard_pending()}</span>
 						</div>
 						<div class="status-item warning">
 							<span class="status-count">{summary.overdue_invoices}</span>
-							<span class="status-label">Overdue</span>
+							<span class="status-label">{m.invoices_overdue()}</span>
 						</div>
 					</div>
 				</div>
 			{:else if isLoadingAnalytics}
-				<div class="summary-loading">Loading analytics...</div>
+				<div class="summary-loading">{m.common_loading()}</div>
 			{/if}
 
 			<!-- Chart -->
 			<div class="card chart-card">
-				<h3>Revenue vs Expenses (6 months)</h3>
+				<h3>{m.dashboard_revenueVsExpenses()}</h3>
 				<div class="chart-container">
 					<canvas bind:this={chartCanvas}></canvas>
 				</div>
@@ -288,18 +289,18 @@
 
 			<!-- Quick Links -->
 			<div class="quick-links card">
-				<h3>Quick Actions</h3>
+				<h3>{m.dashboard_quickActions()}</h3>
 				<div class="links-row">
-					<a href="/invoices?tenant={selectedTenant.id}" class="btn btn-secondary">Invoices</a>
-					<a href="/recurring?tenant={selectedTenant.id}" class="btn btn-secondary">Recurring</a>
-					<a href="/payments?tenant={selectedTenant.id}" class="btn btn-secondary">Payments</a>
-					<a href="/contacts?tenant={selectedTenant.id}" class="btn btn-secondary">Contacts</a>
-					<a href="/accounts?tenant={selectedTenant.id}" class="btn btn-secondary">Accounts</a>
-					<a href="/journal?tenant={selectedTenant.id}" class="btn btn-secondary">Journal</a>
-					<a href="/reports?tenant={selectedTenant.id}" class="btn btn-secondary">Reports</a>
-					<a href="/banking?tenant={selectedTenant.id}" class="btn btn-secondary">Banking</a>
-					<a href="/tax?tenant={selectedTenant.id}" class="btn btn-secondary">Tax (KMD)</a>
-					<a href="/settings/email?tenant={selectedTenant.id}" class="btn btn-secondary">Email</a>
+					<a href="/invoices?tenant={selectedTenant.id}" class="btn btn-secondary">{m.nav_invoices()}</a>
+					<a href="/recurring?tenant={selectedTenant.id}" class="btn btn-secondary">{m.nav_recurring()}</a>
+					<a href="/payments?tenant={selectedTenant.id}" class="btn btn-secondary">{m.nav_payments()}</a>
+					<a href="/contacts?tenant={selectedTenant.id}" class="btn btn-secondary">{m.nav_contacts()}</a>
+					<a href="/accounts?tenant={selectedTenant.id}" class="btn btn-secondary">{m.nav_accounts()}</a>
+					<a href="/journal?tenant={selectedTenant.id}" class="btn btn-secondary">{m.nav_journal()}</a>
+					<a href="/reports?tenant={selectedTenant.id}" class="btn btn-secondary">{m.nav_reports()}</a>
+					<a href="/banking?tenant={selectedTenant.id}" class="btn btn-secondary">{m.nav_banking()}</a>
+					<a href="/tax?tenant={selectedTenant.id}" class="btn btn-secondary">{m.nav_tax()}</a>
+					<a href="/settings/email?tenant={selectedTenant.id}" class="btn btn-secondary">{m.settings_emailSettings()}</a>
 				</div>
 			</div>
 		{/if}
@@ -311,10 +312,10 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div class="modal-backdrop" onclick={() => (showCreateTenant = false)} role="presentation">
 		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-org-title" tabindex="-1">
-			<h2 id="create-org-title">Create Organization</h2>
+			<h2 id="create-org-title">{m.modal_createOrganization()}</h2>
 			<form onsubmit={createTenant}>
 				<div class="form-group">
-					<label class="label" for="name">Organization Name</label>
+					<label class="label" for="name">{m.modal_organizationName()}</label>
 					<input
 						class="input"
 						type="text"
@@ -327,7 +328,7 @@
 				</div>
 
 				<div class="form-group">
-					<label class="label" for="slug">URL Identifier</label>
+					<label class="label" for="slug">{m.modal_urlIdentifier()}</label>
 					<input
 						class="input"
 						type="text"
@@ -337,14 +338,14 @@
 						pattern="[a-z0-9][a-z0-9-]*[a-z0-9]"
 						placeholder="my-company"
 					/>
-					<small>Only lowercase letters, numbers, and hyphens</small>
+					<small>{m.modal_urlIdentifierHint()}</small>
 				</div>
 
 				<div class="modal-actions">
 					<button type="button" class="btn btn-secondary" onclick={() => (showCreateTenant = false)}>
-						Cancel
+						{m.common_cancel()}
 					</button>
-					<button type="submit" class="btn btn-primary">Create</button>
+					<button type="submit" class="btn btn-primary">{m.common_create()}</button>
 				</div>
 			</form>
 		</div>

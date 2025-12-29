@@ -3,6 +3,8 @@
 	import { page } from '$app/stores';
 	import { api } from '$lib/api';
 	import { pluginManager, type PluginNavigationItem } from '$lib/plugins';
+	import LanguageSelector from '$lib/components/LanguageSelector.svelte';
+	import * as m from '$lib/paraglide/messages.js';
 
 	let { children } = $props();
 
@@ -71,36 +73,37 @@
 
 				<!-- Desktop Navigation -->
 				<div class="nav-links hide-mobile-flex">
-					<a href="/dashboard">Dashboard</a>
-					<a href="/accounts">Accounts</a>
-					<a href="/journal">Journal</a>
-					<a href="/contacts">Contacts</a>
-					<a href="/invoices">Invoices</a>
-					<a href="/payments">Payments</a>
-					<a href="/reports">Reports</a>
+					<a href="/dashboard">{m.nav_dashboard()}</a>
+					<a href="/accounts">{m.nav_accounts()}</a>
+					<a href="/journal">{m.nav_journal()}</a>
+					<a href="/contacts">{m.nav_contacts()}</a>
+					<a href="/invoices">{m.nav_invoices()}</a>
+					<a href="/payments">{m.nav_payments()}</a>
+					<a href="/reports">{m.nav_reports()}</a>
 					<div class="nav-dropdown">
-						<span class="nav-dropdown-trigger">Payroll</span>
+						<span class="nav-dropdown-trigger">{m.nav_payroll()}</span>
 						<div class="nav-dropdown-menu">
-							<a href="/employees">Employees</a>
-							<a href="/payroll">Payroll Runs</a>
-							<a href="/tsd">TSD Declarations</a>
+							<a href="/employees">{m.nav_employees()}</a>
+							<a href="/payroll">{m.nav_payrollRuns()}</a>
+							<a href="/tsd">{m.nav_tsd()}</a>
 						</div>
 					</div>
 					{#if pluginNavItems.length > 0}
-						{#each pluginNavItems as navItem}
+						{#each pluginNavItems as navItem (navItem.path)}
 							<a href={getPluginNavUrl(navItem)} class="plugin-nav-item" title={navItem.pluginName}>
 								{navItem.label}
 							</a>
 						{/each}
 					{/if}
 					<div class="nav-dropdown">
-						<span class="nav-dropdown-trigger">Admin</span>
+						<span class="nav-dropdown-trigger">{m.nav_admin()}</span>
 						<div class="nav-dropdown-menu">
-							<a href="/admin/plugins">Plugin Marketplace</a>
-							<a href="/settings">Settings</a>
+							<a href="/admin/plugins">{m.nav_plugins()}</a>
+							<a href="/settings">{m.nav_settings()}</a>
 						</div>
 					</div>
-					<button class="btn btn-secondary" onclick={handleLogout}>Logout</button>
+					<LanguageSelector />
+					<button class="btn btn-secondary" onclick={handleLogout}>{m.nav_logout()}</button>
 				</div>
 
 				<!-- Mobile Menu Button -->
@@ -123,33 +126,33 @@
 					<button class="mobile-nav-close" onclick={closeMobileMenu} aria-label="Close menu">×</button>
 				</div>
 				<div class="mobile-nav-content">
-					<a href="/dashboard" class="mobile-nav-link">Dashboard</a>
-					<a href="/accounts" class="mobile-nav-link">Accounts</a>
-					<a href="/journal" class="mobile-nav-link">Journal</a>
-					<a href="/contacts" class="mobile-nav-link">Contacts</a>
-					<a href="/invoices" class="mobile-nav-link">Invoices</a>
-					<a href="/payments" class="mobile-nav-link">Payments</a>
-					<a href="/reports" class="mobile-nav-link">Reports</a>
+					<a href="/dashboard" class="mobile-nav-link">{m.nav_dashboard()}</a>
+					<a href="/accounts" class="mobile-nav-link">{m.nav_accounts()}</a>
+					<a href="/journal" class="mobile-nav-link">{m.nav_journal()}</a>
+					<a href="/contacts" class="mobile-nav-link">{m.nav_contacts()}</a>
+					<a href="/invoices" class="mobile-nav-link">{m.nav_invoices()}</a>
+					<a href="/payments" class="mobile-nav-link">{m.nav_payments()}</a>
+					<a href="/reports" class="mobile-nav-link">{m.nav_reports()}</a>
 
 					<!-- Payroll Accordion -->
 					<div class="mobile-nav-accordion">
 						<button class="mobile-nav-accordion-trigger" onclick={() => toggleDropdown('payroll')}>
-							<span>Payroll</span>
+							<span>{m.nav_payroll()}</span>
 							<span class="accordion-arrow" class:expanded={expandedDropdown === 'payroll'}>▸</span>
 						</button>
 						{#if expandedDropdown === 'payroll'}
 							<div class="mobile-nav-accordion-content">
-								<a href="/employees" class="mobile-nav-link sub">Employees</a>
-								<a href="/payroll" class="mobile-nav-link sub">Payroll Runs</a>
-								<a href="/tsd" class="mobile-nav-link sub">TSD Declarations</a>
+								<a href="/employees" class="mobile-nav-link sub">{m.nav_employees()}</a>
+								<a href="/payroll" class="mobile-nav-link sub">{m.nav_payrollRuns()}</a>
+								<a href="/tsd" class="mobile-nav-link sub">{m.nav_tsd()}</a>
 							</div>
 						{/if}
 					</div>
 
 					{#if pluginNavItems.length > 0}
 						<div class="mobile-nav-divider"></div>
-						<span class="mobile-nav-section-title">Plugins</span>
-						{#each pluginNavItems as navItem}
+						<span class="mobile-nav-section-title">{m.nav_plugins()}</span>
+						{#each pluginNavItems as navItem (navItem.path)}
 							<a href={getPluginNavUrl(navItem)} class="mobile-nav-link plugin" title={navItem.pluginName}>
 								{navItem.label}
 							</a>
@@ -159,19 +162,22 @@
 					<!-- Admin Accordion -->
 					<div class="mobile-nav-accordion">
 						<button class="mobile-nav-accordion-trigger" onclick={() => toggleDropdown('admin')}>
-							<span>Admin</span>
+							<span>{m.nav_admin()}</span>
 							<span class="accordion-arrow" class:expanded={expandedDropdown === 'admin'}>▸</span>
 						</button>
 						{#if expandedDropdown === 'admin'}
 							<div class="mobile-nav-accordion-content">
-								<a href="/admin/plugins" class="mobile-nav-link sub">Plugin Marketplace</a>
-								<a href="/settings" class="mobile-nav-link sub">Settings</a>
+								<a href="/admin/plugins" class="mobile-nav-link sub">{m.nav_plugins()}</a>
+								<a href="/settings" class="mobile-nav-link sub">{m.nav_settings()}</a>
 							</div>
 						{/if}
 					</div>
 
 					<div class="mobile-nav-divider"></div>
-					<button class="btn btn-secondary mobile-nav-logout" onclick={handleLogout}>Logout</button>
+					<div class="mobile-nav-language">
+						<LanguageSelector />
+					</div>
+					<button class="btn btn-secondary mobile-nav-logout" onclick={handleLogout}>{m.nav_logout()}</button>
 				</div>
 			</div>
 		{/if}
@@ -483,6 +489,10 @@
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		color: var(--color-text-muted);
+	}
+
+	.mobile-nav-language {
+		padding: 0.5rem 1rem;
 	}
 
 	.mobile-nav-logout {
