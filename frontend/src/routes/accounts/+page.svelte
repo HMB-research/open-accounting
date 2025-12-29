@@ -2,6 +2,7 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { api, type Account } from '$lib/api';
+	import * as m from '$lib/paraglide/messages.js';
 
 	let accounts = $state<Account[]>([]);
 	let isLoading = $state(true);
@@ -73,25 +74,29 @@
 		return groups;
 	}
 
-	const typeLabels: Record<Account['account_type'], string> = {
-		ASSET: 'Assets',
-		LIABILITY: 'Liabilities',
-		EQUITY: 'Equity',
-		REVENUE: 'Revenue',
-		EXPENSE: 'Expenses'
-	};
+	function getTypeLabel(type: Account['account_type']): string {
+		switch (type) {
+			case 'ASSET': return m.accounts_assets();
+			case 'LIABILITY': return m.accounts_liabilities();
+			case 'EQUITY': return m.accounts_equities();
+			case 'REVENUE': return m.accounts_revenues();
+			case 'EXPENSE': return m.accounts_expenses();
+		}
+	}
+
+	const typeOrder: Account['account_type'][] = ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'];
 </script>
 
 <svelte:head>
-	<title>Chart of Accounts - Open Accounting</title>
+	<title>{m.accounts_title()} - Open Accounting</title>
 </svelte:head>
 
 <div class="container">
 	<div class="page-header">
-		<h1>Chart of Accounts</h1>
+		<h1>{m.accounts_title()}</h1>
 		<div class="page-actions">
 			<button class="btn btn-primary" onclick={() => (showCreateAccount = true)}>
-				+ New Account
+				+ {m.accounts_newAccount()}
 			</button>
 		</div>
 	</div>
@@ -101,22 +106,22 @@
 	{/if}
 
 	{#if isLoading}
-		<p>Loading accounts...</p>
+		<p>{m.common_loading()}</p>
 	{:else}
 		{@const groups = groupByType(accounts)}
-		{#each Object.entries(typeLabels) as [type, label]}
-			{@const typeAccounts = groups[type as Account['account_type']]}
+		{#each typeOrder as type}
+			{@const typeAccounts = groups[type]}
 			{#if typeAccounts.length > 0}
 				<section class="account-section card">
-					<h2>{label}</h2>
+					<h2>{getTypeLabel(type)}</h2>
 					<div class="table-container">
 						<table class="table table-mobile-cards">
 							<thead>
 								<tr>
-									<th>Code</th>
-									<th>Name</th>
-									<th class="hide-mobile">Description</th>
-									<th>Status</th>
+									<th>{m.accounts_code()}</th>
+									<th>{m.common_name()}</th>
+									<th class="hide-mobile">{m.common_description()}</th>
+									<th>{m.common_status()}</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -127,9 +132,9 @@
 										<td class="description hide-mobile" data-label="Description">{account.description || '-'}</td>
 										<td data-label="Status">
 											{#if account.is_system}
-												<span class="badge badge-system">System</span>
+												<span class="badge badge-system">{m.accounts_system()}</span>
 											{:else if !account.is_active}
-												<span class="badge badge-inactive">Inactive</span>
+												<span class="badge badge-inactive">{m.accounts_inactive()}</span>
 											{/if}
 										</td>
 									</tr>
@@ -148,10 +153,10 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div class="modal-backdrop" onclick={() => (showCreateAccount = false)} role="presentation">
 		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-account-title" tabindex="-1">
-			<h2 id="create-account-title">Create Account</h2>
+			<h2 id="create-account-title">{m.accounts_newAccount()}</h2>
 			<form onsubmit={createAccount}>
 				<div class="form-group">
-					<label class="label" for="code">Account Code</label>
+					<label class="label" for="code">{m.accounts_accountCode()}</label>
 					<input
 						class="input"
 						type="text"
@@ -163,44 +168,44 @@
 				</div>
 
 				<div class="form-group">
-					<label class="label" for="name">Account Name</label>
+					<label class="label" for="name">{m.accounts_accountName()}</label>
 					<input
 						class="input"
 						type="text"
 						id="name"
 						bind:value={newName}
 						required
-						placeholder="Cash and Bank"
+						placeholder={m.accounts_cashAndBank()}
 					/>
 				</div>
 
 				<div class="form-group">
-					<label class="label" for="type">Account Type</label>
+					<label class="label" for="type">{m.accounts_accountType()}</label>
 					<select class="input" id="type" bind:value={newType}>
-						<option value="ASSET">Asset</option>
-						<option value="LIABILITY">Liability</option>
-						<option value="EQUITY">Equity</option>
-						<option value="REVENUE">Revenue</option>
-						<option value="EXPENSE">Expense</option>
+						<option value="ASSET">{m.accounts_asset()}</option>
+						<option value="LIABILITY">{m.accounts_liability()}</option>
+						<option value="EQUITY">{m.accounts_equity()}</option>
+						<option value="REVENUE">{m.accounts_revenue()}</option>
+						<option value="EXPENSE">{m.accounts_expense()}</option>
 					</select>
 				</div>
 
 				<div class="form-group">
-					<label class="label" for="description">Description</label>
+					<label class="label" for="description">{m.common_description()}</label>
 					<input
 						class="input"
 						type="text"
 						id="description"
 						bind:value={newDescription}
-						placeholder="Optional description"
+						placeholder={m.accounts_optionalDescription()}
 					/>
 				</div>
 
 				<div class="modal-actions">
 					<button type="button" class="btn btn-secondary" onclick={() => (showCreateAccount = false)}>
-						Cancel
+						{m.common_cancel()}
 					</button>
-					<button type="submit" class="btn btn-primary">Create</button>
+					<button type="submit" class="btn btn-primary">{m.common_create()}</button>
 				</div>
 			</form>
 		</div>

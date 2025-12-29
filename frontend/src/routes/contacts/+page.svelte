@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { api, type Contact, type ContactType } from '$lib/api';
+	import * as m from '$lib/paraglide/messages.js';
 
 	let contacts = $state<Contact[]>([]);
 	let isLoading = $state(true);
@@ -91,11 +92,13 @@
 		}
 	}
 
-	const typeLabels: Record<ContactType, string> = {
-		CUSTOMER: 'Customer',
-		SUPPLIER: 'Supplier',
-		BOTH: 'Both'
-	};
+	function getTypeLabel(type: ContactType): string {
+		switch (type) {
+			case 'CUSTOMER': return m.contacts_customer();
+			case 'SUPPLIER': return m.contacts_supplier();
+			case 'BOTH': return m.contacts_both();
+		}
+	}
 
 	const typeBadgeClass: Record<ContactType, string> = {
 		CUSTOMER: 'badge-customer',
@@ -105,15 +108,15 @@
 </script>
 
 <svelte:head>
-	<title>Contacts - Open Accounting</title>
+	<title>{m.contacts_title()} - Open Accounting</title>
 </svelte:head>
 
 <div class="container">
 	<div class="page-header">
-		<h1>Contacts</h1>
+		<h1>{m.contacts_title()}</h1>
 		<div class="page-actions">
 			<button class="btn btn-primary" onclick={() => (showCreateContact = true)}>
-				+ New Contact
+				+ {m.contacts_newContact()}
 			</button>
 		</div>
 	</div>
@@ -121,19 +124,19 @@
 	<div class="filters card">
 		<div class="filter-row">
 			<select class="input" bind:value={filterType} onchange={handleSearch}>
-				<option value="">All Types</option>
-				<option value="CUSTOMER">Customers</option>
-				<option value="SUPPLIER">Suppliers</option>
-				<option value="BOTH">Both</option>
+				<option value="">{m.contacts_allTypes()}</option>
+				<option value="CUSTOMER">{m.contacts_customers()}</option>
+				<option value="SUPPLIER">{m.contacts_suppliers()}</option>
+				<option value="BOTH">{m.contacts_both()}</option>
 			</select>
 			<input
 				class="input search-input"
 				type="text"
-				placeholder="Search contacts..."
+				placeholder={m.contacts_searchContacts()}
 				bind:value={searchQuery}
 				onkeyup={(e) => e.key === 'Enter' && handleSearch()}
 			/>
-			<button class="btn btn-secondary" onclick={handleSearch}>Search</button>
+			<button class="btn btn-secondary" onclick={handleSearch}>{m.common_search()}</button>
 		</div>
 	</div>
 
@@ -142,10 +145,10 @@
 	{/if}
 
 	{#if isLoading}
-		<p>Loading contacts...</p>
+		<p>{m.common_loading()}</p>
 	{:else if contacts.length === 0}
 		<div class="empty-state card">
-			<p>No contacts found. Create your first contact to get started.</p>
+			<p>{m.contacts_noContacts()} {m.contacts_createFirst()}</p>
 		</div>
 	{:else}
 		<div class="card">
@@ -153,12 +156,12 @@
 				<table class="table table-mobile-cards">
 					<thead>
 						<tr>
-							<th>Name</th>
-							<th>Type</th>
-							<th>Email</th>
-							<th class="hide-mobile">Phone</th>
-							<th class="hide-mobile">VAT Number</th>
-							<th class="hide-mobile">Payment Terms</th>
+							<th>{m.common_name()}</th>
+							<th>{m.contacts_type()}</th>
+							<th>{m.common_email()}</th>
+							<th class="hide-mobile">{m.common_phone()}</th>
+							<th class="hide-mobile">{m.contacts_vatNumber()}</th>
+							<th class="hide-mobile">{m.contacts_paymentTerms()}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -167,13 +170,13 @@
 								<td class="name" data-label="Name">{contact.name}</td>
 								<td data-label="Type">
 									<span class="badge {typeBadgeClass[contact.contact_type]}">
-										{typeLabels[contact.contact_type]}
+										{getTypeLabel(contact.contact_type)}
 									</span>
 								</td>
 								<td class="email" data-label="Email">{contact.email || '-'}</td>
 								<td class="hide-mobile" data-label="Phone">{contact.phone || '-'}</td>
 								<td class="vat hide-mobile" data-label="VAT">{contact.vat_number || '-'}</td>
-								<td class="hide-mobile" data-label="Terms">{contact.payment_terms_days} days</td>
+								<td class="hide-mobile" data-label="Terms">{contact.payment_terms_days} {m.contacts_days()}</td>
 							</tr>
 						{/each}
 					</tbody>
@@ -188,33 +191,33 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div class="modal-backdrop" onclick={() => (showCreateContact = false)} role="presentation">
 		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-contact-title" tabindex="-1">
-			<h2 id="create-contact-title">Create Contact</h2>
+			<h2 id="create-contact-title">{m.contacts_newContact()}</h2>
 			<form onsubmit={createContact}>
 				<div class="form-row">
 					<div class="form-group">
-						<label class="label" for="name">Name *</label>
+						<label class="label" for="name">{m.common_name()} *</label>
 						<input
 							class="input"
 							type="text"
 							id="name"
 							bind:value={newName}
 							required
-							placeholder="Company or Person Name"
+							placeholder={m.contacts_companyOrPerson()}
 						/>
 					</div>
 					<div class="form-group">
-						<label class="label" for="type">Type</label>
+						<label class="label" for="type">{m.contacts_type()}</label>
 						<select class="input" id="type" bind:value={newType}>
-							<option value="CUSTOMER">Customer</option>
-							<option value="SUPPLIER">Supplier</option>
-							<option value="BOTH">Both</option>
+							<option value="CUSTOMER">{m.contacts_customer()}</option>
+							<option value="SUPPLIER">{m.contacts_supplier()}</option>
+							<option value="BOTH">{m.contacts_both()}</option>
 						</select>
 					</div>
 				</div>
 
 				<div class="form-row">
 					<div class="form-group">
-						<label class="label" for="email">Email</label>
+						<label class="label" for="email">{m.common_email()}</label>
 						<input
 							class="input"
 							type="email"
@@ -224,7 +227,7 @@
 						/>
 					</div>
 					<div class="form-group">
-						<label class="label" for="phone">Phone</label>
+						<label class="label" for="phone">{m.common_phone()}</label>
 						<input
 							class="input"
 							type="tel"
@@ -236,7 +239,7 @@
 				</div>
 
 				<div class="form-group">
-					<label class="label" for="vat">VAT Number</label>
+					<label class="label" for="vat">{m.contacts_vatNumber()}</label>
 					<input
 						class="input"
 						type="text"
@@ -247,23 +250,23 @@
 				</div>
 
 				<div class="form-group">
-					<label class="label" for="address">Address</label>
+					<label class="label" for="address">{m.common_address()}</label>
 					<input
 						class="input"
 						type="text"
 						id="address"
 						bind:value={newAddress}
-						placeholder="Street Address"
+						placeholder={m.contacts_streetAddress()}
 					/>
 				</div>
 
 				<div class="form-row">
 					<div class="form-group">
-						<label class="label" for="city">City</label>
+						<label class="label" for="city">{m.contacts_city()}</label>
 						<input class="input" type="text" id="city" bind:value={newCity} placeholder="Tallinn" />
 					</div>
 					<div class="form-group">
-						<label class="label" for="postal">Postal Code</label>
+						<label class="label" for="postal">{m.contacts_postalCode()}</label>
 						<input
 							class="input"
 							type="text"
@@ -273,7 +276,7 @@
 						/>
 					</div>
 					<div class="form-group">
-						<label class="label" for="country">Country</label>
+						<label class="label" for="country">{m.contacts_country()}</label>
 						<select class="input" id="country" bind:value={newCountry}>
 							<option value="EE">Estonia</option>
 							<option value="LV">Latvia</option>
@@ -285,7 +288,7 @@
 				</div>
 
 				<div class="form-group">
-					<label class="label" for="payment-days">Payment Terms (days)</label>
+					<label class="label" for="payment-days">{m.contacts_paymentTermsDays()}</label>
 					<input
 						class="input"
 						type="number"
@@ -298,9 +301,9 @@
 
 				<div class="modal-actions">
 					<button type="button" class="btn btn-secondary" onclick={() => (showCreateContact = false)}>
-						Cancel
+						{m.common_cancel()}
 					</button>
-					<button type="submit" class="btn btn-primary">Create</button>
+					<button type="submit" class="btn btn-primary">{m.common_create()}</button>
 				</div>
 			</form>
 		</div>
