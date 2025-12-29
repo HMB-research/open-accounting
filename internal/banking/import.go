@@ -18,64 +18,64 @@ import (
 type CSVFormat string
 
 const (
-	FormatGeneric   CSVFormat = "GENERIC"
+	FormatGeneric    CSVFormat = "GENERIC"
 	FormatSwedbankEE CSVFormat = "SWEDBANK_EE"
-	FormatSEBEE     CSVFormat = "SEB_EE"
-	FormatLHVEE     CSVFormat = "LHV_EE"
+	FormatSEBEE      CSVFormat = "SEB_EE"
+	FormatLHVEE      CSVFormat = "LHV_EE"
 )
 
 // CSVColumnMapping defines how to map CSV columns to transaction fields
 type CSVColumnMapping struct {
-	DateColumn             int
-	ValueDateColumn        int // -1 if not present
-	AmountColumn           int
-	DescriptionColumn      int
-	ReferenceColumn        int // -1 if not present
-	CounterpartyNameColumn int // -1 if not present
+	DateColumn                int
+	ValueDateColumn           int // -1 if not present
+	AmountColumn              int
+	DescriptionColumn         int
+	ReferenceColumn           int // -1 if not present
+	CounterpartyNameColumn    int // -1 if not present
 	CounterpartyAccountColumn int // -1 if not present
-	ExternalIDColumn       int // -1 if not present
-	DateFormat             string
-	DecimalSeparator       string
-	ThousandsSeparator     string
-	SkipRows               int
-	HasHeader              bool
+	ExternalIDColumn          int // -1 if not present
+	DateFormat                string
+	DecimalSeparator          string
+	ThousandsSeparator        string
+	SkipRows                  int
+	HasHeader                 bool
 }
 
 // DefaultGenericMapping returns a generic CSV mapping
 func DefaultGenericMapping() CSVColumnMapping {
 	return CSVColumnMapping{
-		DateColumn:             0,
-		ValueDateColumn:        -1,
-		AmountColumn:           1,
-		DescriptionColumn:      2,
-		ReferenceColumn:        -1,
-		CounterpartyNameColumn: -1,
+		DateColumn:                0,
+		ValueDateColumn:           -1,
+		AmountColumn:              1,
+		DescriptionColumn:         2,
+		ReferenceColumn:           -1,
+		CounterpartyNameColumn:    -1,
 		CounterpartyAccountColumn: -1,
-		ExternalIDColumn:       -1,
-		DateFormat:             "2006-01-02",
-		DecimalSeparator:       ".",
-		ThousandsSeparator:     ",",
-		SkipRows:               0,
-		HasHeader:              true,
+		ExternalIDColumn:          -1,
+		DateFormat:                "2006-01-02",
+		DecimalSeparator:          ".",
+		ThousandsSeparator:        ",",
+		SkipRows:                  0,
+		HasHeader:                 true,
 	}
 }
 
 // SwedbankEEMapping returns mapping for Swedbank Estonia CSV exports
 func SwedbankEEMapping() CSVColumnMapping {
 	return CSVColumnMapping{
-		DateColumn:             0,
-		ValueDateColumn:        1,
-		AmountColumn:           3,
-		DescriptionColumn:      6,
-		ReferenceColumn:        5,
-		CounterpartyNameColumn: 7,
+		DateColumn:                0,
+		ValueDateColumn:           1,
+		AmountColumn:              3,
+		DescriptionColumn:         6,
+		ReferenceColumn:           5,
+		CounterpartyNameColumn:    7,
 		CounterpartyAccountColumn: 8,
-		ExternalIDColumn:       -1,
-		DateFormat:             "02.01.2006",
-		DecimalSeparator:       ",",
-		ThousandsSeparator:     " ",
-		SkipRows:               0,
-		HasHeader:              true,
+		ExternalIDColumn:          -1,
+		DateFormat:                "02.01.2006",
+		DecimalSeparator:          ",",
+		ThousandsSeparator:        " ",
+		SkipRows:                  0,
+		HasHeader:                 true,
 	}
 }
 
@@ -342,11 +342,6 @@ func (s *Service) ImportTransactions(ctx context.Context, schemaName, tenantID, 
 	}
 
 	return result, nil
-}
-
-type txExecutor interface {
-	Exec(ctx context.Context, sql string, arguments ...interface{}) (interface{}, error)
-	QueryRow(ctx context.Context, sql string, args ...interface{}) interface{}
 }
 
 func (s *Service) isTransactionDuplicate(ctx context.Context, tx interface{}, schemaName, bankAccountID string, date time.Time, amount decimal.Decimal, reference, externalID string) (bool, error) {
