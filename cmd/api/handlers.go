@@ -10,10 +10,15 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/openaccounting/openaccounting/internal/accounting"
+	"github.com/openaccounting/openaccounting/internal/analytics"
 	"github.com/openaccounting/openaccounting/internal/auth"
+	"github.com/openaccounting/openaccounting/internal/banking"
 	"github.com/openaccounting/openaccounting/internal/contacts"
+	"github.com/openaccounting/openaccounting/internal/email"
 	"github.com/openaccounting/openaccounting/internal/invoicing"
 	"github.com/openaccounting/openaccounting/internal/payments"
+	"github.com/openaccounting/openaccounting/internal/pdf"
+	"github.com/openaccounting/openaccounting/internal/recurring"
 	"github.com/openaccounting/openaccounting/internal/tenant"
 )
 
@@ -25,6 +30,11 @@ type Handlers struct {
 	contactsService   *contacts.Service
 	invoicingService  *invoicing.Service
 	paymentsService   *payments.Service
+	pdfService        *pdf.Service
+	analyticsService  *analytics.Service
+	recurringService  *recurring.Service
+	emailService      *email.Service
+	bankingService    *banking.Service
 }
 
 // getSchemaName returns the schema name for a tenant
