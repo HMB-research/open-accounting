@@ -23,6 +23,7 @@ Open-source accounting software with double-entry bookkeeping, invoicing, invent
 - **Chart of Accounts**: Hierarchical account structure with 5 account types
 - **Financial Reports**: Trial balance, balance sheet, income statement
 - **VAT/Tax Support**: Date-aware VAT rates for EU compliance
+- **Estonian Tax Compliance**: KMD (VAT declaration) generation with e-MTA XML export
 - **REST API**: Full-featured JSON API for integration
 
 ## Quick Start
@@ -143,6 +144,11 @@ make migrate-up    # Run database migrations
 - `GET /api/v1/tenants/{id}/reports/trial-balance` - Trial balance
 - `GET /api/v1/tenants/{id}/reports/account-balance/{accountId}` - Account balance
 
+### Tax (Estonian KMD)
+- `POST /api/v1/tenants/{id}/tax/kmd` - Generate KMD declaration
+- `GET /api/v1/tenants/{id}/tax/kmd` - List KMD declarations
+- `GET /api/v1/tenants/{id}/tax/kmd/{year}/{month}/xml` - Export KMD to e-MTA XML
+
 ### API Documentation
 - `GET /swagger/` - Interactive Swagger UI
 - `GET /swagger/doc.json` - OpenAPI specification
@@ -160,6 +166,7 @@ open-accounting/
 │   ├── contacts/     # Customer/supplier management
 │   ├── invoicing/    # Sales and purchase invoices
 │   ├── payments/     # Payment recording and allocation
+│   ├── tax/          # Estonian tax compliance (KMD)
 │   └── tenant/       # Multi-tenant management
 ├── migrations/       # SQL migrations
 ├── frontend/         # SvelteKit frontend

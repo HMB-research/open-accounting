@@ -274,6 +274,7 @@
 					<a href="/journal?tenant={selectedTenant.id}" class="btn btn-secondary">Journal</a>
 					<a href="/reports?tenant={selectedTenant.id}" class="btn btn-secondary">Reports</a>
 					<a href="/banking?tenant={selectedTenant.id}" class="btn btn-secondary">Banking</a>
+					<a href="/tax?tenant={selectedTenant.id}" class="btn btn-secondary">Tax (KMD)</a>
 					<a href="/settings/email?tenant={selectedTenant.id}" class="btn btn-secondary">Email</a>
 				</div>
 			</div>
