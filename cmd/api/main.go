@@ -25,6 +25,7 @@ import (
 	"github.com/openaccounting/openaccounting/internal/email"
 	"github.com/openaccounting/openaccounting/internal/invoicing"
 	"github.com/openaccounting/openaccounting/internal/payments"
+	"github.com/openaccounting/openaccounting/internal/payroll"
 	"github.com/openaccounting/openaccounting/internal/pdf"
 	"github.com/openaccounting/openaccounting/internal/recurring"
 	"github.com/openaccounting/openaccounting/internal/tax"
@@ -74,6 +75,7 @@ func main() {
 	emailService := email.NewService(pool)
 	bankingService := banking.NewService(pool)
 	taxService := tax.NewService(pool)
+	payrollService := payroll.NewService(pool)
 
 	// Create handlers
 	handlers := &Handlers{
@@ -89,6 +91,7 @@ func main() {
 		emailService:      emailService,
 		bankingService:    bankingService,
 		taxService:        taxService,
+		payrollService:    payrollService,
 	}
 
 	// Setup router
@@ -311,6 +314,32 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Post("/tax/kmd", h.HandleGenerateKMD)
 				r.Get("/tax/kmd", h.HandleListKMD)
 				r.Get("/tax/kmd/{year}/{month}/xml", h.HandleExportKMD)
+
+				// Payroll - Employees
+				r.Get("/employees", h.ListEmployees)
+				r.Post("/employees", h.CreateEmployee)
+				r.Get("/employees/{employeeID}", h.GetEmployee)
+				r.Put("/employees/{employeeID}", h.UpdateEmployee)
+				r.Post("/employees/{employeeID}/salary", h.SetBaseSalary)
+
+				// Payroll - Runs
+				r.Get("/payroll-runs", h.ListPayrollRuns)
+				r.Post("/payroll-runs", h.CreatePayrollRun)
+				r.Get("/payroll-runs/{runID}", h.GetPayrollRun)
+				r.Post("/payroll-runs/{runID}/calculate", h.CalculatePayroll)
+				r.Post("/payroll-runs/{runID}/approve", h.ApprovePayroll)
+				r.Get("/payroll-runs/{runID}/payslips", h.GetPayslips)
+				r.Post("/payroll-runs/{runID}/tsd", h.GenerateTSD)
+
+				// Payroll - Tax Preview
+				r.Post("/payroll/tax-preview", h.CalculateTaxPreview)
+
+				// TSD Declarations
+				r.Get("/tsd", h.ListTSD)
+				r.Get("/tsd/{year}/{month}", h.GetTSD)
+				r.Get("/tsd/{year}/{month}/xml", h.ExportTSDXML)
+				r.Get("/tsd/{year}/{month}/csv", h.ExportTSDCSV)
+				r.Post("/tsd/{year}/{month}/submit", h.MarkTSDSubmitted)
 
 				// User Management
 				r.Get("/users", h.ListTenantUsers)
