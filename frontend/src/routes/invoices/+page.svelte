@@ -140,6 +140,17 @@
 		}
 	}
 
+	async function downloadPDF(invoiceId: string, invoiceNumber: string) {
+		const tenantId = $page.url.searchParams.get('tenant');
+		if (!tenantId) return;
+
+		try {
+			await api.downloadInvoicePDF(tenantId, invoiceId, invoiceNumber);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to download PDF';
+		}
+	}
+
 	const typeLabels: Record<InvoiceType, string> = {
 		SALES: 'Sales Invoice',
 		PURCHASE: 'Purchase Invoice',
@@ -247,7 +258,14 @@
 									{statusLabels[invoice.status]}
 								</span>
 							</td>
-							<td>
+							<td class="actions">
+								<button
+									class="btn btn-small btn-secondary"
+									onclick={() => downloadPDF(invoice.id, invoice.invoice_number)}
+									title="Download PDF"
+								>
+									PDF
+								</button>
 								{#if invoice.status === 'DRAFT'}
 									<button class="btn btn-small" onclick={() => sendInvoice(invoice.id)}>
 										Send
@@ -491,6 +509,20 @@
 	.btn-danger {
 		background: #dc2626;
 		color: white;
+	}
+
+	.btn-secondary {
+		background: #6b7280;
+		color: white;
+	}
+
+	.btn-secondary:hover {
+		background: #4b5563;
+	}
+
+	.actions {
+		display: flex;
+		gap: 0.25rem;
 	}
 
 	.empty-state {

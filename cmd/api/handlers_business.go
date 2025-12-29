@@ -1,17 +1,163 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/shopspring/decimal"
 
 	"github.com/openaccounting/openaccounting/internal/auth"
+	"github.com/openaccounting/openaccounting/internal/banking"
 	"github.com/openaccounting/openaccounting/internal/contacts"
+	"github.com/openaccounting/openaccounting/internal/email"
 	"github.com/openaccounting/openaccounting/internal/invoicing"
 	"github.com/openaccounting/openaccounting/internal/payments"
+	"github.com/openaccounting/openaccounting/internal/recurring"
 )
+
+// =============================================================================
+// ANALYTICS HANDLERS
+// =============================================================================
+
+// GetDashboardSummary returns key metrics for the dashboard
+// @Summary Get dashboard summary
+// @Description Get key metrics including revenue, expenses, receivables, and invoice counts
+// @Tags Analytics
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Success 200 {object} analytics.DashboardSummary
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/analytics/dashboard [get]
+func (h *Handlers) GetDashboardSummary(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	summary, err := h.analyticsService.GetDashboardSummary(r.Context(), tenantID, schemaName)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get dashboard summary")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, summary)
+}
+
+// GetRevenueExpenseChart returns monthly revenue vs expense data
+// @Summary Get revenue/expense chart data
+// @Description Get monthly revenue and expense data for charting
+// @Tags Analytics
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param months query int false "Number of months (default 12)"
+// @Success 200 {object} analytics.RevenueExpenseChart
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/analytics/revenue-expense [get]
+func (h *Handlers) GetRevenueExpenseChart(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	months := 12
+	if m := r.URL.Query().Get("months"); m != "" {
+		if parsed, err := parseIntParam(m); err == nil && parsed > 0 {
+			months = parsed
+		}
+	}
+
+	chart, err := h.analyticsService.GetRevenueExpenseChart(r.Context(), tenantID, schemaName, months)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get chart data")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, chart)
+}
+
+// GetCashFlowChart returns monthly cash flow data
+// @Summary Get cash flow chart data
+// @Description Get monthly cash inflows and outflows for charting
+// @Tags Analytics
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param months query int false "Number of months (default 12)"
+// @Success 200 {object} analytics.CashFlowChart
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/analytics/cash-flow [get]
+func (h *Handlers) GetCashFlowChart(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	months := 12
+	if m := r.URL.Query().Get("months"); m != "" {
+		if parsed, err := parseIntParam(m); err == nil && parsed > 0 {
+			months = parsed
+		}
+	}
+
+	chart, err := h.analyticsService.GetCashFlowChart(r.Context(), tenantID, schemaName, months)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get chart data")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, chart)
+}
+
+// GetReceivablesAging returns aging report for receivables
+// @Summary Get receivables aging report
+// @Description Get aging breakdown for accounts receivable
+// @Tags Reports
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Success 200 {object} analytics.AgingReport
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/reports/aging/receivables [get]
+func (h *Handlers) GetReceivablesAging(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	report, err := h.analyticsService.GetReceivablesAging(r.Context(), tenantID, schemaName)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get aging report")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, report)
+}
+
+// GetPayablesAging returns aging report for payables
+// @Summary Get payables aging report
+// @Description Get aging breakdown for accounts payable
+// @Tags Reports
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Success 200 {object} analytics.AgingReport
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/reports/aging/payables [get]
+func (h *Handlers) GetPayablesAging(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	report, err := h.analyticsService.GetPayablesAging(r.Context(), tenantID, schemaName)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get aging report")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, report)
+}
+
+func parseIntParam(s string) (int, error) {
+	var i int
+	_, err := fmt.Sscanf(s, "%d", &i)
+	return i, err
+}
 
 // =============================================================================
 // CONTACTS HANDLERS
@@ -348,6 +494,57 @@ func (h *Handlers) VoidInvoice(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"status": "voided"})
 }
 
+// GetInvoicePDF generates and returns a PDF for an invoice
+// @Summary Download invoice PDF
+// @Description Generate and download a PDF for an invoice
+// @Tags Invoices
+// @Produce application/pdf
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param invoiceID path string true "Invoice ID"
+// @Success 200 {file} binary
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/invoices/{invoiceID}/pdf [get]
+func (h *Handlers) GetInvoicePDF(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	invoiceID := chi.URLParam(r, "invoiceID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	// Get invoice with contact
+	invoice, err := h.invoicingService.GetByID(r.Context(), tenantID, schemaName, invoiceID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Invoice not found")
+		return
+	}
+
+	// Get tenant for company details
+	t, err := h.tenantService.GetTenant(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get tenant")
+		return
+	}
+
+	// Get PDF settings from tenant
+	pdfSettings := h.pdfService.PDFSettingsFromTenant(t)
+
+	// Generate PDF
+	pdfBytes, err := h.pdfService.GenerateInvoicePDF(invoice, t, pdfSettings)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to generate PDF")
+		return
+	}
+
+	// Set response headers for PDF download
+	filename := "invoice-" + invoice.InvoiceNumber + ".pdf"
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(pdfBytes)))
+
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(pdfBytes)
+}
+
 // =============================================================================
 // PAYMENTS HANDLERS
 // =============================================================================
@@ -534,4 +731,1201 @@ func (h *Handlers) GetUnallocatedPayments(w http.ResponseWriter, r *http.Request
 	}
 
 	respondJSON(w, http.StatusOK, paymentsList)
+}
+
+// =============================================================================
+// RECURRING INVOICES HANDLERS
+// =============================================================================
+
+// ListRecurringInvoices returns all recurring invoices for a tenant
+// @Summary List recurring invoices
+// @Description Get all recurring invoice templates for a tenant
+// @Tags Recurring
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param active_only query bool false "Filter for active recurring invoices only"
+// @Success 200 {array} recurring.RecurringInvoice
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/recurring-invoices [get]
+func (h *Handlers) ListRecurringInvoices(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	activeOnly := r.URL.Query().Get("active_only") == "true"
+
+	invoices, err := h.recurringService.List(r.Context(), tenantID, schemaName, activeOnly)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list recurring invoices")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, invoices)
+}
+
+// CreateRecurringInvoice creates a new recurring invoice
+// @Summary Create recurring invoice
+// @Description Create a new recurring invoice template
+// @Tags Recurring
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body recurring.CreateRecurringInvoiceRequest true "Recurring invoice details"
+// @Success 201 {object} recurring.RecurringInvoice
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/recurring-invoices [post]
+func (h *Handlers) CreateRecurringInvoice(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req recurring.CreateRecurringInvoiceRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	req.UserID = claims.UserID
+
+	invoice, err := h.recurringService.Create(r.Context(), tenantID, schemaName, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, invoice)
+}
+
+// CreateRecurringInvoiceFromInvoice creates a recurring invoice from an existing invoice
+// @Summary Create recurring invoice from existing invoice
+// @Description Create a new recurring invoice template based on an existing invoice
+// @Tags Recurring
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param invoiceID path string true "Invoice ID to use as template"
+// @Param request body recurring.CreateFromInvoiceRequest true "Recurring invoice settings"
+// @Success 201 {object} recurring.RecurringInvoice
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/recurring-invoices/from-invoice/{invoiceID} [post]
+func (h *Handlers) CreateRecurringInvoiceFromInvoice(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	invoiceID := chi.URLParam(r, "invoiceID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req recurring.CreateFromInvoiceRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	req.InvoiceID = invoiceID
+	req.UserID = claims.UserID
+
+	invoice, err := h.recurringService.CreateFromInvoice(r.Context(), tenantID, schemaName, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, invoice)
+}
+
+// GetRecurringInvoice returns a recurring invoice by ID
+// @Summary Get recurring invoice
+// @Description Get recurring invoice details by ID
+// @Tags Recurring
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param recurringID path string true "Recurring Invoice ID"
+// @Success 200 {object} recurring.RecurringInvoice
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/recurring-invoices/{recurringID} [get]
+func (h *Handlers) GetRecurringInvoice(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	recurringID := chi.URLParam(r, "recurringID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	invoice, err := h.recurringService.GetByID(r.Context(), tenantID, schemaName, recurringID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Recurring invoice not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, invoice)
+}
+
+// UpdateRecurringInvoice updates a recurring invoice
+// @Summary Update recurring invoice
+// @Description Update recurring invoice details
+// @Tags Recurring
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param recurringID path string true "Recurring Invoice ID"
+// @Param request body recurring.UpdateRecurringInvoiceRequest true "Updated details"
+// @Success 200 {object} recurring.RecurringInvoice
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/recurring-invoices/{recurringID} [put]
+func (h *Handlers) UpdateRecurringInvoice(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	recurringID := chi.URLParam(r, "recurringID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req recurring.UpdateRecurringInvoiceRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	invoice, err := h.recurringService.Update(r.Context(), tenantID, schemaName, recurringID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, invoice)
+}
+
+// DeleteRecurringInvoice deletes a recurring invoice
+// @Summary Delete recurring invoice
+// @Description Delete a recurring invoice template
+// @Tags Recurring
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param recurringID path string true "Recurring Invoice ID"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/recurring-invoices/{recurringID} [delete]
+func (h *Handlers) DeleteRecurringInvoice(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	recurringID := chi.URLParam(r, "recurringID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.recurringService.Delete(r.Context(), tenantID, schemaName, recurringID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// PauseRecurringInvoice pauses a recurring invoice
+// @Summary Pause recurring invoice
+// @Description Pause automatic generation of a recurring invoice
+// @Tags Recurring
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param recurringID path string true "Recurring Invoice ID"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/recurring-invoices/{recurringID}/pause [post]
+func (h *Handlers) PauseRecurringInvoice(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	recurringID := chi.URLParam(r, "recurringID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.recurringService.Pause(r.Context(), tenantID, schemaName, recurringID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "paused"})
+}
+
+// ResumeRecurringInvoice resumes a paused recurring invoice
+// @Summary Resume recurring invoice
+// @Description Resume automatic generation of a paused recurring invoice
+// @Tags Recurring
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param recurringID path string true "Recurring Invoice ID"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/recurring-invoices/{recurringID}/resume [post]
+func (h *Handlers) ResumeRecurringInvoice(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	recurringID := chi.URLParam(r, "recurringID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.recurringService.Resume(r.Context(), tenantID, schemaName, recurringID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "resumed"})
+}
+
+// GenerateRecurringInvoice manually generates an invoice from a recurring invoice
+// @Summary Generate invoice from recurring template
+// @Description Manually trigger generation of an invoice from a recurring invoice
+// @Tags Recurring
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param recurringID path string true "Recurring Invoice ID"
+// @Success 200 {object} recurring.GenerationResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/recurring-invoices/{recurringID}/generate [post]
+func (h *Handlers) GenerateRecurringInvoice(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	recurringID := chi.URLParam(r, "recurringID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	result, err := h.recurringService.GenerateInvoice(r.Context(), tenantID, schemaName, recurringID, claims.UserID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// GenerateDueRecurringInvoices generates all due recurring invoices
+// @Summary Generate all due invoices
+// @Description Trigger generation of all recurring invoices that are due
+// @Tags Recurring
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Success 200 {array} recurring.GenerationResult
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/recurring-invoices/generate-due [post]
+func (h *Handlers) GenerateDueRecurringInvoices(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	results, err := h.recurringService.GenerateDueInvoices(r.Context(), tenantID, schemaName, claims.UserID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to generate invoices")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, results)
+}
+
+// =============================================================================
+// EMAIL HANDLERS
+// =============================================================================
+
+// GetSMTPConfig returns the SMTP configuration for a tenant
+// @Summary Get SMTP configuration
+// @Description Get the SMTP email settings for a tenant
+// @Tags Email
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Success 200 {object} email.SMTPConfig
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/settings/smtp [get]
+func (h *Handlers) GetSMTPConfig(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+
+	config, err := h.emailService.GetSMTPConfig(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get SMTP config")
+		return
+	}
+
+	// Don't expose password
+	config.Password = ""
+
+	respondJSON(w, http.StatusOK, config)
+}
+
+// UpdateSMTPConfig updates the SMTP configuration for a tenant
+// @Summary Update SMTP configuration
+// @Description Update the SMTP email settings for a tenant
+// @Tags Email
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body email.UpdateSMTPConfigRequest true "SMTP settings"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/settings/smtp [put]
+func (h *Handlers) UpdateSMTPConfig(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+
+	var req email.UpdateSMTPConfigRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if err := h.emailService.UpdateSMTPConfig(r.Context(), tenantID, &req); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+// TestSMTP tests the SMTP configuration
+// @Summary Test SMTP configuration
+// @Description Send a test email to verify SMTP settings
+// @Tags Email
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body email.TestSMTPRequest true "Test email recipient"
+// @Success 200 {object} email.TestSMTPResponse
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/settings/smtp/test [post]
+func (h *Handlers) TestSMTP(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+
+	var req email.TestSMTPRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.RecipientEmail == "" {
+		respondError(w, http.StatusBadRequest, "Recipient email is required")
+		return
+	}
+
+	result, err := h.emailService.TestSMTP(r.Context(), tenantID, req.RecipientEmail)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// ListEmailTemplates returns all email templates for a tenant
+// @Summary List email templates
+// @Description Get all email templates for a tenant
+// @Tags Email
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Success 200 {array} email.EmailTemplate
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/email-templates [get]
+func (h *Handlers) ListEmailTemplates(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	templates, err := h.emailService.ListTemplates(r.Context(), schemaName, tenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list templates")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, templates)
+}
+
+// UpdateEmailTemplate updates an email template
+// @Summary Update email template
+// @Description Update an email template for a tenant
+// @Tags Email
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param templateType path string true "Template type (INVOICE_SEND, PAYMENT_RECEIPT, OVERDUE_REMINDER)"
+// @Param request body email.UpdateTemplateRequest true "Template content"
+// @Success 200 {object} email.EmailTemplate
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/email-templates/{templateType} [put]
+func (h *Handlers) UpdateEmailTemplate(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	templateType := chi.URLParam(r, "templateType")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req email.UpdateTemplateRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	template, err := h.emailService.UpdateTemplate(r.Context(), schemaName, tenantID, email.TemplateType(templateType), &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, template)
+}
+
+// GetEmailLog returns the email log for a tenant
+// @Summary Get email log
+// @Description Get the email sending history for a tenant
+// @Tags Email
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param limit query int false "Number of entries to return (default 50)"
+// @Success 200 {array} email.EmailLog
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/email-log [get]
+func (h *Handlers) GetEmailLog(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := parseIntParam(l); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	logs, err := h.emailService.GetEmailLog(r.Context(), schemaName, tenantID, limit)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get email log")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, logs)
+}
+
+// EmailInvoice sends an invoice via email
+// @Summary Email invoice
+// @Description Send an invoice to a recipient via email
+// @Tags Email
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param invoiceID path string true "Invoice ID"
+// @Param request body email.SendInvoiceRequest true "Email details"
+// @Success 200 {object} email.EmailSentResponse
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/invoices/{invoiceID}/email [post]
+func (h *Handlers) EmailInvoice(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	invoiceID := chi.URLParam(r, "invoiceID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req email.SendInvoiceRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Get invoice
+	invoice, err := h.invoicingService.GetByID(r.Context(), tenantID, schemaName, invoiceID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Invoice not found")
+		return
+	}
+
+	// Get tenant for company name
+	t, err := h.tenantService.GetTenant(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get tenant")
+		return
+	}
+
+	// Get template
+	template, err := h.emailService.GetTemplate(r.Context(), schemaName, tenantID, email.TemplateInvoiceSend)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get email template")
+		return
+	}
+
+	// Prepare template data
+	data := &email.TemplateData{
+		CompanyName:   t.Name,
+		ContactName:   req.RecipientName,
+		InvoiceNumber: invoice.InvoiceNumber,
+		TotalAmount:   invoice.Total.StringFixed(2),
+		Currency:      invoice.Currency,
+		DueDate:       invoice.DueDate.Format("2006-01-02"),
+		IssueDate:     invoice.IssueDate.Format("2006-01-02"),
+		Message:       req.Message,
+	}
+
+	// Render template
+	subject, bodyHTML, bodyText, err := h.emailService.RenderTemplate(template, data)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to render email template")
+		return
+	}
+
+	// Override subject if provided
+	if req.Subject != "" {
+		subject = req.Subject
+	}
+
+	// Prepare attachments
+	var attachments []email.Attachment
+	if req.AttachPDF {
+		pdfSettings := h.pdfService.PDFSettingsFromTenant(t)
+		pdfBytes, err := h.pdfService.GenerateInvoicePDF(invoice, t, pdfSettings)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to generate PDF")
+			return
+		}
+		attachments = append(attachments, email.Attachment{
+			Filename:    "invoice-" + invoice.InvoiceNumber + ".pdf",
+			Content:     pdfBytes,
+			ContentType: "application/pdf",
+		})
+	}
+
+	// Send email
+	result, err := h.emailService.SendEmail(r.Context(), schemaName, tenantID, string(email.TemplateInvoiceSend), req.RecipientEmail, req.RecipientName, subject, bodyHTML, bodyText, attachments, invoiceID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Mark invoice as sent if it's a draft
+	if invoice.Status == invoicing.StatusDraft {
+		_ = h.invoicingService.Send(r.Context(), tenantID, schemaName, invoiceID)
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// EmailPaymentReceipt sends a payment receipt via email
+// @Summary Email payment receipt
+// @Description Send a payment receipt to a recipient via email
+// @Tags Email
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param paymentID path string true "Payment ID"
+// @Param request body email.SendPaymentReceiptRequest true "Email details"
+// @Success 200 {object} email.EmailSentResponse
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/payments/{paymentID}/email-receipt [post]
+func (h *Handlers) EmailPaymentReceipt(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	paymentID := chi.URLParam(r, "paymentID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req email.SendPaymentReceiptRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Get payment
+	payment, err := h.paymentsService.GetByID(r.Context(), tenantID, schemaName, paymentID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Payment not found")
+		return
+	}
+
+	// Get tenant for company name
+	t, err := h.tenantService.GetTenant(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get tenant")
+		return
+	}
+
+	// Get template
+	template, err := h.emailService.GetTemplate(r.Context(), schemaName, tenantID, email.TemplatePaymentReceipt)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get email template")
+		return
+	}
+
+	// Prepare template data
+	data := &email.TemplateData{
+		CompanyName: t.Name,
+		ContactName: req.RecipientName,
+		Amount:      payment.Amount.StringFixed(2),
+		Currency:    payment.Currency,
+		PaymentDate: payment.PaymentDate.Format("2006-01-02"),
+		Reference:   payment.Reference,
+		Message:     req.Message,
+	}
+
+	// Render template
+	subject, bodyHTML, bodyText, err := h.emailService.RenderTemplate(template, data)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to render email template")
+		return
+	}
+
+	// Override subject if provided
+	if req.Subject != "" {
+		subject = req.Subject
+	}
+
+	// Send email
+	result, err := h.emailService.SendEmail(r.Context(), schemaName, tenantID, string(email.TemplatePaymentReceipt), req.RecipientEmail, req.RecipientName, subject, bodyHTML, bodyText, nil, paymentID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// =============================================================================
+// BANKING HANDLERS
+// =============================================================================
+
+// ListBankAccounts lists all bank accounts for a tenant
+// @Summary List bank accounts
+// @Description Get all bank accounts for a tenant
+// @Tags Banking
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Success 200 {array} banking.BankAccount
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-accounts [get]
+func (h *Handlers) ListBankAccounts(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	activeOnly := r.URL.Query().Get("active_only") == "true"
+	var filter *banking.BankAccountFilter
+	if activeOnly {
+		active := true
+		filter = &banking.BankAccountFilter{IsActive: &active}
+	}
+
+	accounts, err := h.bankingService.ListBankAccounts(r.Context(), schemaName, tenantID, filter)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list bank accounts")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, accounts)
+}
+
+// CreateBankAccount creates a new bank account
+// @Summary Create bank account
+// @Description Create a new bank account
+// @Tags Banking
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body banking.CreateBankAccountRequest true "Bank account details"
+// @Success 201 {object} banking.BankAccount
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-accounts [post]
+func (h *Handlers) CreateBankAccount(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req banking.CreateBankAccountRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.Name == "" || req.AccountNumber == "" {
+		respondError(w, http.StatusBadRequest, "Name and account number are required")
+		return
+	}
+
+	account, err := h.bankingService.CreateBankAccount(r.Context(), schemaName, tenantID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, account)
+}
+
+// GetBankAccount retrieves a bank account by ID
+// @Summary Get bank account
+// @Description Get bank account details by ID
+// @Tags Banking
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param accountID path string true "Bank Account ID"
+// @Success 200 {object} banking.BankAccount
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-accounts/{accountID} [get]
+func (h *Handlers) GetBankAccount(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	accountID := chi.URLParam(r, "accountID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	account, err := h.bankingService.GetBankAccount(r.Context(), schemaName, tenantID, accountID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Bank account not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, account)
+}
+
+// UpdateBankAccount updates a bank account
+// @Summary Update bank account
+// @Description Update bank account details
+// @Tags Banking
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param accountID path string true "Bank Account ID"
+// @Param request body banking.UpdateBankAccountRequest true "Bank account updates"
+// @Success 200 {object} banking.BankAccount
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-accounts/{accountID} [put]
+func (h *Handlers) UpdateBankAccount(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	accountID := chi.URLParam(r, "accountID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req banking.UpdateBankAccountRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	account, err := h.bankingService.UpdateBankAccount(r.Context(), schemaName, tenantID, accountID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, account)
+}
+
+// DeleteBankAccount deletes a bank account
+// @Summary Delete bank account
+// @Description Delete a bank account (only if no transactions)
+// @Tags Banking
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param accountID path string true "Bank Account ID"
+// @Success 204
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-accounts/{accountID} [delete]
+func (h *Handlers) DeleteBankAccount(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	accountID := chi.URLParam(r, "accountID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.bankingService.DeleteBankAccount(r.Context(), schemaName, tenantID, accountID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListBankTransactions lists bank transactions for an account
+// @Summary List bank transactions
+// @Description Get bank transactions for a bank account with filters
+// @Tags Banking
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param accountID path string true "Bank Account ID"
+// @Param status query string false "Filter by status (UNMATCHED, MATCHED, RECONCILED)"
+// @Param from_date query string false "Filter from date (YYYY-MM-DD)"
+// @Param to_date query string false "Filter to date (YYYY-MM-DD)"
+// @Success 200 {array} banking.BankTransaction
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-accounts/{accountID}/transactions [get]
+func (h *Handlers) ListBankTransactions(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	accountID := chi.URLParam(r, "accountID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	filter := &banking.TransactionFilter{
+		BankAccountID: accountID,
+	}
+
+	if status := r.URL.Query().Get("status"); status != "" {
+		filter.Status = banking.TransactionStatus(status)
+	}
+
+	if fromDate := r.URL.Query().Get("from_date"); fromDate != "" {
+		t, err := time.Parse("2006-01-02", fromDate)
+		if err == nil {
+			filter.FromDate = &t
+		}
+	}
+
+	if toDate := r.URL.Query().Get("to_date"); toDate != "" {
+		t, err := time.Parse("2006-01-02", toDate)
+		if err == nil {
+			filter.ToDate = &t
+		}
+	}
+
+	transactions, err := h.bankingService.ListTransactions(r.Context(), schemaName, tenantID, filter)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list transactions")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, transactions)
+}
+
+// GetBankTransaction retrieves a single bank transaction
+// @Summary Get bank transaction
+// @Description Get bank transaction details by ID
+// @Tags Banking
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param transactionID path string true "Transaction ID"
+// @Success 200 {object} banking.BankTransaction
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-transactions/{transactionID} [get]
+func (h *Handlers) GetBankTransaction(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	transactionID := chi.URLParam(r, "transactionID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	transaction, err := h.bankingService.GetTransaction(r.Context(), schemaName, tenantID, transactionID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Transaction not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, transaction)
+}
+
+// ImportBankTransactions imports transactions from JSON data
+// @Summary Import bank transactions
+// @Description Import bank transactions from CSV data
+// @Tags Banking
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param accountID path string true "Bank Account ID"
+// @Param request body banking.ImportCSVRequest true "Import data"
+// @Success 200 {object} banking.ImportResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-accounts/{accountID}/import [post]
+func (h *Handlers) ImportBankTransactions(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	accountID := chi.URLParam(r, "accountID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req banking.ImportCSVRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if len(req.Transactions) == 0 {
+		respondError(w, http.StatusBadRequest, "No transactions to import")
+		return
+	}
+
+	if req.FileName == "" {
+		req.FileName = "manual_import.csv"
+	}
+
+	result, err := h.bankingService.ImportTransactions(r.Context(), schemaName, tenantID, accountID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// GetImportHistory retrieves import history for a bank account
+// @Summary Get import history
+// @Description Get bank statement import history for an account
+// @Tags Banking
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param accountID path string true "Bank Account ID"
+// @Success 200 {array} banking.BankStatementImport
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-accounts/{accountID}/import-history [get]
+func (h *Handlers) GetImportHistory(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	accountID := chi.URLParam(r, "accountID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	imports, err := h.bankingService.GetImportHistory(r.Context(), schemaName, tenantID, accountID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get import history")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, imports)
+}
+
+// GetMatchSuggestions returns match suggestions for a transaction
+// @Summary Get match suggestions
+// @Description Get payment match suggestions for a bank transaction
+// @Tags Banking
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param transactionID path string true "Transaction ID"
+// @Success 200 {array} banking.MatchSuggestion
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-transactions/{transactionID}/suggestions [get]
+func (h *Handlers) GetMatchSuggestions(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	transactionID := chi.URLParam(r, "transactionID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	suggestions, err := h.bankingService.GetMatchSuggestions(r.Context(), schemaName, tenantID, transactionID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get match suggestions")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, suggestions)
+}
+
+// MatchBankTransaction matches a transaction to a payment
+// @Summary Match bank transaction
+// @Description Match a bank transaction to a payment
+// @Tags Banking
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param transactionID path string true "Transaction ID"
+// @Param request body banking.MatchTransactionRequest true "Match details"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-transactions/{transactionID}/match [post]
+func (h *Handlers) MatchBankTransaction(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	transactionID := chi.URLParam(r, "transactionID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req banking.MatchTransactionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.PaymentID == "" {
+		respondError(w, http.StatusBadRequest, "Payment ID is required")
+		return
+	}
+
+	if err := h.bankingService.MatchTransaction(r.Context(), schemaName, tenantID, transactionID, req.PaymentID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "matched"})
+}
+
+// UnmatchBankTransaction removes match from a transaction
+// @Summary Unmatch bank transaction
+// @Description Remove the payment match from a bank transaction
+// @Tags Banking
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param transactionID path string true "Transaction ID"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-transactions/{transactionID}/unmatch [post]
+func (h *Handlers) UnmatchBankTransaction(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	transactionID := chi.URLParam(r, "transactionID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.bankingService.UnmatchTransaction(r.Context(), schemaName, tenantID, transactionID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "unmatched"})
+}
+
+// CreatePaymentFromTransaction creates a payment from a bank transaction
+// @Summary Create payment from transaction
+// @Description Create a new payment from a bank transaction and link them
+// @Tags Banking
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param transactionID path string true "Transaction ID"
+// @Success 200 {object} object{payment_id=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-transactions/{transactionID}/create-payment [post]
+func (h *Handlers) CreatePaymentFromTransaction(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	transactionID := chi.URLParam(r, "transactionID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	paymentID, err := h.bankingService.CreatePaymentFromTransaction(r.Context(), schemaName, tenantID, claims.UserID, transactionID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"payment_id": paymentID})
+}
+
+// ListReconciliations lists reconciliations for a bank account
+// @Summary List reconciliations
+// @Description Get reconciliation history for a bank account
+// @Tags Banking
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param accountID path string true "Bank Account ID"
+// @Success 200 {array} banking.BankReconciliation
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-accounts/{accountID}/reconciliations [get]
+func (h *Handlers) ListReconciliations(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	accountID := chi.URLParam(r, "accountID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	reconciliations, err := h.bankingService.ListReconciliations(r.Context(), schemaName, tenantID, accountID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list reconciliations")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, reconciliations)
+}
+
+// CreateReconciliation starts a new reconciliation session
+// @Summary Create reconciliation
+// @Description Start a new bank reconciliation session
+// @Tags Banking
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param accountID path string true "Bank Account ID"
+// @Param request body banking.CreateReconciliationRequest true "Reconciliation details"
+// @Success 201 {object} banking.BankReconciliation
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-accounts/{accountID}/reconciliation [post]
+func (h *Handlers) CreateReconciliation(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	accountID := chi.URLParam(r, "accountID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req banking.CreateReconciliationRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	reconciliation, err := h.bankingService.CreateReconciliation(r.Context(), schemaName, tenantID, accountID, claims.UserID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, reconciliation)
+}
+
+// GetReconciliation retrieves a reconciliation by ID
+// @Summary Get reconciliation
+// @Description Get reconciliation details by ID
+// @Tags Banking
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param reconciliationID path string true "Reconciliation ID"
+// @Success 200 {object} banking.BankReconciliation
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/reconciliations/{reconciliationID} [get]
+func (h *Handlers) GetReconciliation(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	reconciliationID := chi.URLParam(r, "reconciliationID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	reconciliation, err := h.bankingService.GetReconciliation(r.Context(), schemaName, tenantID, reconciliationID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Reconciliation not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, reconciliation)
+}
+
+// CompleteReconciliation marks a reconciliation as complete
+// @Summary Complete reconciliation
+// @Description Mark a reconciliation session as complete
+// @Tags Banking
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param reconciliationID path string true "Reconciliation ID"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/reconciliations/{reconciliationID}/complete [post]
+func (h *Handlers) CompleteReconciliation(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	reconciliationID := chi.URLParam(r, "reconciliationID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.bankingService.CompleteReconciliation(r.Context(), schemaName, tenantID, reconciliationID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "completed"})
+}
+
+// AutoMatchTransactions attempts to auto-match unmatched transactions
+// @Summary Auto-match transactions
+// @Description Automatically match unmatched bank transactions to payments
+// @Tags Banking
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param accountID path string true "Bank Account ID"
+// @Param min_confidence query number false "Minimum confidence threshold (0-1, default 0.7)"
+// @Success 200 {object} object{matched=int}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-accounts/{accountID}/auto-match [post]
+func (h *Handlers) AutoMatchTransactions(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	accountID := chi.URLParam(r, "accountID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	minConfidence := 0.7
+	if conf := r.URL.Query().Get("min_confidence"); conf != "" {
+		if parsed, err := strconv.ParseFloat(conf, 64); err == nil && parsed >= 0 && parsed <= 1 {
+			minConfidence = parsed
+		}
+	}
+
+	matched, err := h.bankingService.AutoMatchTransactions(r.Context(), schemaName, tenantID, accountID, minConfidence)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to auto-match transactions")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]int{"matched": matched})
 }

@@ -294,6 +294,32 @@ class ApiClient {
 		);
 	}
 
+	async downloadInvoicePDF(tenantId: string, invoiceId: string, invoiceNumber: string) {
+		const headers: Record<string, string> = {};
+		if (this.accessToken) {
+			headers['Authorization'] = `Bearer ${this.accessToken}`;
+		}
+
+		const response = await fetch(
+			`${API_BASE}/api/v1/tenants/${tenantId}/invoices/${invoiceId}/pdf`,
+			{ headers }
+		);
+
+		if (!response.ok) {
+			throw new Error('Failed to download PDF');
+		}
+
+		const blob = await response.blob();
+		const url = window.URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `invoice-${invoiceNumber}.pdf`;
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		window.URL.revokeObjectURL(url);
+	}
+
 	// Payment endpoints
 	async listPayments(tenantId: string, filter?: PaymentFilter) {
 		const params = new URLSearchParams();
@@ -325,6 +351,301 @@ class ApiClient {
 		return this.request<Payment[]>(
 			'GET',
 			`/api/v1/tenants/${tenantId}/payments/unallocated?type=${type}`
+		);
+	}
+
+	// Analytics endpoints
+	async getDashboardSummary(tenantId: string) {
+		return this.request<DashboardSummary>('GET', `/api/v1/tenants/${tenantId}/analytics/dashboard`);
+	}
+
+	async getRevenueExpenseChart(tenantId: string, months = 12) {
+		return this.request<RevenueExpenseChart>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/analytics/revenue-expense?months=${months}`
+		);
+	}
+
+	async getCashFlowChart(tenantId: string, months = 12) {
+		return this.request<CashFlowChart>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/analytics/cash-flow?months=${months}`
+		);
+	}
+
+	async getReceivablesAging(tenantId: string) {
+		return this.request<AgingReport>('GET', `/api/v1/tenants/${tenantId}/reports/aging/receivables`);
+	}
+
+	async getPayablesAging(tenantId: string) {
+		return this.request<AgingReport>('GET', `/api/v1/tenants/${tenantId}/reports/aging/payables`);
+	}
+
+	// Recurring Invoice endpoints
+	async listRecurringInvoices(tenantId: string, activeOnly = false) {
+		const query = activeOnly ? '?active_only=true' : '';
+		return this.request<RecurringInvoice[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/recurring-invoices${query}`
+		);
+	}
+
+	async createRecurringInvoice(tenantId: string, data: CreateRecurringInvoiceRequest) {
+		return this.request<RecurringInvoice>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/recurring-invoices`,
+			data
+		);
+	}
+
+	async createRecurringInvoiceFromInvoice(
+		tenantId: string,
+		invoiceId: string,
+		data: CreateFromInvoiceRequest
+	) {
+		return this.request<RecurringInvoice>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/recurring-invoices/from-invoice/${invoiceId}`,
+			data
+		);
+	}
+
+	async getRecurringInvoice(tenantId: string, recurringId: string) {
+		return this.request<RecurringInvoice>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/recurring-invoices/${recurringId}`
+		);
+	}
+
+	async updateRecurringInvoice(
+		tenantId: string,
+		recurringId: string,
+		data: UpdateRecurringInvoiceRequest
+	) {
+		return this.request<RecurringInvoice>(
+			'PUT',
+			`/api/v1/tenants/${tenantId}/recurring-invoices/${recurringId}`,
+			data
+		);
+	}
+
+	async deleteRecurringInvoice(tenantId: string, recurringId: string) {
+		return this.request<{ status: string }>(
+			'DELETE',
+			`/api/v1/tenants/${tenantId}/recurring-invoices/${recurringId}`
+		);
+	}
+
+	async pauseRecurringInvoice(tenantId: string, recurringId: string) {
+		return this.request<{ status: string }>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/recurring-invoices/${recurringId}/pause`
+		);
+	}
+
+	async resumeRecurringInvoice(tenantId: string, recurringId: string) {
+		return this.request<{ status: string }>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/recurring-invoices/${recurringId}/resume`
+		);
+	}
+
+	async generateRecurringInvoice(tenantId: string, recurringId: string) {
+		return this.request<GenerationResult>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/recurring-invoices/${recurringId}/generate`
+		);
+	}
+
+	async generateDueRecurringInvoices(tenantId: string) {
+		return this.request<GenerationResult[]>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/recurring-invoices/generate-due`
+		);
+	}
+
+	// Email endpoints
+	async getSMTPConfig(tenantId: string) {
+		return this.request<SMTPConfig>('GET', `/api/v1/tenants/${tenantId}/settings/smtp`);
+	}
+
+	async updateSMTPConfig(tenantId: string, data: UpdateSMTPConfigRequest) {
+		return this.request<{ status: string }>(
+			'PUT',
+			`/api/v1/tenants/${tenantId}/settings/smtp`,
+			data
+		);
+	}
+
+	async testSMTP(tenantId: string, recipientEmail: string) {
+		return this.request<TestSMTPResponse>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/settings/smtp/test`,
+			{ recipient_email: recipientEmail }
+		);
+	}
+
+	async listEmailTemplates(tenantId: string) {
+		return this.request<EmailTemplate[]>('GET', `/api/v1/tenants/${tenantId}/email-templates`);
+	}
+
+	async updateEmailTemplate(tenantId: string, templateType: TemplateType, data: UpdateTemplateRequest) {
+		return this.request<EmailTemplate>(
+			'PUT',
+			`/api/v1/tenants/${tenantId}/email-templates/${templateType}`,
+			data
+		);
+	}
+
+	async getEmailLog(tenantId: string, limit = 50) {
+		return this.request<EmailLog[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/email-log?limit=${limit}`
+		);
+	}
+
+	async emailInvoice(tenantId: string, invoiceId: string, data: SendInvoiceEmailRequest) {
+		return this.request<EmailSentResponse>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/invoices/${invoiceId}/email`,
+			data
+		);
+	}
+
+	async emailPaymentReceipt(tenantId: string, paymentId: string, data: SendPaymentReceiptRequest) {
+		return this.request<EmailSentResponse>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/payments/${paymentId}/email-receipt`,
+			data
+		);
+	}
+
+	// Banking endpoints
+	async listBankAccounts(tenantId: string, activeOnly = false) {
+		const query = activeOnly ? '?active_only=true' : '';
+		return this.request<BankAccount[]>('GET', `/api/v1/tenants/${tenantId}/bank-accounts${query}`);
+	}
+
+	async createBankAccount(tenantId: string, data: CreateBankAccountRequest) {
+		return this.request<BankAccount>('POST', `/api/v1/tenants/${tenantId}/bank-accounts`, data);
+	}
+
+	async getBankAccount(tenantId: string, accountId: string) {
+		return this.request<BankAccount>('GET', `/api/v1/tenants/${tenantId}/bank-accounts/${accountId}`);
+	}
+
+	async updateBankAccount(tenantId: string, accountId: string, data: UpdateBankAccountRequest) {
+		return this.request<BankAccount>(
+			'PUT',
+			`/api/v1/tenants/${tenantId}/bank-accounts/${accountId}`,
+			data
+		);
+	}
+
+	async deleteBankAccount(tenantId: string, accountId: string) {
+		return this.request<void>('DELETE', `/api/v1/tenants/${tenantId}/bank-accounts/${accountId}`);
+	}
+
+	async listBankTransactions(
+		tenantId: string,
+		accountId: string,
+		filters?: { status?: TransactionStatus; from_date?: string; to_date?: string }
+	) {
+		const params = new URLSearchParams();
+		if (filters?.status) params.set('status', filters.status);
+		if (filters?.from_date) params.set('from_date', filters.from_date);
+		if (filters?.to_date) params.set('to_date', filters.to_date);
+		const query = params.toString() ? `?${params.toString()}` : '';
+		return this.request<BankTransaction[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/bank-accounts/${accountId}/transactions${query}`
+		);
+	}
+
+	async getBankTransaction(tenantId: string, transactionId: string) {
+		return this.request<BankTransaction>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/bank-transactions/${transactionId}`
+		);
+	}
+
+	async importBankTransactions(tenantId: string, accountId: string, data: ImportTransactionsRequest) {
+		return this.request<ImportResult>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/bank-accounts/${accountId}/import`,
+			data
+		);
+	}
+
+	async getImportHistory(tenantId: string, accountId: string) {
+		return this.request<BankStatementImport[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/bank-accounts/${accountId}/import-history`
+		);
+	}
+
+	async getMatchSuggestions(tenantId: string, transactionId: string) {
+		return this.request<MatchSuggestion[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/bank-transactions/${transactionId}/suggestions`
+		);
+	}
+
+	async matchBankTransaction(tenantId: string, transactionId: string, paymentId: string) {
+		return this.request<{ status: string }>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/bank-transactions/${transactionId}/match`,
+			{ payment_id: paymentId }
+		);
+	}
+
+	async unmatchBankTransaction(tenantId: string, transactionId: string) {
+		return this.request<{ status: string }>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/bank-transactions/${transactionId}/unmatch`
+		);
+	}
+
+	async createPaymentFromTransaction(tenantId: string, transactionId: string) {
+		return this.request<{ payment_id: string }>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/bank-transactions/${transactionId}/create-payment`
+		);
+	}
+
+	async listReconciliations(tenantId: string, accountId: string) {
+		return this.request<BankReconciliation[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/bank-accounts/${accountId}/reconciliations`
+		);
+	}
+
+	async createReconciliation(tenantId: string, accountId: string, data: CreateReconciliationRequest) {
+		return this.request<BankReconciliation>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/bank-accounts/${accountId}/reconciliation`,
+			data
+		);
+	}
+
+	async getReconciliation(tenantId: string, reconciliationId: string) {
+		return this.request<BankReconciliation>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/reconciliations/${reconciliationId}`
+		);
+	}
+
+	async completeReconciliation(tenantId: string, reconciliationId: string) {
+		return this.request<{ status: string }>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/reconciliations/${reconciliationId}/complete`
+		);
+	}
+
+	async autoMatchTransactions(tenantId: string, accountId: string, minConfidence = 0.7) {
+		return this.request<{ matched: number }>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/bank-accounts/${accountId}/auto-match?min_confidence=${minConfidence}`
 		);
 	}
 }
@@ -664,6 +985,351 @@ export interface PaymentFilter {
 	contact_id?: string;
 	from_date?: string;
 	to_date?: string;
+}
+
+// Analytics types
+export interface DashboardSummary {
+	total_revenue: Decimal;
+	total_expenses: Decimal;
+	net_income: Decimal;
+	revenue_change: Decimal;
+	expenses_change: Decimal;
+	total_receivables: Decimal;
+	total_payables: Decimal;
+	overdue_receivables: Decimal;
+	overdue_payables: Decimal;
+	draft_invoices: number;
+	pending_invoices: number;
+	overdue_invoices: number;
+	period_start: string;
+	period_end: string;
+}
+
+export interface RevenueExpenseChart {
+	labels: string[];
+	revenue: Decimal[];
+	expenses: Decimal[];
+}
+
+export interface CashFlowChart {
+	labels: string[];
+	inflows: Decimal[];
+	outflows: Decimal[];
+	net: Decimal[];
+}
+
+export interface AgingBucket {
+	label: string;
+	amount: Decimal;
+	count: number;
+}
+
+export interface AgingReport {
+	report_type: string;
+	as_of_date: string;
+	total: Decimal;
+	buckets: AgingBucket[];
+}
+
+// Recurring Invoice types
+export type Frequency = 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
+
+export interface RecurringInvoice {
+	id: string;
+	tenant_id: string;
+	name: string;
+	contact_id: string;
+	contact_name?: string;
+	invoice_type: string;
+	currency: string;
+	frequency: Frequency;
+	start_date: string;
+	end_date?: string;
+	next_generation_date: string;
+	payment_terms_days: number;
+	reference?: string;
+	notes?: string;
+	is_active: boolean;
+	last_generated_at?: string;
+	generated_count: number;
+	lines: RecurringInvoiceLine[];
+	created_at: string;
+	created_by: string;
+	updated_at: string;
+}
+
+export interface RecurringInvoiceLine {
+	id: string;
+	recurring_invoice_id: string;
+	line_number: number;
+	description: string;
+	quantity: Decimal;
+	unit?: string;
+	unit_price: Decimal;
+	discount_percent: Decimal;
+	vat_rate: Decimal;
+	account_id?: string;
+	product_id?: string;
+}
+
+export interface CreateRecurringInvoiceRequest {
+	name: string;
+	contact_id: string;
+	invoice_type?: string;
+	currency?: string;
+	frequency: Frequency;
+	start_date: string;
+	end_date?: string;
+	payment_terms_days?: number;
+	reference?: string;
+	notes?: string;
+	lines: CreateRecurringInvoiceLineRequest[];
+}
+
+export interface CreateRecurringInvoiceLineRequest {
+	description: string;
+	quantity: string;
+	unit?: string;
+	unit_price: string;
+	discount_percent?: string;
+	vat_rate: string;
+	account_id?: string;
+	product_id?: string;
+}
+
+export interface UpdateRecurringInvoiceRequest {
+	name?: string;
+	contact_id?: string;
+	frequency?: Frequency;
+	end_date?: string;
+	payment_terms_days?: number;
+	reference?: string;
+	notes?: string;
+	lines?: CreateRecurringInvoiceLineRequest[];
+}
+
+export interface CreateFromInvoiceRequest {
+	name: string;
+	frequency: Frequency;
+	start_date: string;
+	end_date?: string;
+	payment_terms_days?: number;
+}
+
+export interface GenerationResult {
+	recurring_invoice_id: string;
+	generated_invoice_id: string;
+	generated_invoice_number: string;
+}
+
+// Email types
+export type TemplateType = 'INVOICE_SEND' | 'PAYMENT_RECEIPT' | 'OVERDUE_REMINDER';
+export type EmailStatus = 'PENDING' | 'SENT' | 'FAILED';
+
+export interface SMTPConfig {
+	smtp_host: string;
+	smtp_port: number;
+	smtp_username: string;
+	smtp_password?: string;
+	smtp_from_email: string;
+	smtp_from_name: string;
+	smtp_use_tls: boolean;
+}
+
+export interface UpdateSMTPConfigRequest {
+	smtp_host: string;
+	smtp_port: number;
+	smtp_username: string;
+	smtp_password?: string;
+	smtp_from_email: string;
+	smtp_from_name: string;
+	smtp_use_tls: boolean;
+}
+
+export interface TestSMTPResponse {
+	success: boolean;
+	message: string;
+}
+
+export interface EmailTemplate {
+	id: string;
+	tenant_id: string;
+	template_type: TemplateType;
+	subject: string;
+	body_html: string;
+	body_text?: string;
+	is_active: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface UpdateTemplateRequest {
+	subject: string;
+	body_html: string;
+	body_text?: string;
+	is_active: boolean;
+}
+
+export interface EmailLog {
+	id: string;
+	tenant_id: string;
+	email_type: string;
+	recipient_email: string;
+	recipient_name?: string;
+	subject: string;
+	status: EmailStatus;
+	sent_at?: string;
+	error_message?: string;
+	related_id?: string;
+	created_at: string;
+}
+
+export interface SendInvoiceEmailRequest {
+	recipient_email: string;
+	recipient_name?: string;
+	subject?: string;
+	message?: string;
+	attach_pdf: boolean;
+}
+
+export interface SendPaymentReceiptRequest {
+	recipient_email: string;
+	recipient_name?: string;
+	subject?: string;
+	message?: string;
+}
+
+export interface EmailSentResponse {
+	success: boolean;
+	log_id: string;
+	message: string;
+}
+
+// Banking types
+export type TransactionStatus = 'UNMATCHED' | 'MATCHED' | 'RECONCILED';
+export type ReconciliationStatus = 'IN_PROGRESS' | 'COMPLETED';
+
+export interface BankAccount {
+	id: string;
+	tenant_id: string;
+	name: string;
+	account_number: string;
+	bank_name?: string;
+	currency: string;
+	opening_balance: Decimal;
+	current_balance: Decimal;
+	gl_account_id?: string;
+	is_active: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface BankTransaction {
+	id: string;
+	tenant_id: string;
+	bank_account_id: string;
+	transaction_date: string;
+	value_date?: string;
+	description: string;
+	reference?: string;
+	amount: Decimal;
+	currency: string;
+	counterparty_name?: string;
+	counterparty_account?: string;
+	status: TransactionStatus;
+	matched_payment_id?: string;
+	reconciliation_id?: string;
+	import_id?: string;
+	created_at: string;
+}
+
+export interface BankReconciliation {
+	id: string;
+	tenant_id: string;
+	bank_account_id: string;
+	statement_date: string;
+	opening_balance: Decimal;
+	closing_balance: Decimal;
+	calculated_balance?: Decimal;
+	difference?: Decimal;
+	status: ReconciliationStatus;
+	completed_at?: string;
+	completed_by?: string;
+	transactions_matched: number;
+	transactions_unmatched: number;
+	created_at: string;
+	created_by: string;
+}
+
+export interface BankStatementImport {
+	id: string;
+	tenant_id: string;
+	bank_account_id: string;
+	file_name: string;
+	transactions_imported: number;
+	transactions_matched: number;
+	transactions_duplicates: number;
+	created_at: string;
+	created_by: string;
+}
+
+export interface MatchSuggestion {
+	payment_id: string;
+	payment_number: string;
+	payment_date: string;
+	amount: Decimal;
+	contact_name?: string;
+	reference?: string;
+	confidence: number;
+	match_reason: string;
+}
+
+export interface CreateBankAccountRequest {
+	name: string;
+	account_number: string;
+	bank_name?: string;
+	currency?: string;
+	opening_balance?: string;
+	gl_account_id?: string;
+}
+
+export interface UpdateBankAccountRequest {
+	name?: string;
+	bank_name?: string;
+	gl_account_id?: string;
+	is_active?: boolean;
+}
+
+export interface ImportTransactionsRequest {
+	csv_content: string;
+	file_name: string;
+	mapping: CSVColumnMapping;
+	skip_duplicates?: boolean;
+}
+
+export interface CSVColumnMapping {
+	date_column: number;
+	description_column: number;
+	amount_column: number;
+	reference_column?: number;
+	counterparty_column?: number;
+	date_format: string;
+	decimal_separator: string;
+	thousands_separator?: string;
+	skip_header: boolean;
+}
+
+export interface ImportResult {
+	import_id: string;
+	transactions_imported: number;
+	transactions_duplicates: number;
+	errors: string[];
+}
+
+export interface CreateReconciliationRequest {
+	statement_date: string;
+	opening_balance: string;
+	closing_balance: string;
 }
 
 export const api = new ApiClient();
