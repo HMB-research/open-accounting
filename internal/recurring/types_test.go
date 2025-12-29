@@ -65,14 +65,14 @@ func TestRecurringInvoice_Validate(t *testing.T) {
 
 	baseInvoice := func() RecurringInvoice {
 		return RecurringInvoice{
-			ID:                 "test-id",
-			TenantID:           "tenant-id",
-			Name:               "Monthly Services",
-			ContactID:          "contact-id",
-			Frequency:          FrequencyMonthly,
-			StartDate:          time.Now(),
-			PaymentTermsDays:   14,
-			Lines:              []RecurringInvoiceLine{validLine},
+			ID:               "test-id",
+			TenantID:         "tenant-id",
+			Name:             "Monthly Services",
+			ContactID:        "contact-id",
+			Frequency:        FrequencyMonthly,
+			StartDate:        time.Now(),
+			PaymentTermsDays: 14,
+			Lines:            []RecurringInvoiceLine{validLine},
 		}
 	}
 

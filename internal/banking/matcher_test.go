@@ -507,7 +507,7 @@ func TestMatchPayments_MinConfidenceFilter(t *testing.T) {
 		{
 			ID:            "pay-1",
 			PaymentNumber: "PMT-001",
-			PaymentDate:   now, // Different date
+			PaymentDate:   now,                         // Different date
 			Amount:        decimal.NewFromFloat(75.00), // Different amount
 		},
 	}
