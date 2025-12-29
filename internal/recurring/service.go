@@ -191,7 +191,7 @@ func (s *Service) CreateFromInvoice(ctx context.Context, tenantID, schemaName st
 	}
 
 	// Convert invoice lines to recurring invoice lines
-	var lines []CreateRecurringInvoiceLineRequest
+	lines := make([]CreateRecurringInvoiceLineRequest, 0, len(invoice.Lines))
 	for _, invLine := range invoice.Lines {
 		lines = append(lines, CreateRecurringInvoiceLineRequest{
 			Description:     invLine.Description,
@@ -306,7 +306,7 @@ func (s *Service) List(ctx context.Context, tenantID, schemaName string, activeO
 	}
 	defer rows.Close()
 
-	var results []RecurringInvoice
+	results := make([]RecurringInvoice, 0)
 	for rows.Next() {
 		var ri RecurringInvoice
 		if err := rows.Scan(
@@ -497,7 +497,7 @@ func (s *Service) GenerateDueInvoices(ctx context.Context, tenantID, schemaName,
 		ids = append(ids, id)
 	}
 
-	var results []GenerationResult
+	results := make([]GenerationResult, 0, len(ids))
 	for _, id := range ids {
 		result, err := s.GenerateInvoice(ctx, tenantID, schemaName, id, userID)
 		if err != nil {
@@ -525,7 +525,7 @@ func (s *Service) GenerateInvoice(ctx context.Context, tenantID, schemaName, rec
 	issueDate := time.Now()
 	dueDate := issueDate.AddDate(0, 0, ri.PaymentTermsDays)
 
-	var lines []invoicing.CreateInvoiceLineRequest
+	lines := make([]invoicing.CreateInvoiceLineRequest, 0, len(ri.Lines))
 	for _, riLine := range ri.Lines {
 		lines = append(lines, invoicing.CreateInvoiceLineRequest{
 			Description:     riLine.Description,
