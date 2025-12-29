@@ -1,0 +1,49 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/openaccounting
+/api
+
+# Test binary
+*.test
+
+# Output of go coverage
+*.out
+
+# Dependency directories
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build output
+/bin/
+/dist/
+
+# Logs
+*.log
+
+# Frontend build artifacts
+frontend/.svelte-kit/
+frontend/build/
+frontend/node_modules/
+
+# Swagger docs (generated)
+docs/docs.go
+docs/swagger.json
+docs/swagger.yaml

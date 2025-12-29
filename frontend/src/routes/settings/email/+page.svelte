@@ -1,0 +1,633 @@
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import {
+		api,
+		type SMTPConfig,
+		type EmailTemplate,
+		type EmailLog,
+		type TemplateType,
+		type UpdateTemplateRequest
+	} from '$lib/api';
+
+	let selectedTenantId = $state('');
+	let isLoading = $state(true);
+	let error = $state('');
+	let success = $state('');
+	let activeTab = $state<'smtp' | 'templates' | 'log'>('smtp');
+
+	// SMTP Config
+	let smtpConfig = $state<SMTPConfig>({
+		smtp_host: '',
+		smtp_port: 587,
+		smtp_username: '',
+		smtp_password: '',
+		smtp_from_email: '',
+		smtp_from_name: '',
+		smtp_use_tls: true
+	});
+	let isSavingSMTP = $state(false);
+	let isTestingSMTP = $state(false);
+	let testEmail = $state('');
+
+	// Templates
+	let templates = $state<EmailTemplate[]>([]);
+	let selectedTemplate = $state<EmailTemplate | null>(null);
+	let editingTemplate = $state<UpdateTemplateRequest | null>(null);
+	let isSavingTemplate = $state(false);
+
+	// Email Log
+	let emailLog = $state<EmailLog[]>([]);
+
+	onMount(async () => {
+		const urlParams = new URLSearchParams(window.location.search);
+		selectedTenantId = urlParams.get('tenant') || '';
+
+		if (!selectedTenantId) {
+			const tenants = await api.getMyTenants();
+			if (tenants.length > 0) {
+				selectedTenantId = tenants.find((t) => t.is_default)?.tenant.id || tenants[0].tenant.id;
+			}
+		}
+
+		if (selectedTenantId) {
+			await loadData();
+		}
+		isLoading = false;
+	});
+
+	async function loadData() {
+		try {
+			const [config, templateList, log] = await Promise.all([
+				api.getSMTPConfig(selectedTenantId),
+				api.listEmailTemplates(selectedTenantId),
+				api.getEmailLog(selectedTenantId, 50)
+			]);
+			smtpConfig = config;
+			templates = templateList;
+			emailLog = log;
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to load settings';
+		}
+	}
+
+	async function saveSMTPConfig(e: Event) {
+		e.preventDefault();
+		error = '';
+		success = '';
+		isSavingSMTP = true;
+
+		try {
+			await api.updateSMTPConfig(selectedTenantId, smtpConfig);
+			success = 'SMTP settings saved successfully';
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to save SMTP settings';
+		} finally {
+			isSavingSMTP = false;
+		}
+	}
+
+	async function testSMTPConfig() {
+		if (!testEmail) {
+			error = 'Please enter a test email address';
+			return;
+		}
+
+		error = '';
+		success = '';
+		isTestingSMTP = true;
+
+		try {
+			const result = await api.testSMTP(selectedTenantId, testEmail);
+			if (result.success) {
+				success = result.message;
+			} else {
+				error = result.message;
+			}
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'SMTP test failed';
+		} finally {
+			isTestingSMTP = false;
+		}
+	}
+
+	function selectTemplate(template: EmailTemplate) {
+		selectedTemplate = template;
+		editingTemplate = {
+			subject: template.subject,
+			body_html: template.body_html,
+			body_text: template.body_text || '',
+			is_active: template.is_active
+		};
+	}
+
+	async function saveTemplate(e: Event) {
+		e.preventDefault();
+		if (!selectedTemplate || !editingTemplate) return;
+
+		error = '';
+		success = '';
+		isSavingTemplate = true;
+
+		try {
+			const updated = await api.updateEmailTemplate(
+				selectedTenantId,
+				selectedTemplate.template_type,
+				editingTemplate
+			);
+			templates = templates.map((t) =>
+				t.template_type === selectedTemplate!.template_type ? updated : t
+			);
+			selectedTemplate = updated;
+			success = 'Template saved successfully';
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to save template';
+		} finally {
+			isSavingTemplate = false;
+		}
+	}
+
+	function templateTypeName(type: TemplateType): string {
+		const names: Record<TemplateType, string> = {
+			INVOICE_SEND: 'Invoice Email',
+			PAYMENT_RECEIPT: 'Payment Receipt',
+			OVERDUE_REMINDER: 'Overdue Reminder'
+		};
+		return names[type] || type;
+	}
+
+	function formatDate(dateStr: string): string {
+		return new Date(dateStr).toLocaleString('en-GB');
+	}
+
+	function statusBadgeClass(status: string): string {
+		switch (status) {
+			case 'SENT':
+				return 'badge-success';
+			case 'FAILED':
+				return 'badge-danger';
+			default:
+				return 'badge-muted';
+		}
+	}
+</script>
+
+<svelte:head>
+	<title>Email Settings - Open Accounting</title>
+</svelte:head>
+
+<div class="container">
+	<div class="header">
+		<h1>Email Settings</h1>
+		<a href="/dashboard?tenant={selectedTenantId}" class="btn btn-secondary">Back to Dashboard</a>
+	</div>
+
+	{#if error}
+		<div class="alert alert-error">{error}</div>
+	{/if}
+
+	{#if success}
+		<div class="alert alert-success">{success}</div>
+	{/if}
+
+	{#if isLoading}
+		<p>Loading...</p>
+	{:else}
+		<div class="tabs">
+			<button
+				class="tab"
+				class:active={activeTab === 'smtp'}
+				onclick={() => (activeTab = 'smtp')}
+			>
+				SMTP Configuration
+			</button>
+			<button
+				class="tab"
+				class:active={activeTab === 'templates'}
+				onclick={() => (activeTab = 'templates')}
+			>
+				Email Templates
+			</button>
+			<button
+				class="tab"
+				class:active={activeTab === 'log'}
+				onclick={() => (activeTab = 'log')}
+			>
+				Email Log
+			</button>
+		</div>
+
+		{#if activeTab === 'smtp'}
+			<div class="card">
+				<h2>SMTP Server Configuration</h2>
+				<p class="text-muted">Configure your email server to send invoices and notifications.</p>
+
+				<form onsubmit={saveSMTPConfig}>
+					<div class="form-row">
+						<div class="form-group">
+							<label class="label" for="smtp_host">SMTP Host</label>
+							<input
+								class="input"
+								type="text"
+								id="smtp_host"
+								bind:value={smtpConfig.smtp_host}
+								placeholder="smtp.example.com"
+							/>
+						</div>
+						<div class="form-group">
+							<label class="label" for="smtp_port">Port</label>
+							<input
+								class="input"
+								type="number"
+								id="smtp_port"
+								bind:value={smtpConfig.smtp_port}
+								placeholder="587"
+							/>
+						</div>
+					</div>
+
+					<div class="form-row">
+						<div class="form-group">
+							<label class="label" for="smtp_username">Username</label>
+							<input
+								class="input"
+								type="text"
+								id="smtp_username"
+								bind:value={smtpConfig.smtp_username}
+								placeholder="user@example.com"
+							/>
+						</div>
+						<div class="form-group">
+							<label class="label" for="smtp_password">Password</label>
+							<input
+								class="input"
+								type="password"
+								id="smtp_password"
+								bind:value={smtpConfig.smtp_password}
+								placeholder="Enter password to change"
+							/>
+						</div>
+					</div>
+
+					<div class="form-row">
+						<div class="form-group">
+							<label class="label" for="smtp_from_email">From Email</label>
+							<input
+								class="input"
+								type="email"
+								id="smtp_from_email"
+								bind:value={smtpConfig.smtp_from_email}
+								placeholder="invoices@example.com"
+							/>
+						</div>
+						<div class="form-group">
+							<label class="label" for="smtp_from_name">From Name</label>
+							<input
+								class="input"
+								type="text"
+								id="smtp_from_name"
+								bind:value={smtpConfig.smtp_from_name}
+								placeholder="My Company"
+							/>
+						</div>
+					</div>
+
+					<div class="form-group">
+						<label class="checkbox-label">
+							<input type="checkbox" bind:checked={smtpConfig.smtp_use_tls} />
+							Use TLS encryption
+						</label>
+					</div>
+
+					<div class="form-actions">
+						<button type="submit" class="btn btn-primary" disabled={isSavingSMTP}>
+							{isSavingSMTP ? 'Saving...' : 'Save Settings'}
+						</button>
+					</div>
+				</form>
+
+				<hr />
+
+				<h3>Test Configuration</h3>
+				<div class="test-form">
+					<div class="form-group">
+						<label class="label" for="test_email">Send test email to</label>
+						<input
+							class="input"
+							type="email"
+							id="test_email"
+							bind:value={testEmail}
+							placeholder="your@email.com"
+						/>
+					</div>
+					<button
+						type="button"
+						class="btn btn-secondary"
+						onclick={testSMTPConfig}
+						disabled={isTestingSMTP}
+					>
+						{isTestingSMTP ? 'Sending...' : 'Send Test Email'}
+					</button>
+				</div>
+			</div>
+		{/if}
+
+		{#if activeTab === 'templates'}
+			<div class="templates-layout">
+				<div class="template-list card">
+					<h3>Templates</h3>
+					{#each templates as template}
+						<button
+							class="template-item"
+							class:active={selectedTemplate?.template_type === template.template_type}
+							onclick={() => selectTemplate(template)}
+						>
+							<div class="template-name">{templateTypeName(template.template_type)}</div>
+							<span class="badge" class:badge-success={template.is_active} class:badge-muted={!template.is_active}>
+								{template.is_active ? 'Active' : 'Inactive'}
+							</span>
+						</button>
+					{/each}
+				</div>
+
+				<div class="template-editor card">
+					{#if selectedTemplate && editingTemplate}
+						<h3>Edit {templateTypeName(selectedTemplate.template_type)}</h3>
+						<form onsubmit={saveTemplate}>
+							<div class="form-group">
+								<label class="label" for="template_subject">Subject</label>
+								<input
+									class="input"
+									type="text"
+									id="template_subject"
+									bind:value={editingTemplate.subject}
+								/>
+								<small class="text-muted">
+									Available variables: {'{{.CompanyName}}'}, {'{{.ContactName}}'}, {'{{.InvoiceNumber}}'}, {'{{.TotalAmount}}'}, {'{{.Currency}}'}, {'{{.DueDate}}'}
+								</small>
+							</div>
+
+							<div class="form-group">
+								<label class="label" for="template_body">HTML Body</label>
+								<textarea
+									class="input textarea"
+									id="template_body"
+									bind:value={editingTemplate.body_html}
+									rows="15"
+								></textarea>
+							</div>
+
+							<div class="form-group">
+								<label class="checkbox-label">
+									<input type="checkbox" bind:checked={editingTemplate.is_active} />
+									Template is active
+								</label>
+							</div>
+
+							<div class="form-actions">
+								<button type="submit" class="btn btn-primary" disabled={isSavingTemplate}>
+									{isSavingTemplate ? 'Saving...' : 'Save Template'}
+								</button>
+							</div>
+						</form>
+					{:else}
+						<p class="text-muted">Select a template to edit</p>
+					{/if}
+				</div>
+			</div>
+		{/if}
+
+		{#if activeTab === 'log'}
+			<div class="card">
+				<h2>Email Log</h2>
+				{#if emailLog.length === 0}
+					<p class="text-muted">No emails have been sent yet.</p>
+				{:else}
+					<div class="table-container">
+						<table class="table">
+							<thead>
+								<tr>
+									<th>Date</th>
+									<th>Type</th>
+									<th>Recipient</th>
+									<th>Subject</th>
+									<th>Status</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each emailLog as log}
+									<tr>
+										<td>{formatDate(log.created_at)}</td>
+										<td>{templateTypeName(log.email_type as TemplateType)}</td>
+										<td>
+											{log.recipient_name || log.recipient_email}
+											{#if log.recipient_name}
+												<br /><small class="text-muted">{log.recipient_email}</small>
+											{/if}
+										</td>
+										<td>{log.subject}</td>
+										<td>
+											<span class="badge {statusBadgeClass(log.status)}">
+												{log.status}
+											</span>
+											{#if log.error_message}
+												<br /><small class="text-muted">{log.error_message}</small>
+											{/if}
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
+			</div>
+		{/if}
+	{/if}
+</div>
+
+<style>
+	.header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 1.5rem;
+	}
+
+	h1 {
+		font-size: 1.75rem;
+	}
+
+	h2 {
+		font-size: 1.25rem;
+		margin-bottom: 0.5rem;
+	}
+
+	h3 {
+		font-size: 1rem;
+		margin-bottom: 1rem;
+	}
+
+	.text-muted {
+		color: var(--color-text-muted);
+	}
+
+	.tabs {
+		display: flex;
+		gap: 0.5rem;
+		margin-bottom: 1.5rem;
+		border-bottom: 1px solid var(--color-border);
+		padding-bottom: 0.5rem;
+	}
+
+	.tab {
+		padding: 0.5rem 1rem;
+		border: none;
+		background: none;
+		cursor: pointer;
+		border-radius: var(--radius-sm);
+		color: var(--color-text-muted);
+	}
+
+	.tab:hover {
+		background: var(--color-border);
+	}
+
+	.tab.active {
+		background: var(--color-primary);
+		color: white;
+	}
+
+	.form-row {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1rem;
+	}
+
+	.form-actions {
+		margin-top: 1.5rem;
+	}
+
+	.checkbox-label {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		cursor: pointer;
+	}
+
+	hr {
+		border: none;
+		border-top: 1px solid var(--color-border);
+		margin: 1.5rem 0;
+	}
+
+	.test-form {
+		display: flex;
+		gap: 1rem;
+		align-items: flex-end;
+	}
+
+	.test-form .form-group {
+		flex: 1;
+		margin-bottom: 0;
+	}
+
+	.templates-layout {
+		display: grid;
+		grid-template-columns: 250px 1fr;
+		gap: 1.5rem;
+	}
+
+	.template-list h3 {
+		margin-bottom: 0.75rem;
+	}
+
+	.template-item {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		width: 100%;
+		padding: 0.75rem;
+		border: 1px solid var(--color-border);
+		background: none;
+		cursor: pointer;
+		text-align: left;
+		border-radius: var(--radius-sm);
+		margin-bottom: 0.5rem;
+	}
+
+	.template-item:hover {
+		background: var(--color-border);
+	}
+
+	.template-item.active {
+		border-color: var(--color-primary);
+		background: rgba(29, 78, 216, 0.1);
+	}
+
+	.template-name {
+		font-weight: 500;
+	}
+
+	.textarea {
+		min-height: 300px;
+		font-family: var(--font-mono);
+		font-size: 0.875rem;
+	}
+
+	small {
+		font-size: 0.75rem;
+	}
+
+	.table-container {
+		overflow-x: auto;
+	}
+
+	.table {
+		width: 100%;
+		border-collapse: collapse;
+	}
+
+	.table th,
+	.table td {
+		padding: 0.75rem;
+		text-align: left;
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.table th {
+		font-weight: 600;
+		color: var(--color-text-muted);
+		font-size: 0.75rem;
+		text-transform: uppercase;
+	}
+
+	.badge {
+		display: inline-block;
+		padding: 0.25rem 0.5rem;
+		border-radius: var(--radius-sm);
+		font-size: 0.75rem;
+		font-weight: 500;
+	}
+
+	.badge-success {
+		background: rgba(34, 197, 94, 0.1);
+		color: #22c55e;
+	}
+
+	.badge-danger {
+		background: rgba(239, 68, 68, 0.1);
+		color: #ef4444;
+	}
+
+	.badge-muted {
+		background: var(--color-border);
+		color: var(--color-text-muted);
+	}
+
+	.alert-success {
+		background: rgba(34, 197, 94, 0.1);
+		color: #22c55e;
+		padding: 1rem;
+		border-radius: var(--radius-md);
+		margin-bottom: 1rem;
+	}
+</style>
