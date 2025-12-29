@@ -648,6 +648,41 @@ class ApiClient {
 			`/api/v1/tenants/${tenantId}/bank-accounts/${accountId}/auto-match?min_confidence=${minConfidence}`
 		);
 	}
+
+	// Tax (KMD) endpoints
+	async generateKMD(tenantId: string, data: CreateKMDRequest) {
+		return this.request<KMDDeclaration>('POST', `/api/v1/tenants/${tenantId}/tax/kmd`, data);
+	}
+
+	async listKMD(tenantId: string) {
+		return this.request<KMDDeclaration[]>('GET', `/api/v1/tenants/${tenantId}/tax/kmd`);
+	}
+
+	async downloadKMDXml(tenantId: string, year: number, month: number) {
+		const headers: Record<string, string> = {};
+		if (this.accessToken) {
+			headers['Authorization'] = `Bearer ${this.accessToken}`;
+		}
+
+		const response = await fetch(
+			`${API_BASE}/api/v1/tenants/${tenantId}/tax/kmd/${year}/${month}/xml`,
+			{ headers }
+		);
+
+		if (!response.ok) {
+			throw new Error('Failed to download XML');
+		}
+
+		const blob = await response.blob();
+		const url = window.URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `KMD_${year}_${String(month).padStart(2, '0')}.xml`;
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		window.URL.revokeObjectURL(url);
+	}
 }
 
 // Types
@@ -1330,6 +1365,33 @@ export interface CreateReconciliationRequest {
 	statement_date: string;
 	opening_balance: string;
 	closing_balance: string;
+}
+
+// Tax (KMD) types
+export interface KMDRow {
+	code: string;
+	description: string;
+	tax_base: Decimal;
+	tax_amount: Decimal;
+}
+
+export interface KMDDeclaration {
+	id: string;
+	tenant_id: string;
+	year: number;
+	month: number;
+	status: 'DRAFT' | 'SUBMITTED' | 'ACCEPTED';
+	total_output_vat: Decimal;
+	total_input_vat: Decimal;
+	rows: KMDRow[];
+	submitted_at?: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface CreateKMDRequest {
+	year: number;
+	month: number;
 }
 
 export const api = new ApiClient();
