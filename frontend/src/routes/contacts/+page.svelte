@@ -109,11 +109,13 @@
 </svelte:head>
 
 <div class="container">
-	<div class="header">
+	<div class="page-header">
 		<h1>Contacts</h1>
-		<button class="btn btn-primary" onclick={() => (showCreateContact = true)}>
-			+ New Contact
-		</button>
+		<div class="page-actions">
+			<button class="btn btn-primary" onclick={() => (showCreateContact = true)}>
+				+ New Contact
+			</button>
+		</div>
 	</div>
 
 	<div class="filters card">
@@ -147,34 +149,36 @@
 		</div>
 	{:else}
 		<div class="card">
-			<table class="table">
-				<thead>
-					<tr>
-						<th>Name</th>
-						<th>Type</th>
-						<th>Email</th>
-						<th>Phone</th>
-						<th>VAT Number</th>
-						<th>Payment Terms</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each contacts as contact}
-						<tr class:inactive={!contact.is_active}>
-							<td class="name">{contact.name}</td>
-							<td>
-								<span class="badge {typeBadgeClass[contact.contact_type]}">
-									{typeLabels[contact.contact_type]}
-								</span>
-							</td>
-							<td class="email">{contact.email || '-'}</td>
-							<td>{contact.phone || '-'}</td>
-							<td class="vat">{contact.vat_number || '-'}</td>
-							<td>{contact.payment_terms_days} days</td>
+			<div class="table-container">
+				<table class="table table-mobile-cards">
+					<thead>
+						<tr>
+							<th>Name</th>
+							<th>Type</th>
+							<th>Email</th>
+							<th class="hide-mobile">Phone</th>
+							<th class="hide-mobile">VAT Number</th>
+							<th class="hide-mobile">Payment Terms</th>
 						</tr>
-					{/each}
-				</tbody>
-			</table>
+					</thead>
+					<tbody>
+						{#each contacts as contact}
+							<tr class:inactive={!contact.is_active}>
+								<td class="name" data-label="Name">{contact.name}</td>
+								<td data-label="Type">
+									<span class="badge {typeBadgeClass[contact.contact_type]}">
+										{typeLabels[contact.contact_type]}
+									</span>
+								</td>
+								<td class="email" data-label="Email">{contact.email || '-'}</td>
+								<td class="hide-mobile" data-label="Phone">{contact.phone || '-'}</td>
+								<td class="vat hide-mobile" data-label="VAT">{contact.vat_number || '-'}</td>
+								<td class="hide-mobile" data-label="Terms">{contact.payment_terms_days} days</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
 		</div>
 	{/if}
 </div>
@@ -304,13 +308,6 @@
 {/if}
 
 <style>
-	.header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 1.5rem;
-	}
-
 	h1 {
 		font-size: 1.75rem;
 	}
@@ -324,10 +321,16 @@
 		display: flex;
 		gap: 1rem;
 		align-items: center;
+		flex-wrap: wrap;
+	}
+
+	.filter-row select {
+		min-width: 120px;
 	}
 
 	.search-input {
 		flex: 1;
+		min-width: 150px;
 	}
 
 	.name {
@@ -376,12 +379,12 @@
 		align-items: center;
 		justify-content: center;
 		z-index: 100;
+		padding: 1rem;
 	}
 
 	.modal {
 		width: 100%;
 		max-width: 600px;
-		margin: 1rem;
 		max-height: 90vh;
 		overflow-y: auto;
 	}
@@ -393,10 +396,12 @@
 	.form-row {
 		display: flex;
 		gap: 1rem;
+		flex-wrap: wrap;
 	}
 
 	.form-row .form-group {
 		flex: 1;
+		min-width: 150px;
 	}
 
 	.modal-actions {
@@ -404,5 +409,27 @@
 		justify-content: flex-end;
 		gap: 0.5rem;
 		margin-top: 1.5rem;
+	}
+
+	/* Mobile responsive */
+	@media (max-width: 768px) {
+		.modal-backdrop {
+			padding: 0;
+			align-items: flex-end;
+		}
+
+		.modal {
+			max-width: 100%;
+			max-height: 95vh;
+			border-radius: 1rem 1rem 0 0;
+		}
+
+		.modal-actions {
+			flex-direction: column-reverse;
+		}
+
+		.modal-actions button {
+			width: 100%;
+		}
 	}
 </style>

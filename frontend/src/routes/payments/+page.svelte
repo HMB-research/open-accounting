@@ -150,11 +150,13 @@
 </svelte:head>
 
 <div class="container">
-	<div class="header">
+	<div class="page-header">
 		<h1>Payments</h1>
-		<button class="btn btn-primary" onclick={() => (showCreatePayment = true)}>
-			+ New Payment
-		</button>
+		<div class="page-actions">
+			<button class="btn btn-primary" onclick={() => (showCreatePayment = true)}>
+				+ New Payment
+			</button>
+		</div>
 	</div>
 
 	<div class="filters card">
@@ -179,41 +181,43 @@
 		</div>
 	{:else}
 		<div class="card">
-			<table class="table">
-				<thead>
-					<tr>
-						<th>Number</th>
-						<th>Type</th>
-						<th>Contact</th>
-						<th>Date</th>
-						<th>Method</th>
-						<th>Amount</th>
-						<th>Unallocated</th>
-						<th>Reference</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each payments as payment}
-						{@const unallocated = getUnallocatedAmount(payment)}
+			<div class="table-container">
+				<table class="table table-mobile-cards">
+					<thead>
 						<tr>
-							<td class="number">{payment.payment_number}</td>
-							<td>
-								<span class="badge {typeBadgeClass[payment.payment_type]}">
-									{typeLabels[payment.payment_type]}
-								</span>
-							</td>
-							<td>{getContactName(payment.contact_id)}</td>
-							<td>{formatDate(payment.payment_date)}</td>
-							<td>{methodLabels[payment.payment_method || 'OTHER'] || payment.payment_method}</td>
-							<td class="amount">{formatCurrency(payment.amount)}</td>
-							<td class="amount" class:unallocated-warning={unallocated.greaterThan(0)}>
-								{formatCurrency(unallocated)}
-							</td>
-							<td class="reference">{payment.reference || '-'}</td>
+							<th>Number</th>
+							<th>Type</th>
+							<th class="hide-mobile">Contact</th>
+							<th>Date</th>
+							<th class="hide-mobile">Method</th>
+							<th>Amount</th>
+							<th class="hide-mobile">Unallocated</th>
+							<th class="hide-mobile">Reference</th>
 						</tr>
-					{/each}
-				</tbody>
-			</table>
+					</thead>
+					<tbody>
+						{#each payments as payment}
+							{@const unallocated = getUnallocatedAmount(payment)}
+							<tr>
+								<td class="number" data-label="Number">{payment.payment_number}</td>
+								<td data-label="Type">
+									<span class="badge {typeBadgeClass[payment.payment_type]}">
+										{typeLabels[payment.payment_type]}
+									</span>
+								</td>
+								<td class="hide-mobile" data-label="Contact">{getContactName(payment.contact_id)}</td>
+								<td data-label="Date">{formatDate(payment.payment_date)}</td>
+								<td class="hide-mobile" data-label="Method">{methodLabels[payment.payment_method || 'OTHER'] || payment.payment_method}</td>
+								<td class="amount" data-label="Amount">{formatCurrency(payment.amount)}</td>
+								<td class="amount hide-mobile" class:unallocated-warning={unallocated.greaterThan(0)} data-label="Unallocated">
+									{formatCurrency(unallocated)}
+								</td>
+								<td class="reference hide-mobile" data-label="Reference">{payment.reference || '-'}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
 		</div>
 	{/if}
 </div>
