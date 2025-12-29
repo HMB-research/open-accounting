@@ -193,11 +193,13 @@
 </svelte:head>
 
 <div class="container">
-	<div class="header">
+	<div class="page-header">
 		<h1>Invoices</h1>
-		<button class="btn btn-primary" onclick={() => (showCreateInvoice = true)}>
-			+ New Invoice
-		</button>
+		<div class="page-actions">
+			<button class="btn btn-primary" onclick={() => (showCreateInvoice = true)}>
+				+ New Invoice
+			</button>
+		</div>
 	</div>
 
 	<div class="filters card">
@@ -231,51 +233,53 @@
 		</div>
 	{:else}
 		<div class="card">
-			<table class="table">
-				<thead>
-					<tr>
-						<th>Number</th>
-						<th>Type</th>
-						<th>Contact</th>
-						<th>Issue Date</th>
-						<th>Due Date</th>
-						<th>Total</th>
-						<th>Status</th>
-						<th>Actions</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each invoices as invoice}
+			<div class="table-container">
+				<table class="table table-mobile-cards">
+					<thead>
 						<tr>
-							<td class="number">{invoice.invoice_number}</td>
-							<td>{typeLabels[invoice.invoice_type]}</td>
-							<td>{invoice.contact?.name || '-'}</td>
-							<td>{formatDate(invoice.issue_date)}</td>
-							<td>{formatDate(invoice.due_date)}</td>
-							<td class="amount">{formatCurrency(invoice.total)}</td>
-							<td>
-								<span class="badge {statusClass[invoice.status]}">
-									{statusLabels[invoice.status]}
-								</span>
-							</td>
-							<td class="actions">
-								<button
-									class="btn btn-small btn-secondary"
-									onclick={() => downloadPDF(invoice.id, invoice.invoice_number)}
-									title="Download PDF"
-								>
-									PDF
-								</button>
-								{#if invoice.status === 'DRAFT'}
-									<button class="btn btn-small" onclick={() => sendInvoice(invoice.id)}>
-										Send
-									</button>
-								{/if}
-							</td>
+							<th>Number</th>
+							<th class="hide-mobile">Type</th>
+							<th>Contact</th>
+							<th class="hide-mobile">Issue Date</th>
+							<th>Due Date</th>
+							<th>Total</th>
+							<th>Status</th>
+							<th>Actions</th>
 						</tr>
-					{/each}
-				</tbody>
-			</table>
+					</thead>
+					<tbody>
+						{#each invoices as invoice}
+							<tr>
+								<td class="number" data-label="Number">{invoice.invoice_number}</td>
+								<td class="hide-mobile" data-label="Type">{typeLabels[invoice.invoice_type]}</td>
+								<td data-label="Contact">{invoice.contact?.name || '-'}</td>
+								<td class="hide-mobile" data-label="Issue Date">{formatDate(invoice.issue_date)}</td>
+								<td data-label="Due Date">{formatDate(invoice.due_date)}</td>
+								<td class="amount" data-label="Total">{formatCurrency(invoice.total)}</td>
+								<td data-label="Status">
+									<span class="badge {statusClass[invoice.status]}">
+										{statusLabels[invoice.status]}
+									</span>
+								</td>
+								<td class="actions actions-cell">
+									<button
+										class="btn btn-small btn-secondary"
+										onclick={() => downloadPDF(invoice.id, invoice.invoice_number)}
+										title="Download PDF"
+									>
+										PDF
+									</button>
+									{#if invoice.status === 'DRAFT'}
+										<button class="btn btn-small" onclick={() => sendInvoice(invoice.id)}>
+											Send
+										</button>
+									{/if}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
 		</div>
 	{/if}
 </div>
@@ -440,13 +444,6 @@
 {/if}
 
 <style>
-	.header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 1.5rem;
-	}
-
 	h1 {
 		font-size: 1.75rem;
 	}
@@ -459,6 +456,12 @@
 	.filter-row {
 		display: flex;
 		gap: 1rem;
+		flex-wrap: wrap;
+	}
+
+	.filter-row select {
+		flex: 1;
+		min-width: 150px;
 	}
 
 	.number {
@@ -539,12 +542,12 @@
 		align-items: center;
 		justify-content: center;
 		z-index: 100;
+		padding: 1rem;
 	}
 
 	.modal {
 		width: 100%;
 		max-width: 600px;
-		margin: 1rem;
 		max-height: 90vh;
 		overflow-y: auto;
 	}
@@ -560,10 +563,12 @@
 	.form-row {
 		display: flex;
 		gap: 1rem;
+		flex-wrap: wrap;
 	}
 
 	.form-row .form-group {
 		flex: 1;
+		min-width: 150px;
 	}
 
 	.lines-section {
@@ -601,5 +606,43 @@
 		justify-content: flex-end;
 		gap: 0.5rem;
 		margin-top: 1.5rem;
+	}
+
+	/* Mobile responsive styles */
+	@media (max-width: 768px) {
+		h1 {
+			font-size: 1.5rem;
+		}
+
+		.modal-backdrop {
+			padding: 0;
+			align-items: flex-end;
+		}
+
+		.modal {
+			max-width: 100%;
+			max-height: 95vh;
+			border-radius: 1rem 1rem 0 0;
+		}
+
+		.lines-section {
+			overflow-x: auto;
+		}
+
+		.lines-table {
+			min-width: 600px;
+		}
+
+		.input-small {
+			width: 70px;
+		}
+
+		.modal-actions {
+			flex-direction: column-reverse;
+		}
+
+		.modal-actions button {
+			width: 100%;
+		}
 	}
 </style>

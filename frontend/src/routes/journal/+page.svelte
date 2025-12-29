@@ -160,12 +160,14 @@
 </svelte:head>
 
 <div class="container">
-	<div class="header">
+	<div class="page-header">
 		<h1>Journal Entries</h1>
 		{#if tenantId}
-			<button class="btn btn-primary" onclick={() => (showCreate = true)}>
-				+ New Entry
-			</button>
+			<div class="page-actions">
+				<button class="btn btn-primary" onclick={() => (showCreate = true)}>
+					+ New Entry
+				</button>
+			</div>
 		{/if}
 	</div>
 
@@ -216,26 +218,28 @@
 						<p class="entry-reference">Ref: {entry.reference}</p>
 					{/if}
 
-					<table class="lines-table">
-						<thead>
-							<tr>
-								<th>Account</th>
-								<th>Description</th>
-								<th class="amount">Debit</th>
-								<th class="amount">Credit</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each entry.lines as line}
+					<div class="table-container">
+						<table class="lines-table">
+							<thead>
 								<tr>
-									<td>{getAccountName(line.account_id)}</td>
-									<td>{line.description || '-'}</td>
-									<td class="amount">{formatAmount(line.debit_amount)}</td>
-									<td class="amount">{formatAmount(line.credit_amount)}</td>
+									<th>Account</th>
+									<th class="hide-mobile">Description</th>
+									<th class="amount">Debit</th>
+									<th class="amount">Credit</th>
 								</tr>
-							{/each}
-						</tbody>
-					</table>
+							</thead>
+							<tbody>
+								{#each entry.lines as line}
+									<tr>
+										<td>{getAccountName(line.account_id)}</td>
+										<td class="hide-mobile">{line.description || '-'}</td>
+										<td class="amount">{formatAmount(line.debit_amount)}</td>
+										<td class="amount">{formatAmount(line.credit_amount)}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
 
 					{#if entry.void_reason}
 						<p class="void-reason">Void reason: {entry.void_reason}</p>

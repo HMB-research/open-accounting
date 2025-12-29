@@ -87,11 +87,13 @@
 </svelte:head>
 
 <div class="container">
-	<div class="header">
+	<div class="page-header">
 		<h1>Chart of Accounts</h1>
-		<button class="btn btn-primary" onclick={() => (showCreateAccount = true)}>
-			+ New Account
-		</button>
+		<div class="page-actions">
+			<button class="btn btn-primary" onclick={() => (showCreateAccount = true)}>
+				+ New Account
+			</button>
+		</div>
 	</div>
 
 	{#if error}
@@ -107,32 +109,34 @@
 			{#if typeAccounts.length > 0}
 				<section class="account-section card">
 					<h2>{label}</h2>
-					<table class="table">
-						<thead>
-							<tr>
-								<th>Code</th>
-								<th>Name</th>
-								<th>Description</th>
-								<th>Status</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each typeAccounts as account}
-								<tr class:inactive={!account.is_active}>
-									<td class="code">{account.code}</td>
-									<td>{account.name}</td>
-									<td class="description">{account.description || '-'}</td>
-									<td>
-										{#if account.is_system}
-											<span class="badge badge-system">System</span>
-										{:else if !account.is_active}
-											<span class="badge badge-inactive">Inactive</span>
-										{/if}
-									</td>
+					<div class="table-container">
+						<table class="table table-mobile-cards">
+							<thead>
+								<tr>
+									<th>Code</th>
+									<th>Name</th>
+									<th class="hide-mobile">Description</th>
+									<th>Status</th>
 								</tr>
-							{/each}
-						</tbody>
-					</table>
+							</thead>
+							<tbody>
+								{#each typeAccounts as account}
+									<tr class:inactive={!account.is_active}>
+										<td class="code" data-label="Code">{account.code}</td>
+										<td data-label="Name">{account.name}</td>
+										<td class="description hide-mobile" data-label="Description">{account.description || '-'}</td>
+										<td data-label="Status">
+											{#if account.is_system}
+												<span class="badge badge-system">System</span>
+											{:else if !account.is_active}
+												<span class="badge badge-inactive">Inactive</span>
+											{/if}
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
 				</section>
 			{/if}
 		{/each}
