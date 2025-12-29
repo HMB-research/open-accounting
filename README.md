@@ -263,6 +263,32 @@ git push origin feature/your-feature
 # Open a Pull Request
 ```
 
+### Contributors
+
+<a href="https://github.com/HMB-research/open-accounting/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=HMB-research/open-accounting" />
+</a>
+
+---
+
+## 🏆 Supporters
+
+A huge thank you to our supporters who help make this project possible!
+
+### Sponsors
+
+<!-- sponsors -->
+*Become the first sponsor! [Support us on GitHub Sponsors](https://github.com/sponsors/HMB-research) or [Ko-fi](https://ko-fi.com/tsopic)*
+<!-- sponsors -->
+
+### Stargazers
+
+[![Stargazers repo roster for @HMB-research/open-accounting](https://reporoster.com/stars/HMB-research/open-accounting)](https://github.com/HMB-research/open-accounting/stargazers)
+
+### Forkers
+
+[![Forkers repo roster for @HMB-research/open-accounting](https://reporoster.com/forks/HMB-research/open-accounting)](https://github.com/HMB-research/open-accounting/network/members)
+
 ---
 
 ## 📄 License
