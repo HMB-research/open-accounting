@@ -6,7 +6,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"github.com/openaccounting/openaccounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/contacts"
 )
 
 // InvoiceType represents the type of invoice
