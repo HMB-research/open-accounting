@@ -153,8 +153,32 @@ func TestRoleConstants(t *testing.T) {
 	// Verify role constants are defined correctly
 	assert.Equal(t, "owner", RoleOwner)
 	assert.Equal(t, "admin", RoleAdmin)
-	assert.Equal(t, "user", RoleUser)
+	assert.Equal(t, "accountant", RoleAccountant)
 	assert.Equal(t, "viewer", RoleViewer)
+}
+
+func TestGetRolePermissions(t *testing.T) {
+	tests := []struct {
+		role              string
+		canManageUsers    bool
+		canManageSettings bool
+		canViewReports    bool
+	}{
+		{RoleOwner, true, true, true},
+		{RoleAdmin, true, true, true},
+		{RoleAccountant, false, false, true},
+		{RoleViewer, false, false, true},
+		{"unknown", false, false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.role, func(t *testing.T) {
+			perms := GetRolePermissions(tt.role)
+			assert.Equal(t, tt.canManageUsers, perms.CanManageUsers)
+			assert.Equal(t, tt.canManageSettings, perms.CanManageSettings)
+			assert.Equal(t, tt.canViewReports, perms.CanViewReports)
+		})
+	}
 }
 
 func TestTenant_JSONSerialization(t *testing.T) {

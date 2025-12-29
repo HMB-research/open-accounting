@@ -87,11 +87,76 @@ type TenantUser struct {
 
 // Role constants
 const (
-	RoleOwner  = "owner"
-	RoleAdmin  = "admin"
-	RoleUser   = "user"
-	RoleViewer = "viewer"
+	RoleOwner      = "owner"      // Full access - can manage everything including organization
+	RoleAdmin      = "admin"      // Administrative access - can manage users and settings
+	RoleAccountant = "accountant" // Accounting access - can manage all accounting functions
+	RoleViewer     = "viewer"     // Read-only access - can only view reports
 )
+
+// RolePermissions defines what each role can do
+type RolePermissions struct {
+	CanManageUsers    bool
+	CanManageSettings bool
+	CanManageAccounts bool
+	CanCreateEntries  bool
+	CanApproveEntries bool
+	CanViewReports    bool
+	CanManageInvoices bool
+	CanManagePayments bool
+	CanManageContacts bool
+	CanManageBanking  bool
+	CanExportData     bool
+}
+
+// GetRolePermissions returns permissions for a given role
+func GetRolePermissions(role string) RolePermissions {
+	switch role {
+	case RoleOwner, RoleAdmin:
+		return RolePermissions{
+			CanManageUsers:    true,
+			CanManageSettings: true,
+			CanManageAccounts: true,
+			CanCreateEntries:  true,
+			CanApproveEntries: true,
+			CanViewReports:    true,
+			CanManageInvoices: true,
+			CanManagePayments: true,
+			CanManageContacts: true,
+			CanManageBanking:  true,
+			CanExportData:     true,
+		}
+	case RoleAccountant:
+		return RolePermissions{
+			CanManageUsers:    false,
+			CanManageSettings: false,
+			CanManageAccounts: true,
+			CanCreateEntries:  true,
+			CanApproveEntries: true,
+			CanViewReports:    true,
+			CanManageInvoices: true,
+			CanManagePayments: true,
+			CanManageContacts: true,
+			CanManageBanking:  true,
+			CanExportData:     true,
+		}
+	case RoleViewer:
+		return RolePermissions{
+			CanManageUsers:    false,
+			CanManageSettings: false,
+			CanManageAccounts: false,
+			CanCreateEntries:  false,
+			CanApproveEntries: false,
+			CanViewReports:    true,
+			CanManageInvoices: false,
+			CanManagePayments: false,
+			CanManageContacts: false,
+			CanManageBanking:  false,
+			CanExportData:     false,
+		}
+	default:
+		return RolePermissions{} // No permissions for unknown roles
+	}
+}
 
 // CreateTenantRequest is the request to create a new tenant
 type CreateTenantRequest struct {
