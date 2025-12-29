@@ -9,11 +9,13 @@
 	} from '$lib/api';
 	import { Chart, registerables } from 'chart.js';
 	import Decimal from 'decimal.js';
+	import OnboardingWizard from '$lib/components/OnboardingWizard.svelte';
 
 	Chart.register(...registerables);
 
 	let tenants = $state<TenantMembership[]>([]);
 	let selectedTenant = $state<Tenant | null>(null);
+	let showOnboarding = $state(false);
 	let summary = $state<DashboardSummary | null>(null);
 	let chartData = $state<RevenueExpenseChart | null>(null);
 	let isLoading = $state(true);
@@ -30,6 +32,10 @@
 			tenants = await api.getMyTenants();
 			if (tenants.length > 0) {
 				selectedTenant = tenants.find((t) => t.is_default)?.tenant || tenants[0].tenant;
+				// Show onboarding wizard if tenant hasn't completed onboarding
+				if (selectedTenant && !selectedTenant.onboarding_completed) {
+					showOnboarding = true;
+				}
 			}
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load tenants';
@@ -37,6 +43,24 @@
 			isLoading = false;
 		}
 	});
+
+	async function handleOnboardingComplete() {
+		showOnboarding = false;
+		// Reload the tenant to get updated data
+		if (selectedTenant) {
+			try {
+				const updated = await api.getTenant(selectedTenant.id);
+				selectedTenant = updated;
+				// Update in tenants array too
+				const idx = tenants.findIndex((t) => t.tenant.id === updated.id);
+				if (idx >= 0) {
+					tenants[idx].tenant = updated;
+				}
+			} catch {
+				// Ignore error, we'll just proceed with existing data
+			}
+		}
+	}
 
 	$effect(() => {
 		if (selectedTenant) {
@@ -325,6 +349,10 @@
 			</form>
 		</div>
 	</div>
+{/if}
+
+{#if showOnboarding && selectedTenant}
+	<OnboardingWizard tenant={selectedTenant} oncomplete={handleOnboardingComplete} />
 {/if}
 
 <style>

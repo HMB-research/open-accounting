@@ -460,6 +460,41 @@ func (h *Handlers) UpdateTenant(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, t)
 }
 
+// CompleteOnboarding marks the tenant's onboarding as completed
+// @Summary Complete onboarding
+// @Description Mark the tenant's onboarding wizard as completed
+// @Tags Tenants
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Success 200 {object} object{success=bool}
+// @Failure 403 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/complete-onboarding [post]
+func (h *Handlers) CompleteOnboarding(w http.ResponseWriter, r *http.Request) {
+	claims, ok := auth.GetClaims(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Not authenticated")
+		return
+	}
+
+	tenantID := chi.URLParam(r, "tenantID")
+
+	// Verify user has access to this tenant
+	_, err := h.tenantService.GetUserRole(r.Context(), tenantID, claims.UserID)
+	if err != nil {
+		respondError(w, http.StatusForbidden, "Access denied")
+		return
+	}
+
+	if err := h.tenantService.CompleteOnboarding(r.Context(), tenantID); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]bool{"success": true})
+}
+
 // ListAccounts returns all accounts for a tenant
 // @Summary List accounts
 // @Description Get all accounts (chart of accounts) for a tenant

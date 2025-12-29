@@ -250,6 +250,9 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 			r.Route("/tenants/{tenantID}", func(r chi.Router) {
 				r.Use(h.TenantContext)
 
+				// Onboarding
+				r.Post("/complete-onboarding", h.CompleteOnboarding)
+
 				// Accounts
 				r.Get("/accounts", h.ListAccounts)
 				r.Post("/accounts", h.CreateAccount)

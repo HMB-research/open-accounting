@@ -109,12 +109,12 @@ func (s *Service) GetTenant(ctx context.Context, tenantID string) (*Tenant, erro
 	var t Tenant
 	var settingsJSON []byte
 	err := s.db.QueryRow(ctx, `
-		SELECT id, name, slug, schema_name, settings, is_active, created_at, updated_at
+		SELECT id, name, slug, schema_name, settings, is_active, onboarding_completed, created_at, updated_at
 		FROM tenants
 		WHERE id = $1
 	`, tenantID).Scan(
 		&t.ID, &t.Name, &t.Slug, &t.SchemaName, &settingsJSON,
-		&t.IsActive, &t.CreatedAt, &t.UpdatedAt,
+		&t.IsActive, &t.OnboardingCompleted, &t.CreatedAt, &t.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("tenant not found: %s", tenantID)
@@ -135,12 +135,12 @@ func (s *Service) GetTenantBySlug(ctx context.Context, slug string) (*Tenant, er
 	var t Tenant
 	var settingsJSON []byte
 	err := s.db.QueryRow(ctx, `
-		SELECT id, name, slug, schema_name, settings, is_active, created_at, updated_at
+		SELECT id, name, slug, schema_name, settings, is_active, onboarding_completed, created_at, updated_at
 		FROM tenants
 		WHERE slug = $1
 	`, slug).Scan(
 		&t.ID, &t.Name, &t.Slug, &t.SchemaName, &settingsJSON,
-		&t.IsActive, &t.CreatedAt, &t.UpdatedAt,
+		&t.IsActive, &t.OnboardingCompleted, &t.CreatedAt, &t.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("tenant not found: %s", slug)
@@ -241,7 +241,7 @@ func (s *Service) UpdateTenant(ctx context.Context, tenantID string, req *Update
 // ListUserTenants retrieves all tenants a user belongs to
 func (s *Service) ListUserTenants(ctx context.Context, userID string) ([]TenantMembership, error) {
 	rows, err := s.db.Query(ctx, `
-		SELECT t.id, t.name, t.slug, t.schema_name, t.settings, t.is_active, t.created_at, t.updated_at,
+		SELECT t.id, t.name, t.slug, t.schema_name, t.settings, t.is_active, t.onboarding_completed, t.created_at, t.updated_at,
 		       tu.role, tu.is_default
 		FROM tenants t
 		JOIN tenant_users tu ON tu.tenant_id = t.id
@@ -259,7 +259,7 @@ func (s *Service) ListUserTenants(ctx context.Context, userID string) ([]TenantM
 		var settingsJSON []byte
 		if err := rows.Scan(
 			&m.Tenant.ID, &m.Tenant.Name, &m.Tenant.Slug, &m.Tenant.SchemaName, &settingsJSON,
-			&m.Tenant.IsActive, &m.Tenant.CreatedAt, &m.Tenant.UpdatedAt,
+			&m.Tenant.IsActive, &m.Tenant.OnboardingCompleted, &m.Tenant.CreatedAt, &m.Tenant.UpdatedAt,
 			&m.Role, &m.IsDefault,
 		); err != nil {
 			return nil, fmt.Errorf("scan tenant: %w", err)
@@ -273,6 +273,18 @@ func (s *Service) ListUserTenants(ctx context.Context, userID string) ([]TenantM
 	}
 
 	return memberships, nil
+}
+
+// CompleteOnboarding marks the tenant's onboarding as completed
+func (s *Service) CompleteOnboarding(ctx context.Context, tenantID string) error {
+	_, err := s.db.Exec(ctx, `
+		UPDATE tenants SET onboarding_completed = true, updated_at = NOW()
+		WHERE id = $1
+	`, tenantID)
+	if err != nil {
+		return fmt.Errorf("complete onboarding: %w", err)
+	}
+	return nil
 }
 
 // AddUserToTenant adds a user to a tenant with a specified role

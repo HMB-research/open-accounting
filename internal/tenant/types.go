@@ -7,14 +7,15 @@ import (
 
 // Tenant represents a company/organization using the system
 type Tenant struct {
-	ID         string         `json:"id"`
-	Name       string         `json:"name"`
-	Slug       string         `json:"slug"`
-	SchemaName string         `json:"schema_name"`
-	Settings   TenantSettings `json:"settings"`
-	IsActive   bool           `json:"is_active"`
-	CreatedAt  time.Time      `json:"created_at"`
-	UpdatedAt  time.Time      `json:"updated_at"`
+	ID                  string         `json:"id"`
+	Name                string         `json:"name"`
+	Slug                string         `json:"slug"`
+	SchemaName          string         `json:"schema_name"`
+	Settings            TenantSettings `json:"settings"`
+	IsActive            bool           `json:"is_active"`
+	OnboardingCompleted bool           `json:"onboarding_completed"`
+	CreatedAt           time.Time      `json:"created_at"`
+	UpdatedAt           time.Time      `json:"updated_at"`
 }
 
 // TenantSettings contains configurable settings for a tenant
