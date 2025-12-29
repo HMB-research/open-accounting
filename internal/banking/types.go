@@ -41,23 +41,23 @@ type BankAccount struct {
 
 // BankTransaction represents an imported bank transaction
 type BankTransaction struct {
-	ID                 string            `json:"id"`
-	TenantID           string            `json:"tenant_id"`
-	BankAccountID      string            `json:"bank_account_id"`
-	TransactionDate    time.Time         `json:"transaction_date"`
-	ValueDate          *time.Time        `json:"value_date,omitempty"`
-	Amount             decimal.Decimal   `json:"amount"`
-	Currency           string            `json:"currency"`
-	Description        string            `json:"description,omitempty"`
-	Reference          string            `json:"reference,omitempty"`
-	CounterpartyName   string            `json:"counterparty_name,omitempty"`
-	CounterpartyAccount string           `json:"counterparty_account,omitempty"`
-	Status             TransactionStatus `json:"status"`
-	MatchedPaymentID   *string           `json:"matched_payment_id,omitempty"`
-	JournalEntryID     *string           `json:"journal_entry_id,omitempty"`
-	ReconciliationID   *string           `json:"reconciliation_id,omitempty"`
-	ImportedAt         time.Time         `json:"imported_at"`
-	ExternalID         string            `json:"external_id,omitempty"`
+	ID                  string            `json:"id"`
+	TenantID            string            `json:"tenant_id"`
+	BankAccountID       string            `json:"bank_account_id"`
+	TransactionDate     time.Time         `json:"transaction_date"`
+	ValueDate           *time.Time        `json:"value_date,omitempty"`
+	Amount              decimal.Decimal   `json:"amount"`
+	Currency            string            `json:"currency"`
+	Description         string            `json:"description,omitempty"`
+	Reference           string            `json:"reference,omitempty"`
+	CounterpartyName    string            `json:"counterparty_name,omitempty"`
+	CounterpartyAccount string            `json:"counterparty_account,omitempty"`
+	Status              TransactionStatus `json:"status"`
+	MatchedPaymentID    *string           `json:"matched_payment_id,omitempty"`
+	JournalEntryID      *string           `json:"journal_entry_id,omitempty"`
+	ReconciliationID    *string           `json:"reconciliation_id,omitempty"`
+	ImportedAt          time.Time         `json:"imported_at"`
+	ExternalID          string            `json:"external_id,omitempty"`
 }
 
 // BankReconciliation represents a reconciliation session
@@ -88,14 +88,14 @@ type BankStatementImport struct {
 
 // MatchSuggestion represents a suggested match between bank transaction and payment
 type MatchSuggestion struct {
-	PaymentID   string          `json:"payment_id"`
-	PaymentNumber string        `json:"payment_number"`
-	PaymentDate time.Time       `json:"payment_date"`
-	Amount      decimal.Decimal `json:"amount"`
-	ContactName string          `json:"contact_name,omitempty"`
-	Reference   string          `json:"reference,omitempty"`
-	Confidence  float64         `json:"confidence"` // 0.0 - 1.0
-	MatchReason string          `json:"match_reason"`
+	PaymentID     string          `json:"payment_id"`
+	PaymentNumber string          `json:"payment_number"`
+	PaymentDate   time.Time       `json:"payment_date"`
+	Amount        decimal.Decimal `json:"amount"`
+	ContactName   string          `json:"contact_name,omitempty"`
+	Reference     string          `json:"reference,omitempty"`
+	Confidence    float64         `json:"confidence"` // 0.0 - 1.0
+	MatchReason   string          `json:"match_reason"`
 }
 
 // CreateBankAccountRequest is the request to create a bank account
@@ -121,21 +121,21 @@ type UpdateBankAccountRequest struct {
 
 // ImportCSVRequest is the request to import transactions from CSV
 type ImportCSVRequest struct {
-	FileName     string              `json:"-"`
-	Transactions []CSVTransactionRow `json:"transactions"`
-	SkipDuplicates bool              `json:"skip_duplicates"`
+	FileName       string              `json:"-"`
+	Transactions   []CSVTransactionRow `json:"transactions"`
+	SkipDuplicates bool                `json:"skip_duplicates"`
 }
 
 // CSVTransactionRow represents a row in the CSV import
 type CSVTransactionRow struct {
-	Date             string `json:"date"`
-	ValueDate        string `json:"value_date,omitempty"`
-	Amount           string `json:"amount"`
-	Description      string `json:"description"`
-	Reference        string `json:"reference,omitempty"`
-	CounterpartyName string `json:"counterparty_name,omitempty"`
+	Date                string `json:"date"`
+	ValueDate           string `json:"value_date,omitempty"`
+	Amount              string `json:"amount"`
+	Description         string `json:"description"`
+	Reference           string `json:"reference,omitempty"`
+	CounterpartyName    string `json:"counterparty_name,omitempty"`
 	CounterpartyAccount string `json:"counterparty_account,omitempty"`
-	ExternalID       string `json:"external_id,omitempty"`
+	ExternalID          string `json:"external_id,omitempty"`
 }
 
 // ImportResult is the result of a CSV import

@@ -331,7 +331,9 @@ func (s *Service) SendEmail(ctx context.Context, schemaName string, tenantID str
 
 	// Add attachments
 	for _, att := range attachments {
-		m.AttachReader(att.Filename, bytes.NewReader(att.Content))
+		if err := m.AttachReader(att.Filename, bytes.NewReader(att.Content)); err != nil {
+			return s.logEmailError(ctx, schemaName, logID, fmt.Errorf("attach file %s: %w", att.Filename, err))
+		}
 	}
 
 	// Send email
@@ -381,6 +383,7 @@ func (s *Service) sendMail(config *SMTPConfig, m *mail.Msg) error {
 		opts = append(opts, mail.WithTLSPortPolicy(mail.TLSMandatory))
 		opts = append(opts, mail.WithTLSConfig(&tls.Config{
 			ServerName: config.Host,
+			MinVersion: tls.VersionTLS12,
 		}))
 	}
 
@@ -492,12 +495,12 @@ type InvoiceEmailData struct {
 
 // PaymentEmailData holds data for payment-related emails
 type PaymentEmailData struct {
-	PaymentID   string
-	ContactName string
+	PaymentID    string
+	ContactName  string
 	ContactEmail string
-	Amount      string
-	Currency    string
-	PaymentDate time.Time
-	Reference   string
-	CompanyName string
+	Amount       string
+	Currency     string
+	PaymentDate  time.Time
+	Reference    string
+	CompanyName  string
 }

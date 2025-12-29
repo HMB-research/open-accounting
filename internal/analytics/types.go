@@ -9,11 +9,11 @@ import (
 // DashboardSummary contains key metrics for the dashboard
 type DashboardSummary struct {
 	// Revenue and expenses
-	TotalRevenue       decimal.Decimal `json:"total_revenue"`
-	TotalExpenses      decimal.Decimal `json:"total_expenses"`
-	NetIncome          decimal.Decimal `json:"net_income"`
-	RevenueChange      decimal.Decimal `json:"revenue_change"`      // % change from previous period
-	ExpensesChange     decimal.Decimal `json:"expenses_change"`     // % change from previous period
+	TotalRevenue   decimal.Decimal `json:"total_revenue"`
+	TotalExpenses  decimal.Decimal `json:"total_expenses"`
+	NetIncome      decimal.Decimal `json:"net_income"`
+	RevenueChange  decimal.Decimal `json:"revenue_change"`  // % change from previous period
+	ExpensesChange decimal.Decimal `json:"expenses_change"` // % change from previous period
 
 	// Receivables and payables
 	TotalReceivables   decimal.Decimal `json:"total_receivables"`
@@ -22,9 +22,9 @@ type DashboardSummary struct {
 	OverduePayables    decimal.Decimal `json:"overdue_payables"`
 
 	// Invoice counts
-	DraftInvoices      int `json:"draft_invoices"`
-	PendingInvoices    int `json:"pending_invoices"`
-	OverdueInvoices    int `json:"overdue_invoices"`
+	DraftInvoices   int `json:"draft_invoices"`
+	PendingInvoices int `json:"pending_invoices"`
+	OverdueInvoices int `json:"overdue_invoices"`
 
 	// Period
 	PeriodStart time.Time `json:"period_start"`

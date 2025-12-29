@@ -45,17 +45,17 @@ type RecurringInvoice struct {
 
 // RecurringInvoiceLine represents a line item on a recurring invoice
 type RecurringInvoiceLine struct {
-	ID                  string          `json:"id"`
-	RecurringInvoiceID  string          `json:"recurring_invoice_id"`
-	LineNumber          int             `json:"line_number"`
-	Description         string          `json:"description"`
-	Quantity            decimal.Decimal `json:"quantity"`
-	Unit                string          `json:"unit,omitempty"`
-	UnitPrice           decimal.Decimal `json:"unit_price"`
-	DiscountPercent     decimal.Decimal `json:"discount_percent"`
-	VATRate             decimal.Decimal `json:"vat_rate"`
-	AccountID           *string         `json:"account_id,omitempty"`
-	ProductID           *string         `json:"product_id,omitempty"`
+	ID                 string          `json:"id"`
+	RecurringInvoiceID string          `json:"recurring_invoice_id"`
+	LineNumber         int             `json:"line_number"`
+	Description        string          `json:"description"`
+	Quantity           decimal.Decimal `json:"quantity"`
+	Unit               string          `json:"unit,omitempty"`
+	UnitPrice          decimal.Decimal `json:"unit_price"`
+	DiscountPercent    decimal.Decimal `json:"discount_percent"`
+	VATRate            decimal.Decimal `json:"vat_rate"`
+	AccountID          *string         `json:"account_id,omitempty"`
+	ProductID          *string         `json:"product_id,omitempty"`
 }
 
 // Validate validates the recurring invoice
@@ -134,18 +134,18 @@ func (r *RecurringInvoice) IsDue() bool {
 
 // CreateRecurringInvoiceRequest is the request to create a recurring invoice
 type CreateRecurringInvoiceRequest struct {
-	Name             string                            `json:"name"`
-	ContactID        string                            `json:"contact_id"`
-	InvoiceType      string                            `json:"invoice_type"`
-	Currency         string                            `json:"currency,omitempty"`
-	Frequency        Frequency                         `json:"frequency"`
-	StartDate        time.Time                         `json:"start_date"`
-	EndDate          *time.Time                        `json:"end_date,omitempty"`
-	PaymentTermsDays int                               `json:"payment_terms_days"`
-	Reference        string                            `json:"reference,omitempty"`
-	Notes            string                            `json:"notes,omitempty"`
+	Name             string                              `json:"name"`
+	ContactID        string                              `json:"contact_id"`
+	InvoiceType      string                              `json:"invoice_type"`
+	Currency         string                              `json:"currency,omitempty"`
+	Frequency        Frequency                           `json:"frequency"`
+	StartDate        time.Time                           `json:"start_date"`
+	EndDate          *time.Time                          `json:"end_date,omitempty"`
+	PaymentTermsDays int                                 `json:"payment_terms_days"`
+	Reference        string                              `json:"reference,omitempty"`
+	Notes            string                              `json:"notes,omitempty"`
 	Lines            []CreateRecurringInvoiceLineRequest `json:"lines"`
-	UserID           string                            `json:"-"`
+	UserID           string                              `json:"-"`
 }
 
 // CreateRecurringInvoiceLineRequest is a line in the create request
@@ -162,13 +162,13 @@ type CreateRecurringInvoiceLineRequest struct {
 
 // UpdateRecurringInvoiceRequest is the request to update a recurring invoice
 type UpdateRecurringInvoiceRequest struct {
-	Name             *string                           `json:"name,omitempty"`
-	ContactID        *string                           `json:"contact_id,omitempty"`
-	Frequency        *Frequency                        `json:"frequency,omitempty"`
-	EndDate          *time.Time                        `json:"end_date,omitempty"`
-	PaymentTermsDays *int                              `json:"payment_terms_days,omitempty"`
-	Reference        *string                           `json:"reference,omitempty"`
-	Notes            *string                           `json:"notes,omitempty"`
+	Name             *string                             `json:"name,omitempty"`
+	ContactID        *string                             `json:"contact_id,omitempty"`
+	Frequency        *Frequency                          `json:"frequency,omitempty"`
+	EndDate          *time.Time                          `json:"end_date,omitempty"`
+	PaymentTermsDays *int                                `json:"payment_terms_days,omitempty"`
+	Reference        *string                             `json:"reference,omitempty"`
+	Notes            *string                             `json:"notes,omitempty"`
 	Lines            []CreateRecurringInvoiceLineRequest `json:"lines,omitempty"`
 }
 
@@ -185,7 +185,7 @@ type CreateFromInvoiceRequest struct {
 
 // GenerationResult represents the result of generating invoices
 type GenerationResult struct {
-	RecurringInvoiceID   string `json:"recurring_invoice_id"`
-	GeneratedInvoiceID   string `json:"generated_invoice_id"`
+	RecurringInvoiceID     string `json:"recurring_invoice_id"`
+	GeneratedInvoiceID     string `json:"generated_invoice_id"`
 	GeneratedInvoiceNumber string `json:"generated_invoice_number"`
 }

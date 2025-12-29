@@ -15,8 +15,8 @@ import (
 
 // Service provides recurring invoice operations
 type Service struct {
-	db         *pgxpool.Pool
-	invoicing  *invoicing.Service
+	db        *pgxpool.Pool
+	invoicing *invoicing.Service
 }
 
 // NewService creates a new recurring invoice service
