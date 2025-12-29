@@ -683,6 +683,160 @@ class ApiClient {
 		document.body.removeChild(a);
 		window.URL.revokeObjectURL(url);
 	}
+
+	// Payroll - Employee endpoints
+	async listEmployees(tenantId: string, activeOnly = false) {
+		const query = activeOnly ? '?active_only=true' : '';
+		return this.request<Employee[]>('GET', `/api/v1/tenants/${tenantId}/employees${query}`);
+	}
+
+	async createEmployee(tenantId: string, data: CreateEmployeeRequest) {
+		return this.request<Employee>('POST', `/api/v1/tenants/${tenantId}/employees`, data);
+	}
+
+	async getEmployee(tenantId: string, employeeId: string) {
+		return this.request<Employee>('GET', `/api/v1/tenants/${tenantId}/employees/${employeeId}`);
+	}
+
+	async updateEmployee(tenantId: string, employeeId: string, data: UpdateEmployeeRequest) {
+		return this.request<Employee>(
+			'PUT',
+			`/api/v1/tenants/${tenantId}/employees/${employeeId}`,
+			data
+		);
+	}
+
+	async setBaseSalary(tenantId: string, employeeId: string, amount: string) {
+		return this.request<{ status: string }>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/employees/${employeeId}/salary`,
+			{ amount }
+		);
+	}
+
+	// Payroll - Payroll Run endpoints
+	async listPayrollRuns(tenantId: string, year?: number) {
+		const query = year ? `?year=${year}` : '';
+		return this.request<PayrollRun[]>('GET', `/api/v1/tenants/${tenantId}/payroll-runs${query}`);
+	}
+
+	async createPayrollRun(tenantId: string, data: CreatePayrollRunRequest) {
+		return this.request<PayrollRun>('POST', `/api/v1/tenants/${tenantId}/payroll-runs`, data);
+	}
+
+	async getPayrollRun(tenantId: string, runId: string) {
+		return this.request<PayrollRun>('GET', `/api/v1/tenants/${tenantId}/payroll-runs/${runId}`);
+	}
+
+	async calculatePayroll(tenantId: string, runId: string) {
+		return this.request<PayrollRun>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/payroll-runs/${runId}/calculate`
+		);
+	}
+
+	async approvePayroll(tenantId: string, runId: string) {
+		return this.request<PayrollRun>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/payroll-runs/${runId}/approve`
+		);
+	}
+
+	async getPayslips(tenantId: string, runId: string) {
+		return this.request<Payslip[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/payroll-runs/${runId}/payslips`
+		);
+	}
+
+	async generateTSD(tenantId: string, runId: string) {
+		return this.request<TSDDeclaration>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/payroll-runs/${runId}/tsd`
+		);
+	}
+
+	// Payroll - Tax Preview
+	async calculateTaxPreview(tenantId: string, grossSalary: string, basicExemption?: string, fundedPensionRate?: string) {
+		return this.request<TaxCalculation>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/payroll/tax-preview`,
+			{ gross_salary: grossSalary, basic_exemption: basicExemption, funded_pension_rate: fundedPensionRate }
+		);
+	}
+
+	// Payroll - TSD endpoints
+	async listTSD(tenantId: string, year?: number) {
+		const query = year ? `?year=${year}` : '';
+		return this.request<TSDDeclaration[]>('GET', `/api/v1/tenants/${tenantId}/tsd${query}`);
+	}
+
+	async getTSD(tenantId: string, year: number, month: number) {
+		return this.request<TSDDeclaration>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/tsd/${year}/${month}`
+		);
+	}
+
+	async downloadTSDXml(tenantId: string, year: number, month: number) {
+		const headers: Record<string, string> = {};
+		if (this.accessToken) {
+			headers['Authorization'] = `Bearer ${this.accessToken}`;
+		}
+
+		const response = await fetch(
+			`${API_BASE}/api/v1/tenants/${tenantId}/tsd/${year}/${month}/xml`,
+			{ headers }
+		);
+
+		if (!response.ok) {
+			throw new Error('Failed to download TSD XML');
+		}
+
+		const blob = await response.blob();
+		const url = window.URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `TSD_${year}_${String(month).padStart(2, '0')}.xml`;
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		window.URL.revokeObjectURL(url);
+	}
+
+	async downloadTSDCsv(tenantId: string, year: number, month: number) {
+		const headers: Record<string, string> = {};
+		if (this.accessToken) {
+			headers['Authorization'] = `Bearer ${this.accessToken}`;
+		}
+
+		const response = await fetch(
+			`${API_BASE}/api/v1/tenants/${tenantId}/tsd/${year}/${month}/csv`,
+			{ headers }
+		);
+
+		if (!response.ok) {
+			throw new Error('Failed to download TSD CSV');
+		}
+
+		const blob = await response.blob();
+		const url = window.URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `TSD_${year}_${String(month).padStart(2, '0')}.csv`;
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		window.URL.revokeObjectURL(url);
+	}
+
+	async markTSDSubmitted(tenantId: string, year: number, month: number, emtaReference: string) {
+		return this.request<{ status: string }>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/tsd/${year}/${month}/submit`,
+			{ emta_reference: emtaReference }
+		);
+	}
 }
 
 // Types
@@ -1392,6 +1546,189 @@ export interface KMDDeclaration {
 export interface CreateKMDRequest {
 	year: number;
 	month: number;
+}
+
+// Payroll types
+export type EmploymentType = 'FULL_TIME' | 'PART_TIME' | 'CONTRACT';
+export type PayrollStatus = 'DRAFT' | 'CALCULATED' | 'APPROVED' | 'PAID' | 'DECLARED';
+export type TSDStatus = 'DRAFT' | 'SUBMITTED' | 'ACCEPTED' | 'REJECTED';
+
+export interface Employee {
+	id: string;
+	tenant_id: string;
+	employee_number?: string;
+	first_name: string;
+	last_name: string;
+	personal_code?: string;
+	email?: string;
+	phone?: string;
+	address?: string;
+	bank_account?: string;
+	start_date: string;
+	end_date?: string;
+	position?: string;
+	department?: string;
+	employment_type: EmploymentType;
+	tax_residency: string;
+	apply_basic_exemption: boolean;
+	basic_exemption_amount: Decimal;
+	funded_pension_rate: Decimal;
+	is_active: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface CreateEmployeeRequest {
+	employee_number?: string;
+	first_name: string;
+	last_name: string;
+	personal_code?: string;
+	email?: string;
+	phone?: string;
+	address?: string;
+	bank_account?: string;
+	start_date: string;
+	position?: string;
+	department?: string;
+	employment_type: EmploymentType;
+	apply_basic_exemption: boolean;
+	basic_exemption_amount?: string;
+	funded_pension_rate?: string;
+}
+
+export interface UpdateEmployeeRequest {
+	employee_number?: string;
+	first_name?: string;
+	last_name?: string;
+	personal_code?: string;
+	email?: string;
+	phone?: string;
+	address?: string;
+	bank_account?: string;
+	end_date?: string;
+	position?: string;
+	department?: string;
+	employment_type?: EmploymentType;
+	apply_basic_exemption?: boolean;
+	basic_exemption_amount?: string;
+	funded_pension_rate?: string;
+	is_active?: boolean;
+}
+
+export interface SalaryComponent {
+	id: string;
+	tenant_id: string;
+	employee_id: string;
+	component_type: string;
+	name: string;
+	amount: Decimal;
+	is_taxable: boolean;
+	is_recurring: boolean;
+	effective_from: string;
+	effective_to?: string;
+	created_at: string;
+}
+
+export interface PayrollRun {
+	id: string;
+	tenant_id: string;
+	period_year: number;
+	period_month: number;
+	status: PayrollStatus;
+	payment_date?: string;
+	total_gross: Decimal;
+	total_net: Decimal;
+	total_employer_cost: Decimal;
+	notes?: string;
+	created_by?: string;
+	approved_by?: string;
+	approved_at?: string;
+	created_at: string;
+	updated_at: string;
+	payslips?: Payslip[];
+}
+
+export interface CreatePayrollRunRequest {
+	period_year: number;
+	period_month: number;
+	payment_date?: string;
+	notes?: string;
+}
+
+export interface Payslip {
+	id: string;
+	tenant_id: string;
+	payroll_run_id: string;
+	employee_id: string;
+	gross_salary: Decimal;
+	taxable_income: Decimal;
+	income_tax: Decimal;
+	unemployment_insurance_employee: Decimal;
+	funded_pension: Decimal;
+	other_deductions: Decimal;
+	net_salary: Decimal;
+	social_tax: Decimal;
+	unemployment_insurance_employer: Decimal;
+	total_employer_cost: Decimal;
+	basic_exemption_applied: Decimal;
+	payment_status: string;
+	paid_at?: string;
+	created_at: string;
+	employee?: Employee;
+}
+
+export interface TSDDeclaration {
+	id: string;
+	tenant_id: string;
+	period_year: number;
+	period_month: number;
+	payroll_run_id?: string;
+	total_payments: Decimal;
+	total_income_tax: Decimal;
+	total_social_tax: Decimal;
+	total_unemployment_employer: Decimal;
+	total_unemployment_employee: Decimal;
+	total_funded_pension: Decimal;
+	status: TSDStatus;
+	submitted_at?: string;
+	emta_reference?: string;
+	created_at: string;
+	updated_at: string;
+	rows?: TSDRow[];
+}
+
+export interface TSDRow {
+	id: string;
+	tenant_id: string;
+	declaration_id: string;
+	employee_id: string;
+	personal_code: string;
+	first_name: string;
+	last_name: string;
+	payment_type: string;
+	gross_payment: Decimal;
+	basic_exemption: Decimal;
+	taxable_amount: Decimal;
+	income_tax: Decimal;
+	social_tax: Decimal;
+	unemployment_insurance_employer: Decimal;
+	unemployment_insurance_employee: Decimal;
+	funded_pension: Decimal;
+	created_at: string;
+}
+
+export interface TaxCalculation {
+	gross_salary: Decimal;
+	basic_exemption: Decimal;
+	taxable_income: Decimal;
+	income_tax: Decimal;
+	unemployment_employee: Decimal;
+	funded_pension: Decimal;
+	total_deductions: Decimal;
+	net_salary: Decimal;
+	social_tax: Decimal;
+	unemployment_employer: Decimal;
+	total_employer_cost: Decimal;
 }
 
 export const api = new ApiClient();
