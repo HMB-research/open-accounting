@@ -176,6 +176,10 @@ class ApiClient {
 		return this.request<Tenant>('PUT', `/api/v1/tenants/${tenantId}`, data);
 	}
 
+	async completeOnboarding(tenantId: string) {
+		return this.request<{ success: boolean }>('POST', `/api/v1/tenants/${tenantId}/complete-onboarding`);
+	}
+
 	// Account endpoints
 	async listAccounts(tenantId: string, activeOnly = false) {
 		const query = activeOnly ? '?active_only=true' : '';
@@ -968,6 +972,7 @@ export interface Tenant {
 	schema_name: string;
 	settings: TenantSettings;
 	is_active: boolean;
+	onboarding_completed: boolean;
 	created_at: string;
 	updated_at: string;
 }
