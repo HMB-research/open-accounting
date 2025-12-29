@@ -27,6 +27,7 @@ import (
 	"github.com/openaccounting/openaccounting/internal/payments"
 	"github.com/openaccounting/openaccounting/internal/pdf"
 	"github.com/openaccounting/openaccounting/internal/recurring"
+	"github.com/openaccounting/openaccounting/internal/tax"
 	"github.com/openaccounting/openaccounting/internal/tenant"
 )
 
@@ -72,6 +73,7 @@ func main() {
 	recurringService := recurring.NewService(pool, invoicingService)
 	emailService := email.NewService(pool)
 	bankingService := banking.NewService(pool)
+	taxService := tax.NewService(pool)
 
 	// Create handlers
 	handlers := &Handlers{
@@ -86,6 +88,7 @@ func main() {
 		recurringService:  recurringService,
 		emailService:      emailService,
 		bankingService:    bankingService,
+		taxService:        taxService,
 	}
 
 	// Setup router
@@ -299,6 +302,11 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/reconciliations/{reconciliationID}", h.GetReconciliation)
 				r.Post("/reconciliations/{reconciliationID}/complete", h.CompleteReconciliation)
 				r.Post("/bank-accounts/{accountID}/auto-match", h.AutoMatchTransactions)
+
+				// Tax (Estonian KMD)
+				r.Post("/tax/kmd", h.HandleGenerateKMD)
+				r.Get("/tax/kmd", h.HandleListKMD)
+				r.Get("/tax/kmd/{year}/{month}/xml", h.HandleExportKMD)
 			})
 		})
 	})
