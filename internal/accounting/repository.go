@@ -317,3 +317,56 @@ func (r *Repository) GetTrialBalance(ctx context.Context, tenantID string, asOfD
 	}
 	return balances, nil
 }
+
+// GetPeriodBalances retrieves account activity for a specific period (not cumulative)
+func (r *Repository) GetPeriodBalances(ctx context.Context, tenantID string, startDate, endDate time.Time) ([]AccountBalance, error) {
+	rows, err := r.db.Query(ctx, `
+		WITH period_totals AS (
+			SELECT
+				a.id AS account_id,
+				a.code AS account_code,
+				a.name AS account_name,
+				a.account_type,
+				COALESCE(SUM(jel.debit_amount), 0) AS total_debits,
+				COALESCE(SUM(jel.credit_amount), 0) AS total_credits
+			FROM accounts a
+			LEFT JOIN journal_entry_lines jel ON jel.account_id = a.id AND jel.tenant_id = a.tenant_id
+			LEFT JOIN journal_entries je ON je.id = jel.journal_entry_id
+			WHERE a.tenant_id = $1
+			  AND (je.id IS NULL OR (je.entry_date >= $2 AND je.entry_date <= $3 AND je.status = 'POSTED'))
+			  AND a.account_type IN ('REVENUE', 'EXPENSE')
+			GROUP BY a.id, a.code, a.name, a.account_type
+		)
+		SELECT
+			account_id,
+			account_code,
+			account_name,
+			account_type,
+			total_debits,
+			total_credits,
+			CASE
+				WHEN account_type = 'EXPENSE' THEN total_debits - total_credits
+				ELSE total_credits - total_debits
+			END AS net_balance
+		FROM period_totals
+		WHERE total_debits != 0 OR total_credits != 0
+		ORDER BY account_type DESC, account_code
+	`, tenantID, startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("get period balances: %w", err)
+	}
+	defer rows.Close()
+
+	var balances []AccountBalance
+	for rows.Next() {
+		var ab AccountBalance
+		if err := rows.Scan(
+			&ab.AccountID, &ab.AccountCode, &ab.AccountName, &ab.AccountType,
+			&ab.DebitBalance, &ab.CreditBalance, &ab.NetBalance,
+		); err != nil {
+			return nil, fmt.Errorf("scan period balance: %w", err)
+		}
+		balances = append(balances, ab)
+	}
+	return balances, nil
+}

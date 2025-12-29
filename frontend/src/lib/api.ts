@@ -230,6 +230,21 @@ class ApiClient {
 		);
 	}
 
+	async getBalanceSheet(tenantId: string, asOfDate?: string) {
+		const query = asOfDate ? `?as_of=${asOfDate}` : '';
+		return this.request<BalanceSheet>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/reports/balance-sheet${query}`
+		);
+	}
+
+	async getIncomeStatement(tenantId: string, startDate: string, endDate: string) {
+		return this.request<IncomeStatement>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/reports/income-statement?start=${startDate}&end=${endDate}`
+		);
+	}
+
 	// Contact endpoints
 	async listContacts(tenantId: string, filter?: ContactFilter) {
 		const params = new URLSearchParams();
@@ -961,6 +976,32 @@ export interface AccountBalance {
 	debit_balance: Decimal;
 	credit_balance: Decimal;
 	net_balance: Decimal;
+}
+
+export interface BalanceSheet {
+	tenant_id: string;
+	as_of_date: string;
+	generated_at: string;
+	assets: AccountBalance[];
+	liabilities: AccountBalance[];
+	equity: AccountBalance[];
+	total_assets: Decimal;
+	total_liabilities: Decimal;
+	total_equity: Decimal;
+	retained_earnings: Decimal;
+	is_balanced: boolean;
+}
+
+export interface IncomeStatement {
+	tenant_id: string;
+	start_date: string;
+	end_date: string;
+	generated_at: string;
+	revenue: AccountBalance[];
+	expenses: AccountBalance[];
+	total_revenue: Decimal;
+	total_expenses: Decimal;
+	net_income: Decimal;
 }
 
 // Contact types

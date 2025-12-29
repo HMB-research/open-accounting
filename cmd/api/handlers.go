@@ -712,6 +712,91 @@ func (h *Handlers) GetAccountBalance(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetBalanceSheet returns the balance sheet for a tenant
+// @Summary Get balance sheet
+// @Description Get balance sheet report as of a specific date
+// @Tags Reports
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param as_of query string false "As of date (YYYY-MM-DD)"
+// @Success 200 {object} accounting.BalanceSheet
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/reports/balance-sheet [get]
+func (h *Handlers) GetBalanceSheet(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+
+	asOfDateStr := r.URL.Query().Get("as_of")
+	asOfDate := time.Now()
+	if asOfDateStr != "" {
+		parsed, err := time.Parse("2006-01-02", asOfDateStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "Invalid date format. Use YYYY-MM-DD")
+			return
+		}
+		asOfDate = parsed
+	}
+
+	bs, err := h.accountingService.GetBalanceSheet(r.Context(), tenantID, asOfDate)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to generate balance sheet")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, bs)
+}
+
+// GetIncomeStatement returns the income statement for a tenant
+// @Summary Get income statement
+// @Description Get income statement (P&L) report for a specific period
+// @Tags Reports
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param start query string true "Start date (YYYY-MM-DD)"
+// @Param end query string true "End date (YYYY-MM-DD)"
+// @Success 200 {object} accounting.IncomeStatement
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/reports/income-statement [get]
+func (h *Handlers) GetIncomeStatement(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+
+	startDateStr := r.URL.Query().Get("start")
+	endDateStr := r.URL.Query().Get("end")
+
+	if startDateStr == "" || endDateStr == "" {
+		respondError(w, http.StatusBadRequest, "start and end date parameters are required")
+		return
+	}
+
+	startDate, err := time.Parse("2006-01-02", startDateStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid start date format. Use YYYY-MM-DD")
+		return
+	}
+
+	endDate, err := time.Parse("2006-01-02", endDateStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid end date format. Use YYYY-MM-DD")
+		return
+	}
+
+	if endDate.Before(startDate) {
+		respondError(w, http.StatusBadRequest, "End date must be after start date")
+		return
+	}
+
+	is, err := h.accountingService.GetIncomeStatement(r.Context(), tenantID, startDate, endDate)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to generate income statement")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, is)
+}
+
 // Custom JSON marshaling for decimal values
 func init() {
 	// Register decimal type for proper JSON encoding

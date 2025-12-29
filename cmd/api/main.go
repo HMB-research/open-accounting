@@ -176,10 +176,14 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 		AllowedOrigins:   cfg.AllowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Tenant-ID"},
-		ExposedHeaders:   []string{"Link"},
+		ExposedHeaders:   []string{"Link", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset", "Retry-After"},
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
+
+	// Rate limiting (100 requests/minute, burst 10)
+	rateLimiter := auth.DefaultRateLimiter()
+	r.Use(rateLimiter.Middleware)
 
 	// Health check
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -254,6 +258,8 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				// Reports
 				r.Get("/reports/trial-balance", h.GetTrialBalance)
 				r.Get("/reports/account-balance/{accountID}", h.GetAccountBalance)
+				r.Get("/reports/balance-sheet", h.GetBalanceSheet)
+				r.Get("/reports/income-statement", h.GetIncomeStatement)
 
 				// Analytics
 				r.Get("/analytics/dashboard", h.GetDashboardSummary)

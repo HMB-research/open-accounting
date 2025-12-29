@@ -172,3 +172,39 @@ type AccountBalance struct {
 	CreditBalance decimal.Decimal `json:"credit_balance"`
 	NetBalance    decimal.Decimal `json:"net_balance"`
 }
+
+// AccountGroup represents a group of accounts in a financial report
+type AccountGroup struct {
+	Code     string           `json:"code"`
+	Name     string           `json:"name"`
+	Balance  decimal.Decimal  `json:"balance"`
+	Children []AccountBalance `json:"children,omitempty"`
+}
+
+// BalanceSheet represents a balance sheet report as of a specific date
+type BalanceSheet struct {
+	TenantID         string           `json:"tenant_id"`
+	AsOfDate         time.Time        `json:"as_of_date"`
+	GeneratedAt      time.Time        `json:"generated_at"`
+	Assets           []AccountBalance `json:"assets"`
+	Liabilities      []AccountBalance `json:"liabilities"`
+	Equity           []AccountBalance `json:"equity"`
+	TotalAssets      decimal.Decimal  `json:"total_assets"`
+	TotalLiabilities decimal.Decimal  `json:"total_liabilities"`
+	TotalEquity      decimal.Decimal  `json:"total_equity"`
+	RetainedEarnings decimal.Decimal  `json:"retained_earnings"`
+	IsBalanced       bool             `json:"is_balanced"`
+}
+
+// IncomeStatement represents an income statement (P&L) for a period
+type IncomeStatement struct {
+	TenantID      string           `json:"tenant_id"`
+	StartDate     time.Time        `json:"start_date"`
+	EndDate       time.Time        `json:"end_date"`
+	GeneratedAt   time.Time        `json:"generated_at"`
+	Revenue       []AccountBalance `json:"revenue"`
+	Expenses      []AccountBalance `json:"expenses"`
+	TotalRevenue  decimal.Decimal  `json:"total_revenue"`
+	TotalExpenses decimal.Decimal  `json:"total_expenses"`
+	NetIncome     decimal.Decimal  `json:"net_income"`
+}

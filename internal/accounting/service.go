@@ -255,6 +255,85 @@ type TrialBalance struct {
 	IsBalanced   bool             `json:"is_balanced"`
 }
 
+// GetBalanceSheet generates a balance sheet as of a specific date
+func (s *Service) GetBalanceSheet(ctx context.Context, tenantID string, asOfDate time.Time) (*BalanceSheet, error) {
+	// Get all account balances as of the date
+	balances, err := s.repo.GetTrialBalance(ctx, tenantID, asOfDate)
+	if err != nil {
+		return nil, err
+	}
+
+	bs := &BalanceSheet{
+		TenantID:    tenantID,
+		AsOfDate:    asOfDate,
+		GeneratedAt: time.Now(),
+	}
+
+	// Categorize accounts by type
+	for _, b := range balances {
+		switch b.AccountType {
+		case AccountTypeAsset:
+			bs.Assets = append(bs.Assets, b)
+			bs.TotalAssets = bs.TotalAssets.Add(b.NetBalance)
+		case AccountTypeLiability:
+			bs.Liabilities = append(bs.Liabilities, b)
+			bs.TotalLiabilities = bs.TotalLiabilities.Add(b.NetBalance.Abs())
+		case AccountTypeEquity:
+			bs.Equity = append(bs.Equity, b)
+			bs.TotalEquity = bs.TotalEquity.Add(b.NetBalance.Abs())
+		case AccountTypeRevenue:
+			// Revenue contributes to retained earnings (credit balance = positive)
+			bs.RetainedEarnings = bs.RetainedEarnings.Add(b.NetBalance.Abs())
+		case AccountTypeExpense:
+			// Expenses reduce retained earnings (debit balance = positive, so subtract)
+			bs.RetainedEarnings = bs.RetainedEarnings.Sub(b.NetBalance)
+		}
+	}
+
+	// Add retained earnings to total equity
+	bs.TotalEquity = bs.TotalEquity.Add(bs.RetainedEarnings)
+
+	// Check if the balance sheet balances: Assets = Liabilities + Equity
+	bs.IsBalanced = bs.TotalAssets.Equal(bs.TotalLiabilities.Add(bs.TotalEquity))
+
+	return bs, nil
+}
+
+// GetIncomeStatement generates an income statement for a period
+func (s *Service) GetIncomeStatement(ctx context.Context, tenantID string, startDate, endDate time.Time) (*IncomeStatement, error) {
+	// Get balances for the period (revenue and expenses)
+	balances, err := s.repo.GetPeriodBalances(ctx, tenantID, startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+
+	is := &IncomeStatement{
+		TenantID:    tenantID,
+		StartDate:   startDate,
+		EndDate:     endDate,
+		GeneratedAt: time.Now(),
+	}
+
+	// Categorize accounts by type
+	for _, b := range balances {
+		switch b.AccountType {
+		case AccountTypeRevenue:
+			is.Revenue = append(is.Revenue, b)
+			// Revenue has credit balance, so NetBalance is negative; use absolute value
+			is.TotalRevenue = is.TotalRevenue.Add(b.NetBalance.Abs())
+		case AccountTypeExpense:
+			is.Expenses = append(is.Expenses, b)
+			// Expenses have debit balance, so NetBalance is positive
+			is.TotalExpenses = is.TotalExpenses.Add(b.NetBalance)
+		}
+	}
+
+	// Net Income = Revenue - Expenses
+	is.NetIncome = is.TotalRevenue.Sub(is.TotalExpenses)
+
+	return is, nil
+}
+
 // Tx interface for transaction support
 type Tx interface {
 	Exec(ctx context.Context, sql string, arguments ...interface{}) (pgconn.CommandTag, error)
