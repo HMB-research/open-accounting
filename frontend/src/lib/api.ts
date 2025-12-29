@@ -991,6 +991,10 @@ export interface TenantSettings {
 	email?: string;
 	phone?: string;
 	logo?: string;
+	pdf_primary_color?: string;
+	pdf_footer_text?: string;
+	bank_details?: string;
+	invoice_terms?: string;
 }
 
 export interface TenantMembership {
