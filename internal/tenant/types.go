@@ -166,6 +166,12 @@ type CreateTenantRequest struct {
 	OwnerID  string          `json:"-"`
 }
 
+// UpdateTenantRequest is the request to update a tenant's settings
+type UpdateTenantRequest struct {
+	Name     *string         `json:"name,omitempty"`
+	Settings *TenantSettings `json:"settings,omitempty"`
+}
+
 // CreateUserRequest is the request to create a new user
 type CreateUserRequest struct {
 	Email    string `json:"email"`

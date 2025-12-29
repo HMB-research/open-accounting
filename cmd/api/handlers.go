@@ -421,6 +421,45 @@ func (h *Handlers) GetTenant(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, t)
 }
 
+// UpdateTenant updates a tenant's name and/or settings
+func (h *Handlers) UpdateTenant(w http.ResponseWriter, r *http.Request) {
+	claims, ok := auth.GetClaims(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Not authenticated")
+		return
+	}
+
+	tenantID := chi.URLParam(r, "tenantID")
+
+	// Verify user has admin access
+	role, err := h.tenantService.GetUserRole(r.Context(), tenantID, claims.UserID)
+	if err != nil {
+		respondError(w, http.StatusForbidden, "Access denied")
+		return
+	}
+
+	// Only owners and admins can update tenant settings
+	perms := tenant.GetRolePermissions(role)
+	if !perms.CanManageSettings {
+		respondError(w, http.StatusForbidden, "Insufficient permissions")
+		return
+	}
+
+	var req tenant.UpdateTenantRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	t, err := h.tenantService.UpdateTenant(r.Context(), tenantID, &req)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, t)
+}
+
 // ListAccounts returns all accounts for a tenant
 // @Summary List accounts
 // @Description Get all accounts (chart of accounts) for a tenant
