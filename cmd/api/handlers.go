@@ -18,6 +18,7 @@ import (
 	"github.com/openaccounting/openaccounting/internal/email"
 	"github.com/openaccounting/openaccounting/internal/invoicing"
 	"github.com/openaccounting/openaccounting/internal/payments"
+	"github.com/openaccounting/openaccounting/internal/payroll"
 	"github.com/openaccounting/openaccounting/internal/pdf"
 	"github.com/openaccounting/openaccounting/internal/recurring"
 	"github.com/openaccounting/openaccounting/internal/tax"
@@ -38,6 +39,7 @@ type Handlers struct {
 	emailService      *email.Service
 	bankingService    *banking.Service
 	taxService        *tax.Service
+	payrollService    *payroll.Service
 }
 
 // getSchemaName returns the schema name for a tenant

@@ -15,6 +15,7 @@ import (
 	"github.com/openaccounting/openaccounting/internal/email"
 	"github.com/openaccounting/openaccounting/internal/invoicing"
 	"github.com/openaccounting/openaccounting/internal/payments"
+	"github.com/openaccounting/openaccounting/internal/payroll"
 	"github.com/openaccounting/openaccounting/internal/recurring"
 	"github.com/openaccounting/openaccounting/internal/tenant"
 )
@@ -2216,4 +2217,606 @@ func (h *Handlers) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, membership)
+}
+
+// =============================================================================
+// PAYROLL HANDLERS
+// =============================================================================
+
+// ListEmployees returns all employees for a tenant
+// @Summary List employees
+// @Description Get all employees for the payroll system
+// @Tags Payroll
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param active_only query bool false "Filter for active employees only"
+// @Success 200 {array} payroll.Employee
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/employees [get]
+func (h *Handlers) ListEmployees(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	activeOnly := r.URL.Query().Get("active_only") == "true"
+
+	employees, err := h.payrollService.ListEmployees(r.Context(), schemaName, tenantID, activeOnly)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list employees")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, employees)
+}
+
+// CreateEmployee creates a new employee
+// @Summary Create employee
+// @Description Create a new employee in the payroll system
+// @Tags Payroll
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body payroll.CreateEmployeeRequest true "Employee details"
+// @Success 201 {object} payroll.Employee
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/employees [post]
+func (h *Handlers) CreateEmployee(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req payroll.CreateEmployeeRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	employee, err := h.payrollService.CreateEmployee(r.Context(), schemaName, tenantID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, employee)
+}
+
+// GetEmployee returns an employee by ID
+// @Summary Get employee
+// @Description Get employee details by ID
+// @Tags Payroll
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param employeeID path string true "Employee ID"
+// @Success 200 {object} payroll.Employee
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/employees/{employeeID} [get]
+func (h *Handlers) GetEmployee(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	employeeID := chi.URLParam(r, "employeeID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	employee, err := h.payrollService.GetEmployee(r.Context(), schemaName, tenantID, employeeID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Employee not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, employee)
+}
+
+// UpdateEmployee updates an employee
+// @Summary Update employee
+// @Description Update an existing employee's details
+// @Tags Payroll
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param employeeID path string true "Employee ID"
+// @Param request body payroll.UpdateEmployeeRequest true "Updated employee details"
+// @Success 200 {object} payroll.Employee
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/employees/{employeeID} [put]
+func (h *Handlers) UpdateEmployee(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	employeeID := chi.URLParam(r, "employeeID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req payroll.UpdateEmployeeRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	employee, err := h.payrollService.UpdateEmployee(r.Context(), schemaName, tenantID, employeeID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, employee)
+}
+
+// SetBaseSalary sets the base salary for an employee
+// @Summary Set base salary
+// @Description Set or update the base salary for an employee
+// @Tags Payroll
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param employeeID path string true "Employee ID"
+// @Param request body object{amount=number,effective_from=string} true "Salary details"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/employees/{employeeID}/salary [post]
+func (h *Handlers) SetBaseSalary(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	employeeID := chi.URLParam(r, "employeeID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req struct {
+		Amount        decimal.Decimal `json:"amount"`
+		EffectiveFrom time.Time       `json:"effective_from"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.Amount.IsZero() {
+		respondError(w, http.StatusBadRequest, "Amount is required")
+		return
+	}
+
+	if req.EffectiveFrom.IsZero() {
+		req.EffectiveFrom = time.Now()
+	}
+
+	err := h.payrollService.SetBaseSalary(r.Context(), schemaName, tenantID, employeeID, req.Amount, req.EffectiveFrom)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "salary updated"})
+}
+
+// ListPayrollRuns returns all payroll runs for a tenant
+// @Summary List payroll runs
+// @Description Get all payroll runs for a tenant
+// @Tags Payroll
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param year query int false "Filter by year"
+// @Success 200 {array} payroll.PayrollRun
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/payroll-runs [get]
+func (h *Handlers) ListPayrollRuns(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	year := 0
+	if y := r.URL.Query().Get("year"); y != "" {
+		if parsed, err := strconv.Atoi(y); err == nil {
+			year = parsed
+		}
+	}
+
+	runs, err := h.payrollService.ListPayrollRuns(r.Context(), schemaName, tenantID, year)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list payroll runs")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, runs)
+}
+
+// CreatePayrollRun creates a new payroll run
+// @Summary Create payroll run
+// @Description Create a new monthly payroll run
+// @Tags Payroll
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body payroll.CreatePayrollRunRequest true "Payroll run details"
+// @Success 201 {object} payroll.PayrollRun
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/payroll-runs [post]
+func (h *Handlers) CreatePayrollRun(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req payroll.CreatePayrollRunRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	run, err := h.payrollService.CreatePayrollRun(r.Context(), schemaName, tenantID, claims.UserID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, run)
+}
+
+// GetPayrollRun returns a payroll run by ID
+// @Summary Get payroll run
+// @Description Get payroll run details by ID
+// @Tags Payroll
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param runID path string true "Payroll Run ID"
+// @Success 200 {object} payroll.PayrollRun
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/payroll-runs/{runID} [get]
+func (h *Handlers) GetPayrollRun(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	runID := chi.URLParam(r, "runID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	run, err := h.payrollService.GetPayrollRun(r.Context(), schemaName, tenantID, runID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Payroll run not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, run)
+}
+
+// CalculatePayroll calculates all payslips for a payroll run
+// @Summary Calculate payroll
+// @Description Calculate payslips for all active employees in a payroll run
+// @Tags Payroll
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param runID path string true "Payroll Run ID"
+// @Success 200 {object} payroll.PayrollRun
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/payroll-runs/{runID}/calculate [post]
+func (h *Handlers) CalculatePayroll(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	runID := chi.URLParam(r, "runID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	run, err := h.payrollService.CalculatePayroll(r.Context(), schemaName, tenantID, runID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, run)
+}
+
+// ApprovePayroll approves a calculated payroll run
+// @Summary Approve payroll
+// @Description Approve a calculated payroll run for payment
+// @Tags Payroll
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param runID path string true "Payroll Run ID"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/payroll-runs/{runID}/approve [post]
+func (h *Handlers) ApprovePayroll(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	runID := chi.URLParam(r, "runID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.payrollService.ApprovePayrollRun(r.Context(), schemaName, tenantID, runID, claims.UserID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "approved"})
+}
+
+// GetPayslips returns all payslips for a payroll run
+// @Summary Get payslips
+// @Description Get all payslips for a specific payroll run
+// @Tags Payroll
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param runID path string true "Payroll Run ID"
+// @Success 200 {array} payroll.Payslip
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/payroll-runs/{runID}/payslips [get]
+func (h *Handlers) GetPayslips(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	runID := chi.URLParam(r, "runID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	payslips, err := h.payrollService.GetPayslipsWithEmployees(r.Context(), schemaName, tenantID, runID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get payslips")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, payslips)
+}
+
+// CalculateTaxPreview returns a tax preview for a salary
+// @Summary Calculate tax preview
+// @Description Preview Estonian tax calculations for a given gross salary
+// @Tags Payroll
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body object{gross_salary=number,apply_basic_exemption=bool,funded_pension_rate=number} true "Calculation parameters"
+// @Success 200 {object} payroll.TaxCalculation
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/payroll/tax-preview [post]
+func (h *Handlers) CalculateTaxPreview(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		GrossSalary          decimal.Decimal `json:"gross_salary"`
+		ApplyBasicExemption  bool            `json:"apply_basic_exemption"`
+		FundedPensionRate    decimal.Decimal `json:"funded_pension_rate"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.GrossSalary.IsZero() || req.GrossSalary.IsNegative() {
+		respondError(w, http.StatusBadRequest, "Gross salary must be positive")
+		return
+	}
+
+	calc := payroll.CalculateTaxPreview(req.GrossSalary, req.ApplyBasicExemption, req.FundedPensionRate)
+	respondJSON(w, http.StatusOK, calc)
+}
+
+// =============================================================================
+// TSD (TAX DECLARATION) HANDLERS
+// =============================================================================
+
+// GenerateTSD generates a TSD declaration from a payroll run
+// @Summary Generate TSD declaration
+// @Description Generate an Estonian TSD tax declaration from a payroll run
+// @Tags Payroll
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param runID path string true "Payroll Run ID"
+// @Success 200 {object} payroll.TSDDeclaration
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/payroll-runs/{runID}/tsd [post]
+func (h *Handlers) GenerateTSD(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	runID := chi.URLParam(r, "runID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	tsd, err := h.payrollService.GenerateTSD(r.Context(), schemaName, tenantID, runID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, tsd)
+}
+
+// GetTSD returns a TSD declaration by period
+// @Summary Get TSD declaration
+// @Description Get a TSD declaration for a specific period
+// @Tags Payroll
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param year path int true "Year"
+// @Param month path int true "Month"
+// @Success 200 {object} payroll.TSDDeclaration
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/tsd/{year}/{month} [get]
+func (h *Handlers) GetTSD(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	year, err := strconv.Atoi(chi.URLParam(r, "year"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid year")
+		return
+	}
+
+	month, err := strconv.Atoi(chi.URLParam(r, "month"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid month")
+		return
+	}
+
+	tsd, err := h.payrollService.GetTSD(r.Context(), schemaName, tenantID, year, month)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "TSD declaration not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, tsd)
+}
+
+// ListTSD returns all TSD declarations for a tenant
+// @Summary List TSD declarations
+// @Description Get all TSD declarations for a tenant
+// @Tags Payroll
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Success 200 {array} payroll.TSDDeclaration
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/tsd [get]
+func (h *Handlers) ListTSD(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	declarations, err := h.payrollService.ListTSD(r.Context(), schemaName, tenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list TSD declarations")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, declarations)
+}
+
+// ExportTSDXML exports a TSD declaration to e-MTA XML format
+// @Summary Export TSD to XML
+// @Description Export a TSD declaration to Estonian e-MTA XML format
+// @Tags Payroll
+// @Produce application/xml
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param year path int true "Year"
+// @Param month path int true "Month"
+// @Success 200 {file} file "XML file"
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/tsd/{year}/{month}/xml [get]
+func (h *Handlers) ExportTSDXML(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	year, err := strconv.Atoi(chi.URLParam(r, "year"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid year")
+		return
+	}
+
+	month, err := strconv.Atoi(chi.URLParam(r, "month"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid month")
+		return
+	}
+
+	// Get tenant for company info
+	t, err := h.tenantService.GetTenant(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Tenant not found")
+		return
+	}
+
+	company := payroll.TSDCompanyInfo{
+		RegistryCode: t.Settings.RegCode,
+		Name:         t.Name,
+	}
+
+	xmlData, err := h.payrollService.ExportTSDToXML(r.Context(), schemaName, tenantID, year, month, company)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	filename := payroll.GenerateTSDFilename(company.RegistryCode, year, month, "xml")
+	w.Header().Set("Content-Type", "application/xml")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	_, _ = w.Write(xmlData)
+}
+
+// ExportTSDCSV exports a TSD declaration to CSV format
+// @Summary Export TSD to CSV
+// @Description Export a TSD declaration to CSV format
+// @Tags Payroll
+// @Produce text/csv
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param year path int true "Year"
+// @Param month path int true "Month"
+// @Success 200 {file} file "CSV file"
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/tsd/{year}/{month}/csv [get]
+func (h *Handlers) ExportTSDCSV(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	year, err := strconv.Atoi(chi.URLParam(r, "year"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid year")
+		return
+	}
+
+	month, err := strconv.Atoi(chi.URLParam(r, "month"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid month")
+		return
+	}
+
+	// Get tenant for company info
+	t, err := h.tenantService.GetTenant(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Tenant not found")
+		return
+	}
+
+	csvData, err := h.payrollService.ExportTSDToCSV(r.Context(), schemaName, tenantID, year, month)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	filename := payroll.GenerateTSDFilename(t.Settings.RegCode, year, month, "csv")
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	_, _ = w.Write(csvData)
+}
+
+// MarkTSDSubmitted marks a TSD declaration as submitted
+// @Summary Mark TSD as submitted
+// @Description Mark a TSD declaration as submitted to e-MTA
+// @Tags Payroll
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param year path int true "Year"
+// @Param month path int true "Month"
+// @Param request body object{emta_reference=string} true "EMTA reference"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/tsd/{year}/{month}/submit [post]
+func (h *Handlers) MarkTSDSubmitted(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	year, err := strconv.Atoi(chi.URLParam(r, "year"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid year")
+		return
+	}
+
+	month, err := strconv.Atoi(chi.URLParam(r, "month"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid month")
+		return
+	}
+
+	var req struct {
+		EMTAReference string `json:"emta_reference"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	// Get the TSD declaration to get its ID
+	tsd, err := h.payrollService.GetTSD(r.Context(), schemaName, tenantID, year, month)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "TSD declaration not found")
+		return
+	}
+
+	if err := h.payrollService.MarkTSDSubmitted(r.Context(), schemaName, tenantID, tsd.ID, req.EMTAReference); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "submitted"})
 }
