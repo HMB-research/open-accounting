@@ -181,3 +181,76 @@ func RequireRole(roles ...string) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+// RequirePermission creates a middleware that checks for a specific permission
+func RequirePermission(check func(role string) bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims, ok := GetClaims(r.Context())
+			if !ok {
+				http.Error(w, "Authentication required", http.StatusUnauthorized)
+				return
+			}
+
+			if !check(claims.Role) {
+				http.Error(w, "Insufficient permissions", http.StatusForbidden)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// Permission check functions - these check if a role has a specific permission
+// Uses tenant.GetRolePermissions internally
+
+// CanManageUsers checks if the role can manage users
+func CanManageUsers(role string) bool {
+	return role == "owner" || role == "admin"
+}
+
+// CanManageSettings checks if the role can manage settings
+func CanManageSettings(role string) bool {
+	return role == "owner" || role == "admin"
+}
+
+// CanManageAccounts checks if the role can manage accounts
+func CanManageAccounts(role string) bool {
+	return role == "owner" || role == "admin" || role == "accountant"
+}
+
+// CanCreateEntries checks if the role can create journal entries
+func CanCreateEntries(role string) bool {
+	return role == "owner" || role == "admin" || role == "accountant"
+}
+
+// CanViewReports checks if the role can view reports
+func CanViewReports(role string) bool {
+	return role == "owner" || role == "admin" || role == "accountant" || role == "viewer"
+}
+
+// CanManageInvoices checks if the role can manage invoices
+func CanManageInvoices(role string) bool {
+	return role == "owner" || role == "admin" || role == "accountant"
+}
+
+// CanManagePayments checks if the role can manage payments
+func CanManagePayments(role string) bool {
+	return role == "owner" || role == "admin" || role == "accountant"
+}
+
+// CanManageContacts checks if the role can manage contacts
+func CanManageContacts(role string) bool {
+	return role == "owner" || role == "admin" || role == "accountant"
+}
+
+// CanManageBanking checks if the role can manage banking
+func CanManageBanking(role string) bool {
+	return role == "owner" || role == "admin" || role == "accountant"
+}
+
+// CanExportData checks if the role can export data
+func CanExportData(role string) bool {
+	return role == "owner" || role == "admin" || role == "accountant"
+}
