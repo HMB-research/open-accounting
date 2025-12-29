@@ -13,7 +13,7 @@ func TestValidatePersonalCode(t *testing.T) {
 		expected bool
 	}{
 		// Valid codes with correct checksums
-		{"Valid male born 1980", "38001010009", true}, // Checksum: 9
+		{"Valid male born 1980", "38001010009", true},   // Checksum: 9
 		{"Valid female born 1990", "49001010012", true}, // Checksum: 2
 		{"Valid code with checksum 0", "37605030299", true},
 

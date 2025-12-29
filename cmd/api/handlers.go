@@ -20,6 +20,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/pdf"
+	"github.com/HMB-research/open-accounting/internal/plugin"
 	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
@@ -40,6 +41,7 @@ type Handlers struct {
 	bankingService    *banking.Service
 	taxService        *tax.Service
 	payrollService    *payroll.Service
+	pluginService     *plugin.Service
 }
 
 // getSchemaName returns the schema name for a tenant

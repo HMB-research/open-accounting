@@ -8,74 +8,74 @@ import (
 
 func TestCalculateEstonianTaxes(t *testing.T) {
 	tests := []struct {
-		name               string
-		grossSalary        decimal.Decimal
-		basicExemption     decimal.Decimal
-		fundedPensionRate  decimal.Decimal
-		expectedIncomeTax  decimal.Decimal
-		expectedNetSalary  decimal.Decimal
-		expectedSocialTax  decimal.Decimal
-		expectedTotalCost  decimal.Decimal
+		name              string
+		grossSalary       decimal.Decimal
+		basicExemption    decimal.Decimal
+		fundedPensionRate decimal.Decimal
+		expectedIncomeTax decimal.Decimal
+		expectedNetSalary decimal.Decimal
+		expectedSocialTax decimal.Decimal
+		expectedTotalCost decimal.Decimal
 	}{
 		{
-			name:               "Standard salary with full exemption",
-			grossSalary:        decimal.NewFromFloat(2000.00),
-			basicExemption:     decimal.NewFromFloat(700.00),
-			fundedPensionRate:  decimal.NewFromFloat(0.02),
-			expectedIncomeTax:  decimal.NewFromFloat(286.00), // 22% of (2000-700)
-			expectedNetSalary:  decimal.NewFromFloat(1642.00), // 2000 - 286 - 32 - 40
-			expectedSocialTax:  decimal.NewFromFloat(660.00), // 33% of 2000
-			expectedTotalCost:  decimal.NewFromFloat(2676.00), // 2000 + 660 + 16
+			name:              "Standard salary with full exemption",
+			grossSalary:       decimal.NewFromFloat(2000.00),
+			basicExemption:    decimal.NewFromFloat(700.00),
+			fundedPensionRate: decimal.NewFromFloat(0.02),
+			expectedIncomeTax: decimal.NewFromFloat(286.00),  // 22% of (2000-700)
+			expectedNetSalary: decimal.NewFromFloat(1642.00), // 2000 - 286 - 32 - 40
+			expectedSocialTax: decimal.NewFromFloat(660.00),  // 33% of 2000
+			expectedTotalCost: decimal.NewFromFloat(2676.00), // 2000 + 660 + 16
 		},
 		{
-			name:               "Minimum wage with exemption",
-			grossSalary:        decimal.NewFromFloat(820.00),
-			basicExemption:     decimal.NewFromFloat(700.00),
-			fundedPensionRate:  decimal.NewFromFloat(0.02),
-			expectedIncomeTax:  decimal.NewFromFloat(26.40), // 22% of (820-700)
-			expectedNetSalary:  decimal.NewFromFloat(764.08), // 820 - 26.40 - 13.12 - 16.40
-			expectedSocialTax:  decimal.NewFromFloat(270.60), // Minimum social tax
-			expectedTotalCost:  decimal.NewFromFloat(1097.16), // 820 + 270.60 + 6.56
+			name:              "Minimum wage with exemption",
+			grossSalary:       decimal.NewFromFloat(820.00),
+			basicExemption:    decimal.NewFromFloat(700.00),
+			fundedPensionRate: decimal.NewFromFloat(0.02),
+			expectedIncomeTax: decimal.NewFromFloat(26.40),   // 22% of (820-700)
+			expectedNetSalary: decimal.NewFromFloat(764.08),  // 820 - 26.40 - 13.12 - 16.40
+			expectedSocialTax: decimal.NewFromFloat(270.60),  // Minimum social tax
+			expectedTotalCost: decimal.NewFromFloat(1097.16), // 820 + 270.60 + 6.56
 		},
 		{
-			name:               "Salary without basic exemption",
-			grossSalary:        decimal.NewFromFloat(3000.00),
-			basicExemption:     decimal.NewFromFloat(0),
-			fundedPensionRate:  decimal.NewFromFloat(0.02),
-			expectedIncomeTax:  decimal.NewFromFloat(660.00), // 22% of 3000
-			expectedNetSalary:  decimal.NewFromFloat(2232.00), // 3000 - 660 - 48 - 60
-			expectedSocialTax:  decimal.NewFromFloat(990.00), // 33% of 3000
-			expectedTotalCost:  decimal.NewFromFloat(4014.00), // 3000 + 990 + 24
+			name:              "Salary without basic exemption",
+			grossSalary:       decimal.NewFromFloat(3000.00),
+			basicExemption:    decimal.NewFromFloat(0),
+			fundedPensionRate: decimal.NewFromFloat(0.02),
+			expectedIncomeTax: decimal.NewFromFloat(660.00),  // 22% of 3000
+			expectedNetSalary: decimal.NewFromFloat(2232.00), // 3000 - 660 - 48 - 60
+			expectedSocialTax: decimal.NewFromFloat(990.00),  // 33% of 3000
+			expectedTotalCost: decimal.NewFromFloat(4014.00), // 3000 + 990 + 24
 		},
 		{
-			name:               "Salary with increased pension rate",
-			grossSalary:        decimal.NewFromFloat(2000.00),
-			basicExemption:     decimal.NewFromFloat(700.00),
-			fundedPensionRate:  decimal.NewFromFloat(0.04),
-			expectedIncomeTax:  decimal.NewFromFloat(286.00), // 22% of (2000-700)
-			expectedNetSalary:  decimal.NewFromFloat(1602.00), // 2000 - 286 - 32 - 80
-			expectedSocialTax:  decimal.NewFromFloat(660.00), // 33% of 2000
-			expectedTotalCost:  decimal.NewFromFloat(2676.00), // 2000 + 660 + 16
+			name:              "Salary with increased pension rate",
+			grossSalary:       decimal.NewFromFloat(2000.00),
+			basicExemption:    decimal.NewFromFloat(700.00),
+			fundedPensionRate: decimal.NewFromFloat(0.04),
+			expectedIncomeTax: decimal.NewFromFloat(286.00),  // 22% of (2000-700)
+			expectedNetSalary: decimal.NewFromFloat(1602.00), // 2000 - 286 - 32 - 80
+			expectedSocialTax: decimal.NewFromFloat(660.00),  // 33% of 2000
+			expectedTotalCost: decimal.NewFromFloat(2676.00), // 2000 + 660 + 16
 		},
 		{
-			name:               "Low salary below exemption",
-			grossSalary:        decimal.NewFromFloat(500.00),
-			basicExemption:     decimal.NewFromFloat(700.00),
-			fundedPensionRate:  decimal.NewFromFloat(0.02),
-			expectedIncomeTax:  decimal.NewFromFloat(0), // Taxable income is 0
-			expectedNetSalary:  decimal.NewFromFloat(482.00), // 500 - 0 - 8 - 10
-			expectedSocialTax:  decimal.NewFromFloat(270.60), // Minimum social tax
-			expectedTotalCost:  decimal.NewFromFloat(774.60), // 500 + 270.60 + 4
+			name:              "Low salary below exemption",
+			grossSalary:       decimal.NewFromFloat(500.00),
+			basicExemption:    decimal.NewFromFloat(700.00),
+			fundedPensionRate: decimal.NewFromFloat(0.02),
+			expectedIncomeTax: decimal.NewFromFloat(0),      // Taxable income is 0
+			expectedNetSalary: decimal.NewFromFloat(482.00), // 500 - 0 - 8 - 10
+			expectedSocialTax: decimal.NewFromFloat(270.60), // Minimum social tax
+			expectedTotalCost: decimal.NewFromFloat(774.60), // 500 + 270.60 + 4
 		},
 		{
-			name:               "No pension contributions",
-			grossSalary:        decimal.NewFromFloat(2000.00),
-			basicExemption:     decimal.NewFromFloat(700.00),
-			fundedPensionRate:  decimal.NewFromFloat(0),
-			expectedIncomeTax:  decimal.NewFromFloat(286.00), // 22% of (2000-700)
-			expectedNetSalary:  decimal.NewFromFloat(1682.00), // 2000 - 286 - 32 - 0
-			expectedSocialTax:  decimal.NewFromFloat(660.00), // 33% of 2000
-			expectedTotalCost:  decimal.NewFromFloat(2676.00), // 2000 + 660 + 16
+			name:              "No pension contributions",
+			grossSalary:       decimal.NewFromFloat(2000.00),
+			basicExemption:    decimal.NewFromFloat(700.00),
+			fundedPensionRate: decimal.NewFromFloat(0),
+			expectedIncomeTax: decimal.NewFromFloat(286.00),  // 22% of (2000-700)
+			expectedNetSalary: decimal.NewFromFloat(1682.00), // 2000 - 286 - 32 - 0
+			expectedSocialTax: decimal.NewFromFloat(660.00),  // 33% of 2000
+			expectedTotalCost: decimal.NewFromFloat(2676.00), // 2000 + 660 + 16
 		},
 	}
 

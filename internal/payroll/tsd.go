@@ -71,7 +71,7 @@ func (s *Service) GenerateTSD(ctx context.Context, schemaName, tenantID, payroll
 	}
 
 	// Calculate totals and create rows
-	var rows []TSDRow
+	rows := make([]TSDRow, 0, len(payslips))
 	for _, ps := range payslips {
 		if ps.Employee == nil {
 			continue

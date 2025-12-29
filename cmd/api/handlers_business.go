@@ -2560,9 +2560,9 @@ func (h *Handlers) GetPayslips(w http.ResponseWriter, r *http.Request) {
 // @Router /tenants/{tenantID}/payroll/tax-preview [post]
 func (h *Handlers) CalculateTaxPreview(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		GrossSalary          decimal.Decimal `json:"gross_salary"`
-		ApplyBasicExemption  bool            `json:"apply_basic_exemption"`
-		FundedPensionRate    decimal.Decimal `json:"funded_pension_rate"`
+		GrossSalary         decimal.Decimal `json:"gross_salary"`
+		ApplyBasicExemption bool            `json:"apply_basic_exemption"`
+		FundedPensionRate   decimal.Decimal `json:"funded_pension_rate"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		respondError(w, http.StatusBadRequest, "Invalid request body")

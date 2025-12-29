@@ -34,6 +34,8 @@ Open Accounting is a **self-hosted, multi-tenant accounting platform** designed 
 | **Journal Entries** | Draft → Posted → Void workflow with reversal entries |
 | **Multi-Currency** | Support for multiple currencies with exchange rate tracking |
 | **Trial Balance** | Real-time balance reports as of any date |
+| **Balance Sheet** | Assets, liabilities, and equity statement |
+| **Income Statement** | Revenue and expense summary (P&L) |
 | **VAT Tracking** | Date-aware VAT rates for proper EU compliance |
 
 ### Business Operations
@@ -60,13 +62,36 @@ Open Accounting is a **self-hosted, multi-tenant accounting platform** designed 
 | **User Management** | Invite users, assign roles, manage permissions |
 | **JWT Authentication** | Secure token-based authentication |
 | **RBAC** | Role-based access control with permission checks |
+| **API Rate Limiting** | Token bucket rate limiting with configurable thresholds |
+
+### Payroll (Estonian)
+| Feature | Description |
+|---------|-------------|
+| **Employee Management** | Full employee lifecycle with personal codes |
+| **Estonian Tax Calculations** | Income tax, social tax, unemployment insurance |
+| **Funded Pension (II Pillar)** | Configurable pension contribution rates |
+| **Payroll Runs** | Monthly payroll with draft → approved → paid workflow |
+| **Payslips** | Detailed breakdown of earnings and deductions |
+| **TSD Declaration** | Annex 1 generation with XML/CSV export for e-MTA |
 
 ### Estonian Compliance
 | Feature | Description |
 |---------|-------------|
 | **KMD Declaration** | Automated VAT declaration generation |
+| **TSD Declaration** | Payroll tax declaration with e-MTA XML export |
 | **e-MTA Export** | XML format compatible with Estonian Tax Board |
 | **Estonian Defaults** | Pre-configured for Estonian accounting standards |
+
+### Plugin Marketplace
+| Feature | Description |
+|---------|-------------|
+| **Plugin Registries** | Add custom plugin marketplaces (GitHub/GitLab) |
+| **Permission System** | Fine-grained permissions with risk levels |
+| **Event Hooks** | 27+ events for plugin integration |
+| **UI Slots** | Extend dashboard, invoices, and more |
+| **Two-Level Control** | Instance-wide install, per-tenant enable |
+
+> 📖 See [Plugin Documentation](docs/PLUGINS.md) for development guide
 
 ---
 
@@ -134,15 +159,17 @@ open-accounting/
 │   └── migrate/          # Database migration CLI tool
 │
 ├── internal/
-│   ├── accounting/       # Core: accounts, journal entries, trial balance
+│   ├── accounting/       # Core: accounts, journal entries, reports
 │   ├── analytics/        # Dashboard metrics and reporting
-│   ├── auth/             # JWT authentication & RBAC middleware
+│   ├── auth/             # JWT authentication, RBAC, rate limiting
 │   ├── banking/          # Bank accounts, transactions, reconciliation
 │   ├── contacts/         # Customer and supplier management
 │   ├── email/            # Email notifications and templates
 │   ├── invoicing/        # Sales and purchase invoices
 │   ├── payments/         # Payment recording and allocation
+│   ├── payroll/          # Estonian payroll with TSD declarations
 │   ├── pdf/              # PDF generation for invoices
+│   ├── plugin/           # Plugin marketplace system
 │   ├── recurring/        # Recurring invoice automation
 │   ├── tax/              # Estonian KMD/VAT compliance
 │   └── tenant/           # Multi-tenant management, users, invitations
@@ -199,14 +226,35 @@ PUT        /api/v1/tenants/{id}/users/{id}/role   # Change roles
 ### Reports & Analytics
 ```
 GET /api/v1/tenants/{id}/reports/trial-balance
+GET /api/v1/tenants/{id}/reports/balance-sheet
+GET /api/v1/tenants/{id}/reports/income-statement
 GET /api/v1/tenants/{id}/analytics/dashboard
 GET /api/v1/tenants/{id}/reports/aging/receivables
+```
+
+### Payroll
+```
+GET/POST   /api/v1/tenants/{id}/employees         # Employee management
+GET/POST   /api/v1/tenants/{id}/payroll           # Payroll runs
+POST       /api/v1/tenants/{id}/payroll/{id}/calculate
+POST       /api/v1/tenants/{id}/payroll/{id}/approve
+GET        /api/v1/tenants/{id}/payroll/{id}/payslips
 ```
 
 ### Estonian Tax
 ```
 POST /api/v1/tenants/{id}/tax/kmd                 # Generate KMD
 GET  /api/v1/tenants/{id}/tax/kmd/{year}/{month}/xml  # Export XML
+GET  /api/v1/tenants/{id}/tax/tsd/{year}/{month}  # TSD declaration
+GET  /api/v1/tenants/{id}/tax/tsd/{year}/{month}/xml  # TSD XML export
+```
+
+### Plugins (Admin)
+```
+GET/POST   /api/v1/admin/plugins                  # Plugin management
+GET/POST   /api/v1/admin/plugin-registries        # Registry management
+POST       /api/v1/admin/plugins/install          # Install from URL
+GET        /api/v1/tenants/{id}/plugins           # Tenant plugins
 ```
 
 ---
@@ -233,19 +281,18 @@ GET  /api/v1/tenants/{id}/tax/kmd/{year}/{month}/xml  # Export XML
 - [x] Bank transaction import and reconciliation
 - [x] Estonian KMD/VAT compliance
 - [x] User invitation system
-
-### In Progress 🚧
-- [ ] Dashboard analytics with charts
-- [ ] Email notifications
-- [ ] Recurring invoice automation
+- [x] Dashboard analytics with charts
+- [x] Email notifications
+- [x] Recurring invoice automation
+- [x] Balance sheet and income statement reports
+- [x] Payroll module with Estonian TSD declarations
+- [x] API rate limiting
+- [x] Plugin marketplace system
 
 ### Planned 📋
-- [ ] Balance sheet and income statement reports
-- [ ] E-invoice support (Peppol)
+- [ ] E-invoice support (Peppol) — *requires external Access Point*
 - [ ] Inventory management
-- [ ] Payroll module
 - [ ] Mobile-responsive frontend
-- [ ] API rate limiting
 
 ---
 

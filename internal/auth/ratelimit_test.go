@@ -214,7 +214,7 @@ func TestDefaultRateLimiter(t *testing.T) {
 	rl := DefaultRateLimiter()
 
 	if rl == nil {
-		t.Error("DefaultRateLimiter should not return nil")
+		t.Fatal("DefaultRateLimiter should not return nil")
 	}
 
 	if rl.b != 10 {
