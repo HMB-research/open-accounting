@@ -852,6 +852,108 @@ class ApiClient {
 			{ emta_reference: emtaReference }
 		);
 	}
+
+	// Plugin Registries (Admin)
+	async listPluginRegistries() {
+		return this.request<PluginRegistry[]>('GET', '/api/v1/admin/plugin-registries');
+	}
+
+	async addPluginRegistry(name: string, url: string, description?: string) {
+		return this.request<PluginRegistry>('POST', '/api/v1/admin/plugin-registries', {
+			name,
+			url,
+			description
+		});
+	}
+
+	async removePluginRegistry(registryId: string) {
+		return this.request<{ status: string }>(
+			'DELETE',
+			`/api/v1/admin/plugin-registries/${registryId}`
+		);
+	}
+
+	async syncPluginRegistry(registryId: string) {
+		return this.request<{ status: string }>(
+			'POST',
+			`/api/v1/admin/plugin-registries/${registryId}/sync`
+		);
+	}
+
+	// Plugins (Admin - Instance Level)
+	async listPlugins() {
+		return this.request<Plugin[]>('GET', '/api/v1/admin/plugins');
+	}
+
+	async searchPlugins(query: string) {
+		return this.request<PluginSearchResult[]>(
+			'GET',
+			`/api/v1/admin/plugins/search?q=${encodeURIComponent(query)}`
+		);
+	}
+
+	async getPluginPermissions() {
+		return this.request<Record<string, PluginPermission>>('GET', '/api/v1/admin/plugins/permissions');
+	}
+
+	async installPlugin(repositoryUrl: string) {
+		return this.request<Plugin>('POST', '/api/v1/admin/plugins/install', {
+			repository_url: repositoryUrl
+		});
+	}
+
+	async getPlugin(pluginId: string) {
+		return this.request<Plugin>('GET', `/api/v1/admin/plugins/${pluginId}`);
+	}
+
+	async uninstallPlugin(pluginId: string) {
+		return this.request<{ status: string }>('DELETE', `/api/v1/admin/plugins/${pluginId}`);
+	}
+
+	async enablePlugin(pluginId: string, permissions: string[]) {
+		return this.request<Plugin>('POST', `/api/v1/admin/plugins/${pluginId}/enable`, {
+			permissions
+		});
+	}
+
+	async disablePlugin(pluginId: string) {
+		return this.request<Plugin>('POST', `/api/v1/admin/plugins/${pluginId}/disable`);
+	}
+
+	// Tenant Plugin Management
+	async listTenantPlugins(tenantId: string) {
+		return this.request<TenantPlugin[]>('GET', `/api/v1/tenants/${tenantId}/plugins`);
+	}
+
+	async enableTenantPlugin(tenantId: string, pluginId: string, settings?: Record<string, unknown>) {
+		return this.request<TenantPlugin>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/plugins/${pluginId}/enable`,
+			settings ? { settings } : undefined
+		);
+	}
+
+	async disableTenantPlugin(tenantId: string, pluginId: string) {
+		return this.request<{ status: string }>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/plugins/${pluginId}/disable`
+		);
+	}
+
+	async getTenantPluginSettings(tenantId: string, pluginId: string) {
+		return this.request<TenantPluginSettings>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/plugins/${pluginId}/settings`
+		);
+	}
+
+	async updateTenantPluginSettings(tenantId: string, pluginId: string, settings: Record<string, unknown>) {
+		return this.request<TenantPluginSettings>(
+			'PUT',
+			`/api/v1/tenants/${tenantId}/plugins/${pluginId}/settings`,
+			{ settings }
+		);
+	}
 }
 
 // Types
@@ -1770,6 +1872,139 @@ export interface TaxCalculation {
 	social_tax: Decimal;
 	unemployment_employer: Decimal;
 	total_employer_cost: Decimal;
+}
+
+// Plugin Types
+export type PluginState = 'installed' | 'enabled' | 'disabled' | 'failed';
+export type PermissionRisk = 'low' | 'medium' | 'high' | 'critical';
+export type PermissionCategory = 'data' | 'system' | 'database' | 'dangerous';
+export type RepositoryType = 'github' | 'gitlab';
+
+export interface PluginRegistry {
+	id: string;
+	name: string;
+	url: string;
+	description?: string;
+	is_official: boolean;
+	is_active: boolean;
+	last_synced_at?: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface Plugin {
+	id: string;
+	name: string;
+	display_name: string;
+	description?: string;
+	version: string;
+	repository_url: string;
+	repository_type: RepositoryType;
+	author?: string;
+	license?: string;
+	homepage_url?: string;
+	state: PluginState;
+	granted_permissions: string[];
+	manifest: PluginManifest;
+	installed_at: string;
+	updated_at: string;
+}
+
+export interface PluginManifest {
+	name: string;
+	display_name: string;
+	version: string;
+	description?: string;
+	author?: string;
+	license?: string;
+	homepage?: string;
+	min_app_version?: string;
+	permissions: string[];
+	backend?: PluginBackendConfig;
+	frontend?: PluginFrontendConfig;
+	database?: PluginDatabaseConfig;
+	settings?: Record<string, unknown>;
+}
+
+export interface PluginBackendConfig {
+	package?: string;
+	entry?: string;
+	hooks?: PluginHook[];
+	routes?: PluginRoute[];
+}
+
+export interface PluginHook {
+	event: string;
+	handler: string;
+}
+
+export interface PluginRoute {
+	method: string;
+	path: string;
+	handler: string;
+}
+
+export interface PluginFrontendConfig {
+	components?: string;
+	navigation?: PluginNavItem[];
+	slots?: PluginSlot[];
+}
+
+export interface PluginNavItem {
+	label: string;
+	icon?: string;
+	path: string;
+	position?: string;
+}
+
+export interface PluginSlot {
+	name: string;
+	component: string;
+}
+
+export interface PluginDatabaseConfig {
+	migrations?: string;
+}
+
+export interface PluginPermission {
+	name: string;
+	category: PermissionCategory;
+	risk: PermissionRisk;
+	description: string;
+}
+
+export interface TenantPlugin {
+	id: string;
+	tenant_id: string;
+	plugin_id: string;
+	is_enabled: boolean;
+	settings: Record<string, unknown>;
+	enabled_at?: string;
+	created_at: string;
+	updated_at: string;
+	plugin?: Plugin;
+}
+
+export interface TenantPluginSettings {
+	plugin_id: string;
+	settings: Record<string, unknown>;
+	schema?: Record<string, unknown>;
+}
+
+export interface PluginSearchResult {
+	plugin: PluginInfo;
+	registry: string;
+}
+
+export interface PluginInfo {
+	name: string;
+	display_name: string;
+	description?: string;
+	repository: string;
+	version: string;
+	author?: string;
+	license?: string;
+	tags?: string[];
 }
 
 export const api = new ApiClient();

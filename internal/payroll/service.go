@@ -360,7 +360,7 @@ func (s *Service) CalculatePayroll(ctx context.Context, schemaName, tenantID, pa
 	_, _ = tx.Exec(ctx, deleteQuery, payrollRunID)
 
 	var totalGross, totalNet, totalEmployerCost decimal.Decimal
-	var payslips []Payslip
+	payslips := make([]Payslip, 0, len(employees))
 
 	for _, emp := range employees {
 		// Get current salary

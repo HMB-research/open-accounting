@@ -15,31 +15,31 @@ import (
 
 // TSDDocument represents the root TSD XML document
 type TSDDocument struct {
-	XMLName       xml.Name       `xml:"tpiDeklaratsioon"`
-	XMLNs         string         `xml:"xmlns,attr"`
-	Header        TSDHeader      `xml:"dpiPais"`
-	Declaration   TSDDecl        `xml:"dpiKeha"`
-	Annexes       TSDLisad       `xml:"dpiLisad"`
+	XMLName     xml.Name  `xml:"tpiDeklaratsioon"`
+	XMLNs       string    `xml:"xmlns,attr"`
+	Header      TSDHeader `xml:"dpiPais"`
+	Declaration TSDDecl   `xml:"dpiKeha"`
+	Annexes     TSDLisad  `xml:"dpiLisad"`
 }
 
 // TSDHeader contains document metadata
 type TSDHeader struct {
-	TaxpayerRegCode string `xml:"dpiMkIsik>rpiMkIsikKood"`     // Company registry code
-	TaxpayerName    string `xml:"dpiMkIsik>rpiMkIsikNimi"`     // Company name
-	Period          string `xml:"dpiPeriood"`                   // YYYYMM format
-	DocumentType    string `xml:"dpiDokLiik"`                   // TSD
-	Version         string `xml:"dpiVersioon,omitempty"`        // Version number
+	TaxpayerRegCode string `xml:"dpiMkIsik>rpiMkIsikKood"` // Company registry code
+	TaxpayerName    string `xml:"dpiMkIsik>rpiMkIsikNimi"` // Company name
+	Period          string `xml:"dpiPeriood"`              // YYYYMM format
+	DocumentType    string `xml:"dpiDokLiik"`              // TSD
+	Version         string `xml:"dpiVersioon,omitempty"`   // Version number
 }
 
 // TSDDecl contains the main declaration body
 type TSDDecl struct {
 	// Summary totals
-	TotalPayments      string `xml:"dpsMaksedKokku,omitempty"`      // Total payments
-	TotalIncomeTax     string `xml:"dpsTm,omitempty"`               // Total income tax
-	TotalSocialTax     string `xml:"dpsSm,omitempty"`               // Total social tax
-	TotalUnempEE       string `xml:"dpsTkm,omitempty"`              // Total unemployment ins. employee
-	TotalUnempER       string `xml:"dpsTkmTootja,omitempty"`        // Total unemployment ins. employer
-	TotalPension       string `xml:"dpsKp,omitempty"`               // Total funded pension
+	TotalPayments  string `xml:"dpsMaksedKokku,omitempty"` // Total payments
+	TotalIncomeTax string `xml:"dpsTm,omitempty"`          // Total income tax
+	TotalSocialTax string `xml:"dpsSm,omitempty"`          // Total social tax
+	TotalUnempEE   string `xml:"dpsTkm,omitempty"`         // Total unemployment ins. employee
+	TotalUnempER   string `xml:"dpsTkmTootja,omitempty"`   // Total unemployment ins. employer
+	TotalPension   string `xml:"dpsKp,omitempty"`          // Total funded pension
 }
 
 // TSDLisad contains all annexes
@@ -54,19 +54,19 @@ type TSDLisa1 struct {
 
 // TSDLisa1Row represents a single row in Annex 1
 type TSDLisa1Row struct {
-	RowNumber      int    `xml:"l1Jrk"`                   // Row number
-	PersonalCode   string `xml:"l1Isikukood"`             // Estonian personal ID code
-	FirstName      string `xml:"l1Eesnimi"`               // First name
-	LastName       string `xml:"l1Perenimi"`              // Last name
-	PaymentType    string `xml:"l1MakseliikKood"`         // Payment type code (10 = salary)
-	GrossPayment   string `xml:"l1Mk"`                    // Gross payment
-	BasicExemption string `xml:"l1Mv,omitempty"`          // Basic exemption applied
-	TaxableAmount  string `xml:"l1Mmv,omitempty"`         // Taxable amount
-	IncomeTax      string `xml:"l1Tm"`                    // Income tax withheld
-	SocialTax      string `xml:"l1Sm"`                    // Social tax
-	UnempEE        string `xml:"l1Tkm,omitempty"`         // Unemployment insurance (employee)
-	UnempER        string `xml:"l1TkmTootja,omitempty"`   // Unemployment insurance (employer)
-	FundedPension  string `xml:"l1Kp,omitempty"`          // Funded pension contribution
+	RowNumber      int    `xml:"l1Jrk"`                 // Row number
+	PersonalCode   string `xml:"l1Isikukood"`           // Estonian personal ID code
+	FirstName      string `xml:"l1Eesnimi"`             // First name
+	LastName       string `xml:"l1Perenimi"`            // Last name
+	PaymentType    string `xml:"l1MakseliikKood"`       // Payment type code (10 = salary)
+	GrossPayment   string `xml:"l1Mk"`                  // Gross payment
+	BasicExemption string `xml:"l1Mv,omitempty"`        // Basic exemption applied
+	TaxableAmount  string `xml:"l1Mmv,omitempty"`       // Taxable amount
+	IncomeTax      string `xml:"l1Tm"`                  // Income tax withheld
+	SocialTax      string `xml:"l1Sm"`                  // Social tax
+	UnempEE        string `xml:"l1Tkm,omitempty"`       // Unemployment insurance (employee)
+	UnempER        string `xml:"l1TkmTootja,omitempty"` // Unemployment insurance (employer)
+	FundedPension  string `xml:"l1Kp,omitempty"`        // Funded pension contribution
 }
 
 // TSDCompanyInfo contains company information for XML generation
@@ -77,8 +77,8 @@ type TSDCompanyInfo struct {
 
 // ExportTSDOptions contains options for TSD XML export
 type ExportTSDOptions struct {
-	Company       TSDCompanyInfo
-	IncludeZeros  bool // Include rows with zero amounts
+	Company      TSDCompanyInfo
+	IncludeZeros bool // Include rows with zero amounts
 }
 
 // ExportTSDToXML generates TSD XML for e-MTA submission
@@ -206,20 +206,20 @@ func formatDecimalIfPositive(d decimal.Decimal) string {
 
 // TSD Payment Type Codes for Annex 1 (Estonian residents)
 const (
-	PaymentTypeSalary           = "10"  // Regular salary/wages
-	PaymentTypeVacationPay      = "11"  // Vacation pay
-	PaymentTypeSickPay          = "12"  // Sick pay
-	PaymentTypeBonus            = "13"  // Bonuses
-	PaymentTypeTermination      = "14"  // Termination compensation
-	PaymentTypeBoard            = "21"  // Board member fees
-	PaymentTypeContract         = "22"  // Contract work
-	PaymentTypeRoyalties        = "30"  // Royalties
-	PaymentTypeRent             = "40"  // Rent payments
-	PaymentTypeInterest         = "50"  // Interest payments
-	PaymentTypeDividends        = "60"  // Dividends (Annex 7)
-	PaymentTypePension          = "70"  // Pension payments
-	PaymentTypeBenefit          = "80"  // Benefits
-	PaymentTypeFringeBenefit    = "42"  // Fringe benefits
+	PaymentTypeSalary        = "10" // Regular salary/wages
+	PaymentTypeVacationPay   = "11" // Vacation pay
+	PaymentTypeSickPay       = "12" // Sick pay
+	PaymentTypeBonus         = "13" // Bonuses
+	PaymentTypeTermination   = "14" // Termination compensation
+	PaymentTypeBoard         = "21" // Board member fees
+	PaymentTypeContract      = "22" // Contract work
+	PaymentTypeRoyalties     = "30" // Royalties
+	PaymentTypeRent          = "40" // Rent payments
+	PaymentTypeInterest      = "50" // Interest payments
+	PaymentTypeDividends     = "60" // Dividends (Annex 7)
+	PaymentTypePension       = "70" // Pension payments
+	PaymentTypeBenefit       = "80" // Benefits
+	PaymentTypeFringeBenefit = "42" // Fringe benefits
 )
 
 // ValidatePersonalCode validates Estonian personal identification code (isikukood)
@@ -261,13 +261,13 @@ func ValidatePersonalCode(code string) bool {
 
 // TSDSummary provides a summary of TSD declaration for display
 type TSDSummary struct {
-	Period              string          `json:"period"`
-	EmployeeCount       int             `json:"employee_count"`
-	TotalGrossPayments  decimal.Decimal `json:"total_gross_payments"`
-	TotalTaxes          decimal.Decimal `json:"total_taxes"`
-	TotalEmployerCosts  decimal.Decimal `json:"total_employer_costs"`
-	Status              TSDStatus       `json:"status"`
-	SubmittedAt         *time.Time      `json:"submitted_at,omitempty"`
+	Period             string          `json:"period"`
+	EmployeeCount      int             `json:"employee_count"`
+	TotalGrossPayments decimal.Decimal `json:"total_gross_payments"`
+	TotalTaxes         decimal.Decimal `json:"total_taxes"`
+	TotalEmployerCosts decimal.Decimal `json:"total_employer_costs"`
+	Status             TSDStatus       `json:"status"`
+	SubmittedAt        *time.Time      `json:"submitted_at,omitempty"`
 }
 
 // GetTSDSummary returns a summary of TSD declaration

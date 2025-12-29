@@ -51,16 +51,16 @@ const (
 
 // Employee represents an employee in the payroll system
 type Employee struct {
-	ID             string         `json:"id"`
-	TenantID       string         `json:"tenant_id"`
-	EmployeeNumber string         `json:"employee_number,omitempty"`
-	FirstName      string         `json:"first_name"`
-	LastName       string         `json:"last_name"`
-	PersonalCode   string         `json:"personal_code,omitempty"` // Estonian isikukood
-	Email          string         `json:"email,omitempty"`
-	Phone          string         `json:"phone,omitempty"`
-	Address        string         `json:"address,omitempty"`
-	BankAccount    string         `json:"bank_account,omitempty"` // IBAN
+	ID             string `json:"id"`
+	TenantID       string `json:"tenant_id"`
+	EmployeeNumber string `json:"employee_number,omitempty"`
+	FirstName      string `json:"first_name"`
+	LastName       string `json:"last_name"`
+	PersonalCode   string `json:"personal_code,omitempty"` // Estonian isikukood
+	Email          string `json:"email,omitempty"`
+	Phone          string `json:"phone,omitempty"`
+	Address        string `json:"address,omitempty"`
+	BankAccount    string `json:"bank_account,omitempty"` // IBAN
 
 	// Employment details
 	StartDate      time.Time      `json:"start_date"`
@@ -134,10 +134,10 @@ type Payslip struct {
 	TaxableIncome decimal.Decimal `json:"taxable_income"`
 
 	// Employee deductions (withheld from gross)
-	IncomeTax                   decimal.Decimal `json:"income_tax"`
-	UnemploymentInsuranceEE     decimal.Decimal `json:"unemployment_insurance_employee"`
-	FundedPension               decimal.Decimal `json:"funded_pension"`
-	OtherDeductions             decimal.Decimal `json:"other_deductions"`
+	IncomeTax               decimal.Decimal `json:"income_tax"`
+	UnemploymentInsuranceEE decimal.Decimal `json:"unemployment_insurance_employee"`
+	FundedPension           decimal.Decimal `json:"funded_pension"`
+	OtherDeductions         decimal.Decimal `json:"other_deductions"`
 
 	// Net pay (what employee receives)
 	NetSalary decimal.Decimal `json:"net_salary"`
@@ -169,12 +169,12 @@ type TSDDeclaration struct {
 	PayrollRunID string `json:"payroll_run_id,omitempty"`
 
 	// Totals for the declaration
-	TotalPayments           decimal.Decimal `json:"total_payments"`
-	TotalIncomeTax          decimal.Decimal `json:"total_income_tax"`
-	TotalSocialTax          decimal.Decimal `json:"total_social_tax"`
-	TotalUnemploymentER     decimal.Decimal `json:"total_unemployment_employer"`
-	TotalUnemploymentEE     decimal.Decimal `json:"total_unemployment_employee"`
-	TotalFundedPension      decimal.Decimal `json:"total_funded_pension"`
+	TotalPayments       decimal.Decimal `json:"total_payments"`
+	TotalIncomeTax      decimal.Decimal `json:"total_income_tax"`
+	TotalSocialTax      decimal.Decimal `json:"total_social_tax"`
+	TotalUnemploymentER decimal.Decimal `json:"total_unemployment_employer"`
+	TotalUnemploymentEE decimal.Decimal `json:"total_unemployment_employee"`
+	TotalFundedPension  decimal.Decimal `json:"total_funded_pension"`
 
 	Status        TSDStatus  `json:"status"`
 	SubmittedAt   *time.Time `json:"submitted_at,omitempty"`
@@ -200,17 +200,17 @@ type TSDRow struct {
 	LastName     string `json:"last_name"`
 
 	// Payment details
-	PaymentType   string          `json:"payment_type"` // TSD payment type code (e.g., "10" for salary)
-	GrossPayment  decimal.Decimal `json:"gross_payment"`
+	PaymentType    string          `json:"payment_type"` // TSD payment type code (e.g., "10" for salary)
+	GrossPayment   decimal.Decimal `json:"gross_payment"`
 	BasicExemption decimal.Decimal `json:"basic_exemption"`
-	TaxableAmount decimal.Decimal `json:"taxable_amount"`
+	TaxableAmount  decimal.Decimal `json:"taxable_amount"`
 
 	// Taxes
-	IncomeTax           decimal.Decimal `json:"income_tax"`
-	SocialTax           decimal.Decimal `json:"social_tax"`
-	UnemploymentER      decimal.Decimal `json:"unemployment_insurance_employer"`
-	UnemploymentEE      decimal.Decimal `json:"unemployment_insurance_employee"`
-	FundedPension       decimal.Decimal `json:"funded_pension"`
+	IncomeTax      decimal.Decimal `json:"income_tax"`
+	SocialTax      decimal.Decimal `json:"social_tax"`
+	UnemploymentER decimal.Decimal `json:"unemployment_insurance_employer"`
+	UnemploymentEE decimal.Decimal `json:"unemployment_insurance_employee"`
+	FundedPension  decimal.Decimal `json:"funded_pension"`
 
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -266,22 +266,22 @@ type UpdateEmployeeRequest struct {
 
 // TaxCalculation holds the breakdown of taxes for a salary
 type TaxCalculation struct {
-	GrossSalary         decimal.Decimal `json:"gross_salary"`
-	BasicExemption      decimal.Decimal `json:"basic_exemption"`
-	TaxableIncome       decimal.Decimal `json:"taxable_income"`
+	GrossSalary    decimal.Decimal `json:"gross_salary"`
+	BasicExemption decimal.Decimal `json:"basic_exemption"`
+	TaxableIncome  decimal.Decimal `json:"taxable_income"`
 
 	// Employee deductions
-	IncomeTax           decimal.Decimal `json:"income_tax"`
-	UnemploymentEE      decimal.Decimal `json:"unemployment_employee"`
-	FundedPension       decimal.Decimal `json:"funded_pension"`
-	TotalDeductions     decimal.Decimal `json:"total_deductions"`
+	IncomeTax       decimal.Decimal `json:"income_tax"`
+	UnemploymentEE  decimal.Decimal `json:"unemployment_employee"`
+	FundedPension   decimal.Decimal `json:"funded_pension"`
+	TotalDeductions decimal.Decimal `json:"total_deductions"`
 
-	NetSalary           decimal.Decimal `json:"net_salary"`
+	NetSalary decimal.Decimal `json:"net_salary"`
 
 	// Employer costs
-	SocialTax           decimal.Decimal `json:"social_tax"`
-	UnemploymentER      decimal.Decimal `json:"unemployment_employer"`
-	TotalEmployerCost   decimal.Decimal `json:"total_employer_cost"`
+	SocialTax         decimal.Decimal `json:"social_tax"`
+	UnemploymentER    decimal.Decimal `json:"unemployment_employer"`
+	TotalEmployerCost decimal.Decimal `json:"total_employer_cost"`
 }
 
 // CalculateEstonianTaxes calculates all Estonian payroll taxes

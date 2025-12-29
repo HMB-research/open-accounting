@@ -27,6 +27,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/pdf"
+	"github.com/HMB-research/open-accounting/internal/plugin"
 	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
@@ -76,6 +77,12 @@ func main() {
 	bankingService := banking.NewService(pool)
 	taxService := tax.NewService(pool)
 	payrollService := payroll.NewService(pool)
+	pluginService := plugin.NewService(pool, "./plugins")
+
+	// Load enabled plugins on startup
+	if err := pluginService.LoadEnabledPlugins(ctx); err != nil {
+		log.Warn().Err(err).Msg("Failed to load some plugins")
+	}
 
 	// Create handlers
 	handlers := &Handlers{
@@ -92,6 +99,7 @@ func main() {
 		bankingService:    bankingService,
 		taxService:        taxService,
 		payrollService:    payrollService,
+		pluginService:     pluginService,
 	}
 
 	// Setup router
@@ -217,6 +225,25 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 			// Tenant management
 			r.Post("/tenants", h.CreateTenant)
 			r.Get("/tenants/{tenantID}", h.GetTenant)
+
+			// Admin routes (instance-level plugin management)
+			r.Route("/admin", func(r chi.Router) {
+				// Plugin Registries
+				r.Get("/plugin-registries", h.ListPluginRegistries)
+				r.Post("/plugin-registries", h.AddPluginRegistry)
+				r.Delete("/plugin-registries/{id}", h.RemovePluginRegistry)
+				r.Post("/plugin-registries/{id}/sync", h.SyncPluginRegistry)
+
+				// Plugin Management
+				r.Get("/plugins", h.ListPlugins)
+				r.Get("/plugins/search", h.SearchPlugins)
+				r.Get("/plugins/permissions", h.GetAllPermissions)
+				r.Post("/plugins/install", h.InstallPlugin)
+				r.Get("/plugins/{id}", h.GetPlugin)
+				r.Delete("/plugins/{id}", h.UninstallPlugin)
+				r.Post("/plugins/{id}/enable", h.EnablePlugin)
+				r.Post("/plugins/{id}/disable", h.DisablePlugin)
+			})
 
 			// Tenant-scoped routes
 			r.Route("/tenants/{tenantID}", func(r chi.Router) {
@@ -356,6 +383,13 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/invitations", h.ListInvitations)
 				r.Post("/invitations", h.CreateInvitation)
 				r.Delete("/invitations/{invitationID}", h.RevokeInvitation)
+
+				// Tenant Plugin Management
+				r.Get("/plugins", h.ListTenantPlugins)
+				r.Post("/plugins/{pluginID}/enable", h.EnableTenantPlugin)
+				r.Post("/plugins/{pluginID}/disable", h.DisableTenantPlugin)
+				r.Get("/plugins/{pluginID}/settings", h.GetTenantPluginSettings)
+				r.Put("/plugins/{pluginID}/settings", h.UpdateTenantPluginSettings)
 			})
 		})
 	})

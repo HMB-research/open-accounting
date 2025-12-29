@@ -1,0 +1,193 @@
+# Open Accounting
+
+> Open-source multi-tenant accounting software with Estonian tax compliance
+
+This file provides AI-readable documentation for Open Accounting. For full documentation, see `/docs/` directory.
+
+## Overview
+
+Open Accounting is a full-stack accounting application built with Go (backend) and SvelteKit (frontend). It features multi-tenant architecture with schema-per-tenant database isolation, plugin marketplace for extensibility, and Estonian tax compliance (KMD, TSD).
+
+## Quick Links
+
+- Repository: https://github.com/HMB-research/open-accounting
+- Documentation: /docs/
+- API Documentation: /swagger/ (when running)
+
+## Architecture
+
+### Backend (Go)
+- Framework: Chi router with middleware
+- Database: PostgreSQL with pgx driver
+- Auth: JWT tokens with rate limiting
+- Code generation: SQLC for type-safe queries
+
+### Frontend (SvelteKit 5)
+- UI: Custom CSS with CSS variables
+- State: Svelte 5 runes ($state, $effect)
+- API Client: Type-safe fetch wrapper with Decimal.js
+
+### Database
+- Multi-tenant: Schema-per-tenant isolation
+- Migrations: golang-migrate with versioned SQL files
+- Tables: tenants, users, accounts, invoices, payments, etc.
+
+## Key Directories
+
+```
+/cmd/api/          - Main API server entry point
+/internal/         - Business logic packages
+  /accounting/     - Chart of accounts, journal entries
+  /invoicing/      - Invoice management
+  /payments/       - Payment processing
+  /payroll/        - Payroll with Estonian tax calculations
+  /plugin/         - Plugin marketplace system
+  /tax/            - KMD (VAT) declarations
+/frontend/         - SvelteKit application
+  /src/lib/        - Shared utilities, API client
+  /src/routes/     - Page components
+/migrations/       - Database migrations
+/docs/             - Documentation
+```
+
+## Core Features
+
+### Accounting
+- Double-entry bookkeeping
+- Chart of accounts (Estonian kontoplaani)
+- Journal entries with posting/voiding
+- Trial balance, balance sheet, income statement
+
+### Invoicing
+- Create/send/void invoices
+- PDF generation
+- Recurring invoices
+- Email notifications
+
+### Payments
+- Payment recording
+- Invoice allocation
+- Bank reconciliation
+- Transaction matching
+
+### Payroll (Estonian)
+- Employee management
+- Estonian tax calculations (income tax, social tax, unemployment)
+- TSD declaration generation
+- XML export for e-MTA
+
+### Tax Compliance
+- KMD (VAT) declarations
+- Automatic tax code mapping
+- XML export for Estonian Tax Board
+
+### Plugin System
+- Install plugins from GitHub/GitLab
+- Permission-based security
+- Two-level enablement (instance + tenant)
+- Event hooks for integration
+- UI slots for extensibility
+
+## API Endpoints
+
+### Authentication
+- POST /api/v1/auth/register
+- POST /api/v1/auth/login
+- POST /api/v1/auth/refresh
+
+### Tenant-Scoped (requires tenant ID)
+- GET/POST /api/v1/tenants/{id}/accounts
+- GET/POST /api/v1/tenants/{id}/invoices
+- GET/POST /api/v1/tenants/{id}/payments
+- GET/POST /api/v1/tenants/{id}/contacts
+- GET /api/v1/tenants/{id}/reports/*
+
+### Admin
+- GET/POST /api/v1/admin/plugins
+- GET/POST /api/v1/admin/plugin-registries
+
+## Plugin Development
+
+Plugins extend Open Accounting with custom functionality. See /docs/PLUGINS.md for details.
+
+### Plugin Manifest (plugin.yaml)
+```yaml
+name: my-plugin
+display_name: My Plugin
+version: 1.0.0
+permissions:
+  - invoices:read
+  - hooks:register
+frontend:
+  navigation:
+    - label: My Feature
+      path: /my-feature
+```
+
+### Available Permissions
+- Data: contacts:read/write, invoices:read/write, payments:read/write
+- System: email:send, storage:write, pdf:generate
+- Database: database:migrate, database:query
+- Dangerous: hooks:register, routes:register
+
+### Event Hooks
+- invoice.created, invoice.sent, invoice.paid
+- payment.received, payment.allocated
+- contact.created, contact.updated
+- journal_entry.posted
+- payroll.calculated, payroll.approved
+
+## Development
+
+### Prerequisites
+- Go 1.21+
+- Node.js 18+
+- PostgreSQL 15+
+
+### Setup
+```bash
+# Backend
+go mod download
+go run cmd/api/main.go
+
+# Frontend
+cd frontend
+npm install
+npm run dev
+```
+
+### Environment Variables
+- DATABASE_URL: PostgreSQL connection string
+- JWT_SECRET: Secret for JWT signing
+- PORT: Server port (default: 8080)
+- ALLOWED_ORIGINS: CORS origins
+
+## File Index
+
+### Backend Entry Points
+- cmd/api/main.go - Server initialization
+- cmd/api/handlers.go - HTTP handlers struct
+- cmd/api/handlers_*.go - Route handlers by domain
+
+### Key Packages
+- internal/plugin/service.go - Plugin lifecycle management
+- internal/plugin/hooks.go - Event system
+- internal/accounting/service.go - Core accounting logic
+- internal/invoicing/service.go - Invoice management
+- internal/payroll/service.go - Payroll calculations
+
+### Frontend Key Files
+- frontend/src/lib/api.ts - API client with all types
+- frontend/src/lib/plugins/manager.ts - Plugin state management
+- frontend/src/routes/+layout.svelte - Main layout with navigation
+
+## Contributing
+
+1. Fork the repository
+2. Create feature branch
+3. Follow Go and Svelte conventions
+4. Submit pull request
+
+## License
+
+MIT License - See LICENSE file

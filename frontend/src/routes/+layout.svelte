@@ -1,15 +1,40 @@
 <script lang="ts">
 	import '../app.css';
+	import { page } from '$app/stores';
 	import { api } from '$lib/api';
+	import { pluginManager, type PluginNavigationItem } from '$lib/plugins';
 
 	let { children } = $props();
 
 	let isAuthenticated = $state(api.isAuthenticated);
+	let pluginNavItems = $state<PluginNavigationItem[]>([]);
+
+	// Load plugins when tenant changes
+	$effect(() => {
+		const tenantId = $page.url.searchParams.get('tenant');
+		if (tenantId && isAuthenticated) {
+			pluginManager.loadPlugins(tenantId);
+		}
+	});
+
+	// Subscribe to plugin navigation changes
+	$effect(() => {
+		const unsubscribe = pluginManager.subscribe(() => {
+			pluginNavItems = pluginManager.getNavigation();
+		});
+		return unsubscribe;
+	});
 
 	function handleLogout() {
 		api.logout();
+		pluginManager.clear();
 		isAuthenticated = false;
 		window.location.href = '/login';
+	}
+
+	function getPluginNavUrl(item: PluginNavigationItem): string {
+		const tenantId = $page.url.searchParams.get('tenant');
+		return tenantId ? `${item.path}?tenant=${tenantId}` : item.path;
 	}
 </script>
 
@@ -32,6 +57,20 @@
 							<a href="/employees">Employees</a>
 							<a href="/payroll">Payroll Runs</a>
 							<a href="/tsd">TSD Declarations</a>
+						</div>
+					</div>
+					{#if pluginNavItems.length > 0}
+						{#each pluginNavItems as navItem}
+							<a href={getPluginNavUrl(navItem)} class="plugin-nav-item" title={navItem.pluginName}>
+								{navItem.label}
+							</a>
+						{/each}
+					{/if}
+					<div class="nav-dropdown">
+						<span class="nav-dropdown-trigger">Admin</span>
+						<div class="nav-dropdown-menu">
+							<a href="/admin/plugins">Plugin Marketplace</a>
+							<a href="/settings">Settings</a>
 						</div>
 					</div>
 					<button class="btn btn-secondary" onclick={handleLogout}>Logout</button>
@@ -131,6 +170,21 @@
 
 	.nav-dropdown-menu a:hover {
 		background: var(--color-bg);
+	}
+
+	.plugin-nav-item {
+		position: relative;
+	}
+
+	.plugin-nav-item::before {
+		content: '';
+		display: inline-block;
+		width: 6px;
+		height: 6px;
+		background: var(--color-primary);
+		border-radius: 50%;
+		margin-right: 0.25rem;
+		opacity: 0.6;
 	}
 
 	.main-content {
