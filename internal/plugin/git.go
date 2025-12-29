@@ -101,6 +101,7 @@ func (s *Service) cloneRepository(ctx context.Context, repoURL string) (string, 
 }
 
 // updateRepository pulls the latest changes for a plugin
+// nolint:unused // Reserved for UpdatePlugin implementation
 func (s *Service) updateRepository(ctx context.Context, pluginName string) error {
 	pluginPath := s.getPluginPath(pluginName)
 	if pluginPath == "" {
@@ -147,6 +148,7 @@ func (s *Service) removePluginFiles(pluginName string) error {
 }
 
 // getPluginPath returns the filesystem path for a plugin
+// nolint:unused // Reserved for UpdatePlugin implementation
 func (s *Service) getPluginPath(pluginName string) string {
 	entries, err := os.ReadDir(s.pluginDir)
 	if err != nil {

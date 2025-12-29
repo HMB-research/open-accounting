@@ -280,10 +280,10 @@ func TestAccountBalanceWidget_JSONSerialization(t *testing.T) {
 
 func TestDashboardSummary_NetIncomeCalculation(t *testing.T) {
 	tests := []struct {
-		name      string
-		revenue   decimal.Decimal
-		expenses  decimal.Decimal
-		expected  decimal.Decimal
+		name     string
+		revenue  decimal.Decimal
+		expenses decimal.Decimal
+		expected decimal.Decimal
 	}{
 		{"Positive net income", decimal.NewFromInt(10000), decimal.NewFromInt(7000), decimal.NewFromInt(3000)},
 		{"Zero net income", decimal.NewFromInt(5000), decimal.NewFromInt(5000), decimal.Zero},
@@ -303,10 +303,10 @@ func TestDashboardSummary_NetIncomeCalculation(t *testing.T) {
 
 func TestRevenueChangePercentage(t *testing.T) {
 	tests := []struct {
-		name        string
-		current     decimal.Decimal
-		previous    decimal.Decimal
-		expected    decimal.Decimal
+		name     string
+		current  decimal.Decimal
+		previous decimal.Decimal
+		expected decimal.Decimal
 	}{
 		{"10% increase", decimal.NewFromInt(1100), decimal.NewFromInt(1000), decimal.NewFromInt(10)},
 		{"50% increase", decimal.NewFromInt(1500), decimal.NewFromInt(1000), decimal.NewFromInt(50)},
