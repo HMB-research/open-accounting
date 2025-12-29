@@ -195,6 +195,10 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 		r.Post("/auth/login", h.Login)
 		r.Post("/auth/refresh", h.RefreshToken)
 
+		// Public invitation endpoints (no auth required)
+		r.Get("/invitations/{token}", h.GetInvitationByToken)
+		r.Post("/invitations/accept", h.AcceptInvitation)
+
 		// Authenticated routes
 		r.Group(func(r chi.Router) {
 			r.Use(tokenService.Middleware)
@@ -307,6 +311,16 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Post("/tax/kmd", h.HandleGenerateKMD)
 				r.Get("/tax/kmd", h.HandleListKMD)
 				r.Get("/tax/kmd/{year}/{month}/xml", h.HandleExportKMD)
+
+				// User Management
+				r.Get("/users", h.ListTenantUsers)
+				r.Delete("/users/{userID}", h.RemoveTenantUser)
+				r.Put("/users/{userID}/role", h.UpdateTenantUserRole)
+
+				// Invitations
+				r.Get("/invitations", h.ListInvitations)
+				r.Post("/invitations", h.CreateInvitation)
+				r.Delete("/invitations/{invitationID}", h.RevokeInvitation)
 			})
 		})
 	})
