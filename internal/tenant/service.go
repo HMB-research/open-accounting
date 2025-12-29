@@ -156,6 +156,88 @@ func (s *Service) GetTenantBySlug(ctx context.Context, slug string) (*Tenant, er
 	return &t, nil
 }
 
+// UpdateTenant updates a tenant's name and/or settings
+func (s *Service) UpdateTenant(ctx context.Context, tenantID string, req *UpdateTenantRequest) (*Tenant, error) {
+	// Get current tenant
+	current, err := s.GetTenant(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Update name if provided
+	if req.Name != nil && *req.Name != "" {
+		current.Name = *req.Name
+	}
+
+	// Update settings if provided
+	if req.Settings != nil {
+		// Merge settings - keep existing values for fields not provided
+		if req.Settings.VATNumber != "" {
+			current.Settings.VATNumber = req.Settings.VATNumber
+		}
+		if req.Settings.RegCode != "" {
+			current.Settings.RegCode = req.Settings.RegCode
+		}
+		if req.Settings.Address != "" {
+			current.Settings.Address = req.Settings.Address
+		}
+		if req.Settings.Email != "" {
+			current.Settings.Email = req.Settings.Email
+		}
+		if req.Settings.Phone != "" {
+			current.Settings.Phone = req.Settings.Phone
+		}
+		if req.Settings.Logo != "" {
+			current.Settings.Logo = req.Settings.Logo
+		}
+		if req.Settings.PDFPrimaryColor != "" {
+			current.Settings.PDFPrimaryColor = req.Settings.PDFPrimaryColor
+		}
+		if req.Settings.PDFFooterText != "" {
+			current.Settings.PDFFooterText = req.Settings.PDFFooterText
+		}
+		if req.Settings.BankDetails != "" {
+			current.Settings.BankDetails = req.Settings.BankDetails
+		}
+		if req.Settings.InvoiceTerms != "" {
+			current.Settings.InvoiceTerms = req.Settings.InvoiceTerms
+		}
+		if req.Settings.Timezone != "" {
+			current.Settings.Timezone = req.Settings.Timezone
+		}
+		if req.Settings.DateFormat != "" {
+			current.Settings.DateFormat = req.Settings.DateFormat
+		}
+		if req.Settings.DecimalSep != "" {
+			current.Settings.DecimalSep = req.Settings.DecimalSep
+		}
+		if req.Settings.ThousandsSep != "" {
+			current.Settings.ThousandsSep = req.Settings.ThousandsSep
+		}
+		if req.Settings.FiscalYearStart != 0 {
+			current.Settings.FiscalYearStart = req.Settings.FiscalYearStart
+		}
+	}
+
+	current.UpdatedAt = time.Now()
+
+	settingsJSON, err := json.Marshal(current.Settings)
+	if err != nil {
+		return nil, fmt.Errorf("marshal settings: %w", err)
+	}
+
+	_, err = s.db.Exec(ctx, `
+		UPDATE tenants
+		SET name = $1, settings = $2, updated_at = $3
+		WHERE id = $4
+	`, current.Name, settingsJSON, current.UpdatedAt, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("update tenant: %w", err)
+	}
+
+	return current, nil
+}
+
 // ListUserTenants retrieves all tenants a user belongs to
 func (s *Service) ListUserTenants(ctx context.Context, userID string) ([]TenantMembership, error) {
 	rows, err := s.db.Query(ctx, `

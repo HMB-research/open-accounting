@@ -172,6 +172,10 @@ class ApiClient {
 		return this.request<Tenant>('GET', `/api/v1/tenants/${tenantId}`);
 	}
 
+	async updateTenant(tenantId: string, data: { name?: string; settings?: Partial<TenantSettings> }) {
+		return this.request<Tenant>('PUT', `/api/v1/tenants/${tenantId}`, data);
+	}
+
 	// Account endpoints
 	async listAccounts(tenantId: string, activeOnly = false) {
 		const query = activeOnly ? '?active_only=true' : '';

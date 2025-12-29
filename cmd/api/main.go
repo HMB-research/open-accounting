@@ -225,6 +225,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 			// Tenant management
 			r.Post("/tenants", h.CreateTenant)
 			r.Get("/tenants/{tenantID}", h.GetTenant)
+			r.Put("/tenants/{tenantID}", h.UpdateTenant)
 
 			// Admin routes (instance-level plugin management)
 			r.Route("/admin", func(r chi.Router) {
