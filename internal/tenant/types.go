@@ -185,3 +185,45 @@ type TenantMembership struct {
 	Role      string `json:"role"`
 	IsDefault bool   `json:"is_default"`
 }
+
+// UserInvitation represents a pending invitation to join a tenant
+type UserInvitation struct {
+	ID         string     `json:"id"`
+	TenantID   string     `json:"tenant_id"`
+	TenantName string     `json:"tenant_name,omitempty"`
+	Email      string     `json:"email"`
+	Role       string     `json:"role"`
+	InvitedBy  string     `json:"invited_by"`
+	Token      string     `json:"-"` // Never expose token in JSON
+	ExpiresAt  time.Time  `json:"expires_at"`
+	AcceptedAt *time.Time `json:"accepted_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+}
+
+// CreateInvitationRequest is the request to invite a user
+type CreateInvitationRequest struct {
+	Email string `json:"email"`
+	Role  string `json:"role"`
+}
+
+// AcceptInvitationRequest is the request to accept an invitation
+type AcceptInvitationRequest struct {
+	Token    string `json:"token"`
+	Password string `json:"password,omitempty"` // Required if user doesn't exist
+	Name     string `json:"name,omitempty"`     // Required if user doesn't exist
+}
+
+// ValidRoles returns the list of valid roles for invitations
+func ValidRoles() []string {
+	return []string{RoleAdmin, RoleAccountant, RoleViewer}
+}
+
+// IsValidRole checks if a role is valid for invitation
+func IsValidRole(role string) bool {
+	for _, r := range ValidRoles() {
+		if r == role {
+			return true
+		}
+	}
+	return false
+}

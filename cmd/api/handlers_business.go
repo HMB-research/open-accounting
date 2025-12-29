@@ -16,6 +16,7 @@ import (
 	"github.com/openaccounting/openaccounting/internal/invoicing"
 	"github.com/openaccounting/openaccounting/internal/payments"
 	"github.com/openaccounting/openaccounting/internal/recurring"
+	"github.com/openaccounting/openaccounting/internal/tenant"
 )
 
 // =============================================================================
@@ -1928,4 +1929,291 @@ func (h *Handlers) AutoMatchTransactions(w http.ResponseWriter, r *http.Request)
 	}
 
 	respondJSON(w, http.StatusOK, map[string]int{"matched": matched})
+}
+
+// =============================================================================
+// USER & INVITATION HANDLERS
+// =============================================================================
+
+// ListTenantUsers returns all users for a tenant
+// @Summary List tenant users
+// @Description Get all users who are members of a tenant
+// @Tags Users
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Success 200 {array} tenant.TenantUser
+// @Failure 403 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/users [get]
+func (h *Handlers) ListTenantUsers(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+
+	// Only admin/owner can list users
+	if !auth.CanManageUsers(claims.Role) {
+		respondError(w, http.StatusForbidden, "Permission denied")
+		return
+	}
+
+	users, err := h.tenantService.ListTenantUsers(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list users")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, users)
+}
+
+// RemoveTenantUser removes a user from a tenant
+// @Summary Remove user from tenant
+// @Description Remove a user from the tenant organization
+// @Tags Users
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param userID path string true "User ID"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Router /tenants/{tenantID}/users/{userID} [delete]
+func (h *Handlers) RemoveTenantUser(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	userID := chi.URLParam(r, "userID")
+
+	// Only admin/owner can remove users
+	if !auth.CanManageUsers(claims.Role) {
+		respondError(w, http.StatusForbidden, "Permission denied")
+		return
+	}
+
+	// Prevent self-removal
+	if userID == claims.UserID {
+		respondError(w, http.StatusBadRequest, "Cannot remove yourself from the organization")
+		return
+	}
+
+	if err := h.tenantService.RemoveTenantUser(r.Context(), tenantID, userID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "removed"})
+}
+
+// UpdateTenantUserRole updates a user's role in the tenant
+// @Summary Update user role
+// @Description Update a user's role in the tenant organization
+// @Tags Users
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param userID path string true "User ID"
+// @Param request body object{role=string} true "New role"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Router /tenants/{tenantID}/users/{userID}/role [put]
+func (h *Handlers) UpdateTenantUserRole(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	userID := chi.URLParam(r, "userID")
+
+	// Only admin/owner can update roles
+	if !auth.CanManageUsers(claims.Role) {
+		respondError(w, http.StatusForbidden, "Permission denied")
+		return
+	}
+
+	var req struct {
+		Role string `json:"role"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.Role == "" {
+		respondError(w, http.StatusBadRequest, "Role is required")
+		return
+	}
+
+	if err := h.tenantService.UpdateTenantUserRole(r.Context(), tenantID, userID, req.Role); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+// CreateInvitation creates a new invitation to join a tenant
+// @Summary Create invitation
+// @Description Invite a user to join the tenant organization
+// @Tags Invitations
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body tenant.CreateInvitationRequest true "Invitation details"
+// @Success 201 {object} tenant.UserInvitation
+// @Failure 400 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Router /tenants/{tenantID}/invitations [post]
+func (h *Handlers) CreateInvitation(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+
+	// Only admin/owner can invite users
+	if !auth.CanManageUsers(claims.Role) {
+		respondError(w, http.StatusForbidden, "Permission denied")
+		return
+	}
+
+	var req struct {
+		Email string `json:"email"`
+		Role  string `json:"role"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.Email == "" || req.Role == "" {
+		respondError(w, http.StatusBadRequest, "Email and role are required")
+		return
+	}
+
+	invitation, err := h.tenantService.CreateInvitation(r.Context(), tenantID, claims.UserID, &tenant.CreateInvitationRequest{
+		Email: req.Email,
+		Role:  req.Role,
+	})
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, invitation)
+}
+
+// ListInvitations returns pending invitations for a tenant
+// @Summary List invitations
+// @Description Get all pending invitations for a tenant
+// @Tags Invitations
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Success 200 {array} tenant.UserInvitation
+// @Failure 403 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/invitations [get]
+func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+
+	// Only admin/owner can view invitations
+	if !auth.CanManageUsers(claims.Role) {
+		respondError(w, http.StatusForbidden, "Permission denied")
+		return
+	}
+
+	invitations, err := h.tenantService.ListInvitations(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list invitations")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, invitations)
+}
+
+// RevokeInvitation revokes a pending invitation
+// @Summary Revoke invitation
+// @Description Revoke a pending invitation
+// @Tags Invitations
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param invitationID path string true "Invitation ID"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Router /tenants/{tenantID}/invitations/{invitationID} [delete]
+func (h *Handlers) RevokeInvitation(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	invitationID := chi.URLParam(r, "invitationID")
+
+	// Only admin/owner can revoke invitations
+	if !auth.CanManageUsers(claims.Role) {
+		respondError(w, http.StatusForbidden, "Permission denied")
+		return
+	}
+
+	if err := h.tenantService.RevokeInvitation(r.Context(), tenantID, invitationID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
+}
+
+// GetInvitationByToken retrieves invitation details by token
+// @Summary Get invitation by token
+// @Description Get invitation details for the invitation acceptance page
+// @Tags Invitations
+// @Produce json
+// @Param token path string true "Invitation token"
+// @Success 200 {object} tenant.UserInvitation
+// @Failure 400 {object} object{error=string}
+// @Router /invitations/{token} [get]
+func (h *Handlers) GetInvitationByToken(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+
+	invitation, err := h.tenantService.GetInvitationByToken(r.Context(), token)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, invitation)
+}
+
+// AcceptInvitation accepts an invitation and joins the tenant
+// @Summary Accept invitation
+// @Description Accept an invitation to join a tenant organization
+// @Tags Invitations
+// @Accept json
+// @Produce json
+// @Param request body tenant.AcceptInvitationRequest true "Acceptance details"
+// @Success 200 {object} tenant.TenantMembership
+// @Failure 400 {object} object{error=string}
+// @Router /invitations/accept [post]
+func (h *Handlers) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token    string `json:"token"`
+		Password string `json:"password,omitempty"`
+		Name     string `json:"name,omitempty"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.Token == "" {
+		respondError(w, http.StatusBadRequest, "Token is required")
+		return
+	}
+
+	membership, err := h.tenantService.AcceptInvitation(r.Context(), &tenant.AcceptInvitationRequest{
+		Token:    req.Token,
+		Password: req.Password,
+		Name:     req.Name,
+	})
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, membership)
 }
