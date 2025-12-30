@@ -7,6 +7,7 @@
 		type PluginPermission,
 		type PermissionRisk
 	} from '$lib/api';
+	import * as m from '$lib/paraglide/messages.js';
 
 	let plugins = $state<Plugin[]>([]);
 	let registries = $state<PluginRegistry[]>([]);
@@ -53,7 +54,7 @@
 			registries = registriesData;
 			allPermissions = permissionsData;
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to load data';
+			error = err instanceof Error ? err.message : m.plugins_failedToLoad();
 		} finally {
 			isLoading = false;
 		}
@@ -72,10 +73,10 @@
 			registries = [...registries, registry];
 			showAddRegistry = false;
 			resetRegistryForm();
-			successMessage = 'Registry added successfully';
+			successMessage = m.plugins_registryAdded();
 			setTimeout(() => (successMessage = ''), 3000);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to add registry';
+			error = err instanceof Error ? err.message : m.plugins_failedToAddRegistry();
 		}
 	}
 
@@ -86,25 +87,25 @@
 	}
 
 	async function removeRegistry(registryId: string) {
-		if (!confirm('Are you sure you want to remove this registry?')) return;
+		if (!confirm(m.plugins_confirmRemoveRegistry())) return;
 
 		try {
 			await api.removePluginRegistry(registryId);
 			registries = registries.filter((r) => r.id !== registryId);
-			successMessage = 'Registry removed';
+			successMessage = m.plugins_registryRemoved();
 			setTimeout(() => (successMessage = ''), 3000);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to remove registry';
+			error = err instanceof Error ? err.message : m.plugins_failedToRemoveRegistry();
 		}
 	}
 
 	async function syncRegistry(registryId: string) {
 		try {
 			await api.syncPluginRegistry(registryId);
-			successMessage = 'Registry synced successfully';
+			successMessage = m.plugins_registrySynced();
 			setTimeout(() => (successMessage = ''), 3000);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to sync registry';
+			error = err instanceof Error ? err.message : m.plugins_failedToSyncRegistry();
 		}
 	}
 
@@ -117,24 +118,24 @@
 			plugins = [...plugins, plugin];
 			showInstallPlugin = false;
 			installUrl = '';
-			successMessage = `Plugin "${plugin.display_name}" installed successfully`;
+			successMessage = m.plugins_pluginInstalled({ name: plugin.display_name });
 			setTimeout(() => (successMessage = ''), 3000);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to install plugin';
+			error = err instanceof Error ? err.message : m.plugins_failedToInstall();
 		}
 	}
 
 	async function uninstallPlugin(pluginId: string, pluginName: string) {
-		if (!confirm(`Are you sure you want to uninstall "${pluginName}"? This will remove all plugin data.`))
+		if (!confirm(m.plugins_confirmUninstall({ name: pluginName })))
 			return;
 
 		try {
 			await api.uninstallPlugin(pluginId);
 			plugins = plugins.filter((p) => p.id !== pluginId);
-			successMessage = `Plugin "${pluginName}" uninstalled`;
+			successMessage = m.plugins_pluginUninstalled({ name: pluginName });
 			setTimeout(() => (successMessage = ''), 3000);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to uninstall plugin';
+			error = err instanceof Error ? err.message : m.plugins_failedToUninstall();
 		}
 	}
 
@@ -152,10 +153,10 @@
 			plugins = plugins.map((p) => (p.id === updated.id ? updated : p));
 			showEnablePlugin = false;
 			selectedPlugin = null;
-			successMessage = `Plugin "${updated.display_name}" enabled`;
+			successMessage = m.plugins_pluginEnabled({ name: updated.display_name });
 			setTimeout(() => (successMessage = ''), 3000);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to enable plugin';
+			error = err instanceof Error ? err.message : m.plugins_failedToEnable();
 		}
 	}
 
@@ -163,10 +164,10 @@
 		try {
 			const updated = await api.disablePlugin(pluginId);
 			plugins = plugins.map((p) => (p.id === updated.id ? updated : p));
-			successMessage = `Plugin "${updated.display_name}" disabled`;
+			successMessage = m.plugins_pluginDisabled({ name: updated.display_name });
 			setTimeout(() => (successMessage = ''), 3000);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to disable plugin';
+			error = err instanceof Error ? err.message : m.plugins_failedToDisable();
 		}
 	}
 
@@ -176,7 +177,7 @@
 		try {
 			searchResults = await api.searchPlugins(searchQuery);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Search failed';
+			error = err instanceof Error ? err.message : m.plugins_searchFailed();
 		}
 	}
 
@@ -185,10 +186,10 @@
 			const plugin = await api.installPlugin(result.plugin.repository);
 			plugins = [...plugins, plugin];
 			searchResults = searchResults.filter((r) => r.plugin.repository !== result.plugin.repository);
-			successMessage = `Plugin "${plugin.display_name}" installed`;
+			successMessage = m.plugins_pluginInstalled({ name: plugin.display_name });
 			setTimeout(() => (successMessage = ''), 3000);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to install plugin';
+			error = err instanceof Error ? err.message : m.plugins_failedToInstall();
 		}
 	}
 
@@ -236,19 +237,19 @@
 </script>
 
 <svelte:head>
-	<title>Plugin Marketplace - Open Accounting</title>
+	<title>{m.plugins_title()} - Open Accounting</title>
 </svelte:head>
 
 <div class="container">
 	<div class="header">
 		<div>
-			<h1>Plugin Marketplace</h1>
-			<p class="subtitle">Manage plugins and registries for your Open Accounting instance</p>
+			<h1>{m.plugins_title()}</h1>
+			<p class="subtitle">{m.plugins_subtitle()}</p>
 		</div>
 		<div class="header-actions">
-			<button class="btn btn-secondary" onclick={() => (showSearch = true)}>Search Plugins</button>
+			<button class="btn btn-secondary" onclick={() => (showSearch = true)}>{m.plugins_searchPlugins()}</button>
 			<button class="btn btn-primary" onclick={() => (showInstallPlugin = true)}>
-				+ Install from URL
+				{m.plugins_installFromUrl()}
 			</button>
 		</div>
 	</div>
@@ -267,26 +268,26 @@
 			class:active={activeTab === 'installed'}
 			onclick={() => (activeTab = 'installed')}
 		>
-			Installed Plugins ({plugins.length})
+			{m.plugins_installedPlugins()} ({plugins.length})
 		</button>
 		<button
 			class="tab-btn"
 			class:active={activeTab === 'registries'}
 			onclick={() => (activeTab = 'registries')}
 		>
-			Registries ({registries.length})
+			{m.plugins_registries()} ({registries.length})
 		</button>
 	</div>
 
 	{#if isLoading}
-		<div class="loading">Loading...</div>
+		<div class="loading">{m.common_loading()}</div>
 	{:else if activeTab === 'installed'}
 		{#if plugins.length === 0}
 			<div class="empty-state card">
-				<h3>No plugins installed</h3>
-				<p>Install plugins from registries or directly from GitHub/GitLab repositories.</p>
+				<h3>{m.plugins_noPluginsInstalled()}</h3>
+				<p>{m.plugins_noPluginsInstalledDesc()}</p>
 				<button class="btn btn-primary" onclick={() => (showInstallPlugin = true)}>
-					Install Your First Plugin
+					{m.plugins_installFirstPlugin()}
 				</button>
 			</div>
 		{:else}
@@ -298,7 +299,7 @@
 								<h3>{plugin.display_name}</h3>
 								<span class="badge {getStateClass(plugin.state)}">{plugin.state}</span>
 							</div>
-							<span class="version">v{plugin.version}</span>
+							<span class="version">{m.plugins_version({ version: plugin.version })}</span>
 						</div>
 
 						{#if plugin.description}
@@ -307,17 +308,17 @@
 
 						<div class="plugin-meta">
 							{#if plugin.author}
-								<span class="meta-item">By {plugin.author}</span>
+								<span class="meta-item">{m.plugins_byAuthor({ author: plugin.author })}</span>
 							{/if}
 							{#if plugin.license}
 								<span class="meta-item">{plugin.license}</span>
 							{/if}
-							<span class="meta-item">Installed {formatDate(plugin.installed_at)}</span>
+							<span class="meta-item">{m.plugins_installedOn({ date: formatDate(plugin.installed_at) })}</span>
 						</div>
 
 						{#if plugin.granted_permissions.length > 0}
 							<div class="permissions-summary">
-								<span class="permissions-label">Permissions:</span>
+								<span class="permissions-label">{m.plugins_permissions()}</span>
 								<div class="permission-badges">
 									{#each plugin.granted_permissions.slice(0, 3) as perm}
 										{@const permInfo = allPermissions[perm]}
@@ -330,7 +331,7 @@
 									{/each}
 									{#if plugin.granted_permissions.length > 3}
 										<span class="permission-badge more">
-											+{plugin.granted_permissions.length - 3} more
+											{m.plugins_morePermissions({ count: (plugin.granted_permissions.length - 3).toString() })}
 										</span>
 									{/if}
 								</div>
@@ -340,18 +341,18 @@
 						<div class="plugin-actions">
 							{#if plugin.state === 'enabled'}
 								<button class="btn btn-sm btn-secondary" onclick={() => disablePlugin(plugin.id)}>
-									Disable
+									{m.plugins_disable()}
 								</button>
 							{:else if plugin.state === 'installed' || plugin.state === 'disabled'}
 								<button class="btn btn-sm btn-primary" onclick={() => openEnableModal(plugin)}>
-									Enable
+									{m.plugins_enable()}
 								</button>
 							{/if}
 							<button
 								class="btn btn-sm btn-danger"
 								onclick={() => uninstallPlugin(plugin.id, plugin.display_name)}
 							>
-								Uninstall
+								{m.plugins_uninstall()}
 							</button>
 						</div>
 					</div>
@@ -361,14 +362,14 @@
 	{:else}
 		<div class="registries-header">
 			<button class="btn btn-primary" onclick={() => (showAddRegistry = true)}>
-				+ Add Registry
+				{m.plugins_addRegistry()}
 			</button>
 		</div>
 
 		{#if registries.length === 0}
 			<div class="empty-state card">
-				<h3>No registries configured</h3>
-				<p>Add plugin registries to discover and install community plugins.</p>
+				<h3>{m.plugins_noRegistries()}</h3>
+				<p>{m.plugins_noRegistriesDesc()}</p>
 			</div>
 		{:else}
 			<div class="registries-list">
@@ -379,7 +380,7 @@
 								<h3>
 									{registry.name}
 									{#if registry.is_official}
-										<span class="badge badge-official">Official</span>
+										<span class="badge badge-official">{m.plugins_official()}</span>
 									{/if}
 								</h3>
 								<a href={registry.url} target="_blank" rel="noopener" class="registry-url">
@@ -387,7 +388,7 @@
 								</a>
 							</div>
 							<span class="badge {registry.is_active ? 'badge-active' : 'badge-inactive'}">
-								{registry.is_active ? 'Active' : 'Inactive'}
+								{registry.is_active ? m.plugins_active() : m.plugins_inactive()}
 							</span>
 						</div>
 
@@ -397,22 +398,22 @@
 
 						<div class="registry-meta">
 							{#if registry.last_synced_at}
-								<span>Last synced: {formatDate(registry.last_synced_at)}</span>
+								<span>{m.plugins_lastSynced({ date: formatDate(registry.last_synced_at) })}</span>
 							{:else}
-								<span>Never synced</span>
+								<span>{m.plugins_neverSynced()}</span>
 							{/if}
 						</div>
 
 						<div class="registry-actions">
 							<button class="btn btn-sm btn-secondary" onclick={() => syncRegistry(registry.id)}>
-								Sync Now
+								{m.plugins_syncNow()}
 							</button>
 							{#if !registry.is_official}
 								<button
 									class="btn btn-sm btn-danger"
 									onclick={() => removeRegistry(registry.id)}
 								>
-									Remove
+									{m.plugins_remove()}
 								</button>
 							{/if}
 						</div>
@@ -435,49 +436,49 @@
 			aria-modal="true"
 			tabindex="-1"
 		>
-			<h2>Add Plugin Registry</h2>
+			<h2>{m.plugins_addRegistryTitle()}</h2>
 			<form onsubmit={addRegistry}>
 				<div class="form-group">
-					<label class="label" for="registryName">Registry Name *</label>
+					<label class="label" for="registryName">{m.plugins_registryNameRequired()}</label>
 					<input
 						class="input"
 						type="text"
 						id="registryName"
 						bind:value={newRegistryName}
 						required
-						placeholder="Community Plugins"
+						placeholder={m.plugins_registryNamePlaceholder()}
 					/>
 				</div>
 
 				<div class="form-group">
-					<label class="label" for="registryUrl">Repository URL *</label>
+					<label class="label" for="registryUrl">{m.plugins_repositoryUrlRequired()}</label>
 					<input
 						class="input"
 						type="url"
 						id="registryUrl"
 						bind:value={newRegistryUrl}
 						required
-						placeholder="https://github.com/owner/plugins-registry"
+						placeholder={m.plugins_repositoryUrlPlaceholder()}
 					/>
-					<small class="help-text">GitHub or GitLab repository URL containing plugins.yaml</small>
+					<small class="help-text">{m.plugins_repositoryUrlHelp()}</small>
 				</div>
 
 				<div class="form-group">
-					<label class="label" for="registryDescription">Description</label>
+					<label class="label" for="registryDescription">{m.plugins_description()}</label>
 					<textarea
 						class="input"
 						id="registryDescription"
 						bind:value={newRegistryDescription}
-						placeholder="Optional description..."
+						placeholder={m.plugins_descriptionPlaceholder()}
 						rows="2"
 					></textarea>
 				</div>
 
 				<div class="modal-actions">
 					<button type="button" class="btn btn-secondary" onclick={() => (showAddRegistry = false)}>
-						Cancel
+						{m.common_cancel()}
 					</button>
-					<button type="submit" class="btn btn-primary">Add Registry</button>
+					<button type="submit" class="btn btn-primary">{m.plugins_addRegistryBtn()}</button>
 				</div>
 			</form>
 		</div>
@@ -496,21 +497,20 @@
 			aria-modal="true"
 			tabindex="-1"
 		>
-			<h2>Install Plugin from URL</h2>
+			<h2>{m.plugins_installPluginTitle()}</h2>
 			<form onsubmit={installPlugin}>
 				<div class="form-group">
-					<label class="label" for="installUrl">Repository URL *</label>
+					<label class="label" for="installUrl">{m.plugins_installUrlRequired()}</label>
 					<input
 						class="input"
 						type="url"
 						id="installUrl"
 						bind:value={installUrl}
 						required
-						placeholder="https://github.com/owner/plugin-name"
+						placeholder={m.plugins_installUrlPlaceholder()}
 					/>
 					<small class="help-text">
-						Enter the GitHub or GitLab repository URL. The repository must contain a valid
-						plugin.yaml manifest and a LICENSE file.
+						{m.plugins_installUrlHelp()}
 					</small>
 				</div>
 
@@ -520,9 +520,9 @@
 						class="btn btn-secondary"
 						onclick={() => (showInstallPlugin = false)}
 					>
-						Cancel
+						{m.common_cancel()}
 					</button>
-					<button type="submit" class="btn btn-primary">Install Plugin</button>
+					<button type="submit" class="btn btn-primary">{m.plugins_installPluginBtn()}</button>
 				</div>
 			</form>
 		</div>
@@ -541,12 +541,12 @@
 			aria-modal="true"
 			tabindex="-1"
 		>
-			<h2>Enable Plugin: {selectedPlugin.display_name}</h2>
+			<h2>{m.plugins_enablePluginTitle({ name: selectedPlugin.display_name })}</h2>
 
 			<div class="permission-review">
-				<h3>Review Permissions</h3>
+				<h3>{m.plugins_reviewPermissions()}</h3>
 				<p class="permission-notice">
-					This plugin requires the following permissions. Review each carefully before enabling.
+					{m.plugins_reviewPermissionsNotice()}
 				</p>
 
 				<div class="permissions-list">
@@ -588,15 +588,14 @@
 					return info && (info.risk === 'high' || info.risk === 'critical');
 				})}
 					<div class="warning-box">
-						<strong>Warning:</strong> This plugin requests high-risk permissions. Only enable if you
-						trust the source.
+						<strong>{m.common_warning()}:</strong> {m.plugins_permissionWarning()}
 					</div>
 				{/if}
 			</div>
 
 			<div class="modal-actions">
 				<button type="button" class="btn btn-secondary" onclick={() => (showEnablePlugin = false)}>
-					Cancel
+					{m.common_cancel()}
 				</button>
 				<button
 					type="button"
@@ -604,7 +603,7 @@
 					onclick={enablePlugin}
 					disabled={selectedPermissions.length === 0}
 				>
-					Enable with {selectedPermissions.length} Permissions
+					{m.plugins_enableWithPermissions({ count: selectedPermissions.length.toString() })}
 				</button>
 			</div>
 		</div>
@@ -623,7 +622,7 @@
 			aria-modal="true"
 			tabindex="-1"
 		>
-			<h2>Search Plugins</h2>
+			<h2>{m.plugins_searchTitle()}</h2>
 
 			<div class="search-form">
 				<div class="search-row">
@@ -631,10 +630,10 @@
 						class="input"
 						type="text"
 						bind:value={searchQuery}
-						placeholder="Search plugins by name, description, or tags..."
+						placeholder={m.plugins_searchPlaceholder()}
 						onkeydown={(e) => e.key === 'Enter' && searchPlugins()}
 					/>
-					<button class="btn btn-primary" onclick={searchPlugins}>Search</button>
+					<button class="btn btn-primary" onclick={searchPlugins}>{m.plugins_search()}</button>
 				</div>
 			</div>
 
@@ -644,15 +643,15 @@
 						<div class="search-result-item">
 							<div class="result-info">
 								<h4>{result.plugin.display_name}</h4>
-								<span class="result-registry">from {result.registry}</span>
+								<span class="result-registry">{m.plugins_searchFrom({ registry: result.registry })}</span>
 								{#if result.plugin.description}
 									<p class="result-desc">{result.plugin.description}</p>
 								{/if}
 								<div class="result-meta">
 									{#if result.plugin.author}
-										<span>By {result.plugin.author}</span>
+										<span>{m.plugins_byAuthor({ author: result.plugin.author })}</span>
 									{/if}
-									<span>v{result.plugin.version}</span>
+									<span>{m.plugins_version({ version: result.plugin.version })}</span>
 									{#if result.plugin.license}
 										<span>{result.plugin.license}</span>
 									{/if}
@@ -667,13 +666,13 @@
 							</div>
 							<div class="result-actions">
 								{#if isPluginInstalled(result.plugin.repository)}
-									<span class="installed-badge">Installed</span>
+									<span class="installed-badge">{m.plugins_installed()}</span>
 								{:else}
 									<button
 										class="btn btn-sm btn-primary"
 										onclick={() => installFromSearch(result)}
 									>
-										Install
+										{m.plugins_install()}
 									</button>
 								{/if}
 							</div>
@@ -682,17 +681,17 @@
 				</div>
 			{:else if searchQuery}
 				<div class="no-results">
-					<p>No plugins found matching "{searchQuery}"</p>
+					<p>{m.plugins_noResults({ query: searchQuery })}</p>
 				</div>
 			{:else}
 				<div class="search-hint">
-					<p>Enter a search term to find plugins across all registered marketplaces.</p>
+					<p>{m.plugins_searchHint()}</p>
 				</div>
 			{/if}
 
 			<div class="modal-actions">
 				<button type="button" class="btn btn-secondary" onclick={() => (showSearch = false)}>
-					Close
+					{m.plugins_close()}
 				</button>
 			</div>
 		</div>

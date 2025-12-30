@@ -212,6 +212,97 @@ Error response format:
 }
 ```
 
+## Frontend Architecture
+
+The frontend is built with **SvelteKit** and **Svelte 5** using the new runes reactivity system.
+
+### Technology Stack
+- **Framework**: SvelteKit 2.x with Svelte 5
+- **Styling**: Tailwind CSS
+- **Build Tool**: Vite
+- **Type Safety**: TypeScript
+
+### Internationalization (i18n)
+
+The frontend supports multiple languages using **Paraglide-JS**, a compile-time i18n solution.
+
+#### Supported Languages
+| Code | Language | Status |
+|------|----------|--------|
+| `en` | English | Default fallback |
+| `et` | Estonian | Primary (Estonian market) |
+
+#### Project Structure
+```
+frontend/
+├── messages/
+│   ├── en.json          # English translations (~650 keys)
+│   └── et.json          # Estonian translations
+├── project.inlang/
+│   └── settings.json    # Inlang configuration
+├── src/
+│   └── lib/
+│       └── paraglide/   # Generated translation functions
+│           └── messages.js
+```
+
+#### Translation Key Naming Convention
+```
+{page}_{element}
+
+Examples:
+- nav_dashboard         → Navigation: Dashboard
+- common_save           → Common: Save button
+- invoices_newInvoice   → Invoices page: New Invoice
+- payroll_monthJan      → Payroll: January
+- tsd_statusDraft       → TSD: Draft status
+```
+
+#### Usage in Components
+```svelte
+<script lang="ts">
+  import * as m from '$lib/paraglide/messages.js';
+</script>
+
+<!-- Simple translation -->
+<h1>{m.dashboard_title()}</h1>
+
+<!-- Parameterized translation -->
+<p>{m.payroll_emptyState({ year: '2025' })}</p>
+
+<!-- Dynamic translations (use functions, not objects) -->
+function getStatusLabel(status: string): string {
+  switch (status) {
+    case 'DRAFT': return m.payroll_statusDraft();
+    case 'APPROVED': return m.payroll_statusApproved();
+    default: return status;
+  }
+}
+```
+
+#### Build Commands
+```bash
+# Compile translations
+npm run paraglide
+
+# Full build (includes paraglide)
+npm run build
+
+# Type check
+npm run check
+```
+
+#### Adding New Translations
+1. Add keys to `messages/en.json` and `messages/et.json`
+2. Run `npm run paraglide` to generate TypeScript functions
+3. Import and use in components: `m.your_new_key()`
+
+#### Language Detection Priority
+1. URL parameter (`?lang=et`)
+2. localStorage (`preferredLanguage`)
+3. Browser language (`navigator.language`)
+4. Default: Estonian (`et`)
+
 ## Performance Considerations
 
 1. **Connection Pooling** - pgxpool for efficient database connections
@@ -219,3 +310,4 @@ Error response format:
 3. **Schema Isolation** - Smaller tables, faster queries per tenant
 4. **Index Strategy** - Composite indexes on (tenant_id, foreign_key)
 5. **Pagination** - All list endpoints support limit/offset
+6. **Compile-time i18n** - Paraglide generates optimized code with zero runtime overhead

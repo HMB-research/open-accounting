@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { api, type Tenant, type TenantSettings } from '$lib/api';
+	import * as m from '$lib/paraglide/messages.js';
 
 	let tenantId = $derived($page.url.searchParams.get('tenant') || '');
 	let tenant = $state<Tenant | null>(null);
@@ -30,7 +31,7 @@
 
 	onMount(async () => {
 		if (!tenantId) {
-			error = 'No tenant selected. Please select a tenant from the dashboard.';
+			error = m.settings_noTenantSelected();
 			isLoading = false;
 			return;
 		}
@@ -39,7 +40,7 @@
 			tenant = await api.getTenant(tenantId);
 			populateForm(tenant);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to load company settings';
+			error = err instanceof Error ? err.message : m.errors_loadFailed();
 		} finally {
 			isLoading = false;
 		}
@@ -93,9 +94,9 @@
 				name: companyName,
 				settings
 			});
-			success = 'Settings saved successfully';
+			success = m.settings_settingsSaved();
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to save settings';
+			error = err instanceof Error ? err.message : m.errors_saveFailed();
 		} finally {
 			isSaving = false;
 		}
@@ -107,7 +108,7 @@
 		if (!file) return;
 
 		if (file.size > 500 * 1024) {
-			error = 'Logo file must be less than 500KB';
+			error = m.settings_logoTooLarge();
 			return;
 		}
 
@@ -144,31 +145,36 @@
 		{ value: 'DD/MM/YYYY', label: '31/12/2024' }
 	];
 
-	const months = [
-		'January',
-		'February',
-		'March',
-		'April',
-		'May',
-		'June',
-		'July',
-		'August',
-		'September',
-		'October',
-		'November',
-		'December'
-	];
+	function getMonthLabel(index: number): string {
+		switch (index) {
+			case 0: return m.months_january();
+			case 1: return m.months_february();
+			case 2: return m.months_march();
+			case 3: return m.months_april();
+			case 4: return m.months_may();
+			case 5: return m.months_june();
+			case 6: return m.months_july();
+			case 7: return m.months_august();
+			case 8: return m.months_september();
+			case 9: return m.months_october();
+			case 10: return m.months_november();
+			case 11: return m.months_december();
+			default: return '';
+		}
+	}
+
+	const monthIndices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 </script>
 
 <svelte:head>
-	<title>Company Settings - Open Accounting</title>
+	<title>{m.settings_companySettings()} - Open Accounting</title>
 </svelte:head>
 
 <div class="container">
 	<div class="page-header">
 		<div>
-			<a href="/settings?tenant={tenantId}" class="back-link">&larr; Back to Settings</a>
-			<h1>Company Settings</h1>
+			<a href="/settings?tenant={tenantId}" class="back-link">&larr; {m.settings_backToSettings()}</a>
+			<h1>{m.settings_companySettings()}</h1>
 		</div>
 	</div>
 
@@ -181,23 +187,23 @@
 	{/if}
 
 	{#if isLoading}
-		<p>Loading...</p>
+		<p>{m.common_loading()}</p>
 	{:else if !tenantId}
 		<div class="card empty-state">
-			<p>Please select a tenant from the <a href="/dashboard">dashboard</a>.</p>
+			<p>{m.settings_selectTenantDashboard()} <a href="/dashboard">{m.dashboard_title()}</a>.</p>
 		</div>
 	{:else}
 		<form onsubmit={saveSettings}>
 			<!-- Company Information -->
 			<section class="card settings-section">
-				<h2>Company Information</h2>
+				<h2>{m.settings_companyInfo()}</h2>
 				<div class="form-grid">
 					<div class="form-group">
-						<label class="label" for="companyName">Company Name</label>
+						<label class="label" for="companyName">{m.settings_companyName()}</label>
 						<input class="input" type="text" id="companyName" bind:value={companyName} required />
 					</div>
 					<div class="form-group">
-						<label class="label" for="regCode">Registration Code</label>
+						<label class="label" for="regCode">{m.settings_regCode()}</label>
 						<input
 							class="input"
 							type="text"
@@ -207,7 +213,7 @@
 						/>
 					</div>
 					<div class="form-group">
-						<label class="label" for="vatNumber">VAT Number</label>
+						<label class="label" for="vatNumber">{m.settings_vatNumber()}</label>
 						<input
 							class="input"
 							type="text"
@@ -217,13 +223,13 @@
 						/>
 					</div>
 					<div class="form-group full-width">
-						<label class="label" for="address">Address</label>
+						<label class="label" for="address">{m.settings_address()}</label>
 						<textarea
 							class="input"
 							id="address"
 							bind:value={address}
 							rows="3"
-							placeholder="Street address, City, Postal code, Country"
+							placeholder={m.settings_addressPlaceholder()}
 						></textarea>
 					</div>
 				</div>
@@ -231,10 +237,10 @@
 
 			<!-- Contact Information -->
 			<section class="card settings-section">
-				<h2>Contact Information</h2>
+				<h2>{m.settings_contactInfo()}</h2>
 				<div class="form-grid">
 					<div class="form-group">
-						<label class="label" for="email">Email</label>
+						<label class="label" for="email">{m.settings_email()}</label>
 						<input
 							class="input"
 							type="email"
@@ -244,7 +250,7 @@
 						/>
 					</div>
 					<div class="form-group">
-						<label class="label" for="phone">Phone</label>
+						<label class="label" for="phone">{m.settings_phone()}</label>
 						<input class="input" type="tel" id="phone" bind:value={phone} placeholder="+372 5555 5555" />
 					</div>
 				</div>
@@ -252,16 +258,16 @@
 
 			<!-- Branding -->
 			<section class="card settings-section">
-				<h2>Branding & Invoice Settings</h2>
+				<h2>{m.settings_brandingInvoice()}</h2>
 				<div class="form-grid">
 					<div class="form-group">
-						<label class="label">Company Logo</label>
+						<label class="label">{m.settings_logo()}</label>
 						<div class="logo-upload">
 							{#if logo}
 								<div class="logo-preview">
 									<img src={logo} alt="Company logo" />
 									<button type="button" class="btn btn-sm btn-danger" onclick={removeLogo}>
-										Remove
+										{m.settings_removeLogo()}
 									</button>
 								</div>
 							{:else}
@@ -272,14 +278,14 @@
 										onchange={handleLogoUpload}
 										id="logoUpload"
 									/>
-									<label for="logoUpload" class="btn btn-secondary">Upload Logo</label>
-									<span class="help-text">PNG, JPG or SVG, max 500KB</span>
+									<label for="logoUpload" class="btn btn-secondary">{m.settings_uploadLogo()}</label>
+									<span class="help-text">{m.settings_logoMaxSize()}</span>
 								</div>
 							{/if}
 						</div>
 					</div>
 					<div class="form-group">
-						<label class="label" for="pdfPrimaryColor">Primary Color</label>
+						<label class="label" for="pdfPrimaryColor">{m.settings_primaryColor()}</label>
 						<div class="color-input">
 							<input type="color" id="pdfPrimaryColor" bind:value={pdfPrimaryColor} />
 							<input
@@ -290,37 +296,37 @@
 								pattern="^#[0-9A-Fa-f]{6}$"
 							/>
 						</div>
-						<span class="help-text">Used in PDF invoices and branding</span>
+						<span class="help-text">{m.settings_usedInPdf()}</span>
 					</div>
 					<div class="form-group full-width">
-						<label class="label" for="bankDetails">Bank Details</label>
+						<label class="label" for="bankDetails">{m.settings_bankDetails()}</label>
 						<textarea
 							class="input"
 							id="bankDetails"
 							bind:value={bankDetails}
 							rows="2"
-							placeholder="Bank name, IBAN, SWIFT/BIC"
+							placeholder={m.settings_bankDetailsPlaceholder()}
 						></textarea>
-						<span class="help-text">Displayed on invoices</span>
+						<span class="help-text">{m.settings_displayedOnInvoices()}</span>
 					</div>
 					<div class="form-group full-width">
-						<label class="label" for="invoiceTerms">Invoice Terms</label>
+						<label class="label" for="invoiceTerms">{m.settings_invoiceTerms()}</label>
 						<textarea
 							class="input"
 							id="invoiceTerms"
 							bind:value={invoiceTerms}
 							rows="2"
-							placeholder="Payment terms and conditions"
+							placeholder={m.settings_invoiceTermsPlaceholder()}
 						></textarea>
 					</div>
 					<div class="form-group full-width">
-						<label class="label" for="pdfFooterText">PDF Footer Text</label>
+						<label class="label" for="pdfFooterText">{m.settings_pdfFooterText()}</label>
 						<input
 							class="input"
 							type="text"
 							id="pdfFooterText"
 							bind:value={pdfFooterText}
-							placeholder="Custom footer text for PDF invoices"
+							placeholder={m.settings_pdfFooterPlaceholder()}
 						/>
 					</div>
 				</div>
@@ -328,10 +334,10 @@
 
 			<!-- Regional Settings -->
 			<section class="card settings-section">
-				<h2>Regional Settings</h2>
+				<h2>{m.settings_regionalSettings()}</h2>
 				<div class="form-grid">
 					<div class="form-group">
-						<label class="label" for="currency">Currency</label>
+						<label class="label" for="currency">{m.settings_currency()}</label>
 						<input
 							class="input"
 							type="text"
@@ -339,10 +345,10 @@
 							value={tenant?.settings?.default_currency || 'EUR'}
 							disabled
 						/>
-						<span class="help-text">Currency cannot be changed after creation</span>
+						<span class="help-text">{m.settings_currencyNoChange()}</span>
 					</div>
 					<div class="form-group">
-						<label class="label" for="timezone">Timezone</label>
+						<label class="label" for="timezone">{m.settings_timezone()}</label>
 						<select class="input" id="timezone" bind:value={timezone}>
 							{#each timezones as tz}
 								<option value={tz}>{tz}</option>
@@ -350,7 +356,7 @@
 						</select>
 					</div>
 					<div class="form-group">
-						<label class="label" for="dateFormat">Date Format</label>
+						<label class="label" for="dateFormat">{m.settings_dateFormat()}</label>
 						<select class="input" id="dateFormat" bind:value={dateFormat}>
 							{#each dateFormats as fmt}
 								<option value={fmt.value}>{fmt.label}</option>
@@ -358,27 +364,27 @@
 						</select>
 					</div>
 					<div class="form-group">
-						<label class="label" for="fiscalYearStart">Fiscal Year Start</label>
+						<label class="label" for="fiscalYearStart">{m.settings_fiscalYearStart()}</label>
 						<select class="input" id="fiscalYearStart" bind:value={fiscalYearStart}>
-							{#each months as month, i}
-								<option value={i + 1}>{month}</option>
+							{#each monthIndices as i}
+								<option value={i + 1}>{getMonthLabel(i)}</option>
 							{/each}
 						</select>
 					</div>
 					<div class="form-group">
-						<label class="label" for="decimalSep">Decimal Separator</label>
+						<label class="label" for="decimalSep">{m.settings_decimalSeparator()}</label>
 						<select class="input" id="decimalSep" bind:value={decimalSep}>
-							<option value=",">Comma (1.234,56)</option>
-							<option value=".">Period (1,234.56)</option>
+							<option value=",">{m.settings_commaDecimal()}</option>
+							<option value=".">{m.settings_periodDecimal()}</option>
 						</select>
 					</div>
 					<div class="form-group">
-						<label class="label" for="thousandsSep">Thousands Separator</label>
+						<label class="label" for="thousandsSep">{m.settings_thousandsSeparator()}</label>
 						<select class="input" id="thousandsSep" bind:value={thousandsSep}>
-							<option value=" ">Space (1 234)</option>
-							<option value=",">Comma (1,234)</option>
-							<option value=".">Period (1.234)</option>
-							<option value="">None (1234)</option>
+							<option value=" ">{m.settings_spaceThousands()}</option>
+							<option value=",">{m.settings_commaThousands()}</option>
+							<option value=".">{m.settings_periodThousands()}</option>
+							<option value="">{m.settings_noneThousands()}</option>
 						</select>
 					</div>
 				</div>
@@ -386,7 +392,7 @@
 
 			<div class="form-actions">
 				<button type="submit" class="btn btn-primary" disabled={isSaving}>
-					{isSaving ? 'Saving...' : 'Save Settings'}
+					{isSaving ? m.settings_saving() : m.settings_saveSettings()}
 				</button>
 			</div>
 		</form>

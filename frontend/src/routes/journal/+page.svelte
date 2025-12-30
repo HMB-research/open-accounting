@@ -8,6 +8,7 @@
 		type CreateJournalEntryRequest
 	} from '$lib/api';
 	import Decimal from 'decimal.js';
+	import * as m from '$lib/paraglide/messages.js';
 
 	let tenantId = $derived($page.url.searchParams.get('tenant') || '');
 	let entries = $state<JournalEntry[]>([]);
@@ -34,7 +35,7 @@
 
 	onMount(async () => {
 		if (!tenantId) {
-			error = 'No tenant selected. Please select a tenant from the dashboard.';
+			error = m.journal_noTenantSelected();
 			isLoading = false;
 			return;
 		}
@@ -42,7 +43,7 @@
 		try {
 			accounts = await api.listAccounts(tenantId, true);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to load accounts';
+			error = err instanceof Error ? err.message : m.journal_failedToLoadAccounts();
 		} finally {
 			isLoading = false;
 		}
@@ -81,13 +82,13 @@
 		formError = '';
 
 		if (!isBalanced()) {
-			formError = 'Debits must equal credits';
+			formError = m.journal_debitsMustEqualCredits();
 			return;
 		}
 
 		const validLines = lines.filter((l) => l.accountId && (l.debit || l.credit));
 		if (validLines.length < 2) {
-			formError = 'At least two lines with amounts are required';
+			formError = m.journal_minTwoLines();
 			return;
 		}
 
@@ -116,7 +117,7 @@
 				{ accountId: '', description: '', debit: '', credit: '' }
 			];
 		} catch (err) {
-			formError = err instanceof Error ? err.message : 'Failed to create entry';
+			formError = err instanceof Error ? err.message : m.journal_failedToCreateEntry();
 		}
 	}
 
@@ -126,12 +127,12 @@
 			entry.status = 'POSTED';
 			entries = [...entries];
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to post entry';
+			error = err instanceof Error ? err.message : m.journal_failedToPostEntry();
 		}
 	}
 
 	async function voidEntry(entry: JournalEntry) {
-		const reason = prompt('Enter reason for voiding:');
+		const reason = prompt(m.journal_voidReasonPrompt());
 		if (!reason) return;
 
 		try {
@@ -140,7 +141,7 @@
 			entry.void_reason = reason;
 			entries = [...entries];
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to void entry';
+			error = err instanceof Error ? err.message : m.journal_failedToVoidEntry();
 		}
 	}
 
@@ -156,16 +157,16 @@
 </script>
 
 <svelte:head>
-	<title>Journal Entries - Open Accounting</title>
+	<title>{m.journal_title()} - Open Accounting</title>
 </svelte:head>
 
 <div class="container">
 	<div class="page-header">
-		<h1>Journal Entries</h1>
+		<h1>{m.journal_title()}</h1>
 		{#if tenantId}
 			<div class="page-actions">
 				<button class="btn btn-primary" onclick={() => (showCreate = true)}>
-					+ New Entry
+					{m.journal_newEntry()}
 				</button>
 			</div>
 		{/if}
@@ -176,17 +177,17 @@
 	{/if}
 
 	{#if isLoading}
-		<p>Loading...</p>
+		<p>{m.common_loading()}</p>
 	{:else if !tenantId}
 		<div class="card empty-state">
-			<p>Please select a tenant from the <a href="/dashboard">dashboard</a>.</p>
+			<p>{m.journal_selectTenantDashboard()} <a href="/dashboard">{m.nav_dashboard()}</a>.</p>
 		</div>
 	{:else if entries.length === 0 && !showCreate}
 		<div class="card empty-state">
-			<h2>No Journal Entries</h2>
-			<p>Create your first journal entry to record a transaction.</p>
+			<h2>{m.journal_noEntriesTitle()}</h2>
+			<p>{m.journal_noEntriesDesc()}</p>
 			<button class="btn btn-primary" onclick={() => (showCreate = true)}>
-				Create Journal Entry
+				{m.journal_createJournalEntry()}
 			</button>
 		</div>
 	{:else}
@@ -202,12 +203,12 @@
 						<div class="entry-actions">
 							{#if entry.status === 'DRAFT'}
 								<button class="btn btn-sm btn-primary" onclick={() => postEntry(entry)}>
-									Post
+									{m.journal_post()}
 								</button>
 							{/if}
 							{#if entry.status === 'POSTED'}
 								<button class="btn btn-sm btn-danger" onclick={() => voidEntry(entry)}>
-									Void
+									{m.journal_void()}
 								</button>
 							{/if}
 						</div>
@@ -215,17 +216,17 @@
 
 					<p class="entry-description">{entry.description}</p>
 					{#if entry.reference}
-						<p class="entry-reference">Ref: {entry.reference}</p>
+						<p class="entry-reference">{m.journal_ref()} {entry.reference}</p>
 					{/if}
 
 					<div class="table-container">
 						<table class="lines-table">
 							<thead>
 								<tr>
-									<th>Account</th>
-									<th class="hide-mobile">Description</th>
-									<th class="amount">Debit</th>
-									<th class="amount">Credit</th>
+									<th>{m.journal_account()}</th>
+									<th class="hide-mobile">{m.common_description()}</th>
+									<th class="amount">{m.journal_debit()}</th>
+									<th class="amount">{m.journal_credit()}</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -242,7 +243,7 @@
 					</div>
 
 					{#if entry.void_reason}
-						<p class="void-reason">Void reason: {entry.void_reason}</p>
+						<p class="void-reason">{m.journal_voidReason()} {entry.void_reason}</p>
 					{/if}
 				</div>
 			{/each}
@@ -255,7 +256,7 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div class="modal-backdrop" onclick={() => (showCreate = false)} role="presentation">
 		<div class="modal card modal-lg" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-journal-title" tabindex="-1">
-			<h2 id="create-journal-title">Create Journal Entry</h2>
+			<h2 id="create-journal-title">{m.journal_createJournalEntry()}</h2>
 
 			{#if formError}
 				<div class="alert alert-error">{formError}</div>
@@ -264,41 +265,41 @@
 			<form onsubmit={createEntry}>
 				<div class="form-row">
 					<div class="form-group">
-						<label class="label" for="entryDate">Date</label>
+						<label class="label" for="entryDate">{m.common_date()}</label>
 						<input class="input" type="date" id="entryDate" bind:value={entryDate} required />
 					</div>
 					<div class="form-group">
-						<label class="label" for="reference">Reference</label>
+						<label class="label" for="reference">{m.journal_reference()}</label>
 						<input
 							class="input"
 							type="text"
 							id="reference"
 							bind:value={reference}
-							placeholder="INV-001, etc."
+							placeholder={m.journal_referencePlaceholder()}
 						/>
 					</div>
 				</div>
 
 				<div class="form-group">
-					<label class="label" for="description">Description</label>
+					<label class="label" for="description">{m.common_description()}</label>
 					<input
 						class="input"
 						type="text"
 						id="description"
 						bind:value={description}
 						required
-						placeholder="Description of this transaction"
+						placeholder={m.journal_descriptionPlaceholder()}
 					/>
 				</div>
 
-				<h3>Lines</h3>
+				<h3>{m.journal_lines()}</h3>
 				<table class="lines-table edit-mode">
 					<thead>
 						<tr>
-							<th>Account</th>
-							<th>Description</th>
-							<th class="amount">Debit</th>
-							<th class="amount">Credit</th>
+							<th>{m.journal_account()}</th>
+							<th>{m.common_description()}</th>
+							<th class="amount">{m.journal_debit()}</th>
+							<th class="amount">{m.journal_credit()}</th>
 							<th></th>
 						</tr>
 					</thead>
@@ -307,7 +308,7 @@
 							<tr>
 								<td>
 									<select class="input" bind:value={line.accountId} required>
-										<option value="">Select account</option>
+										<option value="">{m.journal_selectAccount()}</option>
 										{#each accounts as account}
 											<option value={account.id}>
 												{account.code} - {account.name}
@@ -352,7 +353,7 @@
 						<tr class="totals">
 							<td colspan="2">
 								<button type="button" class="btn btn-sm btn-secondary" onclick={addLine}>
-									+ Add Line
+									{m.journal_addLine()}
 								</button>
 							</td>
 							<td class="amount">{getTotalDebits().toFixed(2)}</td>
@@ -362,9 +363,9 @@
 						<tr class="balance-check">
 							<td colspan="5" class:balanced={isBalanced()} class:unbalanced={!isBalanced()}>
 								{#if isBalanced()}
-									Balanced
+									{m.journal_balanced()}
 								{:else}
-									Difference: {getTotalDebits().minus(getTotalCredits()).toFixed(2)}
+									{m.journal_difference()} {getTotalDebits().minus(getTotalCredits()).toFixed(2)}
 								{/if}
 							</td>
 						</tr>
@@ -373,10 +374,10 @@
 
 				<div class="modal-actions">
 					<button type="button" class="btn btn-secondary" onclick={() => (showCreate = false)}>
-						Cancel
+						{m.common_cancel()}
 					</button>
 					<button type="submit" class="btn btn-primary" disabled={!isBalanced()}>
-						Create Entry
+						{m.journal_createEntry()}
 					</button>
 				</div>
 			</form>

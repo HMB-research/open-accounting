@@ -6,10 +6,6 @@
 	function switchLanguage(lang: Locale) {
 		setLocale(lang);
 		currentLocale = lang;
-		// Store preference in localStorage for persistence
-		if (typeof localStorage !== 'undefined') {
-			localStorage.setItem('PARAGLIDE_LOCALE', lang);
-		}
 	}
 
 	const languageNames: Record<Locale, string> = {

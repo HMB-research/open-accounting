@@ -2,6 +2,7 @@
 	import { page } from '$app/stores';
 	import { api, type TSDDeclaration, type TSDStatus } from '$lib/api';
 	import Decimal from 'decimal.js';
+	import * as m from '$lib/paraglide/messages.js';
 
 	let declarations = $state<TSDDeclaration[]>([]);
 	let isLoading = $state(true);
@@ -11,20 +12,23 @@
 	let emtaReference = $state('');
 	let filterYear = $state(new Date().getFullYear());
 
-	const months = [
-		'January',
-		'February',
-		'March',
-		'April',
-		'May',
-		'June',
-		'July',
-		'August',
-		'September',
-		'October',
-		'November',
-		'December'
-	];
+	function getMonthName(month: number): string {
+		switch (month) {
+			case 1: return m.payroll_monthJan();
+			case 2: return m.payroll_monthFeb();
+			case 3: return m.payroll_monthMar();
+			case 4: return m.payroll_monthApr();
+			case 5: return m.payroll_monthMay();
+			case 6: return m.payroll_monthJun();
+			case 7: return m.payroll_monthJul();
+			case 8: return m.payroll_monthAug();
+			case 9: return m.payroll_monthSep();
+			case 10: return m.payroll_monthOct();
+			case 11: return m.payroll_monthNov();
+			case 12: return m.payroll_monthDec();
+			default: return '';
+		}
+	}
 
 	$effect(() => {
 		const tenantId = $page.url.searchParams.get('tenant');
@@ -40,7 +44,7 @@
 		try {
 			declarations = await api.listTSD(tenantId, filterYear);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to load TSD declarations';
+			error = err instanceof Error ? err.message : m.tsd_failedToLoad();
 		} finally {
 			isLoading = false;
 		}
@@ -53,7 +57,7 @@
 		try {
 			await api.downloadTSDXml(tenantId, declaration.period_year, declaration.period_month);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to download XML';
+			error = err instanceof Error ? err.message : m.tsd_failedToDownloadXml();
 		}
 	}
 
@@ -64,7 +68,7 @@
 		try {
 			await api.downloadTSDCsv(tenantId, declaration.period_year, declaration.period_month);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to download CSV';
+			error = err instanceof Error ? err.message : m.tsd_failedToDownloadCsv();
 		}
 	}
 
@@ -90,7 +94,7 @@
 			await loadDeclarations(tenantId);
 			showSubmitModal = false;
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to mark as submitted';
+			error = err instanceof Error ? err.message : m.tsd_failedToMarkSubmitted();
 		}
 	}
 
@@ -118,12 +122,15 @@
 		});
 	}
 
-	const statusLabels: Record<TSDStatus, string> = {
-		DRAFT: 'Draft',
-		SUBMITTED: 'Submitted',
-		ACCEPTED: 'Accepted',
-		REJECTED: 'Rejected'
-	};
+	function getStatusLabel(status: TSDStatus): string {
+		switch (status) {
+			case 'DRAFT': return m.tsd_statusDraft();
+			case 'SUBMITTED': return m.tsd_statusSubmitted();
+			case 'ACCEPTED': return m.tsd_statusAccepted();
+			case 'REJECTED': return m.tsd_statusRejected();
+			default: return status;
+		}
+	}
 
 	const statusBadgeClass: Record<TSDStatus, string> = {
 		DRAFT: 'badge-draft',
@@ -138,32 +145,30 @@
 </script>
 
 <svelte:head>
-	<title>TSD Declarations - Open Accounting</title>
+	<title>{m.tsd_title()} - Open Accounting</title>
 </svelte:head>
 
 <div class="container">
 	<div class="header">
 		<div>
-			<h1>TSD Declarations</h1>
-			<p class="subtitle">Tulu- ja sotsiaalmaksu deklaratsioon</p>
+			<h1>{m.tsd_title()}</h1>
+			<p class="subtitle">{m.tsd_subtitle()}</p>
 		</div>
 	</div>
 
 	<div class="info-banner card">
 		<div class="banner-icon">i</div>
 		<div class="banner-content">
-			<strong>Manual Submission Required</strong>
+			<strong>{m.tsd_manualSubmissionRequired()}</strong>
 			<p>
-				Automatic e-MTA submission is not yet available. Export your TSD as XML and upload it
-				manually to the <a href="https://www.emta.ee" target="_blank" rel="noopener">e-MTA portal</a
-				>.
+				{m.tsd_manualSubmissionInfo()} <a href="https://www.emta.ee" target="_blank" rel="noopener">{m.tsd_emtaPortal()}</a>.
 			</p>
 		</div>
 	</div>
 
 	<div class="filters card">
 		<div class="filter-row">
-			<label class="label" for="yearFilter">Year</label>
+			<label class="label" for="yearFilter">{m.tsd_year()}</label>
 			<select class="input" id="yearFilter" bind:value={filterYear} onchange={handleYearChange}>
 				{#each Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i) as year}
 					<option value={year}>{year}</option>
@@ -177,14 +182,14 @@
 	{/if}
 
 	{#if isLoading}
-		<p>Loading TSD declarations...</p>
+		<p>{m.tsd_loading()}</p>
 	{:else if declarations.length === 0}
 		<div class="empty-state card">
 			<p>
-				No TSD declarations found for {filterYear}. Generate TSD from an approved payroll run first.
+				{m.tsd_emptyState({ year: filterYear.toString() })}
 			</p>
 			<a href="/payroll?tenant={$page.url.searchParams.get('tenant')}" class="btn btn-primary">
-				Go to Payroll
+				{m.tsd_goToPayroll()}
 			</a>
 		</div>
 	{:else}
@@ -192,14 +197,14 @@
 			<table class="table">
 				<thead>
 					<tr>
-						<th>Period</th>
-						<th>Status</th>
-						<th class="text-right">Total Payments</th>
-						<th class="text-right">Income Tax</th>
-						<th class="text-right">Social Tax</th>
-						<th class="text-right">Total Taxes</th>
-						<th>e-MTA Reference</th>
-						<th>Actions</th>
+						<th>{m.tsd_period()}</th>
+						<th>{m.tsd_status()}</th>
+						<th class="text-right">{m.tsd_totalPayments()}</th>
+						<th class="text-right">{m.tsd_incomeTax()}</th>
+						<th class="text-right">{m.tsd_socialTax()}</th>
+						<th class="text-right">{m.tsd_totalTaxes()}</th>
+						<th>{m.tsd_emtaReference()}</th>
+						<th>{m.tsd_actions()}</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -211,12 +216,12 @@
 							.add(new Decimal(declaration.total_funded_pension))}
 						<tr>
 							<td class="period">
-								{months[declaration.period_month - 1]}
+								{getMonthName(declaration.period_month)}
 								{declaration.period_year}
 							</td>
 							<td>
 								<span class="badge {statusBadgeClass[declaration.status]}">
-									{statusLabels[declaration.status]}
+									{getStatusLabel(declaration.status)}
 								</span>
 								{#if declaration.submitted_at}
 									<div class="submitted-date">
@@ -241,7 +246,7 @@
 										class="btn btn-small btn-primary"
 										onclick={() => openSubmitModal(declaration)}
 									>
-										Mark Submitted
+										{m.tsd_markSubmitted()}
 									</button>
 								{/if}
 							</td>
@@ -253,48 +258,48 @@
 	{/if}
 
 	<div class="workflow-info card">
-		<h3>TSD Submission Workflow</h3>
+		<h3>{m.tsd_workflowTitle()}</h3>
 		<ol class="workflow-steps">
 			<li>
 				<span class="step-number">1</span>
 				<div class="step-content">
-					<strong>Generate Payroll</strong>
-					<p>Create and calculate payroll for the period</p>
+					<strong>{m.tsd_step1Title()}</strong>
+					<p>{m.tsd_step1Desc()}</p>
 				</div>
 			</li>
 			<li>
 				<span class="step-number">2</span>
 				<div class="step-content">
-					<strong>Approve Payroll</strong>
-					<p>Review and approve the calculated payroll</p>
+					<strong>{m.tsd_step2Title()}</strong>
+					<p>{m.tsd_step2Desc()}</p>
 				</div>
 			</li>
 			<li>
 				<span class="step-number">3</span>
 				<div class="step-content">
-					<strong>Generate TSD</strong>
-					<p>Generate TSD declaration from approved payroll</p>
+					<strong>{m.tsd_step3Title()}</strong>
+					<p>{m.tsd_step3Desc()}</p>
 				</div>
 			</li>
 			<li>
 				<span class="step-number">4</span>
 				<div class="step-content">
-					<strong>Export XML</strong>
-					<p>Download the TSD in XML format</p>
+					<strong>{m.tsd_step4Title()}</strong>
+					<p>{m.tsd_step4Desc()}</p>
 				</div>
 			</li>
 			<li>
 				<span class="step-number">5</span>
 				<div class="step-content">
-					<strong>Upload to e-MTA</strong>
-					<p>Log into e-MTA portal and upload the XML file</p>
+					<strong>{m.tsd_step5Title()}</strong>
+					<p>{m.tsd_step5Desc()}</p>
 				</div>
 			</li>
 			<li>
 				<span class="step-number">6</span>
 				<div class="step-content">
-					<strong>Record Reference</strong>
-					<p>Mark as submitted with the e-MTA reference number</p>
+					<strong>{m.tsd_step6Title()}</strong>
+					<p>{m.tsd_step6Desc()}</p>
 				</div>
 			</li>
 		</ol>
@@ -313,25 +318,25 @@
 			aria-labelledby="submit-title"
 			tabindex="-1"
 		>
-			<h2 id="submit-title">Mark TSD as Submitted</h2>
+			<h2 id="submit-title">{m.tsd_markTsdSubmitted()}</h2>
 			<p class="modal-subtitle">
-				{months[selectedDeclaration.period_month - 1]}
+				{getMonthName(selectedDeclaration.period_month)}
 				{selectedDeclaration.period_year}
 			</p>
 
 			<form onsubmit={markAsSubmitted}>
 				<div class="form-group">
-					<label class="label" for="emtaRef">e-MTA Reference Number *</label>
+					<label class="label" for="emtaRef">{m.tsd_emtaRefNumber()} *</label>
 					<input
 						class="input"
 						type="text"
 						id="emtaRef"
 						bind:value={emtaReference}
 						required
-						placeholder="e.g., TSD-2025-12345"
+						placeholder={m.tsd_emtaRefPlaceholder()}
 					/>
 					<small class="help-text">
-						Enter the reference number you received from e-MTA after submitting
+						{m.tsd_emtaRefHelp()}
 					</small>
 				</div>
 
@@ -341,9 +346,9 @@
 						class="btn btn-secondary"
 						onclick={() => (showSubmitModal = false)}
 					>
-						Cancel
+						{m.common_cancel()}
 					</button>
-					<button type="submit" class="btn btn-primary">Mark as Submitted</button>
+					<button type="submit" class="btn btn-primary">{m.tsd_markSubmitted()}</button>
 				</div>
 			</form>
 		</div>

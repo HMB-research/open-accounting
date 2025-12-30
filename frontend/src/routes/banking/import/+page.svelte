@@ -2,6 +2,7 @@
 	import { api, type BankAccount, type CSVColumnMapping } from '$lib/api';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
+	import * as m from '$lib/paraglide/messages.js';
 
 	let tenantId = $state('');
 	let bankAccounts = $state<BankAccount[]>([]);
@@ -85,7 +86,7 @@
 		try {
 			const memberships = await api.getMyTenants();
 			if (memberships.length === 0) {
-				error = 'No tenant available';
+				error = m.bankingImport_noTenantAvailable();
 				return;
 			}
 			tenantId = memberships[0].tenant.id;
@@ -99,7 +100,7 @@
 				selectedAccountId = bankAccounts[0].id;
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to load data';
+			error = e instanceof Error ? e.message : m.bankingImport_failedToLoad();
 		} finally {
 			loading = false;
 		}
@@ -162,7 +163,7 @@
 
 	async function importTransactions() {
 		if (!selectedAccountId || !csvContent || !csvFile) {
-			alert('Please select a file and bank account');
+			alert(m.bankingImport_selectFileAndAccount());
 			return;
 		}
 
@@ -177,9 +178,9 @@
 				skip_duplicates: skipDuplicates
 			});
 
-			let message = `Imported ${result.transactions_imported} transactions`;
+			let message: string = m.bankingImport_importedTransactions({ count: result.transactions_imported.toString() });
 			if (result.transactions_duplicates > 0) {
-				message += `, ${result.transactions_duplicates} duplicates skipped`;
+				message += `, ${m.bankingImport_duplicatesSkipped({ count: result.transactions_duplicates.toString() })}`;
 			}
 			if (result.errors.length > 0) {
 				message += `\n\nErrors:\n${result.errors.join('\n')}`;
@@ -188,7 +189,7 @@
 			alert(message);
 			goto('/banking');
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Import failed';
+			error = e instanceof Error ? e.message : m.bankingImport_importFailed();
 		} finally {
 			importing = false;
 		}
@@ -212,9 +213,9 @@
 <div class="max-w-6xl mx-auto px-4 py-8">
 	<div class="flex items-center gap-4 mb-6">
 		<button onclick={() => goto('/banking')} class="text-gray-600 hover:text-gray-800">
-			&larr; Back
+			&larr; {m.common_back()}
 		</button>
-		<h1 class="text-2xl font-bold text-gray-900">Import Bank Transactions</h1>
+		<h1 class="text-2xl font-bold text-gray-900">{m.bankingImport_title()}</h1>
 	</div>
 
 	{#if loading}
@@ -227,11 +228,11 @@
 		<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 			<!-- Settings Panel -->
 			<div class="bg-white rounded-lg shadow p-6">
-				<h2 class="text-lg font-semibold mb-4">Import Settings</h2>
+				<h2 class="text-lg font-semibold mb-4">{m.bankingImport_importSettings()}</h2>
 
 				<!-- Bank Account -->
 				<div class="mb-4">
-					<label class="block text-sm font-medium text-gray-700 mb-1">Bank Account</label>
+					<label class="block text-sm font-medium text-gray-700 mb-1">{m.bankingImport_bankAccount()}</label>
 					<select bind:value={selectedAccountId} class="w-full border border-gray-300 rounded-lg px-3 py-2">
 						{#each bankAccounts as account}
 							<option value={account.id}>{account.name}</option>
@@ -241,53 +242,53 @@
 
 				<!-- File Upload -->
 				<div class="mb-4">
-					<label class="block text-sm font-medium text-gray-700 mb-1">CSV File</label>
+					<label class="block text-sm font-medium text-gray-700 mb-1">{m.bankingImport_csvFile()}</label>
 					<input type="file" accept=".csv,.txt" onchange={handleFileSelect} class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
 				</div>
 
 				<!-- Bank Preset -->
 				<div class="mb-4">
-					<label class="block text-sm font-medium text-gray-700 mb-1">Bank Format Preset</label>
+					<label class="block text-sm font-medium text-gray-700 mb-1">{m.bankingImport_bankFormatPreset()}</label>
 					<select onchange={(e) => applyPreset((e.target as HTMLSelectElement).value)} class="w-full border border-gray-300 rounded-lg px-3 py-2">
-						<option value="generic">Generic CSV</option>
-						<option value="swedbank">Swedbank (Estonia)</option>
-						<option value="seb">SEB (Estonia)</option>
-						<option value="lhv">LHV (Estonia)</option>
+						<option value="generic">{m.bankingImport_genericCsv()}</option>
+						<option value="swedbank">{m.bankingImport_swedbankEstonia()}</option>
+						<option value="seb">{m.bankingImport_sebEstonia()}</option>
+						<option value="lhv">{m.bankingImport_lhvEstonia()}</option>
 					</select>
 				</div>
 
 				<hr class="my-4" />
 
-				<h3 class="font-medium mb-3">Column Mapping</h3>
+				<h3 class="font-medium mb-3">{m.bankingImport_columnMapping()}</h3>
 
 				<div class="grid grid-cols-2 gap-3 mb-4">
 					<div>
-						<label class="block text-xs font-medium text-blue-700 mb-1">Date Column</label>
+						<label class="block text-xs font-medium text-blue-700 mb-1">{m.bankingImport_dateColumn()}</label>
 						<input type="number" bind:value={mapping.date_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" />
 					</div>
 					<div>
-						<label class="block text-xs font-medium text-green-700 mb-1">Description Column</label>
+						<label class="block text-xs font-medium text-green-700 mb-1">{m.bankingImport_descriptionColumn()}</label>
 						<input type="number" bind:value={mapping.description_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" />
 					</div>
 					<div>
-						<label class="block text-xs font-medium text-yellow-700 mb-1">Amount Column</label>
+						<label class="block text-xs font-medium text-yellow-700 mb-1">{m.bankingImport_amountColumn()}</label>
 						<input type="number" bind:value={mapping.amount_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" />
 					</div>
 					<div>
-						<label class="block text-xs font-medium text-purple-700 mb-1">Reference Column</label>
-						<input type="number" bind:value={mapping.reference_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" placeholder="Optional" />
+						<label class="block text-xs font-medium text-purple-700 mb-1">{m.bankingImport_referenceColumn()}</label>
+						<input type="number" bind:value={mapping.reference_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" placeholder={m.common_optional()} />
 					</div>
 					<div class="col-span-2">
-						<label class="block text-xs font-medium text-pink-700 mb-1">Counterparty Column</label>
-						<input type="number" bind:value={mapping.counterparty_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" placeholder="Optional" />
+						<label class="block text-xs font-medium text-pink-700 mb-1">{m.bankingImport_counterpartyColumn()}</label>
+						<input type="number" bind:value={mapping.counterparty_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" placeholder={m.common_optional()} />
 					</div>
 				</div>
 
-				<h3 class="font-medium mb-3">Format Settings</h3>
+				<h3 class="font-medium mb-3">{m.bankingImport_formatSettings()}</h3>
 
 				<div class="grid grid-cols-2 gap-3 mb-4">
 					<div class="col-span-2">
-						<label class="block text-xs font-medium text-gray-700 mb-1">Date Format</label>
+						<label class="block text-xs font-medium text-gray-700 mb-1">{m.bankingImport_dateFormat()}</label>
 						<select bind:value={mapping.date_format} class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
 							<option value="2006-01-02">YYYY-MM-DD</option>
 							<option value="02.01.2006">DD.MM.YYYY</option>
@@ -296,30 +297,30 @@
 						</select>
 					</div>
 					<div>
-						<label class="block text-xs font-medium text-gray-700 mb-1">Decimal Sep.</label>
+						<label class="block text-xs font-medium text-gray-700 mb-1">{m.bankingImport_decimalSep()}</label>
 						<select bind:value={mapping.decimal_separator} class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
-							<option value=".">. (dot)</option>
-							<option value=",">, (comma)</option>
+							<option value=".">{m.bankingImport_dotDecimal()}</option>
+							<option value=",">{m.bankingImport_commaDecimal()}</option>
 						</select>
 					</div>
 					<div>
-						<label class="block text-xs font-medium text-gray-700 mb-1">Thousands Sep.</label>
+						<label class="block text-xs font-medium text-gray-700 mb-1">{m.bankingImport_thousandsSep()}</label>
 						<select bind:value={mapping.thousands_separator} class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
-							<option value="">None</option>
-							<option value=",">, (comma)</option>
-							<option value=" ">(space)</option>
+							<option value="">{m.bankingImport_none()}</option>
+							<option value=",">{m.bankingImport_commaDecimal()}</option>
+							<option value=" ">{m.bankingImport_space()}</option>
 						</select>
 					</div>
 				</div>
 
 				<label class="flex items-center gap-2 mb-4">
 					<input type="checkbox" bind:checked={mapping.skip_header} class="rounded" />
-					<span class="text-sm">Skip header row</span>
+					<span class="text-sm">{m.bankingImport_skipHeaderRow()}</span>
 				</label>
 
 				<label class="flex items-center gap-2 mb-6">
 					<input type="checkbox" bind:checked={skipDuplicates} class="rounded" />
-					<span class="text-sm">Skip duplicate transactions</span>
+					<span class="text-sm">{m.bankingImport_skipDuplicates()}</span>
 				</label>
 
 				<button
@@ -327,25 +328,25 @@
 					disabled={importing || !csvContent || !selectedAccountId}
 					class="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
 				>
-					{importing ? 'Importing...' : 'Import Transactions'}
+					{importing ? m.bankingImport_importing() : m.bankingImport_importTransactions()}
 				</button>
 			</div>
 
 			<!-- Preview Panel -->
 			<div class="lg:col-span-2 bg-white rounded-lg shadow p-6">
-				<h2 class="text-lg font-semibold mb-4">File Preview</h2>
+				<h2 class="text-lg font-semibold mb-4">{m.bankingImport_filePreview()}</h2>
 
 				{#if csvPreview.length === 0}
 					<div class="text-center py-12 text-gray-500">
-						<p>Select a CSV file to preview</p>
+						<p>{m.bankingImport_selectCsvFile()}</p>
 					</div>
 				{:else}
 					<div class="mb-4 flex flex-wrap gap-2 text-xs">
-						<span class="px-2 py-1 bg-blue-100 text-blue-700 rounded">Date</span>
-						<span class="px-2 py-1 bg-green-100 text-green-700 rounded">Description</span>
-						<span class="px-2 py-1 bg-yellow-100 text-yellow-700 rounded">Amount</span>
-						<span class="px-2 py-1 bg-purple-100 text-purple-700 rounded">Reference</span>
-						<span class="px-2 py-1 bg-pink-100 text-pink-700 rounded">Counterparty</span>
+						<span class="px-2 py-1 bg-blue-100 text-blue-700 rounded">{m.common_date()}</span>
+						<span class="px-2 py-1 bg-green-100 text-green-700 rounded">{m.common_description()}</span>
+						<span class="px-2 py-1 bg-yellow-100 text-yellow-700 rounded">{m.common_amount()}</span>
+						<span class="px-2 py-1 bg-purple-100 text-purple-700 rounded">{m.banking_reference()}</span>
+						<span class="px-2 py-1 bg-pink-100 text-pink-700 rounded">{m.banking_counterparty()}</span>
 					</div>
 
 					<div class="overflow-x-auto">
@@ -375,7 +376,7 @@
 						</table>
 					</div>
 
-					<p class="mt-2 text-xs text-gray-500">Showing first {csvPreview.length} rows</p>
+					<p class="mt-2 text-xs text-gray-500">{m.bankingImport_showingRows({ count: csvPreview.length.toString() })}</p>
 				{/if}
 			</div>
 		</div>
