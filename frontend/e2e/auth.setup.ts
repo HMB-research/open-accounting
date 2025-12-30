@@ -14,25 +14,50 @@ const TEST_USER = {
 setup('authenticate', async ({ page, request }) => {
 	const baseUrl = process.env.PUBLIC_API_URL || 'http://localhost:8080';
 
-	// Step 1: Try to register test user via API (ignore if already exists)
-	try {
-		await request.post(`${baseUrl}/api/v1/auth/register`, {
-			data: TEST_USER
-		});
-		// 201 = created, 409 = already exists - both are OK
-	} catch {
-		// Registration may fail if user already exists - that's fine
+	// Step 1: Register test user via API
+	console.log(`Registering test user at ${baseUrl}/api/v1/auth/register`);
+	const registerResponse = await request.post(`${baseUrl}/api/v1/auth/register`, {
+		data: TEST_USER,
+		failOnStatusCode: false
+	});
+	console.log(`Registration response: ${registerResponse.status()}`);
+
+	// 201 = created, 409 = already exists - both are OK
+	if (registerResponse.status() !== 201 && registerResponse.status() !== 409) {
+		const body = await registerResponse.text();
+		console.log(`Registration response body: ${body}`);
 	}
 
-	// Step 2: Login via UI to get proper localStorage state
+	// Step 2: Login via API to get tokens
+	console.log(`Logging in at ${baseUrl}/api/v1/auth/login`);
+	const loginResponse = await request.post(`${baseUrl}/api/v1/auth/login`, {
+		data: {
+			email: TEST_USER.email,
+			password: TEST_USER.password
+		},
+		failOnStatusCode: false
+	});
+	console.log(`Login response: ${loginResponse.status()}`);
+
+	if (!loginResponse.ok()) {
+		const body = await loginResponse.text();
+		throw new Error(`Login failed: ${loginResponse.status()} - ${body}`);
+	}
+
+	const tokens = await loginResponse.json();
+	console.log(`Login successful, got access token`);
+
+	// Step 3: Navigate to app and inject tokens into localStorage
 	await page.goto('/login');
-	await page.getByLabel(/email/i).fill(TEST_USER.email);
-	await page.getByLabel(/password/i).fill(TEST_USER.password);
-	await page.getByRole('button', { name: /login|sign in/i }).click();
+	await page.evaluate((tokenData) => {
+		localStorage.setItem('access_token', tokenData.access_token);
+		localStorage.setItem('refresh_token', tokenData.refresh_token);
+	}, tokens);
 
-	// Wait for successful navigation to dashboard
-	await expect(page).toHaveURL(/dashboard/i, { timeout: 15000 });
+	// Step 4: Navigate to dashboard (should be authenticated now)
+	await page.goto('/dashboard');
+	await expect(page).toHaveURL(/dashboard/i, { timeout: 10000 });
 
-	// Step 3: Save storage state for reuse by other tests
+	// Step 5: Save storage state for reuse by other tests
 	await page.context().storageState({ path: authFile });
 });
