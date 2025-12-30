@@ -316,3 +316,41 @@ func TestCreateUserRequest(t *testing.T) {
 	// In the actual service, email would be normalized like this:
 	assert.NotEqual(t, normalizedEmail, request.Email) // Before normalization
 }
+
+func TestValidRoles(t *testing.T) {
+	roles := ValidRoles()
+
+	// Should contain exactly these three roles
+	assert.Len(t, roles, 3)
+	assert.Contains(t, roles, RoleAdmin)
+	assert.Contains(t, roles, RoleAccountant)
+	assert.Contains(t, roles, RoleViewer)
+
+	// Should NOT contain owner (owner is assigned at creation, not invited)
+	assert.NotContains(t, roles, RoleOwner)
+}
+
+func TestIsValidRole(t *testing.T) {
+	tests := []struct {
+		name     string
+		role     string
+		expected bool
+	}{
+		{"admin is valid", RoleAdmin, true},
+		{"accountant is valid", RoleAccountant, true},
+		{"viewer is valid", RoleViewer, true},
+		{"owner is NOT valid for invitation", RoleOwner, false},
+		{"empty string is invalid", "", false},
+		{"unknown role is invalid", "unknown", false},
+		{"uppercase admin is invalid", "ADMIN", false},
+		{"mixed case is invalid", "Admin", false},
+		{"whitespace is invalid", " admin ", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsValidRole(tt.role)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
