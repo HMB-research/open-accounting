@@ -1,41 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { parsePosition, pluginManager } from '$lib/plugins/manager';
+import { SLOT_NAMES, type SlotName } from '$lib/plugins';
+import { api } from '$lib/api';
 
-// Test the parsePosition logic since it's used for sorting navigation items
-describe('Plugin Position Parsing', () => {
-	// Recreate the parsePosition logic for testing
-	const parsePosition = (position?: string): number => {
-		if (!position) return 1000;
-
-		const num = parseInt(position, 10);
-		if (!isNaN(num)) return num;
-
-		const knownPositions: Record<string, number> = {
-			dashboard: 100,
-			accounts: 200,
-			journal: 300,
-			contacts: 400,
-			invoices: 500,
-			payments: 600,
-			reports: 700,
-			payroll: 800,
-			admin: 900
-		};
-
-		if (position.startsWith('after:')) {
-			const target = position.substring(6);
-			const targetPos = knownPositions[target] || 500;
-			return targetPos + 50;
-		}
-
-		if (position.startsWith('before:')) {
-			const target = position.substring(7);
-			const targetPos = knownPositions[target] || 500;
-			return targetPos - 50;
-		}
-
-		return 1000;
-	};
-
+describe('parsePosition', () => {
 	it('should return default position for undefined', () => {
 		expect(parsePosition(undefined)).toBe(1000);
 	});
@@ -93,37 +61,56 @@ describe('Plugin Position Parsing', () => {
 	});
 });
 
+describe('pluginManager', () => {
+	beforeEach(() => {
+		pluginManager.clear();
+	});
+
+	it('should start with empty state', () => {
+		expect(pluginManager.isLoaded()).toBe(false);
+		expect(pluginManager.getNavigation()).toEqual([]);
+		expect(pluginManager.getEnabledPlugins()).toEqual([]);
+	});
+
+	it('should return empty array for non-existent slot', () => {
+		expect(pluginManager.getSlotRegistrations('nonexistent')).toEqual([]);
+	});
+
+	it('should return false for hasSlotContent on empty slot', () => {
+		expect(pluginManager.hasSlotContent('dashboard-widgets')).toBe(false);
+	});
+
+	it('should clear state', () => {
+		pluginManager.clear();
+		expect(pluginManager.isLoaded()).toBe(false);
+		expect(pluginManager.getNavigation()).toEqual([]);
+	});
+
+	it('should support subscription', () => {
+		const callback = vi.fn();
+		const unsubscribe = pluginManager.subscribe(callback);
+
+		// Should be called immediately with initial state
+		expect(callback).toHaveBeenCalledTimes(1);
+
+		// Clear triggers notification
+		pluginManager.clear();
+		expect(callback).toHaveBeenCalledTimes(2);
+
+		// After unsubscribe, no more calls
+		unsubscribe();
+		pluginManager.clear();
+		expect(callback).toHaveBeenCalledTimes(2);
+	});
+});
+
 describe('Plugin Navigation Sorting', () => {
-	interface NavItem {
-		label: string;
-		position?: string;
-	}
-
-	const parsePosition = (position?: string): number => {
-		if (!position) return 1000;
-		const num = parseInt(position, 10);
-		if (!isNaN(num)) return num;
-
-		const knownPositions: Record<string, number> = {
-			dashboard: 100,
-			invoices: 500,
-			reports: 700
-		};
-
-		if (position.startsWith('after:')) {
-			const target = position.substring(6);
-			return (knownPositions[target] || 500) + 50;
-		}
-
-		if (position.startsWith('before:')) {
-			const target = position.substring(7);
-			return (knownPositions[target] || 500) - 50;
-		}
-
-		return 1000;
-	};
-
 	it('should sort navigation items by position', () => {
+		interface NavItem {
+			label: string;
+			position?: string;
+		}
+
 		const items: NavItem[] = [
 			{ label: 'Custom Reports', position: 'after:reports' },
 			{ label: 'Quick Actions', position: 'after:dashboard' },
@@ -144,246 +131,295 @@ describe('Plugin Navigation Sorting', () => {
 	});
 });
 
-describe('Plugin Manager State Types', () => {
-	it('should define PluginNavigationItem structure', () => {
-		interface PluginNavigationItem {
-			pluginId: string;
-			pluginName: string;
-			path: string;
-			label: string;
-			icon?: string;
-			position?: string;
-		}
+describe('pluginManager.loadPlugins', () => {
+	beforeEach(() => {
+		pluginManager.clear();
+		vi.clearAllMocks();
+	});
 
-		const navItem: PluginNavigationItem = {
-			pluginId: 'plugin-123',
-			pluginName: 'Test Plugin',
+	it('should load plugins and extract navigation', async () => {
+		const mockPlugins = [
+			{
+				id: 'tp-1',
+				tenant_id: 'tenant-1',
+				plugin_id: 'plugin-1',
+				is_enabled: true,
+				config: {},
+				plugin: {
+					id: 'plugin-1',
+					name: 'Test Plugin',
+					version: '1.0.0',
+					description: 'A test plugin',
+					manifest: {
+						id: 'plugin-1',
+						name: 'Test Plugin',
+						version: '1.0.0',
+						frontend: {
+							navigation: [
+								{
+									label: 'Test Nav',
+									path: '/test',
+									icon: 'test-icon',
+									position: 'after:dashboard'
+								}
+							],
+							slots: [
+								{
+									name: 'dashboard-widgets',
+									component: 'TestWidget'
+								}
+							]
+						}
+					}
+				}
+			}
+		];
+
+		vi.spyOn(api, 'listTenantPlugins').mockResolvedValueOnce(mockPlugins);
+
+		await pluginManager.loadPlugins('tenant-1');
+
+		expect(pluginManager.isLoaded()).toBe(true);
+		expect(pluginManager.getNavigation()).toHaveLength(1);
+		expect(pluginManager.getNavigation()[0]).toMatchObject({
+			label: 'Test Nav',
 			path: '/test',
-			label: 'Test'
-		};
-
-		expect(navItem.pluginId).toBe('plugin-123');
-		expect(navItem.pluginName).toBe('Test Plugin');
-		expect(navItem.path).toBe('/test');
-		expect(navItem.label).toBe('Test');
-		expect(navItem.icon).toBeUndefined();
-		expect(navItem.position).toBeUndefined();
+			pluginId: 'plugin-1',
+			pluginName: 'Test Plugin'
+		});
+		expect(pluginManager.hasSlotContent('dashboard-widgets')).toBe(true);
+		expect(pluginManager.getSlotRegistrations('dashboard-widgets')).toHaveLength(1);
 	});
 
-	it('should define PluginSlotRegistration structure', () => {
-		interface PluginSlotRegistration {
-			pluginId: string;
-			pluginName: string;
-			slotName: string;
-			componentName: string;
-		}
+	it('should skip already loaded tenant', async () => {
+		const mockPlugins = [
+			{
+				id: 'tp-1',
+				tenant_id: 'tenant-1',
+				plugin_id: 'plugin-1',
+				is_enabled: true,
+				config: {},
+				plugin: {
+					id: 'plugin-1',
+					name: 'Test Plugin',
+					version: '1.0.0',
+					description: 'A test plugin',
+					manifest: { id: 'plugin-1', name: 'Test', version: '1.0.0' }
+				}
+			}
+		];
 
-		const slot: PluginSlotRegistration = {
-			pluginId: 'plugin-456',
-			pluginName: 'Dashboard Widget',
-			slotName: 'dashboard-widgets',
-			componentName: 'WeatherWidget'
-		};
+		const spy = vi.spyOn(api, 'listTenantPlugins').mockResolvedValue(mockPlugins);
 
-		expect(slot.pluginId).toBe('plugin-456');
-		expect(slot.pluginName).toBe('Dashboard Widget');
-		expect(slot.slotName).toBe('dashboard-widgets');
-		expect(slot.componentName).toBe('WeatherWidget');
+		await pluginManager.loadPlugins('tenant-1');
+		expect(spy).toHaveBeenCalledTimes(1);
+
+		// Second call should be skipped
+		await pluginManager.loadPlugins('tenant-1');
+		expect(spy).toHaveBeenCalledTimes(1);
 	});
 
-	it('should define PluginManagerState structure', () => {
-		interface PluginManagerState {
-			plugins: unknown[];
-			navigation: unknown[];
-			slots: Map<string, unknown[]>;
-			isLoaded: boolean;
-			currentTenantId: string | null;
-		}
+	it('should reload for different tenant', async () => {
+		const mockPlugins = [
+			{
+				id: 'tp-1',
+				tenant_id: 'tenant-1',
+				plugin_id: 'plugin-1',
+				is_enabled: true,
+				config: {},
+				plugin: {
+					id: 'plugin-1',
+					name: 'Test Plugin',
+					version: '1.0.0',
+					description: 'Test',
+					manifest: { id: 'plugin-1', name: 'Test', version: '1.0.0' }
+				}
+			}
+		];
 
-		const initialState: PluginManagerState = {
-			plugins: [],
-			navigation: [],
-			slots: new Map(),
-			isLoaded: false,
-			currentTenantId: null
-		};
+		const spy = vi.spyOn(api, 'listTenantPlugins').mockResolvedValue(mockPlugins);
 
-		expect(initialState.plugins).toEqual([]);
-		expect(initialState.navigation).toEqual([]);
-		expect(initialState.slots.size).toBe(0);
-		expect(initialState.isLoaded).toBe(false);
-		expect(initialState.currentTenantId).toBeNull();
+		await pluginManager.loadPlugins('tenant-1');
+		await pluginManager.loadPlugins('tenant-2');
+
+		expect(spy).toHaveBeenCalledTimes(2);
+	});
+
+	it('should handle API errors gracefully', async () => {
+		vi.spyOn(api, 'listTenantPlugins').mockRejectedValueOnce(new Error('Network error'));
+		const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+		await pluginManager.loadPlugins('tenant-1');
+
+		expect(pluginManager.isLoaded()).toBe(false);
+		expect(consoleErrorSpy).toHaveBeenCalled();
+		consoleErrorSpy.mockRestore();
+	});
+
+	it('should filter out disabled plugins', async () => {
+		const mockPlugins = [
+			{
+				id: 'tp-1',
+				tenant_id: 'tenant-1',
+				plugin_id: 'plugin-1',
+				is_enabled: false,
+				config: {},
+				plugin: {
+					id: 'plugin-1',
+					name: 'Disabled Plugin',
+					version: '1.0.0',
+					description: 'Test',
+					manifest: {
+						id: 'plugin-1',
+						name: 'Disabled',
+						version: '1.0.0',
+						frontend: {
+							navigation: [{ label: 'Should Not Show', path: '/hidden', icon: 'x' }]
+						}
+					}
+				}
+			}
+		];
+
+		vi.spyOn(api, 'listTenantPlugins').mockResolvedValueOnce(mockPlugins);
+
+		await pluginManager.loadPlugins('tenant-1');
+
+		expect(pluginManager.getNavigation()).toHaveLength(0);
+		expect(pluginManager.getEnabledPlugins()).toHaveLength(0);
+	});
+
+	it('should handle plugins without manifest', async () => {
+		const mockPlugins = [
+			{
+				id: 'tp-1',
+				tenant_id: 'tenant-1',
+				plugin_id: 'plugin-1',
+				is_enabled: true,
+				config: {},
+				plugin: {
+					id: 'plugin-1',
+					name: 'Plugin Without Manifest',
+					version: '1.0.0',
+					description: 'Test',
+					manifest: null
+				}
+			}
+		];
+
+		vi.spyOn(api, 'listTenantPlugins').mockResolvedValueOnce(mockPlugins);
+
+		await pluginManager.loadPlugins('tenant-1');
+
+		expect(pluginManager.isLoaded()).toBe(true);
+		expect(pluginManager.getNavigation()).toHaveLength(0);
+	});
+
+	it('should sort navigation by position', async () => {
+		const mockPlugins = [
+			{
+				id: 'tp-1',
+				tenant_id: 'tenant-1',
+				plugin_id: 'plugin-1',
+				is_enabled: true,
+				config: {},
+				plugin: {
+					id: 'plugin-1',
+					name: 'Multi-Nav Plugin',
+					version: '1.0.0',
+					description: 'Test',
+					manifest: {
+						id: 'plugin-1',
+						name: 'Multi-Nav',
+						version: '1.0.0',
+						frontend: {
+							navigation: [
+								{ label: 'Last', path: '/last', icon: 'z', position: 'after:admin' },
+								{ label: 'First', path: '/first', icon: 'a', position: 'before:dashboard' },
+								{ label: 'Middle', path: '/middle', icon: 'm', position: 'after:invoices' }
+							]
+						}
+					}
+				}
+			}
+		];
+
+		vi.spyOn(api, 'listTenantPlugins').mockResolvedValueOnce(mockPlugins);
+
+		await pluginManager.loadPlugins('tenant-1');
+
+		const nav = pluginManager.getNavigation();
+		expect(nav.map((n) => n.label)).toEqual(['First', 'Middle', 'Last']);
 	});
 });
 
-describe('Plugin Slot Management', () => {
-	it('should handle empty slot registrations', () => {
-		const slots = new Map<string, unknown[]>();
-		const getSlotRegistrations = (slotName: string) => slots.get(slotName) || [];
-
-		expect(getSlotRegistrations('dashboard-widgets')).toEqual([]);
-		expect(getSlotRegistrations('nonexistent')).toEqual([]);
+describe('pluginManager.reload', () => {
+	beforeEach(() => {
+		pluginManager.clear();
+		vi.clearAllMocks();
 	});
 
-	it('should handle slot registration retrieval', () => {
-		const slots = new Map<string, unknown[]>();
-		slots.set('dashboard-widgets', [
-			{ pluginId: 'p1', componentName: 'Widget1' },
-			{ pluginId: 'p2', componentName: 'Widget2' }
-		]);
+	it('should reload plugins for current tenant', async () => {
+		const mockPlugins = [
+			{
+				id: 'tp-1',
+				tenant_id: 'tenant-1',
+				plugin_id: 'plugin-1',
+				is_enabled: true,
+				config: {},
+				plugin: {
+					id: 'plugin-1',
+					name: 'Test Plugin',
+					version: '1.0.0',
+					description: 'Test',
+					manifest: { id: 'plugin-1', name: 'Test', version: '1.0.0' }
+				}
+			}
+		];
 
-		const getSlotRegistrations = (slotName: string) => slots.get(slotName) || [];
+		const spy = vi.spyOn(api, 'listTenantPlugins').mockResolvedValue(mockPlugins);
 
-		expect(getSlotRegistrations('dashboard-widgets')).toHaveLength(2);
+		// First load
+		await pluginManager.loadPlugins('tenant-1');
+		expect(spy).toHaveBeenCalledTimes(1);
+
+		// Reload should fetch again
+		await pluginManager.reload();
+		expect(spy).toHaveBeenCalledTimes(2);
 	});
 
-	it('should check if slot has content', () => {
-		const slots = new Map<string, unknown[]>();
-		slots.set('dashboard-widgets', [{ pluginId: 'p1' }]);
-		slots.set('empty-slot', []);
+	it('should do nothing when no tenant loaded', async () => {
+		const spy = vi.spyOn(api, 'listTenantPlugins').mockResolvedValue([]);
 
-		const hasSlotContent = (slotName: string) => (slots.get(slotName)?.length || 0) > 0;
+		await pluginManager.reload();
 
-		expect(hasSlotContent('dashboard-widgets')).toBe(true);
-		expect(hasSlotContent('empty-slot')).toBe(false);
-		expect(hasSlotContent('nonexistent')).toBe(false);
+		expect(spy).not.toHaveBeenCalled();
 	});
 });
 
-describe('Plugin State Subscription Pattern', () => {
-	it('should handle subscriber registration and notification', () => {
-		const subscribers = new Set<(state: unknown) => void>();
-		let state = { isLoaded: false };
-
-		const subscribe = (fn: (state: unknown) => void) => {
-			subscribers.add(fn);
-			fn(state); // Initial call
-			return () => subscribers.delete(fn);
-		};
-
-		const notify = () => {
-			subscribers.forEach((fn) => fn(state));
-		};
-
-		const callback = vi.fn();
-		const unsubscribe = subscribe(callback);
-
-		// Should have been called once on subscribe
-		expect(callback).toHaveBeenCalledTimes(1);
-		expect(callback).toHaveBeenCalledWith({ isLoaded: false });
-
-		// Update state and notify
-		state = { isLoaded: true };
-		notify();
-
-		expect(callback).toHaveBeenCalledTimes(2);
-		expect(callback).toHaveBeenLastCalledWith({ isLoaded: true });
-
-		// Unsubscribe
-		unsubscribe();
-		notify();
-
-		// Should not have been called again
-		expect(callback).toHaveBeenCalledTimes(2);
-	});
-
-	it('should handle multiple subscribers', () => {
-		const subscribers = new Set<(state: unknown) => void>();
-		const state = { plugins: [] };
-
-		const subscribe = (fn: (state: unknown) => void) => {
-			subscribers.add(fn);
-			fn(state);
-			return () => subscribers.delete(fn);
-		};
-
-		const notify = () => {
-			subscribers.forEach((fn) => fn(state));
-		};
-
-		const callback1 = vi.fn();
-		const callback2 = vi.fn();
-
-		subscribe(callback1);
-		subscribe(callback2);
-
-		expect(callback1).toHaveBeenCalledTimes(1);
-		expect(callback2).toHaveBeenCalledTimes(1);
-
-		notify();
-
-		expect(callback1).toHaveBeenCalledTimes(2);
-		expect(callback2).toHaveBeenCalledTimes(2);
+describe('parsePosition edge cases', () => {
+	it('should handle non-matching position formats', () => {
+		// This should hit the final return 1000 on line 237
+		expect(parsePosition('invalid:format')).toBe(1000);
+		expect(parsePosition('something_else')).toBe(1000);
 	});
 });
 
-describe('Plugin Manifest Processing', () => {
-	interface PluginManifest {
-		frontend?: {
-			navigation?: Array<{
-				path: string;
-				label: string;
-				icon?: string;
-				position?: string;
-			}>;
-			slots?: Array<{
-				name: string;
-				component: string;
-			}>;
-		};
-	}
-
-	it('should extract navigation from manifest', () => {
-		const manifest: PluginManifest = {
-			frontend: {
-				navigation: [
-					{ path: '/custom', label: 'Custom Page' },
-					{ path: '/settings', label: 'Settings', icon: 'cog' }
-				]
-			}
-		};
-
-		const navItems = manifest.frontend?.navigation || [];
-		expect(navItems).toHaveLength(2);
-		expect(navItems[0].path).toBe('/custom');
-		expect(navItems[1].icon).toBe('cog');
+describe('SLOT_NAMES', () => {
+	it('should export all slot names', () => {
+		expect(SLOT_NAMES.DASHBOARD_WIDGETS).toBe('dashboard.widgets');
+		expect(SLOT_NAMES.DASHBOARD_ACTIONS).toBe('dashboard.actions');
+		expect(SLOT_NAMES.INVOICE_SIDEBAR).toBe('invoice.sidebar');
+		expect(SLOT_NAMES.INVOICE_ACTIONS).toBe('invoice.actions');
+		expect(SLOT_NAMES.CONTACT_SIDEBAR).toBe('contact.sidebar');
+		expect(SLOT_NAMES.PAYMENT_SIDEBAR).toBe('payment.sidebar');
+		expect(SLOT_NAMES.SETTINGS_TABS).toBe('settings.tabs');
+		expect(SLOT_NAMES.REPORTS_CUSTOM).toBe('reports.custom');
+		expect(SLOT_NAMES.HEADER_ACTIONS).toBe('header.actions');
 	});
 
-	it('should extract slots from manifest', () => {
-		const manifest: PluginManifest = {
-			frontend: {
-				slots: [
-					{ name: 'dashboard-widgets', component: 'MyWidget' },
-					{ name: 'invoice-actions', component: 'CustomAction' }
-				]
-			}
-		};
-
-		const slots = manifest.frontend?.slots || [];
-		expect(slots).toHaveLength(2);
-		expect(slots[0].name).toBe('dashboard-widgets');
-		expect(slots[1].component).toBe('CustomAction');
-	});
-
-	it('should handle missing frontend section', () => {
-		const manifest: PluginManifest = {};
-
-		const navItems = manifest.frontend?.navigation || [];
-		const slots = manifest.frontend?.slots || [];
-
-		expect(navItems).toEqual([]);
-		expect(slots).toEqual([]);
-	});
-
-	it('should handle empty navigation and slots', () => {
-		const manifest: PluginManifest = {
-			frontend: {
-				navigation: [],
-				slots: []
-			}
-		};
-
-		expect(manifest.frontend?.navigation).toEqual([]);
-		expect(manifest.frontend?.slots).toEqual([]);
+	it('should provide type safety for slot names', () => {
+		const slotName: SlotName = SLOT_NAMES.DASHBOARD_WIDGETS;
+		expect(slotName).toBeDefined();
 	});
 });
