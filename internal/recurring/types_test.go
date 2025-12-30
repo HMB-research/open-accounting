@@ -625,3 +625,317 @@ func TestUpdateRecurringInvoiceRequest_PartialUpdate(t *testing.T) {
 		t.Error("Reference should be nil for partial update")
 	}
 }
+
+func TestRecurringInvoice_EmailConfiguration(t *testing.T) {
+	// Test that email configuration fields are properly stored and serialized
+	validLine := RecurringInvoiceLine{
+		Description: "Service",
+		Quantity:    decimal.NewFromInt(1),
+		UnitPrice:   decimal.NewFromInt(100),
+	}
+
+	tests := []struct {
+		name                   string
+		sendEmailOnGeneration  bool
+		emailTemplateType      string
+		recipientEmailOverride string
+		attachPDFToEmail       bool
+		emailSubjectOverride   string
+		emailMessage           string
+	}{
+		{
+			name:                  "email disabled",
+			sendEmailOnGeneration: false,
+			emailTemplateType:     "INVOICE_SEND",
+			attachPDFToEmail:      true,
+		},
+		{
+			name:                  "email enabled with defaults",
+			sendEmailOnGeneration: true,
+			emailTemplateType:     "INVOICE_SEND",
+			attachPDFToEmail:      true,
+		},
+		{
+			name:                   "email enabled with recipient override",
+			sendEmailOnGeneration:  true,
+			emailTemplateType:      "INVOICE_SEND",
+			recipientEmailOverride: "billing@example.com",
+			attachPDFToEmail:       true,
+		},
+		{
+			name:                  "email enabled without PDF attachment",
+			sendEmailOnGeneration: true,
+			emailTemplateType:     "INVOICE_SEND",
+			attachPDFToEmail:      false,
+		},
+		{
+			name:                 "email enabled with custom subject and message",
+			sendEmailOnGeneration: true,
+			emailTemplateType:     "INVOICE_SEND",
+			attachPDFToEmail:      true,
+			emailSubjectOverride:  "Custom Invoice Subject",
+			emailMessage:          "Please find your invoice attached.",
+		},
+		{
+			name:                  "email with different template type",
+			sendEmailOnGeneration: true,
+			emailTemplateType:     "OVERDUE_REMINDER",
+			attachPDFToEmail:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ri := RecurringInvoice{
+				ID:                     "ri-123",
+				TenantID:               "tenant-1",
+				Name:                   "Test Invoice",
+				ContactID:              "contact-1",
+				Frequency:              FrequencyMonthly,
+				StartDate:              time.Now(),
+				PaymentTermsDays:       14,
+				Lines:                  []RecurringInvoiceLine{validLine},
+				SendEmailOnGeneration:  tt.sendEmailOnGeneration,
+				EmailTemplateType:      tt.emailTemplateType,
+				RecipientEmailOverride: tt.recipientEmailOverride,
+				AttachPDFToEmail:       tt.attachPDFToEmail,
+				EmailSubjectOverride:   tt.emailSubjectOverride,
+				EmailMessage:           tt.emailMessage,
+			}
+
+			// Test validation still passes with email configuration
+			if err := ri.Validate(); err != nil {
+				t.Errorf("Validate() unexpected error: %v", err)
+			}
+
+			// Test JSON serialization preserves email fields
+			data, err := json.Marshal(ri)
+			if err != nil {
+				t.Fatalf("Failed to marshal: %v", err)
+			}
+
+			var parsed RecurringInvoice
+			if err := json.Unmarshal(data, &parsed); err != nil {
+				t.Fatalf("Failed to unmarshal: %v", err)
+			}
+
+			if parsed.SendEmailOnGeneration != tt.sendEmailOnGeneration {
+				t.Errorf("SendEmailOnGeneration = %v, want %v", parsed.SendEmailOnGeneration, tt.sendEmailOnGeneration)
+			}
+			if parsed.EmailTemplateType != tt.emailTemplateType {
+				t.Errorf("EmailTemplateType = %q, want %q", parsed.EmailTemplateType, tt.emailTemplateType)
+			}
+			if parsed.RecipientEmailOverride != tt.recipientEmailOverride {
+				t.Errorf("RecipientEmailOverride = %q, want %q", parsed.RecipientEmailOverride, tt.recipientEmailOverride)
+			}
+			if parsed.AttachPDFToEmail != tt.attachPDFToEmail {
+				t.Errorf("AttachPDFToEmail = %v, want %v", parsed.AttachPDFToEmail, tt.attachPDFToEmail)
+			}
+			if parsed.EmailSubjectOverride != tt.emailSubjectOverride {
+				t.Errorf("EmailSubjectOverride = %q, want %q", parsed.EmailSubjectOverride, tt.emailSubjectOverride)
+			}
+			if parsed.EmailMessage != tt.emailMessage {
+				t.Errorf("EmailMessage = %q, want %q", parsed.EmailMessage, tt.emailMessage)
+			}
+		})
+	}
+}
+
+func TestGenerationResult_EmailStatus_JSONSerialization(t *testing.T) {
+	// Test that email status fields are properly serialized in GenerationResult
+	tests := []struct {
+		name        string
+		emailSent   bool
+		emailStatus string
+		emailLogID  string
+		emailError  string
+	}{
+		{
+			name:        "sent",
+			emailSent:   true,
+			emailStatus: "SENT",
+			emailLogID:  "log-123",
+			emailError:  "",
+		},
+		{
+			name:        "failed",
+			emailSent:   false,
+			emailStatus: "FAILED",
+			emailLogID:  "",
+			emailError:  "SMTP error",
+		},
+		{
+			name:        "skipped",
+			emailSent:   false,
+			emailStatus: "SKIPPED",
+			emailLogID:  "",
+			emailError:  "",
+		},
+		{
+			name:        "no_config",
+			emailSent:   false,
+			emailStatus: "NO_CONFIG",
+			emailLogID:  "",
+			emailError:  "email service not configured",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := GenerationResult{
+				RecurringInvoiceID:     "ri-123",
+				GeneratedInvoiceID:     "inv-456",
+				GeneratedInvoiceNumber: "INV-2025-001",
+				EmailSent:              tt.emailSent,
+				EmailStatus:            tt.emailStatus,
+				EmailLogID:             tt.emailLogID,
+				EmailError:             tt.emailError,
+			}
+
+			data, err := json.Marshal(result)
+			if err != nil {
+				t.Fatalf("Failed to marshal: %v", err)
+			}
+
+			var parsed GenerationResult
+			if err := json.Unmarshal(data, &parsed); err != nil {
+				t.Fatalf("Failed to unmarshal: %v", err)
+			}
+
+			if parsed.EmailSent != tt.emailSent {
+				t.Errorf("EmailSent = %v, want %v", parsed.EmailSent, tt.emailSent)
+			}
+			if parsed.EmailStatus != tt.emailStatus {
+				t.Errorf("EmailStatus = %q, want %q", parsed.EmailStatus, tt.emailStatus)
+			}
+			if parsed.EmailLogID != tt.emailLogID {
+				t.Errorf("EmailLogID = %q, want %q", parsed.EmailLogID, tt.emailLogID)
+			}
+			if parsed.EmailError != tt.emailError {
+				t.Errorf("EmailError = %q, want %q", parsed.EmailError, tt.emailError)
+			}
+		})
+	}
+}
+
+func TestCreateRecurringInvoiceRequest_EmailFields(t *testing.T) {
+	// Test that CreateRecurringInvoiceRequest properly handles email fields
+	attachPDFTrue := true
+	attachPDFFalse := false
+
+	tests := []struct {
+		name              string
+		req               CreateRecurringInvoiceRequest
+		expectSendEmail   bool
+		expectAttachPDF   bool
+	}{
+		{
+			name: "default values",
+			req: CreateRecurringInvoiceRequest{
+				Name:      "Test",
+				ContactID: "c1",
+				Frequency: FrequencyMonthly,
+				StartDate: time.Now(),
+			},
+			expectSendEmail: false,
+			expectAttachPDF: true, // nil defaults to true
+		},
+		{
+			name: "email enabled explicit attach true",
+			req: CreateRecurringInvoiceRequest{
+				Name:                  "Test",
+				ContactID:             "c1",
+				Frequency:             FrequencyMonthly,
+				StartDate:             time.Now(),
+				SendEmailOnGeneration: true,
+				AttachPDFToEmail:      &attachPDFTrue,
+			},
+			expectSendEmail: true,
+			expectAttachPDF: true,
+		},
+		{
+			name: "email enabled explicit attach false",
+			req: CreateRecurringInvoiceRequest{
+				Name:                  "Test",
+				ContactID:             "c1",
+				Frequency:             FrequencyMonthly,
+				StartDate:             time.Now(),
+				SendEmailOnGeneration: true,
+				AttachPDFToEmail:      &attachPDFFalse,
+			},
+			expectSendEmail: true,
+			expectAttachPDF: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.req.SendEmailOnGeneration != tt.expectSendEmail {
+				t.Errorf("SendEmailOnGeneration = %v, want %v", tt.req.SendEmailOnGeneration, tt.expectSendEmail)
+			}
+
+			// Apply default logic
+			attachPDF := true
+			if tt.req.AttachPDFToEmail != nil {
+				attachPDF = *tt.req.AttachPDFToEmail
+			}
+			if attachPDF != tt.expectAttachPDF {
+				t.Errorf("AttachPDFToEmail (with default logic) = %v, want %v", attachPDF, tt.expectAttachPDF)
+			}
+		})
+	}
+}
+
+func TestUpdateRecurringInvoiceRequest_EmailFields(t *testing.T) {
+	// Test that UpdateRecurringInvoiceRequest email fields work as partial updates
+	sendEmail := true
+	templateType := "OVERDUE_REMINDER"
+	recipientOverride := "override@example.com"
+	attachPDF := false
+	subjectOverride := "Custom Subject"
+	emailMessage := "Custom message"
+
+	req := UpdateRecurringInvoiceRequest{
+		SendEmailOnGeneration:  &sendEmail,
+		EmailTemplateType:      &templateType,
+		RecipientEmailOverride: &recipientOverride,
+		AttachPDFToEmail:       &attachPDF,
+		EmailSubjectOverride:   &subjectOverride,
+		EmailMessage:           &emailMessage,
+	}
+
+	// Verify all email fields are set
+	if req.SendEmailOnGeneration == nil || *req.SendEmailOnGeneration != true {
+		t.Error("SendEmailOnGeneration not set correctly")
+	}
+	if req.EmailTemplateType == nil || *req.EmailTemplateType != "OVERDUE_REMINDER" {
+		t.Error("EmailTemplateType not set correctly")
+	}
+	if req.RecipientEmailOverride == nil || *req.RecipientEmailOverride != "override@example.com" {
+		t.Error("RecipientEmailOverride not set correctly")
+	}
+	if req.AttachPDFToEmail == nil || *req.AttachPDFToEmail != false {
+		t.Error("AttachPDFToEmail not set correctly")
+	}
+	if req.EmailSubjectOverride == nil || *req.EmailSubjectOverride != "Custom Subject" {
+		t.Error("EmailSubjectOverride not set correctly")
+	}
+	if req.EmailMessage == nil || *req.EmailMessage != "Custom message" {
+		t.Error("EmailMessage not set correctly")
+	}
+
+	// Test partial update (only email related)
+	partialReq := UpdateRecurringInvoiceRequest{
+		SendEmailOnGeneration: &sendEmail,
+	}
+
+	if partialReq.SendEmailOnGeneration == nil {
+		t.Error("SendEmailOnGeneration should be set")
+	}
+	if partialReq.EmailTemplateType != nil {
+		t.Error("EmailTemplateType should be nil for partial update")
+	}
+	if partialReq.Name != nil {
+		t.Error("Name should be nil for partial update")
+	}
+}
