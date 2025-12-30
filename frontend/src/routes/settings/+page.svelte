@@ -1,15 +1,16 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import * as m from '$lib/paraglide/messages.js';
 
 	let tenantId = $derived($page.url.searchParams.get('tenant') || '');
 </script>
 
 <svelte:head>
-	<title>Settings - Open Accounting</title>
+	<title>{m.settings_title()} - Open Accounting</title>
 </svelte:head>
 
 <div class="container">
-	<h1>Settings</h1>
+	<h1>{m.settings_title()}</h1>
 
 	<div class="settings-grid">
 		<a href="/settings/company?tenant={tenantId}" class="settings-card card">
@@ -35,8 +36,8 @@
 				</svg>
 			</div>
 			<div class="card-content">
-				<h3>Company Profile</h3>
-				<p>Manage company details, branding, VAT number, and regional settings.</p>
+				<h3>{m.settings_companyProfile()}</h3>
+				<p>{m.settings_companyProfileDesc()}</p>
 			</div>
 		</a>
 
@@ -58,8 +59,8 @@
 				</svg>
 			</div>
 			<div class="card-content">
-				<h3>Email Settings</h3>
-				<p>Configure SMTP settings and email templates for invoices and notifications.</p>
+				<h3>{m.settings_emailSettings()}</h3>
+				<p>{m.settings_emailSettingsDesc()}</p>
 			</div>
 		</a>
 
@@ -82,8 +83,8 @@
 				</svg>
 			</div>
 			<div class="card-content">
-				<h3>Plugins</h3>
-				<p>Enable or disable plugins for your organization and configure their settings.</p>
+				<h3>{m.settings_plugins()}</h3>
+				<p>{m.settings_pluginsDesc()}</p>
 			</div>
 		</a>
 	</div>

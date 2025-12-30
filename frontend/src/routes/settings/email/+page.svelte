@@ -8,6 +8,7 @@
 		type TemplateType,
 		type UpdateTemplateRequest
 	} from '$lib/api';
+	import * as m from '$lib/paraglide/messages.js';
 
 	let selectedTenantId = $state('');
 	let isLoading = $state(true);
@@ -66,7 +67,7 @@
 			templates = templateList;
 			emailLog = log;
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to load settings';
+			error = err instanceof Error ? err.message : m.errors_loadFailed();
 		}
 	}
 
@@ -78,9 +79,9 @@
 
 		try {
 			await api.updateSMTPConfig(selectedTenantId, smtpConfig);
-			success = 'SMTP settings saved successfully';
+			success = m.email_smtpSaved();
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to save SMTP settings';
+			error = err instanceof Error ? err.message : m.errors_saveFailed();
 		} finally {
 			isSavingSMTP = false;
 		}
@@ -88,7 +89,7 @@
 
 	async function testSMTPConfig() {
 		if (!testEmail) {
-			error = 'Please enter a test email address';
+			error = m.email_enterTestEmail();
 			return;
 		}
 
@@ -104,7 +105,7 @@
 				error = result.message;
 			}
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'SMTP test failed';
+			error = err instanceof Error ? err.message : m.errors_saveFailed();
 		} finally {
 			isTestingSMTP = false;
 		}
@@ -138,21 +139,21 @@
 				t.template_type === selectedTemplate!.template_type ? updated : t
 			);
 			selectedTemplate = updated;
-			success = 'Template saved successfully';
+			success = m.email_templateSaved();
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to save template';
+			error = err instanceof Error ? err.message : m.errors_saveFailed();
 		} finally {
 			isSavingTemplate = false;
 		}
 	}
 
 	function templateTypeName(type: TemplateType): string {
-		const names: Record<TemplateType, string> = {
-			INVOICE_SEND: 'Invoice Email',
-			PAYMENT_RECEIPT: 'Payment Receipt',
-			OVERDUE_REMINDER: 'Overdue Reminder'
-		};
-		return names[type] || type;
+		switch (type) {
+			case 'INVOICE_SEND': return m.email_invoiceEmail();
+			case 'PAYMENT_RECEIPT': return m.email_paymentReceipt();
+			case 'OVERDUE_REMINDER': return m.email_overdueReminder();
+			default: return type;
+		}
 	}
 
 	function formatDate(dateStr: string): string {
@@ -172,13 +173,13 @@
 </script>
 
 <svelte:head>
-	<title>Email Settings - Open Accounting</title>
+	<title>{m.email_title()} - Open Accounting</title>
 </svelte:head>
 
 <div class="container">
 	<div class="header">
-		<h1>Email Settings</h1>
-		<a href="/dashboard?tenant={selectedTenantId}" class="btn btn-secondary">Back to Dashboard</a>
+		<h1>{m.email_title()}</h1>
+		<a href="/dashboard?tenant={selectedTenantId}" class="btn btn-secondary">{m.email_backToDashboard()}</a>
 	</div>
 
 	{#if error}
@@ -190,7 +191,7 @@
 	{/if}
 
 	{#if isLoading}
-		<p>Loading...</p>
+		<p>{m.common_loading()}</p>
 	{:else}
 		<div class="tabs">
 			<button
@@ -198,33 +199,33 @@
 				class:active={activeTab === 'smtp'}
 				onclick={() => (activeTab = 'smtp')}
 			>
-				SMTP Configuration
+				{m.email_smtpConfig()}
 			</button>
 			<button
 				class="tab"
 				class:active={activeTab === 'templates'}
 				onclick={() => (activeTab = 'templates')}
 			>
-				Email Templates
+				{m.email_templates()}
 			</button>
 			<button
 				class="tab"
 				class:active={activeTab === 'log'}
 				onclick={() => (activeTab = 'log')}
 			>
-				Email Log
+				{m.email_log()}
 			</button>
 		</div>
 
 		{#if activeTab === 'smtp'}
 			<div class="card">
-				<h2>SMTP Server Configuration</h2>
-				<p class="text-muted">Configure your email server to send invoices and notifications.</p>
+				<h2>{m.email_smtpConfig()}</h2>
+				<p class="text-muted">{m.email_smtpConfigDesc()}</p>
 
 				<form onsubmit={saveSMTPConfig}>
 					<div class="form-row">
 						<div class="form-group">
-							<label class="label" for="smtp_host">SMTP Host</label>
+							<label class="label" for="smtp_host">{m.email_smtpHost()}</label>
 							<input
 								class="input"
 								type="text"
@@ -234,7 +235,7 @@
 							/>
 						</div>
 						<div class="form-group">
-							<label class="label" for="smtp_port">Port</label>
+							<label class="label" for="smtp_port">{m.email_port()}</label>
 							<input
 								class="input"
 								type="number"
@@ -247,7 +248,7 @@
 
 					<div class="form-row">
 						<div class="form-group">
-							<label class="label" for="smtp_username">Username</label>
+							<label class="label" for="smtp_username">{m.email_username()}</label>
 							<input
 								class="input"
 								type="text"
@@ -257,20 +258,20 @@
 							/>
 						</div>
 						<div class="form-group">
-							<label class="label" for="smtp_password">Password</label>
+							<label class="label" for="smtp_password">{m.email_password()}</label>
 							<input
 								class="input"
 								type="password"
 								id="smtp_password"
 								bind:value={smtpConfig.smtp_password}
-								placeholder="Enter password to change"
+								placeholder=""
 							/>
 						</div>
 					</div>
 
 					<div class="form-row">
 						<div class="form-group">
-							<label class="label" for="smtp_from_email">From Email</label>
+							<label class="label" for="smtp_from_email">{m.email_fromEmail()}</label>
 							<input
 								class="input"
 								type="email"
@@ -280,7 +281,7 @@
 							/>
 						</div>
 						<div class="form-group">
-							<label class="label" for="smtp_from_name">From Name</label>
+							<label class="label" for="smtp_from_name">{m.email_fromName()}</label>
 							<input
 								class="input"
 								type="text"
@@ -294,23 +295,23 @@
 					<div class="form-group">
 						<label class="checkbox-label">
 							<input type="checkbox" bind:checked={smtpConfig.smtp_use_tls} />
-							Use TLS encryption
+							{m.email_useTls()}
 						</label>
 					</div>
 
 					<div class="form-actions">
 						<button type="submit" class="btn btn-primary" disabled={isSavingSMTP}>
-							{isSavingSMTP ? 'Saving...' : 'Save Settings'}
+							{isSavingSMTP ? m.settings_saving() : m.settings_saveSettings()}
 						</button>
 					</div>
 				</form>
 
 				<hr />
 
-				<h3>Test Configuration</h3>
+				<h3>{m.email_testConfig()}</h3>
 				<div class="test-form">
 					<div class="form-group">
-						<label class="label" for="test_email">Send test email to</label>
+						<label class="label" for="test_email">{m.email_sendTestTo()}</label>
 						<input
 							class="input"
 							type="email"
@@ -325,7 +326,7 @@
 						onclick={testSMTPConfig}
 						disabled={isTestingSMTP}
 					>
-						{isTestingSMTP ? 'Sending...' : 'Send Test Email'}
+						{isTestingSMTP ? m.email_sending() : m.email_sendTest()}
 					</button>
 				</div>
 			</div>
@@ -334,7 +335,7 @@
 		{#if activeTab === 'templates'}
 			<div class="templates-layout">
 				<div class="template-list card">
-					<h3>Templates</h3>
+					<h3>{m.email_templates()}</h3>
 					{#each templates as template}
 						<button
 							class="template-item"
@@ -343,7 +344,7 @@
 						>
 							<div class="template-name">{templateTypeName(template.template_type)}</div>
 							<span class="badge" class:badge-success={template.is_active} class:badge-muted={!template.is_active}>
-								{template.is_active ? 'Active' : 'Inactive'}
+								{template.is_active ? m.email_active() : m.email_inactive()}
 							</span>
 						</button>
 					{/each}
@@ -351,10 +352,10 @@
 
 				<div class="template-editor card">
 					{#if selectedTemplate && editingTemplate}
-						<h3>Edit {templateTypeName(selectedTemplate.template_type)}</h3>
+						<h3>{m.common_edit()} {templateTypeName(selectedTemplate.template_type)}</h3>
 						<form onsubmit={saveTemplate}>
 							<div class="form-group">
-								<label class="label" for="template_subject">Subject</label>
+								<label class="label" for="template_subject">{m.email_subject()}</label>
 								<input
 									class="input"
 									type="text"
@@ -362,12 +363,12 @@
 									bind:value={editingTemplate.subject}
 								/>
 								<small class="text-muted">
-									Available variables: {'{{.CompanyName}}'}, {'{{.ContactName}}'}, {'{{.InvoiceNumber}}'}, {'{{.TotalAmount}}'}, {'{{.Currency}}'}, {'{{.DueDate}}'}
+									{m.email_availableVars()}: {'{{.CompanyName}}'}, {'{{.ContactName}}'}, {'{{.InvoiceNumber}}'}, {'{{.TotalAmount}}'}, {'{{.Currency}}'}, {'{{.DueDate}}'}
 								</small>
 							</div>
 
 							<div class="form-group">
-								<label class="label" for="template_body">HTML Body</label>
+								<label class="label" for="template_body">{m.email_htmlBody()}</label>
 								<textarea
 									class="input textarea"
 									id="template_body"
@@ -379,18 +380,18 @@
 							<div class="form-group">
 								<label class="checkbox-label">
 									<input type="checkbox" bind:checked={editingTemplate.is_active} />
-									Template is active
+									{m.email_templateActive()}
 								</label>
 							</div>
 
 							<div class="form-actions">
 								<button type="submit" class="btn btn-primary" disabled={isSavingTemplate}>
-									{isSavingTemplate ? 'Saving...' : 'Save Template'}
+									{isSavingTemplate ? m.settings_saving() : m.email_saveTemplate()}
 								</button>
 							</div>
 						</form>
 					{:else}
-						<p class="text-muted">Select a template to edit</p>
+						<p class="text-muted">{m.email_selectTemplate()}</p>
 					{/if}
 				</div>
 			</div>
@@ -398,19 +399,19 @@
 
 		{#if activeTab === 'log'}
 			<div class="card">
-				<h2>Email Log</h2>
+				<h2>{m.email_log()}</h2>
 				{#if emailLog.length === 0}
-					<p class="text-muted">No emails have been sent yet.</p>
+					<p class="text-muted">{m.email_noEmailsSent()}</p>
 				{:else}
 					<div class="table-container">
 						<table class="table">
 							<thead>
 								<tr>
-									<th>Date</th>
-									<th>Type</th>
-									<th>Recipient</th>
-									<th>Subject</th>
-									<th>Status</th>
+									<th>{m.common_date()}</th>
+									<th>{m.email_type()}</th>
+									<th>{m.email_recipient()}</th>
+									<th>{m.email_subject()}</th>
+									<th>{m.common_status()}</th>
 								</tr>
 							</thead>
 							<tbody>

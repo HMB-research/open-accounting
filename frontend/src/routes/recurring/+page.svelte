@@ -8,6 +8,7 @@
 		type CreateRecurringInvoiceRequest
 	} from '$lib/api';
 	import Decimal from 'decimal.js';
+	import * as m from '$lib/paraglide/messages.js';
 
 	let recurringInvoices = $state<RecurringInvoice[]>([]);
 	let contacts = $state<Contact[]>([]);
@@ -56,7 +57,7 @@
 			recurringInvoices = invoicesData;
 			contacts = contactsData;
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to load data';
+			error = err instanceof Error ? err.message : m.recurring_failedToLoad();
 		}
 	}
 
@@ -69,27 +70,27 @@
 			}
 			await loadData();
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to update status';
+			error = err instanceof Error ? err.message : m.recurring_failedToUpdateStatus();
 		}
 	}
 
 	async function handleGenerate(invoice: RecurringInvoice) {
 		try {
 			const result = await api.generateRecurringInvoice(selectedTenantId, invoice.id);
-			alert(`Generated invoice: ${result.generated_invoice_number}`);
+			alert(m.recurring_generatedInvoice({ number: result.generated_invoice_number }));
 			await loadData();
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to generate invoice';
+			error = err instanceof Error ? err.message : m.recurring_failedToGenerate();
 		}
 	}
 
 	async function handleDelete(invoice: RecurringInvoice) {
-		if (!confirm(`Delete recurring invoice "${invoice.name}"?`)) return;
+		if (!confirm(m.recurring_deleteConfirm({ name: invoice.name }))) return;
 		try {
 			await api.deleteRecurringInvoice(selectedTenantId, invoice.id);
 			await loadData();
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to delete';
+			error = err instanceof Error ? err.message : m.recurring_failedToDelete();
 		}
 	}
 
@@ -123,7 +124,7 @@
 			resetForm();
 			await loadData();
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to create recurring invoice';
+			error = err instanceof Error ? err.message : m.recurring_failedToCreate();
 		}
 	}
 
@@ -162,14 +163,14 @@
 	}
 
 	function frequencyLabel(f: Frequency): string {
-		const labels: Record<Frequency, string> = {
-			WEEKLY: 'Weekly',
-			BIWEEKLY: 'Bi-weekly',
-			MONTHLY: 'Monthly',
-			QUARTERLY: 'Quarterly',
-			YEARLY: 'Yearly'
-		};
-		return labels[f] || f;
+		switch (f) {
+			case 'WEEKLY': return m.recurring_weekly();
+			case 'BIWEEKLY': return m.recurring_biweekly();
+			case 'MONTHLY': return m.recurring_monthly();
+			case 'QUARTERLY': return m.recurring_quarterly();
+			case 'YEARLY': return m.recurring_yearly();
+			default: return f;
+		}
 	}
 </script>
 
@@ -179,14 +180,14 @@
 
 <div class="container">
 	<div class="header">
-		<h1>Recurring Invoices</h1>
+		<h1>{m.recurring_title()}</h1>
 		<div class="header-actions">
 			<label class="checkbox-label">
 				<input type="checkbox" bind:checked={showActiveOnly} onchange={loadData} />
-				Active only
+				{m.recurring_activeOnly()}
 			</label>
 			<button class="btn btn-primary" onclick={() => (showCreateModal = true)}>
-				+ New Recurring Invoice
+				{m.recurring_newRecurring()}
 			</button>
 		</div>
 	</div>
@@ -196,13 +197,13 @@
 	{/if}
 
 	{#if isLoading}
-		<p>Loading...</p>
+		<p>{m.common_loading()}</p>
 	{:else if recurringInvoices.length === 0}
 		<div class="card empty-state">
-			<h2>No recurring invoices</h2>
-			<p>Create your first recurring invoice to automate billing.</p>
+			<h2>{m.recurring_noRecurringInvoices()}</h2>
+			<p>{m.recurring_createFirst()}</p>
 			<button class="btn btn-primary" onclick={() => (showCreateModal = true)}>
-				Create Recurring Invoice
+				{m.recurring_createRecurringInvoice()}
 			</button>
 		</div>
 	{:else}
@@ -210,13 +211,13 @@
 			<table class="table">
 				<thead>
 					<tr>
-						<th>Name</th>
-						<th>Contact</th>
-						<th>Frequency</th>
-						<th>Next Generation</th>
-						<th>Generated</th>
-						<th>Status</th>
-						<th>Actions</th>
+						<th>{m.common_name()}</th>
+						<th>{m.recurring_contact()}</th>
+						<th>{m.recurring_frequency()}</th>
+						<th>{m.recurring_nextGeneration()}</th>
+						<th>{m.recurring_generated()}</th>
+						<th>{m.common_status()}</th>
+						<th>{m.common_actions()}</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -234,28 +235,28 @@
 							<td>{invoice.generated_count}</td>
 							<td>
 								<span class="badge" class:badge-success={invoice.is_active} class:badge-muted={!invoice.is_active}>
-									{invoice.is_active ? 'Active' : 'Paused'}
+									{invoice.is_active ? m.recurring_active() : m.recurring_paused()}
 								</span>
 							</td>
 							<td class="actions">
 								<button
 									class="btn btn-secondary btn-sm"
 									onclick={() => handleGenerate(invoice)}
-									title="Generate invoice now"
+									title={m.recurring_generateNow()}
 								>
-									Generate
+									{m.recurring_generate()}
 								</button>
 								<button
 									class="btn btn-secondary btn-sm"
 									onclick={() => handleToggleActive(invoice)}
 								>
-									{invoice.is_active ? 'Pause' : 'Resume'}
+									{invoice.is_active ? m.recurring_pause() : m.recurring_resume()}
 								</button>
 								<button
 									class="btn btn-danger btn-sm"
 									onclick={() => handleDelete(invoice)}
 								>
-									Delete
+									{m.common_delete()}
 								</button>
 							</td>
 						</tr>
@@ -271,24 +272,24 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div class="modal-backdrop" onclick={() => (showCreateModal = false)} role="presentation">
 		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-recurring-title" tabindex="-1">
-			<h2 id="create-recurring-title">Create Recurring Invoice</h2>
+			<h2 id="create-recurring-title">{m.recurring_createRecurringInvoice()}</h2>
 			<form onsubmit={handleCreate}>
 				<div class="form-row">
 					<div class="form-group">
-						<label class="label" for="name">Name</label>
+						<label class="label" for="name">{m.common_name()}</label>
 						<input
 							class="input"
 							type="text"
 							id="name"
 							bind:value={newName}
 							required
-							placeholder="Monthly Hosting Fee"
+							placeholder={m.recurring_namePlaceholder()}
 						/>
 					</div>
 					<div class="form-group">
-						<label class="label" for="contact">Contact</label>
+						<label class="label" for="contact">{m.recurring_contact()}</label>
 						<select class="input" id="contact" bind:value={newContactId} required>
-							<option value="">Select contact</option>
+							<option value="">{m.recurring_selectContact()}</option>
 							{#each contacts as contact}
 								<option value={contact.id}>{contact.name}</option>
 							{/each}
@@ -298,17 +299,17 @@
 
 				<div class="form-row">
 					<div class="form-group">
-						<label class="label" for="frequency">Frequency</label>
+						<label class="label" for="frequency">{m.recurring_frequency()}</label>
 						<select class="input" id="frequency" bind:value={newFrequency}>
-							<option value="WEEKLY">Weekly</option>
-							<option value="BIWEEKLY">Bi-weekly</option>
-							<option value="MONTHLY">Monthly</option>
-							<option value="QUARTERLY">Quarterly</option>
-							<option value="YEARLY">Yearly</option>
+							<option value="WEEKLY">{m.recurring_weekly()}</option>
+							<option value="BIWEEKLY">{m.recurring_biweekly()}</option>
+							<option value="MONTHLY">{m.recurring_monthly()}</option>
+							<option value="QUARTERLY">{m.recurring_quarterly()}</option>
+							<option value="YEARLY">{m.recurring_yearly()}</option>
 						</select>
 					</div>
 					<div class="form-group">
-						<label class="label" for="payment_terms">Payment Terms (days)</label>
+						<label class="label" for="payment_terms">{m.recurring_paymentTermsDays()}</label>
 						<input
 							class="input"
 							type="number"
@@ -321,7 +322,7 @@
 
 				<div class="form-row">
 					<div class="form-group">
-						<label class="label" for="start_date">Start Date</label>
+						<label class="label" for="start_date">{m.recurring_startDate()}</label>
 						<input
 							class="input"
 							type="date"
@@ -331,30 +332,30 @@
 						/>
 					</div>
 					<div class="form-group">
-						<label class="label" for="end_date">End Date (optional)</label>
+						<label class="label" for="end_date">{m.recurring_endDateOptional()}</label>
 						<input class="input" type="date" id="end_date" bind:value={newEndDate} />
 					</div>
 				</div>
 
 				<div class="form-group">
-					<label class="label" for="reference">Reference</label>
+					<label class="label" for="reference">{m.recurring_reference()}</label>
 					<input class="input" type="text" id="reference" bind:value={newReference} />
 				</div>
 
-				<h3>Line Items</h3>
+				<h3>{m.recurring_lineItems()}</h3>
 				{#each newLines as line, index}
 					<div class="line-row">
 						<input
 							class="input"
 							type="text"
-							placeholder="Description"
+							placeholder={m.recurring_descriptionPlaceholder()}
 							bind:value={line.description}
 							required
 						/>
 						<input
 							class="input input-sm"
 							type="number"
-							placeholder="Qty"
+							placeholder={m.recurring_qtyPlaceholder()}
 							bind:value={line.quantity}
 							step="0.01"
 							required
@@ -362,7 +363,7 @@
 						<input
 							class="input input-sm"
 							type="number"
-							placeholder="Unit Price"
+							placeholder={m.recurring_unitPricePlaceholder()}
 							bind:value={line.unit_price}
 							step="0.01"
 							required
@@ -370,7 +371,7 @@
 						<input
 							class="input input-sm"
 							type="number"
-							placeholder="VAT %"
+							placeholder={m.recurring_vatPlaceholder()}
 							bind:value={line.vat_rate}
 							step="0.01"
 							required
@@ -385,7 +386,7 @@
 						</button>
 					</div>
 				{/each}
-				<button type="button" class="btn btn-secondary" onclick={addLine}>+ Add Line</button>
+				<button type="button" class="btn btn-secondary" onclick={addLine}>{m.recurring_addLine()}</button>
 
 				<div class="modal-actions">
 					<button
@@ -393,9 +394,9 @@
 						class="btn btn-secondary"
 						onclick={() => (showCreateModal = false)}
 					>
-						Cancel
+						{m.common_cancel()}
 					</button>
-					<button type="submit" class="btn btn-primary">Create</button>
+					<button type="submit" class="btn btn-primary">{m.common_create()}</button>
 				</div>
 			</form>
 		</div>

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { api, type Tenant, type TenantSettings } from '$lib/api';
+	import * as m from '$lib/paraglide/messages.js';
 
 	interface Props {
 		tenant: Tenant;
@@ -55,7 +56,7 @@
 				settings
 			});
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to save settings';
+			error = err instanceof Error ? err.message : m.onboarding_failedToSave();
 			isSubmitting = false;
 			return false;
 		}
@@ -103,7 +104,7 @@
 			await api.completeOnboarding(tenant.id);
 			oncomplete();
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to complete onboarding';
+			error = err instanceof Error ? err.message : m.onboarding_failedToComplete();
 			isSubmitting = false;
 		}
 	}
@@ -118,7 +119,7 @@
 		if (!file) return;
 
 		if (file.size > 500 * 1024) {
-			error = 'Logo file must be less than 500KB';
+			error = m.onboarding_logoTooLarge();
 			return;
 		}
 
@@ -133,8 +134,8 @@
 <div class="onboarding-overlay">
 	<div class="onboarding-wizard card">
 		<div class="wizard-header">
-			<h1>Welcome to Open Accounting</h1>
-			<p class="subtitle">Let's set up your organization in just a few steps</p>
+			<h1>{m.onboarding_welcome()}</h1>
+			<p class="subtitle">{m.onboarding_subtitle()}</p>
 
 			<!-- Progress bar -->
 			<div class="progress-bar">
@@ -142,7 +143,7 @@
 					<div class="progress-step" class:active={i + 1 <= currentStep} class:current={i + 1 === currentStep}>
 						<div class="step-dot">{i + 1}</div>
 						<span class="step-label">
-							{#if i === 0}Company{:else if i === 1}Branding{:else if i === 2}Contact{:else}Done{/if}
+							{#if i === 0}{m.onboarding_step1Title()}{:else if i === 1}{m.onboarding_step2Title()}{:else if i === 2}{m.onboarding_step3Title()}{:else}{m.onboarding_step4Title()}{/if}
 						</span>
 					</div>
 					{#if i < totalSteps - 1}
@@ -160,33 +161,33 @@
 			{#if currentStep === 1}
 				<!-- Step 1: Company Profile -->
 				<div class="step-content">
-					<h2>Company Information</h2>
-					<p class="step-description">Tell us about your company. This information will appear on your invoices.</p>
+					<h2>{m.onboarding_companyInfo()}</h2>
+					<p class="step-description">{m.onboarding_companyInfoDesc()}</p>
 
 					<div class="form-grid">
 						<div class="form-group">
-							<label class="label" for="companyName">Company Name *</label>
+							<label class="label" for="companyName">{m.onboarding_companyName()}</label>
 							<input class="input" type="text" id="companyName" bind:value={companyName} required />
 						</div>
 						<div class="form-group">
-							<label class="label" for="regCode">Registration Code</label>
-							<input class="input" type="text" id="regCode" bind:value={regCode} placeholder="e.g. 12345678" />
+							<label class="label" for="regCode">{m.onboarding_regCode()}</label>
+							<input class="input" type="text" id="regCode" bind:value={regCode} placeholder={m.onboarding_regCodePlaceholder()} />
 						</div>
 						<div class="form-group">
-							<label class="label" for="vatNumber">VAT Number</label>
-							<input class="input" type="text" id="vatNumber" bind:value={vatNumber} placeholder="e.g. EE123456789" />
+							<label class="label" for="vatNumber">{m.onboarding_vatNumber()}</label>
+							<input class="input" type="text" id="vatNumber" bind:value={vatNumber} placeholder={m.onboarding_vatNumberPlaceholder()} />
 						</div>
 						<div class="form-group">
-							<label class="label" for="email">Email</label>
-							<input class="input" type="email" id="email" bind:value={email} placeholder="info@company.com" />
+							<label class="label" for="email">{m.common_email()}</label>
+							<input class="input" type="email" id="email" bind:value={email} placeholder={m.onboarding_emailPlaceholder()} />
 						</div>
 						<div class="form-group">
-							<label class="label" for="phone">Phone</label>
-							<input class="input" type="tel" id="phone" bind:value={phone} placeholder="+372 5555 5555" />
+							<label class="label" for="phone">{m.common_phone()}</label>
+							<input class="input" type="tel" id="phone" bind:value={phone} placeholder={m.onboarding_phonePlaceholder()} />
 						</div>
 						<div class="form-group full-width">
-							<label class="label" for="address">Address</label>
-							<textarea class="input" id="address" bind:value={address} rows="2" placeholder="Street, City, Country"></textarea>
+							<label class="label" for="address">{m.common_address()}</label>
+							<textarea class="input" id="address" bind:value={address} rows="2" placeholder={m.onboarding_addressPlaceholder()}></textarea>
 						</div>
 					</div>
 				</div>
@@ -194,42 +195,42 @@
 			{:else if currentStep === 2}
 				<!-- Step 2: Branding -->
 				<div class="step-content">
-					<h2>Branding & Invoice Settings</h2>
-					<p class="step-description">Customize how your invoices look. You can skip this and set up later.</p>
+					<h2>{m.onboarding_brandingTitle()}</h2>
+					<p class="step-description">{m.onboarding_brandingDesc()}</p>
 
 					<div class="form-grid">
 						<div class="form-group">
-							<label class="label">Company Logo</label>
+							<label class="label">{m.onboarding_companyLogo()}</label>
 							<div class="logo-upload">
 								{#if logo}
 									<div class="logo-preview">
 										<img src={logo} alt="Logo" />
-										<button type="button" class="btn btn-sm btn-secondary" onclick={() => (logo = '')}>Remove</button>
+										<button type="button" class="btn btn-sm btn-secondary" onclick={() => (logo = '')}>{m.common_remove()}</button>
 									</div>
 								{:else}
 									<div class="logo-placeholder">
 										<input type="file" accept="image/png,image/jpeg,image/svg+xml" onchange={handleLogoUpload} id="logoUpload" />
-										<label for="logoUpload" class="btn btn-secondary">Upload Logo</label>
-										<span class="help-text">PNG, JPG or SVG, max 500KB</span>
+										<label for="logoUpload" class="btn btn-secondary">{m.onboarding_uploadLogo()}</label>
+										<span class="help-text">{m.onboarding_logoHelp()}</span>
 									</div>
 								{/if}
 							</div>
 						</div>
 						<div class="form-group">
-							<label class="label" for="pdfPrimaryColor">Brand Color</label>
+							<label class="label" for="pdfPrimaryColor">{m.onboarding_brandColor()}</label>
 							<div class="color-input">
 								<input type="color" id="pdfPrimaryColor" bind:value={pdfPrimaryColor} />
 								<input class="input" type="text" bind:value={pdfPrimaryColor} placeholder="#4f46e5" />
 							</div>
 						</div>
 						<div class="form-group full-width">
-							<label class="label" for="bankDetails">Bank Details</label>
-							<textarea class="input" id="bankDetails" bind:value={bankDetails} rows="2" placeholder="Bank name, IBAN, SWIFT/BIC"></textarea>
-							<span class="help-text">Displayed on your invoices for payments</span>
+							<label class="label" for="bankDetails">{m.onboarding_bankDetails()}</label>
+							<textarea class="input" id="bankDetails" bind:value={bankDetails} rows="2" placeholder={m.onboarding_bankDetailsPlaceholder()}></textarea>
+							<span class="help-text">{m.onboarding_bankDetailsHelp()}</span>
 						</div>
 						<div class="form-group full-width">
-							<label class="label" for="invoiceTerms">Invoice Payment Terms</label>
-							<textarea class="input" id="invoiceTerms" bind:value={invoiceTerms} rows="2" placeholder="e.g. Payment due within 14 days"></textarea>
+							<label class="label" for="invoiceTerms">{m.onboarding_invoiceTerms()}</label>
+							<textarea class="input" id="invoiceTerms" bind:value={invoiceTerms} rows="2" placeholder={m.onboarding_invoiceTermsPlaceholder()}></textarea>
 						</div>
 					</div>
 				</div>
@@ -237,8 +238,8 @@
 			{:else if currentStep === 3}
 				<!-- Step 3: First Contact -->
 				<div class="step-content">
-					<h2>Add Your First Contact</h2>
-					<p class="step-description">Add a customer or vendor to get started. You can skip this step.</p>
+					<h2>{m.onboarding_addFirstContact()}</h2>
+					<p class="step-description">{m.onboarding_addFirstContactDesc()}</p>
 
 					<div class="contact-type-selector">
 						<button type="button" class="type-btn" class:active={contactType === 'CUSTOMER'} onclick={() => (contactType = 'CUSTOMER')}>
@@ -248,7 +249,7 @@
 								<path d="M23 21v-2a4 4 0 0 0-3-3.87" />
 								<path d="M16 3.13a4 4 0 0 1 0 7.75" />
 							</svg>
-							<span>Customer</span>
+							<span>{m.onboarding_customer()}</span>
 						</button>
 						<button type="button" class="type-btn" class:active={contactType === 'SUPPLIER'} onclick={() => (contactType = 'SUPPLIER')}>
 							<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -256,18 +257,18 @@
 								<path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" />
 								<path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" />
 							</svg>
-							<span>Supplier</span>
+							<span>{m.onboarding_supplier()}</span>
 						</button>
 					</div>
 
 					<div class="form-grid">
 						<div class="form-group">
-							<label class="label" for="contactName">{contactType === 'CUSTOMER' ? 'Customer' : 'Supplier'} Name</label>
-							<input class="input" type="text" id="contactName" bind:value={contactName} placeholder="Company or person name" />
+							<label class="label" for="contactName">{contactType === 'CUSTOMER' ? m.onboarding_customerName() : m.onboarding_supplierName()}</label>
+							<input class="input" type="text" id="contactName" bind:value={contactName} placeholder={m.onboarding_contactNamePlaceholder()} />
 						</div>
 						<div class="form-group">
-							<label class="label" for="contactEmail">Email</label>
-							<input class="input" type="email" id="contactEmail" bind:value={contactEmail} placeholder="email@example.com" />
+							<label class="label" for="contactEmail">{m.common_email()}</label>
+							<input class="input" type="email" id="contactEmail" bind:value={contactEmail} placeholder={m.onboarding_contactEmailPlaceholder()} />
 						</div>
 					</div>
 				</div>
@@ -281,8 +282,8 @@
 							<polyline points="22 4 12 14.01 9 11.01" />
 						</svg>
 					</div>
-					<h2>You're All Set!</h2>
-					<p class="step-description">Your organization is ready to use. Here's what you can do next:</p>
+					<h2>{m.onboarding_allSet()}</h2>
+					<p class="step-description">{m.onboarding_allSetDesc()}</p>
 
 					<div class="quick-actions">
 						<a href="/invoices?tenant={tenant.id}" class="quick-action-card">
@@ -292,7 +293,7 @@
 								<line x1="16" y1="13" x2="8" y2="13" />
 								<line x1="16" y1="17" x2="8" y2="17" />
 							</svg>
-							<span>Create Invoice</span>
+							<span>{m.onboarding_createInvoice()}</span>
 						</a>
 						<a href="/contacts?tenant={tenant.id}" class="quick-action-card">
 							<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -301,21 +302,21 @@
 								<path d="M23 21v-2a4 4 0 0 0-3-3.87" />
 								<path d="M16 3.13a4 4 0 0 1 0 7.75" />
 							</svg>
-							<span>Add Contacts</span>
+							<span>{m.onboarding_addContacts()}</span>
 						</a>
 						<a href="/accounts?tenant={tenant.id}" class="quick-action-card">
 							<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 								<line x1="12" y1="1" x2="12" y2="23" />
 								<path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
 							</svg>
-							<span>View Accounts</span>
+							<span>{m.onboarding_viewAccounts()}</span>
 						</a>
 						<a href="/settings/company?tenant={tenant.id}" class="quick-action-card">
 							<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 								<circle cx="12" cy="12" r="3" />
 								<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
 							</svg>
-							<span>More Settings</span>
+							<span>{m.onboarding_moreSettings()}</span>
 						</a>
 					</div>
 				</div>
@@ -325,24 +326,24 @@
 		<div class="wizard-footer">
 			{#if currentStep < totalSteps}
 				<button type="button" class="btn btn-ghost" onclick={skipOnboarding}>
-					Skip Setup
+					{m.onboarding_skip()}
 				</button>
 			{/if}
 
 			<div class="footer-actions">
 				{#if currentStep > 1 && currentStep < totalSteps}
 					<button type="button" class="btn btn-secondary" onclick={prevStep}>
-						Back
+						{m.onboarding_back()}
 					</button>
 				{/if}
 
 				{#if currentStep < totalSteps}
 					<button type="button" class="btn btn-primary" onclick={nextStep} disabled={isSubmitting}>
-						{isSubmitting ? 'Saving...' : currentStep === 3 ? (contactName ? 'Add & Continue' : 'Skip & Continue') : 'Continue'}
+						{isSubmitting ? m.onboarding_saving() : currentStep === 3 ? (contactName ? m.onboarding_addAndContinue() : m.onboarding_skipAndContinue()) : m.onboarding_continue()}
 					</button>
 				{:else}
 					<button type="button" class="btn btn-primary" onclick={completeOnboarding} disabled={isSubmitting}>
-						{isSubmitting ? 'Finishing...' : 'Go to Dashboard'}
+						{isSubmitting ? m.onboarding_finishing() : m.onboarding_goToDashboard()}
 					</button>
 				{/if}
 			</div>

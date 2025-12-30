@@ -7,6 +7,7 @@
 		type PluginPermission,
 		type PermissionRisk
 	} from '$lib/api';
+	import * as m from '$lib/paraglide/messages.js';
 
 	let tenantPlugins = $state<TenantPlugin[]>([]);
 	let allPermissions = $state<Record<string, PluginPermission>>({});
@@ -39,7 +40,7 @@
 			tenantPlugins = pluginsData;
 			allPermissions = permissionsData;
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to load plugins';
+			error = err instanceof Error ? err.message : m.errors_loadFailed();
 		} finally {
 			isLoading = false;
 		}
@@ -52,10 +53,10 @@
 		try {
 			const updated = await api.enableTenantPlugin(tenantId, pluginId);
 			tenantPlugins = tenantPlugins.map((p) => (p.plugin_id === updated.plugin_id ? updated : p));
-			successMessage = 'Plugin enabled successfully';
+			successMessage = m.plugins_enabledSuccess();
 			setTimeout(() => (successMessage = ''), 3000);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to enable plugin';
+			error = err instanceof Error ? err.message : m.errors_saveFailed();
 		}
 	}
 
@@ -63,17 +64,17 @@
 		const tenantId = $page.url.searchParams.get('tenant');
 		if (!tenantId) return;
 
-		if (!confirm('Are you sure you want to disable this plugin?')) return;
+		if (!confirm(m.plugins_confirmDisable())) return;
 
 		try {
 			await api.disableTenantPlugin(tenantId, pluginId);
 			tenantPlugins = tenantPlugins.map((p) =>
 				p.plugin_id === pluginId ? { ...p, is_enabled: false, enabled_at: undefined } : p
 			);
-			successMessage = 'Plugin disabled';
+			successMessage = m.plugins_disabledSuccess();
 			setTimeout(() => (successMessage = ''), 3000);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to disable plugin';
+			error = err instanceof Error ? err.message : m.errors_saveFailed();
 		}
 	}
 
@@ -87,7 +88,7 @@
 			editedSettings = { ...settingsData.settings };
 			showSettings = true;
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to load settings';
+			error = err instanceof Error ? err.message : m.errors_loadFailed();
 		}
 	}
 
@@ -102,10 +103,10 @@
 			);
 			showSettings = false;
 			selectedPlugin = null;
-			successMessage = 'Settings saved';
+			successMessage = m.plugins_settingsSaved();
 			setTimeout(() => (successMessage = ''), 3000);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to save settings';
+			error = err instanceof Error ? err.message : m.errors_saveFailed();
 		}
 	}
 
@@ -142,14 +143,14 @@
 </script>
 
 <svelte:head>
-	<title>Plugin Settings - Open Accounting</title>
+	<title>{m.plugins_pluginSettings()} - Open Accounting</title>
 </svelte:head>
 
 <div class="container">
 	<div class="header">
 		<div>
-			<h1>Plugin Settings</h1>
-			<p class="subtitle">Manage plugins for your organization</p>
+			<h1>{m.plugins_pluginSettings()}</h1>
+			<p class="subtitle">{m.plugins_managePlugins()}</p>
 		</div>
 	</div>
 
@@ -162,14 +163,11 @@
 	{/if}
 
 	{#if isLoading}
-		<div class="loading">Loading plugins...</div>
+		<div class="loading">{m.plugins_loadingPlugins()}</div>
 	{:else if tenantPlugins.length === 0}
 		<div class="empty-state card">
-			<h3>No plugins available</h3>
-			<p>
-				No plugins have been installed on this instance yet. Contact your system administrator to
-				install plugins.
-			</p>
+			<h3>{m.plugins_noPlugins()}</h3>
+			<p>{m.plugins_noPluginsDesc()}</p>
 		</div>
 	{:else}
 		<div class="plugins-list">
@@ -183,7 +181,7 @@
 								<span class="version">v{plugin.version}</span>
 							</div>
 							<span class="badge" class:badge-enabled={tenantPlugin.is_enabled}>
-								{tenantPlugin.is_enabled ? 'Enabled' : 'Disabled'}
+								{tenantPlugin.is_enabled ? m.plugins_enabled() : m.plugins_disabled()}
 							</span>
 						</div>
 
@@ -193,7 +191,7 @@
 
 						{#if plugin.granted_permissions.length > 0}
 							<div class="permissions-section">
-								<span class="section-label">Granted Permissions:</span>
+								<span class="section-label">{m.plugins_grantedPermissions()}</span>
 								<div class="permission-badges">
 									{#each plugin.granted_permissions as perm}
 										{@const permInfo = allPermissions[perm]}
@@ -210,7 +208,7 @@
 
 						{#if tenantPlugin.is_enabled && tenantPlugin.enabled_at}
 							<div class="plugin-meta">
-								<span>Enabled on {formatDate(tenantPlugin.enabled_at)}</span>
+								<span>{m.plugins_enabledOn()} {formatDate(tenantPlugin.enabled_at)}</span>
 							</div>
 						{/if}
 
@@ -221,21 +219,21 @@
 										class="btn btn-sm btn-secondary"
 										onclick={() => openSettingsModal(tenantPlugin)}
 									>
-										Settings
+										{m.plugins_settings()}
 									</button>
 								{/if}
 								<button
 									class="btn btn-sm btn-danger"
 									onclick={() => disablePlugin(tenantPlugin.plugin_id)}
 								>
-									Disable
+									{m.plugins_disable()}
 								</button>
 							{:else}
 								<button
 									class="btn btn-sm btn-primary"
 									onclick={() => enablePlugin(tenantPlugin.plugin_id)}
 								>
-									Enable
+									{m.plugins_enable()}
 								</button>
 							{/if}
 						</div>
@@ -310,15 +308,15 @@
 						</div>
 					{/each}
 				{:else}
-					<p class="no-settings">This plugin has no configurable settings.</p>
+					<p class="no-settings">{m.plugins_noSettings()}</p>
 				{/if}
 			</div>
 
 			<div class="modal-actions">
 				<button type="button" class="btn btn-secondary" onclick={() => (showSettings = false)}>
-					Cancel
+					{m.common_cancel()}
 				</button>
-				<button type="button" class="btn btn-primary" onclick={saveSettings}>Save Settings</button>
+				<button type="button" class="btn btn-primary" onclick={saveSettings}>{m.plugins_saveSettings()}</button>
 			</div>
 		</div>
 	</div>

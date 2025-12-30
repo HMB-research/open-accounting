@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import { api } from '$lib/api';
+	import * as m from '$lib/paraglide/messages.js';
 
 	if (browser) {
 		if (api.isAuthenticated) {
@@ -12,5 +13,5 @@
 </script>
 
 <div class="container">
-	<p>Redirecting...</p>
+	<p>{m.common_redirecting()}</p>
 </div>

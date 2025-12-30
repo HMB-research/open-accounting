@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api, type BankAccount, type BankTransaction, type MatchSuggestion } from '$lib/api';
 	import { goto } from '$app/navigation';
+	import * as m from '$lib/paraglide/messages.js';
 
 	let tenantId = $state('');
 	let bankAccounts = $state<BankAccount[]>([]);
@@ -38,7 +39,7 @@
 		try {
 			const memberships = await api.getMyTenants();
 			if (memberships.length === 0) {
-				error = 'No tenant available';
+				error = m.banking_noTenantAvailable();
 				return;
 			}
 			tenantId = memberships[0].tenant.id;
@@ -47,7 +48,7 @@
 				selectedAccount = bankAccounts[0];
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to load data';
+			error = e instanceof Error ? e.message : m.banking_failedToLoad();
 		} finally {
 			loading = false;
 		}
@@ -77,7 +78,7 @@
 			showAddAccountModal = false;
 			newAccount = { name: '', account_number: '', bank_name: '', currency: 'EUR', opening_balance: '0' };
 		} catch (e) {
-			alert(e instanceof Error ? e.message : 'Failed to create account');
+			alert(e instanceof Error ? e.message : m.banking_failedToCreate());
 		}
 	}
 
@@ -103,17 +104,17 @@
 			selectedTransaction = null;
 			await loadTransactions();
 		} catch (e) {
-			alert(e instanceof Error ? e.message : 'Failed to match');
+			alert(e instanceof Error ? e.message : m.banking_failedToMatch());
 		}
 	}
 
 	async function unmatchTransaction(transactionId: string) {
-		if (!confirm('Unmatch this transaction?')) return;
+		if (!confirm(m.banking_confirmUnmatch())) return;
 		try {
 			await api.unmatchBankTransaction(tenantId, transactionId);
 			await loadTransactions();
 		} catch (e) {
-			alert(e instanceof Error ? e.message : 'Failed to unmatch');
+			alert(e instanceof Error ? e.message : m.banking_failedToUnmatch());
 		}
 	}
 
@@ -122,7 +123,7 @@
 			await api.createPaymentFromTransaction(tenantId, transactionId);
 			await loadTransactions();
 		} catch (e) {
-			alert(e instanceof Error ? e.message : 'Failed to create payment');
+			alert(e instanceof Error ? e.message : m.banking_failedToCreatePayment());
 		}
 	}
 
@@ -130,10 +131,10 @@
 		if (!selectedAccount) return;
 		try {
 			const result = await api.autoMatchTransactions(tenantId, selectedAccount.id, 0.7);
-			alert(`Matched ${result.matched} transactions`);
+			alert(m.banking_matchedCount({ count: result.matched.toString() }));
 			await loadTransactions();
 		} catch (e) {
-			alert(e instanceof Error ? e.message : 'Failed to auto-match');
+			alert(e instanceof Error ? e.message : m.banking_failedToAutoMatch());
 		}
 	}
 
@@ -161,19 +162,19 @@
 </script>
 
 <svelte:head>
-	<title>Bank Reconciliation</title>
+	<title>{m.banking_bankReconciliation()} - Open Accounting</title>
 </svelte:head>
 
 <div class="max-w-7xl mx-auto px-4 py-8">
 	<div class="flex justify-between items-center mb-6">
-		<h1 class="text-2xl font-bold text-gray-900">Bank Reconciliation</h1>
+		<h1 class="text-2xl font-bold text-gray-900">{m.banking_bankReconciliation()}</h1>
 		<div class="flex gap-2">
 			<button onclick={() => showAddAccountModal = true} class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-				Add Bank Account
+				{m.banking_addBankAccount()}
 			</button>
 			{#if selectedAccount}
 				<button onclick={() => goto(`/banking/import?account=${selectedAccount?.id}`)} class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
-					Import Transactions
+					{m.banking_importTransactions()}
 				</button>
 			{/if}
 		</div>
@@ -189,7 +190,7 @@
 		<!-- Bank Account Selector -->
 		<div class="bg-white rounded-lg shadow mb-6 p-4">
 			<div class="flex flex-wrap gap-4 items-center">
-				<label class="font-medium text-gray-700">Bank Account:</label>
+				<label class="font-medium text-gray-700">{m.banking_bankAccount()}</label>
 				<select
 					bind:value={selectedAccount}
 					class="border border-gray-300 rounded-lg px-3 py-2 min-w-[200px]"
@@ -200,9 +201,9 @@
 				</select>
 				{#if selectedAccount}
 					<div class="ml-auto flex items-center gap-4">
-						<span class="text-gray-600">Balance: <strong class="text-gray-900">{selectedAccount.currency} {formatAmount(selectedAccount.current_balance)}</strong></span>
+						<span class="text-gray-600">{m.banking_balance()} <strong class="text-gray-900">{selectedAccount.currency} {formatAmount(selectedAccount.current_balance)}</strong></span>
 						<button onclick={autoMatch} class="px-3 py-1 text-sm bg-purple-100 text-purple-700 rounded hover:bg-purple-200">
-							Auto-Match
+							{m.banking_autoMatch()}
 						</button>
 					</div>
 				{/if}
@@ -216,19 +217,19 @@
 					<button
 						onclick={() => statusFilter = 'all'}
 						class="px-3 py-1 rounded {statusFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
-					>All</button>
+					>{m.banking_all()}</button>
 					<button
 						onclick={() => statusFilter = 'UNMATCHED'}
 						class="px-3 py-1 rounded {statusFilter === 'UNMATCHED' ? 'bg-yellow-600 text-white' : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'}"
-					>Unmatched</button>
+					>{m.banking_unmatched()}</button>
 					<button
 						onclick={() => statusFilter = 'MATCHED'}
 						class="px-3 py-1 rounded {statusFilter === 'MATCHED' ? 'bg-green-600 text-white' : 'bg-green-100 text-green-700 hover:bg-green-200'}"
-					>Matched</button>
+					>{m.banking_matched()}</button>
 					<button
 						onclick={() => statusFilter = 'RECONCILED'}
 						class="px-3 py-1 rounded {statusFilter === 'RECONCILED' ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}"
-					>Reconciled</button>
+					>{m.banking_reconciled()}</button>
 				</div>
 			</div>
 
@@ -237,12 +238,12 @@
 				<table class="min-w-full divide-y divide-gray-200">
 					<thead class="bg-gray-50">
 						<tr>
-							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Counterparty</th>
-							<th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
-							<th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
-							<th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{m.common_date()}</th>
+							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{m.common_description()}</th>
+							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{m.banking_counterparty()}</th>
+							<th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">{m.common_amount()}</th>
+							<th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">{m.common_status()}</th>
+							<th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">{m.common_actions()}</th>
 						</tr>
 					</thead>
 					<tbody class="bg-white divide-y divide-gray-200">
@@ -254,7 +255,7 @@
 								<td class="px-6 py-4 text-sm text-gray-900">
 									<div class="max-w-xs truncate">{transaction.description}</div>
 									{#if transaction.reference}
-										<div class="text-xs text-gray-500">Ref: {transaction.reference}</div>
+										<div class="text-xs text-gray-500">{m.banking_ref()} {transaction.reference}</div>
 									{/if}
 								</td>
 								<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
@@ -271,14 +272,14 @@
 								<td class="px-6 py-4 whitespace-nowrap text-right text-sm">
 									{#if transaction.status === 'UNMATCHED'}
 										<button onclick={() => openMatchModal(transaction)} class="text-blue-600 hover:text-blue-800 mr-2">
-											Match
+											{m.banking_match()}
 										</button>
 										<button onclick={() => createPaymentFromTransaction(transaction.id)} class="text-green-600 hover:text-green-800">
-											Create Payment
+											{m.banking_createPayment()}
 										</button>
 									{:else if transaction.status === 'MATCHED'}
 										<button onclick={() => unmatchTransaction(transaction.id)} class="text-red-600 hover:text-red-800">
-											Unmatch
+											{m.banking_unmatch()}
 										</button>
 									{/if}
 								</td>
@@ -286,7 +287,7 @@
 						{:else}
 							<tr>
 								<td colspan="6" class="px-6 py-12 text-center text-gray-500">
-									No transactions found. Import a bank statement to get started.
+									{m.banking_noTransactions()}
 								</td>
 							</tr>
 						{/each}
@@ -295,9 +296,9 @@
 			</div>
 		{:else}
 			<div class="bg-white rounded-lg shadow p-12 text-center">
-				<p class="text-gray-500 mb-4">No bank accounts configured yet.</p>
+				<p class="text-gray-500 mb-4">{m.banking_noAccounts()}</p>
 				<button onclick={() => showAddAccountModal = true} class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-					Add Your First Bank Account
+					{m.banking_addFirstAccount()}
 				</button>
 			</div>
 		{/if}
@@ -308,24 +309,24 @@
 {#if showAddAccountModal}
 	<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
 		<div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
-			<h2 class="text-xl font-bold mb-4">Add Bank Account</h2>
+			<h2 class="text-xl font-bold mb-4">{m.banking_addBankAccount()}</h2>
 			<form onsubmit={(e) => { e.preventDefault(); createAccount(); }}>
 				<div class="space-y-4">
 					<div>
-						<label class="block text-sm font-medium text-gray-700 mb-1">Account Name</label>
+						<label class="block text-sm font-medium text-gray-700 mb-1">{m.banking_accountName()}</label>
 						<input type="text" bind:value={newAccount.name} required class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="Main Business Account" />
 					</div>
 					<div>
-						<label class="block text-sm font-medium text-gray-700 mb-1">Account Number</label>
+						<label class="block text-sm font-medium text-gray-700 mb-1">{m.banking_accountNumber()}</label>
 						<input type="text" bind:value={newAccount.account_number} required class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="EE123456789" />
 					</div>
 					<div>
-						<label class="block text-sm font-medium text-gray-700 mb-1">Bank Name</label>
+						<label class="block text-sm font-medium text-gray-700 mb-1">{m.banking_bankName()}</label>
 						<input type="text" bind:value={newAccount.bank_name} class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="Swedbank" />
 					</div>
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<label class="block text-sm font-medium text-gray-700 mb-1">Currency</label>
+							<label class="block text-sm font-medium text-gray-700 mb-1">{m.settings_currency()}</label>
 							<select bind:value={newAccount.currency} class="w-full border border-gray-300 rounded-lg px-3 py-2">
 								<option value="EUR">EUR</option>
 								<option value="USD">USD</option>
@@ -333,14 +334,14 @@
 							</select>
 						</div>
 						<div>
-							<label class="block text-sm font-medium text-gray-700 mb-1">Opening Balance</label>
+							<label class="block text-sm font-medium text-gray-700 mb-1">{m.banking_openingBalance()}</label>
 							<input type="text" bind:value={newAccount.opening_balance} class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="0.00" />
 						</div>
 					</div>
 				</div>
 				<div class="mt-6 flex justify-end gap-2">
-					<button type="button" onclick={() => showAddAccountModal = false} class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-					<button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Create</button>
+					<button type="button" onclick={() => showAddAccountModal = false} class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">{m.common_cancel()}</button>
+					<button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">{m.banking_create()}</button>
 				</div>
 			</form>
 		</div>
@@ -351,21 +352,21 @@
 {#if showMatchModal && selectedTransaction}
 	<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
 		<div class="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6">
-			<h2 class="text-xl font-bold mb-4">Match Transaction</h2>
+			<h2 class="text-xl font-bold mb-4">{m.banking_matchTransaction()}</h2>
 			<div class="bg-gray-50 rounded-lg p-4 mb-4">
 				<div class="grid grid-cols-2 gap-4">
 					<div>
-						<span class="text-gray-500 text-sm">Date:</span>
+						<span class="text-gray-500 text-sm">{m.common_date()}:</span>
 						<span class="ml-2 font-medium">{formatDate(selectedTransaction.transaction_date)}</span>
 					</div>
 					<div>
-						<span class="text-gray-500 text-sm">Amount:</span>
+						<span class="text-gray-500 text-sm">{m.common_amount()}:</span>
 						<span class="ml-2 font-medium font-mono {Number(selectedTransaction.amount) >= 0 ? 'text-green-600' : 'text-red-600'}">
 							{formatAmount(selectedTransaction.amount)}
 						</span>
 					</div>
 					<div class="col-span-2">
-						<span class="text-gray-500 text-sm">Description:</span>
+						<span class="text-gray-500 text-sm">{m.common_description()}:</span>
 						<span class="ml-2">{selectedTransaction.description}</span>
 					</div>
 				</div>
@@ -376,24 +377,24 @@
 					<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
 				</div>
 			{:else if matchSuggestions.length === 0}
-				<p class="text-gray-500 text-center py-8">No matching payments found.</p>
+				<p class="text-gray-500 text-center py-8">{m.banking_noMatchingPayments()}</p>
 			{:else}
-				<h3 class="font-medium mb-2">Suggested Matches</h3>
+				<h3 class="font-medium mb-2">{m.banking_suggestedMatches()}</h3>
 				<div class="space-y-2 max-h-80 overflow-y-auto">
 					{#each matchSuggestions as suggestion}
 						<div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 flex justify-between items-center">
 							<div>
 								<div class="font-medium">{suggestion.payment_number}</div>
 								<div class="text-sm text-gray-600">
-									{formatDate(suggestion.payment_date)} - {suggestion.contact_name || 'No contact'}
+									{formatDate(suggestion.payment_date)} - {suggestion.contact_name || m.banking_noContact()}
 								</div>
 								<div class="text-xs text-gray-500">{suggestion.match_reason}</div>
 							</div>
 							<div class="text-right">
 								<div class="font-mono font-medium">{formatAmount(suggestion.amount)}</div>
-								<div class="text-xs text-gray-500">Confidence: {Math.round(suggestion.confidence * 100)}%</div>
+								<div class="text-xs text-gray-500">{m.banking_confidence()} {Math.round(suggestion.confidence * 100)}%</div>
 								<button onclick={() => matchToPayment(suggestion.payment_id)} class="mt-1 px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">
-									Match
+									{m.banking_match()}
 								</button>
 							</div>
 						</div>
@@ -403,7 +404,7 @@
 
 			<div class="mt-6 flex justify-end">
 				<button onclick={() => { showMatchModal = false; selectedTransaction = null; }} class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-					Cancel
+					{m.common_cancel()}
 				</button>
 			</div>
 		</div>

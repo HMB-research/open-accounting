@@ -2,6 +2,7 @@
 	import { api, type KMDDeclaration } from '$lib/api';
 	import { goto } from '$app/navigation';
 	import Decimal from 'decimal.js';
+	import * as m from '$lib/paraglide/messages.js';
 
 	let tenantId = $state('');
 	let loading = $state(true);
@@ -22,13 +23,13 @@
 		try {
 			const memberships = await api.getMyTenants();
 			if (memberships.length === 0) {
-				error = 'No tenant available';
+				error = m.tax_noTenantAvailable();
 				return;
 			}
 			tenantId = memberships[0].tenant.id;
 			declarations = await api.listKMD(tenantId);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to load data';
+			error = e instanceof Error ? e.message : m.tax_failedToLoad();
 		} finally {
 			loading = false;
 		}
@@ -45,7 +46,7 @@
 			// Reload to get the updated list
 			declarations = await api.listKMD(tenantId);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to generate KMD';
+			error = e instanceof Error ? e.message : m.tax_failedToGenerate();
 		} finally {
 			generating = false;
 		}
@@ -55,7 +56,7 @@
 		try {
 			await api.downloadKMDXml(tenantId, decl.year, decl.month);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to download XML';
+			error = e instanceof Error ? e.message : m.tax_failedToDownload();
 		}
 	}
 
@@ -88,9 +89,9 @@
 	<div class="flex items-center justify-between mb-6">
 		<div class="flex items-center gap-4">
 			<button onclick={() => goto('/dashboard')} class="text-gray-600 hover:text-gray-800">
-				&larr; Back
+				&larr; {m.common_back()}
 			</button>
-			<h1 class="text-2xl font-bold text-gray-900">VAT Declarations (KMD)</h1>
+			<h1 class="text-2xl font-bold text-gray-900">{m.tax_vatDeclarations()}</h1>
 		</div>
 	</div>
 
@@ -105,10 +106,10 @@
 	{:else}
 		<!-- Generate KMD Form -->
 		<div class="bg-white rounded-lg shadow p-6 mb-6">
-			<h2 class="text-lg font-semibold mb-4">Generate VAT Declaration</h2>
+			<h2 class="text-lg font-semibold mb-4">{m.tax_generateVatDeclaration()}</h2>
 			<div class="flex gap-4 items-end">
 				<div>
-					<label for="year" class="block text-sm font-medium text-gray-700 mb-1">Year</label>
+					<label for="year" class="block text-sm font-medium text-gray-700 mb-1">{m.tax_year()}</label>
 					<select
 						id="year"
 						bind:value={selectedYear}
@@ -120,7 +121,7 @@
 					</select>
 				</div>
 				<div>
-					<label for="month" class="block text-sm font-medium text-gray-700 mb-1">Month</label>
+					<label for="month" class="block text-sm font-medium text-gray-700 mb-1">{m.tax_month()}</label>
 					<select
 						id="month"
 						bind:value={selectedMonth}
@@ -136,7 +137,7 @@
 					disabled={generating}
 					class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
 				>
-					{generating ? 'Generating...' : 'Generate KMD'}
+					{generating ? m.tax_generating() : m.tax_generate()}
 				</button>
 			</div>
 		</div>
@@ -145,7 +146,7 @@
 		{#if declarations.length > 0}
 			<div class="bg-white rounded-lg shadow">
 				<div class="px-6 py-4 border-b">
-					<h2 class="text-lg font-semibold">Generated Declarations</h2>
+					<h2 class="text-lg font-semibold">{m.tax_generatedDeclarations()}</h2>
 				</div>
 				<div class="divide-y">
 					{#each declarations as decl}
@@ -153,9 +154,9 @@
 							<div>
 								<div class="font-medium">{decl.year}-{String(decl.month).padStart(2, '0')}</div>
 								<div class="text-sm text-gray-500">
-									Output VAT: {formatCurrency(decl.total_output_vat)} | Input VAT: {formatCurrency(
+									{m.tax_outputVat()}: {formatCurrency(decl.total_output_vat)} | {m.tax_inputVat()}: {formatCurrency(
 										decl.total_input_vat
-									)} | Payable: {formatCurrency(getPayable(decl))}
+									)} | {m.tax_payable()}: {formatCurrency(getPayable(decl))}
 								</div>
 							</div>
 							<div class="flex gap-2 items-center">
@@ -172,7 +173,7 @@
 									onclick={() => downloadXml(decl)}
 									class="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50"
 								>
-									Download XML
+									{m.tax_downloadXml()}
 								</button>
 							</div>
 						</div>
@@ -181,7 +182,7 @@
 			</div>
 		{:else}
 			<div class="bg-white rounded-lg shadow p-12 text-center text-gray-500">
-				<p>No VAT declarations yet. Generate one to get started.</p>
+				<p>{m.tax_noDeclarations()}</p>
 			</div>
 		{/if}
 	{/if}

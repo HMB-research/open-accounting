@@ -3,6 +3,7 @@
 	import { page } from '$app/stores';
 	import { api, type TrialBalance, type AccountBalance, type BalanceSheet, type IncomeStatement } from '$lib/api';
 	import Decimal from 'decimal.js';
+	import * as m from '$lib/paraglide/messages.js';
 
 	let tenantId = $derived($page.url.searchParams.get('tenant') || '');
 	let isLoading = $state(false);
@@ -45,7 +46,7 @@
 				balanceSheet = null;
 			}
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to load report';
+			error = err instanceof Error ? err.message : m.reports_failedToLoad();
 		} finally {
 			isLoading = false;
 		}
@@ -86,14 +87,20 @@
 	}
 
 	function getTypeLabel(type: string): string {
-		const labels: Record<string, string> = {
-			ASSET: 'Assets',
-			LIABILITY: 'Liabilities',
-			EQUITY: 'Equity',
-			REVENUE: 'Revenue',
-			EXPENSE: 'Expenses'
-		};
-		return labels[type] || type;
+		switch (type) {
+			case 'ASSET':
+				return m.accounts_assets();
+			case 'LIABILITY':
+				return m.accounts_liabilities();
+			case 'EQUITY':
+				return m.accounts_equities();
+			case 'REVENUE':
+				return m.accounts_revenues();
+			case 'EXPENSE':
+				return m.accounts_expenses();
+			default:
+				return type;
+		}
 	}
 
 	function printReport() {
@@ -102,51 +109,51 @@
 </script>
 
 <svelte:head>
-	<title>Reports - Open Accounting</title>
+	<title>{m.reports_title()} - Open Accounting</title>
 </svelte:head>
 
 <div class="container">
 	<div class="header">
-		<h1>Financial Reports</h1>
+		<h1>{m.reports_financialReports()}</h1>
 		{#if trialBalance || balanceSheet || incomeStatement}
-			<button class="btn btn-secondary" onclick={printReport}>Print</button>
+			<button class="btn btn-secondary" onclick={printReport}>{m.reports_print()}</button>
 		{/if}
 	</div>
 
 	{#if !tenantId}
 		<div class="card empty-state">
-			<p>Please select a tenant from the <a href="/dashboard">dashboard</a>.</p>
+			<p>{m.reports_selectTenantDashboard()} <a href="/dashboard">{m.nav_dashboard()}</a>.</p>
 		</div>
 	{:else}
 		<div class="report-controls card">
 			<div class="control-row">
 				<div class="form-group">
-					<label class="label" for="reportType">Report Type</label>
+					<label class="label" for="reportType">{m.reports_reportType()}</label>
 					<select class="input" id="reportType" bind:value={selectedReport}>
-						<option value="trial-balance">Trial Balance</option>
-						<option value="balance-sheet">Balance Sheet</option>
-						<option value="income-statement">Income Statement</option>
+						<option value="trial-balance">{m.reports_trialBalance()}</option>
+						<option value="balance-sheet">{m.reports_balanceSheet()}</option>
+						<option value="income-statement">{m.reports_incomeStatement()}</option>
 					</select>
 				</div>
 
 				{#if selectedReport === 'income-statement'}
 					<div class="form-group">
-						<label class="label" for="startDate">Start Date</label>
+						<label class="label" for="startDate">{m.reports_startDate()}</label>
 						<input class="input" type="date" id="startDate" bind:value={startDate} />
 					</div>
 					<div class="form-group">
-						<label class="label" for="endDate">End Date</label>
+						<label class="label" for="endDate">{m.reports_endDate()}</label>
 						<input class="input" type="date" id="endDate" bind:value={endDate} />
 					</div>
 				{:else}
 					<div class="form-group">
-						<label class="label" for="asOfDate">As of Date</label>
+						<label class="label" for="asOfDate">{m.reports_asOfDate()}</label>
 						<input class="input" type="date" id="asOfDate" bind:value={asOfDate} />
 					</div>
 				{/if}
 
 				<button class="btn btn-primary" onclick={loadReport} disabled={isLoading}>
-					{isLoading ? 'Loading...' : 'Generate Report'}
+					{isLoading ? m.reports_generating() : m.reports_generateReport()}
 				</button>
 			</div>
 		</div>
@@ -159,22 +166,22 @@
 		{#if trialBalance}
 			<div class="report card">
 				<div class="report-header">
-					<h2>Trial Balance</h2>
-					<p class="report-date">As of {trialBalance.as_of_date}</p>
+					<h2>{m.reports_trialBalance()}</h2>
+					<p class="report-date">{m.reports_asOf()} {trialBalance.as_of_date}</p>
 				</div>
 
 				{#if trialBalance.accounts.length === 0}
-					<p class="empty-message">No account balances found for this date.</p>
+					<p class="empty-message">{m.reports_noBalancesForDate()}</p>
 				{:else}
 					{@const groupedAccounts = groupByType(trialBalance.accounts)}
 
 					<table class="report-table">
 						<thead>
 							<tr>
-								<th>Account Code</th>
-								<th>Account Name</th>
-								<th class="amount">Debit</th>
-								<th class="amount">Credit</th>
+								<th>{m.reports_accountCode()}</th>
+								<th>{m.reports_accountName()}</th>
+								<th class="amount">{m.accounts_debit()}</th>
+								<th class="amount">{m.accounts_credit()}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -197,17 +204,17 @@
 						</tbody>
 						<tfoot>
 							<tr class="totals">
-								<td colspan="2"><strong>Totals</strong></td>
+								<td colspan="2"><strong>{m.reports_totals()}</strong></td>
 								<td class="amount"><strong>{formatAmount(trialBalance.total_debits)}</strong></td>
 								<td class="amount"><strong>{formatAmount(trialBalance.total_credits)}</strong></td>
 							</tr>
 							<tr class="balance-status">
 								<td colspan="4" class:balanced={trialBalance.is_balanced} class:unbalanced={!trialBalance.is_balanced}>
 									{#if trialBalance.is_balanced}
-										Trial balance is in balance
+										{m.reports_trialBalanceBalanced()}
 									{:else}
-										Trial balance is NOT in balance!
-										Difference: {trialBalance.total_debits.minus(trialBalance.total_credits).toFixed(2)}
+										{m.reports_trialBalanceNotBalanced()}
+										{m.reports_difference()} {trialBalance.total_debits.minus(trialBalance.total_credits).toFixed(2)}
 									{/if}
 								</td>
 							</tr>
@@ -216,7 +223,7 @@
 				{/if}
 
 				<p class="report-footer">
-					Generated on {new Date(trialBalance.generated_at).toLocaleString()}
+					{m.reports_generatedOn()} {new Date(trialBalance.generated_at).toLocaleString()}
 				</p>
 			</div>
 		{/if}
@@ -225,21 +232,21 @@
 		{#if balanceSheet}
 			<div class="report card">
 				<div class="report-header">
-					<h2>Balance Sheet</h2>
-					<p class="report-date">As of {balanceSheet.as_of_date}</p>
+					<h2>{m.reports_balanceSheet()}</h2>
+					<p class="report-date">{m.reports_asOf()} {balanceSheet.as_of_date}</p>
 				</div>
 
 				<div class="balance-sheet-layout">
 					<div class="bs-section">
-						<h3>Assets</h3>
+						<h3>{m.accounts_assets()}</h3>
 						{#if balanceSheet.assets.length === 0}
-							<p class="empty-message">No asset accounts with balances.</p>
+							<p class="empty-message">{m.reports_noAssetBalances()}</p>
 						{:else}
 							<table class="report-table">
 								<thead>
 									<tr>
-										<th>Account</th>
-										<th class="amount">Balance</th>
+										<th>{m.reports_account()}</th>
+										<th class="amount">{m.reports_balance()}</th>
 									</tr>
 								</thead>
 								<tbody>
@@ -252,7 +259,7 @@
 								</tbody>
 								<tfoot>
 									<tr class="totals">
-										<td><strong>Total Assets</strong></td>
+										<td><strong>{m.reports_totalAssets()}</strong></td>
 										<td class="amount"><strong>{formatAmount(balanceSheet.total_assets)}</strong></td>
 									</tr>
 								</tfoot>
@@ -261,15 +268,15 @@
 					</div>
 
 					<div class="bs-section">
-						<h3>Liabilities</h3>
+						<h3>{m.accounts_liabilities()}</h3>
 						{#if balanceSheet.liabilities.length === 0}
-							<p class="empty-message">No liability accounts with balances.</p>
+							<p class="empty-message">{m.reports_noLiabilityBalances()}</p>
 						{:else}
 							<table class="report-table">
 								<thead>
 									<tr>
-										<th>Account</th>
-										<th class="amount">Balance</th>
+										<th>{m.reports_account()}</th>
+										<th class="amount">{m.reports_balance()}</th>
 									</tr>
 								</thead>
 								<tbody>
@@ -282,22 +289,22 @@
 								</tbody>
 								<tfoot>
 									<tr class="totals">
-										<td><strong>Total Liabilities</strong></td>
+										<td><strong>{m.reports_totalLiabilities()}</strong></td>
 										<td class="amount"><strong>{formatAmount(balanceSheet.total_liabilities)}</strong></td>
 									</tr>
 								</tfoot>
 							</table>
 						{/if}
 
-						<h3 class="mt-2">Equity</h3>
+						<h3 class="mt-2">{m.accounts_equities()}</h3>
 						{#if balanceSheet.equity.length === 0 && balanceSheet.retained_earnings.isZero()}
-							<p class="empty-message">No equity accounts with balances.</p>
+							<p class="empty-message">{m.reports_noEquityBalances()}</p>
 						{:else}
 							<table class="report-table">
 								<thead>
 									<tr>
-										<th>Account</th>
-										<th class="amount">Balance</th>
+										<th>{m.reports_account()}</th>
+										<th class="amount">{m.reports_balance()}</th>
 									</tr>
 								</thead>
 								<tbody>
@@ -309,14 +316,14 @@
 									{/each}
 									{#if !balanceSheet.retained_earnings.isZero()}
 										<tr>
-											<td><em>Retained Earnings</em></td>
+											<td><em>{m.reports_retainedEarnings()}</em></td>
 											<td class="amount">{formatAmount(balanceSheet.retained_earnings)}</td>
 										</tr>
 									{/if}
 								</tbody>
 								<tfoot>
 									<tr class="totals">
-										<td><strong>Total Equity</strong></td>
+										<td><strong>{m.reports_totalEquity()}</strong></td>
 										<td class="amount"><strong>{formatAmount(balanceSheet.total_equity)}</strong></td>
 									</tr>
 								</tfoot>
@@ -329,19 +336,19 @@
 					<table class="report-table summary-table">
 						<tbody>
 							<tr>
-								<td><strong>Total Assets</strong></td>
+								<td><strong>{m.reports_totalAssets()}</strong></td>
 								<td class="amount"><strong>{formatAmount(balanceSheet.total_assets)}</strong></td>
 							</tr>
 							<tr>
-								<td><strong>Total Liabilities + Equity</strong></td>
+								<td><strong>{m.reports_totalLiabilitiesEquity()}</strong></td>
 								<td class="amount"><strong>{formatAmount(balanceSheet.total_liabilities.plus(balanceSheet.total_equity))}</strong></td>
 							</tr>
 							<tr class="balance-status">
 								<td colspan="2" class:balanced={balanceSheet.is_balanced} class:unbalanced={!balanceSheet.is_balanced}>
 									{#if balanceSheet.is_balanced}
-										Balance sheet is in balance (Assets = Liabilities + Equity)
+										{m.reports_bsBalanced()}
 									{:else}
-										Balance sheet is NOT in balance!
+										{m.reports_bsNotBalanced()}
 									{/if}
 								</td>
 							</tr>
@@ -350,7 +357,7 @@
 				</div>
 
 				<p class="report-footer">
-					Generated on {new Date(balanceSheet.generated_at).toLocaleString()}
+					{m.reports_generatedOn()} {new Date(balanceSheet.generated_at).toLocaleString()}
 				</p>
 			</div>
 		{/if}
@@ -359,20 +366,20 @@
 		{#if incomeStatement}
 			<div class="report card">
 				<div class="report-header">
-					<h2>Income Statement</h2>
-					<p class="report-date">{incomeStatement.start_date} to {incomeStatement.end_date}</p>
+					<h2>{m.reports_incomeStatement()}</h2>
+					<p class="report-date">{incomeStatement.start_date} - {incomeStatement.end_date}</p>
 				</div>
 
 				<div class="is-section">
-					<h3>Revenue</h3>
+					<h3>{m.accounts_revenues()}</h3>
 					{#if incomeStatement.revenue.length === 0}
-						<p class="empty-message">No revenue for this period.</p>
+						<p class="empty-message">{m.reports_noRevenue()}</p>
 					{:else}
 						<table class="report-table">
 							<thead>
 								<tr>
-									<th>Account</th>
-									<th class="amount">Amount</th>
+									<th>{m.reports_account()}</th>
+									<th class="amount">{m.reports_amount()}</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -385,7 +392,7 @@
 							</tbody>
 							<tfoot>
 								<tr class="totals">
-									<td><strong>Total Revenue</strong></td>
+									<td><strong>{m.reports_totalRevenue()}</strong></td>
 									<td class="amount"><strong>{formatAmount(incomeStatement.total_revenue)}</strong></td>
 								</tr>
 							</tfoot>
@@ -394,15 +401,15 @@
 				</div>
 
 				<div class="is-section">
-					<h3>Expenses</h3>
+					<h3>{m.accounts_expenses()}</h3>
 					{#if incomeStatement.expenses.length === 0}
-						<p class="empty-message">No expenses for this period.</p>
+						<p class="empty-message">{m.reports_noExpenses()}</p>
 					{:else}
 						<table class="report-table">
 							<thead>
 								<tr>
-									<th>Account</th>
-									<th class="amount">Amount</th>
+									<th>{m.reports_account()}</th>
+									<th class="amount">{m.reports_amount()}</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -415,7 +422,7 @@
 							</tbody>
 							<tfoot>
 								<tr class="totals">
-									<td><strong>Total Expenses</strong></td>
+									<td><strong>{m.reports_totalExpenses()}</strong></td>
 									<td class="amount"><strong>{formatAmount(incomeStatement.total_expenses)}</strong></td>
 								</tr>
 							</tfoot>
@@ -427,7 +434,7 @@
 					<table class="report-table summary-table">
 						<tbody>
 							<tr class="net-income" class:profit={incomeStatement.net_income.greaterThanOrEqualTo(0)} class:loss={incomeStatement.net_income.lessThan(0)}>
-								<td><strong>Net Income</strong></td>
+								<td><strong>{m.reports_netIncome()}</strong></td>
 								<td class="amount"><strong>{formatAmount(incomeStatement.net_income)}</strong></td>
 							</tr>
 						</tbody>
@@ -435,7 +442,7 @@
 				</div>
 
 				<p class="report-footer">
-					Generated on {new Date(incomeStatement.generated_at).toLocaleString()}
+					{m.reports_generatedOn()} {new Date(incomeStatement.generated_at).toLocaleString()}
 				</p>
 			</div>
 		{/if}

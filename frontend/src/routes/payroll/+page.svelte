@@ -2,6 +2,7 @@
 	import { page } from '$app/stores';
 	import { api, type PayrollRun, type Payslip, type PayrollStatus } from '$lib/api';
 	import Decimal from 'decimal.js';
+	import * as m from '$lib/paraglide/messages.js';
 
 	let payrollRuns = $state<PayrollRun[]>([]);
 	let isLoading = $state(true);
@@ -18,20 +19,25 @@
 	let newPaymentDate = $state('');
 	let newNotes = $state('');
 
-	const months = [
-		'January',
-		'February',
-		'March',
-		'April',
-		'May',
-		'June',
-		'July',
-		'August',
-		'September',
-		'October',
-		'November',
-		'December'
-	];
+	function getMonthName(month: number): string {
+		switch (month) {
+			case 1: return m.payroll_monthJan();
+			case 2: return m.payroll_monthFeb();
+			case 3: return m.payroll_monthMar();
+			case 4: return m.payroll_monthApr();
+			case 5: return m.payroll_monthMay();
+			case 6: return m.payroll_monthJun();
+			case 7: return m.payroll_monthJul();
+			case 8: return m.payroll_monthAug();
+			case 9: return m.payroll_monthSep();
+			case 10: return m.payroll_monthOct();
+			case 11: return m.payroll_monthNov();
+			case 12: return m.payroll_monthDec();
+			default: return '';
+		}
+	}
+
+	const months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
 	$effect(() => {
 		const tenantId = $page.url.searchParams.get('tenant');
@@ -47,7 +53,7 @@
 		try {
 			payrollRuns = await api.listPayrollRuns(tenantId, filterYear);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to load payroll runs';
+			error = err instanceof Error ? err.message : m.payroll_failedToLoad();
 		} finally {
 			isLoading = false;
 		}
@@ -71,7 +77,7 @@
 			showCreateRun = false;
 			resetForm();
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to create payroll run';
+			error = err instanceof Error ? err.message : m.payroll_failedToCreate();
 		}
 	}
 
@@ -90,7 +96,7 @@
 			const updated = await api.calculatePayroll(tenantId, run.id);
 			payrollRuns = payrollRuns.map((r) => (r.id === updated.id ? updated : r));
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to calculate payroll';
+			error = err instanceof Error ? err.message : m.payroll_failedToCalculate();
 		}
 	}
 
@@ -102,7 +108,7 @@
 			const updated = await api.approvePayroll(tenantId, run.id);
 			payrollRuns = payrollRuns.map((r) => (r.id === updated.id ? updated : r));
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to approve payroll';
+			error = err instanceof Error ? err.message : m.payroll_failedToApprove();
 		}
 	}
 
@@ -115,7 +121,7 @@
 			selectedRun = run;
 			showPayslips = true;
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to load payslips';
+			error = err instanceof Error ? err.message : m.payroll_failedToLoadPayslips();
 		}
 	}
 
@@ -128,7 +134,7 @@
 			// Navigate to TSD page or show success
 			window.location.href = `/tsd?tenant=${tenantId}`;
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to generate TSD';
+			error = err instanceof Error ? err.message : m.payroll_failedToGenerateTsd();
 		}
 	}
 
@@ -146,13 +152,16 @@
 		return new Decimal(value).toFixed(2);
 	}
 
-	const statusLabels: Record<PayrollStatus, string> = {
-		DRAFT: 'Draft',
-		CALCULATED: 'Calculated',
-		APPROVED: 'Approved',
-		PAID: 'Paid',
-		DECLARED: 'Declared'
-	};
+	function getStatusLabel(status: PayrollStatus): string {
+		switch (status) {
+			case 'DRAFT': return m.payroll_statusDraft();
+			case 'CALCULATED': return m.payroll_statusCalculated();
+			case 'APPROVED': return m.payroll_statusApproved();
+			case 'PAID': return m.payroll_statusPaid();
+			case 'DECLARED': return m.payroll_statusDeclared();
+			default: return status;
+		}
+	}
 
 	const statusBadgeClass: Record<PayrollStatus, string> = {
 		DRAFT: 'badge-draft',
@@ -176,20 +185,20 @@
 </script>
 
 <svelte:head>
-	<title>Payroll - Open Accounting</title>
+	<title>{m.payroll_title()} - Open Accounting</title>
 </svelte:head>
 
 <div class="container">
 	<div class="header">
-		<h1>Payroll Runs</h1>
+		<h1>{m.payroll_title()}</h1>
 		<button class="btn btn-primary" onclick={() => (showCreateRun = true)}>
-			+ New Payroll Run
+			+ {m.payroll_newRun()}
 		</button>
 	</div>
 
 	<div class="filters card">
 		<div class="filter-row">
-			<label class="label" for="yearFilter">Year</label>
+			<label class="label" for="yearFilter">{m.payroll_year()}</label>
 			<select class="input" id="yearFilter" bind:value={filterYear} onchange={handleYearChange}>
 				{#each Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i) as year}
 					<option value={year}>{year}</option>
@@ -203,11 +212,11 @@
 	{/if}
 
 	{#if isLoading}
-		<p>Loading payroll runs...</p>
+		<p>{m.payroll_loading()}</p>
 	{:else if payrollRuns.length === 0}
 		<div class="empty-state card">
 			<p>
-				No payroll runs found for {filterYear}. Create a new payroll run to calculate employee salaries.
+				{m.payroll_emptyState({ year: filterYear.toString() })}
 			</p>
 		</div>
 	{:else}
@@ -215,41 +224,41 @@
 			<table class="table">
 				<thead>
 					<tr>
-						<th>Period</th>
-						<th>Status</th>
-						<th class="text-right">Gross Total</th>
-						<th class="text-right">Net Total</th>
-						<th class="text-right">Employer Cost</th>
-						<th>Actions</th>
+						<th>{m.payroll_period()}</th>
+						<th>{m.payroll_status()}</th>
+						<th class="text-right">{m.payroll_grossTotal()}</th>
+						<th class="text-right">{m.payroll_netTotal()}</th>
+						<th class="text-right">{m.payroll_employerCost()}</th>
+						<th>{m.payroll_actions()}</th>
 					</tr>
 				</thead>
 				<tbody>
 					{#each payrollRuns as run}
 						<tr>
-							<td class="period">{months[run.period_month - 1]} {run.period_year}</td>
+							<td class="period">{getMonthName(run.period_month)} {run.period_year}</td>
 							<td>
 								<span class="badge {statusBadgeClass[run.status]}">
-									{statusLabels[run.status]}
+									{getStatusLabel(run.status)}
 								</span>
 							</td>
 							<td class="text-right mono">{formatDecimal(run.total_gross)}</td>
 							<td class="text-right mono">{formatDecimal(run.total_net)}</td>
 							<td class="text-right mono">{formatDecimal(run.total_employer_cost)}</td>
 							<td class="actions">
-								<button class="btn btn-small" onclick={() => viewPayslips(run)}>Payslips</button>
+								<button class="btn btn-small" onclick={() => viewPayslips(run)}>{m.payroll_payslips()}</button>
 								{#if canCalculate(run)}
 									<button class="btn btn-small btn-primary" onclick={() => calculatePayroll(run)}>
-										Calculate
+										{m.payroll_calculate()}
 									</button>
 								{/if}
 								{#if canApprove(run)}
 									<button class="btn btn-small btn-success" onclick={() => approvePayroll(run)}>
-										Approve
+										{m.payroll_approve()}
 									</button>
 								{/if}
 								{#if canGenerateTSD(run)}
 									<button class="btn btn-small btn-secondary" onclick={() => generateTSD(run)}>
-										Generate TSD
+										{m.payroll_generateTsd()}
 									</button>
 								{/if}
 							</td>
@@ -261,26 +270,26 @@
 	{/if}
 
 	<div class="info-box card">
-		<h3>Estonian Payroll Tax Rates (2025)</h3>
+		<h3>{m.payroll_estonianTaxRates()}</h3>
 		<div class="tax-rates">
 			<div class="tax-rate">
-				<span class="rate-label">Income Tax</span>
+				<span class="rate-label">{m.payroll_incomeTaxRate()}</span>
 				<span class="rate-value">22%</span>
 			</div>
 			<div class="tax-rate">
-				<span class="rate-label">Social Tax (Employer)</span>
+				<span class="rate-label">{m.payroll_socialTaxRate()}</span>
 				<span class="rate-value">33%</span>
 			</div>
 			<div class="tax-rate">
-				<span class="rate-label">Unemployment Ins. (Employee)</span>
+				<span class="rate-label">{m.payroll_unemploymentEmployeeRate()}</span>
 				<span class="rate-value">1.6%</span>
 			</div>
 			<div class="tax-rate">
-				<span class="rate-label">Unemployment Ins. (Employer)</span>
+				<span class="rate-label">{m.payroll_unemploymentEmployerRate()}</span>
 				<span class="rate-value">0.8%</span>
 			</div>
 			<div class="tax-rate">
-				<span class="rate-label">Basic Exemption (max)</span>
+				<span class="rate-label">{m.payroll_basicExemptionMax()}</span>
 				<span class="rate-value">700 EUR</span>
 			</div>
 		</div>
@@ -299,11 +308,11 @@
 			aria-labelledby="create-run-title"
 			tabindex="-1"
 		>
-			<h2 id="create-run-title">Create Payroll Run</h2>
+			<h2 id="create-run-title">{m.payroll_createRun()}</h2>
 			<form onsubmit={createPayrollRun}>
 				<div class="form-row">
 					<div class="form-group">
-						<label class="label" for="year">Year *</label>
+						<label class="label" for="year">{m.payroll_year()} *</label>
 						<select class="input" id="year" bind:value={newYear} required>
 							{#each Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i + 1) as year}
 								<option value={year}>{year}</option>
@@ -311,37 +320,37 @@
 						</select>
 					</div>
 					<div class="form-group">
-						<label class="label" for="month">Month *</label>
+						<label class="label" for="month">{m.payroll_month()} *</label>
 						<select class="input" id="month" bind:value={newMonth} required>
-							{#each months as month, i}
-								<option value={i + 1}>{month}</option>
+							{#each months as month}
+								<option value={month}>{getMonthName(month)}</option>
 							{/each}
 						</select>
 					</div>
 				</div>
 
 				<div class="form-group">
-					<label class="label" for="paymentDate">Payment Date</label>
+					<label class="label" for="paymentDate">{m.payroll_paymentDate()}</label>
 					<input class="input" type="date" id="paymentDate" bind:value={newPaymentDate} />
-					<small class="help-text">When salaries will be paid</small>
+					<small class="help-text">{m.payroll_paymentDateHelp()}</small>
 				</div>
 
 				<div class="form-group">
-					<label class="label" for="notes">Notes</label>
+					<label class="label" for="notes">{m.payroll_notes()}</label>
 					<textarea
 						class="input"
 						id="notes"
 						bind:value={newNotes}
 						rows="3"
-						placeholder="Optional notes about this payroll run"
+						placeholder={m.payroll_notesPlaceholder()}
 					></textarea>
 				</div>
 
 				<div class="modal-actions">
 					<button type="button" class="btn btn-secondary" onclick={() => (showCreateRun = false)}>
-						Cancel
+						{m.common_cancel()}
 					</button>
-					<button type="submit" class="btn btn-primary">Create</button>
+					<button type="submit" class="btn btn-primary">{m.payroll_create()}</button>
 				</div>
 			</form>
 		</div>
@@ -361,26 +370,26 @@
 			tabindex="-1"
 		>
 			<h2 id="payslips-title">
-				Payslips - {months[selectedRun.period_month - 1]}
+				{m.payroll_payslips()} - {getMonthName(selectedRun.period_month)}
 				{selectedRun.period_year}
 			</h2>
 
 			{#if payslips.length === 0}
-				<p class="text-muted">No payslips found. Calculate the payroll to generate payslips.</p>
+				<p class="text-muted">{m.payroll_noPayslips()}</p>
 			{:else}
 				<div class="payslips-table-container">
 					<table class="table payslips-table">
 						<thead>
 							<tr>
-								<th>Employee</th>
-								<th class="text-right">Gross</th>
-								<th class="text-right">Income Tax</th>
-								<th class="text-right">Unemp. EE</th>
-								<th class="text-right">Pension</th>
-								<th class="text-right">Net</th>
-								<th class="text-right">Social Tax</th>
-								<th class="text-right">Unemp. ER</th>
-								<th class="text-right">Total Cost</th>
+								<th>{m.payroll_employee()}</th>
+								<th class="text-right">{m.payroll_gross()}</th>
+								<th class="text-right">{m.payroll_incomeTax()}</th>
+								<th class="text-right">{m.payroll_unempEe()}</th>
+								<th class="text-right">{m.payroll_pension()}</th>
+								<th class="text-right">{m.payroll_net()}</th>
+								<th class="text-right">{m.payroll_socialTax()}</th>
+								<th class="text-right">{m.payroll_unempEr()}</th>
+								<th class="text-right">{m.payroll_totalCost()}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -390,7 +399,7 @@
 										{#if payslip.employee}
 											{payslip.employee.last_name}, {payslip.employee.first_name}
 										{:else}
-											Employee ID: {payslip.employee_id}
+											{m.payroll_employeeId()} {payslip.employee_id}
 										{/if}
 									</td>
 									<td class="text-right mono">{formatDecimal(payslip.gross_salary)}</td>
@@ -412,7 +421,7 @@
 						</tbody>
 						<tfoot>
 							<tr class="totals-row">
-								<td><strong>Totals</strong></td>
+								<td><strong>{m.payroll_totals()}</strong></td>
 								<td class="text-right mono">
 									<strong>{formatDecimal(selectedRun.total_gross)}</strong>
 								</td>
@@ -432,7 +441,7 @@
 
 			<div class="modal-actions">
 				<button type="button" class="btn btn-secondary" onclick={() => (showPayslips = false)}>
-					Close
+					{m.payroll_close()}
 				</button>
 			</div>
 		</div>

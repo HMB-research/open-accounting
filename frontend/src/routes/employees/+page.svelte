@@ -2,6 +2,7 @@
 	import { page } from '$app/stores';
 	import { api, type Employee, type EmploymentType } from '$lib/api';
 	import Decimal from 'decimal.js';
+	import * as m from '$lib/paraglide/messages.js';
 
 	let employees = $state<Employee[]>([]);
 	let isLoading = $state(true);
@@ -40,7 +41,7 @@
 		try {
 			employees = await api.listEmployees(tenantId, showActiveOnly);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to load employees';
+			error = err instanceof Error ? err.message : m.employees_failedToLoad();
 		} finally {
 			isLoading = false;
 		}
@@ -74,7 +75,7 @@
 			showCreateEmployee = false;
 			resetForm();
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to create employee';
+			error = err instanceof Error ? err.message : m.employees_failedToCreate();
 		}
 	}
 
@@ -116,11 +117,14 @@
 		return `${new Decimal(value).mul(100).toFixed(0)}%`;
 	}
 
-	const typeLabels: Record<EmploymentType, string> = {
-		FULL_TIME: 'Full-time',
-		PART_TIME: 'Part-time',
-		CONTRACT: 'Contract'
-	};
+	function getTypeLabel(type: EmploymentType): string {
+		switch (type) {
+			case 'FULL_TIME': return m.employees_fullTime();
+			case 'PART_TIME': return m.employees_partTime();
+			case 'CONTRACT': return m.employees_contract();
+			default: return type;
+		}
+	}
 
 	const typeBadgeClass: Record<EmploymentType, string> = {
 		FULL_TIME: 'badge-fulltime',
@@ -144,14 +148,14 @@
 </script>
 
 <svelte:head>
-	<title>Employees - Open Accounting</title>
+	<title>{m.employees_title()} - Open Accounting</title>
 </svelte:head>
 
 <div class="container">
 	<div class="header">
-		<h1>Employees</h1>
+		<h1>{m.employees_title()}</h1>
 		<button class="btn btn-primary" onclick={() => (showCreateEmployee = true)}>
-			+ New Employee
+			+ {m.employees_newEmployee()}
 		</button>
 	</div>
 
@@ -159,12 +163,12 @@
 		<div class="filter-row">
 			<label class="checkbox-label">
 				<input type="checkbox" bind:checked={showActiveOnly} onchange={handleFilter} />
-				Active only
+				{m.employees_activeOnly()}
 			</label>
 			<input
 				class="input search-input"
 				type="text"
-				placeholder="Search employees..."
+				placeholder={m.employees_searchPlaceholder()}
 				bind:value={searchQuery}
 			/>
 		</div>
@@ -175,23 +179,23 @@
 	{/if}
 
 	{#if isLoading}
-		<p>Loading employees...</p>
+		<p>{m.employees_loading()}</p>
 	{:else if employees.length === 0}
 		<div class="empty-state card">
-			<p>No employees found. Add your first employee to get started with payroll.</p>
+			<p>{m.employees_emptyState()}</p>
 		</div>
 	{:else}
 		<div class="card">
 			<table class="table">
 				<thead>
 					<tr>
-						<th>Name</th>
-						<th>Personal Code</th>
-						<th>Position</th>
-						<th>Type</th>
-						<th>Basic Exemption</th>
-						<th>Pension Rate</th>
-						<th>Status</th>
+						<th>{m.employees_name()}</th>
+						<th>{m.employees_personalCode()}</th>
+						<th>{m.employees_position()}</th>
+						<th>{m.employees_type()}</th>
+						<th>{m.employees_basicExemption()}</th>
+						<th>{m.employees_pensionRate()}</th>
+						<th>{m.employees_status()}</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -212,20 +216,20 @@
 							</td>
 							<td>
 								<span class="badge {typeBadgeClass[employee.employment_type]}">
-									{typeLabels[employee.employment_type]}
+									{getTypeLabel(employee.employment_type)}
 								</span>
 							</td>
 							<td>
 								{#if employee.apply_basic_exemption}
 									{formatDecimal(employee.basic_exemption_amount)}
 								{:else}
-									<span class="text-muted">Not applied</span>
+									<span class="text-muted">{m.employees_notApplied()}</span>
 								{/if}
 							</td>
 							<td>{formatPercent(employee.funded_pension_rate)}</td>
 							<td>
 								<span class="badge {employee.is_active ? 'badge-active' : 'badge-inactive'}">
-									{employee.is_active ? 'Active' : 'Inactive'}
+									{employee.is_active ? m.employees_active() : m.employees_inactive()}
 								</span>
 							</td>
 						</tr>
@@ -248,12 +252,12 @@
 			aria-labelledby="create-employee-title"
 			tabindex="-1"
 		>
-			<h2 id="create-employee-title">Add New Employee</h2>
+			<h2 id="create-employee-title">{m.employees_addNewEmployee()}</h2>
 			<form onsubmit={createEmployee}>
-				<h3 class="section-title">Personal Information</h3>
+				<h3 class="section-title">{m.employees_personalInfo()}</h3>
 				<div class="form-row">
 					<div class="form-group">
-						<label class="label" for="firstName">First Name *</label>
+						<label class="label" for="firstName">{m.employees_firstName()} *</label>
 						<input
 							class="input"
 							type="text"
@@ -264,7 +268,7 @@
 						/>
 					</div>
 					<div class="form-group">
-						<label class="label" for="lastName">Last Name *</label>
+						<label class="label" for="lastName">{m.employees_lastName()} *</label>
 						<input
 							class="input"
 							type="text"
@@ -278,7 +282,7 @@
 
 				<div class="form-row">
 					<div class="form-group">
-						<label class="label" for="personalCode">Personal Code (Isikukood)</label>
+						<label class="label" for="personalCode">{m.employees_personalCodeIsikukood()}</label>
 						<input
 							class="input"
 							type="text"
@@ -289,7 +293,7 @@
 						/>
 					</div>
 					<div class="form-group">
-						<label class="label" for="email">Email</label>
+						<label class="label" for="email">{m.common_email()}</label>
 						<input
 							class="input"
 							type="email"
@@ -302,7 +306,7 @@
 
 				<div class="form-row">
 					<div class="form-group">
-						<label class="label" for="phone">Phone</label>
+						<label class="label" for="phone">{m.employees_phone()}</label>
 						<input
 							class="input"
 							type="tel"
@@ -312,7 +316,7 @@
 						/>
 					</div>
 					<div class="form-group">
-						<label class="label" for="bankAccount">Bank Account (IBAN)</label>
+						<label class="label" for="bankAccount">{m.employees_bankAccount()}</label>
 						<input
 							class="input"
 							type="text"
@@ -324,7 +328,7 @@
 				</div>
 
 				<div class="form-group">
-					<label class="label" for="address">Address</label>
+					<label class="label" for="address">{m.employees_address()}</label>
 					<input
 						class="input"
 						type="text"
@@ -334,25 +338,25 @@
 					/>
 				</div>
 
-				<h3 class="section-title">Employment Details</h3>
+				<h3 class="section-title">{m.employees_employmentDetails()}</h3>
 				<div class="form-row">
 					<div class="form-group">
-						<label class="label" for="startDate">Start Date *</label>
+						<label class="label" for="startDate">{m.employees_startDate()} *</label>
 						<input class="input" type="date" id="startDate" bind:value={newStartDate} required />
 					</div>
 					<div class="form-group">
-						<label class="label" for="employmentType">Employment Type</label>
+						<label class="label" for="employmentType">{m.employees_employmentType()}</label>
 						<select class="input" id="employmentType" bind:value={newEmploymentType}>
-							<option value="FULL_TIME">Full-time</option>
-							<option value="PART_TIME">Part-time</option>
-							<option value="CONTRACT">Contract</option>
+							<option value="FULL_TIME">{m.employees_fullTime()}</option>
+							<option value="PART_TIME">{m.employees_partTime()}</option>
+							<option value="CONTRACT">{m.employees_contract()}</option>
 						</select>
 					</div>
 				</div>
 
 				<div class="form-row">
 					<div class="form-group">
-						<label class="label" for="position">Position</label>
+						<label class="label" for="position">{m.employees_position()}</label>
 						<input
 							class="input"
 							type="text"
@@ -362,7 +366,7 @@
 						/>
 					</div>
 					<div class="form-group">
-						<label class="label" for="department">Department</label>
+						<label class="label" for="department">{m.employees_department()}</label>
 						<input
 							class="input"
 							type="text"
@@ -373,17 +377,17 @@
 					</div>
 				</div>
 
-				<h3 class="section-title">Tax Settings</h3>
+				<h3 class="section-title">{m.employees_taxSettings()}</h3>
 				<div class="form-group">
 					<label class="checkbox-label">
 						<input type="checkbox" bind:checked={newApplyBasicExemption} />
-						Apply Basic Exemption (Maksuvaba tulu)
+						{m.employees_applyBasicExemption()}
 					</label>
 				</div>
 
 				{#if newApplyBasicExemption}
 					<div class="form-group">
-						<label class="label" for="basicExemption">Basic Exemption Amount (EUR/month)</label>
+						<label class="label" for="basicExemption">{m.employees_basicExemptionAmount()}</label>
 						<input
 							class="input"
 							type="number"
@@ -393,16 +397,16 @@
 							min="0"
 							max="700"
 						/>
-						<small class="help-text">Maximum 700 EUR in 2025</small>
+						<small class="help-text">{m.employees_basicExemptionHelp()}</small>
 					</div>
 				{/if}
 
 				<div class="form-group">
-					<label class="label" for="pensionRate">Funded Pension Rate (II pillar)</label>
+					<label class="label" for="pensionRate">{m.employees_fundedPensionRate()}</label>
 					<select class="input" id="pensionRate" bind:value={newFundedPensionRate}>
-						<option value="0">Not enrolled (0%)</option>
-						<option value="0.02">Standard (2%)</option>
-						<option value="0.04">Increased (4%)</option>
+						<option value="0">{m.employees_notEnrolled()}</option>
+						<option value="0.02">{m.employees_standard2()}</option>
+						<option value="0.04">{m.employees_increased4()}</option>
 					</select>
 				</div>
 
@@ -412,9 +416,9 @@
 						class="btn btn-secondary"
 						onclick={() => (showCreateEmployee = false)}
 					>
-						Cancel
+						{m.common_cancel()}
 					</button>
-					<button type="submit" class="btn btn-primary">Add Employee</button>
+					<button type="submit" class="btn btn-primary">{m.employees_addEmployee()}</button>
 				</div>
 			</form>
 		</div>
