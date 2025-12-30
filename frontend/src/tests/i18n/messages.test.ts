@@ -200,7 +200,7 @@ describe('i18n Message Completeness', () => {
 
 		for (const msgKey of requiredMessages) {
 			expect(m).toHaveProperty(msgKey);
-			expect(typeof (m as Record<string, () => string>)[msgKey]).toBe('function');
+			expect(typeof (m as unknown as Record<string, () => string>)[msgKey]).toBe('function');
 		}
 	});
 
@@ -221,7 +221,7 @@ describe('i18n Message Completeness', () => {
 
 		for (const msgKey of requiredMessages) {
 			expect(m).toHaveProperty(msgKey);
-			expect(typeof (m as Record<string, () => string>)[msgKey]).toBe('function');
+			expect(typeof (m as unknown as Record<string, () => string>)[msgKey]).toBe('function');
 		}
 	});
 
@@ -243,7 +243,7 @@ describe('i18n Message Completeness', () => {
 
 		for (const msgKey of requiredMessages) {
 			expect(m).toHaveProperty(msgKey);
-			expect(typeof (m as Record<string, () => string>)[msgKey]).toBe('function');
+			expect(typeof (m as unknown as Record<string, () => string>)[msgKey]).toBe('function');
 		}
 	});
 });
