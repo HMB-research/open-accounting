@@ -9,11 +9,8 @@ test.describe('Mobile Navigation', () => {
 	test.use({ viewport: { width: 375, height: 667 } }); // iPhone SE viewport
 
 	test.beforeEach(async ({ page }) => {
-		await page.goto('/');
-		await page.getByLabel(/email/i).fill('test@example.com');
-		await page.getByLabel(/password/i).fill('testpassword123');
-		await page.getByRole('button', { name: /login|sign in/i }).click();
-		await expect(page).toHaveURL(/dashboard/i, { timeout: 10000 });
+		// Auth is handled by global setup - just navigate
+		await page.goto('/dashboard');
 	});
 
 	test('should have accessible navigation on mobile', async ({ page }) => {
@@ -57,11 +54,7 @@ test.describe('Mobile Tables', () => {
 	test.use({ viewport: { width: 375, height: 667 } });
 
 	test.beforeEach(async ({ page }) => {
-		await page.goto('/');
-		await page.getByLabel(/email/i).fill('test@example.com');
-		await page.getByLabel(/password/i).fill('testpassword123');
-		await page.getByRole('button', { name: /login|sign in/i }).click();
-		await expect(page).toHaveURL(/dashboard/i, { timeout: 10000 });
+		// Auth is handled by global setup - no navigation needed for per-test routing
 	});
 
 	test('invoices table should be scrollable on mobile', async ({ page }) => {
@@ -97,11 +90,7 @@ test.describe('Mobile Forms', () => {
 	test.use({ viewport: { width: 375, height: 667 } });
 
 	test.beforeEach(async ({ page }) => {
-		await page.goto('/');
-		await page.getByLabel(/email/i).fill('test@example.com');
-		await page.getByLabel(/password/i).fill('testpassword123');
-		await page.getByRole('button', { name: /login|sign in/i }).click();
-		await expect(page).toHaveURL(/dashboard/i, { timeout: 10000 });
+		// Auth is handled by global setup - no navigation needed for per-test routing
 	});
 
 	test('form inputs should be full width on mobile', async ({ page }) => {
@@ -162,11 +151,7 @@ test.describe('Mobile Modals', () => {
 	test.use({ viewport: { width: 375, height: 667 } });
 
 	test.beforeEach(async ({ page }) => {
-		await page.goto('/');
-		await page.getByLabel(/email/i).fill('test@example.com');
-		await page.getByLabel(/password/i).fill('testpassword123');
-		await page.getByRole('button', { name: /login|sign in/i }).click();
-		await expect(page).toHaveURL(/dashboard/i, { timeout: 10000 });
+		// Auth is handled by global setup - no navigation needed for per-test routing
 	});
 
 	test('modal should cover screen on mobile', async ({ page }) => {
@@ -213,11 +198,8 @@ test.describe('Mobile Dashboard', () => {
 	test.use({ viewport: { width: 375, height: 667 } });
 
 	test.beforeEach(async ({ page }) => {
-		await page.goto('/');
-		await page.getByLabel(/email/i).fill('test@example.com');
-		await page.getByLabel(/password/i).fill('testpassword123');
-		await page.getByRole('button', { name: /login|sign in/i }).click();
-		await expect(page).toHaveURL(/dashboard/i, { timeout: 10000 });
+		// Auth is handled by global setup - just navigate
+		await page.goto('/dashboard');
 	});
 
 	test('summary cards should stack vertically', async ({ page }) => {
@@ -251,11 +233,8 @@ test.describe('Tablet Viewport', () => {
 	test.use({ viewport: { width: 768, height: 1024 } }); // iPad viewport
 
 	test.beforeEach(async ({ page }) => {
-		await page.goto('/');
-		await page.getByLabel(/email/i).fill('test@example.com');
-		await page.getByLabel(/password/i).fill('testpassword123');
-		await page.getByRole('button', { name: /login|sign in/i }).click();
-		await expect(page).toHaveURL(/dashboard/i, { timeout: 10000 });
+		// Auth is handled by global setup - just navigate
+		await page.goto('/dashboard');
 	});
 
 	test('should display properly on tablet', async ({ page }) => {
