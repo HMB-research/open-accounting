@@ -2,12 +2,8 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Dashboard', () => {
 	test.beforeEach(async ({ page }) => {
-		// Login before each test
-		await page.goto('/');
-		await page.getByLabel(/email/i).fill('test@example.com');
-		await page.getByLabel(/password/i).fill('testpassword123');
-		await page.getByRole('button', { name: /login|sign in/i }).click();
-		await expect(page).toHaveURL(/dashboard/i, { timeout: 10000 });
+		// Auth is handled by global setup - just navigate
+		await page.goto('/dashboard');
 	});
 
 	test('should display dashboard summary cards', async ({ page }) => {
@@ -64,11 +60,8 @@ test.describe('Dashboard - Mobile', () => {
 	test.use({ viewport: { width: 375, height: 667 } });
 
 	test.beforeEach(async ({ page }) => {
-		await page.goto('/');
-		await page.getByLabel(/email/i).fill('test@example.com');
-		await page.getByLabel(/password/i).fill('testpassword123');
-		await page.getByRole('button', { name: /login|sign in/i }).click();
-		await expect(page).toHaveURL(/dashboard/i, { timeout: 10000 });
+		// Auth is handled by global setup - just navigate
+		await page.goto('/dashboard');
 	});
 
 	test('should display in single column on mobile', async ({ page }) => {

@@ -2,14 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Contacts', () => {
 	test.beforeEach(async ({ page }) => {
-		// Login before each test
-		await page.goto('/');
-		await page.getByLabel(/email/i).fill('test@example.com');
-		await page.getByLabel(/password/i).fill('testpassword123');
-		await page.getByRole('button', { name: /login|sign in/i }).click();
-		await expect(page).toHaveURL(/dashboard/i, { timeout: 10000 });
-
-		// Navigate to contacts page
+		// Auth is handled by global setup - just navigate
 		await page.goto('/contacts');
 	});
 
@@ -115,11 +108,7 @@ test.describe('Contacts', () => {
 
 test.describe('Contacts - Validation', () => {
 	test.beforeEach(async ({ page }) => {
-		await page.goto('/');
-		await page.getByLabel(/email/i).fill('test@example.com');
-		await page.getByLabel(/password/i).fill('testpassword123');
-		await page.getByRole('button', { name: /login|sign in/i }).click();
-		await expect(page).toHaveURL(/dashboard/i, { timeout: 10000 });
+		// Auth is handled by global setup - just navigate
 		await page.goto('/contacts');
 	});
 

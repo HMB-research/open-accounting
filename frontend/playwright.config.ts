@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const authFile = './e2e/.auth/user.json';
+
 /**
  * Playwright configuration for Open Accounting E2E tests
  * See https://playwright.dev/docs/test-configuration
@@ -21,27 +23,52 @@ export default defineConfig({
 	},
 
 	projects: [
+		// Setup project - runs first to authenticate
+		{
+			name: 'setup',
+			testMatch: /auth\.setup\.ts/
+		},
 		// Desktop browsers
 		{
 			name: 'chromium',
-			use: { ...devices['Desktop Chrome'] }
+			use: {
+				...devices['Desktop Chrome'],
+				storageState: authFile
+			},
+			dependencies: ['setup']
 		},
 		{
 			name: 'firefox',
-			use: { ...devices['Desktop Firefox'] }
+			use: {
+				...devices['Desktop Firefox'],
+				storageState: authFile
+			},
+			dependencies: ['setup']
 		},
 		{
 			name: 'webkit',
-			use: { ...devices['Desktop Safari'] }
+			use: {
+				...devices['Desktop Safari'],
+				storageState: authFile
+			},
+			dependencies: ['setup']
 		},
 		// Mobile viewports
 		{
 			name: 'Mobile Chrome',
-			use: { ...devices['Pixel 5'] }
+			use: {
+				...devices['Pixel 5'],
+				storageState: authFile
+			},
+			dependencies: ['setup']
 		},
 		{
 			name: 'Mobile Safari',
-			use: { ...devices['iPhone 12'] }
+			use: {
+				...devices['iPhone 12'],
+				storageState: authFile
+			},
+			dependencies: ['setup']
 		}
 	],
 
