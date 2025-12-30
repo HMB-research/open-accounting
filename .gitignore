@@ -47,3 +47,17 @@ frontend/node_modules/
 docs/docs.go
 docs/swagger.json
 docs/swagger.yaml
+
+# Claude Code (keep plugins tracked, ignore local state)
+.claude/ralph-loop.local.md
+.claude/*.local.*
+
+# Test artifacts
+coverage/
+*.lcov
+playwright-report/
+test-results/
+
+# Database files
+*.db
+*.sqlite

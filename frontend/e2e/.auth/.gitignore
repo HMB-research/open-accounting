@@ -1,0 +1,2 @@
+# Ignore all auth state files (contains tokens)
+*.json

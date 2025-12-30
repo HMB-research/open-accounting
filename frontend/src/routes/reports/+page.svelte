@@ -636,8 +636,74 @@
 	}
 
 	@media (max-width: 768px) {
+		h1 {
+			font-size: 1.25rem;
+		}
+
+		.header {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 1rem;
+		}
+
+		.header .btn {
+			width: 100%;
+			min-height: 44px;
+			justify-content: center;
+		}
+
+		.control-row {
+			flex-direction: column;
+			gap: 0.75rem;
+		}
+
+		.control-row .form-group {
+			max-width: none;
+			width: 100%;
+		}
+
+		.control-row .form-group .input {
+			min-height: 44px;
+		}
+
+		.control-row .btn {
+			width: 100%;
+			min-height: 44px;
+			justify-content: center;
+		}
+
+		.report {
+			padding: 1rem;
+		}
+
+		.report-header h2 {
+			font-size: 1.25rem;
+		}
+
+		.report-table th,
+		.report-table td {
+			padding: 0.5rem;
+			font-size: 0.875rem;
+		}
+
+		.report-table .amount {
+			width: auto;
+		}
+
+		.account-code {
+			width: auto;
+		}
+
 		.balance-sheet-layout {
 			grid-template-columns: 1fr;
+		}
+
+		.empty-state {
+			padding: 2rem 1rem;
+		}
+
+		.summary-table {
+			max-width: 100%;
 		}
 	}
 
