@@ -571,4 +571,123 @@
 		gap: 0.5rem;
 		margin-top: 1.5rem;
 	}
+
+	/* Mobile responsive */
+	@media (max-width: 768px) {
+		h1 {
+			font-size: 1.25rem;
+		}
+
+		.entry-card {
+			padding: 1rem;
+		}
+
+		.entry-header {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 0.75rem;
+		}
+
+		.entry-info {
+			flex-wrap: wrap;
+			gap: 0.5rem;
+		}
+
+		.entry-actions {
+			width: 100%;
+			display: flex;
+			gap: 0.5rem;
+		}
+
+		.entry-actions .btn {
+			flex: 1;
+			min-height: 44px;
+			justify-content: center;
+		}
+
+		.empty-state {
+			padding: 2rem 1rem;
+		}
+
+		.form-row {
+			grid-template-columns: 1fr;
+			gap: 0;
+		}
+
+		.lines-table.edit-mode {
+			display: block;
+		}
+
+		.lines-table.edit-mode thead {
+			display: none;
+		}
+
+		.lines-table.edit-mode tbody tr {
+			display: block;
+			padding: 1rem;
+			background: var(--color-bg);
+			border-radius: 0.5rem;
+			margin-bottom: 1rem;
+			border-bottom: none;
+		}
+
+		.lines-table.edit-mode td {
+			display: block;
+			padding: 0.25rem 0;
+			border-bottom: none;
+		}
+
+		.lines-table.edit-mode td::before {
+			content: attr(data-label);
+			display: block;
+			font-size: 0.75rem;
+			font-weight: 600;
+			color: var(--color-text-muted);
+			margin-bottom: 0.25rem;
+		}
+
+		.lines-table.edit-mode .input {
+			min-height: 44px;
+		}
+
+		.lines-table.edit-mode tfoot {
+			display: block;
+		}
+
+		.lines-table.edit-mode tfoot tr {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.5rem;
+			padding: 0.75rem 0;
+		}
+
+		.lines-table.edit-mode tfoot td {
+			display: block;
+		}
+
+		.modal-backdrop {
+			padding: 0;
+			align-items: flex-end;
+		}
+
+		.modal {
+			max-width: 100%;
+			max-height: 95vh;
+			border-radius: 1rem 1rem 0 0;
+			margin: 0;
+		}
+
+		.modal h2 {
+			font-size: 1.25rem;
+		}
+
+		.modal-actions {
+			flex-direction: column-reverse;
+		}
+
+		.modal-actions button {
+			width: 100%;
+			min-height: 44px;
+		}
+	}
 </style>

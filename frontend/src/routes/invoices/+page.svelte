@@ -619,6 +619,18 @@
 			font-size: 1.5rem;
 		}
 
+		.filter-row {
+			flex-direction: column;
+		}
+
+		.filter-row select {
+			min-height: 44px;
+		}
+
+		.page-actions .btn {
+			min-height: 44px;
+		}
+
 		.modal-backdrop {
 			padding: 0;
 			align-items: flex-end;
@@ -632,6 +644,7 @@
 
 		.lines-section {
 			overflow-x: auto;
+			-webkit-overflow-scrolling: touch;
 		}
 
 		.lines-table {
@@ -648,6 +661,16 @@
 
 		.modal-actions button {
 			width: 100%;
+			min-height: 44px;
+		}
+
+		.actions {
+			flex-wrap: wrap;
+		}
+
+		.btn-small {
+			min-height: 36px;
+			padding: 0.5rem 0.75rem;
 		}
 	}
 </style>

@@ -639,4 +639,107 @@
 		gap: 0.5rem;
 		margin-top: 1.5rem;
 	}
+
+	/* Mobile responsive */
+	@media (max-width: 768px) {
+		h1 {
+			font-size: 1.25rem;
+		}
+
+		.header {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 1rem;
+		}
+
+		.header-actions {
+			width: 100%;
+			flex-direction: column;
+			gap: 0.75rem;
+		}
+
+		.header-actions .btn {
+			width: 100%;
+			min-height: 44px;
+			justify-content: center;
+		}
+
+		.checkbox-label {
+			min-height: 44px;
+		}
+
+		.table th,
+		.table td {
+			padding: 0.5rem;
+			font-size: 0.875rem;
+		}
+
+		.actions {
+			flex-direction: column;
+			gap: 0.5rem;
+		}
+
+		.actions .btn {
+			min-height: 44px;
+			width: 100%;
+			justify-content: center;
+		}
+
+		.btn-sm {
+			padding: 0.5rem 0.75rem;
+			font-size: 0.875rem;
+		}
+
+		.empty-state {
+			padding: 2rem 1rem;
+		}
+
+		.modal-backdrop {
+			padding: 0;
+			align-items: flex-end;
+		}
+
+		.modal {
+			max-width: 100%;
+			max-height: 95vh;
+			border-radius: 1rem 1rem 0 0;
+			margin: 0;
+		}
+
+		.modal h2 {
+			font-size: 1.25rem;
+		}
+
+		.form-row {
+			grid-template-columns: 1fr;
+			gap: 0;
+		}
+
+		.line-row {
+			grid-template-columns: 1fr;
+			gap: 0.5rem;
+			padding: 0.75rem;
+			background: var(--color-bg);
+			border-radius: 0.5rem;
+			margin-bottom: 1rem;
+		}
+
+		.line-row input {
+			min-height: 44px;
+		}
+
+		.line-row .btn {
+			min-height: 44px;
+			width: 100%;
+		}
+
+		.modal-actions {
+			flex-direction: column-reverse;
+		}
+
+		.modal-actions button {
+			width: 100%;
+			min-height: 44px;
+		}
+	}
 </style>
