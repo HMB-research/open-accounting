@@ -250,3 +250,14 @@ func TestPayment_EmptyAllocations(t *testing.T) {
 	assert.True(t, payment.TotalAllocated().IsZero())
 	assert.True(t, payment.UnallocatedAmount().Equal(decimal.NewFromFloat(1000)))
 }
+
+func TestNewService(t *testing.T) {
+	service := NewService(nil, nil)
+	assert.NotNil(t, service)
+}
+
+func TestNewService_WithNilDependencies(t *testing.T) {
+	// Service can be created with nil dependencies for testing
+	service := NewService(nil, nil)
+	assert.NotNil(t, service, "NewService should return a non-nil service even with nil dependencies")
+}
