@@ -303,6 +303,51 @@ npm run check
 3. Browser language (`navigator.language`)
 4. Default: Estonian (`et`)
 
+## Testing
+
+### Backend Tests
+Go standard library testing with race detection:
+
+```bash
+go test -race -cover ./...
+```
+
+### Frontend Tests
+Vitest with jsdom environment for unit and integration tests:
+
+```bash
+cd frontend
+
+# Run all tests
+npm test
+
+# Watch mode
+npm run test:watch
+
+# Coverage report
+npm run test:coverage
+```
+
+#### Test Structure
+```
+frontend/src/tests/
+├── setup.ts                   # Test environment setup
+├── mocks/
+│   └── app/                   # SvelteKit mocks
+│       ├── navigation.ts      # $app/navigation mock
+│       └── stores.ts          # $app/stores mock
+├── i18n/
+│   ├── messages.test.ts       # Translation value tests
+│   └── translation-completeness.test.ts  # Key parity tests
+└── components/
+    └── LanguageSelector.test.ts  # Component tests
+```
+
+#### i18n Test Coverage
+- **Messages Tests**: Verify translations return expected values for both locales
+- **Completeness Tests**: Ensure all keys exist in both English and Estonian
+- **Placeholder Tests**: Verify parameterized translations have matching placeholders
+
 ## Performance Considerations
 
 1. **Connection Pooling** - pgxpool for efficient database connections
