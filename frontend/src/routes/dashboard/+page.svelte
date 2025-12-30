@@ -362,6 +362,8 @@
 		justify-content: space-between;
 		align-items: center;
 		margin-bottom: 1.5rem;
+		gap: 1rem;
+		flex-wrap: wrap;
 	}
 
 	h1 {
@@ -371,6 +373,89 @@
 	.tenant-selector {
 		margin-bottom: 1.5rem;
 		max-width: 300px;
+	}
+
+	/* Mobile responsive styles */
+	@media (max-width: 768px) {
+		.header {
+			flex-direction: column;
+			align-items: stretch;
+		}
+
+		.header .btn {
+			width: 100%;
+			justify-content: center;
+			min-height: 44px; /* Touch target */
+		}
+
+		h1 {
+			font-size: 1.5rem;
+		}
+
+		.tenant-selector {
+			max-width: 100%;
+		}
+
+		.summary-grid {
+			grid-template-columns: 1fr;
+		}
+
+		.status-row {
+			flex-wrap: wrap;
+			gap: 1rem;
+		}
+
+		.status-item {
+			flex: 1;
+			min-width: 80px;
+		}
+
+		.chart-container {
+			height: 250px;
+		}
+
+		.links-row .btn {
+			flex: 1 1 calc(50% - 0.25rem);
+			min-width: 120px;
+			min-height: 44px;
+			justify-content: center;
+		}
+
+		.modal {
+			margin: 0;
+			max-width: 100%;
+			border-radius: 1rem 1rem 0 0;
+			max-height: 90vh;
+		}
+
+		.modal-backdrop {
+			align-items: flex-end;
+			padding: 0;
+		}
+
+		.modal-actions {
+			flex-direction: column;
+		}
+
+		.modal-actions .btn {
+			width: 100%;
+			min-height: 44px;
+			justify-content: center;
+		}
+	}
+
+	@media (max-width: 480px) {
+		h1 {
+			font-size: 1.25rem;
+		}
+
+		.summary-value {
+			font-size: 1.25rem;
+		}
+
+		.links-row .btn {
+			flex: 1 1 100%;
+		}
 	}
 
 	.empty-state {

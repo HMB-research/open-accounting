@@ -379,6 +379,20 @@ textarea {
 		justify-content: center;
 	}
 
+	/* Touch-friendly button sizes (minimum 44px touch target) */
+	.btn {
+		min-height: 44px;
+		padding: 0.75rem 1rem;
+	}
+
+	/* Touch-friendly input sizes */
+	.input,
+	select,
+	textarea {
+		min-height: 44px;
+		padding: 0.75rem;
+	}
+
 	/* Form layouts */
 	.form-row {
 		flex-direction: column;

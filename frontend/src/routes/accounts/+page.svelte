@@ -283,4 +283,45 @@
 		gap: 0.5rem;
 		margin-top: 1.5rem;
 	}
+
+	/* Mobile responsive */
+	@media (max-width: 768px) {
+		h1 {
+			font-size: 1.25rem;
+		}
+
+		.account-section {
+			padding: 1rem;
+		}
+
+		.account-section h2 {
+			font-size: 1rem;
+		}
+
+		.modal-backdrop {
+			padding: 0;
+			align-items: flex-end;
+		}
+
+		.modal {
+			max-width: 100%;
+			max-height: 95vh;
+			border-radius: 1rem 1rem 0 0;
+			margin: 0;
+			overflow-y: auto;
+		}
+
+		.modal h2 {
+			font-size: 1.25rem;
+		}
+
+		.modal-actions {
+			flex-direction: column-reverse;
+		}
+
+		.modal-actions button {
+			width: 100%;
+			min-height: 44px;
+		}
+	}
 </style>
