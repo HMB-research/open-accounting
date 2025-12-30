@@ -1401,6 +1401,13 @@ export interface RecurringInvoice {
 	created_at: string;
 	created_by: string;
 	updated_at: string;
+	// Email configuration
+	send_email_on_generation: boolean;
+	email_template_type?: string;
+	recipient_email_override?: string;
+	attach_pdf_to_email: boolean;
+	email_subject_override?: string;
+	email_message?: string;
 }
 
 export interface RecurringInvoiceLine {
@@ -1429,6 +1436,13 @@ export interface CreateRecurringInvoiceRequest {
 	reference?: string;
 	notes?: string;
 	lines: CreateRecurringInvoiceLineRequest[];
+	// Email configuration
+	send_email_on_generation?: boolean;
+	email_template_type?: string;
+	recipient_email_override?: string;
+	attach_pdf_to_email?: boolean;
+	email_subject_override?: string;
+	email_message?: string;
 }
 
 export interface CreateRecurringInvoiceLineRequest {
@@ -1451,6 +1465,13 @@ export interface UpdateRecurringInvoiceRequest {
 	reference?: string;
 	notes?: string;
 	lines?: CreateRecurringInvoiceLineRequest[];
+	// Email configuration
+	send_email_on_generation?: boolean;
+	email_template_type?: string;
+	recipient_email_override?: string;
+	attach_pdf_to_email?: boolean;
+	email_subject_override?: string;
+	email_message?: string;
 }
 
 export interface CreateFromInvoiceRequest {
@@ -1465,6 +1486,11 @@ export interface GenerationResult {
 	recurring_invoice_id: string;
 	generated_invoice_id: string;
 	generated_invoice_number: string;
+	// Email delivery status
+	email_sent: boolean;
+	email_status?: string;
+	email_log_id?: string;
+	email_error?: string;
 }
 
 // Email types

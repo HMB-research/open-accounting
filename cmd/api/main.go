@@ -29,6 +29,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/pdf"
 	"github.com/HMB-research/open-accounting/internal/plugin"
 	"github.com/HMB-research/open-accounting/internal/recurring"
+	"github.com/HMB-research/open-accounting/internal/scheduler"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -72,8 +73,8 @@ func main() {
 	paymentsService := payments.NewService(pool, invoicingService)
 	pdfService := pdf.NewService()
 	analyticsService := analytics.NewService(pool)
-	recurringService := recurring.NewService(pool, invoicingService)
 	emailService := email.NewService(pool)
+	recurringService := recurring.NewService(pool, invoicingService, emailService, pdfService, tenantService, contactsService)
 	bankingService := banking.NewService(pool)
 	taxService := tax.NewService(pool)
 	payrollService := payroll.NewService(pool)
@@ -82,6 +83,19 @@ func main() {
 	// Load enabled plugins on startup
 	if err := pluginService.LoadEnabledPlugins(ctx); err != nil {
 		log.Warn().Err(err).Msg("Failed to load some plugins")
+	}
+
+	// Initialize and start scheduler for recurring invoice generation
+	schedulerConfig := scheduler.DefaultConfig()
+	if schedule := os.Getenv("RECURRING_INVOICE_SCHEDULE"); schedule != "" {
+		schedulerConfig.RecurringInvoiceSchedule = schedule
+	}
+	if os.Getenv("SCHEDULER_ENABLED") == "false" {
+		schedulerConfig.Enabled = false
+	}
+	invoiceScheduler := scheduler.NewScheduler(pool, recurringService, schedulerConfig)
+	if err := invoiceScheduler.Start(); err != nil {
+		log.Warn().Err(err).Msg("Failed to start scheduler")
 	}
 
 	// Create handlers
@@ -121,6 +135,10 @@ func main() {
 		<-sigChan
 
 		log.Info().Msg("Shutting down server...")
+
+		// Stop the scheduler first
+		schedulerCtx := invoiceScheduler.Stop()
+		<-schedulerCtx.Done()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
