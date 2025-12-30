@@ -171,15 +171,15 @@ func TestDefaultAttachPDFToEmail(t *testing.T) {
 func TestEmailConfigurationRequest(t *testing.T) {
 	// Test that CreateRecurringInvoiceRequest properly handles email configuration
 	tests := []struct {
-		name                   string
-		sendEmail              bool
-		templateType           string
-		recipientOverride      string
-		attachPDF              *bool
-		subjectOverride        string
-		message                string
-		expectedSendEmail      bool
-		expectedAttachPDF      bool
+		name              string
+		sendEmail         bool
+		templateType      string
+		recipientOverride string
+		attachPDF         *bool
+		subjectOverride   string
+		message           string
+		expectedSendEmail bool
+		expectedAttachPDF bool
 	}{
 		{
 			name:              "email disabled",
@@ -364,12 +364,12 @@ func TestUpdateEmailConfigurationRequest(t *testing.T) {
 func TestGenerationResultEmailFields(t *testing.T) {
 	// Test that GenerationResult properly represents email delivery outcomes
 	tests := []struct {
-		name         string
-		emailSent    bool
-		emailStatus  string
-		emailLogID   string
-		emailError   string
-		description  string
+		name        string
+		emailSent   bool
+		emailStatus string
+		emailLogID  string
+		emailError  string
+		description string
 	}{
 		{
 			name:        "successful email delivery",

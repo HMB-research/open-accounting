@@ -64,7 +64,7 @@
 			recurringInvoices = invoicesData;
 			contacts = contactsData;
 		} catch (err) {
-			error = err instanceof Error ? err.message : m.recurring_failedToLoad();
+			error = err instanceof Error ? err.message : String(m.recurring_failedToLoad());
 		}
 	}
 
@@ -77,14 +77,14 @@
 			}
 			await loadData();
 		} catch (err) {
-			error = err instanceof Error ? err.message : m.recurring_failedToUpdateStatus();
+			error = err instanceof Error ? err.message : String(m.recurring_failedToUpdateStatus());
 		}
 	}
 
 	async function handleGenerate(invoice: RecurringInvoice) {
 		try {
 			const result = await api.generateRecurringInvoice(selectedTenantId, invoice.id);
-			let message = m.recurring_generatedInvoice({ number: result.generated_invoice_number });
+			let message: string = m.recurring_generatedInvoice({ number: result.generated_invoice_number });
 			if (result.email_sent) {
 				message += '\n' + m.recurring_emailSent();
 			} else if (result.email_status === 'FAILED') {
@@ -95,7 +95,7 @@
 			alert(message);
 			await loadData();
 		} catch (err) {
-			error = err instanceof Error ? err.message : m.recurring_failedToGenerate();
+			error = err instanceof Error ? err.message : String(m.recurring_failedToGenerate());
 		}
 	}
 
@@ -105,7 +105,7 @@
 			await api.deleteRecurringInvoice(selectedTenantId, invoice.id);
 			await loadData();
 		} catch (err) {
-			error = err instanceof Error ? err.message : m.recurring_failedToDelete();
+			error = err instanceof Error ? err.message : String(m.recurring_failedToDelete());
 		}
 	}
 
@@ -145,7 +145,7 @@
 			resetForm();
 			await loadData();
 		} catch (err) {
-			error = err instanceof Error ? err.message : m.recurring_failedToCreate();
+			error = err instanceof Error ? err.message : String(m.recurring_failedToCreate());
 		}
 	}
 

@@ -669,7 +669,7 @@ func TestRecurringInvoice_EmailConfiguration(t *testing.T) {
 			attachPDFToEmail:      false,
 		},
 		{
-			name:                 "email enabled with custom subject and message",
+			name:                  "email enabled with custom subject and message",
 			sendEmailOnGeneration: true,
 			emailTemplateType:     "INVOICE_SEND",
 			attachPDFToEmail:      true,
@@ -824,10 +824,10 @@ func TestCreateRecurringInvoiceRequest_EmailFields(t *testing.T) {
 	attachPDFFalse := false
 
 	tests := []struct {
-		name              string
-		req               CreateRecurringInvoiceRequest
-		expectSendEmail   bool
-		expectAttachPDF   bool
+		name            string
+		req             CreateRecurringInvoiceRequest
+		expectSendEmail bool
+		expectAttachPDF bool
 	}{
 		{
 			name: "default values",
