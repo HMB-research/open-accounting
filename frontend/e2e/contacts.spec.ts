@@ -64,7 +64,8 @@ test.describe('Contacts - Create Flow', () => {
 			.or(page.getByRole('link', { name: /create|new|add/i }))
 			.first();
 
-		if (await createBtn.isVisible()) {
+		const isBtnVisible = await createBtn.isVisible().catch(() => false);
+		if (isBtnVisible) {
 			await createBtn.click();
 
 			// Should show form or modal
@@ -72,6 +73,9 @@ test.describe('Contacts - Create Flow', () => {
 			const nameField = await page.getByLabel(/name/i).isVisible().catch(() => false);
 
 			expect(formVisible || nameField || page.url().includes('new')).toBeTruthy();
+		} else {
+			// No create button means no tenant - test passes by verifying page loaded
+			await expect(page.getByRole('heading', { name: /contacts/i })).toBeVisible();
 		}
 	});
 
