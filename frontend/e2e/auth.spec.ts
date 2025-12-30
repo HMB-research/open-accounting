@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Authentication', () => {
+	// Clear storageState - this test suite tests unauthenticated scenarios
+	test.use({ storageState: { cookies: [], origins: [] } });
+
 	test.beforeEach(async ({ page }) => {
 		await page.goto('/');
 	});
