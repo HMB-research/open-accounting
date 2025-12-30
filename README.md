@@ -101,9 +101,11 @@ Open Accounting is a **self-hosted, multi-tenant accounting platform** designed 
 |-------|------------|
 | **Backend** | Go 1.22+, Chi router, pgx/v5 |
 | **Frontend** | SvelteKit 2, Svelte 5, TypeScript |
+| **i18n** | Paraglide-JS (compile-time translations) |
 | **Database** | PostgreSQL 16+ |
 | **Auth** | JWT with access/refresh tokens |
 | **API Docs** | Swagger/OpenAPI |
+| **Testing** | Go test, Vitest (frontend) |
 | **Container** | Docker, Docker Compose |
 
 ---
@@ -288,6 +290,7 @@ GET        /api/v1/tenants/{id}/plugins           # Tenant plugins
 - [x] Payroll module with Estonian TSD declarations
 - [x] API rate limiting
 - [x] Plugin marketplace system
+- [x] Internationalization (English/Estonian) with Paraglide-JS
 
 ### Planned 📋
 - [ ] E-invoice support (Peppol) — *requires external Access Point*
