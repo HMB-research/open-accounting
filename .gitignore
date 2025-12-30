@@ -48,8 +48,9 @@ docs/docs.go
 docs/swagger.json
 docs/swagger.yaml
 
-# Claude Code
-.claude/
+# Claude Code (keep plugins tracked, ignore local state)
+.claude/ralph-loop.local.md
+.claude/*.local.*
 
 # Test artifacts
 coverage/
