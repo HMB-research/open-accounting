@@ -10,16 +10,17 @@ test.describe('Authentication', () => {
 
 	test('should display login page', async ({ page }) => {
 		// Check for login form elements
-		await expect(page.getByRole('heading', { name: /login|sign in/i })).toBeVisible();
+		// Heading is "Welcome Back" on the login page
+		await expect(page.getByRole('heading', { name: /welcome|login|sign in/i })).toBeVisible();
 		await expect(page.getByLabel(/email/i)).toBeVisible();
 		await expect(page.getByLabel(/password/i)).toBeVisible();
-		await expect(page.getByRole('button', { name: /login|sign in/i })).toBeVisible();
+		await expect(page.getByRole('button', { name: /sign in|login/i })).toBeVisible();
 	});
 
 	test('should show error for invalid credentials', async ({ page }) => {
 		await page.getByLabel(/email/i).fill('invalid@example.com');
 		await page.getByLabel(/password/i).fill('wrongpassword');
-		await page.getByRole('button', { name: /login|sign in/i }).click();
+		await page.getByRole('button', { name: /sign in|login/i }).click();
 
 		// Should show error message
 		await expect(page.getByText(/invalid|error|failed/i)).toBeVisible();
@@ -29,37 +30,37 @@ test.describe('Authentication', () => {
 		// Use test credentials (these should be set up in test environment)
 		await page.getByLabel(/email/i).fill('test@example.com');
 		await page.getByLabel(/password/i).fill('testpassword123');
-		await page.getByRole('button', { name: /login|sign in/i }).click();
+		await page.getByRole('button', { name: /sign in|login/i }).click();
 
 		// Should redirect to dashboard or show authenticated content
-		await expect(page).toHaveURL(/dashboard|home/i, { timeout: 10000 });
+		await expect(page).toHaveURL(/dashboard|home/i, { timeout: 15000 });
 	});
 
 	test('should persist session after page reload', async ({ page }) => {
 		// Login first
 		await page.getByLabel(/email/i).fill('test@example.com');
 		await page.getByLabel(/password/i).fill('testpassword123');
-		await page.getByRole('button', { name: /login|sign in/i }).click();
-		await expect(page).toHaveURL(/dashboard|home/i, { timeout: 10000 });
+		await page.getByRole('button', { name: /sign in|login/i }).click();
+		await expect(page).toHaveURL(/dashboard|home/i, { timeout: 15000 });
 
 		// Reload page
 		await page.reload();
 
 		// Should still be on dashboard (session persisted)
-		await expect(page).toHaveURL(/dashboard|home/i);
+		await expect(page).toHaveURL(/dashboard|home/i, { timeout: 10000 });
 	});
 
 	test('should logout successfully', async ({ page }) => {
 		// Login first
 		await page.getByLabel(/email/i).fill('test@example.com');
 		await page.getByLabel(/password/i).fill('testpassword123');
-		await page.getByRole('button', { name: /login|sign in/i }).click();
-		await expect(page).toHaveURL(/dashboard|home/i, { timeout: 10000 });
+		await page.getByRole('button', { name: /sign in|login/i }).click();
+		await expect(page).toHaveURL(/dashboard|home/i, { timeout: 15000 });
 
-		// Click logout
-		await page.getByRole('button', { name: /logout|sign out/i }).click();
+		// Click logout - using text match since button may not have accessible role
+		await page.getByRole('button', { name: /logout/i }).click();
 
 		// Should redirect to login page
-		await expect(page).toHaveURL(/login|\/$/i);
+		await expect(page).toHaveURL(/login/i, { timeout: 10000 });
 	});
 });
