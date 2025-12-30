@@ -129,18 +129,18 @@ func TestScheduler_StopNotRunning(t *testing.T) {
 	config := DefaultConfig()
 	scheduler := NewScheduler(nil, nil, config)
 
-	// Stop without starting should not panic and return cancelled context
+	// Stop without starting should not panic and return canceled context
 	ctx := scheduler.Stop()
 	if ctx == nil {
 		t.Error("Stop() returned nil context")
 	}
 
-	// Context should be cancelled
+	// Context should be canceled
 	select {
 	case <-ctx.Done():
 		// Expected
 	default:
-		t.Error("context should be cancelled when stopping non-running scheduler")
+		t.Error("context should be canceled when stopping non-running scheduler")
 	}
 }
 

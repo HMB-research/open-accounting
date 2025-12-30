@@ -214,8 +214,8 @@ type GenerationResult struct {
 	GeneratedInvoiceNumber string `json:"generated_invoice_number"`
 
 	// Email delivery status
-	EmailSent    bool   `json:"email_sent"`
-	EmailStatus  string `json:"email_status,omitempty"`  // SENT, FAILED, SKIPPED, NO_CONFIG
-	EmailLogID   string `json:"email_log_id,omitempty"`
-	EmailError   string `json:"email_error,omitempty"`
+	EmailSent   bool   `json:"email_sent"`
+	EmailStatus string `json:"email_status,omitempty"` // SENT, FAILED, SKIPPED, NO_CONFIG
+	EmailLogID  string `json:"email_log_id,omitempty"`
+	EmailError  string `json:"email_error,omitempty"`
 }
