@@ -584,3 +584,18 @@ func TestReconciliationStatusValues(t *testing.T) {
 		}
 	}
 }
+
+func TestNewService(t *testing.T) {
+	service := NewService(nil)
+	if service == nil {
+		t.Error("NewService should return a non-nil service")
+	}
+}
+
+func TestNewService_WithNilPool(t *testing.T) {
+	// Service can be created without a pool for testing
+	service := NewService(nil)
+	if service == nil {
+		t.Error("NewService should return a non-nil service even with nil pool")
+	}
+}

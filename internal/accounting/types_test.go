@@ -267,3 +267,14 @@ func TestDecimalPrecision(t *testing.T) {
 		assert.True(t, result.Round(8).Equal(expected))
 	})
 }
+
+func TestNewService(t *testing.T) {
+	service := NewService(nil)
+	assert.NotNil(t, service)
+}
+
+func TestNewService_WithNilPool(t *testing.T) {
+	// Service can be created without a pool for testing
+	service := NewService(nil)
+	assert.NotNil(t, service, "NewService should return a non-nil service even with nil pool")
+}
