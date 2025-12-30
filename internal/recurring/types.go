@@ -41,6 +41,14 @@ type RecurringInvoice struct {
 	CreatedAt          time.Time              `json:"created_at"`
 	CreatedBy          string                 `json:"created_by"`
 	UpdatedAt          time.Time              `json:"updated_at"`
+
+	// Email configuration for automatic sending
+	SendEmailOnGeneration  bool   `json:"send_email_on_generation"`
+	EmailTemplateType      string `json:"email_template_type,omitempty"`
+	RecipientEmailOverride string `json:"recipient_email_override,omitempty"`
+	AttachPDFToEmail       bool   `json:"attach_pdf_to_email"`
+	EmailSubjectOverride   string `json:"email_subject_override,omitempty"`
+	EmailMessage           string `json:"email_message,omitempty"`
 }
 
 // RecurringInvoiceLine represents a line item on a recurring invoice
@@ -146,6 +154,14 @@ type CreateRecurringInvoiceRequest struct {
 	Notes            string                              `json:"notes,omitempty"`
 	Lines            []CreateRecurringInvoiceLineRequest `json:"lines"`
 	UserID           string                              `json:"-"`
+
+	// Email configuration
+	SendEmailOnGeneration  bool   `json:"send_email_on_generation"`
+	EmailTemplateType      string `json:"email_template_type,omitempty"`
+	RecipientEmailOverride string `json:"recipient_email_override,omitempty"`
+	AttachPDFToEmail       *bool  `json:"attach_pdf_to_email,omitempty"` // Pointer to allow default true
+	EmailSubjectOverride   string `json:"email_subject_override,omitempty"`
+	EmailMessage           string `json:"email_message,omitempty"`
 }
 
 // CreateRecurringInvoiceLineRequest is a line in the create request
@@ -170,6 +186,14 @@ type UpdateRecurringInvoiceRequest struct {
 	Reference        *string                             `json:"reference,omitempty"`
 	Notes            *string                             `json:"notes,omitempty"`
 	Lines            []CreateRecurringInvoiceLineRequest `json:"lines,omitempty"`
+
+	// Email configuration
+	SendEmailOnGeneration  *bool   `json:"send_email_on_generation,omitempty"`
+	EmailTemplateType      *string `json:"email_template_type,omitempty"`
+	RecipientEmailOverride *string `json:"recipient_email_override,omitempty"`
+	AttachPDFToEmail       *bool   `json:"attach_pdf_to_email,omitempty"`
+	EmailSubjectOverride   *string `json:"email_subject_override,omitempty"`
+	EmailMessage           *string `json:"email_message,omitempty"`
 }
 
 // CreateFromInvoiceRequest creates a recurring invoice from an existing invoice
@@ -188,4 +212,10 @@ type GenerationResult struct {
 	RecurringInvoiceID     string `json:"recurring_invoice_id"`
 	GeneratedInvoiceID     string `json:"generated_invoice_id"`
 	GeneratedInvoiceNumber string `json:"generated_invoice_number"`
+
+	// Email delivery status
+	EmailSent    bool   `json:"email_sent"`
+	EmailStatus  string `json:"email_status,omitempty"`  // SENT, FAILED, SKIPPED, NO_CONFIG
+	EmailLogID   string `json:"email_log_id,omitempty"`
+	EmailError   string `json:"email_error,omitempty"`
 }

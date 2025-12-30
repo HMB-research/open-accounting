@@ -31,6 +31,13 @@
 		{ description: string; quantity: string; unit_price: string; vat_rate: string }[]
 	>([{ description: '', quantity: '1', unit_price: '', vat_rate: '22' }]);
 
+	// Email configuration state
+	let sendEmailOnGeneration = $state(false);
+	let attachPdfToEmail = $state(true);
+	let recipientEmailOverride = $state('');
+	let emailSubjectOverride = $state('');
+	let emailMessage = $state('');
+
 	onMount(async () => {
 		const urlParams = new URLSearchParams(window.location.search);
 		selectedTenantId = urlParams.get('tenant') || '';
@@ -77,7 +84,15 @@
 	async function handleGenerate(invoice: RecurringInvoice) {
 		try {
 			const result = await api.generateRecurringInvoice(selectedTenantId, invoice.id);
-			alert(m.recurring_generatedInvoice({ number: result.generated_invoice_number }));
+			let message = m.recurring_generatedInvoice({ number: result.generated_invoice_number });
+			if (result.email_sent) {
+				message += '\n' + m.recurring_emailSent();
+			} else if (result.email_status === 'FAILED') {
+				message += '\n' + m.recurring_emailFailed() + (result.email_error ? ': ' + result.email_error : '');
+			} else if (result.email_status === 'SKIPPED') {
+				message += '\n' + m.recurring_emailSkipped();
+			}
+			alert(message);
 			await loadData();
 		} catch (err) {
 			error = err instanceof Error ? err.message : m.recurring_failedToGenerate();
@@ -111,7 +126,13 @@
 				quantity: l.quantity,
 				unit_price: l.unit_price,
 				vat_rate: l.vat_rate
-			}))
+			})),
+			// Email configuration
+			send_email_on_generation: sendEmailOnGeneration,
+			attach_pdf_to_email: attachPdfToEmail,
+			recipient_email_override: recipientEmailOverride || undefined,
+			email_subject_override: emailSubjectOverride || undefined,
+			email_message: emailMessage || undefined
 		};
 
 		if (newEndDate) {
@@ -138,6 +159,12 @@
 		newReference = '';
 		newNotes = '';
 		newLines = [{ description: '', quantity: '1', unit_price: '', vat_rate: '22' }];
+		// Reset email config
+		sendEmailOnGeneration = false;
+		attachPdfToEmail = true;
+		recipientEmailOverride = '';
+		emailSubjectOverride = '';
+		emailMessage = '';
 	}
 
 	function addLine() {
@@ -216,6 +243,7 @@
 						<th>{m.recurring_frequency()}</th>
 						<th>{m.recurring_nextGeneration()}</th>
 						<th>{m.recurring_generated()}</th>
+						<th>{m.common_email()}</th>
 						<th>{m.common_status()}</th>
 						<th>{m.common_actions()}</th>
 					</tr>
@@ -233,6 +261,15 @@
 							<td>{frequencyLabel(invoice.frequency)}</td>
 							<td>{formatDate(invoice.next_generation_date)}</td>
 							<td>{invoice.generated_count}</td>
+							<td>
+								{#if invoice.send_email_on_generation}
+									<span class="badge badge-info" title={m.recurring_emailEnabled()}>
+										{invoice.attach_pdf_to_email ? '📧📎' : '📧'}
+									</span>
+								{:else}
+									<span class="text-muted">-</span>
+								{/if}
+							</td>
 							<td>
 								<span class="badge" class:badge-success={invoice.is_active} class:badge-muted={!invoice.is_active}>
 									{invoice.is_active ? m.recurring_active() : m.recurring_paused()}
@@ -388,6 +425,56 @@
 				{/each}
 				<button type="button" class="btn btn-secondary" onclick={addLine}>{m.recurring_addLine()}</button>
 
+				<h3>{m.recurring_emailSettings()}</h3>
+				<div class="form-group">
+					<label class="checkbox-label">
+						<input type="checkbox" bind:checked={sendEmailOnGeneration} />
+						{m.recurring_sendEmailOnGeneration()}
+					</label>
+				</div>
+
+				{#if sendEmailOnGeneration}
+					<div class="form-group">
+						<label class="checkbox-label">
+							<input type="checkbox" bind:checked={attachPdfToEmail} />
+							{m.recurring_attachPdf()}
+						</label>
+					</div>
+
+					<div class="form-group">
+						<label class="label" for="recipient_override">{m.recurring_recipientOverride()}</label>
+						<input
+							class="input"
+							type="email"
+							id="recipient_override"
+							bind:value={recipientEmailOverride}
+							placeholder={m.recurring_recipientOverridePlaceholder()}
+						/>
+					</div>
+
+					<div class="form-group">
+						<label class="label" for="email_subject">{m.recurring_emailSubject()}</label>
+						<input
+							class="input"
+							type="text"
+							id="email_subject"
+							bind:value={emailSubjectOverride}
+							placeholder={m.recurring_emailSubjectPlaceholder()}
+						/>
+					</div>
+
+					<div class="form-group">
+						<label class="label" for="email_message">{m.recurring_emailMessageLabel()}</label>
+						<textarea
+							class="input"
+							id="email_message"
+							bind:value={emailMessage}
+							rows="3"
+							placeholder={m.recurring_emailMessagePlaceholder()}
+						></textarea>
+					</div>
+				{/if}
+
 				<div class="modal-actions">
 					<button
 						type="button"
@@ -485,6 +572,11 @@
 	.badge-muted {
 		background: var(--color-border);
 		color: var(--color-text-muted);
+	}
+
+	.badge-info {
+		background: rgba(59, 130, 246, 0.1);
+		color: #3b82f6;
 	}
 
 	.actions {

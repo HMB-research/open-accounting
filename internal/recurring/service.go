@@ -10,20 +10,32 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 
+	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/pdf"
+	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
 // Service provides recurring invoice operations
 type Service struct {
 	db        *pgxpool.Pool
 	invoicing *invoicing.Service
+	email     *email.Service
+	pdf       *pdf.Service
+	tenant    *tenant.Service
+	contacts  *contacts.Service
 }
 
 // NewService creates a new recurring invoice service
-func NewService(db *pgxpool.Pool, invoicingService *invoicing.Service) *Service {
+func NewService(db *pgxpool.Pool, invoicingService *invoicing.Service, emailService *email.Service, pdfService *pdf.Service, tenantService *tenant.Service, contactsService *contacts.Service) *Service {
 	return &Service{
 		db:        db,
 		invoicing: invoicingService,
+		email:     emailService,
+		pdf:       pdfService,
+		tenant:    tenantService,
+		contacts:  contactsService,
 	}
 }
 
@@ -82,6 +94,18 @@ func (s *Service) Create(ctx context.Context, tenantID, schemaName string, req *
 		return nil, err
 	}
 
+	// Default AttachPDFToEmail to true if not specified
+	attachPDF := true
+	if req.AttachPDFToEmail != nil {
+		attachPDF = *req.AttachPDFToEmail
+	}
+
+	// Default email template type
+	emailTemplateType := req.EmailTemplateType
+	if emailTemplateType == "" {
+		emailTemplateType = "INVOICE_SEND"
+	}
+
 	ri := &RecurringInvoice{
 		ID:                 uuid.New().String(),
 		TenantID:           tenantID,
@@ -101,6 +125,14 @@ func (s *Service) Create(ctx context.Context, tenantID, schemaName string, req *
 		CreatedAt:          time.Now(),
 		CreatedBy:          req.UserID,
 		UpdatedAt:          time.Now(),
+
+		// Email configuration
+		SendEmailOnGeneration:  req.SendEmailOnGeneration,
+		EmailTemplateType:      emailTemplateType,
+		RecipientEmailOverride: req.RecipientEmailOverride,
+		AttachPDFToEmail:       attachPDF,
+		EmailSubjectOverride:   req.EmailSubjectOverride,
+		EmailMessage:           req.EmailMessage,
 	}
 
 	if ri.Currency == "" {
@@ -149,12 +181,16 @@ func (s *Service) Create(ctx context.Context, tenantID, schemaName string, req *
 		INSERT INTO %s.recurring_invoices (
 			id, tenant_id, name, contact_id, invoice_type, currency, frequency,
 			start_date, end_date, next_generation_date, payment_terms_days,
-			reference, notes, is_active, generated_count, created_at, created_by, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+			reference, notes, is_active, generated_count, created_at, created_by, updated_at,
+			send_email_on_generation, email_template_type, recipient_email_override,
+			attach_pdf_to_email, email_subject_override, email_message
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
 	`, schemaName),
 		ri.ID, ri.TenantID, ri.Name, ri.ContactID, ri.InvoiceType, ri.Currency, ri.Frequency,
 		ri.StartDate, ri.EndDate, ri.NextGenerationDate, ri.PaymentTermsDays,
 		ri.Reference, ri.Notes, ri.IsActive, ri.GeneratedCount, ri.CreatedAt, ri.CreatedBy, ri.UpdatedAt,
+		ri.SendEmailOnGeneration, ri.EmailTemplateType, ri.RecipientEmailOverride,
+		ri.AttachPDFToEmail, ri.EmailSubjectOverride, ri.EmailMessage,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert recurring invoice: %w", err)
@@ -234,7 +270,10 @@ func (s *Service) GetByID(ctx context.Context, tenantID, schemaName, id string) 
 		SELECT r.id, r.tenant_id, r.name, r.contact_id, c.name as contact_name,
 		       r.invoice_type, r.currency, r.frequency, r.start_date, r.end_date,
 		       r.next_generation_date, r.payment_terms_days, r.reference, r.notes,
-		       r.is_active, r.last_generated_at, r.generated_count, r.created_at, r.created_by, r.updated_at
+		       r.is_active, r.last_generated_at, r.generated_count, r.created_at, r.created_by, r.updated_at,
+		       COALESCE(r.send_email_on_generation, false), COALESCE(r.email_template_type, 'INVOICE_SEND'),
+		       COALESCE(r.recipient_email_override, ''), COALESCE(r.attach_pdf_to_email, true),
+		       COALESCE(r.email_subject_override, ''), COALESCE(r.email_message, '')
 		FROM %s.recurring_invoices r
 		LEFT JOIN %s.contacts c ON r.contact_id = c.id
 		WHERE r.id = $1 AND r.tenant_id = $2
@@ -243,6 +282,8 @@ func (s *Service) GetByID(ctx context.Context, tenantID, schemaName, id string) 
 		&ri.InvoiceType, &ri.Currency, &ri.Frequency, &ri.StartDate, &ri.EndDate,
 		&ri.NextGenerationDate, &ri.PaymentTermsDays, &ri.Reference, &ri.Notes,
 		&ri.IsActive, &ri.LastGeneratedAt, &ri.GeneratedCount, &ri.CreatedAt, &ri.CreatedBy, &ri.UpdatedAt,
+		&ri.SendEmailOnGeneration, &ri.EmailTemplateType, &ri.RecipientEmailOverride,
+		&ri.AttachPDFToEmail, &ri.EmailSubjectOverride, &ri.EmailMessage,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("recurring invoice not found: %s", id)
@@ -289,7 +330,10 @@ func (s *Service) List(ctx context.Context, tenantID, schemaName string, activeO
 		SELECT r.id, r.tenant_id, r.name, r.contact_id, c.name as contact_name,
 		       r.invoice_type, r.currency, r.frequency, r.start_date, r.end_date,
 		       r.next_generation_date, r.payment_terms_days, r.reference, r.notes,
-		       r.is_active, r.last_generated_at, r.generated_count, r.created_at, r.created_by, r.updated_at
+		       r.is_active, r.last_generated_at, r.generated_count, r.created_at, r.created_by, r.updated_at,
+		       COALESCE(r.send_email_on_generation, false), COALESCE(r.email_template_type, 'INVOICE_SEND'),
+		       COALESCE(r.recipient_email_override, ''), COALESCE(r.attach_pdf_to_email, true),
+		       COALESCE(r.email_subject_override, ''), COALESCE(r.email_message, '')
 		FROM %s.recurring_invoices r
 		LEFT JOIN %s.contacts c ON r.contact_id = c.id
 		WHERE r.tenant_id = $1
@@ -314,6 +358,8 @@ func (s *Service) List(ctx context.Context, tenantID, schemaName string, activeO
 			&ri.InvoiceType, &ri.Currency, &ri.Frequency, &ri.StartDate, &ri.EndDate,
 			&ri.NextGenerationDate, &ri.PaymentTermsDays, &ri.Reference, &ri.Notes,
 			&ri.IsActive, &ri.LastGeneratedAt, &ri.GeneratedCount, &ri.CreatedAt, &ri.CreatedBy, &ri.UpdatedAt,
+			&ri.SendEmailOnGeneration, &ri.EmailTemplateType, &ri.RecipientEmailOverride,
+			&ri.AttachPDFToEmail, &ri.EmailSubjectOverride, &ri.EmailMessage,
 		); err != nil {
 			return nil, fmt.Errorf("scan recurring invoice: %w", err)
 		}
@@ -351,6 +397,25 @@ func (s *Service) Update(ctx context.Context, tenantID, schemaName, id string, r
 	if req.Notes != nil {
 		ri.Notes = *req.Notes
 	}
+	// Email configuration updates
+	if req.SendEmailOnGeneration != nil {
+		ri.SendEmailOnGeneration = *req.SendEmailOnGeneration
+	}
+	if req.EmailTemplateType != nil {
+		ri.EmailTemplateType = *req.EmailTemplateType
+	}
+	if req.RecipientEmailOverride != nil {
+		ri.RecipientEmailOverride = *req.RecipientEmailOverride
+	}
+	if req.AttachPDFToEmail != nil {
+		ri.AttachPDFToEmail = *req.AttachPDFToEmail
+	}
+	if req.EmailSubjectOverride != nil {
+		ri.EmailSubjectOverride = *req.EmailSubjectOverride
+	}
+	if req.EmailMessage != nil {
+		ri.EmailMessage = *req.EmailMessage
+	}
 	ri.UpdatedAt = time.Now()
 
 	if err := ri.Validate(); err != nil {
@@ -366,11 +431,16 @@ func (s *Service) Update(ctx context.Context, tenantID, schemaName, id string, r
 	_, err = tx.Exec(ctx, fmt.Sprintf(`
 		UPDATE %s.recurring_invoices SET
 			name = $1, contact_id = $2, frequency = $3, end_date = $4,
-			payment_terms_days = $5, reference = $6, notes = $7, updated_at = $8
-		WHERE id = $9 AND tenant_id = $10
+			payment_terms_days = $5, reference = $6, notes = $7, updated_at = $8,
+			send_email_on_generation = $9, email_template_type = $10, recipient_email_override = $11,
+			attach_pdf_to_email = $12, email_subject_override = $13, email_message = $14
+		WHERE id = $15 AND tenant_id = $16
 	`, schemaName),
 		ri.Name, ri.ContactID, ri.Frequency, ri.EndDate, ri.PaymentTermsDays,
-		ri.Reference, ri.Notes, ri.UpdatedAt, ri.ID, ri.TenantID,
+		ri.Reference, ri.Notes, ri.UpdatedAt,
+		ri.SendEmailOnGeneration, ri.EmailTemplateType, ri.RecipientEmailOverride,
+		ri.AttachPDFToEmail, ri.EmailSubjectOverride, ri.EmailMessage,
+		ri.ID, ri.TenantID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("update recurring invoice: %w", err)
@@ -573,9 +643,164 @@ func (s *Service) GenerateInvoice(ctx context.Context, tenantID, schemaName, rec
 		return nil, fmt.Errorf("update recurring invoice: %w", err)
 	}
 
-	return &GenerationResult{
+	// Prepare result
+	result := &GenerationResult{
 		RecurringInvoiceID:     recurringID,
 		GeneratedInvoiceID:     invoice.ID,
 		GeneratedInvoiceNumber: invoice.InvoiceNumber,
-	}, nil
+		EmailSent:              false,
+		EmailStatus:            "SKIPPED",
+	}
+
+	// Send email if configured
+	if ri.SendEmailOnGeneration {
+		emailResult := s.sendGeneratedInvoiceEmail(ctx, tenantID, schemaName, ri, invoice)
+		result.EmailSent = emailResult.EmailSent
+		result.EmailStatus = emailResult.EmailStatus
+		result.EmailLogID = emailResult.EmailLogID
+		result.EmailError = emailResult.EmailError
+
+		// Update invoice with email status
+		s.updateInvoiceEmailStatus(ctx, schemaName, invoice.ID, emailResult)
+	}
+
+	return result, nil
+}
+
+// sendGeneratedInvoiceEmail sends email for a generated invoice
+func (s *Service) sendGeneratedInvoiceEmail(ctx context.Context, tenantID, schemaName string, ri *RecurringInvoice, invoice *invoicing.Invoice) *GenerationResult {
+	result := &GenerationResult{
+		EmailSent:   false,
+		EmailStatus: "FAILED",
+	}
+
+	// Check if email service is available
+	if s.email == nil {
+		result.EmailStatus = "NO_CONFIG"
+		result.EmailError = "email service not configured"
+		return result
+	}
+
+	// Get tenant for company name and PDF settings
+	t, err := s.tenant.GetTenant(ctx, tenantID)
+	if err != nil {
+		result.EmailError = fmt.Sprintf("failed to get tenant: %v", err)
+		return result
+	}
+
+	// Get contact for email address
+	contact, err := s.contacts.GetByID(ctx, tenantID, schemaName, ri.ContactID)
+	if err != nil {
+		result.EmailError = fmt.Sprintf("failed to get contact: %v", err)
+		return result
+	}
+
+	// Determine recipient email
+	recipientEmail := ri.RecipientEmailOverride
+	if recipientEmail == "" {
+		recipientEmail = contact.Email
+	}
+	if recipientEmail == "" {
+		result.EmailStatus = "SKIPPED"
+		result.EmailError = "no recipient email available"
+		return result
+	}
+
+	// Get email template
+	templateType := email.TemplateType(ri.EmailTemplateType)
+	if templateType == "" {
+		templateType = email.TemplateInvoiceSend
+	}
+	tmpl, err := s.email.GetTemplate(ctx, schemaName, tenantID, templateType)
+	if err != nil {
+		result.EmailError = fmt.Sprintf("failed to get template: %v", err)
+		return result
+	}
+
+	// Prepare template data
+	templateData := &email.TemplateData{
+		CompanyName:   t.Name,
+		ContactName:   contact.Name,
+		InvoiceNumber: invoice.InvoiceNumber,
+		TotalAmount:   invoice.Total.StringFixed(2),
+		Currency:      invoice.Currency,
+		DueDate:       invoice.DueDate.Format("02.01.2006"),
+		IssueDate:     invoice.IssueDate.Format("02.01.2006"),
+		Message:       ri.EmailMessage,
+	}
+
+	// Render template
+	subject, bodyHTML, bodyText, err := s.email.RenderTemplate(tmpl, templateData)
+	if err != nil {
+		result.EmailError = fmt.Sprintf("failed to render template: %v", err)
+		return result
+	}
+
+	// Override subject if specified
+	if ri.EmailSubjectOverride != "" {
+		subject = ri.EmailSubjectOverride
+	}
+
+	// Prepare attachments
+	var attachments []email.Attachment
+	if ri.AttachPDFToEmail && s.pdf != nil {
+		pdfSettings := s.pdf.PDFSettingsFromTenant(t)
+		pdfBytes, err := s.pdf.GenerateInvoicePDF(invoice, t, pdfSettings)
+		if err != nil {
+			// Log PDF error but continue without attachment
+			result.EmailError = fmt.Sprintf("PDF generation failed: %v", err)
+		} else {
+			attachments = append(attachments, email.Attachment{
+				Filename:    fmt.Sprintf("invoice_%s.pdf", invoice.InvoiceNumber),
+				Content:     pdfBytes,
+				ContentType: "application/pdf",
+			})
+		}
+	}
+
+	// Send email
+	emailResp, err := s.email.SendEmail(
+		ctx,
+		schemaName,
+		tenantID,
+		string(templateType),
+		recipientEmail,
+		contact.Name,
+		subject,
+		bodyHTML,
+		bodyText,
+		attachments,
+		invoice.ID,
+	)
+	if err != nil {
+		result.EmailError = fmt.Sprintf("failed to send email: %v", err)
+		return result
+	}
+
+	result.EmailSent = true
+	result.EmailStatus = "SENT"
+	result.EmailLogID = emailResp.LogID
+	result.EmailError = ""
+	return result
+}
+
+// updateInvoiceEmailStatus updates the invoice with email delivery status
+func (s *Service) updateInvoiceEmailStatus(ctx context.Context, schemaName, invoiceID string, emailResult *GenerationResult) {
+	var sentAt *time.Time
+	if emailResult.EmailSent {
+		now := time.Now()
+		sentAt = &now
+	}
+
+	_, err := s.db.Exec(ctx, fmt.Sprintf(`
+		UPDATE %s.invoices SET
+			last_email_sent_at = $1,
+			last_email_status = $2,
+			last_email_log_id = $3
+		WHERE id = $4
+	`, schemaName), sentAt, emailResult.EmailStatus, emailResult.EmailLogID, invoiceID)
+	if err != nil {
+		// Log error but don't fail - invoice was already created
+		fmt.Printf("failed to update invoice email status: %v\n", err)
+	}
 }
