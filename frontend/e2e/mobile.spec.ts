@@ -91,15 +91,21 @@ test.describe('Mobile Forms', () => {
 			.or(page.getByRole('link', { name: /create|new|add/i }))
 			.first();
 
-		if (await createBtn.isVisible()) {
+		const isBtnVisible = await createBtn.isVisible().catch(() => false);
+		if (isBtnVisible) {
 			await createBtn.click();
 
-			// Form or modal should open
+			// Wait for form/modal to open
 			const formElement = page.locator('form, .modal, [role="dialog"]').first();
+			await formElement.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+
 			const hasForm = await formElement.isVisible().catch(() => false);
 
 			// Either form appears or we navigated to a form page
 			expect(hasForm || page.url().includes('new')).toBeTruthy();
+		} else {
+			// No create button - verify page loaded
+			await expect(page.getByRole('heading', { name: /contacts/i })).toBeVisible();
 		}
 	});
 

@@ -68,11 +68,23 @@ test.describe('Contacts - Create Flow', () => {
 		if (isBtnVisible) {
 			await createBtn.click();
 
-			// Should show form or modal
-			const formVisible = await page.locator('form, .modal, [role="dialog"]').isVisible().catch(() => false);
-			const nameField = await page.getByLabel(/name/i).isVisible().catch(() => false);
+			// Wait for modal to appear
+			const modal = page.locator('[role="dialog"], .modal');
+			const formElement = page.locator('form');
+			const nameField = page.getByLabel(/name/i);
 
-			expect(formVisible || nameField || page.url().includes('new')).toBeTruthy();
+			// Wait for any of these to be visible
+			await Promise.race([
+				modal.first().waitFor({ state: 'visible', timeout: 5000 }),
+				formElement.first().waitFor({ state: 'visible', timeout: 5000 }),
+				nameField.first().waitFor({ state: 'visible', timeout: 5000 })
+			]).catch(() => {});
+
+			const formVisible = await formElement.isVisible().catch(() => false);
+			const modalVisible = await modal.isVisible().catch(() => false);
+			const hasNameField = await nameField.isVisible().catch(() => false);
+
+			expect(formVisible || modalVisible || hasNameField || page.url().includes('new')).toBeTruthy();
 		} else {
 			// No create button means no tenant - test passes by verifying page loaded
 			await expect(page.getByRole('heading', { name: /contacts/i })).toBeVisible();
