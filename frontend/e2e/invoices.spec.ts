@@ -64,12 +64,27 @@ test.describe('Invoices - Create Flow', () => {
 			.or(page.getByRole('link', { name: /create|new|add/i }))
 			.first();
 
-		if (await createBtn.isVisible()) {
+		const isBtnVisible = await createBtn.isVisible().catch(() => false);
+		if (isBtnVisible) {
 			await createBtn.click();
 
+			// Wait for modal to appear
+			const modal = page.locator('[role="dialog"], .modal');
+			const formElement = page.locator('form');
+
+			// Wait for any of these to be visible
+			await Promise.race([
+				modal.first().waitFor({ state: 'visible', timeout: 5000 }),
+				formElement.first().waitFor({ state: 'visible', timeout: 5000 })
+			]).catch(() => {});
+
 			// Should show form fields (may fail without tenant contacts)
-			const formVisible = await page.locator('form, .modal, [role="dialog"]').isVisible().catch(() => false);
-			expect(formVisible || page.url().includes('new')).toBeTruthy();
+			const formVisible = await formElement.isVisible().catch(() => false);
+			const modalVisible = await modal.isVisible().catch(() => false);
+			expect(formVisible || modalVisible || page.url().includes('new')).toBeTruthy();
+		} else {
+			// No create button means no tenant - test passes by verifying page loaded
+			await expect(page.getByRole('heading', { name: /invoices/i })).toBeVisible();
 		}
 	});
 });
