@@ -47,3 +47,16 @@ frontend/node_modules/
 docs/docs.go
 docs/swagger.json
 docs/swagger.yaml
+
+# Claude Code
+.claude/
+
+# Test artifacts
+coverage/
+*.lcov
+playwright-report/
+test-results/
+
+# Database files
+*.db
+*.sqlite
