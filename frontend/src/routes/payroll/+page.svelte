@@ -666,4 +666,96 @@
 		resize: vertical;
 		min-height: 80px;
 	}
+
+	/* Mobile responsive */
+	@media (max-width: 768px) {
+		h1 {
+			font-size: 1.25rem;
+		}
+
+		.header {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 1rem;
+		}
+
+		.header .btn {
+			width: 100%;
+			min-height: 44px;
+			justify-content: center;
+		}
+
+		.filter-row {
+			flex-direction: column;
+			gap: 0.5rem;
+			align-items: flex-start;
+		}
+
+		.filter-row .input {
+			width: 100%;
+			min-height: 44px;
+		}
+
+		.table {
+			font-size: 0.875rem;
+		}
+
+		.table th,
+		.table td {
+			padding: 0.5rem;
+		}
+
+		.actions {
+			flex-direction: column;
+			gap: 0.5rem;
+		}
+
+		.actions .btn {
+			width: 100%;
+			min-height: 44px;
+		}
+
+		.btn-small {
+			padding: 0.5rem 0.75rem;
+			font-size: 0.875rem;
+		}
+
+		.tax-rates {
+			grid-template-columns: 1fr;
+		}
+
+		.empty-state {
+			padding: 2rem 1rem;
+		}
+
+		.modal-backdrop {
+			padding: 0;
+			align-items: flex-end;
+		}
+
+		.modal {
+			max-width: 100%;
+			max-height: 95vh;
+			border-radius: 1rem 1rem 0 0;
+			margin: 0;
+		}
+
+		.modal h2 {
+			font-size: 1.25rem;
+		}
+
+		.form-row {
+			flex-direction: column;
+			gap: 0;
+		}
+
+		.modal-actions {
+			flex-direction: column-reverse;
+		}
+
+		.modal-actions button {
+			width: 100%;
+			min-height: 44px;
+		}
+	}
 </style>

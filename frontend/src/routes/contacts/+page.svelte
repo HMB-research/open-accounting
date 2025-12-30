@@ -416,6 +416,32 @@
 
 	/* Mobile responsive */
 	@media (max-width: 768px) {
+		h1 {
+			font-size: 1.25rem;
+		}
+
+		.filters {
+			padding: 0.75rem;
+		}
+
+		.filter-row {
+			flex-direction: column;
+			gap: 0.75rem;
+		}
+
+		.filter-row select,
+		.search-input {
+			width: 100%;
+			min-width: unset;
+			min-height: 44px;
+		}
+
+		.filter-row .btn {
+			width: 100%;
+			min-height: 44px;
+			justify-content: center;
+		}
+
 		.modal-backdrop {
 			padding: 0;
 			align-items: flex-end;
@@ -427,12 +453,31 @@
 			border-radius: 1rem 1rem 0 0;
 		}
 
+		.modal h2 {
+			font-size: 1.25rem;
+		}
+
+		.form-row {
+			flex-direction: column;
+			gap: 0;
+		}
+
+		.form-row .form-group {
+			width: 100%;
+			min-width: unset;
+		}
+
 		.modal-actions {
 			flex-direction: column-reverse;
 		}
 
 		.modal-actions button {
 			width: 100%;
+			min-height: 44px;
+		}
+
+		.empty-state {
+			padding: 2rem 1rem;
 		}
 	}
 </style>
