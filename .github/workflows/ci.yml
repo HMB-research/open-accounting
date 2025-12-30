@@ -219,7 +219,7 @@ jobs:
           CGO_ENABLED=0 go build -o migrate ./cmd/migrate
 
       - name: Run migrations
-        run: ./migrate -dsn "postgres://test:test@localhost:5432/openaccounting_test?sslmode=disable"
+        run: ./migrate -db "postgres://test:test@localhost:5432/openaccounting_test?sslmode=disable"
 
       - name: Start backend
         run: |
