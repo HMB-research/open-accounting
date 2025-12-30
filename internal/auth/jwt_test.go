@@ -344,3 +344,85 @@ func TestRequireRole(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
 	})
 }
+
+func TestCanManageUsers(t *testing.T) {
+	assert.True(t, CanManageUsers("owner"))
+	assert.True(t, CanManageUsers("admin"))
+	assert.False(t, CanManageUsers("accountant"))
+	assert.False(t, CanManageUsers("viewer"))
+	assert.False(t, CanManageUsers(""))
+	assert.False(t, CanManageUsers("unknown"))
+}
+
+func TestCanManageSettings(t *testing.T) {
+	assert.True(t, CanManageSettings("owner"))
+	assert.True(t, CanManageSettings("admin"))
+	assert.False(t, CanManageSettings("accountant"))
+	assert.False(t, CanManageSettings("viewer"))
+	assert.False(t, CanManageSettings(""))
+}
+
+func TestCanManageAccounts(t *testing.T) {
+	assert.True(t, CanManageAccounts("owner"))
+	assert.True(t, CanManageAccounts("admin"))
+	assert.True(t, CanManageAccounts("accountant"))
+	assert.False(t, CanManageAccounts("viewer"))
+	assert.False(t, CanManageAccounts(""))
+}
+
+func TestCanCreateEntries(t *testing.T) {
+	assert.True(t, CanCreateEntries("owner"))
+	assert.True(t, CanCreateEntries("admin"))
+	assert.True(t, CanCreateEntries("accountant"))
+	assert.False(t, CanCreateEntries("viewer"))
+	assert.False(t, CanCreateEntries(""))
+}
+
+func TestCanViewReports(t *testing.T) {
+	assert.True(t, CanViewReports("owner"))
+	assert.True(t, CanViewReports("admin"))
+	assert.True(t, CanViewReports("accountant"))
+	assert.True(t, CanViewReports("viewer"))
+	assert.False(t, CanViewReports(""))
+	assert.False(t, CanViewReports("unknown"))
+}
+
+func TestCanManageInvoices(t *testing.T) {
+	assert.True(t, CanManageInvoices("owner"))
+	assert.True(t, CanManageInvoices("admin"))
+	assert.True(t, CanManageInvoices("accountant"))
+	assert.False(t, CanManageInvoices("viewer"))
+	assert.False(t, CanManageInvoices(""))
+}
+
+func TestCanManagePayments(t *testing.T) {
+	assert.True(t, CanManagePayments("owner"))
+	assert.True(t, CanManagePayments("admin"))
+	assert.True(t, CanManagePayments("accountant"))
+	assert.False(t, CanManagePayments("viewer"))
+	assert.False(t, CanManagePayments(""))
+}
+
+func TestCanManageContacts(t *testing.T) {
+	assert.True(t, CanManageContacts("owner"))
+	assert.True(t, CanManageContacts("admin"))
+	assert.True(t, CanManageContacts("accountant"))
+	assert.False(t, CanManageContacts("viewer"))
+	assert.False(t, CanManageContacts(""))
+}
+
+func TestCanManageBanking(t *testing.T) {
+	assert.True(t, CanManageBanking("owner"))
+	assert.True(t, CanManageBanking("admin"))
+	assert.True(t, CanManageBanking("accountant"))
+	assert.False(t, CanManageBanking("viewer"))
+	assert.False(t, CanManageBanking(""))
+}
+
+func TestCanExportData(t *testing.T) {
+	assert.True(t, CanExportData("owner"))
+	assert.True(t, CanExportData("admin"))
+	assert.True(t, CanExportData("accountant"))
+	assert.False(t, CanExportData("viewer"))
+	assert.False(t, CanExportData(""))
+}
