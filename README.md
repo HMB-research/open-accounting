@@ -178,86 +178,22 @@ open-accounting/
 │
 ├── migrations/           # SQL database migrations
 ├── frontend/             # SvelteKit web application
-├── docs/                 # OpenAPI/Swagger documentation
+├── docs/                 # Documentation (API, Architecture, Deployment)
 └── deploy/               # Deployment configurations
 ```
 
 ---
 
-## 🔌 API Overview
+## 📚 Documentation
 
-Full API documentation available at `/swagger/` when running the server.
-
-### Authentication
-```
-POST /api/v1/auth/register     # Create account
-POST /api/v1/auth/login        # Get tokens
-POST /api/v1/auth/refresh      # Refresh access token
-```
-
-### User & Organization
-```
-GET  /api/v1/me                # Current user profile
-GET  /api/v1/me/tenants        # User's organizations
-POST /api/v1/tenants           # Create organization
-```
-
-### Accounting (requires tenant context)
-```
-GET/POST   /api/v1/tenants/{id}/accounts          # Chart of accounts
-GET/POST   /api/v1/tenants/{id}/journal-entries   # Journal entries
-POST       /api/v1/tenants/{id}/journal-entries/{id}/post
-POST       /api/v1/tenants/{id}/journal-entries/{id}/void
-```
-
-### Business Operations
-```
-GET/POST   /api/v1/tenants/{id}/contacts          # Customers/suppliers
-GET/POST   /api/v1/tenants/{id}/invoices          # Invoices
-GET/POST   /api/v1/tenants/{id}/payments          # Payments
-GET        /api/v1/tenants/{id}/invoices/{id}/pdf # Download PDF
-```
-
-### User Management
-```
-GET/POST   /api/v1/tenants/{id}/invitations       # Invite users
-GET/DELETE /api/v1/tenants/{id}/users             # Manage members
-PUT        /api/v1/tenants/{id}/users/{id}/role   # Change roles
-```
-
-### Reports & Analytics
-```
-GET /api/v1/tenants/{id}/reports/trial-balance
-GET /api/v1/tenants/{id}/reports/balance-sheet
-GET /api/v1/tenants/{id}/reports/income-statement
-GET /api/v1/tenants/{id}/analytics/dashboard
-GET /api/v1/tenants/{id}/reports/aging/receivables
-```
-
-### Payroll
-```
-GET/POST   /api/v1/tenants/{id}/employees         # Employee management
-GET/POST   /api/v1/tenants/{id}/payroll           # Payroll runs
-POST       /api/v1/tenants/{id}/payroll/{id}/calculate
-POST       /api/v1/tenants/{id}/payroll/{id}/approve
-GET        /api/v1/tenants/{id}/payroll/{id}/payslips
-```
-
-### Estonian Tax
-```
-POST /api/v1/tenants/{id}/tax/kmd                 # Generate KMD
-GET  /api/v1/tenants/{id}/tax/kmd/{year}/{month}/xml  # Export XML
-GET  /api/v1/tenants/{id}/tax/tsd/{year}/{month}  # TSD declaration
-GET  /api/v1/tenants/{id}/tax/tsd/{year}/{month}/xml  # TSD XML export
-```
-
-### Plugins (Admin)
-```
-GET/POST   /api/v1/admin/plugins                  # Plugin management
-GET/POST   /api/v1/admin/plugin-registries        # Registry management
-POST       /api/v1/admin/plugins/install          # Install from URL
-GET        /api/v1/tenants/{id}/plugins           # Tenant plugins
-```
+| Document | Description |
+|----------|-------------|
+| [API Reference](docs/API.md) | Complete REST API documentation with examples |
+| [Architecture](docs/ARCHITECTURE.md) | System design, multi-tenancy, authentication flow |
+| [Deployment](docs/DEPLOYMENT.md) | Production deployment guide |
+| [EMTA Integration](docs/EMTA_INTEGRATION.md) | Estonian Tax Board integration guide |
+| [Plugins](docs/PLUGINS.md) | Plugin development and marketplace guide |
+| [Swagger UI](/swagger/) | Interactive API explorer (when server is running) |
 
 ---
 
