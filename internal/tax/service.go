@@ -21,51 +21,27 @@ type VATEntry struct {
 
 // Service provides tax declaration operations
 type Service struct {
-	db *pgxpool.Pool
+	repo Repository
 }
 
-// NewService creates a new tax service
+// NewService creates a new tax service with a PostgreSQL repository
 func NewService(db *pgxpool.Pool) *Service {
-	return &Service{db: db}
+	return &Service{repo: NewPostgresRepository(db)}
+}
+
+// NewServiceWithRepository creates a new tax service with an injected repository
+func NewServiceWithRepository(repo Repository) *Service {
+	return &Service{repo: repo}
 }
 
 // EnsureSchema creates tax tables if they don't exist
 func (s *Service) EnsureSchema(ctx context.Context, schemaName string) error {
-	query := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS %s.kmd_declarations (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			tenant_id UUID NOT NULL,
-			year INTEGER NOT NULL,
-			month INTEGER NOT NULL,
-			status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
-			total_output_vat NUMERIC(28,8) NOT NULL DEFAULT 0,
-			total_input_vat NUMERIC(28,8) NOT NULL DEFAULT 0,
-			submitted_at TIMESTAMPTZ,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			UNIQUE (tenant_id, year, month)
-		);
-
-		CREATE TABLE IF NOT EXISTS %s.kmd_rows (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			declaration_id UUID NOT NULL REFERENCES %s.kmd_declarations(id) ON DELETE CASCADE,
-			code VARCHAR(10) NOT NULL,
-			description TEXT NOT NULL,
-			tax_base NUMERIC(28,8) NOT NULL DEFAULT 0,
-			tax_amount NUMERIC(28,8) NOT NULL DEFAULT 0
-		);
-
-		CREATE INDEX IF NOT EXISTS idx_kmd_declarations_tenant ON %s.kmd_declarations(tenant_id);
-		CREATE INDEX IF NOT EXISTS idx_kmd_rows_declaration ON %s.kmd_rows(declaration_id);
-	`, schemaName, schemaName, schemaName, schemaName, schemaName)
-
-	_, err := s.db.Exec(ctx, query)
-	return err
+	return s.repo.EnsureSchema(ctx, schemaName)
 }
 
 // GenerateKMD generates a KMD declaration for a given period
 func (s *Service) GenerateKMD(ctx context.Context, tenantID, schemaName string, req *CreateKMDRequest) (*KMDDeclaration, error) {
-	if err := s.EnsureSchema(ctx, schemaName); err != nil {
+	if err := s.repo.EnsureSchema(ctx, schemaName); err != nil {
 		return nil, fmt.Errorf("ensure schema: %w", err)
 	}
 
@@ -74,57 +50,30 @@ func (s *Service) GenerateKMD(ctx context.Context, tenantID, schemaName string, 
 	endDate := startDate.AddDate(0, 1, 0).Add(-time.Second)
 
 	// Query VAT data from journal entries
-	rows, err := s.db.Query(ctx, fmt.Sprintf(`
-		SELECT
-			COALESCE(jl.vat_rate, 0) as vat_rate,
-			CASE
-				WHEN a.account_type = 'REVENUE' THEN true
-				ELSE false
-			END as is_output,
-			SUM(CASE WHEN jl.is_debit THEN -jl.amount ELSE jl.amount END) as tax_base,
-			SUM(CASE WHEN jl.is_debit THEN -jl.amount ELSE jl.amount END) * COALESCE(jl.vat_rate, 0) / 100 as tax_amount
-		FROM %s.journal_entries je
-		JOIN %s.journal_lines jl ON je.id = jl.journal_entry_id
-		JOIN %s.accounts a ON jl.account_id = a.id
-		WHERE je.tenant_id = $1
-			AND je.status = 'POSTED'
-			AND je.entry_date >= $2
-			AND je.entry_date <= $3
-			AND COALESCE(jl.vat_rate, 0) > 0
-		GROUP BY jl.vat_rate, a.account_type
-	`, schemaName, schemaName, schemaName), tenantID, startDate, endDate)
+	vatRows, err := s.repo.QueryVATData(ctx, schemaName, tenantID, startDate, endDate)
 	if err != nil {
 		return nil, fmt.Errorf("query VAT data: %w", err)
 	}
-	defer rows.Close()
 
 	// Aggregate into KMD rows
 	kmdRows := make([]KMDRow, 0)
 	var totalOutput, totalInput decimal.Decimal
 
-	for rows.Next() {
-		var vatRate decimal.Decimal
-		var isOutput bool
-		var taxBase, taxAmount decimal.Decimal
-
-		if err := rows.Scan(&vatRate, &isOutput, &taxBase, &taxAmount); err != nil {
-			return nil, fmt.Errorf("scan row: %w", err)
-		}
-
-		code := mapVATRateToKMDCode(vatRate, isOutput)
+	for _, row := range vatRows {
+		code := mapVATRateToKMDCode(row.VATRate, row.IsOutput)
 		desc := getKMDRowDescription(code)
 
 		kmdRows = append(kmdRows, KMDRow{
 			Code:        code,
 			Description: desc,
-			TaxBase:     taxBase.Abs(),
-			TaxAmount:   taxAmount.Abs(),
+			TaxBase:     row.TaxBase.Abs(),
+			TaxAmount:   row.TaxAmount.Abs(),
 		})
 
-		if isOutput {
-			totalOutput = totalOutput.Add(taxAmount.Abs())
+		if row.IsOutput {
+			totalOutput = totalOutput.Add(row.TaxAmount.Abs())
 		} else {
-			totalInput = totalInput.Add(taxAmount.Abs())
+			totalInput = totalInput.Add(row.TaxAmount.Abs())
 		}
 	}
 
@@ -143,44 +92,8 @@ func (s *Service) GenerateKMD(ctx context.Context, tenantID, schemaName string, 
 	}
 
 	// Save to database
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	_, err = tx.Exec(ctx, fmt.Sprintf(`
-		INSERT INTO %s.kmd_declarations (id, tenant_id, year, month, status, total_output_vat, total_input_vat, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		ON CONFLICT (tenant_id, year, month) DO UPDATE SET
-			status = EXCLUDED.status,
-			total_output_vat = EXCLUDED.total_output_vat,
-			total_input_vat = EXCLUDED.total_input_vat,
-			updated_at = EXCLUDED.updated_at
-		RETURNING id
-	`, schemaName), decl.ID, tenantID, req.Year, req.Month, decl.Status, decl.TotalOutputVAT, decl.TotalInputVAT, decl.CreatedAt, decl.UpdatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("insert declaration: %w", err)
-	}
-
-	// Delete old rows and insert new ones
-	_, err = tx.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.kmd_rows WHERE declaration_id = $1`, schemaName), decl.ID)
-	if err != nil {
-		return nil, fmt.Errorf("delete old rows: %w", err)
-	}
-
-	for _, row := range decl.Rows {
-		_, err = tx.Exec(ctx, fmt.Sprintf(`
-			INSERT INTO %s.kmd_rows (declaration_id, code, description, tax_base, tax_amount)
-			VALUES ($1, $2, $3, $4, $5)
-		`, schemaName), decl.ID, row.Code, row.Description, row.TaxBase, row.TaxAmount)
-		if err != nil {
-			return nil, fmt.Errorf("insert row: %w", err)
-		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit: %w", err)
+	if err := s.repo.SaveDeclaration(ctx, schemaName, decl); err != nil {
+		return nil, fmt.Errorf("save declaration: %w", err)
 	}
 
 	return decl, nil
@@ -197,69 +110,12 @@ func (s *Service) GetKMD(ctx context.Context, tenantID, schemaName, yearStr, mon
 		return nil, fmt.Errorf("invalid month: %w", err)
 	}
 
-	var decl KMDDeclaration
-	err = s.db.QueryRow(ctx, fmt.Sprintf(`
-		SELECT id, tenant_id, year, month, status, total_output_vat, total_input_vat, submitted_at, created_at, updated_at
-		FROM %s.kmd_declarations
-		WHERE tenant_id = $1 AND year = $2 AND month = $3
-	`, schemaName), tenantID, year, month).Scan(
-		&decl.ID, &decl.TenantID, &decl.Year, &decl.Month, &decl.Status,
-		&decl.TotalOutputVAT, &decl.TotalInputVAT, &decl.SubmittedAt, &decl.CreatedAt, &decl.UpdatedAt,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("get declaration: %w", err)
-	}
-
-	// Get rows
-	rows, err := s.db.Query(ctx, fmt.Sprintf(`
-		SELECT code, description, tax_base, tax_amount
-		FROM %s.kmd_rows
-		WHERE declaration_id = $1
-		ORDER BY code
-	`, schemaName), decl.ID)
-	if err != nil {
-		return nil, fmt.Errorf("get rows: %w", err)
-	}
-	defer rows.Close()
-
-	decl.Rows = make([]KMDRow, 0)
-	for rows.Next() {
-		var row KMDRow
-		if err := rows.Scan(&row.Code, &row.Description, &row.TaxBase, &row.TaxAmount); err != nil {
-			return nil, fmt.Errorf("scan row: %w", err)
-		}
-		decl.Rows = append(decl.Rows, row)
-	}
-
-	return &decl, nil
+	return s.repo.GetDeclaration(ctx, schemaName, tenantID, year, month)
 }
 
 // ListKMD lists all KMD declarations for a tenant
 func (s *Service) ListKMD(ctx context.Context, tenantID, schemaName string) ([]KMDDeclaration, error) {
-	rows, err := s.db.Query(ctx, fmt.Sprintf(`
-		SELECT id, tenant_id, year, month, status, total_output_vat, total_input_vat, submitted_at, created_at, updated_at
-		FROM %s.kmd_declarations
-		WHERE tenant_id = $1
-		ORDER BY year DESC, month DESC
-	`, schemaName), tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("list declarations: %w", err)
-	}
-	defer rows.Close()
-
-	declarations := make([]KMDDeclaration, 0)
-	for rows.Next() {
-		var decl KMDDeclaration
-		if err := rows.Scan(
-			&decl.ID, &decl.TenantID, &decl.Year, &decl.Month, &decl.Status,
-			&decl.TotalOutputVAT, &decl.TotalInputVAT, &decl.SubmittedAt, &decl.CreatedAt, &decl.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan declaration: %w", err)
-		}
-		declarations = append(declarations, decl)
-	}
-
-	return declarations, nil
+	return s.repo.ListDeclarations(ctx, schemaName, tenantID)
 }
 
 // mapVATRateToKMDCode maps a VAT rate to the appropriate KMD row code

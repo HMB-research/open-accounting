@@ -1,10 +1,14 @@
 package payments
 
 import (
+	"errors"
 	"time"
 
 	"github.com/shopspring/decimal"
 )
+
+// ErrPaymentNotFound is returned when a payment is not found
+var ErrPaymentNotFound = errors.New("payment not found")
 
 // PaymentType represents the type of payment
 type PaymentType string

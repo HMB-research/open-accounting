@@ -6,22 +6,30 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Service provides contact management operations
 type Service struct {
-	db *pgxpool.Pool
+	repo Repository
 }
 
-// NewService creates a new contacts service
+// NewService creates a new contacts service with a PostgreSQL repository
 func NewService(db *pgxpool.Pool) *Service {
-	return &Service{db: db}
+	return &Service{repo: NewPostgresRepository(db)}
+}
+
+// NewServiceWithRepository creates a new contacts service with a custom repository
+func NewServiceWithRepository(repo Repository) *Service {
+	return &Service{repo: repo}
 }
 
 // Create creates a new contact
 func (s *Service) Create(ctx context.Context, tenantID string, schemaName string, req *CreateContactRequest) (*Contact, error) {
+	if err := validateCreateRequest(req); err != nil {
+		return nil, err
+	}
+
 	contact := &Contact{
 		ID:               uuid.New().String(),
 		TenantID:         tenantID,
@@ -46,6 +54,7 @@ func (s *Service) Create(ctx context.Context, tenantID string, schemaName string
 		UpdatedAt:        time.Now(),
 	}
 
+	// Apply defaults
 	if contact.CountryCode == "" {
 		contact.CountryCode = "EE"
 	}
@@ -53,123 +62,74 @@ func (s *Service) Create(ctx context.Context, tenantID string, schemaName string
 		contact.PaymentTermsDays = 14
 	}
 
-	query := fmt.Sprintf(`
-		INSERT INTO %s.contacts (
-			id, tenant_id, code, name, contact_type, reg_code, vat_number,
-			email, phone, address_line1, address_line2, city, postal_code,
-			country_code, payment_terms_days, credit_limit, default_account_id,
-			is_active, notes, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
-	`, schemaName)
-
-	_, err := s.db.Exec(ctx, query,
-		contact.ID, contact.TenantID, contact.Code, contact.Name, contact.ContactType,
-		contact.RegCode, contact.VATNumber, contact.Email, contact.Phone,
-		contact.AddressLine1, contact.AddressLine2, contact.City, contact.PostalCode,
-		contact.CountryCode, contact.PaymentTermsDays, contact.CreditLimit,
-		contact.DefaultAccountID, contact.IsActive, contact.Notes,
-		contact.CreatedAt, contact.UpdatedAt,
-	)
-	if err != nil {
+	if err := s.repo.Create(ctx, schemaName, contact); err != nil {
 		return nil, fmt.Errorf("create contact: %w", err)
 	}
 
 	return contact, nil
 }
 
+// validateCreateRequest validates the create contact request
+func validateCreateRequest(req *CreateContactRequest) error {
+	if req.Name == "" {
+		return fmt.Errorf("name is required")
+	}
+	if req.ContactType == "" {
+		return fmt.Errorf("contact type is required")
+	}
+	if !isValidContactType(req.ContactType) {
+		return fmt.Errorf("invalid contact type: %s", req.ContactType)
+	}
+	return nil
+}
+
+// isValidContactType checks if the contact type is valid
+func isValidContactType(ct ContactType) bool {
+	switch ct {
+	case ContactTypeCustomer, ContactTypeSupplier, ContactTypeBoth:
+		return true
+	}
+	return false
+}
+
 // GetByID retrieves a contact by ID
 func (s *Service) GetByID(ctx context.Context, tenantID, schemaName, contactID string) (*Contact, error) {
-	query := fmt.Sprintf(`
-		SELECT id, tenant_id, code, name, contact_type, reg_code, vat_number,
-		       email, phone, address_line1, address_line2, city, postal_code,
-		       country_code, payment_terms_days, credit_limit, default_account_id,
-		       is_active, notes, created_at, updated_at
-		FROM %s.contacts
-		WHERE id = $1 AND tenant_id = $2
-	`, schemaName)
-
-	var c Contact
-	err := s.db.QueryRow(ctx, query, contactID, tenantID).Scan(
-		&c.ID, &c.TenantID, &c.Code, &c.Name, &c.ContactType,
-		&c.RegCode, &c.VATNumber, &c.Email, &c.Phone,
-		&c.AddressLine1, &c.AddressLine2, &c.City, &c.PostalCode,
-		&c.CountryCode, &c.PaymentTermsDays, &c.CreditLimit,
-		&c.DefaultAccountID, &c.IsActive, &c.Notes,
-		&c.CreatedAt, &c.UpdatedAt,
-	)
-	if err == pgx.ErrNoRows {
-		return nil, fmt.Errorf("contact not found: %s", contactID)
-	}
+	contact, err := s.repo.GetByID(ctx, schemaName, tenantID, contactID)
 	if err != nil {
 		return nil, fmt.Errorf("get contact: %w", err)
 	}
-
-	return &c, nil
+	return contact, nil
 }
 
 // List retrieves contacts with optional filtering
 func (s *Service) List(ctx context.Context, tenantID, schemaName string, filter *ContactFilter) ([]Contact, error) {
-	query := fmt.Sprintf(`
-		SELECT id, tenant_id, code, name, contact_type, reg_code, vat_number,
-		       email, phone, address_line1, address_line2, city, postal_code,
-		       country_code, payment_terms_days, credit_limit, default_account_id,
-		       is_active, notes, created_at, updated_at
-		FROM %s.contacts
-		WHERE tenant_id = $1
-	`, schemaName)
-
-	args := []interface{}{tenantID}
-	argNum := 2
-
-	if filter != nil {
-		if filter.ContactType != "" {
-			query += fmt.Sprintf(" AND contact_type = $%d", argNum)
-			args = append(args, filter.ContactType)
-			argNum++
-		}
-		if filter.ActiveOnly {
-			query += " AND is_active = true"
-		}
-		if filter.Search != "" {
-			query += fmt.Sprintf(" AND (name ILIKE $%d OR code ILIKE $%d OR email ILIKE $%d)", argNum, argNum, argNum)
-			args = append(args, "%"+filter.Search+"%")
-		}
-	}
-
-	query += " ORDER BY name"
-
-	rows, err := s.db.Query(ctx, query, args...)
+	contacts, err := s.repo.List(ctx, schemaName, tenantID, filter)
 	if err != nil {
 		return nil, fmt.Errorf("list contacts: %w", err)
 	}
-	defer rows.Close()
-
-	var contacts []Contact
-	for rows.Next() {
-		var c Contact
-		if err := rows.Scan(
-			&c.ID, &c.TenantID, &c.Code, &c.Name, &c.ContactType,
-			&c.RegCode, &c.VATNumber, &c.Email, &c.Phone,
-			&c.AddressLine1, &c.AddressLine2, &c.City, &c.PostalCode,
-			&c.CountryCode, &c.PaymentTermsDays, &c.CreditLimit,
-			&c.DefaultAccountID, &c.IsActive, &c.Notes,
-			&c.CreatedAt, &c.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan contact: %w", err)
-		}
-		contacts = append(contacts, c)
-	}
-
 	return contacts, nil
 }
 
 // Update updates a contact
 func (s *Service) Update(ctx context.Context, tenantID, schemaName, contactID string, req *UpdateContactRequest) (*Contact, error) {
-	contact, err := s.GetByID(ctx, tenantID, schemaName, contactID)
+	contact, err := s.repo.GetByID(ctx, schemaName, tenantID, contactID)
 	if err != nil {
 		return nil, err
 	}
 
+	// Apply updates
+	applyUpdates(contact, req)
+	contact.UpdatedAt = time.Now()
+
+	if err := s.repo.Update(ctx, schemaName, contact); err != nil {
+		return nil, fmt.Errorf("update contact: %w", err)
+	}
+
+	return contact, nil
+}
+
+// applyUpdates applies update request fields to a contact
+func applyUpdates(contact *Contact, req *UpdateContactRequest) {
 	if req.Name != nil {
 		contact.Name = *req.Name
 	}
@@ -215,45 +175,12 @@ func (s *Service) Update(ctx context.Context, tenantID, schemaName, contactID st
 	if req.IsActive != nil {
 		contact.IsActive = *req.IsActive
 	}
-	contact.UpdatedAt = time.Now()
-
-	query := fmt.Sprintf(`
-		UPDATE %s.contacts SET
-			name = $1, reg_code = $2, vat_number = $3, email = $4, phone = $5,
-			address_line1 = $6, address_line2 = $7, city = $8, postal_code = $9,
-			country_code = $10, payment_terms_days = $11, credit_limit = $12,
-			default_account_id = $13, is_active = $14, notes = $15, updated_at = $16
-		WHERE id = $17 AND tenant_id = $18
-	`, schemaName)
-
-	_, err = s.db.Exec(ctx, query,
-		contact.Name, contact.RegCode, contact.VATNumber, contact.Email, contact.Phone,
-		contact.AddressLine1, contact.AddressLine2, contact.City, contact.PostalCode,
-		contact.CountryCode, contact.PaymentTermsDays, contact.CreditLimit,
-		contact.DefaultAccountID, contact.IsActive, contact.Notes, contact.UpdatedAt,
-		contactID, tenantID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("update contact: %w", err)
-	}
-
-	return contact, nil
 }
 
 // Delete deactivates a contact (soft delete)
 func (s *Service) Delete(ctx context.Context, tenantID, schemaName, contactID string) error {
-	query := fmt.Sprintf(`
-		UPDATE %s.contacts SET is_active = false, updated_at = $1
-		WHERE id = $2 AND tenant_id = $3
-	`, schemaName)
-
-	result, err := s.db.Exec(ctx, query, time.Now(), contactID, tenantID)
-	if err != nil {
+	if err := s.repo.Delete(ctx, schemaName, tenantID, contactID); err != nil {
 		return fmt.Errorf("delete contact: %w", err)
 	}
-	if result.RowsAffected() == 0 {
-		return fmt.Errorf("contact not found: %s", contactID)
-	}
-
 	return nil
 }

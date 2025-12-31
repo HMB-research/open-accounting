@@ -11,6 +11,21 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// RepositoryInterface defines the contract for accounting data access
+type RepositoryInterface interface {
+	GetAccountByID(ctx context.Context, tenantID, accountID string) (*Account, error)
+	ListAccounts(ctx context.Context, tenantID string, activeOnly bool) ([]Account, error)
+	CreateAccount(ctx context.Context, a *Account) error
+	GetJournalEntryByID(ctx context.Context, tenantID, entryID string) (*JournalEntry, error)
+	CreateJournalEntry(ctx context.Context, je *JournalEntry) error
+	CreateJournalEntryTx(ctx context.Context, tx pgx.Tx, je *JournalEntry) error
+	UpdateJournalEntryStatus(ctx context.Context, tenantID, entryID string, status JournalEntryStatus, userID string) error
+	GetAccountBalance(ctx context.Context, tenantID, accountID string, asOfDate time.Time) (decimal.Decimal, error)
+	GetTrialBalance(ctx context.Context, tenantID string, asOfDate time.Time) ([]AccountBalance, error)
+	GetPeriodBalances(ctx context.Context, tenantID string, startDate, endDate time.Time) ([]AccountBalance, error)
+	VoidJournalEntry(ctx context.Context, tenantID, entryID, userID, reason string, reversal *JournalEntry) error
+}
+
 // Repository provides access to accounting data
 type Repository struct {
 	db *pgxpool.Pool
@@ -369,4 +384,34 @@ func (r *Repository) GetPeriodBalances(ctx context.Context, tenantID string, sta
 		balances = append(balances, ab)
 	}
 	return balances, nil
+}
+
+// VoidJournalEntry voids a journal entry and creates a reversal entry within a transaction
+func (r *Repository) VoidJournalEntry(ctx context.Context, tenantID, entryID, userID, reason string, reversal *JournalEntry) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Mark original as voided
+	now := time.Now()
+	result, err := tx.Exec(ctx, `
+		UPDATE journal_entries
+		SET status = $1, voided_at = $2, voided_by = $3, void_reason = $4
+		WHERE id = $5 AND tenant_id = $6 AND status = $7
+	`, StatusVoided, now, userID, reason, entryID, tenantID, StatusPosted)
+	if err != nil {
+		return fmt.Errorf("mark entry as voided: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("entry not found or not in posted status")
+	}
+
+	// Create the reversal entry
+	if err := r.CreateJournalEntryTx(ctx, tx, reversal); err != nil {
+		return fmt.Errorf("create reversal entry: %w", err)
+	}
+
+	return tx.Commit(ctx)
 }

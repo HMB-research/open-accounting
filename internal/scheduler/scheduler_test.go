@@ -1,8 +1,23 @@
 package scheduler
 
 import (
+	"context"
+	"errors"
 	"testing"
 )
+
+// MockRepository implements Repository for testing
+type MockRepository struct {
+	tenants             []TenantInfo
+	listActiveTenantsErr error
+}
+
+func (m *MockRepository) ListActiveTenants(ctx context.Context) ([]TenantInfo, error) {
+	if m.listActiveTenantsErr != nil {
+		return nil, m.listActiveTenantsErr
+	}
+	return m.tenants, nil
+}
 
 func TestDefaultConfig(t *testing.T) {
 	config := DefaultConfig()
@@ -145,22 +160,71 @@ func TestScheduler_StopNotRunning(t *testing.T) {
 }
 
 func TestScheduler_RunNow_WithNilDB(t *testing.T) {
-	// Note: RunNow() with nil db will panic because it tries to query
+	// Note: RunNow() with nil repo will panic because it tries to query
 	// the database. This test documents this expected behavior.
-	// In production, the scheduler is always created with a valid db.
+	// In production, the scheduler is always created with a valid repo.
 	config := DefaultConfig()
 	scheduler := NewScheduler(nil, nil, config)
 
-	// We expect RunNow to panic with nil db - this is acceptable
-	// because in production, db is never nil
+	// We expect RunNow to panic with nil repo - this is acceptable
+	// because in production, repo is never nil
 	defer func() {
 		if r := recover(); r != nil {
 			// Expected panic - test passes
-			t.Logf("RunNow() correctly panicked with nil db: %v", r)
+			t.Logf("RunNow() correctly panicked with nil repo: %v", r)
 		}
 	}()
 
 	scheduler.RunNow()
+}
+
+func TestNewSchedulerWithRepository(t *testing.T) {
+	mockRepo := &MockRepository{}
+	config := DefaultConfig()
+	scheduler := NewSchedulerWithRepository(mockRepo, nil, config)
+
+	if scheduler == nil {
+		t.Fatal("NewSchedulerWithRepository returned nil")
+	}
+	if scheduler.repo == nil {
+		t.Error("repo should not be nil")
+	}
+}
+
+func TestScheduler_RunNow_WithMockRepository(t *testing.T) {
+	// Note: We can only test cases where recurring service is not called
+	// (no tenants, or repository error) since we can't mock recurring.Service
+	tests := []struct {
+		name      string
+		tenants   []TenantInfo
+		repoErr   error
+	}{
+		{
+			name:    "no tenants",
+			tenants: []TenantInfo{},
+			repoErr: nil,
+		},
+		{
+			name:    "repository error",
+			tenants: nil,
+			repoErr: errors.New("database error"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRepo := &MockRepository{
+				tenants:             tt.tenants,
+				listActiveTenantsErr: tt.repoErr,
+			}
+			// nil recurring service is fine when there are no tenants or repo errors
+			config := DefaultConfig()
+			scheduler := NewSchedulerWithRepository(mockRepo, nil, config)
+
+			// Should not panic
+			scheduler.RunNow()
+		})
+	}
 }
 
 func TestConfig_CustomSchedule(t *testing.T) {

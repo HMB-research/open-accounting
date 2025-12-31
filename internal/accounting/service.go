@@ -15,7 +15,7 @@ import (
 // Service provides accounting operations
 type Service struct {
 	db   *pgxpool.Pool
-	repo *Repository
+	repo RepositoryInterface
 }
 
 // NewService creates a new accounting service
@@ -23,6 +23,14 @@ func NewService(db *pgxpool.Pool) *Service {
 	return &Service{
 		db:   db,
 		repo: NewRepository(db),
+	}
+}
+
+// NewServiceWithRepo creates a new accounting service with a custom repository (for testing)
+func NewServiceWithRepo(db *pgxpool.Pool, repo RepositoryInterface) *Service {
+	return &Service{
+		db:   db,
+		repo: repo,
 	}
 }
 
@@ -146,12 +154,6 @@ func (s *Service) PostJournalEntry(ctx context.Context, tenantID, entryID, userI
 
 // VoidJournalEntry voids a posted journal entry by creating a reversing entry
 func (s *Service) VoidJournalEntry(ctx context.Context, tenantID, entryID, userID, reason string) (*JournalEntry, error) {
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
 	// Get the original entry
 	original, err := s.repo.GetJournalEntryByID(ctx, tenantID, entryID)
 	if err != nil {
@@ -162,18 +164,8 @@ func (s *Service) VoidJournalEntry(ctx context.Context, tenantID, entryID, userI
 		return nil, fmt.Errorf("only posted entries can be voided, current status: %s", original.Status)
 	}
 
-	// Mark original as voided
-	now := time.Now()
-	_, err = tx.Exec(ctx, `
-		UPDATE journal_entries
-		SET status = $1, voided_at = $2, voided_by = $3, void_reason = $4
-		WHERE id = $5 AND tenant_id = $6
-	`, StatusVoided, now, userID, reason, entryID, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("mark entry as voided: %w", err)
-	}
-
 	// Create reversing entry
+	now := time.Now()
 	reversal := &JournalEntry{
 		ID:          uuid.New().String(),
 		TenantID:    tenantID,
@@ -204,13 +196,9 @@ func (s *Service) VoidJournalEntry(ctx context.Context, tenantID, entryID, userI
 		})
 	}
 
-	// Create the reversal entry
-	if err := s.repo.CreateJournalEntryTx(ctx, tx, reversal); err != nil {
-		return nil, fmt.Errorf("create reversal entry: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit transaction: %w", err)
+	// Void the entry and create reversal via repository
+	if err := s.repo.VoidJournalEntry(ctx, tenantID, entryID, userID, reason, reversal); err != nil {
+		return nil, err
 	}
 
 	return reversal, nil
