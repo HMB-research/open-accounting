@@ -110,15 +110,15 @@ func TestPostgresRepository_Create(t *testing.T) {
 		ID:            uuid.New().String(),
 		TenantID:      tenant.ID,
 		InvoiceNumber: "INV-TEST-001",
-		Type:          InvoiceTypeSales,
+		InvoiceType:   InvoiceTypeSales,
 		ContactID:     contactID,
 		IssueDate:     time.Now(),
 		DueDate:       time.Now().AddDate(0, 0, 30),
 		Currency:      "EUR",
 		Subtotal:      decimal.NewFromFloat(100),
-		TaxTotal:      decimal.NewFromFloat(20),
+		VATAmount:     decimal.NewFromFloat(20),
 		Total:         decimal.NewFromFloat(120),
-		Status:        InvoiceStatusDraft,
+		Status:        StatusDraft,
 	}
 
 	err = repo.Create(ctx, tenant.SchemaName, invoice)

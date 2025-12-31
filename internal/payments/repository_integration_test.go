@@ -111,18 +111,16 @@ func TestPostgresRepository_CreatePayment(t *testing.T) {
 	}
 
 	payment := &Payment{
-		ID:              uuid.New().String(),
-		TenantID:        tenant.ID,
-		Type:            PaymentTypeReceived,
-		ContactID:       contactID,
-		Amount:          decimal.NewFromFloat(250.50),
-		Currency:        "EUR",
-		PaymentDate:     time.Now(),
-		AccountID:       cashAccountID,
-		Reference:       "TEST-001",
-		Description:     "Test payment",
-		AllocatedAmount: decimal.Zero,
-		Status:          "completed",
+		ID:          uuid.New().String(),
+		TenantID:    tenant.ID,
+		PaymentType: PaymentTypeReceived,
+		ContactID:   &contactID,
+		Amount:      decimal.NewFromFloat(250.50),
+		Currency:    "EUR",
+		PaymentDate: time.Now(),
+		BankAccount: cashAccountID,
+		Reference:   "TEST-001",
+		Notes:       "Test payment",
 	}
 
 	err = repo.Create(ctx, tenant.SchemaName, payment)

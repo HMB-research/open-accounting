@@ -28,7 +28,7 @@ func TestPostgresRepository_PluginLifecycle(t *testing.T) {
 	}
 	manifestJSON, _ := json.Marshal(manifest)
 
-	plugin, err := repo.InsertPluginReturning(ctx, manifest, "https://github.com/test/test-plugin", RepositoryTypeGitHub, manifestJSON)
+	plugin, err := repo.InsertPluginReturning(ctx, manifest, "https://github.com/test/test-plugin", RepoGitHub, manifestJSON)
 	if err != nil {
 		t.Fatalf("InsertPluginReturning failed: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestPostgresRepository_TenantPluginOperations(t *testing.T) {
 	}
 	manifestJSON, _ := json.Marshal(manifest)
 
-	plugin, err := repo.InsertPluginReturning(ctx, manifest, "https://github.com/test/tenant-plugin", RepositoryTypeGitHub, manifestJSON)
+	plugin, err := repo.InsertPluginReturning(ctx, manifest, "https://github.com/test/tenant-plugin", RepoGitHub, manifestJSON)
 	if err != nil {
 		t.Fatalf("InsertPluginReturning failed: %v", err)
 	}

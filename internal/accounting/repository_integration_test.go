@@ -77,22 +77,22 @@ func TestPostgresRepository_VoidJournalEntry(t *testing.T) {
 		Description: "Reversal of JE-001",
 		Status:      StatusPosted,
 		CreatedBy:   userID,
-		Lines: []JournalLine{
+		Lines: []JournalEntryLine{
 			{
 				ID:        uuid.New().String(),
 				TenantID:  tenant.ID,
-				EntryID:   reversalID,
+				JournalEntryID:   reversalID,
 				AccountID: revenueAccountID,
-				Debit:     amount,
-				Credit:    decimal.Zero,
+				DebitAmount:     amount,
+				CreditAmount:    decimal.Zero,
 			},
 			{
 				ID:        uuid.New().String(),
 				TenantID:  tenant.ID,
-				EntryID:   reversalID,
+				JournalEntryID:   reversalID,
 				AccountID: cashAccountID,
-				Debit:     decimal.Zero,
-				Credit:    amount,
+				DebitAmount:     decimal.Zero,
+				CreditAmount:    amount,
 			},
 		},
 	}
@@ -169,22 +169,22 @@ func TestPostgresRepository_CreateJournalEntry(t *testing.T) {
 		Description: "Test journal entry",
 		Status:      StatusDraft,
 		CreatedBy:   userID,
-		Lines: []JournalLine{
+		Lines: []JournalEntryLine{
 			{
 				ID:        uuid.New().String(),
 				TenantID:  tenant.ID,
-				EntryID:   entryID,
+				JournalEntryID:   entryID,
 				AccountID: cashAccountID,
-				Debit:     amount,
-				Credit:    decimal.Zero,
+				DebitAmount:     amount,
+				CreditAmount:    decimal.Zero,
 			},
 			{
 				ID:        uuid.New().String(),
 				TenantID:  tenant.ID,
-				EntryID:   entryID,
+				JournalEntryID:   entryID,
 				AccountID: revenueAccountID,
-				Debit:     decimal.Zero,
-				Credit:    amount,
+				DebitAmount:     decimal.Zero,
+				CreditAmount:    amount,
 			},
 		},
 	}
