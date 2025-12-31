@@ -20,20 +20,20 @@ import (
 // =============================================================================
 
 type MockRepository struct {
-	recurring                  map[string]*RecurringInvoice
-	lines                      map[string][]RecurringInvoiceLine
-	ensureSchemaErr            error
-	createErr                  error
-	createLineErr              error
-	getByIDErr                 error
-	getLinesErr                error
-	listErr                    error
-	updateErr                  error
-	deleteLinesErr             error
-	deleteErr                  error
-	setActiveErr               error
-	getDueIDsErr               error
-	updateAfterGenErr          error
+	recurring                   map[string]*RecurringInvoice
+	lines                       map[string][]RecurringInvoiceLine
+	ensureSchemaErr             error
+	createErr                   error
+	createLineErr               error
+	getByIDErr                  error
+	getLinesErr                 error
+	listErr                     error
+	updateErr                   error
+	deleteLinesErr              error
+	deleteErr                   error
+	setActiveErr                error
+	getDueIDsErr                error
+	updateAfterGenErr           error
 	updateInvoiceEmailStatusErr error
 }
 

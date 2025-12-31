@@ -17,27 +17,27 @@ type MockRepository struct {
 	tenantPlugins map[string]*TenantPlugin // key: "tenantID:pluginID"
 
 	// Error injection
-	listRegistriesErr         error
-	getRegistryErr            error
-	createRegistryErr         error
-	deleteRegistryErr         error
-	updateRegistryErr         error
-	listPluginsErr            error
-	getPluginErr              error
-	getPluginByNameErr        error
-	createPluginErr           error
-	updatePluginErr           error
-	deletePluginErr           error
-	listTenantPluginsErr      error
-	getTenantPluginErr        error
-	createTenantPluginErr     error
-	enableTenantPluginErr     error
-	disableTenantPluginErr    error
+	listRegistriesErr          error
+	getRegistryErr             error
+	createRegistryErr          error
+	deleteRegistryErr          error
+	updateRegistryErr          error
+	listPluginsErr             error
+	getPluginErr               error
+	getPluginByNameErr         error
+	createPluginErr            error
+	updatePluginErr            error
+	deletePluginErr            error
+	listTenantPluginsErr       error
+	getTenantPluginErr         error
+	createTenantPluginErr      error
+	enableTenantPluginErr      error
+	disableTenantPluginErr     error
 	getTenantPluginSettingsErr error
-	updateTenantSettingsErr   error
-	deleteTenantPluginErr     error
-	isEnabledForTenantErr     error
-	listEnabledPluginsErr     error
+	updateTenantSettingsErr    error
+	deleteTenantPluginErr      error
+	isEnabledForTenantErr      error
+	listEnabledPluginsErr      error
 }
 
 func NewMockRepository() *MockRepository {

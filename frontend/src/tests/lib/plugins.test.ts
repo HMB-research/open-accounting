@@ -145,6 +145,9 @@ describe('pluginManager.loadPlugins', () => {
 				plugin_id: 'plugin-1',
 				is_enabled: true,
 				config: {},
+				settings: {},
+				created_at: '2024-01-01T00:00:00Z',
+				updated_at: '2024-01-01T00:00:00Z',
 				plugin: {
 					id: 'plugin-1',
 					name: 'Test Plugin',
@@ -175,7 +178,7 @@ describe('pluginManager.loadPlugins', () => {
 			}
 		];
 
-		vi.spyOn(api, 'listTenantPlugins').mockResolvedValueOnce(mockPlugins);
+		vi.spyOn(api, 'listTenantPlugins').mockResolvedValueOnce(mockPlugins as unknown as import('$lib/api').TenantPlugin[]);
 
 		await pluginManager.loadPlugins('tenant-1');
 
@@ -199,6 +202,9 @@ describe('pluginManager.loadPlugins', () => {
 				plugin_id: 'plugin-1',
 				is_enabled: true,
 				config: {},
+				settings: {},
+				created_at: '2024-01-01T00:00:00Z',
+				updated_at: '2024-01-01T00:00:00Z',
 				plugin: {
 					id: 'plugin-1',
 					name: 'Test Plugin',
@@ -209,7 +215,7 @@ describe('pluginManager.loadPlugins', () => {
 			}
 		];
 
-		const spy = vi.spyOn(api, 'listTenantPlugins').mockResolvedValue(mockPlugins);
+		const spy = vi.spyOn(api, 'listTenantPlugins').mockResolvedValue(mockPlugins as unknown as import('$lib/api').TenantPlugin[]);
 
 		await pluginManager.loadPlugins('tenant-1');
 		expect(spy).toHaveBeenCalledTimes(1);
@@ -227,6 +233,9 @@ describe('pluginManager.loadPlugins', () => {
 				plugin_id: 'plugin-1',
 				is_enabled: true,
 				config: {},
+				settings: {},
+				created_at: '2024-01-01T00:00:00Z',
+				updated_at: '2024-01-01T00:00:00Z',
 				plugin: {
 					id: 'plugin-1',
 					name: 'Test Plugin',
@@ -237,7 +246,7 @@ describe('pluginManager.loadPlugins', () => {
 			}
 		];
 
-		const spy = vi.spyOn(api, 'listTenantPlugins').mockResolvedValue(mockPlugins);
+		const spy = vi.spyOn(api, 'listTenantPlugins').mockResolvedValue(mockPlugins as unknown as import('$lib/api').TenantPlugin[]);
 
 		await pluginManager.loadPlugins('tenant-1');
 		await pluginManager.loadPlugins('tenant-2');
@@ -264,6 +273,9 @@ describe('pluginManager.loadPlugins', () => {
 				plugin_id: 'plugin-1',
 				is_enabled: false,
 				config: {},
+				settings: {},
+				created_at: '2024-01-01T00:00:00Z',
+				updated_at: '2024-01-01T00:00:00Z',
 				plugin: {
 					id: 'plugin-1',
 					name: 'Disabled Plugin',
@@ -281,7 +293,7 @@ describe('pluginManager.loadPlugins', () => {
 			}
 		];
 
-		vi.spyOn(api, 'listTenantPlugins').mockResolvedValueOnce(mockPlugins);
+		vi.spyOn(api, 'listTenantPlugins').mockResolvedValueOnce(mockPlugins as unknown as import('$lib/api').TenantPlugin[]);
 
 		await pluginManager.loadPlugins('tenant-1');
 
@@ -297,6 +309,9 @@ describe('pluginManager.loadPlugins', () => {
 				plugin_id: 'plugin-1',
 				is_enabled: true,
 				config: {},
+				settings: {},
+				created_at: '2024-01-01T00:00:00Z',
+				updated_at: '2024-01-01T00:00:00Z',
 				plugin: {
 					id: 'plugin-1',
 					name: 'Plugin Without Manifest',
@@ -307,7 +322,7 @@ describe('pluginManager.loadPlugins', () => {
 			}
 		];
 
-		vi.spyOn(api, 'listTenantPlugins').mockResolvedValueOnce(mockPlugins);
+		vi.spyOn(api, 'listTenantPlugins').mockResolvedValueOnce(mockPlugins as unknown as import('$lib/api').TenantPlugin[]);
 
 		await pluginManager.loadPlugins('tenant-1');
 
@@ -323,6 +338,9 @@ describe('pluginManager.loadPlugins', () => {
 				plugin_id: 'plugin-1',
 				is_enabled: true,
 				config: {},
+				settings: {},
+				created_at: '2024-01-01T00:00:00Z',
+				updated_at: '2024-01-01T00:00:00Z',
 				plugin: {
 					id: 'plugin-1',
 					name: 'Multi-Nav Plugin',
@@ -344,7 +362,7 @@ describe('pluginManager.loadPlugins', () => {
 			}
 		];
 
-		vi.spyOn(api, 'listTenantPlugins').mockResolvedValueOnce(mockPlugins);
+		vi.spyOn(api, 'listTenantPlugins').mockResolvedValueOnce(mockPlugins as unknown as import('$lib/api').TenantPlugin[]);
 
 		await pluginManager.loadPlugins('tenant-1');
 
@@ -367,6 +385,9 @@ describe('pluginManager.reload', () => {
 				plugin_id: 'plugin-1',
 				is_enabled: true,
 				config: {},
+				settings: {},
+				created_at: '2024-01-01T00:00:00Z',
+				updated_at: '2024-01-01T00:00:00Z',
 				plugin: {
 					id: 'plugin-1',
 					name: 'Test Plugin',
@@ -377,7 +398,7 @@ describe('pluginManager.reload', () => {
 			}
 		];
 
-		const spy = vi.spyOn(api, 'listTenantPlugins').mockResolvedValue(mockPlugins);
+		const spy = vi.spyOn(api, 'listTenantPlugins').mockResolvedValue(mockPlugins as unknown as import('$lib/api').TenantPlugin[]);
 
 		// First load
 		await pluginManager.loadPlugins('tenant-1');

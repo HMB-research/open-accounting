@@ -111,8 +111,8 @@ func TestExportKMDToXML_AllRowCodes(t *testing.T) {
 	assert.Contains(t, xmlStr, "<rida5>20")
 	assert.Contains(t, xmlStr, "<rida6>100")
 	assert.Contains(t, xmlStr, "<rida7>10")
-	assert.Contains(t, xmlStr, "<rida8>500") // Total output VAT
-	assert.Contains(t, xmlStr, "<rida9>200") // Total input VAT
+	assert.Contains(t, xmlStr, "<rida8>500")  // Total output VAT
+	assert.Contains(t, xmlStr, "<rida9>200")  // Total input VAT
 	assert.Contains(t, xmlStr, "<rida10>300") // VAT payable (500-200)
 }
 

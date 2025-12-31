@@ -89,11 +89,11 @@ func TestService_Create(t *testing.T) {
 	service := NewServiceWithRepository(repo)
 
 	tests := []struct {
-		name      string
-		tenantID  string
-		req       *CreateContactRequest
-		wantErr   bool
-		errMsg    string
+		name     string
+		tenantID string
+		req      *CreateContactRequest
+		wantErr  bool
+		errMsg   string
 	}{
 		{
 			name:     "Valid customer",

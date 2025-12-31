@@ -44,13 +44,13 @@ type Repository interface {
 
 // Error definitions
 var (
-	ErrBankAccountNotFound         = fmt.Errorf("bank account not found")
-	ErrTransactionNotFound         = fmt.Errorf("transaction not found")
-	ErrReconciliationNotFound      = fmt.Errorf("reconciliation not found")
-	ErrAccountHasTransactions      = fmt.Errorf("cannot delete bank account with transactions")
-	ErrTransactionAlreadyMatched   = fmt.Errorf("transaction not found or already matched")
-	ErrTransactionNotMatched       = fmt.Errorf("transaction not found or not matched")
-	ErrReconciliationAlreadyDone   = fmt.Errorf("reconciliation not found or already completed")
+	ErrBankAccountNotFound       = fmt.Errorf("bank account not found")
+	ErrTransactionNotFound       = fmt.Errorf("transaction not found")
+	ErrReconciliationNotFound    = fmt.Errorf("reconciliation not found")
+	ErrAccountHasTransactions    = fmt.Errorf("cannot delete bank account with transactions")
+	ErrTransactionAlreadyMatched = fmt.Errorf("transaction not found or already matched")
+	ErrTransactionNotMatched     = fmt.Errorf("transaction not found or not matched")
+	ErrReconciliationAlreadyDone = fmt.Errorf("reconciliation not found or already completed")
 )
 
 // PostgresRepository implements Repository using PostgreSQL

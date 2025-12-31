@@ -27,30 +27,30 @@ func (m *MockUUIDGenerator) New() string {
 // MockRepository implements Repository for testing
 type MockRepository struct {
 	// Employee data
-	Employees          map[string]*Employee
-	CreateEmployeeErr  error
-	GetEmployeeErr     error
-	ListEmployeesErr   error
-	UpdateEmployeeErr  error
+	Employees         map[string]*Employee
+	CreateEmployeeErr error
+	GetEmployeeErr    error
+	ListEmployeesErr  error
+	UpdateEmployeeErr error
 
 	// Salary component data
-	Salaries                   map[string]decimal.Decimal // employeeID -> salary
-	EndCurrentBaseSalaryErr    error
-	CreateSalaryComponentErr   error
-	GetCurrentSalaryErr        error
+	Salaries                 map[string]decimal.Decimal // employeeID -> salary
+	EndCurrentBaseSalaryErr  error
+	CreateSalaryComponentErr error
+	GetCurrentSalaryErr      error
 
 	// Payroll run data
-	PayrollRuns        map[string]*PayrollRun
-	CreatePayrollRunErr error
-	GetPayrollRunErr   error
-	ListPayrollRunsErr error
-	UpdatePayrollRunErr error
+	PayrollRuns          map[string]*PayrollRun
+	CreatePayrollRunErr  error
+	GetPayrollRunErr     error
+	ListPayrollRunsErr   error
+	UpdatePayrollRunErr  error
 	ApprovePayrollRunErr error
 
 	// Payslip data
-	Payslips               []Payslip
-	DeletePayslipsErr      error
-	CreatePayslipErr       error
+	Payslips          []Payslip
+	DeletePayslipsErr error
+	CreatePayslipErr  error
 
 	// Transaction handling
 	BeginTxErr error
@@ -73,7 +73,7 @@ func (t *MockTx) Rollback(ctx context.Context) error {
 	return nil
 }
 
-func (t *MockTx) Begin(ctx context.Context) (pgx.Tx, error)       { return nil, nil }
+func (t *MockTx) Begin(ctx context.Context) (pgx.Tx, error) { return nil, nil }
 func (t *MockTx) CopyFrom(ctx context.Context, tableName pgx.Identifier, columnNames []string, rowSrc pgx.CopyFromSource) (int64, error) {
 	return 0, nil
 }
@@ -811,11 +811,11 @@ func TestCalculatePayroll_MultipleEmployees(t *testing.T) {
 		FundedPensionRate:    FundedPensionRateDefault,
 	}
 	repo.Employees["emp-2"] = &Employee{
-		ID:                   "emp-2",
-		TenantID:             "tenant-1",
-		IsActive:             true,
-		ApplyBasicExemption:  false,
-		FundedPensionRate:    FundedPensionRateDefault,
+		ID:                  "emp-2",
+		TenantID:            "tenant-1",
+		IsActive:            true,
+		ApplyBasicExemption: false,
+		FundedPensionRate:   FundedPensionRateDefault,
 	}
 
 	repo.Salaries["emp-1"] = decimal.NewFromFloat(2000)

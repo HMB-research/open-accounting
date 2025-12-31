@@ -11,30 +11,30 @@ import (
 
 // MockRepository implements Repository for testing
 type MockRepository struct {
-	accounts       map[string]*BankAccount
-	transactions   map[string]*BankTransaction
+	accounts        map[string]*BankAccount
+	transactions    map[string]*BankTransaction
 	reconciliations map[string]*BankReconciliation
-	imports        map[string]*BankStatementImport
+	imports         map[string]*BankStatementImport
 
 	// Function overrides for custom behavior
-	CreateBankAccountFn            func(ctx context.Context, schemaName string, account *BankAccount) error
-	GetBankAccountFn               func(ctx context.Context, schemaName, tenantID, accountID string) (*BankAccount, error)
-	ListBankAccountsFn             func(ctx context.Context, schemaName, tenantID string, filter *BankAccountFilter) ([]BankAccount, error)
-	UpdateBankAccountFn            func(ctx context.Context, schemaName string, account *BankAccount) error
-	DeleteBankAccountFn            func(ctx context.Context, schemaName, tenantID, accountID string) error
-	UnsetDefaultAccountsFn         func(ctx context.Context, schemaName, tenantID string) error
-	CountTransactionsForAccountFn  func(ctx context.Context, schemaName, accountID string) (int, error)
-	CalculateAccountBalanceFn      func(ctx context.Context, schemaName, accountID string) (decimal.Decimal, error)
-	ListTransactionsFn             func(ctx context.Context, schemaName, tenantID string, filter *TransactionFilter) ([]BankTransaction, error)
-	GetTransactionFn               func(ctx context.Context, schemaName, tenantID, transactionID string) (*BankTransaction, error)
-	MatchTransactionFn             func(ctx context.Context, schemaName, tenantID, transactionID, paymentID string) error
-	UnmatchTransactionFn           func(ctx context.Context, schemaName, tenantID, transactionID string) error
-	CreateReconciliationFn         func(ctx context.Context, schemaName string, r *BankReconciliation) error
-	GetReconciliationFn            func(ctx context.Context, schemaName, tenantID, reconciliationID string) (*BankReconciliation, error)
-	ListReconciliationsFn          func(ctx context.Context, schemaName, tenantID, bankAccountID string) ([]BankReconciliation, error)
-	CompleteReconciliationFn       func(ctx context.Context, schemaName, tenantID, reconciliationID string) error
+	CreateBankAccountFn              func(ctx context.Context, schemaName string, account *BankAccount) error
+	GetBankAccountFn                 func(ctx context.Context, schemaName, tenantID, accountID string) (*BankAccount, error)
+	ListBankAccountsFn               func(ctx context.Context, schemaName, tenantID string, filter *BankAccountFilter) ([]BankAccount, error)
+	UpdateBankAccountFn              func(ctx context.Context, schemaName string, account *BankAccount) error
+	DeleteBankAccountFn              func(ctx context.Context, schemaName, tenantID, accountID string) error
+	UnsetDefaultAccountsFn           func(ctx context.Context, schemaName, tenantID string) error
+	CountTransactionsForAccountFn    func(ctx context.Context, schemaName, accountID string) (int, error)
+	CalculateAccountBalanceFn        func(ctx context.Context, schemaName, accountID string) (decimal.Decimal, error)
+	ListTransactionsFn               func(ctx context.Context, schemaName, tenantID string, filter *TransactionFilter) ([]BankTransaction, error)
+	GetTransactionFn                 func(ctx context.Context, schemaName, tenantID, transactionID string) (*BankTransaction, error)
+	MatchTransactionFn               func(ctx context.Context, schemaName, tenantID, transactionID, paymentID string) error
+	UnmatchTransactionFn             func(ctx context.Context, schemaName, tenantID, transactionID string) error
+	CreateReconciliationFn           func(ctx context.Context, schemaName string, r *BankReconciliation) error
+	GetReconciliationFn              func(ctx context.Context, schemaName, tenantID, reconciliationID string) (*BankReconciliation, error)
+	ListReconciliationsFn            func(ctx context.Context, schemaName, tenantID, bankAccountID string) ([]BankReconciliation, error)
+	CompleteReconciliationFn         func(ctx context.Context, schemaName, tenantID, reconciliationID string) error
 	AddTransactionToReconciliationFn func(ctx context.Context, schemaName, tenantID, transactionID, reconciliationID string) error
-	GetImportHistoryFn             func(ctx context.Context, schemaName, tenantID, bankAccountID string) ([]BankStatementImport, error)
+	GetImportHistoryFn               func(ctx context.Context, schemaName, tenantID, bankAccountID string) ([]BankStatementImport, error)
 }
 
 func NewMockRepository() *MockRepository {

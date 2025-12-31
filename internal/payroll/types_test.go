@@ -293,10 +293,10 @@ func TestTaxCalculation_Deductions(t *testing.T) {
 
 func TestTaxCalculation_TaxableIncome(t *testing.T) {
 	tests := []struct {
-		name             string
-		grossSalary      decimal.Decimal
-		basicExemption   decimal.Decimal
-		expectedTaxable  decimal.Decimal
+		name            string
+		grossSalary     decimal.Decimal
+		basicExemption  decimal.Decimal
+		expectedTaxable decimal.Decimal
 	}{
 		{
 			name:            "Normal taxable income",
@@ -445,12 +445,12 @@ func TestTSDDeclaration_Fields(t *testing.T) {
 
 func TestCreateEmployeeRequest_Fields(t *testing.T) {
 	req := CreateEmployeeRequest{
-		FirstName:           "Mari",
-		LastName:            "Maasikas",
-		PersonalCode:        "38501234567",
-		Email:               "mari@example.com",
-		EmploymentType:      EmploymentFullTime,
-		ApplyBasicExemption: true,
+		FirstName:            "Mari",
+		LastName:             "Maasikas",
+		PersonalCode:         "38501234567",
+		Email:                "mari@example.com",
+		EmploymentType:       EmploymentFullTime,
+		ApplyBasicExemption:  true,
 		BasicExemptionAmount: decimal.NewFromFloat(700.00),
 		FundedPensionRate:    decimal.NewFromFloat(0.02),
 	}

@@ -631,15 +631,15 @@ func TestSlugRegex(t *testing.T) {
 	}
 
 	invalidSlugs := []string{
-		"-abc",     // starts with hyphen
-		"abc-",     // ends with hyphen
-		"AB",       // too short and uppercase
-		"a",        // too short
-		"ab",       // too short
-		"ABC",      // uppercase
-		"my_test",  // underscore
-		"my test",  // space
-		"my@test",  // special char
+		"-abc",    // starts with hyphen
+		"abc-",    // ends with hyphen
+		"AB",      // too short and uppercase
+		"a",       // too short
+		"ab",      // too short
+		"ABC",     // uppercase
+		"my_test", // underscore
+		"my test", // space
+		"my@test", // special char
 	}
 
 	for _, slug := range validSlugs {

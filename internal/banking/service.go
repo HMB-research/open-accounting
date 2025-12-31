@@ -296,8 +296,3 @@ func (s *Service) AddTransactionToReconciliation(ctx context.Context, schemaName
 func (s *Service) GetImportHistory(ctx context.Context, schemaName, tenantID, bankAccountID string) ([]BankStatementImport, error) {
 	return s.repo.GetImportHistory(ctx, schemaName, tenantID, bankAccountID)
 }
-
-// calculateAccountBalance is kept for backward compatibility but delegates to repository
-func (s *Service) calculateAccountBalance(ctx context.Context, schemaName, accountID string) (decimal.Decimal, error) {
-	return s.repo.CalculateAccountBalance(ctx, schemaName, accountID)
-}

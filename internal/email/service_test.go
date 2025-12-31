@@ -14,15 +14,15 @@ import (
 // MockRepository implements Repository for testing
 type MockRepository struct {
 	// Function fields for mocking behavior
-	EnsureSchemaFn           func(ctx context.Context, schemaName string) error
-	GetTenantSettingsFn      func(ctx context.Context, tenantID string) ([]byte, error)
-	UpdateTenantSettingsFn   func(ctx context.Context, tenantID string, settingsJSON []byte) error
-	GetTemplateFn            func(ctx context.Context, schemaName, tenantID string, templateType TemplateType) (*EmailTemplate, error)
-	ListTemplatesFn          func(ctx context.Context, schemaName, tenantID string) ([]EmailTemplate, error)
-	UpsertTemplateFn         func(ctx context.Context, schemaName string, template *EmailTemplate) error
-	CreateEmailLogFn         func(ctx context.Context, schemaName string, log *EmailLog) error
-	UpdateEmailLogStatusFn   func(ctx context.Context, schemaName, logID string, status EmailStatus, sentAt *time.Time, errorMessage string) error
-	GetEmailLogFn            func(ctx context.Context, schemaName, tenantID string, limit int) ([]EmailLog, error)
+	EnsureSchemaFn         func(ctx context.Context, schemaName string) error
+	GetTenantSettingsFn    func(ctx context.Context, tenantID string) ([]byte, error)
+	UpdateTenantSettingsFn func(ctx context.Context, tenantID string, settingsJSON []byte) error
+	GetTemplateFn          func(ctx context.Context, schemaName, tenantID string, templateType TemplateType) (*EmailTemplate, error)
+	ListTemplatesFn        func(ctx context.Context, schemaName, tenantID string) ([]EmailTemplate, error)
+	UpsertTemplateFn       func(ctx context.Context, schemaName string, template *EmailTemplate) error
+	CreateEmailLogFn       func(ctx context.Context, schemaName string, log *EmailLog) error
+	UpdateEmailLogStatusFn func(ctx context.Context, schemaName, logID string, status EmailStatus, sentAt *time.Time, errorMessage string) error
+	GetEmailLogFn          func(ctx context.Context, schemaName, tenantID string, limit int) ([]EmailLog, error)
 
 	// Track calls for assertions
 	EnsureSchemaCalled         bool
