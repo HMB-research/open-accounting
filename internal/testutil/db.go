@@ -12,6 +12,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 // TestTenant contains the test tenant information
@@ -228,4 +231,45 @@ func AddUserToTenant(t *testing.T, pool *pgxpool.Pool, tenantID, userID, role st
 	if err != nil {
 		t.Fatalf("failed to add user to tenant: %v", err)
 	}
+}
+
+// SetupGormDB creates a GORM database connection for testing.
+// It skips the test if DATABASE_URL is not set.
+// Returns the GORM DB instance.
+func SetupGormDB(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set, skipping integration test")
+	}
+
+	db, err := gorm.Open(postgres.Open(dbURL), &gorm.Config{
+		Logger:                 logger.Default.LogMode(logger.Silent),
+		SkipDefaultTransaction: true,
+	})
+	if err != nil {
+		t.Fatalf("failed to connect to database with GORM: %v", err)
+	}
+
+	// Verify connection
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get underlying sql.DB: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := sqlDB.PingContext(ctx); err != nil {
+		t.Fatalf("failed to ping database: %v", err)
+	}
+
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Logf("warning: failed to close GORM connection: %v", err)
+		}
+	})
+
+	return db
 }
