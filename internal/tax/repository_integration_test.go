@@ -26,14 +26,14 @@ func TestPostgresRepository_GenerateKMD(t *testing.T) {
 	// Create KMD declaration
 	now := time.Now()
 	decl := &KMDDeclaration{
-		TenantID:           tenant.ID,
-		Year:               now.Year(),
-		Month:              int(now.Month()),
-		TotalSalesVAT:      decimal.NewFromFloat(1000),
-		TotalPurchasesVAT:  decimal.NewFromFloat(300),
-		NetVATPayable:      decimal.NewFromFloat(700),
-		Status:             "draft",
-		GeneratedAt:        now,
+		TenantID:          tenant.ID,
+		Year:              now.Year(),
+		Month:             int(now.Month()),
+		TotalSalesVAT:     decimal.NewFromFloat(1000),
+		TotalPurchasesVAT: decimal.NewFromFloat(300),
+		NetVATPayable:     decimal.NewFromFloat(700),
+		Status:            "draft",
+		GeneratedAt:       now,
 	}
 
 	err = repo.GenerateKMD(ctx, tenant.ID, tenant.SchemaName, now.Year(), int(now.Month()), decl)

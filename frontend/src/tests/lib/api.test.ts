@@ -137,7 +137,7 @@ describe('API Client - Core Functionality', () => {
 			});
 
 			api.setTokens('token', 'refresh');
-			const result = await api.getInvoice('tenant-123', 'invoice-456') as { amount: Decimal; lines: Array<{ total: Decimal }> };
+			const result = await api.getInvoice('tenant-123', 'invoice-456') as unknown as { amount: Decimal; lines: Array<{ total: Decimal }> };
 
 			expect(result.amount).toBeInstanceOf(Decimal);
 			expect(result.amount.toString()).toBe('1234.56');
@@ -1813,8 +1813,8 @@ describe('API Client - Core Functionality', () => {
 				download: '',
 				click: mockClick
 			} as unknown as HTMLAnchorElement);
-			vi.spyOn(document.body, 'appendChild').mockImplementation(() => {});
-			vi.spyOn(document.body, 'removeChild').mockImplementation(() => {});
+			vi.spyOn(document.body, 'appendChild').mockImplementation((node) => node);
+			vi.spyOn(document.body, 'removeChild').mockImplementation((node) => node);
 
 			await api.downloadKMDXml('tenant-123', 2024, 1);
 
@@ -1847,8 +1847,8 @@ describe('API Client - Core Functionality', () => {
 				download: '',
 				click: mockClick
 			} as unknown as HTMLAnchorElement);
-			vi.spyOn(document.body, 'appendChild').mockImplementation(() => {});
-			vi.spyOn(document.body, 'removeChild').mockImplementation(() => {});
+			vi.spyOn(document.body, 'appendChild').mockImplementation((node) => node);
+			vi.spyOn(document.body, 'removeChild').mockImplementation((node) => node);
 
 			await api.downloadTSDXml('tenant-123', 2024, 1);
 
@@ -1881,8 +1881,8 @@ describe('API Client - Core Functionality', () => {
 				download: '',
 				click: mockClick
 			} as unknown as HTMLAnchorElement);
-			vi.spyOn(document.body, 'appendChild').mockImplementation(() => {});
-			vi.spyOn(document.body, 'removeChild').mockImplementation(() => {});
+			vi.spyOn(document.body, 'appendChild').mockImplementation((node) => node);
+			vi.spyOn(document.body, 'removeChild').mockImplementation((node) => node);
 
 			await api.downloadTSDCsv('tenant-123', 2024, 1);
 

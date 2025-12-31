@@ -392,4 +392,3 @@ func TestAgingReport_ReportTypes(t *testing.T) {
 		}
 	}
 }
-

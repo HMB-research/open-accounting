@@ -13,15 +13,15 @@ import (
 
 // MockRepository implements Repository for testing
 type MockRepository struct {
-	ensureSchemaErr     error
-	queryVATDataResult  []VATAggregateRow
-	queryVATDataErr     error
-	saveDeclarationErr  error
-	getDeclarationResult *KMDDeclaration
-	getDeclarationErr   error
+	ensureSchemaErr        error
+	queryVATDataResult     []VATAggregateRow
+	queryVATDataErr        error
+	saveDeclarationErr     error
+	getDeclarationResult   *KMDDeclaration
+	getDeclarationErr      error
 	listDeclarationsResult []KMDDeclaration
-	listDeclarationsErr error
-	savedDeclarations   []*KMDDeclaration
+	listDeclarationsErr    error
+	savedDeclarations      []*KMDDeclaration
 }
 
 func (m *MockRepository) EnsureSchema(ctx context.Context, schemaName string) error {

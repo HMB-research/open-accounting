@@ -8,7 +8,7 @@ import (
 
 // MockRepository implements Repository for testing
 type MockRepository struct {
-	tenants             []TenantInfo
+	tenants              []TenantInfo
 	listActiveTenantsErr error
 }
 
@@ -195,9 +195,9 @@ func TestScheduler_RunNow_WithMockRepository(t *testing.T) {
 	// Note: We can only test cases where recurring service is not called
 	// (no tenants, or repository error) since we can't mock recurring.Service
 	tests := []struct {
-		name      string
-		tenants   []TenantInfo
-		repoErr   error
+		name    string
+		tenants []TenantInfo
+		repoErr error
 	}{
 		{
 			name:    "no tenants",
@@ -214,7 +214,7 @@ func TestScheduler_RunNow_WithMockRepository(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockRepo := &MockRepository{
-				tenants:             tt.tenants,
+				tenants:              tt.tenants,
 				listActiveTenantsErr: tt.repoErr,
 			}
 			// nil recurring service is fine when there are no tenants or repo errors

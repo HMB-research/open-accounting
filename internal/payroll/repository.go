@@ -375,8 +375,8 @@ func (r *PostgresRepository) CreatePayslip(ctx context.Context, schemaName strin
 
 // Error definitions
 var (
-	ErrEmployeeNotFound    = fmt.Errorf("employee not found")
-	ErrPayrollRunNotFound  = fmt.Errorf("payroll run not found")
+	ErrEmployeeNotFound   = fmt.Errorf("employee not found")
+	ErrPayrollRunNotFound = fmt.Errorf("payroll run not found")
 )
 
 // UUIDGenerator interface for generating UUIDs (for testing)
