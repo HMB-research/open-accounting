@@ -426,3 +426,73 @@ func TestCanExportData(t *testing.T) {
 	assert.False(t, CanExportData("viewer"))
 	assert.False(t, CanExportData(""))
 }
+
+func TestRequirePermission(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	t.Run("permission granted", func(t *testing.T) {
+		// Use CanManageUsers as the permission check
+		middleware := RequirePermission(CanManageUsers)(handler)
+		claims := &Claims{
+			UserID: "user-123",
+			Role:   "admin",
+		}
+		ctx := context.WithValue(context.Background(), ClaimsContextKey, claims)
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil).WithContext(ctx)
+		w := httptest.NewRecorder()
+
+		middleware.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("permission denied", func(t *testing.T) {
+		// Viewer cannot manage users
+		middleware := RequirePermission(CanManageUsers)(handler)
+		claims := &Claims{
+			UserID: "user-123",
+			Role:   "viewer",
+		}
+		ctx := context.WithValue(context.Background(), ClaimsContextKey, claims)
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil).WithContext(ctx)
+		w := httptest.NewRecorder()
+
+		middleware.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusForbidden, w.Code)
+	})
+
+	t.Run("without claims", func(t *testing.T) {
+		middleware := RequirePermission(CanManageUsers)(handler)
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		w := httptest.NewRecorder()
+
+		middleware.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+	})
+
+	t.Run("custom permission check", func(t *testing.T) {
+		// Custom permission function that only allows owners
+		onlyOwner := func(role string) bool { return role == "owner" }
+		middleware := RequirePermission(onlyOwner)(handler)
+
+		claims := &Claims{
+			UserID: "user-123",
+			Role:   "owner",
+		}
+		ctx := context.WithValue(context.Background(), ClaimsContextKey, claims)
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil).WithContext(ctx)
+		w := httptest.NewRecorder()
+
+		middleware.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+}

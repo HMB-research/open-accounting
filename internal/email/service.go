@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"time"
@@ -14,136 +13,99 @@ import (
 	"github.com/wneessen/go-mail"
 )
 
+// MailSender is an interface for sending mail (for testing)
+type MailSender interface {
+	SendMail(config *SMTPConfig, m *mail.Msg) error
+}
+
+// DefaultMailSender implements MailSender using go-mail
+type DefaultMailSender struct{}
+
+// SendMail sends an email using go-mail
+func (d *DefaultMailSender) SendMail(config *SMTPConfig, m *mail.Msg) error {
+	var opts []mail.Option
+	opts = append(opts, mail.WithPort(config.Port))
+
+	if config.Username != "" {
+		opts = append(opts, mail.WithSMTPAuth(mail.SMTPAuthPlain))
+		opts = append(opts, mail.WithUsername(config.Username))
+		opts = append(opts, mail.WithPassword(config.Password))
+	}
+
+	if config.UseTLS {
+		opts = append(opts, mail.WithTLSPortPolicy(mail.TLSMandatory))
+		opts = append(opts, mail.WithTLSConfig(&tls.Config{
+			ServerName: config.Host,
+			MinVersion: tls.VersionTLS12,
+		}))
+	}
+
+	client, err := mail.NewClient(config.Host, opts...)
+	if err != nil {
+		return fmt.Errorf("failed to create mail client: %w", err)
+	}
+
+	if err := client.DialAndSend(m); err != nil {
+		return fmt.Errorf("failed to send email: %w", err)
+	}
+
+	return nil
+}
+
 // Service handles email operations
 type Service struct {
-	db *pgxpool.Pool
+	db     *pgxpool.Pool
+	repo   Repository
+	mailer MailSender
 }
 
 // NewService creates a new email service
 func NewService(db *pgxpool.Pool) *Service {
-	return &Service{db: db}
+	return &Service{
+		db:     db,
+		repo:   NewPostgresRepository(db),
+		mailer: &DefaultMailSender{},
+	}
+}
+
+// NewServiceWithRepository creates a new email service with a custom repository (for testing)
+func NewServiceWithRepository(repo Repository, mailer MailSender) *Service {
+	return &Service{
+		repo:   repo,
+		mailer: mailer,
+	}
 }
 
 // EnsureSchema creates email tables if they don't exist
 func (s *Service) EnsureSchema(ctx context.Context, schemaName string) error {
-	query := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS %s.email_templates (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			tenant_id UUID NOT NULL,
-			template_type VARCHAR(50) NOT NULL,
-			subject TEXT NOT NULL,
-			body_html TEXT NOT NULL,
-			body_text TEXT,
-			is_active BOOLEAN DEFAULT true,
-			created_at TIMESTAMPTZ DEFAULT NOW(),
-			updated_at TIMESTAMPTZ DEFAULT NOW(),
-			UNIQUE (tenant_id, template_type)
-		);
-
-		CREATE TABLE IF NOT EXISTS %s.email_log (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			tenant_id UUID NOT NULL,
-			email_type VARCHAR(50) NOT NULL,
-			recipient_email VARCHAR(255) NOT NULL,
-			recipient_name VARCHAR(255),
-			subject TEXT NOT NULL,
-			status VARCHAR(20) DEFAULT 'PENDING',
-			sent_at TIMESTAMPTZ,
-			error_message TEXT,
-			related_id UUID,
-			created_at TIMESTAMPTZ DEFAULT NOW()
-		);
-
-		CREATE INDEX IF NOT EXISTS idx_email_log_tenant ON %s.email_log(tenant_id);
-		CREATE INDEX IF NOT EXISTS idx_email_log_status ON %s.email_log(status);
-	`, schemaName, schemaName, schemaName, schemaName)
-
-	_, err := s.db.Exec(ctx, query)
-	return err
+	return s.repo.EnsureSchema(ctx, schemaName)
 }
 
 // GetSMTPConfig retrieves SMTP configuration for a tenant
 func (s *Service) GetSMTPConfig(ctx context.Context, tenantID string) (*SMTPConfig, error) {
-	var settingsJSON []byte
-	err := s.db.QueryRow(ctx, `
-		SELECT settings FROM tenants WHERE id = $1
-	`, tenantID).Scan(&settingsJSON)
+	settingsJSON, err := s.repo.GetTenantSettings(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tenant settings: %w", err)
 	}
 
-	var settings map[string]interface{}
-	if err := json.Unmarshal(settingsJSON, &settings); err != nil {
-		return nil, fmt.Errorf("failed to parse settings: %w", err)
-	}
-
-	config := &SMTPConfig{
-		Port:   587,
-		UseTLS: true,
-	}
-
-	if host, ok := settings["smtp_host"].(string); ok {
-		config.Host = host
-	}
-	if port, ok := settings["smtp_port"].(float64); ok {
-		config.Port = int(port)
-	}
-	if username, ok := settings["smtp_username"].(string); ok {
-		config.Username = username
-	}
-	if password, ok := settings["smtp_password"].(string); ok {
-		config.Password = password
-	}
-	if fromEmail, ok := settings["smtp_from_email"].(string); ok {
-		config.FromEmail = fromEmail
-	}
-	if fromName, ok := settings["smtp_from_name"].(string); ok {
-		config.FromName = fromName
-	}
-	if useTLS, ok := settings["smtp_use_tls"].(bool); ok {
-		config.UseTLS = useTLS
-	}
-
-	return config, nil
+	return ParseSMTPConfig(settingsJSON)
 }
 
 // UpdateSMTPConfig updates SMTP configuration for a tenant
 func (s *Service) UpdateSMTPConfig(ctx context.Context, tenantID string, req *UpdateSMTPConfigRequest) error {
 	// Get current settings
-	var settingsJSON []byte
-	err := s.db.QueryRow(ctx, `
-		SELECT settings FROM tenants WHERE id = $1
-	`, tenantID).Scan(&settingsJSON)
+	settingsJSON, err := s.repo.GetTenantSettings(ctx, tenantID)
 	if err != nil {
 		return fmt.Errorf("failed to get tenant settings: %w", err)
 	}
 
-	var settings map[string]interface{}
-	if err := json.Unmarshal(settingsJSON, &settings); err != nil {
-		settings = make(map[string]interface{})
-	}
-
-	// Update SMTP settings
-	settings["smtp_host"] = req.Host
-	settings["smtp_port"] = req.Port
-	settings["smtp_username"] = req.Username
-	if req.Password != "" {
-		settings["smtp_password"] = req.Password
-	}
-	settings["smtp_from_email"] = req.FromEmail
-	settings["smtp_from_name"] = req.FromName
-	settings["smtp_use_tls"] = req.UseTLS
-
-	// Save updated settings
-	newSettingsJSON, err := json.Marshal(settings)
+	// Merge new SMTP settings
+	newSettingsJSON, err := MergeSMTPConfig(settingsJSON, req)
 	if err != nil {
 		return fmt.Errorf("failed to marshal settings: %w", err)
 	}
 
-	_, err = s.db.Exec(ctx, `
-		UPDATE tenants SET settings = $2, updated_at = NOW() WHERE id = $1
-	`, tenantID, newSettingsJSON)
-	if err != nil {
+	if err := s.repo.UpdateTenantSettings(ctx, tenantID, newSettingsJSON); err != nil {
 		return fmt.Errorf("failed to update settings: %w", err)
 	}
 
@@ -173,7 +135,7 @@ func (s *Service) TestSMTP(ctx context.Context, tenantID string, recipientEmail 
 	m.SetBodyString(mail.TypeTextPlain, "This is a test email to verify your SMTP configuration is working correctly.")
 
 	// Send test email
-	if err := s.sendMail(config, m); err != nil {
+	if err := s.mailer.SendMail(config, m); err != nil {
 		return &TestSMTPResponse{Success: false, Message: fmt.Sprintf("failed to send: %v", err)}, nil
 	}
 
@@ -182,15 +144,8 @@ func (s *Service) TestSMTP(ctx context.Context, tenantID string, recipientEmail 
 
 // GetTemplate retrieves an email template
 func (s *Service) GetTemplate(ctx context.Context, schemaName string, tenantID string, templateType TemplateType) (*EmailTemplate, error) {
-	var tmpl EmailTemplate
-	err := s.db.QueryRow(ctx, fmt.Sprintf(`
-		SELECT id, tenant_id, template_type, subject, body_html, COALESCE(body_text, ''), is_active, created_at, updated_at
-		FROM %s.email_templates
-		WHERE tenant_id = $1 AND template_type = $2
-	`, schemaName), tenantID, templateType).Scan(
-		&tmpl.ID, &tmpl.TenantID, &tmpl.TemplateType, &tmpl.Subject, &tmpl.BodyHTML, &tmpl.BodyText, &tmpl.IsActive, &tmpl.CreatedAt, &tmpl.UpdatedAt,
-	)
-	if err != nil {
+	tmpl, err := s.repo.GetTemplate(ctx, schemaName, tenantID, templateType)
+	if err == ErrTemplateNotFound {
 		// Return default template if not found
 		defaults := DefaultTemplates()
 		if defaultTmpl, ok := defaults[templateType]; ok {
@@ -199,7 +154,10 @@ func (s *Service) GetTemplate(ctx context.Context, schemaName string, tenantID s
 		}
 		return nil, fmt.Errorf("template not found: %w", err)
 	}
-	return &tmpl, nil
+	if err != nil {
+		return nil, err
+	}
+	return tmpl, nil
 }
 
 // ListTemplates lists all email templates for a tenant
@@ -209,26 +167,13 @@ func (s *Service) ListTemplates(ctx context.Context, schemaName string, tenantID
 		return nil, err
 	}
 
-	rows, err := s.db.Query(ctx, fmt.Sprintf(`
-		SELECT id, tenant_id, template_type, subject, body_html, COALESCE(body_text, ''), is_active, created_at, updated_at
-		FROM %s.email_templates
-		WHERE tenant_id = $1
-		ORDER BY template_type
-	`, schemaName), tenantID)
+	templates, err := s.repo.ListTemplates(ctx, schemaName, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list templates: %w", err)
 	}
-	defer rows.Close()
 
-	templates := []EmailTemplate{}
 	existingTypes := make(map[TemplateType]bool)
-
-	for rows.Next() {
-		var tmpl EmailTemplate
-		if err := rows.Scan(&tmpl.ID, &tmpl.TenantID, &tmpl.TemplateType, &tmpl.Subject, &tmpl.BodyHTML, &tmpl.BodyText, &tmpl.IsActive, &tmpl.CreatedAt, &tmpl.UpdatedAt); err != nil {
-			return nil, err
-		}
-		templates = append(templates, tmpl)
+	for _, tmpl := range templates {
 		existingTypes[tmpl.TemplateType] = true
 	}
 
@@ -251,27 +196,21 @@ func (s *Service) UpdateTemplate(ctx context.Context, schemaName string, tenantI
 		return nil, err
 	}
 
-	id := uuid.New().String()
-	var tmpl EmailTemplate
+	tmpl := &EmailTemplate{
+		ID:           uuid.New().String(),
+		TenantID:     tenantID,
+		TemplateType: templateType,
+		Subject:      req.Subject,
+		BodyHTML:     req.BodyHTML,
+		BodyText:     req.BodyText,
+		IsActive:     req.IsActive,
+	}
 
-	err := s.db.QueryRow(ctx, fmt.Sprintf(`
-		INSERT INTO %s.email_templates (id, tenant_id, template_type, subject, body_html, body_text, is_active)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		ON CONFLICT (tenant_id, template_type) DO UPDATE SET
-			subject = EXCLUDED.subject,
-			body_html = EXCLUDED.body_html,
-			body_text = EXCLUDED.body_text,
-			is_active = EXCLUDED.is_active,
-			updated_at = NOW()
-		RETURNING id, tenant_id, template_type, subject, body_html, COALESCE(body_text, ''), is_active, created_at, updated_at
-	`, schemaName), id, tenantID, templateType, req.Subject, req.BodyHTML, req.BodyText, req.IsActive).Scan(
-		&tmpl.ID, &tmpl.TenantID, &tmpl.TemplateType, &tmpl.Subject, &tmpl.BodyHTML, &tmpl.BodyText, &tmpl.IsActive, &tmpl.CreatedAt, &tmpl.UpdatedAt,
-	)
-	if err != nil {
+	if err := s.repo.UpsertTemplate(ctx, schemaName, tmpl); err != nil {
 		return nil, fmt.Errorf("failed to update template: %w", err)
 	}
 
-	return &tmpl, nil
+	return tmpl, nil
 }
 
 // SendEmail sends an email using the tenant's SMTP configuration
@@ -293,11 +232,17 @@ func (s *Service) SendEmail(ctx context.Context, schemaName string, tenantID str
 
 	// Create email log entry
 	logID := uuid.New().String()
-	_, err = s.db.Exec(ctx, fmt.Sprintf(`
-		INSERT INTO %s.email_log (id, tenant_id, email_type, recipient_email, recipient_name, subject, status, related_id)
-		VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7)
-	`, schemaName), logID, tenantID, emailType, recipient, recipientName, subject, relatedID)
-	if err != nil {
+	emailLog := &EmailLog{
+		ID:             logID,
+		TenantID:       tenantID,
+		EmailType:      emailType,
+		RecipientEmail: recipient,
+		RecipientName:  recipientName,
+		Subject:        subject,
+		Status:         StatusPending,
+		RelatedID:      relatedID,
+	}
+	if err := s.repo.CreateEmailLog(ctx, schemaName, emailLog); err != nil {
 		return nil, fmt.Errorf("failed to create email log: %w", err)
 	}
 
@@ -337,15 +282,13 @@ func (s *Service) SendEmail(ctx context.Context, schemaName string, tenantID str
 	}
 
 	// Send email
-	if err := s.sendMail(config, m); err != nil {
+	if err := s.mailer.SendMail(config, m); err != nil {
 		return s.logEmailError(ctx, schemaName, logID, err)
 	}
 
 	// Update log as sent
-	_, err = s.db.Exec(ctx, fmt.Sprintf(`
-		UPDATE %s.email_log SET status = 'SENT', sent_at = NOW() WHERE id = $1
-	`, schemaName), logID)
-	if err != nil {
+	now := time.Now()
+	if err := s.repo.UpdateEmailLogStatus(ctx, schemaName, logID, StatusSent, &now, ""); err != nil {
 		// Email was sent, just log the error
 		fmt.Printf("failed to update email log: %v\n", err)
 	}
@@ -359,44 +302,10 @@ func (s *Service) SendEmail(ctx context.Context, schemaName string, tenantID str
 
 // logEmailError logs an email error and returns the response
 func (s *Service) logEmailError(ctx context.Context, schemaName string, logID string, sendErr error) (*EmailSentResponse, error) {
-	_, err := s.db.Exec(ctx, fmt.Sprintf(`
-		UPDATE %s.email_log SET status = 'FAILED', error_message = $2 WHERE id = $1
-	`, schemaName), logID, sendErr.Error())
-	if err != nil {
+	if err := s.repo.UpdateEmailLogStatus(ctx, schemaName, logID, StatusFailed, nil, sendErr.Error()); err != nil {
 		fmt.Printf("failed to update email log: %v\n", err)
 	}
 	return nil, fmt.Errorf("failed to send email: %w", sendErr)
-}
-
-// sendMail sends an email using go-mail
-func (s *Service) sendMail(config *SMTPConfig, m *mail.Msg) error {
-	var opts []mail.Option
-	opts = append(opts, mail.WithPort(config.Port))
-
-	if config.Username != "" {
-		opts = append(opts, mail.WithSMTPAuth(mail.SMTPAuthPlain))
-		opts = append(opts, mail.WithUsername(config.Username))
-		opts = append(opts, mail.WithPassword(config.Password))
-	}
-
-	if config.UseTLS {
-		opts = append(opts, mail.WithTLSPortPolicy(mail.TLSMandatory))
-		opts = append(opts, mail.WithTLSConfig(&tls.Config{
-			ServerName: config.Host,
-			MinVersion: tls.VersionTLS12,
-		}))
-	}
-
-	client, err := mail.NewClient(config.Host, opts...)
-	if err != nil {
-		return fmt.Errorf("failed to create mail client: %w", err)
-	}
-
-	if err := client.DialAndSend(m); err != nil {
-		return fmt.Errorf("failed to send email: %w", err)
-	}
-
-	return nil
 }
 
 // RenderTemplate renders an email template with data
@@ -441,35 +350,10 @@ func (s *Service) RenderTemplate(tmpl *EmailTemplate, data *TemplateData) (subje
 
 // GetEmailLog retrieves email logs for a tenant
 func (s *Service) GetEmailLog(ctx context.Context, schemaName string, tenantID string, limit int) ([]EmailLog, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-
-	rows, err := s.db.Query(ctx, fmt.Sprintf(`
-		SELECT id, tenant_id, email_type, recipient_email, COALESCE(recipient_name, ''), subject, status, sent_at, COALESCE(error_message, ''), related_id, created_at
-		FROM %s.email_log
-		WHERE tenant_id = $1
-		ORDER BY created_at DESC
-		LIMIT $2
-	`, schemaName), tenantID, limit)
+	logs, err := s.repo.GetEmailLog(ctx, schemaName, tenantID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get email log: %w", err)
 	}
-	defer rows.Close()
-
-	logs := []EmailLog{}
-	for rows.Next() {
-		var log EmailLog
-		var relatedID *string
-		if err := rows.Scan(&log.ID, &log.TenantID, &log.EmailType, &log.RecipientEmail, &log.RecipientName, &log.Subject, &log.Status, &log.SentAt, &log.ErrorMessage, &relatedID, &log.CreatedAt); err != nil {
-			return nil, err
-		}
-		if relatedID != nil {
-			log.RelatedID = *relatedID
-		}
-		logs = append(logs, log)
-	}
-
 	return logs, nil
 }
 

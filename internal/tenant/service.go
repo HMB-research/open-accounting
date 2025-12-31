@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -18,12 +17,23 @@ var slugRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$`)
 
 // Service provides tenant management operations
 type Service struct {
-	db *pgxpool.Pool
+	db   *pgxpool.Pool
+	repo Repository
 }
 
 // NewService creates a new tenant service
 func NewService(db *pgxpool.Pool) *Service {
-	return &Service{db: db}
+	return &Service{
+		db:   db,
+		repo: NewPostgresRepository(db),
+	}
+}
+
+// NewServiceWithRepository creates a new tenant service with a custom repository (for testing)
+func NewServiceWithRepository(repo Repository) *Service {
+	return &Service{
+		repo: repo,
+	}
 }
 
 // CreateTenant creates a new tenant with its schema
@@ -59,46 +69,8 @@ func (s *Service) CreateTenant(ctx context.Context, req *CreateTenantRequest) (*
 		UpdatedAt:  time.Now(),
 	}
 
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	// Insert tenant record
-	_, err = tx.Exec(ctx, `
-		INSERT INTO tenants (id, name, slug, schema_name, settings, is_active, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-	`, tenant.ID, tenant.Name, tenant.Slug, tenant.SchemaName, settingsJSON, tenant.IsActive, tenant.CreatedAt, tenant.UpdatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("insert tenant: %w", err)
-	}
-
-	// Create tenant schema with all tables
-	_, err = tx.Exec(ctx, "SELECT create_tenant_schema($1)", schemaName)
-	if err != nil {
-		return nil, fmt.Errorf("create tenant schema: %w", err)
-	}
-
-	// Create default chart of accounts
-	_, err = tx.Exec(ctx, "SELECT create_default_chart_of_accounts($1, $2)", schemaName, tenant.ID)
-	if err != nil {
-		return nil, fmt.Errorf("create default chart of accounts: %w", err)
-	}
-
-	// Add owner as tenant user
-	if req.OwnerID != "" {
-		_, err = tx.Exec(ctx, `
-			INSERT INTO tenant_users (tenant_id, user_id, role, is_default)
-			VALUES ($1, $2, $3, true)
-		`, tenant.ID, req.OwnerID, RoleOwner)
-		if err != nil {
-			return nil, fmt.Errorf("add owner to tenant: %w", err)
-		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit transaction: %w", err)
+	if err := s.repo.CreateTenant(ctx, tenant, settingsJSON, req.OwnerID); err != nil {
+		return nil, err
 	}
 
 	return tenant, nil
@@ -106,54 +78,20 @@ func (s *Service) CreateTenant(ctx context.Context, req *CreateTenantRequest) (*
 
 // GetTenant retrieves a tenant by ID
 func (s *Service) GetTenant(ctx context.Context, tenantID string) (*Tenant, error) {
-	var t Tenant
-	var settingsJSON []byte
-	err := s.db.QueryRow(ctx, `
-		SELECT id, name, slug, schema_name, settings, is_active, onboarding_completed, created_at, updated_at
-		FROM tenants
-		WHERE id = $1
-	`, tenantID).Scan(
-		&t.ID, &t.Name, &t.Slug, &t.SchemaName, &settingsJSON,
-		&t.IsActive, &t.OnboardingCompleted, &t.CreatedAt, &t.UpdatedAt,
-	)
-	if err == pgx.ErrNoRows {
+	tenant, err := s.repo.GetTenant(ctx, tenantID)
+	if err == ErrTenantNotFound {
 		return nil, fmt.Errorf("tenant not found: %s", tenantID)
 	}
-	if err != nil {
-		return nil, fmt.Errorf("get tenant: %w", err)
-	}
-
-	if err := json.Unmarshal(settingsJSON, &t.Settings); err != nil {
-		t.Settings = DefaultSettings()
-	}
-
-	return &t, nil
+	return tenant, err
 }
 
 // GetTenantBySlug retrieves a tenant by slug
 func (s *Service) GetTenantBySlug(ctx context.Context, slug string) (*Tenant, error) {
-	var t Tenant
-	var settingsJSON []byte
-	err := s.db.QueryRow(ctx, `
-		SELECT id, name, slug, schema_name, settings, is_active, onboarding_completed, created_at, updated_at
-		FROM tenants
-		WHERE slug = $1
-	`, slug).Scan(
-		&t.ID, &t.Name, &t.Slug, &t.SchemaName, &settingsJSON,
-		&t.IsActive, &t.OnboardingCompleted, &t.CreatedAt, &t.UpdatedAt,
-	)
-	if err == pgx.ErrNoRows {
+	tenant, err := s.repo.GetTenantBySlug(ctx, slug)
+	if err == ErrTenantNotFound {
 		return nil, fmt.Errorf("tenant not found: %s", slug)
 	}
-	if err != nil {
-		return nil, fmt.Errorf("get tenant: %w", err)
-	}
-
-	if err := json.Unmarshal(settingsJSON, &t.Settings); err != nil {
-		t.Settings = DefaultSettings()
-	}
-
-	return &t, nil
+	return tenant, err
 }
 
 // UpdateTenant updates a tenant's name and/or settings
@@ -226,13 +164,8 @@ func (s *Service) UpdateTenant(ctx context.Context, tenantID string, req *Update
 		return nil, fmt.Errorf("marshal settings: %w", err)
 	}
 
-	_, err = s.db.Exec(ctx, `
-		UPDATE tenants
-		SET name = $1, settings = $2, updated_at = $3
-		WHERE id = $4
-	`, current.Name, settingsJSON, current.UpdatedAt, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("update tenant: %w", err)
+	if err := s.repo.UpdateTenant(ctx, tenantID, current.Name, settingsJSON, current.UpdatedAt); err != nil {
+		return nil, err
 	}
 
 	return current, nil
@@ -240,93 +173,35 @@ func (s *Service) UpdateTenant(ctx context.Context, tenantID string, req *Update
 
 // ListUserTenants retrieves all tenants a user belongs to
 func (s *Service) ListUserTenants(ctx context.Context, userID string) ([]TenantMembership, error) {
-	rows, err := s.db.Query(ctx, `
-		SELECT t.id, t.name, t.slug, t.schema_name, t.settings, t.is_active, t.onboarding_completed, t.created_at, t.updated_at,
-		       tu.role, tu.is_default
-		FROM tenants t
-		JOIN tenant_users tu ON tu.tenant_id = t.id
-		WHERE tu.user_id = $1 AND t.is_active = true
-		ORDER BY tu.is_default DESC, t.name
-	`, userID)
-	if err != nil {
-		return nil, fmt.Errorf("list user tenants: %w", err)
-	}
-	defer rows.Close()
-
-	var memberships []TenantMembership
-	for rows.Next() {
-		var m TenantMembership
-		var settingsJSON []byte
-		if err := rows.Scan(
-			&m.Tenant.ID, &m.Tenant.Name, &m.Tenant.Slug, &m.Tenant.SchemaName, &settingsJSON,
-			&m.Tenant.IsActive, &m.Tenant.OnboardingCompleted, &m.Tenant.CreatedAt, &m.Tenant.UpdatedAt,
-			&m.Role, &m.IsDefault,
-		); err != nil {
-			return nil, fmt.Errorf("scan tenant: %w", err)
-		}
-
-		if err := json.Unmarshal(settingsJSON, &m.Tenant.Settings); err != nil {
-			m.Tenant.Settings = DefaultSettings()
-		}
-
-		memberships = append(memberships, m)
-	}
-
-	return memberships, nil
+	return s.repo.ListUserTenants(ctx, userID)
 }
 
 // CompleteOnboarding marks the tenant's onboarding as completed
 func (s *Service) CompleteOnboarding(ctx context.Context, tenantID string) error {
-	_, err := s.db.Exec(ctx, `
-		UPDATE tenants SET onboarding_completed = true, updated_at = NOW()
-		WHERE id = $1
-	`, tenantID)
-	if err != nil {
-		return fmt.Errorf("complete onboarding: %w", err)
-	}
-	return nil
+	return s.repo.CompleteOnboarding(ctx, tenantID)
 }
 
 // AddUserToTenant adds a user to a tenant with a specified role
 func (s *Service) AddUserToTenant(ctx context.Context, tenantID, userID, role string) error {
-	_, err := s.db.Exec(ctx, `
-		INSERT INTO tenant_users (tenant_id, user_id, role, is_default)
-		VALUES ($1, $2, $3, false)
-		ON CONFLICT (tenant_id, user_id) DO UPDATE SET role = $3
-	`, tenantID, userID, role)
-	if err != nil {
-		return fmt.Errorf("add user to tenant: %w", err)
-	}
-	return nil
+	return s.repo.AddUserToTenant(ctx, tenantID, userID, role)
 }
 
 // RemoveUserFromTenant removes a user from a tenant
 func (s *Service) RemoveUserFromTenant(ctx context.Context, tenantID, userID string) error {
-	result, err := s.db.Exec(ctx, `
-		DELETE FROM tenant_users WHERE tenant_id = $1 AND user_id = $2
-	`, tenantID, userID)
-	if err != nil {
-		return fmt.Errorf("remove user from tenant: %w", err)
-	}
-	if result.RowsAffected() == 0 {
+	err := s.repo.RemoveUserFromTenant(ctx, tenantID, userID)
+	if err == ErrUserNotInTenant {
 		return fmt.Errorf("user not found in tenant")
 	}
-	return nil
+	return err
 }
 
 // GetUserRole returns the user's role in a tenant
 func (s *Service) GetUserRole(ctx context.Context, tenantID, userID string) (string, error) {
-	var role string
-	err := s.db.QueryRow(ctx, `
-		SELECT role FROM tenant_users WHERE tenant_id = $1 AND user_id = $2
-	`, tenantID, userID).Scan(&role)
-	if err == pgx.ErrNoRows {
+	role, err := s.repo.GetUserRole(ctx, tenantID, userID)
+	if err == ErrUserNotInTenant {
 		return "", fmt.Errorf("user not member of tenant")
 	}
-	if err != nil {
-		return "", fmt.Errorf("get user role: %w", err)
-	}
-	return role, nil
+	return role, err
 }
 
 // CreateUser creates a new user
@@ -347,15 +222,11 @@ func (s *Service) CreateUser(ctx context.Context, req *CreateUserRequest) (*User
 		UpdatedAt:    time.Now(),
 	}
 
-	_, err = s.db.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, name, is_active, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`, user.ID, user.Email, user.PasswordHash, user.Name, user.IsActive, user.CreatedAt, user.UpdatedAt)
-	if err != nil {
-		if strings.Contains(err.Error(), "duplicate key") {
+	if err := s.repo.CreateUser(ctx, user); err != nil {
+		if err == ErrEmailExists {
 			return nil, fmt.Errorf("email already exists")
 		}
-		return nil, fmt.Errorf("create user: %w", err)
+		return nil, err
 	}
 
 	return user, nil
@@ -363,38 +234,20 @@ func (s *Service) CreateUser(ctx context.Context, req *CreateUserRequest) (*User
 
 // GetUserByEmail retrieves a user by email
 func (s *Service) GetUserByEmail(ctx context.Context, email string) (*User, error) {
-	var u User
-	err := s.db.QueryRow(ctx, `
-		SELECT id, email, password_hash, name, is_active, created_at, updated_at
-		FROM users WHERE email = $1
-	`, strings.ToLower(strings.TrimSpace(email))).Scan(
-		&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.IsActive, &u.CreatedAt, &u.UpdatedAt,
-	)
-	if err == pgx.ErrNoRows {
+	user, err := s.repo.GetUserByEmail(ctx, email)
+	if err == ErrUserNotFound {
 		return nil, fmt.Errorf("user not found")
 	}
-	if err != nil {
-		return nil, fmt.Errorf("get user: %w", err)
-	}
-	return &u, nil
+	return user, err
 }
 
 // GetUserByID retrieves a user by ID
 func (s *Service) GetUserByID(ctx context.Context, userID string) (*User, error) {
-	var u User
-	err := s.db.QueryRow(ctx, `
-		SELECT id, email, password_hash, name, is_active, created_at, updated_at
-		FROM users WHERE id = $1
-	`, userID).Scan(
-		&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.IsActive, &u.CreatedAt, &u.UpdatedAt,
-	)
-	if err == pgx.ErrNoRows {
+	user, err := s.repo.GetUserByID(ctx, userID)
+	if err == ErrUserNotFound {
 		return nil, fmt.Errorf("user not found")
 	}
-	if err != nil {
-		return nil, fmt.Errorf("get user: %w", err)
-	}
-	return &u, nil
+	return user, err
 }
 
 // ValidatePassword checks if the provided password matches the user's hash
@@ -410,35 +263,7 @@ func (s *Service) DeleteTenant(ctx context.Context, tenantID string) error {
 		return err
 	}
 
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	// Remove all tenant users
-	_, err = tx.Exec(ctx, "DELETE FROM tenant_users WHERE tenant_id = $1", tenantID)
-	if err != nil {
-		return fmt.Errorf("delete tenant users: %w", err)
-	}
-
-	// Drop tenant schema
-	_, err = tx.Exec(ctx, "SELECT drop_tenant_schema($1)", tenant.SchemaName)
-	if err != nil {
-		return fmt.Errorf("drop tenant schema: %w", err)
-	}
-
-	// Delete tenant record
-	_, err = tx.Exec(ctx, "DELETE FROM tenants WHERE id = $1", tenantID)
-	if err != nil {
-		return fmt.Errorf("delete tenant: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit transaction: %w", err)
-	}
-
-	return nil
+	return s.repo.DeleteTenant(ctx, tenantID, tenant.SchemaName)
 }
 
 // CreateInvitation creates a new user invitation
@@ -455,16 +280,9 @@ func (s *Service) CreateInvitation(ctx context.Context, tenantID, invitedByUserI
 	}
 
 	// Check if user is already a member
-	var exists bool
-	err := s.db.QueryRow(ctx, `
-		SELECT EXISTS(
-			SELECT 1 FROM tenant_users tu
-			JOIN users u ON u.id = tu.user_id
-			WHERE tu.tenant_id = $1 AND LOWER(u.email) = $2
-		)
-	`, tenantID, email).Scan(&exists)
+	exists, err := s.repo.CheckUserIsMember(ctx, tenantID, email)
 	if err != nil {
-		return nil, fmt.Errorf("check existing member: %w", err)
+		return nil, err
 	}
 	if exists {
 		return nil, fmt.Errorf("user is already a member of this organization")
@@ -485,18 +303,8 @@ func (s *Service) CreateInvitation(ctx context.Context, tenantID, invitedByUserI
 		CreatedAt: time.Now(),
 	}
 
-	_, err = s.db.Exec(ctx, `
-		INSERT INTO user_invitations (id, tenant_id, email, role, invited_by, token, expires_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		ON CONFLICT (tenant_id, email) DO UPDATE SET
-			role = EXCLUDED.role,
-			invited_by = EXCLUDED.invited_by,
-			token = EXCLUDED.token,
-			expires_at = EXCLUDED.expires_at,
-			accepted_at = NULL
-	`, inv.ID, inv.TenantID, inv.Email, inv.Role, inv.InvitedBy, inv.Token, inv.ExpiresAt, inv.CreatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("create invitation: %w", err)
+	if err := s.repo.CreateInvitation(ctx, inv); err != nil {
+		return nil, err
 	}
 
 	return inv, nil
@@ -504,21 +312,12 @@ func (s *Service) CreateInvitation(ctx context.Context, tenantID, invitedByUserI
 
 // GetInvitationByToken retrieves an invitation by its token
 func (s *Service) GetInvitationByToken(ctx context.Context, token string) (*UserInvitation, error) {
-	var inv UserInvitation
-	err := s.db.QueryRow(ctx, `
-		SELECT i.id, i.tenant_id, t.name, i.email, i.role, i.invited_by, i.token, i.expires_at, i.accepted_at, i.created_at
-		FROM user_invitations i
-		JOIN tenants t ON t.id = i.tenant_id
-		WHERE i.token = $1
-	`, token).Scan(
-		&inv.ID, &inv.TenantID, &inv.TenantName, &inv.Email, &inv.Role,
-		&inv.InvitedBy, &inv.Token, &inv.ExpiresAt, &inv.AcceptedAt, &inv.CreatedAt,
-	)
-	if err == pgx.ErrNoRows {
+	inv, err := s.repo.GetInvitationByToken(ctx, token)
+	if err == ErrInvitationNotFound {
 		return nil, fmt.Errorf("invitation not found")
 	}
 	if err != nil {
-		return nil, fmt.Errorf("get invitation: %w", err)
+		return nil, err
 	}
 
 	if inv.AcceptedAt != nil {
@@ -528,7 +327,7 @@ func (s *Service) GetInvitationByToken(ctx context.Context, token string) (*User
 		return nil, fmt.Errorf("invitation expired")
 	}
 
-	return &inv, nil
+	return inv, nil
 }
 
 // AcceptInvitation accepts an invitation and adds the user to the tenant
@@ -538,54 +337,36 @@ func (s *Service) AcceptInvitation(ctx context.Context, req *AcceptInvitationReq
 		return nil, err
 	}
 
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
 	// Check if user exists
+	existingUser, err := s.repo.GetUserByEmail(ctx, inv.Email)
 	var userID string
-	err = tx.QueryRow(ctx, `SELECT id FROM users WHERE LOWER(email) = $1`, inv.Email).Scan(&userID)
-	if err == pgx.ErrNoRows {
-		// Create new user
+	createUser := false
+
+	if err == ErrUserNotFound {
+		// New user - need password and name
 		if req.Password == "" || req.Name == "" {
 			return nil, fmt.Errorf("password and name are required for new users")
 		}
+		userID = uuid.New().String()
+		createUser = true
+	} else if err != nil {
+		return nil, fmt.Errorf("check user: %w", err)
+	} else {
+		userID = existingUser.ID
+	}
+
+	// Hash password if creating user
+	var passwordHash string
+	if createUser {
 		hash, hashErr := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if hashErr != nil {
 			return nil, fmt.Errorf("hash password: %w", hashErr)
 		}
-		userID = uuid.New().String()
-		_, err = tx.Exec(ctx, `
-			INSERT INTO users (id, email, password_hash, name, is_active, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, true, NOW(), NOW())
-		`, userID, inv.Email, string(hash), req.Name)
-		if err != nil {
-			return nil, fmt.Errorf("create user: %w", err)
-		}
-	} else if err != nil {
-		return nil, fmt.Errorf("check user: %w", err)
+		passwordHash = string(hash)
 	}
 
-	// Add user to tenant
-	_, err = tx.Exec(ctx, `
-		INSERT INTO tenant_users (tenant_id, user_id, role, is_default, invited_by, invited_at, created_at)
-		VALUES ($1, $2, $3, false, $4, NOW(), NOW())
-		ON CONFLICT (tenant_id, user_id) DO UPDATE SET role = EXCLUDED.role
-	`, inv.TenantID, userID, inv.Role, inv.InvitedBy)
-	if err != nil {
-		return nil, fmt.Errorf("add user to tenant: %w", err)
-	}
-
-	// Mark invitation as accepted
-	_, err = tx.Exec(ctx, `UPDATE user_invitations SET accepted_at = NOW() WHERE id = $1`, inv.ID)
-	if err != nil {
-		return nil, fmt.Errorf("mark invitation accepted: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit: %w", err)
+	if err := s.repo.AcceptInvitation(ctx, inv, userID, passwordHash, req.Name, createUser); err != nil {
+		return nil, err
 	}
 
 	// Get the tenant for the response
@@ -603,50 +384,19 @@ func (s *Service) AcceptInvitation(ctx context.Context, req *AcceptInvitationReq
 
 // ListInvitations lists pending invitations for a tenant
 func (s *Service) ListInvitations(ctx context.Context, tenantID string) ([]UserInvitation, error) {
-	rows, err := s.db.Query(ctx, `
-		SELECT id, tenant_id, email, role, invited_by, expires_at, created_at
-		FROM user_invitations
-		WHERE tenant_id = $1 AND accepted_at IS NULL AND expires_at > NOW()
-		ORDER BY created_at DESC
-	`, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("list invitations: %w", err)
-	}
-	defer rows.Close()
-
-	var invitations []UserInvitation
-	for rows.Next() {
-		var inv UserInvitation
-		if err := rows.Scan(&inv.ID, &inv.TenantID, &inv.Email, &inv.Role, &inv.InvitedBy, &inv.ExpiresAt, &inv.CreatedAt); err != nil {
-			return nil, fmt.Errorf("scan invitation: %w", err)
-		}
-		invitations = append(invitations, inv)
-	}
-
-	return invitations, nil
+	return s.repo.ListInvitations(ctx, tenantID)
 }
 
 // RevokeInvitation revokes a pending invitation
 func (s *Service) RevokeInvitation(ctx context.Context, tenantID, invitationID string) error {
-	result, err := s.db.Exec(ctx, `
-		DELETE FROM user_invitations
-		WHERE id = $1 AND tenant_id = $2 AND accepted_at IS NULL
-	`, invitationID, tenantID)
-	if err != nil {
-		return fmt.Errorf("revoke invitation: %w", err)
-	}
-	if result.RowsAffected() == 0 {
-		return fmt.Errorf("invitation not found or already accepted")
-	}
-	return nil
+	return s.repo.RevokeInvitation(ctx, tenantID, invitationID)
 }
 
 // RemoveTenantUser removes a user from a tenant
 func (s *Service) RemoveTenantUser(ctx context.Context, tenantID, userID string) error {
 	// Check if user is owner
-	var role string
-	err := s.db.QueryRow(ctx, `SELECT role FROM tenant_users WHERE tenant_id = $1 AND user_id = $2`, tenantID, userID).Scan(&role)
-	if err == pgx.ErrNoRows {
+	role, err := s.repo.GetUserRole(ctx, tenantID, userID)
+	if err == ErrUserNotInTenant {
 		return fmt.Errorf("user not found in tenant")
 	}
 	if err != nil {
@@ -656,11 +406,7 @@ func (s *Service) RemoveTenantUser(ctx context.Context, tenantID, userID string)
 		return fmt.Errorf("cannot remove owner from tenant")
 	}
 
-	_, err = s.db.Exec(ctx, `DELETE FROM tenant_users WHERE tenant_id = $1 AND user_id = $2`, tenantID, userID)
-	if err != nil {
-		return fmt.Errorf("remove user: %w", err)
-	}
-	return nil
+	return s.repo.RemoveTenantUser(ctx, tenantID, userID)
 }
 
 // UpdateTenantUserRole updates a user's role in a tenant
@@ -670,9 +416,8 @@ func (s *Service) UpdateTenantUserRole(ctx context.Context, tenantID, userID, ne
 	}
 
 	// Check current role
-	var currentRole string
-	err := s.db.QueryRow(ctx, `SELECT role FROM tenant_users WHERE tenant_id = $1 AND user_id = $2`, tenantID, userID).Scan(&currentRole)
-	if err == pgx.ErrNoRows {
+	currentRole, err := s.repo.GetUserRole(ctx, tenantID, userID)
+	if err == ErrUserNotInTenant {
 		return fmt.Errorf("user not found in tenant")
 	}
 	if err != nil {
@@ -682,34 +427,10 @@ func (s *Service) UpdateTenantUserRole(ctx context.Context, tenantID, userID, ne
 		return fmt.Errorf("cannot change owner role")
 	}
 
-	_, err = s.db.Exec(ctx, `UPDATE tenant_users SET role = $3 WHERE tenant_id = $1 AND user_id = $2`, tenantID, userID, newRole)
-	if err != nil {
-		return fmt.Errorf("update role: %w", err)
-	}
-	return nil
+	return s.repo.UpdateTenantUserRole(ctx, tenantID, userID, newRole)
 }
 
 // ListTenantUsers lists all users in a tenant
 func (s *Service) ListTenantUsers(ctx context.Context, tenantID string) ([]TenantUser, error) {
-	rows, err := s.db.Query(ctx, `
-		SELECT tu.tenant_id, tu.user_id, tu.role, tu.is_default, tu.created_at
-		FROM tenant_users tu
-		WHERE tu.tenant_id = $1
-		ORDER BY tu.created_at
-	`, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("list tenant users: %w", err)
-	}
-	defer rows.Close()
-
-	var users []TenantUser
-	for rows.Next() {
-		var u TenantUser
-		if err := rows.Scan(&u.TenantID, &u.UserID, &u.Role, &u.IsDefault, &u.CreatedAt); err != nil {
-			return nil, fmt.Errorf("scan tenant user: %w", err)
-		}
-		users = append(users, u)
-	}
-
-	return users, nil
+	return s.repo.ListTenantUsers(ctx, tenantID)
 }

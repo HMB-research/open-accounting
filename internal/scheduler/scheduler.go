@@ -32,7 +32,7 @@ func DefaultConfig() Config {
 // Scheduler manages background jobs
 type Scheduler struct {
 	cron      *cron.Cron
-	db        *pgxpool.Pool
+	repo      Repository
 	recurring *recurring.Service
 	config    Config
 	running   bool
@@ -43,7 +43,17 @@ type Scheduler struct {
 func NewScheduler(db *pgxpool.Pool, recurringService *recurring.Service, config Config) *Scheduler {
 	return &Scheduler{
 		cron:      cron.New(cron.WithSeconds()),
-		db:        db,
+		repo:      NewPostgresRepository(db),
+		recurring: recurringService,
+		config:    config,
+	}
+}
+
+// NewSchedulerWithRepository creates a scheduler with a custom repository (for testing)
+func NewSchedulerWithRepository(repo Repository, recurringService *recurring.Service, config Config) *Scheduler {
+	return &Scheduler{
+		cron:      cron.New(cron.WithSeconds()),
+		repo:      repo,
 		recurring: recurringService,
 		config:    config,
 	}
@@ -105,29 +115,11 @@ func (s *Scheduler) generateDueInvoices() {
 
 	log.Info().Msg("Starting scheduled recurring invoice generation")
 
-	// Get all active tenants
-	rows, err := s.db.Query(ctx, `
-		SELECT id, schema_name FROM tenants WHERE is_active = true
-	`)
+	// Get all active tenants via repository
+	tenants, err := s.repo.ListActiveTenants(ctx)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to get tenants for scheduled invoice generation")
 		return
-	}
-	defer rows.Close()
-
-	type tenantInfo struct {
-		ID         string
-		SchemaName string
-	}
-
-	var tenants []tenantInfo
-	for rows.Next() {
-		var t tenantInfo
-		if err := rows.Scan(&t.ID, &t.SchemaName); err != nil {
-			log.Error().Err(err).Msg("Failed to scan tenant")
-			continue
-		}
-		tenants = append(tenants, t)
 	}
 
 	totalGenerated := 0
