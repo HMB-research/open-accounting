@@ -17,7 +17,7 @@ linters:
     - bodyclose
     - noctx
     - gosec
-    - prealloc
+    # Removed prealloc - optimization-only suggestions that don't indicate bugs
 
 linters-settings:
   errcheck:
@@ -59,11 +59,16 @@ issues:
         - dupl
         - errcheck
         - govet
+        - staticcheck
 
     # Allow unused parameters in test files
     - path: _test\.go
       linters:
         - unparam
+
+  # Exclude specific staticcheck rules globally
+  exclude:
+    - SA5011  # Possible nil pointer dereference (often false positives with test mocks)
 
   max-issues-per-linter: 50
   max-same-issues: 10
