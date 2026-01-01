@@ -5,20 +5,32 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 )
 
 // Service provides payroll operations
 type Service struct {
-	db *pgxpool.Pool
+	db   *pgxpool.Pool
+	repo Repository
+	uuid UUIDGenerator
 }
 
 // NewService creates a new payroll service
 func NewService(db *pgxpool.Pool) *Service {
-	return &Service{db: db}
+	return &Service{
+		db:   db,
+		repo: NewPostgresRepository(db),
+		uuid: &DefaultUUIDGenerator{},
+	}
+}
+
+// NewServiceWithRepository creates a new payroll service with a custom repository (for testing)
+func NewServiceWithRepository(repo Repository, uuidGen UUIDGenerator) *Service {
+	return &Service{
+		repo: repo,
+		uuid: uuidGen,
+	}
 }
 
 // =============================================================================
@@ -43,7 +55,7 @@ func (s *Service) CreateEmployee(ctx context.Context, schemaName, tenantID strin
 	}
 
 	emp := &Employee{
-		ID:                   uuid.New().String(),
+		ID:                   s.uuid.New(),
 		TenantID:             tenantID,
 		EmployeeNumber:       req.EmployeeNumber,
 		FirstName:            req.FirstName,
@@ -66,22 +78,7 @@ func (s *Service) CreateEmployee(ctx context.Context, schemaName, tenantID strin
 		UpdatedAt:            time.Now(),
 	}
 
-	query := fmt.Sprintf(`
-		INSERT INTO %s.employees (
-			id, tenant_id, employee_number, first_name, last_name, personal_code,
-			email, phone, address, bank_account, start_date, position, department,
-			employment_type, tax_residency, apply_basic_exemption, basic_exemption_amount,
-			funded_pension_rate, is_active, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
-	`, schemaName)
-
-	_, err := s.db.Exec(ctx, query,
-		emp.ID, emp.TenantID, emp.EmployeeNumber, emp.FirstName, emp.LastName, emp.PersonalCode,
-		emp.Email, emp.Phone, emp.Address, emp.BankAccount, emp.StartDate, emp.Position, emp.Department,
-		emp.EmploymentType, emp.TaxResidency, emp.ApplyBasicExemption, emp.BasicExemptionAmount,
-		emp.FundedPensionRate, emp.IsActive, emp.CreatedAt, emp.UpdatedAt,
-	)
-	if err != nil {
+	if err := s.repo.CreateEmployee(ctx, schemaName, emp); err != nil {
 		return nil, fmt.Errorf("create employee: %w", err)
 	}
 
@@ -90,70 +87,22 @@ func (s *Service) CreateEmployee(ctx context.Context, schemaName, tenantID strin
 
 // GetEmployee retrieves an employee by ID
 func (s *Service) GetEmployee(ctx context.Context, schemaName, tenantID, employeeID string) (*Employee, error) {
-	query := fmt.Sprintf(`
-		SELECT id, tenant_id, employee_number, first_name, last_name, personal_code,
-			email, phone, address, bank_account, start_date, end_date, position, department,
-			employment_type, tax_residency, apply_basic_exemption, basic_exemption_amount,
-			funded_pension_rate, is_active, created_at, updated_at
-		FROM %s.employees
-		WHERE tenant_id = $1 AND id = $2
-	`, schemaName)
-
-	var emp Employee
-	err := s.db.QueryRow(ctx, query, tenantID, employeeID).Scan(
-		&emp.ID, &emp.TenantID, &emp.EmployeeNumber, &emp.FirstName, &emp.LastName, &emp.PersonalCode,
-		&emp.Email, &emp.Phone, &emp.Address, &emp.BankAccount, &emp.StartDate, &emp.EndDate,
-		&emp.Position, &emp.Department, &emp.EmploymentType, &emp.TaxResidency,
-		&emp.ApplyBasicExemption, &emp.BasicExemptionAmount, &emp.FundedPensionRate,
-		&emp.IsActive, &emp.CreatedAt, &emp.UpdatedAt,
-	)
-	if err == pgx.ErrNoRows {
+	emp, err := s.repo.GetEmployee(ctx, schemaName, tenantID, employeeID)
+	if err == ErrEmployeeNotFound {
 		return nil, fmt.Errorf("employee not found")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get employee: %w", err)
 	}
-
-	return &emp, nil
+	return emp, nil
 }
 
 // ListEmployees returns all active employees for a tenant
 func (s *Service) ListEmployees(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]Employee, error) {
-	query := fmt.Sprintf(`
-		SELECT id, tenant_id, employee_number, first_name, last_name, personal_code,
-			email, phone, address, bank_account, start_date, end_date, position, department,
-			employment_type, tax_residency, apply_basic_exemption, basic_exemption_amount,
-			funded_pension_rate, is_active, created_at, updated_at
-		FROM %s.employees
-		WHERE tenant_id = $1
-	`, schemaName)
-
-	if activeOnly {
-		query += " AND is_active = true"
-	}
-	query += " ORDER BY last_name, first_name"
-
-	rows, err := s.db.Query(ctx, query, tenantID)
+	employees, err := s.repo.ListEmployees(ctx, schemaName, tenantID, activeOnly)
 	if err != nil {
 		return nil, fmt.Errorf("list employees: %w", err)
 	}
-	defer rows.Close()
-
-	var employees []Employee
-	for rows.Next() {
-		var emp Employee
-		if err := rows.Scan(
-			&emp.ID, &emp.TenantID, &emp.EmployeeNumber, &emp.FirstName, &emp.LastName, &emp.PersonalCode,
-			&emp.Email, &emp.Phone, &emp.Address, &emp.BankAccount, &emp.StartDate, &emp.EndDate,
-			&emp.Position, &emp.Department, &emp.EmploymentType, &emp.TaxResidency,
-			&emp.ApplyBasicExemption, &emp.BasicExemptionAmount, &emp.FundedPensionRate,
-			&emp.IsActive, &emp.CreatedAt, &emp.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan employee: %w", err)
-		}
-		employees = append(employees, emp)
-	}
-
 	return employees, nil
 }
 
@@ -217,25 +166,7 @@ func (s *Service) UpdateEmployee(ctx context.Context, schemaName, tenantID, empl
 
 	emp.UpdatedAt = time.Now()
 
-	query := fmt.Sprintf(`
-		UPDATE %s.employees SET
-			employee_number = $1, first_name = $2, last_name = $3, personal_code = $4,
-			email = $5, phone = $6, address = $7, bank_account = $8, end_date = $9,
-			position = $10, department = $11, employment_type = $12,
-			apply_basic_exemption = $13, basic_exemption_amount = $14, funded_pension_rate = $15,
-			is_active = $16, updated_at = $17
-		WHERE tenant_id = $18 AND id = $19
-	`, schemaName)
-
-	_, err = s.db.Exec(ctx, query,
-		emp.EmployeeNumber, emp.FirstName, emp.LastName, emp.PersonalCode,
-		emp.Email, emp.Phone, emp.Address, emp.BankAccount, emp.EndDate,
-		emp.Position, emp.Department, emp.EmploymentType,
-		emp.ApplyBasicExemption, emp.BasicExemptionAmount, emp.FundedPensionRate,
-		emp.IsActive, emp.UpdatedAt,
-		tenantID, employeeID,
-	)
-	if err != nil {
+	if err := s.repo.UpdateEmployee(ctx, schemaName, emp); err != nil {
 		return nil, fmt.Errorf("update employee: %w", err)
 	}
 
@@ -248,22 +179,24 @@ func (s *Service) UpdateEmployee(ctx context.Context, schemaName, tenantID, empl
 
 // SetBaseSalary sets or updates an employee's base salary
 func (s *Service) SetBaseSalary(ctx context.Context, schemaName, tenantID, employeeID string, amount decimal.Decimal, effectiveFrom time.Time) error {
-	// End any existing base salary
-	endQuery := fmt.Sprintf(`
-		UPDATE %s.salary_components
-		SET effective_to = $1
-		WHERE tenant_id = $2 AND employee_id = $3 AND component_type = 'BASE_SALARY' AND effective_to IS NULL
-	`, schemaName)
-	_, _ = s.db.Exec(ctx, endQuery, effectiveFrom.AddDate(0, 0, -1), tenantID, employeeID)
+	// End any existing base salary (ignore errors - may not exist)
+	_ = s.repo.EndCurrentBaseSalary(ctx, schemaName, tenantID, employeeID, effectiveFrom.AddDate(0, 0, -1))
 
 	// Create new base salary
-	insertQuery := fmt.Sprintf(`
-		INSERT INTO %s.salary_components (id, tenant_id, employee_id, component_type, name, amount, is_taxable, is_recurring, effective_from, created_at)
-		VALUES ($1, $2, $3, 'BASE_SALARY', 'Base Salary', $4, true, true, $5, NOW())
-	`, schemaName)
+	comp := &SalaryComponent{
+		ID:            s.uuid.New(),
+		TenantID:      tenantID,
+		EmployeeID:    employeeID,
+		ComponentType: "BASE_SALARY",
+		Name:          "Base Salary",
+		Amount:        amount,
+		IsTaxable:     true,
+		IsRecurring:   true,
+		EffectiveFrom: effectiveFrom,
+		CreatedAt:     time.Now(),
+	}
 
-	_, err := s.db.Exec(ctx, insertQuery, uuid.New().String(), tenantID, employeeID, amount, effectiveFrom)
-	if err != nil {
+	if err := s.repo.CreateSalaryComponent(ctx, schemaName, comp); err != nil {
 		return fmt.Errorf("set base salary: %w", err)
 	}
 
@@ -272,20 +205,10 @@ func (s *Service) SetBaseSalary(ctx context.Context, schemaName, tenantID, emplo
 
 // GetCurrentSalary returns the current salary for an employee
 func (s *Service) GetCurrentSalary(ctx context.Context, schemaName, tenantID, employeeID string) (decimal.Decimal, error) {
-	query := fmt.Sprintf(`
-		SELECT COALESCE(SUM(amount), 0)
-		FROM %s.salary_components
-		WHERE tenant_id = $1 AND employee_id = $2 AND is_recurring = true
-			AND effective_from <= CURRENT_DATE
-			AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)
-	`, schemaName)
-
-	var salary decimal.Decimal
-	err := s.db.QueryRow(ctx, query, tenantID, employeeID).Scan(&salary)
+	salary, err := s.repo.GetCurrentSalary(ctx, schemaName, tenantID, employeeID)
 	if err != nil {
 		return decimal.Zero, fmt.Errorf("get current salary: %w", err)
 	}
-
 	return salary, nil
 }
 
@@ -303,7 +226,7 @@ func (s *Service) CreatePayrollRun(ctx context.Context, schemaName, tenantID, us
 	}
 
 	run := &PayrollRun{
-		ID:          uuid.New().String(),
+		ID:          s.uuid.New(),
 		TenantID:    tenantID,
 		PeriodYear:  req.PeriodYear,
 		PeriodMonth: req.PeriodMonth,
@@ -315,16 +238,7 @@ func (s *Service) CreatePayrollRun(ctx context.Context, schemaName, tenantID, us
 		UpdatedAt:   time.Now(),
 	}
 
-	query := fmt.Sprintf(`
-		INSERT INTO %s.payroll_runs (id, tenant_id, period_year, period_month, status, payment_date, notes, created_by, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-	`, schemaName)
-
-	_, err := s.db.Exec(ctx, query,
-		run.ID, run.TenantID, run.PeriodYear, run.PeriodMonth, run.Status,
-		run.PaymentDate, run.Notes, run.CreatedBy, run.CreatedAt, run.UpdatedAt,
-	)
-	if err != nil {
+	if err := s.repo.CreatePayrollRun(ctx, schemaName, run); err != nil {
 		return nil, fmt.Errorf("create payroll run: %w", err)
 	}
 
@@ -349,15 +263,16 @@ func (s *Service) CalculatePayroll(ctx context.Context, schemaName, tenantID, pa
 		return nil, err
 	}
 
-	tx, err := s.db.Begin(ctx)
+	tx, err := s.repo.BeginTx(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	txRepo := s.repo.WithTx(tx)
+
 	// Delete any existing payslips for this run
-	deleteQuery := fmt.Sprintf(`DELETE FROM %s.payslips WHERE payroll_run_id = $1`, schemaName)
-	_, _ = tx.Exec(ctx, deleteQuery, payrollRunID)
+	_ = txRepo.DeletePayslipsByRunID(ctx, schemaName, payrollRunID)
 
 	var totalGross, totalNet, totalEmployerCost decimal.Decimal
 	payslips := make([]Payslip, 0, len(employees))
@@ -378,7 +293,7 @@ func (s *Service) CalculatePayroll(ctx context.Context, schemaName, tenantID, pa
 
 		// Create payslip
 		payslip := Payslip{
-			ID:                      uuid.New().String(),
+			ID:                      s.uuid.New(),
 			TenantID:                tenantID,
 			PayrollRunID:            payrollRunID,
 			EmployeeID:              emp.ID,
@@ -396,23 +311,7 @@ func (s *Service) CalculatePayroll(ctx context.Context, schemaName, tenantID, pa
 			CreatedAt:               time.Now(),
 		}
 
-		insertQuery := fmt.Sprintf(`
-			INSERT INTO %s.payslips (
-				id, tenant_id, payroll_run_id, employee_id, gross_salary, taxable_income,
-				income_tax, unemployment_insurance_employee, funded_pension, net_salary,
-				social_tax, unemployment_insurance_employer, total_employer_cost,
-				basic_exemption_applied, payment_status, created_at
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-		`, schemaName)
-
-		_, err = tx.Exec(ctx, insertQuery,
-			payslip.ID, payslip.TenantID, payslip.PayrollRunID, payslip.EmployeeID,
-			payslip.GrossSalary, payslip.TaxableIncome, payslip.IncomeTax,
-			payslip.UnemploymentInsuranceEE, payslip.FundedPension, payslip.NetSalary,
-			payslip.SocialTax, payslip.UnemploymentInsuranceER, payslip.TotalEmployerCost,
-			payslip.BasicExemptionApplied, payslip.PaymentStatus, payslip.CreatedAt,
-		)
-		if err != nil {
+		if err := txRepo.CreatePayslip(ctx, schemaName, &payslip); err != nil {
 			return nil, fmt.Errorf("insert payslip: %w", err)
 		}
 
@@ -423,14 +322,12 @@ func (s *Service) CalculatePayroll(ctx context.Context, schemaName, tenantID, pa
 	}
 
 	// Update payroll run totals and status
-	updateQuery := fmt.Sprintf(`
-		UPDATE %s.payroll_runs
-		SET status = $1, total_gross = $2, total_net = $3, total_employer_cost = $4, updated_at = NOW()
-		WHERE id = $5
-	`, schemaName)
+	run.Status = PayrollCalculated
+	run.TotalGross = totalGross
+	run.TotalNet = totalNet
+	run.TotalEmployerCost = totalEmployerCost
 
-	_, err = tx.Exec(ctx, updateQuery, PayrollCalculated, totalGross, totalNet, totalEmployerCost, payrollRunID)
-	if err != nil {
+	if err := txRepo.UpdatePayrollRun(ctx, schemaName, run); err != nil {
 		return nil, fmt.Errorf("update payroll run: %w", err)
 	}
 
@@ -438,10 +335,6 @@ func (s *Service) CalculatePayroll(ctx context.Context, schemaName, tenantID, pa
 		return nil, fmt.Errorf("commit: %w", err)
 	}
 
-	run.Status = PayrollCalculated
-	run.TotalGross = totalGross
-	run.TotalNet = totalNet
-	run.TotalEmployerCost = totalEmployerCost
 	run.Payslips = payslips
 
 	return run, nil
@@ -449,85 +342,32 @@ func (s *Service) CalculatePayroll(ctx context.Context, schemaName, tenantID, pa
 
 // GetPayrollRun retrieves a payroll run by ID
 func (s *Service) GetPayrollRun(ctx context.Context, schemaName, tenantID, runID string) (*PayrollRun, error) {
-	query := fmt.Sprintf(`
-		SELECT id, tenant_id, period_year, period_month, status, payment_date,
-			total_gross, total_net, total_employer_cost, notes,
-			created_by, approved_by, approved_at, created_at, updated_at
-		FROM %s.payroll_runs
-		WHERE tenant_id = $1 AND id = $2
-	`, schemaName)
-
-	var run PayrollRun
-	err := s.db.QueryRow(ctx, query, tenantID, runID).Scan(
-		&run.ID, &run.TenantID, &run.PeriodYear, &run.PeriodMonth, &run.Status, &run.PaymentDate,
-		&run.TotalGross, &run.TotalNet, &run.TotalEmployerCost, &run.Notes,
-		&run.CreatedBy, &run.ApprovedBy, &run.ApprovedAt, &run.CreatedAt, &run.UpdatedAt,
-	)
-	if err == pgx.ErrNoRows {
+	run, err := s.repo.GetPayrollRun(ctx, schemaName, tenantID, runID)
+	if err == ErrPayrollRunNotFound {
 		return nil, fmt.Errorf("payroll run not found")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get payroll run: %w", err)
 	}
-
-	return &run, nil
+	return run, nil
 }
 
 // ListPayrollRuns lists payroll runs for a tenant
 func (s *Service) ListPayrollRuns(ctx context.Context, schemaName, tenantID string, year int) ([]PayrollRun, error) {
-	query := fmt.Sprintf(`
-		SELECT id, tenant_id, period_year, period_month, status, payment_date,
-			total_gross, total_net, total_employer_cost, notes,
-			created_by, approved_by, approved_at, created_at, updated_at
-		FROM %s.payroll_runs
-		WHERE tenant_id = $1
-	`, schemaName)
-
-	args := []interface{}{tenantID}
-	if year > 0 {
-		query += " AND period_year = $2"
-		args = append(args, year)
-	}
-	query += " ORDER BY period_year DESC, period_month DESC"
-
-	rows, err := s.db.Query(ctx, query, args...)
+	runs, err := s.repo.ListPayrollRuns(ctx, schemaName, tenantID, year)
 	if err != nil {
 		return nil, fmt.Errorf("list payroll runs: %w", err)
 	}
-	defer rows.Close()
-
-	var runs []PayrollRun
-	for rows.Next() {
-		var run PayrollRun
-		if err := rows.Scan(
-			&run.ID, &run.TenantID, &run.PeriodYear, &run.PeriodMonth, &run.Status, &run.PaymentDate,
-			&run.TotalGross, &run.TotalNet, &run.TotalEmployerCost, &run.Notes,
-			&run.CreatedBy, &run.ApprovedBy, &run.ApprovedAt, &run.CreatedAt, &run.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan payroll run: %w", err)
-		}
-		runs = append(runs, run)
-	}
-
 	return runs, nil
 }
 
 // ApprovePayrollRun approves a calculated payroll run
 func (s *Service) ApprovePayrollRun(ctx context.Context, schemaName, tenantID, runID, approverID string) error {
-	query := fmt.Sprintf(`
-		UPDATE %s.payroll_runs
-		SET status = $1, approved_by = $2, approved_at = NOW(), updated_at = NOW()
-		WHERE tenant_id = $3 AND id = $4 AND status = $5
-	`, schemaName)
-
-	result, err := s.db.Exec(ctx, query, PayrollApproved, approverID, tenantID, runID, PayrollCalculated)
-	if err != nil {
+	if err := s.repo.ApprovePayrollRun(ctx, schemaName, tenantID, runID, approverID); err != nil {
+		if err == ErrPayrollRunNotFound {
+			return fmt.Errorf("payroll run not found or not in CALCULATED status")
+		}
 		return fmt.Errorf("approve payroll run: %w", err)
 	}
-
-	if result.RowsAffected() == 0 {
-		return fmt.Errorf("payroll run not found or not in CALCULATED status")
-	}
-
 	return nil
 }

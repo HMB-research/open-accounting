@@ -201,6 +201,23 @@ func TestHookRegistry_RegisterPluginHook(t *testing.T) {
 	}
 }
 
+func TestHookRegistry_RegisterPluginHook_EmitEvent(t *testing.T) {
+	registry := NewHookRegistry()
+	pluginID := uuid.New()
+
+	// Register a plugin hook
+	registry.registerPluginHook(pluginID, EventInvoiceCreated, "OnInvoiceCreated")
+
+	// Emit an event to the plugin hook handler
+	event := Event{Type: EventInvoiceCreated, TenantID: uuid.New(), Time: time.Now()}
+	err := registry.Emit(context.Background(), event)
+
+	// The plugin hook handler just logs and returns nil
+	if err != nil {
+		t.Errorf("Emit() error = %v, want nil", err)
+	}
+}
+
 func TestHookRegistry_UnregisterPluginHooks(t *testing.T) {
 	registry := NewHookRegistry()
 	pluginID1 := uuid.New()
@@ -411,6 +428,28 @@ func TestAllEventTypes(t *testing.T) {
 		if !found {
 			t.Errorf("Expected event %q not found in AllEventTypes", expected)
 		}
+	}
+}
+
+func TestHookRegistry_EmitAsyncWithError(t *testing.T) {
+	registry := NewHookRegistry()
+	var callCount int32
+
+	// Register a handler that returns an error
+	registry.Register(EventInvoiceCreated, func(ctx context.Context, event Event) error {
+		atomic.AddInt32(&callCount, 1)
+		return errors.New("handler error for async test")
+	})
+
+	event := Event{Type: EventInvoiceCreated, TenantID: uuid.New(), Time: time.Now()}
+	registry.EmitAsync(event)
+
+	// Give async handler time to complete
+	time.Sleep(100 * time.Millisecond)
+
+	// Handler should still be called even though it returns an error
+	if atomic.LoadInt32(&callCount) != 1 {
+		t.Errorf("EmitAsync handler call count = %d, want 1", callCount)
 	}
 }
 

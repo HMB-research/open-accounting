@@ -124,6 +124,18 @@ func TestValidateAccessToken(t *testing.T) {
 
 		assert.Error(t, err)
 	})
+
+	t.Run("empty token", func(t *testing.T) {
+		_, err := service.ValidateAccessToken("")
+
+		assert.Error(t, err)
+	})
+
+	t.Run("malformed jwt segments", func(t *testing.T) {
+		_, err := service.ValidateAccessToken("header.payload")
+
+		assert.Error(t, err)
+	})
 }
 
 func TestValidateRefreshToken(t *testing.T) {
@@ -147,6 +159,21 @@ func TestValidateRefreshToken(t *testing.T) {
 	t.Run("wrong secret", func(t *testing.T) {
 		otherService := NewTokenService("other-secret", 15*time.Minute, 7*24*time.Hour)
 		token, _ := otherService.GenerateRefreshToken("user-123")
+
+		_, err := service.ValidateRefreshToken(token)
+
+		assert.Error(t, err)
+	})
+
+	t.Run("empty token", func(t *testing.T) {
+		_, err := service.ValidateRefreshToken("")
+
+		assert.Error(t, err)
+	})
+
+	t.Run("expired refresh token", func(t *testing.T) {
+		expiredService := NewTokenService("test-secret", 15*time.Minute, -1*time.Hour)
+		token, _ := expiredService.GenerateRefreshToken("user-123")
 
 		_, err := service.ValidateRefreshToken(token)
 
@@ -343,4 +370,208 @@ func TestRequireRole(t *testing.T) {
 
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
 	})
+}
+
+func TestCanManageUsers(t *testing.T) {
+	assert.True(t, CanManageUsers("owner"))
+	assert.True(t, CanManageUsers("admin"))
+	assert.False(t, CanManageUsers("accountant"))
+	assert.False(t, CanManageUsers("viewer"))
+	assert.False(t, CanManageUsers(""))
+	assert.False(t, CanManageUsers("unknown"))
+}
+
+func TestCanManageSettings(t *testing.T) {
+	assert.True(t, CanManageSettings("owner"))
+	assert.True(t, CanManageSettings("admin"))
+	assert.False(t, CanManageSettings("accountant"))
+	assert.False(t, CanManageSettings("viewer"))
+	assert.False(t, CanManageSettings(""))
+}
+
+func TestCanManageAccounts(t *testing.T) {
+	assert.True(t, CanManageAccounts("owner"))
+	assert.True(t, CanManageAccounts("admin"))
+	assert.True(t, CanManageAccounts("accountant"))
+	assert.False(t, CanManageAccounts("viewer"))
+	assert.False(t, CanManageAccounts(""))
+}
+
+func TestCanCreateEntries(t *testing.T) {
+	assert.True(t, CanCreateEntries("owner"))
+	assert.True(t, CanCreateEntries("admin"))
+	assert.True(t, CanCreateEntries("accountant"))
+	assert.False(t, CanCreateEntries("viewer"))
+	assert.False(t, CanCreateEntries(""))
+}
+
+func TestCanViewReports(t *testing.T) {
+	assert.True(t, CanViewReports("owner"))
+	assert.True(t, CanViewReports("admin"))
+	assert.True(t, CanViewReports("accountant"))
+	assert.True(t, CanViewReports("viewer"))
+	assert.False(t, CanViewReports(""))
+	assert.False(t, CanViewReports("unknown"))
+}
+
+func TestCanManageInvoices(t *testing.T) {
+	assert.True(t, CanManageInvoices("owner"))
+	assert.True(t, CanManageInvoices("admin"))
+	assert.True(t, CanManageInvoices("accountant"))
+	assert.False(t, CanManageInvoices("viewer"))
+	assert.False(t, CanManageInvoices(""))
+}
+
+func TestCanManagePayments(t *testing.T) {
+	assert.True(t, CanManagePayments("owner"))
+	assert.True(t, CanManagePayments("admin"))
+	assert.True(t, CanManagePayments("accountant"))
+	assert.False(t, CanManagePayments("viewer"))
+	assert.False(t, CanManagePayments(""))
+}
+
+func TestCanManageContacts(t *testing.T) {
+	assert.True(t, CanManageContacts("owner"))
+	assert.True(t, CanManageContacts("admin"))
+	assert.True(t, CanManageContacts("accountant"))
+	assert.False(t, CanManageContacts("viewer"))
+	assert.False(t, CanManageContacts(""))
+}
+
+func TestCanManageBanking(t *testing.T) {
+	assert.True(t, CanManageBanking("owner"))
+	assert.True(t, CanManageBanking("admin"))
+	assert.True(t, CanManageBanking("accountant"))
+	assert.False(t, CanManageBanking("viewer"))
+	assert.False(t, CanManageBanking(""))
+}
+
+func TestCanExportData(t *testing.T) {
+	assert.True(t, CanExportData("owner"))
+	assert.True(t, CanExportData("admin"))
+	assert.True(t, CanExportData("accountant"))
+	assert.False(t, CanExportData("viewer"))
+	assert.False(t, CanExportData(""))
+}
+
+func TestValidateAccessToken_WrongSigningMethod(t *testing.T) {
+	// Create a token with a different signing algorithm
+	// This tests the "unexpected signing method" error path
+	service := NewTokenService("test-secret", 15*time.Minute, 7*24*time.Hour)
+
+	// A token signed with RS256 instead of HS256 should fail
+	// We can't easily create an RS256 token without private key,
+	// but we can test with a malformed algorithm by using "none"
+	// This token has alg: "none" which should be rejected
+	noneAlgToken := "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJ1c2VyX2lkIjoidXNlci0xMjMiLCJlbWFpbCI6InRlc3RAZXhhbXBsZS5jb20ifQ." //nolint:gosec // test token not actual credentials
+
+	_, err := service.ValidateAccessToken(noneAlgToken)
+	assert.Error(t, err)
+}
+
+func TestValidateRefreshToken_WrongSigningMethod(t *testing.T) {
+	// Same test for refresh token
+	service := NewTokenService("test-secret", 15*time.Minute, 7*24*time.Hour)
+
+	// Token with alg: "none" which should be rejected
+	noneAlgToken := "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ1c2VyLTEyMyJ9." //nolint:gosec // test token not actual credentials
+
+	_, err := service.ValidateRefreshToken(noneAlgToken)
+	assert.Error(t, err)
+}
+
+func TestRequirePermission(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	t.Run("permission granted", func(t *testing.T) {
+		// Use CanManageUsers as the permission check
+		middleware := RequirePermission(CanManageUsers)(handler)
+		claims := &Claims{
+			UserID: "user-123",
+			Role:   "admin",
+		}
+		ctx := context.WithValue(context.Background(), ClaimsContextKey, claims)
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil).WithContext(ctx)
+		w := httptest.NewRecorder()
+
+		middleware.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("permission denied", func(t *testing.T) {
+		// Viewer cannot manage users
+		middleware := RequirePermission(CanManageUsers)(handler)
+		claims := &Claims{
+			UserID: "user-123",
+			Role:   "viewer",
+		}
+		ctx := context.WithValue(context.Background(), ClaimsContextKey, claims)
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil).WithContext(ctx)
+		w := httptest.NewRecorder()
+
+		middleware.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusForbidden, w.Code)
+	})
+
+	t.Run("without claims", func(t *testing.T) {
+		middleware := RequirePermission(CanManageUsers)(handler)
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		w := httptest.NewRecorder()
+
+		middleware.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+	})
+
+	t.Run("custom permission check", func(t *testing.T) {
+		// Custom permission function that only allows owners
+		onlyOwner := func(role string) bool { return role == "owner" }
+		middleware := RequirePermission(onlyOwner)(handler)
+
+		claims := &Claims{
+			UserID: "user-123",
+			Role:   "owner",
+		}
+		ctx := context.WithValue(context.Background(), ClaimsContextKey, claims)
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil).WithContext(ctx)
+		w := httptest.NewRecorder()
+
+		middleware.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+}
+
+func TestValidateAccessToken_InvalidClaims(t *testing.T) {
+	service := NewTokenService("test-secret", 15*time.Minute, 7*24*time.Hour)
+
+	// Create a service with very short expiry that has already passed
+	shortService := NewTokenService("test-secret", -1*time.Hour, 7*24*time.Hour)
+	expiredToken, err := shortService.GenerateAccessToken("user-123", "test@example.com", "tenant-456", "admin")
+	require.NoError(t, err)
+
+	_, err = service.ValidateAccessToken(expiredToken)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "parse token")
+}
+
+func TestValidateRefreshToken_InvalidClaims(t *testing.T) {
+	service := NewTokenService("test-secret", 15*time.Minute, 7*24*time.Hour)
+
+	// Create a service with very short expiry that has already passed
+	shortService := NewTokenService("test-secret", 15*time.Minute, -1*time.Hour)
+	expiredToken, err := shortService.GenerateRefreshToken("user-123")
+	require.NoError(t, err)
+
+	_, err = service.ValidateRefreshToken(expiredToken)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "parse token")
 }

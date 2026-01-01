@@ -70,7 +70,7 @@ func (s *Service) GenerateTSD(ctx context.Context, schemaName, tenantID, payroll
 		UpdatedAt:    time.Now(),
 	}
 
-	// Calculate totals and create rows
+	// First pass: calculate totals and create row objects
 	rows := make([]TSDRow, 0, len(payslips))
 	for _, ps := range payslips {
 		if ps.Employee == nil {
@@ -97,27 +97,6 @@ func (s *Service) GenerateTSD(ctx context.Context, schemaName, tenantID, payroll
 			CreatedAt:      time.Now(),
 		}
 
-		// Insert TSD row
-		insertRowQuery := fmt.Sprintf(`
-			INSERT INTO %s.tsd_rows (
-				id, tenant_id, declaration_id, employee_id, personal_code, first_name, last_name,
-				payment_type, gross_payment, basic_exemption, taxable_amount,
-				income_tax, social_tax, unemployment_insurance_employer, unemployment_insurance_employee,
-				funded_pension, created_at
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-		`, schemaName)
-
-		_, err = tx.Exec(ctx, insertRowQuery,
-			row.ID, row.TenantID, row.DeclarationID, row.EmployeeID,
-			row.PersonalCode, row.FirstName, row.LastName, row.PaymentType,
-			row.GrossPayment, row.BasicExemption, row.TaxableAmount,
-			row.IncomeTax, row.SocialTax, row.UnemploymentER, row.UnemploymentEE,
-			row.FundedPension, row.CreatedAt,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("insert TSD row: %w", err)
-		}
-
 		rows = append(rows, row)
 
 		// Accumulate totals
@@ -129,7 +108,7 @@ func (s *Service) GenerateTSD(ctx context.Context, schemaName, tenantID, payroll
 		tsd.TotalFundedPension = tsd.TotalFundedPension.Add(row.FundedPension)
 	}
 
-	// Insert TSD declaration
+	// Insert TSD declaration first (parent must exist before children due to FK)
 	insertQuery := fmt.Sprintf(`
 		INSERT INTO %s.tsd_declarations (
 			id, tenant_id, period_year, period_month, payroll_run_id,
@@ -149,6 +128,29 @@ func (s *Service) GenerateTSD(ctx context.Context, schemaName, tenantID, payroll
 		return nil, fmt.Errorf("insert TSD declaration: %w", err)
 	}
 
+	// Second pass: insert TSD rows (after declaration exists)
+	for _, row := range rows {
+		insertRowQuery := fmt.Sprintf(`
+			INSERT INTO %s.tsd_rows (
+				id, tenant_id, declaration_id, employee_id, personal_code, first_name, last_name,
+				payment_type, gross_payment, basic_exemption, taxable_amount,
+				income_tax, social_tax, unemployment_insurance_employer, unemployment_insurance_employee,
+				funded_pension, created_at
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		`, schemaName)
+
+		_, err = tx.Exec(ctx, insertRowQuery,
+			row.ID, row.TenantID, row.DeclarationID, row.EmployeeID,
+			row.PersonalCode, row.FirstName, row.LastName, row.PaymentType,
+			row.GrossPayment, row.BasicExemption, row.TaxableAmount,
+			row.IncomeTax, row.SocialTax, row.UnemploymentER, row.UnemploymentEE,
+			row.FundedPension, row.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("insert TSD row: %w", err)
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit: %w", err)
 	}
@@ -163,7 +165,7 @@ func (s *Service) GetTSD(ctx context.Context, schemaName, tenantID string, year,
 		SELECT id, tenant_id, period_year, period_month, payroll_run_id,
 			total_payments, total_income_tax, total_social_tax,
 			total_unemployment_employer, total_unemployment_employee, total_funded_pension,
-			status, submitted_at, emta_reference, created_at, updated_at
+			status, submitted_at, COALESCE(emta_reference, ''), created_at, updated_at
 		FROM %s.tsd_declarations
 		WHERE tenant_id = $1 AND period_year = $2 AND period_month = $3
 	`, schemaName)
@@ -234,7 +236,7 @@ func (s *Service) ListTSD(ctx context.Context, schemaName, tenantID string) ([]T
 		SELECT id, tenant_id, period_year, period_month, payroll_run_id,
 			total_payments, total_income_tax, total_social_tax,
 			total_unemployment_employer, total_unemployment_employee, total_funded_pension,
-			status, submitted_at, emta_reference, created_at, updated_at
+			status, submitted_at, COALESCE(emta_reference, ''), created_at, updated_at
 		FROM %s.tsd_declarations
 		WHERE tenant_id = $1
 		ORDER BY period_year DESC, period_month DESC

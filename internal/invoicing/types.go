@@ -55,7 +55,7 @@ type Invoice struct {
 	Lines          []InvoiceLine     `json:"lines"`
 	JournalEntryID *string           `json:"journal_entry_id,omitempty"`
 	EInvoiceSentAt *time.Time        `json:"einvoice_sent_at,omitempty"`
-	EInvoiceID     string            `json:"einvoice_id,omitempty"`
+	EInvoiceID     *string           `json:"einvoice_id,omitempty"`
 	CreatedAt      time.Time         `json:"created_at"`
 	CreatedBy      string            `json:"created_by"`
 	UpdatedAt      time.Time         `json:"updated_at"`

@@ -1,10 +1,14 @@
 package contacts
 
 import (
+	"errors"
 	"time"
 
 	"github.com/shopspring/decimal"
 )
+
+// ErrContactNotFound is returned when a contact is not found
+var ErrContactNotFound = errors.New("contact not found")
 
 // ContactType represents the type of contact
 type ContactType string

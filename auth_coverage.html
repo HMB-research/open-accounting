@@ -1,0 +1,513 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>auth: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">github.com/HMB-research/open-accounting/internal/auth/jwt.go (95.2%)</option>
+				
+				<option value="file1">github.com/HMB-research/open-accounting/internal/auth/ratelimit.go (87.9%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package auth
+
+import (
+        "context"
+        "fmt"
+        "net/http"
+        "strings"
+        "time"
+
+        "github.com/golang-jwt/jwt/v5"
+)
+
+// Claims represents the JWT claims
+type Claims struct {
+        UserID   string `json:"user_id"`
+        Email    string `json:"email"`
+        TenantID string `json:"tenant_id,omitempty"`
+        Role     string `json:"role,omitempty"`
+        jwt.RegisteredClaims
+}
+
+// TokenService handles JWT token operations
+type TokenService struct {
+        secretKey     []byte
+        accessExpiry  time.Duration
+        refreshExpiry time.Duration
+}
+
+// NewTokenService creates a new token service
+func NewTokenService(secretKey string, accessExpiry, refreshExpiry time.Duration) *TokenService <span class="cov8" title="1">{
+        return &amp;TokenService{
+                secretKey:     []byte(secretKey),
+                accessExpiry:  accessExpiry,
+                refreshExpiry: refreshExpiry,
+        }
+}</span>
+
+// GenerateAccessToken generates a new access token
+func (s *TokenService) GenerateAccessToken(userID, email, tenantID, role string) (string, error) <span class="cov8" title="1">{
+        claims := &amp;Claims{
+                UserID:   userID,
+                Email:    email,
+                TenantID: tenantID,
+                Role:     role,
+                RegisteredClaims: jwt.RegisteredClaims{
+                        ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.accessExpiry)),
+                        IssuedAt:  jwt.NewNumericDate(time.Now()),
+                        Subject:   userID,
+                },
+        }
+
+        token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+        return token.SignedString(s.secretKey)
+}</span>
+
+// GenerateRefreshToken generates a new refresh token
+func (s *TokenService) GenerateRefreshToken(userID string) (string, error) <span class="cov8" title="1">{
+        claims := &amp;jwt.RegisteredClaims{
+                ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.refreshExpiry)),
+                IssuedAt:  jwt.NewNumericDate(time.Now()),
+                Subject:   userID,
+        }
+
+        token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+        return token.SignedString(s.secretKey)
+}</span>
+
+// ValidateAccessToken validates an access token and returns the claims
+func (s *TokenService) ValidateAccessToken(tokenString string) (*Claims, error) <span class="cov8" title="1">{
+        token, err := jwt.ParseWithClaims(tokenString, &amp;Claims{}, func(token *jwt.Token) (interface{}, error) </span><span class="cov8" title="1">{
+                if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok </span><span class="cov0" title="0">{
+                        return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+                }</span>
+                <span class="cov8" title="1">return s.secretKey, nil</span>
+        })
+        <span class="cov8" title="1">if err != nil </span><span class="cov8" title="1">{
+                return nil, fmt.Errorf("parse token: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">claims, ok := token.Claims.(*Claims)
+        if !ok || !token.Valid </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("invalid token claims")
+        }</span>
+
+        <span class="cov8" title="1">return claims, nil</span>
+}
+
+// ValidateRefreshToken validates a refresh token and returns the user ID
+func (s *TokenService) ValidateRefreshToken(tokenString string) (string, error) <span class="cov8" title="1">{
+        token, err := jwt.ParseWithClaims(tokenString, &amp;jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) </span><span class="cov8" title="1">{
+                if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok </span><span class="cov0" title="0">{
+                        return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+                }</span>
+                <span class="cov8" title="1">return s.secretKey, nil</span>
+        })
+        <span class="cov8" title="1">if err != nil </span><span class="cov8" title="1">{
+                return "", fmt.Errorf("parse token: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">claims, ok := token.Claims.(*jwt.RegisteredClaims)
+        if !ok || !token.Valid </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("invalid token claims")
+        }</span>
+
+        <span class="cov8" title="1">return claims.Subject, nil</span>
+}
+
+// Context key type
+type contextKey string
+
+const (
+        // ClaimsContextKey is the context key for JWT claims
+        ClaimsContextKey contextKey = "claims"
+)
+
+// GetClaims retrieves the JWT claims from the context
+func GetClaims(ctx context.Context) (*Claims, bool) <span class="cov8" title="1">{
+        claims, ok := ctx.Value(ClaimsContextKey).(*Claims)
+        return claims, ok
+}</span>
+
+// Middleware creates an authentication middleware
+func (s *TokenService) Middleware(next http.Handler) http.Handler <span class="cov8" title="1">{
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) </span><span class="cov8" title="1">{
+                authHeader := r.Header.Get("Authorization")
+                if authHeader == "" </span><span class="cov8" title="1">{
+                        http.Error(w, "Authorization header required", http.StatusUnauthorized)
+                        return
+                }</span>
+
+                <span class="cov8" title="1">parts := strings.SplitN(authHeader, " ", 2)
+                if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" </span><span class="cov8" title="1">{
+                        http.Error(w, "Invalid authorization header format", http.StatusUnauthorized)
+                        return
+                }</span>
+
+                <span class="cov8" title="1">claims, err := s.ValidateAccessToken(parts[1])
+                if err != nil </span><span class="cov8" title="1">{
+                        http.Error(w, "Invalid token", http.StatusUnauthorized)
+                        return
+                }</span>
+
+                <span class="cov8" title="1">ctx := context.WithValue(r.Context(), ClaimsContextKey, claims)
+                next.ServeHTTP(w, r.WithContext(ctx))</span>
+        })
+}
+
+// RequireTenant creates a middleware that requires a tenant to be selected
+func RequireTenant(next http.Handler) http.Handler <span class="cov8" title="1">{
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) </span><span class="cov8" title="1">{
+                claims, ok := GetClaims(r.Context())
+                if !ok || claims.TenantID == "" </span><span class="cov8" title="1">{
+                        http.Error(w, "Tenant selection required", http.StatusForbidden)
+                        return
+                }</span>
+                <span class="cov8" title="1">next.ServeHTTP(w, r)</span>
+        })
+}
+
+// RequireRole creates a middleware that requires a specific role
+func RequireRole(roles ...string) func(http.Handler) http.Handler <span class="cov8" title="1">{
+        roleSet := make(map[string]bool)
+        for _, r := range roles </span><span class="cov8" title="1">{
+                roleSet[r] = true
+        }</span>
+
+        <span class="cov8" title="1">return func(next http.Handler) http.Handler </span><span class="cov8" title="1">{
+                return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) </span><span class="cov8" title="1">{
+                        claims, ok := GetClaims(r.Context())
+                        if !ok </span><span class="cov8" title="1">{
+                                http.Error(w, "Authentication required", http.StatusUnauthorized)
+                                return
+                        }</span>
+
+                        <span class="cov8" title="1">if !roleSet[claims.Role] </span><span class="cov8" title="1">{
+                                http.Error(w, "Insufficient permissions", http.StatusForbidden)
+                                return
+                        }</span>
+
+                        <span class="cov8" title="1">next.ServeHTTP(w, r)</span>
+                })
+        }
+}
+
+// RequirePermission creates a middleware that checks for a specific permission
+func RequirePermission(check func(role string) bool) func(http.Handler) http.Handler <span class="cov8" title="1">{
+        return func(next http.Handler) http.Handler </span><span class="cov8" title="1">{
+                return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) </span><span class="cov8" title="1">{
+                        claims, ok := GetClaims(r.Context())
+                        if !ok </span><span class="cov8" title="1">{
+                                http.Error(w, "Authentication required", http.StatusUnauthorized)
+                                return
+                        }</span>
+
+                        <span class="cov8" title="1">if !check(claims.Role) </span><span class="cov8" title="1">{
+                                http.Error(w, "Insufficient permissions", http.StatusForbidden)
+                                return
+                        }</span>
+
+                        <span class="cov8" title="1">next.ServeHTTP(w, r)</span>
+                })
+        }
+}
+
+// Permission check functions - these check if a role has a specific permission
+// Uses tenant.GetRolePermissions internally
+
+// CanManageUsers checks if the role can manage users
+func CanManageUsers(role string) bool <span class="cov8" title="1">{
+        return role == "owner" || role == "admin"
+}</span>
+
+// CanManageSettings checks if the role can manage settings
+func CanManageSettings(role string) bool <span class="cov8" title="1">{
+        return role == "owner" || role == "admin"
+}</span>
+
+// CanManageAccounts checks if the role can manage accounts
+func CanManageAccounts(role string) bool <span class="cov8" title="1">{
+        return role == "owner" || role == "admin" || role == "accountant"
+}</span>
+
+// CanCreateEntries checks if the role can create journal entries
+func CanCreateEntries(role string) bool <span class="cov8" title="1">{
+        return role == "owner" || role == "admin" || role == "accountant"
+}</span>
+
+// CanViewReports checks if the role can view reports
+func CanViewReports(role string) bool <span class="cov8" title="1">{
+        return role == "owner" || role == "admin" || role == "accountant" || role == "viewer"
+}</span>
+
+// CanManageInvoices checks if the role can manage invoices
+func CanManageInvoices(role string) bool <span class="cov8" title="1">{
+        return role == "owner" || role == "admin" || role == "accountant"
+}</span>
+
+// CanManagePayments checks if the role can manage payments
+func CanManagePayments(role string) bool <span class="cov8" title="1">{
+        return role == "owner" || role == "admin" || role == "accountant"
+}</span>
+
+// CanManageContacts checks if the role can manage contacts
+func CanManageContacts(role string) bool <span class="cov8" title="1">{
+        return role == "owner" || role == "admin" || role == "accountant"
+}</span>
+
+// CanManageBanking checks if the role can manage banking
+func CanManageBanking(role string) bool <span class="cov8" title="1">{
+        return role == "owner" || role == "admin" || role == "accountant"
+}</span>
+
+// CanExportData checks if the role can export data
+func CanExportData(role string) bool <span class="cov8" title="1">{
+        return role == "owner" || role == "admin" || role == "accountant"
+}</span>
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package auth
+
+import (
+        "net/http"
+        "strconv"
+        "sync"
+        "time"
+
+        "golang.org/x/time/rate"
+)
+
+// RateLimiter implements a token bucket rate limiter per client IP
+type RateLimiter struct {
+        visitors map[string]*visitor
+        mu       sync.RWMutex
+        r        rate.Limit // requests per second
+        b        int        // burst size
+        cleanup  time.Duration
+}
+
+type visitor struct {
+        limiter  *rate.Limiter
+        lastSeen time.Time
+}
+
+// NewRateLimiter creates a new rate limiter
+// rps: requests per second allowed
+// burst: maximum burst size
+func NewRateLimiter(rps float64, burst int) *RateLimiter <span class="cov8" title="1">{
+        rl := &amp;RateLimiter{
+                visitors: make(map[string]*visitor),
+                r:        rate.Limit(rps),
+                b:        burst,
+                cleanup:  3 * time.Minute,
+        }
+
+        // Start background cleanup
+        go rl.cleanupVisitors()
+
+        return rl
+}</span>
+
+// getVisitor returns the rate limiter for the given IP
+func (rl *RateLimiter) getVisitor(ip string) *rate.Limiter <span class="cov8" title="1">{
+        rl.mu.Lock()
+        defer rl.mu.Unlock()
+
+        v, exists := rl.visitors[ip]
+        if !exists </span><span class="cov8" title="1">{
+                limiter := rate.NewLimiter(rl.r, rl.b)
+                rl.visitors[ip] = &amp;visitor{limiter: limiter, lastSeen: time.Now()}
+                return limiter
+        }</span>
+
+        <span class="cov8" title="1">v.lastSeen = time.Now()
+        return v.limiter</span>
+}
+
+// cleanupVisitors removes stale visitor entries
+func (rl *RateLimiter) cleanupVisitors() <span class="cov8" title="1">{
+        for </span><span class="cov8" title="1">{
+                time.Sleep(rl.cleanup)
+
+                rl.mu.Lock()
+                for ip, v := range rl.visitors </span><span class="cov0" title="0">{
+                        if time.Since(v.lastSeen) &gt; rl.cleanup </span><span class="cov0" title="0">{
+                                delete(rl.visitors, ip)
+                        }</span>
+                }
+                <span class="cov0" title="0">rl.mu.Unlock()</span>
+        }
+}
+
+// getClientIP extracts the client IP from the request
+func getClientIP(r *http.Request) string <span class="cov8" title="1">{
+        // Check X-Forwarded-For header (for proxies)
+        xff := r.Header.Get("X-Forwarded-For")
+        if xff != "" </span><span class="cov8" title="1">{
+                // Take the first IP in the chain
+                for i := 0; i &lt; len(xff); i++ </span><span class="cov8" title="1">{
+                        if xff[i] == ',' </span><span class="cov8" title="1">{
+                                return xff[:i]
+                        }</span>
+                }
+                <span class="cov8" title="1">return xff</span>
+        }
+
+        // Check X-Real-IP header
+        <span class="cov8" title="1">xri := r.Header.Get("X-Real-IP")
+        if xri != "" </span><span class="cov8" title="1">{
+                return xri
+        }</span>
+
+        // Fall back to RemoteAddr
+        <span class="cov8" title="1">return r.RemoteAddr</span>
+}
+
+// Middleware returns a rate limiting middleware handler
+func (rl *RateLimiter) Middleware(next http.Handler) http.Handler <span class="cov8" title="1">{
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) </span><span class="cov8" title="1">{
+                ip := getClientIP(r)
+                limiter := rl.getVisitor(ip)
+
+                // Get current token state for headers
+                now := time.Now()
+                reservation := limiter.ReserveN(now, 1)
+                if !reservation.OK() </span><span class="cov0" title="0">{
+                        // This shouldn't happen with a properly configured limiter
+                        http.Error(w, `{"error":"rate_limit_exceeded","message":"Too many requests. Please try again later."}`, http.StatusTooManyRequests)
+                        return
+                }</span>
+
+                <span class="cov8" title="1">delay := reservation.DelayFrom(now)
+                if delay &gt; 0 </span><span class="cov8" title="1">{
+                        // We need to wait, which means we've exceeded the rate
+                        reservation.CancelAt(now)
+
+                        // Calculate when the limiter will have tokens again
+                        retryAfter := int(delay.Seconds()) + 1
+                        if retryAfter &lt; 1 </span><span class="cov0" title="0">{
+                                retryAfter = 1
+                        }</span>
+
+                        <span class="cov8" title="1">w.Header().Set("Content-Type", "application/json")
+                        w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
+                        w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rl.b))
+                        w.Header().Set("X-RateLimit-Remaining", "0")
+                        w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(now.Add(delay).Unix(), 10))
+                        w.WriteHeader(http.StatusTooManyRequests)
+                        _, _ = w.Write([]byte(`{"error":"rate_limit_exceeded","message":"Too many requests. Please try again later.","retry_after":` + strconv.Itoa(retryAfter) + `}`))
+                        return</span>
+                }
+
+                // Add rate limit headers
+                <span class="cov8" title="1">tokens := int(limiter.Tokens())
+                if tokens &lt; 0 </span><span class="cov0" title="0">{
+                        tokens = 0
+                }</span>
+                <span class="cov8" title="1">w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rl.b))
+                w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(tokens))
+
+                next.ServeHTTP(w, r)</span>
+        })
+}
+
+// DefaultRateLimiter returns a rate limiter with default settings
+// 100 requests per minute with a burst of 10
+func DefaultRateLimiter() *RateLimiter <span class="cov8" title="1">{
+        return NewRateLimiter(100.0/60.0, 10) // ~1.67 requests/sec, burst 10
+}</span>
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>

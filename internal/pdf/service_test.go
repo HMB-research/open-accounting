@@ -2,8 +2,15 @@ package pdf
 
 import (
 	"testing"
+	"time"
 
 	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
 func TestNewService(t *testing.T) {
@@ -222,5 +229,267 @@ func TestFormatDecimal_EdgeCases(t *testing.T) {
 				t.Error("formatDecimal should not return empty string")
 			}
 		})
+	}
+}
+
+func TestPDFSettingsFromTenant(t *testing.T) {
+	svc := NewService()
+
+	t.Run("returns defaults when tenant has no settings", func(t *testing.T) {
+		tenant := &tenant.Tenant{
+			Name:     "Test Company",
+			Settings: tenant.TenantSettings{},
+		}
+
+		settings := svc.PDFSettingsFromTenant(tenant)
+
+		assert.Equal(t, "#1d4ed8", settings.PrimaryColor)
+		assert.Equal(t, "Thank you for your business", settings.FooterText)
+		assert.Empty(t, settings.BankDetails)
+		assert.Equal(t, "Payment due within 14 days of invoice date.", settings.InvoiceTerms)
+	})
+
+	t.Run("uses tenant settings when provided", func(t *testing.T) {
+		tenant := &tenant.Tenant{
+			Name: "Custom Company",
+			Settings: tenant.TenantSettings{
+				PDFPrimaryColor: "#ff5500",
+				PDFFooterText:   "Custom footer text",
+				BankDetails:     "IBAN: EE123456\nSWIFT: ABCD",
+				InvoiceTerms:    "Net 30 days",
+			},
+		}
+
+		settings := svc.PDFSettingsFromTenant(tenant)
+
+		assert.Equal(t, "#ff5500", settings.PrimaryColor)
+		assert.Equal(t, "Custom footer text", settings.FooterText)
+		assert.Equal(t, "IBAN: EE123456\nSWIFT: ABCD", settings.BankDetails)
+		assert.Equal(t, "Net 30 days", settings.InvoiceTerms)
+	})
+
+	t.Run("partial tenant settings uses defaults for missing", func(t *testing.T) {
+		tenant := &tenant.Tenant{
+			Name: "Partial Company",
+			Settings: tenant.TenantSettings{
+				PDFPrimaryColor: "#00ff00",
+				// Others are empty
+			},
+		}
+
+		settings := svc.PDFSettingsFromTenant(tenant)
+
+		assert.Equal(t, "#00ff00", settings.PrimaryColor)
+		assert.Equal(t, "Thank you for your business", settings.FooterText)
+		assert.Empty(t, settings.BankDetails)
+		assert.Equal(t, "Payment due within 14 days of invoice date.", settings.InvoiceTerms)
+	})
+}
+
+func TestGenerateInvoicePDF(t *testing.T) {
+	svc := NewService()
+
+	t.Run("generates PDF for basic invoice", func(t *testing.T) {
+		invoice := createTestInvoice()
+		tnant := createTestTenant()
+		settings := DefaultPDFSettings()
+
+		pdfBytes, err := svc.GenerateInvoicePDF(invoice, tnant, settings)
+
+		require.NoError(t, err)
+		require.NotEmpty(t, pdfBytes)
+		// PDF files start with %PDF
+		assert.True(t, len(pdfBytes) > 4)
+		assert.Equal(t, "%PDF", string(pdfBytes[:4]))
+	})
+
+	t.Run("generates PDF for credit note", func(t *testing.T) {
+		invoice := createTestInvoice()
+		invoice.InvoiceType = invoicing.InvoiceTypeCreditNote
+		tnant := createTestTenant()
+		settings := DefaultPDFSettings()
+
+		pdfBytes, err := svc.GenerateInvoicePDF(invoice, tnant, settings)
+
+		require.NoError(t, err)
+		require.NotEmpty(t, pdfBytes)
+		assert.Equal(t, "%PDF", string(pdfBytes[:4]))
+	})
+
+	t.Run("generates PDF for purchase invoice", func(t *testing.T) {
+		invoice := createTestInvoice()
+		invoice.InvoiceType = invoicing.InvoiceTypePurchase
+		tnant := createTestTenant()
+		settings := DefaultPDFSettings()
+
+		pdfBytes, err := svc.GenerateInvoicePDF(invoice, tnant, settings)
+
+		require.NoError(t, err)
+		require.NotEmpty(t, pdfBytes)
+		assert.Equal(t, "%PDF", string(pdfBytes[:4]))
+	})
+
+	t.Run("generates PDF with contact details", func(t *testing.T) {
+		invoice := createTestInvoice()
+		invoice.Contact = &contacts.Contact{
+			Name:         "Customer Inc",
+			Email:        "customer@example.com",
+			AddressLine1: "123 Main St",
+			AddressLine2: "Suite 100",
+			City:         "Tallinn",
+			PostalCode:   "10115",
+			CountryCode:  "EE",
+			VATNumber:    "EE123456789",
+		}
+		tnant := createTestTenant()
+		settings := DefaultPDFSettings()
+
+		pdfBytes, err := svc.GenerateInvoicePDF(invoice, tnant, settings)
+
+		require.NoError(t, err)
+		require.NotEmpty(t, pdfBytes)
+	})
+
+	t.Run("generates PDF with partial payment", func(t *testing.T) {
+		invoice := createTestInvoice()
+		invoice.AmountPaid = decimal.NewFromInt(50)
+		tnant := createTestTenant()
+		settings := DefaultPDFSettings()
+
+		pdfBytes, err := svc.GenerateInvoicePDF(invoice, tnant, settings)
+
+		require.NoError(t, err)
+		require.NotEmpty(t, pdfBytes)
+	})
+
+	t.Run("generates PDF with reference", func(t *testing.T) {
+		invoice := createTestInvoice()
+		invoice.Reference = "PO-12345"
+		tnant := createTestTenant()
+		settings := DefaultPDFSettings()
+
+		pdfBytes, err := svc.GenerateInvoicePDF(invoice, tnant, settings)
+
+		require.NoError(t, err)
+		require.NotEmpty(t, pdfBytes)
+	})
+
+	t.Run("generates PDF with notes", func(t *testing.T) {
+		invoice := createTestInvoice()
+		invoice.Notes = "Special delivery instructions"
+		tnant := createTestTenant()
+		settings := DefaultPDFSettings()
+
+		pdfBytes, err := svc.GenerateInvoicePDF(invoice, tnant, settings)
+
+		require.NoError(t, err)
+		require.NotEmpty(t, pdfBytes)
+	})
+
+	t.Run("generates PDF with bank details", func(t *testing.T) {
+		invoice := createTestInvoice()
+		tnant := createTestTenant()
+		settings := DefaultPDFSettings()
+		settings.BankDetails = "IBAN: EE123456789\nSWIFT: HABAEE2X\nBank: Swedbank"
+
+		pdfBytes, err := svc.GenerateInvoicePDF(invoice, tnant, settings)
+
+		require.NoError(t, err)
+		require.NotEmpty(t, pdfBytes)
+	})
+
+	t.Run("generates PDF with multiple line items", func(t *testing.T) {
+		invoice := createTestInvoice()
+		invoice.Lines = []invoicing.InvoiceLine{
+			{
+				LineNumber:      1,
+				Description:     "Product A",
+				Quantity:        decimal.NewFromInt(2),
+				UnitPrice:       decimal.NewFromFloat(25.00),
+				VATRate:         decimal.NewFromInt(20),
+				DiscountPercent: decimal.Zero,
+				LineTotal:       decimal.NewFromFloat(50.00),
+			},
+			{
+				LineNumber:      2,
+				Description:     "Product B with longer description that might need truncation",
+				Quantity:        decimal.NewFromInt(5),
+				UnitPrice:       decimal.NewFromFloat(10.00),
+				VATRate:         decimal.NewFromInt(20),
+				DiscountPercent: decimal.NewFromInt(10),
+				LineTotal:       decimal.NewFromFloat(45.00),
+			},
+			{
+				LineNumber:      3,
+				Description:     "Service C",
+				Quantity:        decimal.NewFromFloat(1.5),
+				UnitPrice:       decimal.NewFromFloat(100.00),
+				VATRate:         decimal.NewFromInt(0),
+				DiscountPercent: decimal.Zero,
+				LineTotal:       decimal.NewFromFloat(150.00),
+			},
+		}
+		tnant := createTestTenant()
+		settings := DefaultPDFSettings()
+
+		pdfBytes, err := svc.GenerateInvoicePDF(invoice, tnant, settings)
+
+		require.NoError(t, err)
+		require.NotEmpty(t, pdfBytes)
+	})
+
+	t.Run("generates PDF with full tenant settings", func(t *testing.T) {
+		invoice := createTestInvoice()
+		tnant := createTestTenant()
+		tnant.Settings = tenant.TenantSettings{
+			Address:   "123 Business St\nTallinn",
+			Email:     "info@company.ee",
+			Phone:     "+372 5551234",
+			VATNumber: "EE123456789",
+			RegCode:   "12345678",
+		}
+		settings := DefaultPDFSettings()
+
+		pdfBytes, err := svc.GenerateInvoicePDF(invoice, tnant, settings)
+
+		require.NoError(t, err)
+		require.NotEmpty(t, pdfBytes)
+	})
+}
+
+func createTestInvoice() *invoicing.Invoice {
+	now := time.Now()
+	return &invoicing.Invoice{
+		ID:            "inv-123",
+		InvoiceNumber: "INV-2024-001",
+		InvoiceType:   invoicing.InvoiceTypeSales,
+		Status:        invoicing.StatusDraft,
+		IssueDate:     now,
+		DueDate:       now.AddDate(0, 0, 14),
+		Currency:      "EUR",
+		Subtotal:      decimal.NewFromFloat(100.00),
+		VATAmount:     decimal.NewFromFloat(20.00),
+		Total:         decimal.NewFromFloat(120.00),
+		AmountPaid:    decimal.Zero,
+		Lines: []invoicing.InvoiceLine{
+			{
+				LineNumber:      1,
+				Description:     "Test Product",
+				Quantity:        decimal.NewFromInt(1),
+				UnitPrice:       decimal.NewFromFloat(100.00),
+				VATRate:         decimal.NewFromInt(20),
+				DiscountPercent: decimal.Zero,
+				LineTotal:       decimal.NewFromFloat(100.00),
+			},
+		},
+	}
+}
+
+func createTestTenant() *tenant.Tenant {
+	return &tenant.Tenant{
+		ID:       "tenant-123",
+		Name:     "Test Company OÜ",
+		Slug:     "test-company",
+		Settings: tenant.TenantSettings{},
 	}
 }

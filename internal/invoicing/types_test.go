@@ -419,3 +419,14 @@ func TestCreateInvoiceRequest_Defaults(t *testing.T) {
 	assert.Len(t, req.Lines, 1)
 	assert.True(t, req.Lines[0].Quantity.Equal(decimal.NewFromInt(1)))
 }
+
+func TestNewService(t *testing.T) {
+	service := NewService(nil, nil)
+	assert.NotNil(t, service)
+}
+
+func TestNewService_WithNilDependencies(t *testing.T) {
+	// Service can be created without a pool for testing
+	service := NewService(nil, nil)
+	assert.NotNil(t, service, "NewService should return a non-nil service even with nil dependencies")
+}
