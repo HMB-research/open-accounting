@@ -6,7 +6,7 @@
 [![codecov](https://codecov.io/gh/HMB-research/open-accounting/branch/main/graph/badge.svg)](https://codecov.io/gh/HMB-research/open-accounting)
 [![Go Report Card](https://goreportcard.com/badge/github.com/HMB-research/open-accounting)](https://goreportcard.com/report/github.com/HMB-research/open-accounting)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://go.dev/)
 
 > **⚠️ Development Status**
 > This project is under active development and not yet production-ready. APIs may change, and features may be incomplete. Contributions and feedback welcome!
@@ -99,13 +99,14 @@ Open Accounting is a **self-hosted, multi-tenant accounting platform** designed 
 
 | Layer | Technology |
 |-------|------------|
-| **Backend** | Go 1.22+, Chi router, pgx/v5 |
+| **Backend** | Go 1.24+, Chi router, pgx/v5 |
 | **Frontend** | SvelteKit 2, Svelte 5, TypeScript |
 | **i18n** | Paraglide-JS (compile-time translations) |
 | **Database** | PostgreSQL 16+ |
 | **Auth** | JWT with access/refresh tokens |
 | **API Docs** | Swagger/OpenAPI |
-| **Testing** | Go test, Vitest (frontend) |
+| **Testing** | Go test (90%+ coverage), Vitest (frontend) |
+| **CI/CD** | GitHub Actions, Codecov |
 | **Container** | Docker, Docker Compose |
 
 ---
@@ -132,7 +133,7 @@ docker-compose run --rm migrate
 ### Local Development
 
 ```bash
-# Prerequisites: Go 1.22+, Node.js 22+, PostgreSQL 16+
+# Prerequisites: Go 1.24+, Node.js 22+, PostgreSQL 16+
 
 # Start database
 docker-compose up -d db
