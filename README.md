@@ -10,6 +10,7 @@
 
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-4169E1?logo=postgresql&logoColor=white)](https://postgresql.org/)
 [![SvelteKit](https://img.shields.io/badge/SvelteKit-2-FF3E00?logo=svelte&logoColor=white)](https://kit.svelte.dev/)
+[![Vite](https://img.shields.io/badge/Vite-7-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://typescriptlang.org/)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](https://docker.com/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
@@ -106,7 +107,7 @@ Open Accounting is a **self-hosted, multi-tenant accounting platform** designed 
 | Layer | Technology |
 |-------|------------|
 | **Backend** | Go 1.24+, Chi router, pgx/v5 |
-| **Frontend** | SvelteKit 2, Svelte 5, TypeScript |
+| **Frontend** | SvelteKit 2, Svelte 5, Vite 7, TypeScript |
 | **i18n** | Paraglide-JS (compile-time translations) |
 | **Database** | PostgreSQL 16+ |
 | **Auth** | JWT with access/refresh tokens |
