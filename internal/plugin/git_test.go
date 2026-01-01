@@ -377,7 +377,7 @@ func TestHasLicenseFile(t *testing.T) {
 
 			// Create the license file
 			licensePath := testDir + "/" + licenseName
-			err := os.WriteFile(licensePath, []byte("MIT License"), 0644)
+			err := os.WriteFile(licensePath, []byte("MIT License"), 0600)
 			require.NoError(t, err)
 
 			assert.True(t, hasLicenseFile(testDir), "Should return true for directory with %s", licenseName)
@@ -415,7 +415,7 @@ func TestService_RemovePluginFiles(t *testing.T) {
 				manifestContent := `name: test-plugin
 display_name: Test Plugin
 version: 1.0.0`
-				err = os.WriteFile(pluginPath+"/plugin.yaml", []byte(manifestContent), 0644)
+				err = os.WriteFile(pluginPath+"/plugin.yaml", []byte(manifestContent), 0600)
 				require.NoError(t, err)
 				return "test-plugin"
 			},
@@ -434,7 +434,7 @@ version: 1.0.0`
 			name: "skip_non_directory_entries",
 			setup: func() string {
 				// Create a file instead of directory
-				err := os.WriteFile(pluginDir+"/not-a-dir.txt", []byte("content"), 0644)
+				err := os.WriteFile(pluginDir+"/not-a-dir.txt", []byte("content"), 0600)
 				require.NoError(t, err)
 				return "not-a-dir"
 			},
@@ -463,10 +463,10 @@ version: 1.0.0`
 					manifestContent := `name: test-plugin
 display_name: Test Plugin
 version: 1.0.0`
-					err = os.WriteFile(pluginPath+"/plugin.yaml", []byte(manifestContent), 0644)
+					err = os.WriteFile(pluginPath+"/plugin.yaml", []byte(manifestContent), 0600)
 					require.NoError(t, err)
 				} else if tt.name == "skip_non_directory_entries" {
-					err := os.WriteFile(testPluginDir+"/not-a-dir.txt", []byte("content"), 0644)
+					err := os.WriteFile(testPluginDir+"/not-a-dir.txt", []byte("content"), 0600)
 					require.NoError(t, err)
 				}
 			}
@@ -496,7 +496,7 @@ func TestService_RemovePluginFiles_InvalidManifest(t *testing.T) {
 	pluginPath := pluginDir + "/invalid-plugin"
 	err = os.MkdirAll(pluginPath, 0755)
 	require.NoError(t, err)
-	err = os.WriteFile(pluginPath+"/plugin.yaml", []byte("invalid: yaml: content"), 0644)
+	err = os.WriteFile(pluginPath+"/plugin.yaml", []byte("invalid: yaml: content"), 0600)
 	require.NoError(t, err)
 
 	repo := NewMockRepository()
@@ -530,7 +530,7 @@ func TestService_GetPluginPath(t *testing.T) {
 	manifestContent := `name: my-plugin
 display_name: My Plugin
 version: 1.0.0`
-	err = os.WriteFile(pluginPath+"/plugin.yaml", []byte(manifestContent), 0644)
+	err = os.WriteFile(pluginPath+"/plugin.yaml", []byte(manifestContent), 0600)
 	require.NoError(t, err)
 
 	repo := NewMockRepository()
@@ -581,14 +581,14 @@ func TestService_GetPluginPath_InvalidManifest(t *testing.T) {
 	invalidPath := pluginDir + "/invalid-plugin"
 	err = os.MkdirAll(invalidPath, 0755)
 	require.NoError(t, err)
-	err = os.WriteFile(invalidPath+"/plugin.yaml", []byte("not valid yaml: ["), 0644)
+	err = os.WriteFile(invalidPath+"/plugin.yaml", []byte("not valid yaml: ["), 0600)
 	require.NoError(t, err)
 
 	// Create another with valid manifest
 	validPath := pluginDir + "/valid-plugin"
 	err = os.MkdirAll(validPath, 0755)
 	require.NoError(t, err)
-	err = os.WriteFile(validPath+"/plugin.yaml", []byte("name: valid-plugin\ndisplay_name: Valid\nversion: 1.0.0"), 0644)
+	err = os.WriteFile(validPath+"/plugin.yaml", []byte("name: valid-plugin\ndisplay_name: Valid\nversion: 1.0.0"), 0600)
 	require.NoError(t, err)
 
 	repo := NewMockRepository()
@@ -611,7 +611,7 @@ func TestService_GetPluginPath_SkipsFiles(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a file (not a directory)
-	err = os.WriteFile(pluginDir+"/not-a-dir.txt", []byte("content"), 0644)
+	err = os.WriteFile(pluginDir+"/not-a-dir.txt", []byte("content"), 0600)
 	require.NoError(t, err)
 
 	repo := NewMockRepository()
@@ -756,7 +756,7 @@ func TestService_CloneRepository_CreateDirError(t *testing.T) {
 	repo := NewMockRepository()
 	// Use a path that cannot be created (file instead of directory parent)
 	tmpFile := t.TempDir() + "/file.txt"
-	err := os.WriteFile(tmpFile, []byte("content"), 0644)
+	err := os.WriteFile(tmpFile, []byte("content"), 0600)
 	require.NoError(t, err)
 
 	service := NewServiceWithRepository(repo, nil, tmpFile+"/plugins")

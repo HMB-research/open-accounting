@@ -597,7 +597,7 @@ display_name: Test Plugin
 version: 1.0.0
 description: A test plugin
 `
-		if err := os.WriteFile(manifestPath, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(manifestPath, []byte(content), 0600); err != nil {
 			t.Fatalf("Failed to write test manifest: %v", err)
 		}
 
@@ -633,7 +633,7 @@ description: A test plugin
 		// Invalid YAML with bad indentation
 		content := `name: test
   bad: indentation: here`
-		if err := os.WriteFile(manifestPath, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(manifestPath, []byte(content), 0600); err != nil {
 			t.Fatalf("Failed to write test manifest: %v", err)
 		}
 
@@ -688,7 +688,7 @@ settings:
       type: boolean
       default: true
 `
-		if err := os.WriteFile(manifestPath, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(manifestPath, []byte(content), 0600); err != nil {
 			t.Fatalf("Failed to write test manifest: %v", err)
 		}
 
@@ -750,7 +750,7 @@ settings:
 	t.Run("Empty file", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		manifestPath := tmpDir + "/plugin.yaml"
-		if err := os.WriteFile(manifestPath, []byte(""), 0644); err != nil {
+		if err := os.WriteFile(manifestPath, []byte(""), 0600); err != nil {
 			t.Fatalf("Failed to write test manifest: %v", err)
 		}
 

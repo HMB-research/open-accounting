@@ -463,7 +463,7 @@ func TestValidateAccessToken_WrongSigningMethod(t *testing.T) {
 	// We can't easily create an RS256 token without private key,
 	// but we can test with a malformed algorithm by using "none"
 	// This token has alg: "none" which should be rejected
-	noneAlgToken := "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJ1c2VyX2lkIjoidXNlci0xMjMiLCJlbWFpbCI6InRlc3RAZXhhbXBsZS5jb20ifQ."
+	noneAlgToken := "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJ1c2VyX2lkIjoidXNlci0xMjMiLCJlbWFpbCI6InRlc3RAZXhhbXBsZS5jb20ifQ." //nolint:gosec // test token not actual credentials
 
 	_, err := service.ValidateAccessToken(noneAlgToken)
 	assert.Error(t, err)
@@ -474,7 +474,7 @@ func TestValidateRefreshToken_WrongSigningMethod(t *testing.T) {
 	service := NewTokenService("test-secret", 15*time.Minute, 7*24*time.Hour)
 
 	// Token with alg: "none" which should be rejected
-	noneAlgToken := "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ1c2VyLTEyMyJ9."
+	noneAlgToken := "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ1c2VyLTEyMyJ9." //nolint:gosec // test token not actual credentials
 
 	_, err := service.ValidateRefreshToken(noneAlgToken)
 	assert.Error(t, err)
