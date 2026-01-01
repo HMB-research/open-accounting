@@ -631,8 +631,8 @@ func TestPostgresRepository_ListWithDateRangeAndSearch(t *testing.T) {
 	userID := testutil.CreateTestUser(t, pool, "invoicing-daterange-test@example.com")
 
 	// Create invoices with different dates
-	pastDate := time.Now().AddDate(0, -1, 0)   // 1 month ago
-	futureDate := time.Now().AddDate(0, 1, 0)  // 1 month from now
+	pastDate := time.Now().AddDate(0, -1, 0)  // 1 month ago
+	futureDate := time.Now().AddDate(0, 1, 0) // 1 month from now
 
 	// Invoice in the past
 	pastInvoice := &Invoice{

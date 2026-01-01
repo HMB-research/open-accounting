@@ -30,20 +30,20 @@ func TestPostgresRepository_CreatePayment(t *testing.T) {
 
 	userID := uuid.New().String()
 	payment := &Payment{
-		ID:           uuid.New().String(),
-		TenantID:     tenant.ID,
+		ID:            uuid.New().String(),
+		TenantID:      tenant.ID,
 		PaymentNumber: "PMT-001",
-		PaymentType:  PaymentTypeReceived,
-		ContactID:    &contactID,
-		Amount:       decimal.NewFromFloat(250.50),
-		Currency:     "EUR",
-		ExchangeRate: decimal.NewFromInt(1),
-		BaseAmount:   decimal.NewFromFloat(250.50),
-		PaymentDate:  time.Now(),
-		Reference:    "TEST-001",
-		Notes:        "Test payment",
-		CreatedAt:    time.Now(),
-		CreatedBy:    userID,
+		PaymentType:   PaymentTypeReceived,
+		ContactID:     &contactID,
+		Amount:        decimal.NewFromFloat(250.50),
+		Currency:      "EUR",
+		ExchangeRate:  decimal.NewFromInt(1),
+		BaseAmount:    decimal.NewFromFloat(250.50),
+		PaymentDate:   time.Now(),
+		Reference:     "TEST-001",
+		Notes:         "Test payment",
+		CreatedAt:     time.Now(),
+		CreatedBy:     userID,
 	}
 
 	err = repo.Create(ctx, tenant.SchemaName, payment)
