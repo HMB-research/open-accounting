@@ -509,10 +509,11 @@ func (h *Handlers) CompleteOnboarding(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ListAccounts(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetClaims(r.Context())
 	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
 
 	activeOnly := r.URL.Query().Get("active_only") == "true"
 
-	accounts, err := h.accountingService.ListAccounts(r.Context(), tenantID, activeOnly)
+	accounts, err := h.accountingService.ListAccounts(r.Context(), schemaName, tenantID, activeOnly)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to list accounts")
 		return
@@ -536,6 +537,7 @@ func (h *Handlers) ListAccounts(w http.ResponseWriter, r *http.Request) {
 // @Router /tenants/{tenantID}/accounts [post]
 func (h *Handlers) CreateAccount(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
 
 	var req accounting.CreateAccountRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -548,7 +550,7 @@ func (h *Handlers) CreateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	account, err := h.accountingService.CreateAccount(r.Context(), tenantID, &req)
+	account, err := h.accountingService.CreateAccount(r.Context(), schemaName, tenantID, &req)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -571,8 +573,9 @@ func (h *Handlers) CreateAccount(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetAccount(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	accountID := chi.URLParam(r, "accountID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
 
-	account, err := h.accountingService.GetAccount(r.Context(), tenantID, accountID)
+	account, err := h.accountingService.GetAccount(r.Context(), schemaName, tenantID, accountID)
 	if err != nil {
 		respondError(w, http.StatusNotFound, "Account not found")
 		return
@@ -595,8 +598,9 @@ func (h *Handlers) GetAccount(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetJournalEntry(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	entryID := chi.URLParam(r, "entryID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
 
-	entry, err := h.accountingService.GetJournalEntry(r.Context(), tenantID, entryID)
+	entry, err := h.accountingService.GetJournalEntry(r.Context(), schemaName, tenantID, entryID)
 	if err != nil {
 		respondError(w, http.StatusNotFound, "Journal entry not found")
 		return
@@ -620,6 +624,7 @@ func (h *Handlers) GetJournalEntry(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) CreateJournalEntry(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetClaims(r.Context())
 	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
 
 	var req accounting.CreateJournalEntryRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -638,7 +643,7 @@ func (h *Handlers) CreateJournalEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entry, err := h.accountingService.CreateJournalEntry(r.Context(), tenantID, &req)
+	entry, err := h.accountingService.CreateJournalEntry(r.Context(), schemaName, tenantID, &req)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -662,8 +667,9 @@ func (h *Handlers) PostJournalEntry(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetClaims(r.Context())
 	tenantID := chi.URLParam(r, "tenantID")
 	entryID := chi.URLParam(r, "entryID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
 
-	err := h.accountingService.PostJournalEntry(r.Context(), tenantID, entryID, claims.UserID)
+	err := h.accountingService.PostJournalEntry(r.Context(), schemaName, tenantID, entryID, claims.UserID)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -689,6 +695,7 @@ func (h *Handlers) VoidJournalEntry(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetClaims(r.Context())
 	tenantID := chi.URLParam(r, "tenantID")
 	entryID := chi.URLParam(r, "entryID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
 
 	var req struct {
 		Reason string `json:"reason"`
@@ -703,7 +710,7 @@ func (h *Handlers) VoidJournalEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reversal, err := h.accountingService.VoidJournalEntry(r.Context(), tenantID, entryID, claims.UserID, req.Reason)
+	reversal, err := h.accountingService.VoidJournalEntry(r.Context(), schemaName, tenantID, entryID, claims.UserID, req.Reason)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -726,6 +733,7 @@ func (h *Handlers) VoidJournalEntry(w http.ResponseWriter, r *http.Request) {
 // @Router /tenants/{tenantID}/reports/trial-balance [get]
 func (h *Handlers) GetTrialBalance(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
 
 	asOfDateStr := r.URL.Query().Get("as_of_date")
 	asOfDate := time.Now()
@@ -738,7 +746,7 @@ func (h *Handlers) GetTrialBalance(w http.ResponseWriter, r *http.Request) {
 		asOfDate = parsed
 	}
 
-	tb, err := h.accountingService.GetTrialBalance(r.Context(), tenantID, asOfDate)
+	tb, err := h.accountingService.GetTrialBalance(r.Context(), schemaName, tenantID, asOfDate)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to generate trial balance")
 		return
@@ -763,6 +771,7 @@ func (h *Handlers) GetTrialBalance(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetAccountBalance(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	accountID := chi.URLParam(r, "accountID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
 
 	asOfDateStr := r.URL.Query().Get("as_of_date")
 	asOfDate := time.Now()
@@ -775,7 +784,7 @@ func (h *Handlers) GetAccountBalance(w http.ResponseWriter, r *http.Request) {
 		asOfDate = parsed
 	}
 
-	balance, err := h.accountingService.GetAccountBalance(r.Context(), tenantID, accountID, asOfDate)
+	balance, err := h.accountingService.GetAccountBalance(r.Context(), schemaName, tenantID, accountID, asOfDate)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to get account balance")
 		return
@@ -802,6 +811,7 @@ func (h *Handlers) GetAccountBalance(w http.ResponseWriter, r *http.Request) {
 // @Router /tenants/{tenantID}/reports/balance-sheet [get]
 func (h *Handlers) GetBalanceSheet(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
 
 	asOfDateStr := r.URL.Query().Get("as_of")
 	asOfDate := time.Now()
@@ -814,7 +824,7 @@ func (h *Handlers) GetBalanceSheet(w http.ResponseWriter, r *http.Request) {
 		asOfDate = parsed
 	}
 
-	bs, err := h.accountingService.GetBalanceSheet(r.Context(), tenantID, asOfDate)
+	bs, err := h.accountingService.GetBalanceSheet(r.Context(), schemaName, tenantID, asOfDate)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to generate balance sheet")
 		return
@@ -864,7 +874,8 @@ func (h *Handlers) GetIncomeStatement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	is, err := h.accountingService.GetIncomeStatement(r.Context(), tenantID, startDate, endDate)
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+	is, err := h.accountingService.GetIncomeStatement(r.Context(), schemaName, tenantID, startDate, endDate)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to generate income statement")
 		return

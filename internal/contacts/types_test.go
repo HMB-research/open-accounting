@@ -168,3 +168,15 @@ func TestContact_SupplierType(t *testing.T) {
 	assert.Equal(t, "DE123456789", contact.VATNumber)
 	assert.Equal(t, "DE", contact.CountryCode)
 }
+
+func TestNewService(t *testing.T) {
+	// Test that NewService creates a service with nil pool
+	service := NewService(nil)
+	assert.NotNil(t, service)
+}
+
+func TestNewService_WithNilPool(t *testing.T) {
+	// Service can be created without a pool for testing
+	service := NewService(nil)
+	assert.NotNil(t, service, "NewService should return a non-nil service even with nil pool")
+}

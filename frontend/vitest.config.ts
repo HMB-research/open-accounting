@@ -7,7 +7,19 @@ export default defineConfig({
 		include: ['src/**/*.{test,spec}.{js,ts}'],
 		globals: true,
 		environment: 'jsdom',
-		setupFiles: ['./src/tests/setup.ts']
+		setupFiles: ['./src/tests/setup.ts'],
+		coverage: {
+			provider: 'v8',
+			reporter: ['text', 'json', 'html'],
+			include: ['src/lib/**/*.ts', 'src/routes/**/*.ts'],
+			exclude: [
+				'node_modules/**',
+				'src/tests/**',
+				'src/lib/paraglide/**',
+				'**/*.d.ts',
+				'**/*.config.{js,ts}'
+			]
+		}
 	},
 	resolve: {
 		alias: {

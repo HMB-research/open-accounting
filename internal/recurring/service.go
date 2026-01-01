@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 
@@ -17,72 +16,77 @@ import (
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
+// InvoicingService defines the interface for invoice operations needed by recurring
+type InvoicingService interface {
+	GetByID(ctx context.Context, tenantID, schemaName, id string) (*invoicing.Invoice, error)
+	Create(ctx context.Context, tenantID, schemaName string, req *invoicing.CreateInvoiceRequest) (*invoicing.Invoice, error)
+}
+
+// EmailService defines the interface for email operations needed by recurring
+type EmailService interface {
+	GetTemplate(ctx context.Context, schemaName, tenantID string, templateType email.TemplateType) (*email.EmailTemplate, error)
+	RenderTemplate(tmpl *email.EmailTemplate, data *email.TemplateData) (subject, bodyHTML, bodyText string, err error)
+	SendEmail(ctx context.Context, schemaName, tenantID, templateType, toEmail, toName, subject, bodyHTML, bodyText string, attachments []email.Attachment, relatedEntityID string) (*email.EmailSentResponse, error)
+}
+
+// TenantService defines the interface for tenant operations needed by recurring
+type TenantService interface {
+	GetTenant(ctx context.Context, tenantID string) (*tenant.Tenant, error)
+}
+
+// ContactsService defines the interface for contact operations needed by recurring
+type ContactsService interface {
+	GetByID(ctx context.Context, tenantID, schemaName, contactID string) (*contacts.Contact, error)
+}
+
+// PDFService defines the interface for PDF operations needed by recurring
+type PDFService interface {
+	PDFSettingsFromTenant(t *tenant.Tenant) pdf.PDFSettings
+	GenerateInvoicePDF(invoice *invoicing.Invoice, t *tenant.Tenant, settings pdf.PDFSettings) ([]byte, error)
+}
+
 // Service provides recurring invoice operations
 type Service struct {
 	db        *pgxpool.Pool
-	invoicing *invoicing.Service
-	email     *email.Service
-	pdf       *pdf.Service
-	tenant    *tenant.Service
-	contacts  *contacts.Service
+	repo      Repository
+	invoicing InvoicingService
+	email     EmailService
+	pdfSvc    PDFService
+	tenant    TenantService
+	contacts  ContactsService
 }
 
 // NewService creates a new recurring invoice service
 func NewService(db *pgxpool.Pool, invoicingService *invoicing.Service, emailService *email.Service, pdfService *pdf.Service, tenantService *tenant.Service, contactsService *contacts.Service) *Service {
 	return &Service{
 		db:        db,
+		repo:      NewPostgresRepository(db),
 		invoicing: invoicingService,
 		email:     emailService,
-		pdf:       pdfService,
+		pdfSvc:    pdfService,
 		tenant:    tenantService,
 		contacts:  contactsService,
 	}
 }
 
+// NewServiceWithDependencies creates a new recurring invoice service with injected dependencies
+func NewServiceWithDependencies(repo Repository, invoicing InvoicingService, emailSvc EmailService, pdfSvc PDFService, tenantSvc TenantService, contactsSvc ContactsService) *Service {
+	return &Service{
+		repo:      repo,
+		invoicing: invoicing,
+		email:     emailSvc,
+		pdfSvc:    pdfSvc,
+		tenant:    tenantSvc,
+		contacts:  contactsSvc,
+	}
+}
+
 // EnsureSchema ensures the recurring invoice tables exist in the tenant schema
 func (s *Service) EnsureSchema(ctx context.Context, schemaName string) error {
-	_, err := s.db.Exec(ctx, fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS %s.recurring_invoices (
-			id UUID PRIMARY KEY,
-			tenant_id UUID NOT NULL,
-			name VARCHAR(100) NOT NULL,
-			contact_id UUID NOT NULL,
-			invoice_type VARCHAR(20) NOT NULL DEFAULT 'SALES',
-			currency VARCHAR(3) NOT NULL DEFAULT 'EUR',
-			frequency VARCHAR(20) NOT NULL,
-			start_date DATE NOT NULL,
-			end_date DATE,
-			next_generation_date DATE NOT NULL,
-			payment_terms_days INTEGER NOT NULL DEFAULT 14,
-			reference TEXT,
-			notes TEXT,
-			is_active BOOLEAN NOT NULL DEFAULT true,
-			last_generated_at TIMESTAMPTZ,
-			generated_count INTEGER NOT NULL DEFAULT 0,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			created_by UUID NOT NULL,
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		);
-
-		CREATE TABLE IF NOT EXISTS %s.recurring_invoice_lines (
-			id UUID PRIMARY KEY,
-			recurring_invoice_id UUID NOT NULL REFERENCES %s.recurring_invoices(id) ON DELETE CASCADE,
-			line_number INTEGER NOT NULL,
-			description TEXT NOT NULL,
-			quantity NUMERIC(18,6) NOT NULL DEFAULT 1,
-			unit VARCHAR(20),
-			unit_price NUMERIC(28,8) NOT NULL,
-			discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
-			vat_rate NUMERIC(5,2) NOT NULL DEFAULT 0,
-			account_id UUID,
-			product_id UUID
-		);
-
-		CREATE INDEX IF NOT EXISTS idx_recurring_invoices_tenant ON %s.recurring_invoices(tenant_id);
-		CREATE INDEX IF NOT EXISTS idx_recurring_invoices_next_gen ON %s.recurring_invoices(next_generation_date) WHERE is_active = true;
-		CREATE INDEX IF NOT EXISTS idx_recurring_invoice_lines_recurring ON %s.recurring_invoice_lines(recurring_invoice_id);
-	`, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName))
-	if err != nil {
+	if s.repo == nil {
+		return fmt.Errorf("repository not available")
+	}
+	if err := s.repo.EnsureSchema(ctx, schemaName); err != nil {
 		return fmt.Errorf("ensure recurring schema: %w", err)
 	}
 	return nil
@@ -170,50 +174,17 @@ func (s *Service) Create(ctx context.Context, tenantID, schemaName string, req *
 		return nil, fmt.Errorf("validation failed: %w", err)
 	}
 
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	// Insert recurring invoice
-	_, err = tx.Exec(ctx, fmt.Sprintf(`
-		INSERT INTO %s.recurring_invoices (
-			id, tenant_id, name, contact_id, invoice_type, currency, frequency,
-			start_date, end_date, next_generation_date, payment_terms_days,
-			reference, notes, is_active, generated_count, created_at, created_by, updated_at,
-			send_email_on_generation, email_template_type, recipient_email_override,
-			attach_pdf_to_email, email_subject_override, email_message
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
-	`, schemaName),
-		ri.ID, ri.TenantID, ri.Name, ri.ContactID, ri.InvoiceType, ri.Currency, ri.Frequency,
-		ri.StartDate, ri.EndDate, ri.NextGenerationDate, ri.PaymentTermsDays,
-		ri.Reference, ri.Notes, ri.IsActive, ri.GeneratedCount, ri.CreatedAt, ri.CreatedBy, ri.UpdatedAt,
-		ri.SendEmailOnGeneration, ri.EmailTemplateType, ri.RecipientEmailOverride,
-		ri.AttachPDFToEmail, ri.EmailSubjectOverride, ri.EmailMessage,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("insert recurring invoice: %w", err)
+	// Use repository for creation
+	if err := s.repo.Create(ctx, schemaName, ri); err != nil {
+		return nil, fmt.Errorf("create recurring invoice: %w", err)
 	}
 
-	// Insert lines
+	// Create lines via repository
 	for _, line := range ri.Lines {
-		_, err = tx.Exec(ctx, fmt.Sprintf(`
-			INSERT INTO %s.recurring_invoice_lines (
-				id, recurring_invoice_id, line_number, description, quantity, unit,
-				unit_price, discount_percent, vat_rate, account_id, product_id
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		`, schemaName),
-			line.ID, line.RecurringInvoiceID, line.LineNumber, line.Description, line.Quantity, line.Unit,
-			line.UnitPrice, line.DiscountPercent, line.VATRate, line.AccountID, line.ProductID,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("insert recurring invoice line: %w", err)
+		lineCopy := line
+		if err := s.repo.CreateLine(ctx, schemaName, &lineCopy); err != nil {
+			return nil, fmt.Errorf("create recurring invoice line: %w", err)
 		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit transaction: %w", err)
 	}
 
 	return ri, nil
@@ -265,27 +236,8 @@ func (s *Service) GetByID(ctx context.Context, tenantID, schemaName, id string) 
 		return nil, err
 	}
 
-	var ri RecurringInvoice
-	err := s.db.QueryRow(ctx, fmt.Sprintf(`
-		SELECT r.id, r.tenant_id, r.name, r.contact_id, c.name as contact_name,
-		       r.invoice_type, r.currency, r.frequency, r.start_date, r.end_date,
-		       r.next_generation_date, r.payment_terms_days, r.reference, r.notes,
-		       r.is_active, r.last_generated_at, r.generated_count, r.created_at, r.created_by, r.updated_at,
-		       COALESCE(r.send_email_on_generation, false), COALESCE(r.email_template_type, 'INVOICE_SEND'),
-		       COALESCE(r.recipient_email_override, ''), COALESCE(r.attach_pdf_to_email, true),
-		       COALESCE(r.email_subject_override, ''), COALESCE(r.email_message, '')
-		FROM %s.recurring_invoices r
-		LEFT JOIN %s.contacts c ON r.contact_id = c.id
-		WHERE r.id = $1 AND r.tenant_id = $2
-	`, schemaName, schemaName), id, tenantID).Scan(
-		&ri.ID, &ri.TenantID, &ri.Name, &ri.ContactID, &ri.ContactName,
-		&ri.InvoiceType, &ri.Currency, &ri.Frequency, &ri.StartDate, &ri.EndDate,
-		&ri.NextGenerationDate, &ri.PaymentTermsDays, &ri.Reference, &ri.Notes,
-		&ri.IsActive, &ri.LastGeneratedAt, &ri.GeneratedCount, &ri.CreatedAt, &ri.CreatedBy, &ri.UpdatedAt,
-		&ri.SendEmailOnGeneration, &ri.EmailTemplateType, &ri.RecipientEmailOverride,
-		&ri.AttachPDFToEmail, &ri.EmailSubjectOverride, &ri.EmailMessage,
-	)
-	if err == pgx.ErrNoRows {
+	ri, err := s.repo.GetByID(ctx, schemaName, tenantID, id)
+	if err == ErrRecurringInvoiceNotFound {
 		return nil, fmt.Errorf("recurring invoice not found: %s", id)
 	}
 	if err != nil {
@@ -293,31 +245,13 @@ func (s *Service) GetByID(ctx context.Context, tenantID, schemaName, id string) 
 	}
 
 	// Load lines
-	rows, err := s.db.Query(ctx, fmt.Sprintf(`
-		SELECT id, recurring_invoice_id, line_number, description, quantity, unit,
-		       unit_price, discount_percent, vat_rate, account_id, product_id
-		FROM %s.recurring_invoice_lines
-		WHERE recurring_invoice_id = $1
-		ORDER BY line_number
-	`, schemaName), id)
+	lines, err := s.repo.GetLines(ctx, schemaName, id)
 	if err != nil {
 		return nil, fmt.Errorf("get recurring invoice lines: %w", err)
 	}
-	defer rows.Close()
+	ri.Lines = lines
 
-	for rows.Next() {
-		var line RecurringInvoiceLine
-		if err := rows.Scan(
-			&line.ID, &line.RecurringInvoiceID, &line.LineNumber, &line.Description,
-			&line.Quantity, &line.Unit, &line.UnitPrice, &line.DiscountPercent,
-			&line.VATRate, &line.AccountID, &line.ProductID,
-		); err != nil {
-			return nil, fmt.Errorf("scan recurring invoice line: %w", err)
-		}
-		ri.Lines = append(ri.Lines, line)
-	}
-
-	return &ri, nil
+	return ri, nil
 }
 
 // List retrieves all recurring invoices for a tenant
@@ -326,44 +260,9 @@ func (s *Service) List(ctx context.Context, tenantID, schemaName string, activeO
 		return nil, err
 	}
 
-	query := fmt.Sprintf(`
-		SELECT r.id, r.tenant_id, r.name, r.contact_id, c.name as contact_name,
-		       r.invoice_type, r.currency, r.frequency, r.start_date, r.end_date,
-		       r.next_generation_date, r.payment_terms_days, r.reference, r.notes,
-		       r.is_active, r.last_generated_at, r.generated_count, r.created_at, r.created_by, r.updated_at,
-		       COALESCE(r.send_email_on_generation, false), COALESCE(r.email_template_type, 'INVOICE_SEND'),
-		       COALESCE(r.recipient_email_override, ''), COALESCE(r.attach_pdf_to_email, true),
-		       COALESCE(r.email_subject_override, ''), COALESCE(r.email_message, '')
-		FROM %s.recurring_invoices r
-		LEFT JOIN %s.contacts c ON r.contact_id = c.id
-		WHERE r.tenant_id = $1
-	`, schemaName, schemaName)
-
-	if activeOnly {
-		query += " AND r.is_active = true"
-	}
-	query += " ORDER BY r.next_generation_date, r.name"
-
-	rows, err := s.db.Query(ctx, query, tenantID)
+	results, err := s.repo.List(ctx, schemaName, tenantID, activeOnly)
 	if err != nil {
 		return nil, fmt.Errorf("list recurring invoices: %w", err)
-	}
-	defer rows.Close()
-
-	results := make([]RecurringInvoice, 0)
-	for rows.Next() {
-		var ri RecurringInvoice
-		if err := rows.Scan(
-			&ri.ID, &ri.TenantID, &ri.Name, &ri.ContactID, &ri.ContactName,
-			&ri.InvoiceType, &ri.Currency, &ri.Frequency, &ri.StartDate, &ri.EndDate,
-			&ri.NextGenerationDate, &ri.PaymentTermsDays, &ri.Reference, &ri.Notes,
-			&ri.IsActive, &ri.LastGeneratedAt, &ri.GeneratedCount, &ri.CreatedAt, &ri.CreatedBy, &ri.UpdatedAt,
-			&ri.SendEmailOnGeneration, &ri.EmailTemplateType, &ri.RecipientEmailOverride,
-			&ri.AttachPDFToEmail, &ri.EmailSubjectOverride, &ri.EmailMessage,
-		); err != nil {
-			return nil, fmt.Errorf("scan recurring invoice: %w", err)
-		}
-		results = append(results, ri)
 	}
 
 	return results, nil
@@ -422,35 +321,15 @@ func (s *Service) Update(ctx context.Context, tenantID, schemaName, id string, r
 		return nil, fmt.Errorf("validation failed: %w", err)
 	}
 
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	_, err = tx.Exec(ctx, fmt.Sprintf(`
-		UPDATE %s.recurring_invoices SET
-			name = $1, contact_id = $2, frequency = $3, end_date = $4,
-			payment_terms_days = $5, reference = $6, notes = $7, updated_at = $8,
-			send_email_on_generation = $9, email_template_type = $10, recipient_email_override = $11,
-			attach_pdf_to_email = $12, email_subject_override = $13, email_message = $14
-		WHERE id = $15 AND tenant_id = $16
-	`, schemaName),
-		ri.Name, ri.ContactID, ri.Frequency, ri.EndDate, ri.PaymentTermsDays,
-		ri.Reference, ri.Notes, ri.UpdatedAt,
-		ri.SendEmailOnGeneration, ri.EmailTemplateType, ri.RecipientEmailOverride,
-		ri.AttachPDFToEmail, ri.EmailSubjectOverride, ri.EmailMessage,
-		ri.ID, ri.TenantID,
-	)
-	if err != nil {
+	// Update via repository
+	if err := s.repo.Update(ctx, schemaName, ri); err != nil {
 		return nil, fmt.Errorf("update recurring invoice: %w", err)
 	}
 
 	// Update lines if provided
 	if len(req.Lines) > 0 {
 		// Delete existing lines
-		_, err = tx.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.recurring_invoice_lines WHERE recurring_invoice_id = $1`, schemaName), id)
-		if err != nil {
+		if err := s.repo.DeleteLines(ctx, schemaName, id); err != nil {
 			return nil, fmt.Errorf("delete recurring invoice lines: %w", err)
 		}
 
@@ -474,24 +353,11 @@ func (s *Service) Update(ctx context.Context, tenantID, schemaName, id string, r
 				line.Quantity = decimal.NewFromInt(1)
 			}
 
-			_, err = tx.Exec(ctx, fmt.Sprintf(`
-				INSERT INTO %s.recurring_invoice_lines (
-					id, recurring_invoice_id, line_number, description, quantity, unit,
-					unit_price, discount_percent, vat_rate, account_id, product_id
-				) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-			`, schemaName),
-				line.ID, line.RecurringInvoiceID, line.LineNumber, line.Description, line.Quantity, line.Unit,
-				line.UnitPrice, line.DiscountPercent, line.VATRate, line.AccountID, line.ProductID,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("insert recurring invoice line: %w", err)
+			if err := s.repo.CreateLine(ctx, schemaName, &line); err != nil {
+				return nil, fmt.Errorf("create recurring invoice line: %w", err)
 			}
 			ri.Lines = append(ri.Lines, line)
 		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit transaction: %w", err)
 	}
 
 	return ri, nil
@@ -503,14 +369,11 @@ func (s *Service) Delete(ctx context.Context, tenantID, schemaName, id string) e
 		return err
 	}
 
-	result, err := s.db.Exec(ctx, fmt.Sprintf(`
-		DELETE FROM %s.recurring_invoices WHERE id = $1 AND tenant_id = $2
-	`, schemaName), id, tenantID)
-	if err != nil {
+	if err := s.repo.Delete(ctx, schemaName, tenantID, id); err != nil {
+		if err == ErrRecurringInvoiceNotFound {
+			return fmt.Errorf("recurring invoice not found: %s", id)
+		}
 		return fmt.Errorf("delete recurring invoice: %w", err)
-	}
-	if result.RowsAffected() == 0 {
-		return fmt.Errorf("recurring invoice not found: %s", id)
 	}
 	return nil
 }
@@ -526,15 +389,11 @@ func (s *Service) Resume(ctx context.Context, tenantID, schemaName, id string) e
 }
 
 func (s *Service) setActive(ctx context.Context, tenantID, schemaName, id string, active bool) error {
-	result, err := s.db.Exec(ctx, fmt.Sprintf(`
-		UPDATE %s.recurring_invoices SET is_active = $1, updated_at = $2
-		WHERE id = $3 AND tenant_id = $4
-	`, schemaName), active, time.Now(), id, tenantID)
-	if err != nil {
+	if err := s.repo.SetActive(ctx, schemaName, tenantID, id, active); err != nil {
+		if err == ErrRecurringInvoiceNotFound {
+			return fmt.Errorf("recurring invoice not found: %s", id)
+		}
 		return fmt.Errorf("update recurring invoice: %w", err)
-	}
-	if result.RowsAffected() == 0 {
-		return fmt.Errorf("recurring invoice not found: %s", id)
 	}
 	return nil
 }
@@ -545,26 +404,10 @@ func (s *Service) GenerateDueInvoices(ctx context.Context, tenantID, schemaName,
 		return nil, err
 	}
 
-	// Find all due recurring invoices
-	rows, err := s.db.Query(ctx, fmt.Sprintf(`
-		SELECT id FROM %s.recurring_invoices
-		WHERE tenant_id = $1
-		  AND is_active = true
-		  AND next_generation_date <= $2
-		  AND (end_date IS NULL OR end_date >= $2)
-	`, schemaName), tenantID, time.Now())
+	// Find all due recurring invoices via repository
+	ids, err := s.repo.GetDueRecurringInvoiceIDs(ctx, schemaName, tenantID, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("list due recurring invoices: %w", err)
-	}
-	defer rows.Close()
-
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("scan recurring invoice id: %w", err)
-		}
-		ids = append(ids, id)
 	}
 
 	results := make([]GenerationResult, 0, len(ids))
@@ -628,18 +471,10 @@ func (s *Service) GenerateInvoice(ctx context.Context, tenantID, schemaName, rec
 		return nil, fmt.Errorf("create invoice: %w", err)
 	}
 
-	// Update recurring invoice
+	// Update recurring invoice via repository
 	nextDate := ri.CalculateNextDate(ri.NextGenerationDate)
 	now := time.Now()
-	_, err = s.db.Exec(ctx, fmt.Sprintf(`
-		UPDATE %s.recurring_invoices SET
-			next_generation_date = $1,
-			last_generated_at = $2,
-			generated_count = generated_count + 1,
-			updated_at = $3
-		WHERE id = $4 AND tenant_id = $5
-	`, schemaName), nextDate, now, now, recurringID, tenantID)
-	if err != nil {
+	if err := s.repo.UpdateAfterGeneration(ctx, schemaName, tenantID, recurringID, nextDate, now); err != nil {
 		return nil, fmt.Errorf("update recurring invoice: %w", err)
 	}
 
@@ -743,9 +578,9 @@ func (s *Service) sendGeneratedInvoiceEmail(ctx context.Context, tenantID, schem
 
 	// Prepare attachments
 	var attachments []email.Attachment
-	if ri.AttachPDFToEmail && s.pdf != nil {
-		pdfSettings := s.pdf.PDFSettingsFromTenant(t)
-		pdfBytes, err := s.pdf.GenerateInvoicePDF(invoice, t, pdfSettings)
+	if ri.AttachPDFToEmail && s.pdfSvc != nil {
+		pdfSettings := s.pdfSvc.PDFSettingsFromTenant(t)
+		pdfBytes, err := s.pdfSvc.GenerateInvoicePDF(invoice, t, pdfSettings)
 		if err != nil {
 			// Log PDF error but continue without attachment
 			result.EmailError = fmt.Sprintf("PDF generation failed: %v", err)
@@ -792,13 +627,7 @@ func (s *Service) updateInvoiceEmailStatus(ctx context.Context, schemaName, invo
 		sentAt = &now
 	}
 
-	_, err := s.db.Exec(ctx, fmt.Sprintf(`
-		UPDATE %s.invoices SET
-			last_email_sent_at = $1,
-			last_email_status = $2,
-			last_email_log_id = $3
-		WHERE id = $4
-	`, schemaName), sentAt, emailResult.EmailStatus, emailResult.EmailLogID, invoiceID)
+	err := s.repo.UpdateInvoiceEmailStatus(ctx, schemaName, invoiceID, sentAt, emailResult.EmailStatus, emailResult.EmailLogID)
 	if err != nil {
 		// Log error but don't fail - invoice was already created
 		fmt.Printf("failed to update invoice email status: %v\n", err)

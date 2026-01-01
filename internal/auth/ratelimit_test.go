@@ -228,6 +228,47 @@ func TestDefaultRateLimiter(t *testing.T) {
 	}
 }
 
+func TestRateLimiter_TokensNegativeHandled(t *testing.T) {
+	// Test that negative token count is handled correctly
+	// This can happen when requests come in faster than tokens refill
+	rl := NewRateLimiter(0.1, 2) // Very slow rate: 0.1 req/sec, burst 2
+
+	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// Use all tokens
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest("GET", "/", nil)
+		req.RemoteAddr = "192.168.1.1:12345"
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+	}
+
+	// Wait a tiny bit so tokens might be slightly negative
+	time.Sleep(10 * time.Millisecond)
+
+	// Make another request - should be rate limited but tokens should show as 0
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "192.168.1.1:12345"
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	// Should be rate limited
+	if rr.Code != http.StatusTooManyRequests {
+		t.Errorf("Expected status 429, got %d", rr.Code)
+	}
+
+	// X-RateLimit-Remaining should be "0" not a negative number
+	remaining := rr.Header().Get("X-RateLimit-Remaining")
+	if remaining != "" && remaining != "0" {
+		// If header is set, it should be 0 (not negative)
+		if remaining[0] == '-' {
+			t.Errorf("X-RateLimit-Remaining should not be negative, got %s", remaining)
+		}
+	}
+}
+
 func TestGetClientIP(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -284,5 +325,110 @@ func TestGetClientIP(t *testing.T) {
 				t.Errorf("getClientIP() = %q, want %q", got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestCleanupVisitors(t *testing.T) {
+	// Create a rate limiter with very short cleanup interval
+	rl := &RateLimiter{
+		visitors: make(map[string]*visitor),
+		r:        10,
+		b:        5,
+		cleanup:  20 * time.Millisecond,
+	}
+
+	// Add some visitors - stale visitor is older than cleanup interval
+	rl.mu.Lock()
+	rl.visitors["192.168.1.1"] = &visitor{
+		limiter:  nil,                            // Not needed for cleanup test
+		lastSeen: time.Now().Add(-1 * time.Hour), // Stale visitor (way older than 20ms)
+	}
+	rl.mu.Unlock()
+
+	// Start cleanup in background
+	go rl.cleanupVisitors()
+
+	// Wait for cleanup to run at least once
+	time.Sleep(60 * time.Millisecond)
+
+	// Check that stale visitor was removed
+	rl.mu.RLock()
+	_, staleExists := rl.visitors["192.168.1.1"]
+	rl.mu.RUnlock()
+
+	if staleExists {
+		t.Error("Stale visitor should have been cleaned up")
+	}
+}
+
+func TestRateLimiter_NegativeTokensHandledInHeaders(t *testing.T) {
+	// Create rate limiter with very slow refill to ensure tokens go negative
+	rl := NewRateLimiter(0.001, 1) // 0.001 req/sec, burst 1
+
+	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// First request succeeds
+	req1 := httptest.NewRequest("GET", "/", nil)
+	req1.RemoteAddr = "10.10.10.1:12345"
+	rr1 := httptest.NewRecorder()
+	handler.ServeHTTP(rr1, req1)
+
+	if rr1.Code != http.StatusOK {
+		t.Fatalf("First request should succeed, got %d", rr1.Code)
+	}
+
+	// Get the limiter directly and drain tokens below zero
+	limiter := rl.getVisitor("10.10.10.1:12345")
+	// ReserveN will make tokens negative
+	limiter.ReserveN(time.Now(), 10)
+
+	// Now make another request - tokens are negative
+	req2 := httptest.NewRequest("GET", "/", nil)
+	req2.RemoteAddr = "10.10.10.1:12345"
+	rr2 := httptest.NewRecorder()
+	handler.ServeHTTP(rr2, req2)
+
+	// Should be rate limited
+	if rr2.Code != http.StatusTooManyRequests {
+		t.Errorf("Expected 429, got %d", rr2.Code)
+	}
+
+	// Remaining should be 0, not negative
+	remaining := rr2.Header().Get("X-RateLimit-Remaining")
+	if remaining == "" {
+		t.Error("X-RateLimit-Remaining header should be set")
+	} else if remaining[0] == '-' {
+		t.Errorf("X-RateLimit-Remaining should not be negative, got %s", remaining)
+	}
+}
+
+func TestRateLimiter_NegativeTokensOnSuccessPath(t *testing.T) {
+	// Test the tokens < 0 check on the success path (line 136-137)
+	// This tests when a successful request is made but tokens are still slightly negative
+	rl := NewRateLimiter(1000, 10) // Fast refill rate, burst 10
+
+	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// Make a successful request from a new IP
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "10.10.10.99:12345"
+	rr := httptest.NewRecorder()
+
+	// Get the limiter and drain tokens below zero before the middleware runs
+	limiter := rl.getVisitor("10.10.10.99:12345")
+	// Reserve many tokens to make it negative, but then let it refill just enough to allow request
+	res := limiter.ReserveN(time.Now(), 20)
+	res.CancelAt(time.Now()) // Cancel to give tokens back
+
+	handler.ServeHTTP(rr, req)
+
+	// Check that X-RateLimit-Remaining is set and not negative
+	remaining := rr.Header().Get("X-RateLimit-Remaining")
+	if remaining != "" && len(remaining) > 0 && remaining[0] == '-' {
+		t.Errorf("X-RateLimit-Remaining should not be negative on success, got %s", remaining)
 	}
 }

@@ -1,10 +1,12 @@
-import { vi } from 'vitest';
-
-export const goto = vi.fn();
-export const invalidate = vi.fn();
-export const invalidateAll = vi.fn();
-export const preloadData = vi.fn();
-export const preloadCode = vi.fn();
-export const beforeNavigate = vi.fn();
-export const afterNavigate = vi.fn();
-export const disableScrollHandling = vi.fn();
+// Mock for $app/navigation
+export const goto = async (url: string) => {};
+export const invalidate = async (url: string) => {};
+export const invalidateAll = async () => {};
+export const preloadData = async (url: string) => ({ type: 'loaded', status: 200, data: {} });
+export const preloadCode = async (...urls: string[]) => {};
+export const beforeNavigate = (callback: Function) => {};
+export const afterNavigate = (callback: Function) => {};
+export const onNavigate = (callback: Function) => {};
+export const disableScrollHandling = () => {};
+export const pushState = (url: string, state: any) => {};
+export const replaceState = (url: string, state: any) => {};

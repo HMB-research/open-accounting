@@ -15,7 +15,7 @@ import (
 // Service provides accounting operations
 type Service struct {
 	db   *pgxpool.Pool
-	repo *Repository
+	repo RepositoryInterface
 }
 
 // NewService creates a new accounting service
@@ -26,18 +26,26 @@ func NewService(db *pgxpool.Pool) *Service {
 	}
 }
 
+// NewServiceWithRepo creates a new accounting service with a custom repository (for testing)
+func NewServiceWithRepo(db *pgxpool.Pool, repo RepositoryInterface) *Service {
+	return &Service{
+		db:   db,
+		repo: repo,
+	}
+}
+
 // GetAccount retrieves an account by ID
-func (s *Service) GetAccount(ctx context.Context, tenantID, accountID string) (*Account, error) {
-	return s.repo.GetAccountByID(ctx, tenantID, accountID)
+func (s *Service) GetAccount(ctx context.Context, schemaName, tenantID, accountID string) (*Account, error) {
+	return s.repo.GetAccountByID(ctx, schemaName, tenantID, accountID)
 }
 
 // ListAccounts retrieves all accounts for a tenant
-func (s *Service) ListAccounts(ctx context.Context, tenantID string, activeOnly bool) ([]Account, error) {
-	return s.repo.ListAccounts(ctx, tenantID, activeOnly)
+func (s *Service) ListAccounts(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]Account, error) {
+	return s.repo.ListAccounts(ctx, schemaName, tenantID, activeOnly)
 }
 
 // CreateAccount creates a new account
-func (s *Service) CreateAccount(ctx context.Context, tenantID string, req *CreateAccountRequest) (*Account, error) {
+func (s *Service) CreateAccount(ctx context.Context, schemaName, tenantID string, req *CreateAccountRequest) (*Account, error) {
 	account := &Account{
 		ID:          uuid.New().String(),
 		TenantID:    tenantID,
@@ -51,7 +59,7 @@ func (s *Service) CreateAccount(ctx context.Context, tenantID string, req *Creat
 		CreatedAt:   time.Now(),
 	}
 
-	if err := s.repo.CreateAccount(ctx, account); err != nil {
+	if err := s.repo.CreateAccount(ctx, schemaName, account); err != nil {
 		return nil, err
 	}
 	return account, nil
@@ -67,12 +75,12 @@ type CreateAccountRequest struct {
 }
 
 // GetJournalEntry retrieves a journal entry by ID
-func (s *Service) GetJournalEntry(ctx context.Context, tenantID, entryID string) (*JournalEntry, error) {
-	return s.repo.GetJournalEntryByID(ctx, tenantID, entryID)
+func (s *Service) GetJournalEntry(ctx context.Context, schemaName, tenantID, entryID string) (*JournalEntry, error) {
+	return s.repo.GetJournalEntryByID(ctx, schemaName, tenantID, entryID)
 }
 
 // CreateJournalEntry creates a new journal entry
-func (s *Service) CreateJournalEntry(ctx context.Context, tenantID string, req *CreateJournalEntryRequest) (*JournalEntry, error) {
+func (s *Service) CreateJournalEntry(ctx context.Context, schemaName, tenantID string, req *CreateJournalEntryRequest) (*JournalEntry, error) {
 	entry := &JournalEntry{
 		ID:          uuid.New().String(),
 		TenantID:    tenantID,
@@ -117,7 +125,7 @@ func (s *Service) CreateJournalEntry(ctx context.Context, tenantID string, req *
 	}
 
 	// Create in database
-	if err := s.repo.CreateJournalEntry(ctx, entry); err != nil {
+	if err := s.repo.CreateJournalEntry(ctx, schemaName, entry); err != nil {
 		return nil, err
 	}
 
@@ -125,9 +133,9 @@ func (s *Service) CreateJournalEntry(ctx context.Context, tenantID string, req *
 }
 
 // PostJournalEntry posts a draft journal entry
-func (s *Service) PostJournalEntry(ctx context.Context, tenantID, entryID, userID string) error {
+func (s *Service) PostJournalEntry(ctx context.Context, schemaName, tenantID, entryID, userID string) error {
 	// Get the entry to verify it exists and is in draft status
-	entry, err := s.repo.GetJournalEntryByID(ctx, tenantID, entryID)
+	entry, err := s.repo.GetJournalEntryByID(ctx, schemaName, tenantID, entryID)
 	if err != nil {
 		return err
 	}
@@ -141,19 +149,13 @@ func (s *Service) PostJournalEntry(ctx context.Context, tenantID, entryID, userI
 		return fmt.Errorf("entry validation failed: %w", err)
 	}
 
-	return s.repo.UpdateJournalEntryStatus(ctx, tenantID, entryID, StatusPosted, userID)
+	return s.repo.UpdateJournalEntryStatus(ctx, schemaName, tenantID, entryID, StatusPosted, userID)
 }
 
 // VoidJournalEntry voids a posted journal entry by creating a reversing entry
-func (s *Service) VoidJournalEntry(ctx context.Context, tenantID, entryID, userID, reason string) (*JournalEntry, error) {
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
+func (s *Service) VoidJournalEntry(ctx context.Context, schemaName, tenantID, entryID, userID, reason string) (*JournalEntry, error) {
 	// Get the original entry
-	original, err := s.repo.GetJournalEntryByID(ctx, tenantID, entryID)
+	original, err := s.repo.GetJournalEntryByID(ctx, schemaName, tenantID, entryID)
 	if err != nil {
 		return nil, err
 	}
@@ -162,18 +164,8 @@ func (s *Service) VoidJournalEntry(ctx context.Context, tenantID, entryID, userI
 		return nil, fmt.Errorf("only posted entries can be voided, current status: %s", original.Status)
 	}
 
-	// Mark original as voided
-	now := time.Now()
-	_, err = tx.Exec(ctx, `
-		UPDATE journal_entries
-		SET status = $1, voided_at = $2, voided_by = $3, void_reason = $4
-		WHERE id = $5 AND tenant_id = $6
-	`, StatusVoided, now, userID, reason, entryID, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("mark entry as voided: %w", err)
-	}
-
 	// Create reversing entry
+	now := time.Now()
 	reversal := &JournalEntry{
 		ID:          uuid.New().String(),
 		TenantID:    tenantID,
@@ -204,26 +196,22 @@ func (s *Service) VoidJournalEntry(ctx context.Context, tenantID, entryID, userI
 		})
 	}
 
-	// Create the reversal entry
-	if err := s.repo.CreateJournalEntryTx(ctx, tx, reversal); err != nil {
-		return nil, fmt.Errorf("create reversal entry: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit transaction: %w", err)
+	// Void the entry and create reversal via repository
+	if err := s.repo.VoidJournalEntry(ctx, schemaName, tenantID, entryID, userID, reason, reversal); err != nil {
+		return nil, err
 	}
 
 	return reversal, nil
 }
 
 // GetAccountBalance retrieves the balance of an account as of a date
-func (s *Service) GetAccountBalance(ctx context.Context, tenantID, accountID string, asOfDate time.Time) (decimal.Decimal, error) {
-	return s.repo.GetAccountBalance(ctx, tenantID, accountID, asOfDate)
+func (s *Service) GetAccountBalance(ctx context.Context, schemaName, tenantID, accountID string, asOfDate time.Time) (decimal.Decimal, error) {
+	return s.repo.GetAccountBalance(ctx, schemaName, tenantID, accountID, asOfDate)
 }
 
 // GetTrialBalance retrieves all account balances as of a date
-func (s *Service) GetTrialBalance(ctx context.Context, tenantID string, asOfDate time.Time) (*TrialBalance, error) {
-	balances, err := s.repo.GetTrialBalance(ctx, tenantID, asOfDate)
+func (s *Service) GetTrialBalance(ctx context.Context, schemaName, tenantID string, asOfDate time.Time) (*TrialBalance, error) {
+	balances, err := s.repo.GetTrialBalance(ctx, schemaName, tenantID, asOfDate)
 	if err != nil {
 		return nil, err
 	}
@@ -256,9 +244,9 @@ type TrialBalance struct {
 }
 
 // GetBalanceSheet generates a balance sheet as of a specific date
-func (s *Service) GetBalanceSheet(ctx context.Context, tenantID string, asOfDate time.Time) (*BalanceSheet, error) {
+func (s *Service) GetBalanceSheet(ctx context.Context, schemaName, tenantID string, asOfDate time.Time) (*BalanceSheet, error) {
 	// Get all account balances as of the date
-	balances, err := s.repo.GetTrialBalance(ctx, tenantID, asOfDate)
+	balances, err := s.repo.GetTrialBalance(ctx, schemaName, tenantID, asOfDate)
 	if err != nil {
 		return nil, err
 	}
@@ -300,9 +288,9 @@ func (s *Service) GetBalanceSheet(ctx context.Context, tenantID string, asOfDate
 }
 
 // GetIncomeStatement generates an income statement for a period
-func (s *Service) GetIncomeStatement(ctx context.Context, tenantID string, startDate, endDate time.Time) (*IncomeStatement, error) {
+func (s *Service) GetIncomeStatement(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) (*IncomeStatement, error) {
 	// Get balances for the period (revenue and expenses)
-	balances, err := s.repo.GetPeriodBalances(ctx, tenantID, startDate, endDate)
+	balances, err := s.repo.GetPeriodBalances(ctx, schemaName, tenantID, startDate, endDate)
 	if err != nil {
 		return nil, err
 	}

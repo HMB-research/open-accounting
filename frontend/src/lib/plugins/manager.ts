@@ -240,5 +240,8 @@ function parsePosition(position?: string): number {
 // Export singleton instance
 export const pluginManager = createPluginManager();
 
+// Export parsePosition for testing
+export { parsePosition };
+
 // Export types for external use
 export type { PluginManagerState };

@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"os"
 	"testing"
 )
 
@@ -284,6 +285,18 @@ func TestManifestValidate(t *testing.T) {
 			},
 			wantErr: true,
 			errMsg:  "frontend.components is required",
+		},
+		{
+			name: "Database missing migrations path",
+			manifest: Manifest{
+				Name:        "my-plugin",
+				DisplayName: "My Plugin",
+				Version:     "1.0.0",
+				Permissions: []string{"database:migrate"},
+				Database:    &DatabaseConfig{Migrations: ""},
+			},
+			wantErr: true,
+			errMsg:  "database.migrations is required",
 		},
 		{
 			name: "Database without permission",
@@ -575,6 +588,184 @@ func TestManifestPathHelpers(t *testing.T) {
 	})
 }
 
+func TestLoadManifest(t *testing.T) {
+	t.Run("Valid manifest file", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		manifestPath := tmpDir + "/plugin.yaml"
+		content := `name: test-plugin
+display_name: Test Plugin
+version: 1.0.0
+description: A test plugin
+`
+		if err := os.WriteFile(manifestPath, []byte(content), 0600); err != nil {
+			t.Fatalf("Failed to write test manifest: %v", err)
+		}
+
+		m, err := LoadManifest(manifestPath)
+		if err != nil {
+			t.Fatalf("LoadManifest() error = %v", err)
+		}
+
+		if m.Name != "test-plugin" {
+			t.Errorf("Name = %q, want %q", m.Name, "test-plugin")
+		}
+		if m.DisplayName != "Test Plugin" {
+			t.Errorf("DisplayName = %q, want %q", m.DisplayName, "Test Plugin")
+		}
+		if m.Version != "1.0.0" {
+			t.Errorf("Version = %q, want %q", m.Version, "1.0.0")
+		}
+		if m.Description != "A test plugin" {
+			t.Errorf("Description = %q, want %q", m.Description, "A test plugin")
+		}
+	})
+
+	t.Run("File not found", func(t *testing.T) {
+		_, err := LoadManifest("/non/existent/path/plugin.yaml")
+		if err == nil {
+			t.Error("LoadManifest() expected error for non-existent file")
+		}
+	})
+
+	t.Run("Invalid YAML content", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		manifestPath := tmpDir + "/plugin.yaml"
+		// Invalid YAML with bad indentation
+		content := `name: test
+  bad: indentation: here`
+		if err := os.WriteFile(manifestPath, []byte(content), 0600); err != nil {
+			t.Fatalf("Failed to write test manifest: %v", err)
+		}
+
+		_, err := LoadManifest(manifestPath)
+		if err == nil {
+			t.Error("LoadManifest() expected error for invalid YAML")
+		}
+	})
+
+	t.Run("Full manifest with all fields", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		manifestPath := tmpDir + "/plugin.yaml"
+		content := `name: expense-tracker
+display_name: Expense Tracker
+version: 2.1.0
+description: Track employee expenses
+author: Test Author
+license: MIT
+homepage: https://github.com/test/expense-tracker
+min_app_version: 1.0.0
+permissions:
+  - invoices:read
+  - routes:register
+  - hooks:register
+backend:
+  package: ./backend
+  entry: NewService
+  hooks:
+    - event: invoice.created
+      handler: OnInvoiceCreated
+  routes:
+    - method: GET
+      path: /expenses
+      handler: ListExpenses
+frontend:
+  components: ./frontend
+  navigation:
+    - label: Expenses
+      icon: receipt
+      path: /expenses
+  slots:
+    - name: dashboard.widgets
+      component: ExpenseWidget.svelte
+database:
+  migrations: ./migrations
+dependencies:
+  - other-plugin
+settings:
+  type: object
+  properties:
+    enabled:
+      type: boolean
+      default: true
+`
+		if err := os.WriteFile(manifestPath, []byte(content), 0600); err != nil {
+			t.Fatalf("Failed to write test manifest: %v", err)
+		}
+
+		m, err := LoadManifest(manifestPath)
+		if err != nil {
+			t.Fatalf("LoadManifest() error = %v", err)
+		}
+
+		if m.Name != "expense-tracker" {
+			t.Errorf("Name = %q, want %q", m.Name, "expense-tracker")
+		}
+		if m.Author != "Test Author" {
+			t.Errorf("Author = %q, want %q", m.Author, "Test Author")
+		}
+		if m.License != "MIT" {
+			t.Errorf("License = %q, want %q", m.License, "MIT")
+		}
+		if m.Backend == nil {
+			t.Fatal("Backend is nil")
+		}
+		if m.Backend.Package != "./backend" {
+			t.Errorf("Backend.Package = %q, want %q", m.Backend.Package, "./backend")
+		}
+		if len(m.Backend.Hooks) != 1 {
+			t.Errorf("Backend.Hooks len = %d, want 1", len(m.Backend.Hooks))
+		}
+		if len(m.Backend.Routes) != 1 {
+			t.Errorf("Backend.Routes len = %d, want 1", len(m.Backend.Routes))
+		}
+		if m.Frontend == nil {
+			t.Fatal("Frontend is nil")
+		}
+		if m.Frontend.Components != "./frontend" {
+			t.Errorf("Frontend.Components = %q, want %q", m.Frontend.Components, "./frontend")
+		}
+		if len(m.Frontend.Navigation) != 1 {
+			t.Errorf("Frontend.Navigation len = %d, want 1", len(m.Frontend.Navigation))
+		}
+		if len(m.Frontend.Slots) != 1 {
+			t.Errorf("Frontend.Slots len = %d, want 1", len(m.Frontend.Slots))
+		}
+		if m.Database == nil {
+			t.Fatal("Database is nil")
+		}
+		if m.Database.Migrations != "./migrations" {
+			t.Errorf("Database.Migrations = %q, want %q", m.Database.Migrations, "./migrations")
+		}
+		if len(m.Dependencies) != 1 {
+			t.Errorf("Dependencies len = %d, want 1", len(m.Dependencies))
+		}
+		if m.Settings == nil {
+			t.Fatal("Settings is nil")
+		}
+		if m.Settings.Type != "object" {
+			t.Errorf("Settings.Type = %q, want %q", m.Settings.Type, "object")
+		}
+	})
+
+	t.Run("Empty file", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		manifestPath := tmpDir + "/plugin.yaml"
+		if err := os.WriteFile(manifestPath, []byte(""), 0600); err != nil {
+			t.Fatalf("Failed to write test manifest: %v", err)
+		}
+
+		m, err := LoadManifest(manifestPath)
+		if err != nil {
+			t.Fatalf("LoadManifest() error = %v", err)
+		}
+
+		// Empty YAML results in empty manifest
+		if m.Name != "" {
+			t.Errorf("Name = %q, want empty", m.Name)
+		}
+	})
+}
+
 func TestManifestToJSON(t *testing.T) {
 	manifest := Manifest{
 		Name:        "test-plugin",
@@ -607,5 +798,168 @@ version: 1.0.0
 
 	if parsed.Name != manifest.Name {
 		t.Errorf("Parsed name = %q, want %q", parsed.Name, manifest.Name)
+	}
+}
+
+func TestContainsPermission(t *testing.T) {
+	tests := []struct {
+		name        string
+		permissions []string
+		permission  string
+		expected    bool
+	}{
+		{
+			name:        "permission_exists",
+			permissions: []string{"hooks:register", "routes:register"},
+			permission:  "hooks:register",
+			expected:    true,
+		},
+		{
+			name:        "permission_not_exists",
+			permissions: []string{"hooks:register", "routes:register"},
+			permission:  "database:migrate",
+			expected:    false,
+		},
+		{
+			name:        "empty_permissions",
+			permissions: []string{},
+			permission:  "hooks:register",
+			expected:    false,
+		},
+		{
+			name:        "nil_permissions",
+			permissions: nil,
+			permission:  "hooks:register",
+			expected:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := containsPermission(tt.permissions, tt.permission)
+			if result != tt.expected {
+				t.Errorf("containsPermission() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestManifestValidateSingleLetter(t *testing.T) {
+	manifest := Manifest{
+		Name:        "a",
+		DisplayName: "Single Letter Plugin",
+		Version:     "1.0.0",
+	}
+
+	err := manifest.Validate()
+	if err != nil {
+		t.Errorf("Validate() error = %v, single letter name should be valid", err)
+	}
+}
+
+func TestManifestValidateWithSettings(t *testing.T) {
+	minVal := 0.0
+	maxVal := 100.0
+	minLen := 1
+	maxLen := 255
+
+	manifest := Manifest{
+		Name:        "settings-plugin",
+		DisplayName: "Settings Plugin",
+		Version:     "1.0.0",
+		Settings: &SettingsSchema{
+			Type: "object",
+			Properties: map[string]SettingProperty{
+				"enabled": {
+					Type:        "boolean",
+					Default:     true,
+					Description: "Enable the plugin",
+				},
+				"count": {
+					Type:    "number",
+					Minimum: &minVal,
+					Maximum: &maxVal,
+				},
+				"name": {
+					Type:      "string",
+					MinLength: &minLen,
+					MaxLength: &maxLen,
+					Enum:      []string{"option1", "option2"},
+				},
+			},
+			Required: []string{"enabled"},
+		},
+	}
+
+	err := manifest.Validate()
+	if err != nil {
+		t.Errorf("Validate() error = %v, manifest with settings should be valid", err)
+	}
+}
+
+func TestManifestValidateLicenseVariants(t *testing.T) {
+	validLicenses := []string{
+		"MIT", "Apache-2.0", "GPL-2.0", "GPL-3.0", "LGPL-2.1", "LGPL-3.0",
+		"BSD-2-Clause", "BSD-3-Clause", "MPL-2.0", "ISC", "AGPL-3.0",
+		"Unlicense", "WTFPL", "CC0-1.0", "0BSD",
+	}
+
+	for _, license := range validLicenses {
+		t.Run(license, func(t *testing.T) {
+			manifest := Manifest{
+				Name:        "test-plugin",
+				DisplayName: "Test Plugin",
+				Version:     "1.0.0",
+				License:     license,
+			}
+
+			err := manifest.Validate()
+			if err != nil {
+				t.Errorf("Validate() with license %q error = %v", license, err)
+			}
+		})
+	}
+}
+
+func TestManifestNavigationPosition(t *testing.T) {
+	manifest := Manifest{
+		Name:        "nav-plugin",
+		DisplayName: "Navigation Plugin",
+		Version:     "1.0.0",
+		Frontend: &FrontendConfig{
+			Components: "./frontend",
+			Navigation: []NavigationItem{
+				{
+					Label:    "Dashboard",
+					Icon:     "home",
+					Path:     "/dashboard",
+					Position: "top",
+				},
+				{
+					Label:    "Settings",
+					Icon:     "cog",
+					Path:     "/settings",
+					Position: "bottom",
+				},
+			},
+			Slots: []SlotConfig{
+				{
+					Name:      "sidebar.main",
+					Component: "SidebarWidget.svelte",
+				},
+			},
+		},
+	}
+
+	err := manifest.Validate()
+	if err != nil {
+		t.Errorf("Validate() error = %v", err)
+	}
+
+	// Check paths
+	pluginDir := "/plugins/nav-plugin"
+	frontendPath := manifest.GetFrontendPath(pluginDir)
+	if frontendPath != "/plugins/nav-plugin/frontend" {
+		t.Errorf("GetFrontendPath() = %q, want %q", frontendPath, "/plugins/nav-plugin/frontend")
 	}
 }

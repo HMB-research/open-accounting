@@ -11,6 +11,21 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// RepositoryInterface defines the contract for accounting data access
+type RepositoryInterface interface {
+	GetAccountByID(ctx context.Context, schemaName, tenantID, accountID string) (*Account, error)
+	ListAccounts(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]Account, error)
+	CreateAccount(ctx context.Context, schemaName string, a *Account) error
+	GetJournalEntryByID(ctx context.Context, schemaName, tenantID, entryID string) (*JournalEntry, error)
+	CreateJournalEntry(ctx context.Context, schemaName string, je *JournalEntry) error
+	CreateJournalEntryTx(ctx context.Context, schemaName string, tx pgx.Tx, je *JournalEntry) error
+	UpdateJournalEntryStatus(ctx context.Context, schemaName, tenantID, entryID string, status JournalEntryStatus, userID string) error
+	GetAccountBalance(ctx context.Context, schemaName, tenantID, accountID string, asOfDate time.Time) (decimal.Decimal, error)
+	GetTrialBalance(ctx context.Context, schemaName, tenantID string, asOfDate time.Time) ([]AccountBalance, error)
+	GetPeriodBalances(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]AccountBalance, error)
+	VoidJournalEntry(ctx context.Context, schemaName, tenantID, entryID, userID, reason string, reversal *JournalEntry) error
+}
+
 // Repository provides access to accounting data
 type Repository struct {
 	db *pgxpool.Pool
@@ -22,13 +37,13 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 }
 
 // GetAccountByID retrieves an account by ID
-func (r *Repository) GetAccountByID(ctx context.Context, tenantID, accountID string) (*Account, error) {
+func (r *Repository) GetAccountByID(ctx context.Context, schemaName, tenantID, accountID string) (*Account, error) {
 	var a Account
-	err := r.db.QueryRow(ctx, `
-		SELECT id, tenant_id, code, name, account_type, parent_id, is_active, is_system, description, created_at
-		FROM accounts
+	err := r.db.QueryRow(ctx, fmt.Sprintf(`
+		SELECT id, tenant_id, code, name, account_type, parent_id, is_active, is_system, COALESCE(description, ''), created_at
+		FROM %s.accounts
 		WHERE id = $1 AND tenant_id = $2
-	`, accountID, tenantID).Scan(
+	`, schemaName), accountID, tenantID).Scan(
 		&a.ID, &a.TenantID, &a.Code, &a.Name, &a.AccountType,
 		&a.ParentID, &a.IsActive, &a.IsSystem, &a.Description, &a.CreatedAt,
 	)
@@ -42,12 +57,12 @@ func (r *Repository) GetAccountByID(ctx context.Context, tenantID, accountID str
 }
 
 // ListAccounts retrieves all accounts for a tenant
-func (r *Repository) ListAccounts(ctx context.Context, tenantID string, activeOnly bool) ([]Account, error) {
-	query := `
-		SELECT id, tenant_id, code, name, account_type, parent_id, is_active, is_system, description, created_at
-		FROM accounts
+func (r *Repository) ListAccounts(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]Account, error) {
+	query := fmt.Sprintf(`
+		SELECT id, tenant_id, code, name, account_type, parent_id, is_active, is_system, COALESCE(description, ''), created_at
+		FROM %s.accounts
 		WHERE tenant_id = $1
-	`
+	`, schemaName)
 	if activeOnly {
 		query += " AND is_active = true"
 	}
@@ -74,7 +89,7 @@ func (r *Repository) ListAccounts(ctx context.Context, tenantID string, activeOn
 }
 
 // CreateAccount creates a new account
-func (r *Repository) CreateAccount(ctx context.Context, a *Account) error {
+func (r *Repository) CreateAccount(ctx context.Context, schemaName string, a *Account) error {
 	if a.ID == "" {
 		a.ID = uuid.New().String()
 	}
@@ -82,10 +97,10 @@ func (r *Repository) CreateAccount(ctx context.Context, a *Account) error {
 		a.CreatedAt = time.Now()
 	}
 
-	_, err := r.db.Exec(ctx, `
-		INSERT INTO accounts (id, tenant_id, code, name, account_type, parent_id, is_active, is_system, description, created_at)
+	_, err := r.db.Exec(ctx, fmt.Sprintf(`
+		INSERT INTO %s.accounts (id, tenant_id, code, name, account_type, parent_id, is_active, is_system, description, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-	`, a.ID, a.TenantID, a.Code, a.Name, a.AccountType, a.ParentID, a.IsActive, a.IsSystem, a.Description, a.CreatedAt)
+	`, schemaName), a.ID, a.TenantID, a.Code, a.Name, a.AccountType, a.ParentID, a.IsActive, a.IsSystem, a.Description, a.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("create account: %w", err)
 	}
@@ -93,14 +108,14 @@ func (r *Repository) CreateAccount(ctx context.Context, a *Account) error {
 }
 
 // GetJournalEntryByID retrieves a journal entry with its lines
-func (r *Repository) GetJournalEntryByID(ctx context.Context, tenantID, entryID string) (*JournalEntry, error) {
+func (r *Repository) GetJournalEntryByID(ctx context.Context, schemaName, tenantID, entryID string) (*JournalEntry, error) {
 	var je JournalEntry
-	err := r.db.QueryRow(ctx, `
+	err := r.db.QueryRow(ctx, fmt.Sprintf(`
 		SELECT id, tenant_id, entry_number, entry_date, description, reference, source_type, source_id,
-		       status, posted_at, posted_by, voided_at, voided_by, void_reason, created_at, created_by
-		FROM journal_entries
+		       status, posted_at, posted_by, voided_at, voided_by, COALESCE(void_reason, ''), created_at, created_by
+		FROM %s.journal_entries
 		WHERE id = $1 AND tenant_id = $2
-	`, entryID, tenantID).Scan(
+	`, schemaName), entryID, tenantID).Scan(
 		&je.ID, &je.TenantID, &je.EntryNumber, &je.EntryDate, &je.Description, &je.Reference,
 		&je.SourceType, &je.SourceID, &je.Status, &je.PostedAt, &je.PostedBy,
 		&je.VoidedAt, &je.VoidedBy, &je.VoidReason, &je.CreatedAt, &je.CreatedBy,
@@ -113,13 +128,13 @@ func (r *Repository) GetJournalEntryByID(ctx context.Context, tenantID, entryID 
 	}
 
 	// Load lines
-	rows, err := r.db.Query(ctx, `
-		SELECT id, tenant_id, journal_entry_id, account_id, description,
+	rows, err := r.db.Query(ctx, fmt.Sprintf(`
+		SELECT id, tenant_id, journal_entry_id, account_id, COALESCE(description, ''),
 		       debit_amount, credit_amount, currency, exchange_rate, base_debit, base_credit
-		FROM journal_entry_lines
+		FROM %s.journal_entry_lines
 		WHERE journal_entry_id = $1 AND tenant_id = $2
 		ORDER BY id
-	`, entryID, tenantID)
+	`, schemaName), entryID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get journal entry lines: %w", err)
 	}
@@ -141,14 +156,14 @@ func (r *Repository) GetJournalEntryByID(ctx context.Context, tenantID, entryID 
 }
 
 // CreateJournalEntry creates a new journal entry with lines
-func (r *Repository) CreateJournalEntry(ctx context.Context, je *JournalEntry) error {
+func (r *Repository) CreateJournalEntry(ctx context.Context, schemaName string, je *JournalEntry) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if err := r.CreateJournalEntryTx(ctx, tx, je); err != nil {
+	if err := r.CreateJournalEntryTx(ctx, schemaName, tx, je); err != nil {
 		return err
 	}
 
@@ -156,7 +171,7 @@ func (r *Repository) CreateJournalEntry(ctx context.Context, je *JournalEntry) e
 }
 
 // CreateJournalEntryTx creates a journal entry within a transaction
-func (r *Repository) CreateJournalEntryTx(ctx context.Context, tx pgx.Tx, je *JournalEntry) error {
+func (r *Repository) CreateJournalEntryTx(ctx context.Context, schemaName string, tx pgx.Tx, je *JournalEntry) error {
 	if je.ID == "" {
 		je.ID = uuid.New().String()
 	}
@@ -166,21 +181,21 @@ func (r *Repository) CreateJournalEntryTx(ctx context.Context, tx pgx.Tx, je *Jo
 
 	// Generate entry number
 	var seq int
-	err := tx.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, fmt.Sprintf(`
 		SELECT COALESCE(MAX(CAST(SUBSTRING(entry_number FROM 4) AS INTEGER)), 0) + 1
-		FROM journal_entries WHERE tenant_id = $1
-	`, je.TenantID).Scan(&seq)
+		FROM %s.journal_entries WHERE tenant_id = $1
+	`, schemaName), je.TenantID).Scan(&seq)
 	if err != nil {
 		return fmt.Errorf("generate entry number: %w", err)
 	}
 	je.EntryNumber = fmt.Sprintf("JE-%05d", seq)
 
 	// Insert entry
-	_, err = tx.Exec(ctx, `
-		INSERT INTO journal_entries (id, tenant_id, entry_number, entry_date, description, reference,
+	_, err = tx.Exec(ctx, fmt.Sprintf(`
+		INSERT INTO %s.journal_entries (id, tenant_id, entry_number, entry_date, description, reference,
 		                             source_type, source_id, status, created_at, created_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-	`, je.ID, je.TenantID, je.EntryNumber, je.EntryDate, je.Description, je.Reference,
+	`, schemaName), je.ID, je.TenantID, je.EntryNumber, je.EntryDate, je.Description, je.Reference,
 		je.SourceType, je.SourceID, je.Status, je.CreatedAt, je.CreatedBy)
 	if err != nil {
 		return fmt.Errorf("insert journal entry: %w", err)
@@ -195,11 +210,11 @@ func (r *Repository) CreateJournalEntryTx(ctx context.Context, tx pgx.Tx, je *Jo
 		line.TenantID = je.TenantID
 		line.JournalEntryID = je.ID
 
-		_, err = tx.Exec(ctx, `
-			INSERT INTO journal_entry_lines (id, tenant_id, journal_entry_id, account_id, description,
+		_, err = tx.Exec(ctx, fmt.Sprintf(`
+			INSERT INTO %s.journal_entry_lines (id, tenant_id, journal_entry_id, account_id, description,
 			                                 debit_amount, credit_amount, currency, exchange_rate, base_debit, base_credit)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		`, line.ID, line.TenantID, line.JournalEntryID, line.AccountID, line.Description,
+		`, schemaName), line.ID, line.TenantID, line.JournalEntryID, line.AccountID, line.Description,
 			line.DebitAmount, line.CreditAmount, line.Currency, line.ExchangeRate, line.BaseDebit, line.BaseCredit)
 		if err != nil {
 			return fmt.Errorf("insert journal entry line: %w", err)
@@ -210,18 +225,18 @@ func (r *Repository) CreateJournalEntryTx(ctx context.Context, tx pgx.Tx, je *Jo
 }
 
 // UpdateJournalEntryStatus updates the status of a journal entry
-func (r *Repository) UpdateJournalEntryStatus(ctx context.Context, tenantID, entryID string, status JournalEntryStatus, userID string) error {
+func (r *Repository) UpdateJournalEntryStatus(ctx context.Context, schemaName, tenantID, entryID string, status JournalEntryStatus, userID string) error {
 	now := time.Now()
 	var query string
 	var args []interface{}
 
 	switch status {
 	case StatusPosted:
-		query = `
-			UPDATE journal_entries
+		query = fmt.Sprintf(`
+			UPDATE %s.journal_entries
 			SET status = $1, posted_at = $2, posted_by = $3
 			WHERE id = $4 AND tenant_id = $5 AND status = $6
-		`
+		`, schemaName)
 		args = []interface{}{status, now, userID, entryID, tenantID, StatusDraft}
 	case StatusVoided:
 		return fmt.Errorf("use VoidJournalEntry method to void entries")
@@ -240,22 +255,22 @@ func (r *Repository) UpdateJournalEntryStatus(ctx context.Context, tenantID, ent
 }
 
 // GetAccountBalance retrieves the balance of an account as of a date
-func (r *Repository) GetAccountBalance(ctx context.Context, tenantID, accountID string, asOfDate time.Time) (decimal.Decimal, error) {
+func (r *Repository) GetAccountBalance(ctx context.Context, schemaName, tenantID, accountID string, asOfDate time.Time) (decimal.Decimal, error) {
 	var debitSum, creditSum decimal.Decimal
-	err := r.db.QueryRow(ctx, `
+	err := r.db.QueryRow(ctx, fmt.Sprintf(`
 		SELECT COALESCE(SUM(jel.debit_amount), 0), COALESCE(SUM(jel.credit_amount), 0)
-		FROM journal_entry_lines jel
-		JOIN journal_entries je ON je.id = jel.journal_entry_id
+		FROM %s.journal_entry_lines jel
+		JOIN %s.journal_entries je ON je.id = jel.journal_entry_id
 		WHERE jel.account_id = $1 AND jel.tenant_id = $2
 		  AND je.entry_date <= $3 AND je.status = 'POSTED'
-	`, accountID, tenantID, asOfDate).Scan(&debitSum, &creditSum)
+	`, schemaName, schemaName), accountID, tenantID, asOfDate).Scan(&debitSum, &creditSum)
 	if err != nil {
 		return decimal.Zero, fmt.Errorf("get account balance: %w", err)
 	}
 
 	// Get account type to determine normal balance
 	var accountType AccountType
-	err = r.db.QueryRow(ctx, `SELECT account_type FROM accounts WHERE id = $1 AND tenant_id = $2`, accountID, tenantID).Scan(&accountType)
+	err = r.db.QueryRow(ctx, fmt.Sprintf(`SELECT account_type FROM %s.accounts WHERE id = $1 AND tenant_id = $2`, schemaName), accountID, tenantID).Scan(&accountType)
 	if err != nil {
 		return decimal.Zero, fmt.Errorf("get account type: %w", err)
 	}
@@ -267,8 +282,8 @@ func (r *Repository) GetAccountBalance(ctx context.Context, tenantID, accountID 
 }
 
 // GetTrialBalance retrieves all account balances as of a date
-func (r *Repository) GetTrialBalance(ctx context.Context, tenantID string, asOfDate time.Time) ([]AccountBalance, error) {
-	rows, err := r.db.Query(ctx, `
+func (r *Repository) GetTrialBalance(ctx context.Context, schemaName, tenantID string, asOfDate time.Time) ([]AccountBalance, error) {
+	rows, err := r.db.Query(ctx, fmt.Sprintf(`
 		WITH account_totals AS (
 			SELECT
 				a.id AS account_id,
@@ -277,9 +292,9 @@ func (r *Repository) GetTrialBalance(ctx context.Context, tenantID string, asOfD
 				a.account_type,
 				COALESCE(SUM(jel.debit_amount), 0) AS total_debits,
 				COALESCE(SUM(jel.credit_amount), 0) AS total_credits
-			FROM accounts a
-			LEFT JOIN journal_entry_lines jel ON jel.account_id = a.id AND jel.tenant_id = a.tenant_id
-			LEFT JOIN journal_entries je ON je.id = jel.journal_entry_id
+			FROM %s.accounts a
+			LEFT JOIN %s.journal_entry_lines jel ON jel.account_id = a.id AND jel.tenant_id = a.tenant_id
+			LEFT JOIN %s.journal_entries je ON je.id = jel.journal_entry_id
 			WHERE a.tenant_id = $1
 			  AND (je.id IS NULL OR (je.entry_date <= $2 AND je.status = 'POSTED'))
 			GROUP BY a.id, a.code, a.name, a.account_type
@@ -298,7 +313,7 @@ func (r *Repository) GetTrialBalance(ctx context.Context, tenantID string, asOfD
 		FROM account_totals
 		WHERE total_debits != 0 OR total_credits != 0
 		ORDER BY account_code
-	`, tenantID, asOfDate)
+	`, schemaName, schemaName, schemaName), tenantID, asOfDate)
 	if err != nil {
 		return nil, fmt.Errorf("get trial balance: %w", err)
 	}
@@ -319,8 +334,8 @@ func (r *Repository) GetTrialBalance(ctx context.Context, tenantID string, asOfD
 }
 
 // GetPeriodBalances retrieves account activity for a specific period (not cumulative)
-func (r *Repository) GetPeriodBalances(ctx context.Context, tenantID string, startDate, endDate time.Time) ([]AccountBalance, error) {
-	rows, err := r.db.Query(ctx, `
+func (r *Repository) GetPeriodBalances(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]AccountBalance, error) {
+	rows, err := r.db.Query(ctx, fmt.Sprintf(`
 		WITH period_totals AS (
 			SELECT
 				a.id AS account_id,
@@ -329,9 +344,9 @@ func (r *Repository) GetPeriodBalances(ctx context.Context, tenantID string, sta
 				a.account_type,
 				COALESCE(SUM(jel.debit_amount), 0) AS total_debits,
 				COALESCE(SUM(jel.credit_amount), 0) AS total_credits
-			FROM accounts a
-			LEFT JOIN journal_entry_lines jel ON jel.account_id = a.id AND jel.tenant_id = a.tenant_id
-			LEFT JOIN journal_entries je ON je.id = jel.journal_entry_id
+			FROM %s.accounts a
+			LEFT JOIN %s.journal_entry_lines jel ON jel.account_id = a.id AND jel.tenant_id = a.tenant_id
+			LEFT JOIN %s.journal_entries je ON je.id = jel.journal_entry_id
 			WHERE a.tenant_id = $1
 			  AND (je.id IS NULL OR (je.entry_date >= $2 AND je.entry_date <= $3 AND je.status = 'POSTED'))
 			  AND a.account_type IN ('REVENUE', 'EXPENSE')
@@ -351,7 +366,7 @@ func (r *Repository) GetPeriodBalances(ctx context.Context, tenantID string, sta
 		FROM period_totals
 		WHERE total_debits != 0 OR total_credits != 0
 		ORDER BY account_type DESC, account_code
-	`, tenantID, startDate, endDate)
+	`, schemaName, schemaName, schemaName), tenantID, startDate, endDate)
 	if err != nil {
 		return nil, fmt.Errorf("get period balances: %w", err)
 	}
@@ -369,4 +384,34 @@ func (r *Repository) GetPeriodBalances(ctx context.Context, tenantID string, sta
 		balances = append(balances, ab)
 	}
 	return balances, nil
+}
+
+// VoidJournalEntry voids a journal entry and creates a reversal entry within a transaction
+func (r *Repository) VoidJournalEntry(ctx context.Context, schemaName, tenantID, entryID, userID, reason string, reversal *JournalEntry) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Mark original as voided
+	now := time.Now()
+	result, err := tx.Exec(ctx, fmt.Sprintf(`
+		UPDATE %s.journal_entries
+		SET status = $1, voided_at = $2, voided_by = $3, void_reason = $4
+		WHERE id = $5 AND tenant_id = $6 AND status = $7
+	`, schemaName), StatusVoided, now, userID, reason, entryID, tenantID, StatusPosted)
+	if err != nil {
+		return fmt.Errorf("mark entry as voided: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("entry not found or not in posted status")
+	}
+
+	// Create the reversal entry
+	if err := r.CreateJournalEntryTx(ctx, schemaName, tx, reversal); err != nil {
+		return fmt.Errorf("create reversal entry: %w", err)
+	}
+
+	return tx.Commit(ctx)
 }
