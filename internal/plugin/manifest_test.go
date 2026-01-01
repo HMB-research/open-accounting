@@ -800,3 +800,166 @@ version: 1.0.0
 		t.Errorf("Parsed name = %q, want %q", parsed.Name, manifest.Name)
 	}
 }
+
+func TestContainsPermission(t *testing.T) {
+	tests := []struct {
+		name        string
+		permissions []string
+		permission  string
+		expected    bool
+	}{
+		{
+			name:        "permission_exists",
+			permissions: []string{"hooks:register", "routes:register"},
+			permission:  "hooks:register",
+			expected:    true,
+		},
+		{
+			name:        "permission_not_exists",
+			permissions: []string{"hooks:register", "routes:register"},
+			permission:  "database:migrate",
+			expected:    false,
+		},
+		{
+			name:        "empty_permissions",
+			permissions: []string{},
+			permission:  "hooks:register",
+			expected:    false,
+		},
+		{
+			name:        "nil_permissions",
+			permissions: nil,
+			permission:  "hooks:register",
+			expected:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := containsPermission(tt.permissions, tt.permission)
+			if result != tt.expected {
+				t.Errorf("containsPermission() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestManifestValidateSingleLetter(t *testing.T) {
+	manifest := Manifest{
+		Name:        "a",
+		DisplayName: "Single Letter Plugin",
+		Version:     "1.0.0",
+	}
+
+	err := manifest.Validate()
+	if err != nil {
+		t.Errorf("Validate() error = %v, single letter name should be valid", err)
+	}
+}
+
+func TestManifestValidateWithSettings(t *testing.T) {
+	minVal := 0.0
+	maxVal := 100.0
+	minLen := 1
+	maxLen := 255
+
+	manifest := Manifest{
+		Name:        "settings-plugin",
+		DisplayName: "Settings Plugin",
+		Version:     "1.0.0",
+		Settings: &SettingsSchema{
+			Type: "object",
+			Properties: map[string]SettingProperty{
+				"enabled": {
+					Type:        "boolean",
+					Default:     true,
+					Description: "Enable the plugin",
+				},
+				"count": {
+					Type:    "number",
+					Minimum: &minVal,
+					Maximum: &maxVal,
+				},
+				"name": {
+					Type:      "string",
+					MinLength: &minLen,
+					MaxLength: &maxLen,
+					Enum:      []string{"option1", "option2"},
+				},
+			},
+			Required: []string{"enabled"},
+		},
+	}
+
+	err := manifest.Validate()
+	if err != nil {
+		t.Errorf("Validate() error = %v, manifest with settings should be valid", err)
+	}
+}
+
+func TestManifestValidateLicenseVariants(t *testing.T) {
+	validLicenses := []string{
+		"MIT", "Apache-2.0", "GPL-2.0", "GPL-3.0", "LGPL-2.1", "LGPL-3.0",
+		"BSD-2-Clause", "BSD-3-Clause", "MPL-2.0", "ISC", "AGPL-3.0",
+		"Unlicense", "WTFPL", "CC0-1.0", "0BSD",
+	}
+
+	for _, license := range validLicenses {
+		t.Run(license, func(t *testing.T) {
+			manifest := Manifest{
+				Name:        "test-plugin",
+				DisplayName: "Test Plugin",
+				Version:     "1.0.0",
+				License:     license,
+			}
+
+			err := manifest.Validate()
+			if err != nil {
+				t.Errorf("Validate() with license %q error = %v", license, err)
+			}
+		})
+	}
+}
+
+func TestManifestNavigationPosition(t *testing.T) {
+	manifest := Manifest{
+		Name:        "nav-plugin",
+		DisplayName: "Navigation Plugin",
+		Version:     "1.0.0",
+		Frontend: &FrontendConfig{
+			Components: "./frontend",
+			Navigation: []NavigationItem{
+				{
+					Label:    "Dashboard",
+					Icon:     "home",
+					Path:     "/dashboard",
+					Position: "top",
+				},
+				{
+					Label:    "Settings",
+					Icon:     "cog",
+					Path:     "/settings",
+					Position: "bottom",
+				},
+			},
+			Slots: []SlotConfig{
+				{
+					Name:      "sidebar.main",
+					Component: "SidebarWidget.svelte",
+				},
+			},
+		},
+	}
+
+	err := manifest.Validate()
+	if err != nil {
+		t.Errorf("Validate() error = %v", err)
+	}
+
+	// Check paths
+	pluginDir := "/plugins/nav-plugin"
+	frontendPath := manifest.GetFrontendPath(pluginDir)
+	if frontendPath != "/plugins/nav-plugin/frontend" {
+		t.Errorf("GetFrontendPath() = %q, want %q", frontendPath, "/plugins/nav-plugin/frontend")
+	}
+}
