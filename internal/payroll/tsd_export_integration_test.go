@@ -315,4 +315,3 @@ func TestService_MarkTSDRejected(t *testing.T) {
 		t.Errorf("expected status %s, got %s", TSDRejected, updated.Status)
 	}
 }
-

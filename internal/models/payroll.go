@@ -26,16 +26,16 @@ const (
 
 // Employee represents an employee in the payroll system (GORM model)
 type Employee struct {
-	ID             string         `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	TenantID       string         `gorm:"type:uuid;not null;index" json:"tenant_id"`
-	EmployeeNumber string         `gorm:"column:employee_number;size:50" json:"employee_number,omitempty"`
-	FirstName      string         `gorm:"column:first_name;size:100;not null" json:"first_name"`
-	LastName       string         `gorm:"column:last_name;size:100;not null" json:"last_name"`
-	PersonalCode   string         `gorm:"column:personal_code;size:20" json:"personal_code,omitempty"`
-	Email          string         `gorm:"size:255" json:"email,omitempty"`
-	Phone          string         `gorm:"size:50" json:"phone,omitempty"`
-	Address        string         `gorm:"type:text" json:"address,omitempty"`
-	BankAccount    string         `gorm:"column:bank_account;size:50" json:"bank_account,omitempty"`
+	ID             string `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	TenantID       string `gorm:"type:uuid;not null;index" json:"tenant_id"`
+	EmployeeNumber string `gorm:"column:employee_number;size:50" json:"employee_number,omitempty"`
+	FirstName      string `gorm:"column:first_name;size:100;not null" json:"first_name"`
+	LastName       string `gorm:"column:last_name;size:100;not null" json:"last_name"`
+	PersonalCode   string `gorm:"column:personal_code;size:20" json:"personal_code,omitempty"`
+	Email          string `gorm:"size:255" json:"email,omitempty"`
+	Phone          string `gorm:"size:50" json:"phone,omitempty"`
+	Address        string `gorm:"type:text" json:"address,omitempty"`
+	BankAccount    string `gorm:"column:bank_account;size:50" json:"bank_account,omitempty"`
 
 	StartDate      time.Time      `gorm:"column:start_date;type:date;not null" json:"start_date"`
 	EndDate        *time.Time     `gorm:"column:end_date;type:date" json:"end_date,omitempty"`

@@ -241,13 +241,13 @@ func (r *GORMRepository) GetTrialBalance(ctx context.Context, tenantID string, a
 	db := database.TenantDB(r.db, "").WithContext(ctx)
 
 	var results []struct {
-		AccountID     string
-		AccountCode   string
-		AccountName   string
-		AccountType   string
-		TotalDebits   models.Decimal
-		TotalCredits  models.Decimal
-		NetBalance    models.Decimal
+		AccountID    string
+		AccountCode  string
+		AccountName  string
+		AccountType  string
+		TotalDebits  models.Decimal
+		TotalCredits models.Decimal
+		NetBalance   models.Decimal
 	}
 
 	err := db.Raw(`

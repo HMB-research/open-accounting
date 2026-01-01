@@ -245,19 +245,19 @@ func TestPostgresRepository_CreateAndUpdatePlugin(t *testing.T) {
 	// Create plugin via CreatePlugin (not InsertPluginReturning)
 	pluginID := uuid.New()
 	plugin := &Plugin{
-		ID:               pluginID,
-		Name:             "create-update-test-plugin",
-		DisplayName:      "Create Update Test Plugin",
-		Description:      "Plugin for create/update test",
-		Version:          "1.0.0",
-		RepositoryURL:    "https://github.com/test/create-update-plugin",
-		RepositoryType:   RepoGitHub,
-		Author:           "Test Author",
-		License:          "MIT",
-		HomepageURL:      "https://example.com",
-		State:            StateInstalled,
+		ID:                 pluginID,
+		Name:               "create-update-test-plugin",
+		DisplayName:        "Create Update Test Plugin",
+		Description:        "Plugin for create/update test",
+		Version:            "1.0.0",
+		RepositoryURL:      "https://github.com/test/create-update-plugin",
+		RepositoryType:     RepoGitHub,
+		Author:             "Test Author",
+		License:            "MIT",
+		HomepageURL:        "https://example.com",
+		State:              StateInstalled,
 		GrantedPermissions: []string{},
-		Manifest:         json.RawMessage(`{"name":"create-update-test-plugin"}`),
+		Manifest:           json.RawMessage(`{"name":"create-update-test-plugin"}`),
 	}
 
 	err := repo.CreatePlugin(ctx, plugin)

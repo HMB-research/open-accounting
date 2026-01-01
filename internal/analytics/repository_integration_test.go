@@ -121,8 +121,8 @@ func TestPostgresRepository_GetInvoiceCounts(t *testing.T) {
 
 	// Create invoices with different statuses
 	invoices := []struct {
-		number string
-		status string
+		number  string
+		status  string
 		overdue bool
 	}{
 		{"INV-COUNT-001", "DRAFT", false},
@@ -305,11 +305,11 @@ func TestPostgresRepository_GetAgingByContact_WithData(t *testing.T) {
 		dueDays int // negative means overdue
 		amount  float64
 	}{
-		{"INV-AGING-001", 10, 100},     // current (due in future)
-		{"INV-AGING-002", -15, 200},    // 1-30 days overdue
-		{"INV-AGING-003", -45, 300},    // 31-60 days overdue
-		{"INV-AGING-004", -75, 400},    // 61-90 days overdue
-		{"INV-AGING-005", -120, 500},   // 90+ days overdue
+		{"INV-AGING-001", 10, 100},   // current (due in future)
+		{"INV-AGING-002", -15, 200},  // 1-30 days overdue
+		{"INV-AGING-003", -45, 300},  // 31-60 days overdue
+		{"INV-AGING-004", -75, 400},  // 61-90 days overdue
+		{"INV-AGING-005", -120, 500}, // 90+ days overdue
 	}
 
 	for _, inv := range invoices {
@@ -1206,11 +1206,11 @@ func TestPostgresRepository_GetAgingByContact_Payables(t *testing.T) {
 		dueDays int
 		amount  float64
 	}{
-		{"BILL-AGING-001", 10, 100},    // current
-		{"BILL-AGING-002", -20, 200},   // 1-30 days overdue
-		{"BILL-AGING-003", -50, 300},   // 31-60 days overdue
-		{"BILL-AGING-004", -80, 400},   // 61-90 days overdue
-		{"BILL-AGING-005", -100, 500},  // 90+ days overdue
+		{"BILL-AGING-001", 10, 100},   // current
+		{"BILL-AGING-002", -20, 200},  // 1-30 days overdue
+		{"BILL-AGING-003", -50, 300},  // 31-60 days overdue
+		{"BILL-AGING-004", -80, 400},  // 61-90 days overdue
+		{"BILL-AGING-005", -100, 500}, // 90+ days overdue
 	}
 
 	for _, inv := range invoices {

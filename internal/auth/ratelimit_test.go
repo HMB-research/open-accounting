@@ -340,7 +340,7 @@ func TestCleanupVisitors(t *testing.T) {
 	// Add some visitors - stale visitor is older than cleanup interval
 	rl.mu.Lock()
 	rl.visitors["192.168.1.1"] = &visitor{
-		limiter:  nil, // Not needed for cleanup test
+		limiter:  nil,                            // Not needed for cleanup test
 		lastSeen: time.Now().Add(-1 * time.Hour), // Stale visitor (way older than 20ms)
 	}
 	rl.mu.Unlock()
