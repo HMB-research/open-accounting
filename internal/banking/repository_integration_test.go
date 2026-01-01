@@ -4,6 +4,7 @@ package banking
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -837,10 +838,6 @@ func TestRepository_AddTransactionToReconciliation(t *testing.T) {
 	}
 }
 
-// Note: TestRepository_ImportRecord is skipped because there's a schema mismatch:
-// The repository code uses 'duplicates_skipped' but the migration uses 'transactions_skipped'.
-// This is a pre-existing bug that should be fixed in a separate PR.
-
 func TestRepository_ListTransactionsWithFilters(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
@@ -1145,5 +1142,1329 @@ func TestRepository_CountTransactionsForAccount(t *testing.T) {
 	}
 	if count != 3 {
 		t.Errorf("expected 3 transactions, got %d", count)
+	}
+}
+
+func TestRepository_DeleteBankAccount_NotFound(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Try to delete a non-existent account
+	err := repo.DeleteBankAccount(ctx, tenant.SchemaName, tenant.ID, uuid.New().String())
+	if err != ErrBankAccountNotFound {
+		t.Errorf("expected ErrBankAccountNotFound, got %v", err)
+	}
+}
+
+func TestRepository_MatchTransaction_AlreadyMatched(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	userID := testutil.CreateTestUser(t, pool, "banking-match-err-test@example.com")
+
+	ensureReconciliationSchema(t, pool, tenant.SchemaName)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Create GL account and bank account
+	glAccountID := uuid.New().String()
+	glCode := "1300" + uuid.New().String()[:4]
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.accounts
+		(id, tenant_id, code, name, account_type, is_active, created_at)
+		VALUES ($1, $2, $3, 'Bank Match Err GL', 'ASSET', true, NOW())
+	`, glAccountID, tenant.ID, glCode)
+	if err != nil {
+		t.Fatalf("Failed to create GL account: %v", err)
+	}
+
+	bankAccountID := uuid.New().String()
+	bankAccount := &BankAccount{
+		ID:            bankAccountID,
+		TenantID:      tenant.ID,
+		Name:          "Match Error Test Account",
+		AccountNumber: "EE606060606060606060",
+		BankName:      "LHV",
+		Currency:      "EUR",
+		GLAccountID:   strPtr(glAccountID),
+		IsActive:      true,
+		CreatedAt:     time.Now(),
+	}
+
+	if err := repo.CreateBankAccount(ctx, tenant.SchemaName, bankAccount); err != nil {
+		t.Fatalf("CreateBankAccount failed: %v", err)
+	}
+
+	// Create a transaction that's already matched
+	txID := uuid.New().String()
+	paymentID := uuid.New().String()
+
+	// Create contact for payment
+	contactID := uuid.New().String()
+	_, err = pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.contacts (id, tenant_id, contact_type, name, created_at, updated_at)
+		VALUES ($1, $2, 'CUSTOMER', 'Match Error Test Customer', NOW(), NOW())
+	`, contactID, tenant.ID)
+	if err != nil {
+		t.Fatalf("Failed to create contact: %v", err)
+	}
+
+	// Create payment
+	_, err = pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.payments
+		(id, tenant_id, payment_number, payment_date, amount, currency, base_amount, payment_type, payment_method, contact_id, created_by, created_at)
+		VALUES ($1, $2, 'PAY-MATCH-ERR-001', NOW(), 500, 'EUR', 500, 'RECEIVED', 'BANK_TRANSFER', $3, $4, NOW())
+	`, paymentID, tenant.ID, contactID, userID)
+	if err != nil {
+		t.Fatalf("Failed to create payment: %v", err)
+	}
+
+	// Create transaction with MATCHED status
+	transaction := &BankTransaction{
+		ID:               txID,
+		TenantID:         tenant.ID,
+		BankAccountID:    bankAccountID,
+		TransactionDate:  time.Now(),
+		Amount:           decimal.NewFromFloat(500),
+		Currency:         "EUR",
+		Description:      "Already matched transaction",
+		Status:           StatusMatched,
+		MatchedPaymentID: &paymentID,
+		ImportedAt:       time.Now(),
+	}
+
+	if err := repo.CreateTransaction(ctx, tenant.SchemaName, transaction); err != nil {
+		t.Fatalf("CreateTransaction failed: %v", err)
+	}
+
+	// Try to match again - should fail
+	anotherPaymentID := uuid.New().String()
+	err = repo.MatchTransaction(ctx, tenant.SchemaName, tenant.ID, txID, anotherPaymentID)
+	if err != ErrTransactionAlreadyMatched {
+		t.Errorf("expected ErrTransactionAlreadyMatched, got %v", err)
+	}
+}
+
+func TestRepository_MatchTransaction_NotFound(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	ensureReconciliationSchema(t, pool, tenant.SchemaName)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Try to match a non-existent transaction
+	err := repo.MatchTransaction(ctx, tenant.SchemaName, tenant.ID, uuid.New().String(), uuid.New().String())
+	if err != ErrTransactionAlreadyMatched {
+		t.Errorf("expected ErrTransactionAlreadyMatched for non-existent transaction, got %v", err)
+	}
+}
+
+func TestRepository_UnmatchTransaction_NotMatched(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	ensureReconciliationSchema(t, pool, tenant.SchemaName)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Create GL account and bank account
+	glAccountID := uuid.New().String()
+	glCode := "1301" + uuid.New().String()[:4]
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.accounts
+		(id, tenant_id, code, name, account_type, is_active, created_at)
+		VALUES ($1, $2, $3, 'Bank Unmatch Err GL', 'ASSET', true, NOW())
+	`, glAccountID, tenant.ID, glCode)
+	if err != nil {
+		t.Fatalf("Failed to create GL account: %v", err)
+	}
+
+	bankAccountID := uuid.New().String()
+	bankAccount := &BankAccount{
+		ID:            bankAccountID,
+		TenantID:      tenant.ID,
+		Name:          "Unmatch Error Test Account",
+		AccountNumber: "EE707070707070707070",
+		BankName:      "SEB",
+		Currency:      "EUR",
+		GLAccountID:   strPtr(glAccountID),
+		IsActive:      true,
+		CreatedAt:     time.Now(),
+	}
+
+	if err := repo.CreateBankAccount(ctx, tenant.SchemaName, bankAccount); err != nil {
+		t.Fatalf("CreateBankAccount failed: %v", err)
+	}
+
+	// Create an unmatched transaction
+	txID := uuid.New().String()
+	transaction := &BankTransaction{
+		ID:              txID,
+		TenantID:        tenant.ID,
+		BankAccountID:   bankAccountID,
+		TransactionDate: time.Now(),
+		Amount:          decimal.NewFromFloat(300),
+		Currency:        "EUR",
+		Description:     "Unmatched transaction",
+		Status:          StatusUnmatched,
+		ImportedAt:      time.Now(),
+	}
+
+	if err := repo.CreateTransaction(ctx, tenant.SchemaName, transaction); err != nil {
+		t.Fatalf("CreateTransaction failed: %v", err)
+	}
+
+	// Try to unmatch - should fail because it's not matched
+	err = repo.UnmatchTransaction(ctx, tenant.SchemaName, tenant.ID, txID)
+	if err != ErrTransactionNotMatched {
+		t.Errorf("expected ErrTransactionNotMatched, got %v", err)
+	}
+}
+
+func TestRepository_UnmatchTransaction_NotFound(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	ensureReconciliationSchema(t, pool, tenant.SchemaName)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Try to unmatch a non-existent transaction
+	err := repo.UnmatchTransaction(ctx, tenant.SchemaName, tenant.ID, uuid.New().String())
+	if err != ErrTransactionNotMatched {
+		t.Errorf("expected ErrTransactionNotMatched for non-existent transaction, got %v", err)
+	}
+}
+
+func TestRepository_CompleteReconciliation_AlreadyCompleted(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	userID := testutil.CreateTestUser(t, pool, "banking-recon-complete-err@example.com")
+
+	ensureReconciliationSchema(t, pool, tenant.SchemaName)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Create GL account and bank account
+	glAccountID := uuid.New().String()
+	glCode := "1302" + uuid.New().String()[:4]
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.accounts
+		(id, tenant_id, code, name, account_type, is_active, created_at)
+		VALUES ($1, $2, $3, 'Bank Recon Complete Err GL', 'ASSET', true, NOW())
+	`, glAccountID, tenant.ID, glCode)
+	if err != nil {
+		t.Fatalf("Failed to create GL account: %v", err)
+	}
+
+	bankAccountID := uuid.New().String()
+	bankAccount := &BankAccount{
+		ID:            bankAccountID,
+		TenantID:      tenant.ID,
+		Name:          "Complete Recon Error Test Account",
+		AccountNumber: "EE808080808080808080",
+		BankName:      "Swedbank",
+		Currency:      "EUR",
+		GLAccountID:   strPtr(glAccountID),
+		IsActive:      true,
+		CreatedAt:     time.Now(),
+	}
+
+	if err := repo.CreateBankAccount(ctx, tenant.SchemaName, bankAccount); err != nil {
+		t.Fatalf("CreateBankAccount failed: %v", err)
+	}
+
+	// Create reconciliation
+	reconID := uuid.New().String()
+	recon := &BankReconciliation{
+		ID:             reconID,
+		TenantID:       tenant.ID,
+		BankAccountID:  bankAccountID,
+		StatementDate:  time.Now(),
+		OpeningBalance: decimal.NewFromFloat(1000),
+		ClosingBalance: decimal.NewFromFloat(1500),
+		Status:         ReconciliationInProgress,
+		CreatedAt:      time.Now(),
+		CreatedBy:      userID,
+	}
+
+	if err := repo.CreateReconciliation(ctx, tenant.SchemaName, recon); err != nil {
+		t.Fatalf("CreateReconciliation failed: %v", err)
+	}
+
+	// Complete it once
+	if err := repo.CompleteReconciliation(ctx, tenant.SchemaName, tenant.ID, reconID); err != nil {
+		t.Fatalf("First CompleteReconciliation failed: %v", err)
+	}
+
+	// Try to complete again - should fail
+	err = repo.CompleteReconciliation(ctx, tenant.SchemaName, tenant.ID, reconID)
+	if err != ErrReconciliationAlreadyDone {
+		t.Errorf("expected ErrReconciliationAlreadyDone, got %v", err)
+	}
+}
+
+func TestRepository_CompleteReconciliation_NotFound(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	ensureReconciliationSchema(t, pool, tenant.SchemaName)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Try to complete a non-existent reconciliation
+	err := repo.CompleteReconciliation(ctx, tenant.SchemaName, tenant.ID, uuid.New().String())
+	if err != ErrReconciliationAlreadyDone {
+		t.Errorf("expected ErrReconciliationAlreadyDone for non-existent reconciliation, got %v", err)
+	}
+}
+
+func TestRepository_AddTransactionToReconciliation_NotFound(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	ensureReconciliationSchema(t, pool, tenant.SchemaName)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Try to add a non-existent transaction to reconciliation
+	err := repo.AddTransactionToReconciliation(ctx, tenant.SchemaName, tenant.ID, uuid.New().String(), uuid.New().String())
+	if err != ErrTransactionNotFound {
+		t.Errorf("expected ErrTransactionNotFound, got %v", err)
+	}
+}
+
+func TestRepository_ListBankAccounts_CurrencyFilter(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Create GL account
+	glAccountID := uuid.New().String()
+	glCode := "1303" + uuid.New().String()[:4]
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.accounts
+		(id, tenant_id, code, name, account_type, is_active, created_at)
+		VALUES ($1, $2, $3, 'Bank Currency Filter GL', 'ASSET', true, NOW())
+	`, glAccountID, tenant.ID, glCode)
+	if err != nil {
+		t.Fatalf("Failed to create GL account: %v", err)
+	}
+
+	// Create accounts with different currencies
+	eurAccount := &BankAccount{
+		ID:            uuid.New().String(),
+		TenantID:      tenant.ID,
+		Name:          "EUR Account",
+		AccountNumber: "EE909090909090909090",
+		BankName:      "Swedbank",
+		Currency:      "EUR",
+		GLAccountID:   strPtr(glAccountID),
+		IsActive:      true,
+		CreatedAt:     time.Now(),
+	}
+
+	usdAccount := &BankAccount{
+		ID:            uuid.New().String(),
+		TenantID:      tenant.ID,
+		Name:          "USD Account",
+		AccountNumber: "US909090909090909090",
+		BankName:      "Chase",
+		Currency:      "USD",
+		GLAccountID:   strPtr(glAccountID),
+		IsActive:      true,
+		CreatedAt:     time.Now(),
+	}
+
+	if err := repo.CreateBankAccount(ctx, tenant.SchemaName, eurAccount); err != nil {
+		t.Fatalf("CreateBankAccount EUR failed: %v", err)
+	}
+	if err := repo.CreateBankAccount(ctx, tenant.SchemaName, usdAccount); err != nil {
+		t.Fatalf("CreateBankAccount USD failed: %v", err)
+	}
+
+	// Filter by EUR currency
+	filter := &BankAccountFilter{Currency: "EUR"}
+	eurAccounts, err := repo.ListBankAccounts(ctx, tenant.SchemaName, tenant.ID, filter)
+	if err != nil {
+		t.Fatalf("ListBankAccounts with EUR filter failed: %v", err)
+	}
+
+	for _, acc := range eurAccounts {
+		if acc.Currency != "EUR" {
+			t.Errorf("expected currency EUR, got %s", acc.Currency)
+		}
+	}
+
+	// Filter by USD currency
+	filter = &BankAccountFilter{Currency: "USD"}
+	usdAccounts, err := repo.ListBankAccounts(ctx, tenant.SchemaName, tenant.ID, filter)
+	if err != nil {
+		t.Fatalf("ListBankAccounts with USD filter failed: %v", err)
+	}
+
+	for _, acc := range usdAccounts {
+		if acc.Currency != "USD" {
+			t.Errorf("expected currency USD, got %s", acc.Currency)
+		}
+	}
+}
+
+func TestRepository_ListBankAccounts_EmptyResult(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// List accounts for a tenant with no accounts
+	accounts, err := repo.ListBankAccounts(ctx, tenant.SchemaName, tenant.ID, nil)
+	if err != nil {
+		t.Fatalf("ListBankAccounts failed: %v", err)
+	}
+
+	if accounts == nil {
+		t.Error("expected empty slice, got nil")
+	}
+
+	if len(accounts) != 0 {
+		t.Errorf("expected 0 accounts, got %d", len(accounts))
+	}
+}
+
+func TestRepository_ListTransactions_EmptyResult(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	ensureReconciliationSchema(t, pool, tenant.SchemaName)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// List transactions for a tenant with no transactions
+	transactions, err := repo.ListTransactions(ctx, tenant.SchemaName, tenant.ID, nil)
+	if err != nil {
+		t.Fatalf("ListTransactions failed: %v", err)
+	}
+
+	if transactions == nil {
+		t.Error("expected empty slice, got nil")
+	}
+
+	if len(transactions) != 0 {
+		t.Errorf("expected 0 transactions, got %d", len(transactions))
+	}
+}
+
+func TestRepository_ListReconciliations_EmptyResult(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	ensureReconciliationSchema(t, pool, tenant.SchemaName)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Create a bank account but no reconciliations
+	glAccountID := uuid.New().String()
+	glCode := "1304" + uuid.New().String()[:4]
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.accounts
+		(id, tenant_id, code, name, account_type, is_active, created_at)
+		VALUES ($1, $2, $3, 'Bank Empty Recon GL', 'ASSET', true, NOW())
+	`, glAccountID, tenant.ID, glCode)
+	if err != nil {
+		t.Fatalf("Failed to create GL account: %v", err)
+	}
+
+	bankAccountID := uuid.New().String()
+	bankAccount := &BankAccount{
+		ID:            bankAccountID,
+		TenantID:      tenant.ID,
+		Name:          "Empty Recon Test Account",
+		AccountNumber: "EE101010101010101011",
+		BankName:      "SEB",
+		Currency:      "EUR",
+		GLAccountID:   strPtr(glAccountID),
+		IsActive:      true,
+		CreatedAt:     time.Now(),
+	}
+
+	if err := repo.CreateBankAccount(ctx, tenant.SchemaName, bankAccount); err != nil {
+		t.Fatalf("CreateBankAccount failed: %v", err)
+	}
+
+	// List reconciliations for account with none
+	reconciliations, err := repo.ListReconciliations(ctx, tenant.SchemaName, tenant.ID, bankAccountID)
+	if err != nil {
+		t.Fatalf("ListReconciliations failed: %v", err)
+	}
+
+	if reconciliations == nil {
+		t.Error("expected empty slice, got nil")
+	}
+
+	if len(reconciliations) != 0 {
+		t.Errorf("expected 0 reconciliations, got %d", len(reconciliations))
+	}
+}
+
+func TestRepository_CalculateAccountBalance_EmptyAccount(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	ensureReconciliationSchema(t, pool, tenant.SchemaName)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Create GL account and bank account
+	glAccountID := uuid.New().String()
+	glCode := "1305" + uuid.New().String()[:4]
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.accounts
+		(id, tenant_id, code, name, account_type, is_active, created_at)
+		VALUES ($1, $2, $3, 'Bank Empty Balance GL', 'ASSET', true, NOW())
+	`, glAccountID, tenant.ID, glCode)
+	if err != nil {
+		t.Fatalf("Failed to create GL account: %v", err)
+	}
+
+	bankAccountID := uuid.New().String()
+	bankAccount := &BankAccount{
+		ID:            bankAccountID,
+		TenantID:      tenant.ID,
+		Name:          "Empty Balance Test Account",
+		AccountNumber: "EE111111111111111112",
+		BankName:      "Nordea",
+		Currency:      "EUR",
+		GLAccountID:   strPtr(glAccountID),
+		IsActive:      true,
+		CreatedAt:     time.Now(),
+	}
+
+	if err := repo.CreateBankAccount(ctx, tenant.SchemaName, bankAccount); err != nil {
+		t.Fatalf("CreateBankAccount failed: %v", err)
+	}
+
+	// Calculate balance for account with no transactions
+	balance, err := repo.CalculateAccountBalance(ctx, tenant.SchemaName, bankAccountID)
+	if err != nil {
+		t.Fatalf("CalculateAccountBalance failed: %v", err)
+	}
+
+	if !balance.Equal(decimal.Zero) {
+		t.Errorf("expected balance 0, got %s", balance)
+	}
+}
+
+func TestRepository_CreateTransaction_WithAllFields(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	ensureReconciliationSchema(t, pool, tenant.SchemaName)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Create GL account and bank account
+	glAccountID := uuid.New().String()
+	glCode := "1306" + uuid.New().String()[:4]
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.accounts
+		(id, tenant_id, code, name, account_type, is_active, created_at)
+		VALUES ($1, $2, $3, 'Bank All Fields GL', 'ASSET', true, NOW())
+	`, glAccountID, tenant.ID, glCode)
+	if err != nil {
+		t.Fatalf("Failed to create GL account: %v", err)
+	}
+
+	bankAccountID := uuid.New().String()
+	bankAccount := &BankAccount{
+		ID:            bankAccountID,
+		TenantID:      tenant.ID,
+		Name:          "All Fields Test Account",
+		AccountNumber: "EE121212121212121212",
+		BankName:      "LHV",
+		Currency:      "EUR",
+		GLAccountID:   strPtr(glAccountID),
+		IsActive:      true,
+		CreatedAt:     time.Now(),
+	}
+
+	if err := repo.CreateBankAccount(ctx, tenant.SchemaName, bankAccount); err != nil {
+		t.Fatalf("CreateBankAccount failed: %v", err)
+	}
+
+	// Create a transaction with all fields populated
+	txID := uuid.New().String()
+	valueDate := time.Now().Add(-24 * time.Hour)
+	transaction := &BankTransaction{
+		ID:                  txID,
+		TenantID:            tenant.ID,
+		BankAccountID:       bankAccountID,
+		TransactionDate:     time.Now(),
+		ValueDate:           &valueDate,
+		Amount:              decimal.NewFromFloat(1234.56),
+		Currency:            "EUR",
+		Description:         "Full transaction with all fields",
+		Reference:           "REF-ALL-FIELDS-001",
+		CounterpartyName:    "Test Counterparty Ltd",
+		CounterpartyAccount: "EE999999999999999999",
+		Status:              StatusUnmatched,
+		ExternalID:          "EXT-ALL-FIELDS-001",
+		ImportedAt:          time.Now(),
+	}
+
+	if err := repo.CreateTransaction(ctx, tenant.SchemaName, transaction); err != nil {
+		t.Fatalf("CreateTransaction failed: %v", err)
+	}
+
+	// Retrieve and verify
+	retrieved, err := repo.GetTransaction(ctx, tenant.SchemaName, tenant.ID, txID)
+	if err != nil {
+		t.Fatalf("GetTransaction failed: %v", err)
+	}
+
+	if retrieved.Description != transaction.Description {
+		t.Errorf("expected description %q, got %q", transaction.Description, retrieved.Description)
+	}
+	if retrieved.Reference != transaction.Reference {
+		t.Errorf("expected reference %q, got %q", transaction.Reference, retrieved.Reference)
+	}
+	if retrieved.CounterpartyName != transaction.CounterpartyName {
+		t.Errorf("expected counterparty name %q, got %q", transaction.CounterpartyName, retrieved.CounterpartyName)
+	}
+	if retrieved.CounterpartyAccount != transaction.CounterpartyAccount {
+		t.Errorf("expected counterparty account %q, got %q", transaction.CounterpartyAccount, retrieved.CounterpartyAccount)
+	}
+	if retrieved.ExternalID != transaction.ExternalID {
+		t.Errorf("expected external ID %q, got %q", transaction.ExternalID, retrieved.ExternalID)
+	}
+	if retrieved.ValueDate == nil {
+		t.Error("expected value date to be set")
+	}
+}
+
+func TestRepository_ListBankAccounts_CombinedFilters(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Create GL account
+	glAccountID := uuid.New().String()
+	glCode := "1307" + uuid.New().String()[:4]
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.accounts
+		(id, tenant_id, code, name, account_type, is_active, created_at)
+		VALUES ($1, $2, $3, 'Bank Combined Filter GL', 'ASSET', true, NOW())
+	`, glAccountID, tenant.ID, glCode)
+	if err != nil {
+		t.Fatalf("Failed to create GL account: %v", err)
+	}
+
+	// Create accounts with different combinations
+	accounts := []BankAccount{
+		{ID: uuid.New().String(), TenantID: tenant.ID, Name: "EUR Active", AccountNumber: "EE131313131313131313", BankName: "Swedbank", Currency: "EUR", GLAccountID: strPtr(glAccountID), IsActive: true, CreatedAt: time.Now()},
+		{ID: uuid.New().String(), TenantID: tenant.ID, Name: "EUR Inactive", AccountNumber: "EE141414141414141414", BankName: "LHV", Currency: "EUR", GLAccountID: strPtr(glAccountID), IsActive: false, CreatedAt: time.Now()},
+		{ID: uuid.New().String(), TenantID: tenant.ID, Name: "USD Active", AccountNumber: "US151515151515151515", BankName: "Chase", Currency: "USD", GLAccountID: strPtr(glAccountID), IsActive: true, CreatedAt: time.Now()},
+		{ID: uuid.New().String(), TenantID: tenant.ID, Name: "USD Inactive", AccountNumber: "US161616161616161616", BankName: "BOA", Currency: "USD", GLAccountID: strPtr(glAccountID), IsActive: false, CreatedAt: time.Now()},
+	}
+
+	for _, acc := range accounts {
+		if err := repo.CreateBankAccount(ctx, tenant.SchemaName, &acc); err != nil {
+			t.Fatalf("CreateBankAccount failed: %v", err)
+		}
+	}
+
+	// Filter by both EUR and active
+	filter := &BankAccountFilter{Currency: "EUR", IsActive: boolPtr(true)}
+	results, err := repo.ListBankAccounts(ctx, tenant.SchemaName, tenant.ID, filter)
+	if err != nil {
+		t.Fatalf("ListBankAccounts failed: %v", err)
+	}
+
+	for _, acc := range results {
+		if acc.Currency != "EUR" {
+			t.Errorf("expected currency EUR, got %s", acc.Currency)
+		}
+		if !acc.IsActive {
+			t.Error("expected active account")
+		}
+	}
+}
+
+func TestRepository_IsTransactionDuplicate_NoExternalID(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	ensureReconciliationSchema(t, pool, tenant.SchemaName)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Create GL account and bank account
+	glAccountID := uuid.New().String()
+	glCode := "1308" + uuid.New().String()[:4]
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.accounts
+		(id, tenant_id, code, name, account_type, is_active, created_at)
+		VALUES ($1, $2, $3, 'Bank No External ID GL', 'ASSET', true, NOW())
+	`, glAccountID, tenant.ID, glCode)
+	if err != nil {
+		t.Fatalf("Failed to create GL account: %v", err)
+	}
+
+	bankAccountID := uuid.New().String()
+	bankAccount := &BankAccount{
+		ID:            bankAccountID,
+		TenantID:      tenant.ID,
+		Name:          "No External ID Test Account",
+		AccountNumber: "EE171717171717171717",
+		BankName:      "SEB",
+		Currency:      "EUR",
+		GLAccountID:   strPtr(glAccountID),
+		IsActive:      true,
+		CreatedAt:     time.Now(),
+	}
+
+	if err := repo.CreateBankAccount(ctx, tenant.SchemaName, bankAccount); err != nil {
+		t.Fatalf("CreateBankAccount failed: %v", err)
+	}
+
+	// Create a transaction without external ID
+	txDate := time.Now().Truncate(24 * time.Hour) // Truncate to day for consistent comparison
+	txAmount := decimal.NewFromFloat(750.00)
+
+	transaction := &BankTransaction{
+		ID:              uuid.New().String(),
+		TenantID:        tenant.ID,
+		BankAccountID:   bankAccountID,
+		TransactionDate: txDate,
+		Amount:          txAmount,
+		Currency:        "EUR",
+		Description:     "Transaction without external ID",
+		Status:          StatusUnmatched,
+		ExternalID:      "", // No external ID
+		ImportedAt:      time.Now(),
+	}
+
+	if err := repo.CreateTransaction(ctx, tenant.SchemaName, transaction); err != nil {
+		t.Fatalf("CreateTransaction failed: %v", err)
+	}
+
+	// Check for duplicate without external ID - should use date+amount fallback
+	isDuplicate, err := repo.IsTransactionDuplicate(ctx, tenant.SchemaName, tenant.ID, bankAccountID, txDate, txAmount, "")
+	if err != nil {
+		t.Fatalf("IsTransactionDuplicate failed: %v", err)
+	}
+	if !isDuplicate {
+		t.Error("expected transaction to be duplicate (same date+amount)")
+	}
+
+	// Check with different amount - should not be duplicate
+	differentAmount := decimal.NewFromFloat(750.01)
+	isNotDuplicate, err := repo.IsTransactionDuplicate(ctx, tenant.SchemaName, tenant.ID, bankAccountID, txDate, differentAmount, "")
+	if err != nil {
+		t.Fatalf("IsTransactionDuplicate failed: %v", err)
+	}
+	if isNotDuplicate {
+		t.Error("expected transaction with different amount to not be duplicate")
+	}
+}
+
+func TestRepository_CompleteReconciliation_UpdatesMatchedTransactions(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	userID := testutil.CreateTestUser(t, pool, "banking-recon-tx-update@example.com")
+
+	ensureReconciliationSchema(t, pool, tenant.SchemaName)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Create GL account and bank account
+	glAccountID := uuid.New().String()
+	glCode := "1309" + uuid.New().String()[:4]
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.accounts
+		(id, tenant_id, code, name, account_type, is_active, created_at)
+		VALUES ($1, $2, $3, 'Bank Recon TX Update GL', 'ASSET', true, NOW())
+	`, glAccountID, tenant.ID, glCode)
+	if err != nil {
+		t.Fatalf("Failed to create GL account: %v", err)
+	}
+
+	bankAccountID := uuid.New().String()
+	bankAccount := &BankAccount{
+		ID:            bankAccountID,
+		TenantID:      tenant.ID,
+		Name:          "Recon TX Update Test Account",
+		AccountNumber: "EE181818181818181818",
+		BankName:      "Swedbank",
+		Currency:      "EUR",
+		GLAccountID:   strPtr(glAccountID),
+		IsActive:      true,
+		CreatedAt:     time.Now(),
+	}
+
+	if err := repo.CreateBankAccount(ctx, tenant.SchemaName, bankAccount); err != nil {
+		t.Fatalf("CreateBankAccount failed: %v", err)
+	}
+
+	// Create reconciliation
+	reconID := uuid.New().String()
+	recon := &BankReconciliation{
+		ID:             reconID,
+		TenantID:       tenant.ID,
+		BankAccountID:  bankAccountID,
+		StatementDate:  time.Now(),
+		OpeningBalance: decimal.NewFromFloat(0),
+		ClosingBalance: decimal.NewFromFloat(1000),
+		Status:         ReconciliationInProgress,
+		CreatedAt:      time.Now(),
+		CreatedBy:      userID,
+	}
+
+	if err := repo.CreateReconciliation(ctx, tenant.SchemaName, recon); err != nil {
+		t.Fatalf("CreateReconciliation failed: %v", err)
+	}
+
+	// Create contact for payment
+	contactID := uuid.New().String()
+	_, err = pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.contacts (id, tenant_id, contact_type, name, created_at, updated_at)
+		VALUES ($1, $2, 'CUSTOMER', 'Recon Update Test Customer', NOW(), NOW())
+	`, contactID, tenant.ID)
+	if err != nil {
+		t.Fatalf("Failed to create contact: %v", err)
+	}
+
+	// Create payment
+	paymentID := uuid.New().String()
+	_, err = pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.payments
+		(id, tenant_id, payment_number, payment_date, amount, currency, base_amount, payment_type, payment_method, contact_id, created_by, created_at)
+		VALUES ($1, $2, 'PAY-RECON-UPD-001', NOW(), 1000, 'EUR', 1000, 'RECEIVED', 'BANK_TRANSFER', $3, $4, NOW())
+	`, paymentID, tenant.ID, contactID, userID)
+	if err != nil {
+		t.Fatalf("Failed to create payment: %v", err)
+	}
+
+	// Create a matched transaction with reconciliation_id
+	txID := uuid.New().String()
+	transaction := &BankTransaction{
+		ID:               txID,
+		TenantID:         tenant.ID,
+		BankAccountID:    bankAccountID,
+		TransactionDate:  time.Now(),
+		Amount:           decimal.NewFromFloat(1000),
+		Currency:         "EUR",
+		Description:      "Matched transaction for recon",
+		Status:           StatusMatched,
+		MatchedPaymentID: &paymentID,
+		ReconciliationID: &reconID,
+		ImportedAt:       time.Now(),
+	}
+
+	if err := repo.CreateTransaction(ctx, tenant.SchemaName, transaction); err != nil {
+		t.Fatalf("CreateTransaction failed: %v", err)
+	}
+
+	// Complete reconciliation - should update transaction status to RECONCILED
+	if err := repo.CompleteReconciliation(ctx, tenant.SchemaName, tenant.ID, reconID); err != nil {
+		t.Fatalf("CompleteReconciliation failed: %v", err)
+	}
+
+	// Verify transaction status was updated
+	updatedTx, err := repo.GetTransaction(ctx, tenant.SchemaName, tenant.ID, txID)
+	if err != nil {
+		t.Fatalf("GetTransaction failed: %v", err)
+	}
+
+	if updatedTx.Status != StatusReconciled {
+		t.Errorf("expected status RECONCILED, got %s", updatedTx.Status)
+	}
+}
+
+func TestRepository_BankAccount_NullGLAccountID(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Create a bank account without GL account ID
+	account := &BankAccount{
+		ID:            uuid.New().String(),
+		TenantID:      tenant.ID,
+		Name:          "Account Without GL",
+		AccountNumber: "EE191919191919191919",
+		BankName:      "Nordea",
+		Currency:      "EUR",
+		GLAccountID:   nil, // No GL account
+		IsDefault:     false,
+		IsActive:      true,
+		CreatedAt:     time.Now(),
+	}
+
+	if err := repo.CreateBankAccount(ctx, tenant.SchemaName, account); err != nil {
+		t.Fatalf("CreateBankAccount failed: %v", err)
+	}
+
+	// Retrieve and verify
+	retrieved, err := repo.GetBankAccount(ctx, tenant.SchemaName, tenant.ID, account.ID)
+	if err != nil {
+		t.Fatalf("GetBankAccount failed: %v", err)
+	}
+
+	if retrieved.GLAccountID != nil {
+		t.Error("expected GLAccountID to be nil")
+	}
+}
+
+func TestRepository_ListTransactions_NoFilter(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	ensureReconciliationSchema(t, pool, tenant.SchemaName)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Create GL account and bank account
+	glAccountID := uuid.New().String()
+	glCode := "1310" + uuid.New().String()[:4]
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.accounts
+		(id, tenant_id, code, name, account_type, is_active, created_at)
+		VALUES ($1, $2, $3, 'Bank No Filter GL', 'ASSET', true, NOW())
+	`, glAccountID, tenant.ID, glCode)
+	if err != nil {
+		t.Fatalf("Failed to create GL account: %v", err)
+	}
+
+	bankAccountID := uuid.New().String()
+	bankAccount := &BankAccount{
+		ID:            bankAccountID,
+		TenantID:      tenant.ID,
+		Name:          "No Filter Test Account",
+		AccountNumber: "EE202020202020202021",
+		BankName:      "LHV",
+		Currency:      "EUR",
+		GLAccountID:   strPtr(glAccountID),
+		IsActive:      true,
+		CreatedAt:     time.Now(),
+	}
+
+	if err := repo.CreateBankAccount(ctx, tenant.SchemaName, bankAccount); err != nil {
+		t.Fatalf("CreateBankAccount failed: %v", err)
+	}
+
+	// Create multiple transactions
+	for i := 0; i < 5; i++ {
+		tx := &BankTransaction{
+			ID:              uuid.New().String(),
+			TenantID:        tenant.ID,
+			BankAccountID:   bankAccountID,
+			TransactionDate: time.Now().AddDate(0, 0, -i),
+			Amount:          decimal.NewFromFloat(float64(100 * (i + 1))),
+			Currency:        "EUR",
+			Description:     fmt.Sprintf("Transaction %d", i+1),
+			Status:          StatusUnmatched,
+			ImportedAt:      time.Now(),
+		}
+		if err := repo.CreateTransaction(ctx, tenant.SchemaName, tx); err != nil {
+			t.Fatalf("CreateTransaction failed: %v", err)
+		}
+	}
+
+	// List with nil filter - should return all
+	transactions, err := repo.ListTransactions(ctx, tenant.SchemaName, tenant.ID, nil)
+	if err != nil {
+		t.Fatalf("ListTransactions failed: %v", err)
+	}
+
+	if len(transactions) < 5 {
+		t.Errorf("expected at least 5 transactions, got %d", len(transactions))
+	}
+}
+
+func TestRepository_MultipleReconciliations_SameBankAccount(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	userID := testutil.CreateTestUser(t, pool, "banking-multi-recon@example.com")
+
+	ensureReconciliationSchema(t, pool, tenant.SchemaName)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Create GL account and bank account
+	glAccountID := uuid.New().String()
+	glCode := "1311" + uuid.New().String()[:4]
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.accounts
+		(id, tenant_id, code, name, account_type, is_active, created_at)
+		VALUES ($1, $2, $3, 'Bank Multi Recon GL', 'ASSET', true, NOW())
+	`, glAccountID, tenant.ID, glCode)
+	if err != nil {
+		t.Fatalf("Failed to create GL account: %v", err)
+	}
+
+	bankAccountID := uuid.New().String()
+	bankAccount := &BankAccount{
+		ID:            bankAccountID,
+		TenantID:      tenant.ID,
+		Name:          "Multi Recon Test Account",
+		AccountNumber: "EE212121212121212121",
+		BankName:      "SEB",
+		Currency:      "EUR",
+		GLAccountID:   strPtr(glAccountID),
+		IsActive:      true,
+		CreatedAt:     time.Now(),
+	}
+
+	if err := repo.CreateBankAccount(ctx, tenant.SchemaName, bankAccount); err != nil {
+		t.Fatalf("CreateBankAccount failed: %v", err)
+	}
+
+	// Create multiple reconciliations for the same bank account
+	for i := 0; i < 3; i++ {
+		reconID := uuid.New().String()
+		recon := &BankReconciliation{
+			ID:             reconID,
+			TenantID:       tenant.ID,
+			BankAccountID:  bankAccountID,
+			StatementDate:  time.Now().AddDate(0, -i, 0),
+			OpeningBalance: decimal.NewFromFloat(float64(1000 * i)),
+			ClosingBalance: decimal.NewFromFloat(float64(1000 * (i + 1))),
+			Status:         ReconciliationInProgress,
+			CreatedAt:      time.Now(),
+			CreatedBy:      userID,
+		}
+
+		if err := repo.CreateReconciliation(ctx, tenant.SchemaName, recon); err != nil {
+			t.Fatalf("CreateReconciliation %d failed: %v", i, err)
+		}
+	}
+
+	// List reconciliations - should return all 3
+	reconciliations, err := repo.ListReconciliations(ctx, tenant.SchemaName, tenant.ID, bankAccountID)
+	if err != nil {
+		t.Fatalf("ListReconciliations failed: %v", err)
+	}
+
+	if len(reconciliations) != 3 {
+		t.Errorf("expected 3 reconciliations, got %d", len(reconciliations))
+	}
+
+	// Verify ordering (most recent first)
+	for i := 1; i < len(reconciliations); i++ {
+		if reconciliations[i].StatementDate.After(reconciliations[i-1].StatementDate) {
+			t.Error("expected reconciliations to be ordered by statement date descending")
+		}
+	}
+}
+
+func TestRepository_CreateImportRecord(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	ensureReconciliationSchema(t, pool, tenant.SchemaName)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Create GL account and bank account
+	glAccountID := uuid.New().String()
+	glCode := "1312" + uuid.New().String()[:4]
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.accounts
+		(id, tenant_id, code, name, account_type, is_active, created_at)
+		VALUES ($1, $2, $3, 'Bank Import Test GL', 'ASSET', true, NOW())
+	`, glAccountID, tenant.ID, glCode)
+	if err != nil {
+		t.Fatalf("Failed to create GL account: %v", err)
+	}
+
+	bankAccountID := uuid.New().String()
+	bankAccount := &BankAccount{
+		ID:            bankAccountID,
+		TenantID:      tenant.ID,
+		Name:          "Import Test Account",
+		AccountNumber: "EE222222222222222222",
+		BankName:      "Swedbank",
+		Currency:      "EUR",
+		GLAccountID:   strPtr(glAccountID),
+		IsActive:      true,
+		CreatedAt:     time.Now(),
+	}
+
+	if err := repo.CreateBankAccount(ctx, tenant.SchemaName, bankAccount); err != nil {
+		t.Fatalf("CreateBankAccount failed: %v", err)
+	}
+
+	// Create an import record
+	importID := uuid.New().String()
+	importRecord := &BankStatementImport{
+		ID:                   importID,
+		TenantID:             tenant.ID,
+		BankAccountID:        bankAccountID,
+		FileName:             "test_statement.csv",
+		TransactionsImported: 10,
+		TransactionsMatched:  5,
+		DuplicatesSkipped:    2,
+		CreatedAt:            time.Now(),
+	}
+
+	if err := repo.CreateImportRecord(ctx, tenant.SchemaName, importRecord); err != nil {
+		t.Fatalf("CreateImportRecord failed: %v", err)
+	}
+
+	// Verify the import record was created by querying it directly
+	var fileName string
+	var txImported, txMatched, dupsSkipped int
+	err = pool.QueryRow(ctx, `
+		SELECT file_name, transactions_imported, transactions_matched, duplicates_skipped
+		FROM `+tenant.SchemaName+`.bank_statement_imports
+		WHERE id = $1
+	`, importID).Scan(&fileName, &txImported, &txMatched, &dupsSkipped)
+	if err != nil {
+		t.Fatalf("Failed to query import record: %v", err)
+	}
+
+	if fileName != importRecord.FileName {
+		t.Errorf("expected file name %q, got %q", importRecord.FileName, fileName)
+	}
+	if txImported != importRecord.TransactionsImported {
+		t.Errorf("expected transactions imported %d, got %d", importRecord.TransactionsImported, txImported)
+	}
+	if txMatched != importRecord.TransactionsMatched {
+		t.Errorf("expected transactions matched %d, got %d", importRecord.TransactionsMatched, txMatched)
+	}
+	if dupsSkipped != importRecord.DuplicatesSkipped {
+		t.Errorf("expected duplicates skipped %d, got %d", importRecord.DuplicatesSkipped, dupsSkipped)
+	}
+}
+
+func TestRepository_GetImportHistory(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	ensureReconciliationSchema(t, pool, tenant.SchemaName)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Create GL account and bank account
+	glAccountID := uuid.New().String()
+	glCode := "1313" + uuid.New().String()[:4]
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.accounts
+		(id, tenant_id, code, name, account_type, is_active, created_at)
+		VALUES ($1, $2, $3, 'Bank Import History GL', 'ASSET', true, NOW())
+	`, glAccountID, tenant.ID, glCode)
+	if err != nil {
+		t.Fatalf("Failed to create GL account: %v", err)
+	}
+
+	bankAccountID := uuid.New().String()
+	bankAccount := &BankAccount{
+		ID:            bankAccountID,
+		TenantID:      tenant.ID,
+		Name:          "Import History Test Account",
+		AccountNumber: "EE232323232323232323",
+		BankName:      "LHV",
+		Currency:      "EUR",
+		GLAccountID:   strPtr(glAccountID),
+		IsActive:      true,
+		CreatedAt:     time.Now(),
+	}
+
+	if err := repo.CreateBankAccount(ctx, tenant.SchemaName, bankAccount); err != nil {
+		t.Fatalf("CreateBankAccount failed: %v", err)
+	}
+
+	// Create multiple import records
+	for i := 0; i < 5; i++ {
+		importRecord := &BankStatementImport{
+			ID:                   uuid.New().String(),
+			TenantID:             tenant.ID,
+			BankAccountID:        bankAccountID,
+			FileName:             fmt.Sprintf("statement_%d.csv", i+1),
+			TransactionsImported: 10 + i,
+			TransactionsMatched:  5 + i,
+			DuplicatesSkipped:    i,
+			CreatedAt:            time.Now().Add(time.Duration(-i) * time.Hour),
+		}
+
+		if err := repo.CreateImportRecord(ctx, tenant.SchemaName, importRecord); err != nil {
+			t.Fatalf("CreateImportRecord %d failed: %v", i, err)
+		}
+	}
+
+	// Get import history
+	history, err := repo.GetImportHistory(ctx, tenant.SchemaName, tenant.ID, bankAccountID)
+	if err != nil {
+		t.Fatalf("GetImportHistory failed: %v", err)
+	}
+
+	if len(history) != 5 {
+		t.Errorf("expected 5 import records, got %d", len(history))
+	}
+
+	// Verify ordering (most recent first)
+	for i := 1; i < len(history); i++ {
+		if history[i].CreatedAt.After(history[i-1].CreatedAt) {
+			t.Error("expected import history to be ordered by created_at descending")
+		}
+	}
+
+	// Verify data integrity
+	for _, imp := range history {
+		if imp.TenantID != tenant.ID {
+			t.Errorf("expected tenant ID %s, got %s", tenant.ID, imp.TenantID)
+		}
+		if imp.BankAccountID != bankAccountID {
+			t.Errorf("expected bank account ID %s, got %s", bankAccountID, imp.BankAccountID)
+		}
+		if imp.FileName == "" {
+			t.Error("expected file name to be set")
+		}
+	}
+}
+
+func TestRepository_GetImportHistory_EmptyResult(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	ensureReconciliationSchema(t, pool, tenant.SchemaName)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Create GL account and bank account
+	glAccountID := uuid.New().String()
+	glCode := "1314" + uuid.New().String()[:4]
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.accounts
+		(id, tenant_id, code, name, account_type, is_active, created_at)
+		VALUES ($1, $2, $3, 'Bank Empty Import GL', 'ASSET', true, NOW())
+	`, glAccountID, tenant.ID, glCode)
+	if err != nil {
+		t.Fatalf("Failed to create GL account: %v", err)
+	}
+
+	bankAccountID := uuid.New().String()
+	bankAccount := &BankAccount{
+		ID:            bankAccountID,
+		TenantID:      tenant.ID,
+		Name:          "Empty Import History Account",
+		AccountNumber: "EE242424242424242424",
+		BankName:      "SEB",
+		Currency:      "EUR",
+		GLAccountID:   strPtr(glAccountID),
+		IsActive:      true,
+		CreatedAt:     time.Now(),
+	}
+
+	if err := repo.CreateBankAccount(ctx, tenant.SchemaName, bankAccount); err != nil {
+		t.Fatalf("CreateBankAccount failed: %v", err)
+	}
+
+	// Get import history for account with no imports
+	history, err := repo.GetImportHistory(ctx, tenant.SchemaName, tenant.ID, bankAccountID)
+	if err != nil {
+		t.Fatalf("GetImportHistory failed: %v", err)
+	}
+
+	if history == nil {
+		t.Error("expected empty slice, got nil")
+	}
+
+	if len(history) != 0 {
+		t.Errorf("expected 0 import records, got %d", len(history))
+	}
+}
+
+func TestRepository_GetImportHistory_Limit(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	ensureReconciliationSchema(t, pool, tenant.SchemaName)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	// Create GL account and bank account
+	glAccountID := uuid.New().String()
+	glCode := "1315" + uuid.New().String()[:4]
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.accounts
+		(id, tenant_id, code, name, account_type, is_active, created_at)
+		VALUES ($1, $2, $3, 'Bank Import Limit GL', 'ASSET', true, NOW())
+	`, glAccountID, tenant.ID, glCode)
+	if err != nil {
+		t.Fatalf("Failed to create GL account: %v", err)
+	}
+
+	bankAccountID := uuid.New().String()
+	bankAccount := &BankAccount{
+		ID:            bankAccountID,
+		TenantID:      tenant.ID,
+		Name:          "Import Limit Test Account",
+		AccountNumber: "EE252525252525252525",
+		BankName:      "Nordea",
+		Currency:      "EUR",
+		GLAccountID:   strPtr(glAccountID),
+		IsActive:      true,
+		CreatedAt:     time.Now(),
+	}
+
+	if err := repo.CreateBankAccount(ctx, tenant.SchemaName, bankAccount); err != nil {
+		t.Fatalf("CreateBankAccount failed: %v", err)
+	}
+
+	// Create 55 import records (more than the 50 limit)
+	for i := 0; i < 55; i++ {
+		importRecord := &BankStatementImport{
+			ID:                   uuid.New().String(),
+			TenantID:             tenant.ID,
+			BankAccountID:        bankAccountID,
+			FileName:             fmt.Sprintf("statement_%d.csv", i+1),
+			TransactionsImported: 10,
+			TransactionsMatched:  5,
+			DuplicatesSkipped:    0,
+			CreatedAt:            time.Now().Add(time.Duration(-i) * time.Minute),
+		}
+
+		if err := repo.CreateImportRecord(ctx, tenant.SchemaName, importRecord); err != nil {
+			t.Fatalf("CreateImportRecord %d failed: %v", i, err)
+		}
+	}
+
+	// Get import history - should be limited to 50
+	history, err := repo.GetImportHistory(ctx, tenant.SchemaName, tenant.ID, bankAccountID)
+	if err != nil {
+		t.Fatalf("GetImportHistory failed: %v", err)
+	}
+
+	if len(history) != 50 {
+		t.Errorf("expected 50 import records (limit), got %d", len(history))
 	}
 }

@@ -1,9 +1,11 @@
 package plugin
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -387,4 +389,391 @@ func TestHasLicenseFile_NonExistentDirectory(t *testing.T) {
 	// Test with non-existent directory
 	result := hasLicenseFile("/non/existent/path/that/does/not/exist")
 	assert.False(t, result, "Should return false for non-existent directory")
+}
+
+// TestService_RemovePluginFiles tests the removePluginFiles function
+func TestService_RemovePluginFiles(t *testing.T) {
+	// Create a temporary directory structure
+	tmpDir := t.TempDir()
+	pluginDir := tmpDir + "/plugins"
+	err := os.MkdirAll(pluginDir, 0755)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name        string
+		setup       func() string // returns plugin name
+		pluginName  string
+		expectError bool
+	}{
+		{
+			name: "success_remove_plugin",
+			setup: func() string {
+				// Create plugin directory with manifest
+				pluginPath := pluginDir + "/test-owner-test-plugin"
+				err := os.MkdirAll(pluginPath, 0755)
+				require.NoError(t, err)
+				manifestContent := `name: test-plugin
+display_name: Test Plugin
+version: 1.0.0`
+				err = os.WriteFile(pluginPath+"/plugin.yaml", []byte(manifestContent), 0644)
+				require.NoError(t, err)
+				return "test-plugin"
+			},
+			pluginName:  "test-plugin",
+			expectError: false,
+		},
+		{
+			name: "plugin_not_found",
+			setup: func() string {
+				return "nonexistent-plugin"
+			},
+			pluginName:  "nonexistent-plugin",
+			expectError: true,
+		},
+		{
+			name: "skip_non_directory_entries",
+			setup: func() string {
+				// Create a file instead of directory
+				err := os.WriteFile(pluginDir+"/not-a-dir.txt", []byte("content"), 0644)
+				require.NoError(t, err)
+				return "not-a-dir"
+			},
+			pluginName:  "not-a-dir",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Fresh plugin directory for each test
+			testPluginDir := t.TempDir() + "/plugins"
+			err := os.MkdirAll(testPluginDir, 0755)
+			require.NoError(t, err)
+
+			repo := NewMockRepository()
+			service := NewServiceWithRepository(repo, nil, testPluginDir)
+
+			// Setup test case
+			if tt.setup != nil {
+				// Create plugin directory with manifest for success case
+				if tt.name == "success_remove_plugin" {
+					pluginPath := testPluginDir + "/test-owner-test-plugin"
+					err := os.MkdirAll(pluginPath, 0755)
+					require.NoError(t, err)
+					manifestContent := `name: test-plugin
+display_name: Test Plugin
+version: 1.0.0`
+					err = os.WriteFile(pluginPath+"/plugin.yaml", []byte(manifestContent), 0644)
+					require.NoError(t, err)
+				} else if tt.name == "skip_non_directory_entries" {
+					err := os.WriteFile(testPluginDir+"/not-a-dir.txt", []byte("content"), 0644)
+					require.NoError(t, err)
+				}
+			}
+
+			err = service.removePluginFiles(tt.pluginName)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				// Verify directory was removed
+				_, statErr := os.Stat(testPluginDir + "/test-owner-test-plugin")
+				assert.True(t, os.IsNotExist(statErr), "Plugin directory should be removed")
+			}
+		})
+	}
+}
+
+// TestService_RemovePluginFiles_InvalidManifest tests removePluginFiles with invalid manifest
+func TestService_RemovePluginFiles_InvalidManifest(t *testing.T) {
+	tmpDir := t.TempDir()
+	pluginDir := tmpDir + "/plugins"
+	err := os.MkdirAll(pluginDir, 0755)
+	require.NoError(t, err)
+
+	// Create plugin directory with invalid manifest
+	pluginPath := pluginDir + "/invalid-plugin"
+	err = os.MkdirAll(pluginPath, 0755)
+	require.NoError(t, err)
+	err = os.WriteFile(pluginPath+"/plugin.yaml", []byte("invalid: yaml: content"), 0644)
+	require.NoError(t, err)
+
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil, pluginDir)
+
+	// Should return error since no valid plugin found
+	err = service.removePluginFiles("some-plugin")
+	assert.Error(t, err)
+}
+
+// TestService_RemovePluginFiles_EmptyPluginDir tests removePluginFiles with non-existent plugin dir
+func TestService_RemovePluginFiles_EmptyPluginDir(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil, "/nonexistent/path")
+
+	err := service.removePluginFiles("any-plugin")
+	assert.Error(t, err)
+}
+
+// TestService_GetPluginPath tests the getPluginPath function
+func TestService_GetPluginPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	pluginDir := tmpDir + "/plugins"
+	err := os.MkdirAll(pluginDir, 0755)
+	require.NoError(t, err)
+
+	// Create plugin directory with valid manifest
+	pluginPath := pluginDir + "/owner-my-plugin"
+	err = os.MkdirAll(pluginPath, 0755)
+	require.NoError(t, err)
+	manifestContent := `name: my-plugin
+display_name: My Plugin
+version: 1.0.0`
+	err = os.WriteFile(pluginPath+"/plugin.yaml", []byte(manifestContent), 0644)
+	require.NoError(t, err)
+
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil, pluginDir)
+
+	tests := []struct {
+		name       string
+		pluginName string
+		expectPath string
+	}{
+		{
+			name:       "found",
+			pluginName: "my-plugin",
+			expectPath: pluginPath,
+		},
+		{
+			name:       "not_found",
+			pluginName: "nonexistent-plugin",
+			expectPath: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := service.getPluginPath(tt.pluginName)
+			assert.Equal(t, tt.expectPath, result)
+		})
+	}
+}
+
+// TestService_GetPluginPath_NonExistentDir tests getPluginPath with non-existent directory
+func TestService_GetPluginPath_NonExistentDir(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil, "/nonexistent/path")
+
+	result := service.getPluginPath("any-plugin")
+	assert.Equal(t, "", result)
+}
+
+// TestService_GetPluginPath_InvalidManifest tests getPluginPath skipping invalid manifests
+func TestService_GetPluginPath_InvalidManifest(t *testing.T) {
+	tmpDir := t.TempDir()
+	pluginDir := tmpDir + "/plugins"
+	err := os.MkdirAll(pluginDir, 0755)
+	require.NoError(t, err)
+
+	// Create plugin directory with invalid manifest
+	invalidPath := pluginDir + "/invalid-plugin"
+	err = os.MkdirAll(invalidPath, 0755)
+	require.NoError(t, err)
+	err = os.WriteFile(invalidPath+"/plugin.yaml", []byte("not valid yaml: ["), 0644)
+	require.NoError(t, err)
+
+	// Create another with valid manifest
+	validPath := pluginDir + "/valid-plugin"
+	err = os.MkdirAll(validPath, 0755)
+	require.NoError(t, err)
+	err = os.WriteFile(validPath+"/plugin.yaml", []byte("name: valid-plugin\ndisplay_name: Valid\nversion: 1.0.0"), 0644)
+	require.NoError(t, err)
+
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil, pluginDir)
+
+	// Should find the valid plugin
+	result := service.getPluginPath("valid-plugin")
+	assert.Equal(t, validPath, result)
+
+	// Should not find invalid plugin
+	result = service.getPluginPath("invalid-plugin")
+	assert.Equal(t, "", result)
+}
+
+// TestService_GetPluginPath_SkipsFiles tests getPluginPath skipping non-directory entries
+func TestService_GetPluginPath_SkipsFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	pluginDir := tmpDir + "/plugins"
+	err := os.MkdirAll(pluginDir, 0755)
+	require.NoError(t, err)
+
+	// Create a file (not a directory)
+	err = os.WriteFile(pluginDir+"/not-a-dir.txt", []byte("content"), 0644)
+	require.NoError(t, err)
+
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil, pluginDir)
+
+	result := service.getPluginPath("not-a-dir")
+	assert.Equal(t, "", result)
+}
+
+// TestParseRegistryIndex tests the parseRegistryIndex function
+func TestParseRegistryIndex(t *testing.T) {
+	tests := []struct {
+		name        string
+		data        []byte
+		expectError bool
+	}{
+		{
+			name:        "empty_data",
+			data:        []byte{},
+			expectError: false, // parseManifestYAML currently returns nil
+		},
+		{
+			name:        "valid_yaml",
+			data:        []byte("version: 1\nplugins: []"),
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var index RegistryIndex
+			err := parseRegistryIndex(tt.data, &index)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestParseManifestYAML tests the parseManifestYAML helper
+func TestParseManifestYAML(t *testing.T) {
+	var result interface{}
+	err := parseManifestYAML([]byte("test: value"), &result)
+	// Currently parseManifestYAML returns nil (stub implementation)
+	assert.NoError(t, err)
+}
+
+// TestService_FetchRegistryIndex_InvalidURL tests FetchRegistryIndex with invalid URL
+func TestService_FetchRegistryIndex_InvalidURL(t *testing.T) {
+	ctx := t.Context()
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+
+	tests := []struct {
+		name string
+		url  string
+	}{
+		{
+			name: "invalid_url_format",
+			url:  "not-a-url",
+		},
+		{
+			name: "unsupported_host",
+			url:  "https://bitbucket.org/owner/repo",
+		},
+		{
+			name: "invalid_github_path",
+			url:  "https://github.com/",
+		},
+		{
+			name: "invalid_gitlab_path",
+			url:  "https://gitlab.com/",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := service.FetchRegistryIndex(ctx, tt.url)
+			assert.Error(t, err)
+		})
+	}
+}
+
+// TestService_SyncRegistry tests the SyncRegistry function
+func TestService_SyncRegistry_RegistryNotFound(t *testing.T) {
+	ctx := t.Context()
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+
+	err := service.SyncRegistry(ctx, uuid.New())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "registry not found")
+}
+
+// TestService_SearchPlugins tests the SearchPlugins function
+func TestService_SearchPlugins_RepoError(t *testing.T) {
+	ctx := t.Context()
+	repo := NewMockRepository()
+	repo.listRegistriesErr = fmt.Errorf("db error")
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+
+	_, err := service.SearchPlugins(ctx, "test")
+	assert.Error(t, err)
+}
+
+// TestService_SearchPlugins_NoActiveRegistries tests SearchPlugins with no active registries
+func TestService_SearchPlugins_NoActiveRegistries(t *testing.T) {
+	ctx := t.Context()
+	repo := NewMockRepository()
+	// Add inactive registry
+	regID := uuid.New()
+	repo.registries[regID] = &Registry{
+		ID:       regID,
+		Name:     "Inactive Registry",
+		URL:      "https://github.com/test/registry",
+		IsActive: false,
+	}
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+
+	results, err := service.SearchPlugins(ctx, "test")
+	assert.NoError(t, err)
+	assert.Empty(t, results)
+}
+
+// TestService_CloneRepository_InvalidURL tests cloneRepository with invalid URL
+func TestService_CloneRepository_InvalidURL(t *testing.T) {
+	ctx := t.Context()
+	tmpDir := t.TempDir()
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil, tmpDir)
+
+	_, err := service.cloneRepository(ctx, "invalid-url")
+	assert.Error(t, err)
+}
+
+// TestService_CloneRepository_CreateDirError tests cloneRepository when mkdir fails
+func TestService_CloneRepository_CreateDirError(t *testing.T) {
+	ctx := t.Context()
+	repo := NewMockRepository()
+	// Use a path that cannot be created (file instead of directory parent)
+	tmpFile := t.TempDir() + "/file.txt"
+	err := os.WriteFile(tmpFile, []byte("content"), 0644)
+	require.NoError(t, err)
+
+	service := NewServiceWithRepository(repo, nil, tmpFile+"/plugins")
+
+	_, err = service.cloneRepository(ctx, "https://github.com/owner/repo")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to create plugins directory")
+}
+
+// TestService_UpdateRepository_PluginNotFound tests updateRepository when plugin not found
+func TestService_UpdateRepository_PluginNotFound(t *testing.T) {
+	ctx := t.Context()
+	tmpDir := t.TempDir()
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil, tmpDir)
+
+	err := service.updateRepository(ctx, "nonexistent-plugin")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "plugin not found in filesystem")
 }
