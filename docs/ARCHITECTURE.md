@@ -348,6 +348,46 @@ frontend/src/tests/
 - **Completeness Tests**: Ensure all keys exist in both English and Estonian
 - **Placeholder Tests**: Verify parameterized translations have matching placeholders
 
+## Repository Pattern
+
+The codebase uses the **Repository Pattern** for data access, providing abstraction between business logic and database operations.
+
+### Repository Interface Structure
+
+Each domain package defines a `Repository` interface and provides a PostgreSQL implementation:
+
+```go
+// Repository interface (domain contract)
+type Repository interface {
+    Create(ctx context.Context, schemaName string, entity *Entity) error
+    GetByID(ctx context.Context, schemaName, id string) (*Entity, error)
+    List(ctx context.Context, schemaName string) ([]Entity, error)
+    // ...
+}
+
+// PostgresRepository implementation
+type PostgresRepository struct {
+    db *pgxpool.Pool
+}
+```
+
+### Multi-Tenant Schema Qualification
+
+All repository queries use schema-qualified table names for tenant isolation:
+
+```go
+query := fmt.Sprintf(`
+    SELECT id, name FROM %s.accounts WHERE id = $1
+`, schemaName)
+```
+
+### Benefits
+
+1. **Testability** - Interfaces enable mocking for unit tests
+2. **Flexibility** - Implementation can be swapped (e.g., to GORM)
+3. **Separation of Concerns** - Business logic doesn't depend on database details
+4. **Multi-Tenancy** - Schema name passed explicitly to every operation
+
 ## Performance Considerations
 
 1. **Connection Pooling** - pgxpool for efficient database connections
@@ -356,3 +396,69 @@ frontend/src/tests/
 4. **Index Strategy** - Composite indexes on (tenant_id, foreign_key)
 5. **Pagination** - All list endpoints support limit/offset
 6. **Compile-time i18n** - Paraglide generates optimized code with zero runtime overhead
+
+## Testing Strategy
+
+### Test Coverage Requirements
+
+The project maintains high test coverage standards:
+
+| Layer | Target Coverage |
+|-------|----------------|
+| Backend (unit + integration) | 90%+ average |
+| Frontend | 95%+ |
+| Critical paths (auth, payments) | 95%+ |
+
+### Backend Testing
+
+```bash
+# Unit tests (no database required)
+go test -race -cover ./...
+
+# Integration tests (requires PostgreSQL)
+DATABASE_URL="postgres://..." go test -tags=integration -race -cover ./...
+```
+
+### Integration Test Structure
+
+Integration tests use the `//go:build integration` build tag and test real database operations:
+
+```go
+//go:build integration
+
+package accounting
+
+func TestPostgresRepository_CreateAccount(t *testing.T) {
+    pool := testutil.SetupTestDB(t)
+    tenant := testutil.CreateTestTenant(t, pool)
+    repo := NewPostgresRepository(pool)
+
+    // Test actual database operations
+}
+```
+
+### Test Utilities
+
+The `internal/testutil` package provides shared test infrastructure:
+
+- `SetupTestDB(t)` - Creates isolated test database connection
+- `CreateTestTenant(t, pool)` - Creates tenant with schema for testing
+- `CreateTestUser(t, pool, tenantID)` - Creates test user
+
+### Mocking Strategy
+
+For unit tests, domain packages provide mock implementations:
+
+```go
+type MockRepository struct {
+    entities map[string]*Entity
+    err      error
+}
+
+func (m *MockRepository) GetByID(ctx context.Context, schemaName, id string) (*Entity, error) {
+    if m.err != nil {
+        return nil, m.err
+    }
+    return m.entities[id], nil
+}
+```

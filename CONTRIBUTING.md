@@ -35,14 +35,73 @@ make lint
 
 ### Go
 - Follow the [Go Code Review Comments](https://github.com/golang/go/wiki/CodeReviewComments)
-- Run `make fmt` before committing
-- Run `make lint` to check for issues
+- Run `gofmt -w .` before committing
+- Run `golangci-lint run` to check for issues
 - Write tests for new functionality
 
 ### TypeScript/Svelte
 - Follow existing code patterns
 - Run `npm run check` in the frontend directory
 - Use TypeScript for type safety
+
+## Testing Requirements
+
+### Test Coverage Standards
+
+We maintain high test coverage to ensure code quality:
+
+| Component | Target |
+|-----------|--------|
+| Backend packages | 90%+ average |
+| Frontend | 95%+ |
+| Critical paths | 95%+ |
+
+### Running Tests
+
+```bash
+# Backend unit tests
+go test -race -cover ./...
+
+# Backend integration tests (requires DATABASE_URL)
+go test -tags=integration -race -cover ./...
+
+# Frontend tests
+cd frontend && npm test
+
+# Frontend with coverage
+cd frontend && npm run test:coverage
+```
+
+### Writing Integration Tests
+
+For database operations, write integration tests:
+
+```go
+//go:build integration
+
+package mypackage
+
+import (
+    "testing"
+    "github.com/HMB-research/open-accounting/internal/testutil"
+)
+
+func TestRepository_Create(t *testing.T) {
+    pool := testutil.SetupTestDB(t)
+    tenant := testutil.CreateTestTenant(t, pool)
+    repo := NewPostgresRepository(pool)
+
+    // Test implementation
+}
+```
+
+### CI Checks
+
+Pull requests must pass:
+- `go test` - Unit tests
+- `go test -tags=integration` - Integration tests
+- `golangci-lint run` - Linting
+- Codecov patch coverage threshold
 
 ## Pull Request Process
 
