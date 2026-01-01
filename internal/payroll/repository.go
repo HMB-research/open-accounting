@@ -246,23 +246,31 @@ func (r *PostgresRepository) CreatePayrollRun(ctx context.Context, schemaName st
 func (r *PostgresRepository) GetPayrollRun(ctx context.Context, schemaName, tenantID, runID string) (*PayrollRun, error) {
 	query := fmt.Sprintf(`
 		SELECT id, tenant_id, period_year, period_month, status, payment_date,
-			total_gross, total_net, total_employer_cost, notes,
+			total_gross, total_net, total_employer_cost, COALESCE(notes, ''),
 			created_by, approved_by, approved_at, created_at, updated_at
 		FROM %s.payroll_runs
 		WHERE tenant_id = $1 AND id = $2
 	`, schemaName)
 
 	var run PayrollRun
+	var createdBy, approvedBy *string
 	err := r.queryRow(ctx, query, tenantID, runID).Scan(
 		&run.ID, &run.TenantID, &run.PeriodYear, &run.PeriodMonth, &run.Status, &run.PaymentDate,
 		&run.TotalGross, &run.TotalNet, &run.TotalEmployerCost, &run.Notes,
-		&run.CreatedBy, &run.ApprovedBy, &run.ApprovedAt, &run.CreatedAt, &run.UpdatedAt,
+		&createdBy, &approvedBy, &run.ApprovedAt, &run.CreatedAt, &run.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, ErrPayrollRunNotFound
 	}
 	if err != nil {
 		return nil, err
+	}
+
+	if createdBy != nil {
+		run.CreatedBy = *createdBy
+	}
+	if approvedBy != nil {
+		run.ApprovedBy = *approvedBy
 	}
 
 	return &run, nil
@@ -272,7 +280,7 @@ func (r *PostgresRepository) GetPayrollRun(ctx context.Context, schemaName, tena
 func (r *PostgresRepository) ListPayrollRuns(ctx context.Context, schemaName, tenantID string, year int) ([]PayrollRun, error) {
 	query := fmt.Sprintf(`
 		SELECT id, tenant_id, period_year, period_month, status, payment_date,
-			total_gross, total_net, total_employer_cost, notes,
+			total_gross, total_net, total_employer_cost, COALESCE(notes, ''),
 			created_by, approved_by, approved_at, created_at, updated_at
 		FROM %s.payroll_runs
 		WHERE tenant_id = $1
@@ -294,12 +302,19 @@ func (r *PostgresRepository) ListPayrollRuns(ctx context.Context, schemaName, te
 	var runs []PayrollRun
 	for rows.Next() {
 		var run PayrollRun
+		var createdBy, approvedBy *string
 		if err := rows.Scan(
 			&run.ID, &run.TenantID, &run.PeriodYear, &run.PeriodMonth, &run.Status, &run.PaymentDate,
 			&run.TotalGross, &run.TotalNet, &run.TotalEmployerCost, &run.Notes,
-			&run.CreatedBy, &run.ApprovedBy, &run.ApprovedAt, &run.CreatedAt, &run.UpdatedAt,
+			&createdBy, &approvedBy, &run.ApprovedAt, &run.CreatedAt, &run.UpdatedAt,
 		); err != nil {
 			return nil, err
+		}
+		if createdBy != nil {
+			run.CreatedBy = *createdBy
+		}
+		if approvedBy != nil {
+			run.ApprovedBy = *approvedBy
 		}
 		runs = append(runs, run)
 	}

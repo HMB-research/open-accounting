@@ -1427,3 +1427,21 @@ func TestService_ListTenantUsers(t *testing.T) {
 func strPtr(s string) *string {
 	return &s
 }
+
+func TestService_CreateUser_PasswordTooLong(t *testing.T) {
+	repo := NewMockRepository()
+	svc := NewServiceWithRepository(repo)
+
+	// bcrypt has a 72 byte limit for passwords
+	longPassword := string(make([]byte, 100))
+
+	_, err := svc.CreateUser(context.Background(), &CreateUserRequest{
+		Email:    "test@example.com",
+		Password: longPassword,
+		Name:     "Test User",
+	})
+
+	// bcrypt returns error for passwords > 72 bytes
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "hash password")
+}

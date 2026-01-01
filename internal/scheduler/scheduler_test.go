@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/HMB-research/open-accounting/internal/recurring"
 )
 
 // MockRepository implements Repository for testing
@@ -17,6 +19,29 @@ func (m *MockRepository) ListActiveTenants(ctx context.Context) ([]TenantInfo, e
 		return nil, m.listActiveTenantsErr
 	}
 	return m.tenants, nil
+}
+
+// MockRecurringService implements RecurringService for testing
+type MockRecurringService struct {
+	results map[string][]recurring.GenerationResult
+	errors  map[string]error
+}
+
+func NewMockRecurringService() *MockRecurringService {
+	return &MockRecurringService{
+		results: make(map[string][]recurring.GenerationResult),
+		errors:  make(map[string]error),
+	}
+}
+
+func (m *MockRecurringService) GenerateDueInvoices(ctx context.Context, tenantID, schemaName, userID string) ([]recurring.GenerationResult, error) {
+	if err, ok := m.errors[tenantID]; ok && err != nil {
+		return nil, err
+	}
+	if results, ok := m.results[tenantID]; ok {
+		return results, nil
+	}
+	return []recurring.GenerationResult{}, nil
 }
 
 func TestDefaultConfig(t *testing.T) {
@@ -364,4 +389,143 @@ func TestScheduler_ScheduleFormatWithSeconds(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestScheduler_GenerateDueInvoices_WithTenants(t *testing.T) {
+	tenants := []TenantInfo{
+		{ID: "tenant-1", SchemaName: "tenant_1"},
+		{ID: "tenant-2", SchemaName: "tenant_2"},
+	}
+	mockRepo := &MockRepository{tenants: tenants}
+	mockRecurring := NewMockRecurringService()
+
+	// Set up results for tenant-1 (with email sent)
+	mockRecurring.results["tenant-1"] = []recurring.GenerationResult{
+		{
+			RecurringInvoiceID:     "recurring-1",
+			GeneratedInvoiceID:     "invoice-1",
+			GeneratedInvoiceNumber: "INV-001",
+			EmailSent:              true,
+			EmailStatus:            "sent",
+		},
+	}
+
+	// Set up results for tenant-2 (without email sent)
+	mockRecurring.results["tenant-2"] = []recurring.GenerationResult{
+		{
+			RecurringInvoiceID:     "recurring-2",
+			GeneratedInvoiceID:     "invoice-2",
+			GeneratedInvoiceNumber: "INV-002",
+			EmailSent:              false,
+			EmailStatus:            "not_configured",
+		},
+	}
+
+	config := DefaultConfig()
+	scheduler := NewSchedulerWithRepository(mockRepo, mockRecurring, config)
+
+	// Should not panic and process all tenants
+	scheduler.RunNow()
+}
+
+func TestScheduler_GenerateDueInvoices_TenantError(t *testing.T) {
+	tenants := []TenantInfo{
+		{ID: "tenant-1", SchemaName: "tenant_1"},
+		{ID: "tenant-2", SchemaName: "tenant_2"},
+	}
+	mockRepo := &MockRepository{tenants: tenants}
+	mockRecurring := NewMockRecurringService()
+
+	// Set up error for tenant-1
+	mockRecurring.errors["tenant-1"] = errors.New("database error")
+
+	// Set up success for tenant-2
+	mockRecurring.results["tenant-2"] = []recurring.GenerationResult{
+		{
+			RecurringInvoiceID:     "recurring-2",
+			GeneratedInvoiceID:     "invoice-2",
+			GeneratedInvoiceNumber: "INV-002",
+			EmailSent:              true,
+			EmailStatus:            "sent",
+		},
+	}
+
+	config := DefaultConfig()
+	scheduler := NewSchedulerWithRepository(mockRepo, mockRecurring, config)
+
+	// Should not panic and continue processing other tenants
+	scheduler.RunNow()
+}
+
+func TestScheduler_GenerateDueInvoices_AllErrors(t *testing.T) {
+	tenants := []TenantInfo{
+		{ID: "tenant-1", SchemaName: "tenant_1"},
+		{ID: "tenant-2", SchemaName: "tenant_2"},
+	}
+	mockRepo := &MockRepository{tenants: tenants}
+	mockRecurring := NewMockRecurringService()
+
+	// Set up errors for all tenants
+	mockRecurring.errors["tenant-1"] = errors.New("error 1")
+	mockRecurring.errors["tenant-2"] = errors.New("error 2")
+
+	config := DefaultConfig()
+	scheduler := NewSchedulerWithRepository(mockRepo, mockRecurring, config)
+
+	// Should not panic even when all tenants fail
+	scheduler.RunNow()
+}
+
+func TestScheduler_GenerateDueInvoices_EmptyResults(t *testing.T) {
+	tenants := []TenantInfo{
+		{ID: "tenant-1", SchemaName: "tenant_1"},
+	}
+	mockRepo := &MockRepository{tenants: tenants}
+	mockRecurring := NewMockRecurringService()
+
+	// No results configured - returns empty slice
+	config := DefaultConfig()
+	scheduler := NewSchedulerWithRepository(mockRepo, mockRecurring, config)
+
+	// Should handle empty results gracefully
+	scheduler.RunNow()
+}
+
+func TestScheduler_GenerateDueInvoices_MultipleInvoices(t *testing.T) {
+	tenants := []TenantInfo{
+		{ID: "tenant-1", SchemaName: "tenant_1"},
+	}
+	mockRepo := &MockRepository{tenants: tenants}
+	mockRecurring := NewMockRecurringService()
+
+	// Set up multiple results for one tenant
+	mockRecurring.results["tenant-1"] = []recurring.GenerationResult{
+		{
+			RecurringInvoiceID:     "recurring-1",
+			GeneratedInvoiceID:     "invoice-1",
+			GeneratedInvoiceNumber: "INV-001",
+			EmailSent:              true,
+			EmailStatus:            "sent",
+		},
+		{
+			RecurringInvoiceID:     "recurring-2",
+			GeneratedInvoiceID:     "invoice-2",
+			GeneratedInvoiceNumber: "INV-002",
+			EmailSent:              false,
+			EmailStatus:            "failed",
+		},
+		{
+			RecurringInvoiceID:     "recurring-3",
+			GeneratedInvoiceID:     "invoice-3",
+			GeneratedInvoiceNumber: "INV-003",
+			EmailSent:              true,
+			EmailStatus:            "sent",
+		},
+	}
+
+	config := DefaultConfig()
+	scheduler := NewSchedulerWithRepository(mockRepo, mockRecurring, config)
+
+	// Should process all invoices
+	scheduler.RunNow()
 }

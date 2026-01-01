@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 )
@@ -91,7 +92,7 @@ func (r *PostgresRepository) QueryVATData(ctx context.Context, schemaName, tenan
 			SUM(CASE WHEN jl.is_debit THEN -jl.amount ELSE jl.amount END) as tax_base,
 			SUM(CASE WHEN jl.is_debit THEN -jl.amount ELSE jl.amount END) * COALESCE(jl.vat_rate, 0) / 100 as tax_amount
 		FROM %s.journal_entries je
-		JOIN %s.journal_lines jl ON je.id = jl.journal_entry_id
+		JOIN %s.journal_entry_lines jl ON je.id = jl.journal_entry_id
 		JOIN %s.accounts a ON jl.account_id = a.id
 		WHERE je.tenant_id = $1
 			AND je.status = 'POSTED'
@@ -174,6 +175,9 @@ func (r *PostgresRepository) GetDeclaration(ctx context.Context, schemaName, ten
 		&decl.TotalOutputVAT, &decl.TotalInputVAT, &decl.SubmittedAt, &decl.CreatedAt, &decl.UpdatedAt,
 	)
 	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("get declaration: %w", err)
 	}
 

@@ -25,8 +25,11 @@ func TestValidatePersonalCode(t *testing.T) {
 		{"Valid with weights2", "17605030336", true},
 
 		// Test case where weights2 also gives 10 (checksum becomes 0)
-		// Real Estonian ID: 47101010033 triggers both weight sums % 11 == 10
-		{"Valid with double checksum 10", "47101010033", true},
+		// This code: 10001010080 triggers both weight sums % 11 == 10
+		// weights1: 1+0+0+0+5+0+7+0+0+0 = 13 *wait* let me recalc
+		// Actually: 1*1+0*2+0*3+0*4+1*5+0*6+1*7+0*8+0*9+8*1 = 1+0+0+0+5+0+7+0+0+8 = 21, 21%11=10
+		// weights2: 1*3+0*4+0*5+0*6+1*7+0*8+1*9+0*1+0*2+8*3 = 3+0+0+0+7+0+9+0+0+24 = 43, 43%11=10 -> checksum=0
+		{"Valid with double checksum 10", "10001010080", true},
 
 		// Invalid codes - wrong length
 		{"Too short", "3800101000", false},

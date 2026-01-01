@@ -1,0 +1,3 @@
+-- Migration 012 down: Revert to original add_payroll_tables (with bugs)
+-- This is intentionally empty as the fix is non-destructive and the
+-- original function had bugs. Rolling back would reintroduce the bugs.

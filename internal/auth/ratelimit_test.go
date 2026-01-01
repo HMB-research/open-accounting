@@ -228,6 +228,47 @@ func TestDefaultRateLimiter(t *testing.T) {
 	}
 }
 
+func TestRateLimiter_TokensNegativeHandled(t *testing.T) {
+	// Test that negative token count is handled correctly
+	// This can happen when requests come in faster than tokens refill
+	rl := NewRateLimiter(0.1, 2) // Very slow rate: 0.1 req/sec, burst 2
+
+	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// Use all tokens
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest("GET", "/", nil)
+		req.RemoteAddr = "192.168.1.1:12345"
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+	}
+
+	// Wait a tiny bit so tokens might be slightly negative
+	time.Sleep(10 * time.Millisecond)
+
+	// Make another request - should be rate limited but tokens should show as 0
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "192.168.1.1:12345"
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	// Should be rate limited
+	if rr.Code != http.StatusTooManyRequests {
+		t.Errorf("Expected status 429, got %d", rr.Code)
+	}
+
+	// X-RateLimit-Remaining should be "0" not a negative number
+	remaining := rr.Header().Get("X-RateLimit-Remaining")
+	if remaining != "" && remaining != "0" {
+		// If header is set, it should be 0 (not negative)
+		if remaining[0] == '-' {
+			t.Errorf("X-RateLimit-Remaining should not be negative, got %s", remaining)
+		}
+	}
+}
+
 func TestGetClientIP(t *testing.T) {
 	tests := []struct {
 		name       string

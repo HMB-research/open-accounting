@@ -124,6 +124,18 @@ func TestValidateAccessToken(t *testing.T) {
 
 		assert.Error(t, err)
 	})
+
+	t.Run("empty token", func(t *testing.T) {
+		_, err := service.ValidateAccessToken("")
+
+		assert.Error(t, err)
+	})
+
+	t.Run("malformed jwt segments", func(t *testing.T) {
+		_, err := service.ValidateAccessToken("header.payload")
+
+		assert.Error(t, err)
+	})
 }
 
 func TestValidateRefreshToken(t *testing.T) {
@@ -147,6 +159,21 @@ func TestValidateRefreshToken(t *testing.T) {
 	t.Run("wrong secret", func(t *testing.T) {
 		otherService := NewTokenService("other-secret", 15*time.Minute, 7*24*time.Hour)
 		token, _ := otherService.GenerateRefreshToken("user-123")
+
+		_, err := service.ValidateRefreshToken(token)
+
+		assert.Error(t, err)
+	})
+
+	t.Run("empty token", func(t *testing.T) {
+		_, err := service.ValidateRefreshToken("")
+
+		assert.Error(t, err)
+	})
+
+	t.Run("expired refresh token", func(t *testing.T) {
+		expiredService := NewTokenService("test-secret", 15*time.Minute, -1*time.Hour)
+		token, _ := expiredService.GenerateRefreshToken("user-123")
 
 		_, err := service.ValidateRefreshToken(token)
 
@@ -427,6 +454,32 @@ func TestCanExportData(t *testing.T) {
 	assert.False(t, CanExportData(""))
 }
 
+func TestValidateAccessToken_WrongSigningMethod(t *testing.T) {
+	// Create a token with a different signing algorithm
+	// This tests the "unexpected signing method" error path
+	service := NewTokenService("test-secret", 15*time.Minute, 7*24*time.Hour)
+
+	// A token signed with RS256 instead of HS256 should fail
+	// We can't easily create an RS256 token without private key,
+	// but we can test with a malformed algorithm by using "none"
+	// This token has alg: "none" which should be rejected
+	noneAlgToken := "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJ1c2VyX2lkIjoidXNlci0xMjMiLCJlbWFpbCI6InRlc3RAZXhhbXBsZS5jb20ifQ."
+
+	_, err := service.ValidateAccessToken(noneAlgToken)
+	assert.Error(t, err)
+}
+
+func TestValidateRefreshToken_WrongSigningMethod(t *testing.T) {
+	// Same test for refresh token
+	service := NewTokenService("test-secret", 15*time.Minute, 7*24*time.Hour)
+
+	// Token with alg: "none" which should be rejected
+	noneAlgToken := "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ1c2VyLTEyMyJ9."
+
+	_, err := service.ValidateRefreshToken(noneAlgToken)
+	assert.Error(t, err)
+}
+
 func TestRequirePermission(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -495,4 +548,30 @@ func TestRequirePermission(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 	})
+}
+
+func TestValidateAccessToken_InvalidClaims(t *testing.T) {
+	service := NewTokenService("test-secret", 15*time.Minute, 7*24*time.Hour)
+
+	// Create a service with very short expiry that has already passed
+	shortService := NewTokenService("test-secret", -1*time.Hour, 7*24*time.Hour)
+	expiredToken, err := shortService.GenerateAccessToken("user-123", "test@example.com", "tenant-456", "admin")
+	require.NoError(t, err)
+
+	_, err = service.ValidateAccessToken(expiredToken)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "parse token")
+}
+
+func TestValidateRefreshToken_InvalidClaims(t *testing.T) {
+	service := NewTokenService("test-secret", 15*time.Minute, 7*24*time.Hour)
+
+	// Create a service with very short expiry that has already passed
+	shortService := NewTokenService("test-secret", 15*time.Minute, -1*time.Hour)
+	expiredToken, err := shortService.GenerateRefreshToken("user-123")
+	require.NoError(t, err)
+
+	_, err = service.ValidateRefreshToken(expiredToken)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "parse token")
 }
