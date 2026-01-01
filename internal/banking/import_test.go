@@ -1,6 +1,8 @@
 package banking
 
 import (
+	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +11,26 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// errorReader is a reader that returns an error after reading some data
+type errorReader struct {
+	data   string
+	pos    int
+	errAt  int
+	errMsg string
+}
+
+func (e *errorReader) Read(p []byte) (n int, err error) {
+	if e.pos >= e.errAt && e.errAt > 0 {
+		return 0, errors.New(e.errMsg)
+	}
+	if e.pos >= len(e.data) {
+		return 0, io.EOF
+	}
+	n = copy(p, e.data[e.pos:])
+	e.pos += n
+	return n, nil
+}
 
 func TestDefaultGenericMapping(t *testing.T) {
 	mapping := DefaultGenericMapping()
@@ -235,6 +257,27 @@ func TestParseCSVPreview(t *testing.T) {
 		rows, err := ParseCSVPreview(reader, 10)
 		require.NoError(t, err)
 		assert.Len(t, rows, 0)
+	})
+
+	t.Run("CSV with varying field counts parses due to FieldsPerRecord=-1", func(t *testing.T) {
+		// With FieldsPerRecord=-1, varying field counts are allowed
+		csvData := "A,B,C\n1,2\n3,4,5,6"
+		reader := strings.NewReader(csvData)
+
+		rows, err := ParseCSVPreview(reader, 10)
+		require.NoError(t, err)
+		assert.Len(t, rows, 3)
+	})
+
+	t.Run("Reader error during parsing", func(t *testing.T) {
+		reader := &errorReader{
+			data:   "Date,Amount\n2025-01-01,100.00",
+			errAt:  15,
+			errMsg: "simulated read error",
+		}
+
+		_, err := ParseCSVPreview(reader, 10)
+		assert.Error(t, err)
 	})
 }
 

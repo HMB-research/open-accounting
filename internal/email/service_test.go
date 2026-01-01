@@ -1302,3 +1302,296 @@ func TestService_TestSMTP_GetConfigError(t *testing.T) {
 		t.Error("Message should contain error info")
 	}
 }
+
+func TestService_TestSMTP_InvalidFromAddress(t *testing.T) {
+	settingsJSON := func() []byte {
+		settings := map[string]interface{}{
+			"smtp_host":       "smtp.example.com",
+			"smtp_port":       float64(587),
+			"smtp_from_email": "invalid-email", // Invalid from email
+		}
+		data, _ := json.Marshal(settings)
+		return data
+	}()
+
+	repo := &MockRepository{
+		GetTenantSettingsFn: func(ctx context.Context, tenantID string) ([]byte, error) {
+			return settingsJSON, nil
+		},
+	}
+	svc := NewServiceWithRepository(repo, &MockMailSender{})
+
+	result, err := svc.TestSMTP(context.Background(), "tenant-1", "valid@example.com")
+
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if result.Success {
+		t.Error("Success = true, want false for invalid from address")
+	}
+	if !strings.Contains(result.Message, "invalid from address") {
+		t.Errorf("Message = %q, should contain 'invalid from address'", result.Message)
+	}
+}
+
+func TestService_TestSMTP_InvalidRecipientAddress(t *testing.T) {
+	repo := &MockRepository{
+		GetTenantSettingsFn: func(ctx context.Context, tenantID string) ([]byte, error) {
+			return validSMTPSettingsJSON(), nil
+		},
+	}
+	svc := NewServiceWithRepository(repo, &MockMailSender{})
+
+	result, err := svc.TestSMTP(context.Background(), "tenant-1", "invalid-recipient")
+
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if result.Success {
+		t.Error("Success = true, want false for invalid recipient address")
+	}
+	if !strings.Contains(result.Message, "invalid recipient address") {
+		t.Errorf("Message = %q, should contain 'invalid recipient address'", result.Message)
+	}
+}
+
+func TestService_SendEmail_InvalidFromEmail(t *testing.T) {
+	settingsJSON := func() []byte {
+		settings := map[string]interface{}{
+			"smtp_host":       "smtp.example.com",
+			"smtp_port":       float64(587),
+			"smtp_from_email": "invalid-email", // Invalid
+			"smtp_from_name":  "Test Company",
+		}
+		data, _ := json.Marshal(settings)
+		return data
+	}()
+
+	repo := &MockRepository{
+		GetTenantSettingsFn: func(ctx context.Context, tenantID string) ([]byte, error) {
+			return settingsJSON, nil
+		},
+		CreateEmailLogFn: func(ctx context.Context, schemaName string, log *EmailLog) error {
+			return nil
+		},
+		UpdateEmailLogStatusFn: func(ctx context.Context, schemaName, logID string, status EmailStatus, sentAt *time.Time, errorMessage string) error {
+			return nil
+		},
+	}
+	svc := NewServiceWithRepository(repo, &MockMailSender{})
+
+	_, err := svc.SendEmail(
+		context.Background(),
+		"tenant_test",
+		"tenant-1",
+		"INVOICE_SEND",
+		"customer@example.com",
+		"John Doe",
+		"Subject",
+		"<p>Body</p>",
+		"",
+		nil,
+		"",
+	)
+
+	if err == nil {
+		t.Error("expected error for invalid from email")
+	}
+}
+
+func TestService_SendEmail_InvalidFromEmailNoName(t *testing.T) {
+	settingsJSON := func() []byte {
+		settings := map[string]interface{}{
+			"smtp_host":       "smtp.example.com",
+			"smtp_port":       float64(587),
+			"smtp_from_email": "invalid-email", // Invalid
+			"smtp_from_name":  "",              // No from name
+		}
+		data, _ := json.Marshal(settings)
+		return data
+	}()
+
+	repo := &MockRepository{
+		GetTenantSettingsFn: func(ctx context.Context, tenantID string) ([]byte, error) {
+			return settingsJSON, nil
+		},
+		CreateEmailLogFn: func(ctx context.Context, schemaName string, log *EmailLog) error {
+			return nil
+		},
+		UpdateEmailLogStatusFn: func(ctx context.Context, schemaName, logID string, status EmailStatus, sentAt *time.Time, errorMessage string) error {
+			return nil
+		},
+	}
+	svc := NewServiceWithRepository(repo, &MockMailSender{})
+
+	_, err := svc.SendEmail(
+		context.Background(),
+		"tenant_test",
+		"tenant-1",
+		"INVOICE_SEND",
+		"customer@example.com",
+		"",
+		"Subject",
+		"<p>Body</p>",
+		"",
+		nil,
+		"",
+	)
+
+	if err == nil {
+		t.Error("expected error for invalid from email")
+	}
+}
+
+func TestService_SendEmail_InvalidRecipientEmail(t *testing.T) {
+	repo := &MockRepository{
+		GetTenantSettingsFn: func(ctx context.Context, tenantID string) ([]byte, error) {
+			return validSMTPSettingsJSON(), nil
+		},
+		CreateEmailLogFn: func(ctx context.Context, schemaName string, log *EmailLog) error {
+			return nil
+		},
+		UpdateEmailLogStatusFn: func(ctx context.Context, schemaName, logID string, status EmailStatus, sentAt *time.Time, errorMessage string) error {
+			return nil
+		},
+	}
+	svc := NewServiceWithRepository(repo, &MockMailSender{})
+
+	_, err := svc.SendEmail(
+		context.Background(),
+		"tenant_test",
+		"tenant-1",
+		"INVOICE_SEND",
+		"invalid-recipient",
+		"John Doe",
+		"Subject",
+		"<p>Body</p>",
+		"",
+		nil,
+		"",
+	)
+
+	if err == nil {
+		t.Error("expected error for invalid recipient email")
+	}
+}
+
+func TestService_SendEmail_InvalidRecipientEmailNoName(t *testing.T) {
+	repo := &MockRepository{
+		GetTenantSettingsFn: func(ctx context.Context, tenantID string) ([]byte, error) {
+			return validSMTPSettingsJSON(), nil
+		},
+		CreateEmailLogFn: func(ctx context.Context, schemaName string, log *EmailLog) error {
+			return nil
+		},
+		UpdateEmailLogStatusFn: func(ctx context.Context, schemaName, logID string, status EmailStatus, sentAt *time.Time, errorMessage string) error {
+			return nil
+		},
+	}
+	svc := NewServiceWithRepository(repo, &MockMailSender{})
+
+	_, err := svc.SendEmail(
+		context.Background(),
+		"tenant_test",
+		"tenant-1",
+		"INVOICE_SEND",
+		"invalid-recipient",
+		"", // No recipient name
+		"Subject",
+		"<p>Body</p>",
+		"",
+		nil,
+		"",
+	)
+
+	if err == nil {
+		t.Error("expected error for invalid recipient email")
+	}
+}
+
+func TestService_RenderTemplate_SubjectExecuteError(t *testing.T) {
+	svc := NewServiceWithRepository(&MockRepository{}, &MockMailSender{})
+
+	// Template that references a method that will fail during execution
+	tmpl := &EmailTemplate{
+		Subject:  "{{.MissingMethod}}",
+		BodyHTML: "<p>Body</p>",
+	}
+	// Pass a data type that doesn't have the referenced method/field
+	data := &TemplateData{}
+
+	_, _, _, err := svc.RenderTemplate(tmpl, data)
+
+	if err == nil {
+		t.Error("expected error when subject template execution fails")
+	}
+	if !strings.Contains(err.Error(), "failed to render subject") {
+		t.Errorf("error = %q, should contain 'failed to render subject'", err.Error())
+	}
+}
+
+func TestService_RenderTemplate_HTMLExecuteError(t *testing.T) {
+	svc := NewServiceWithRepository(&MockRepository{}, &MockMailSender{})
+
+	// Valid subject, but HTML template references non-existent field
+	tmpl := &EmailTemplate{
+		Subject:  "Valid Subject",
+		BodyHTML: "{{.NonExistentMethod}}",
+	}
+	data := &TemplateData{}
+
+	_, _, _, err := svc.RenderTemplate(tmpl, data)
+
+	if err == nil {
+		t.Error("expected error when HTML template execution fails")
+	}
+	if !strings.Contains(err.Error(), "failed to render HTML") {
+		t.Errorf("error = %q, should contain 'failed to render HTML'", err.Error())
+	}
+}
+
+func TestService_RenderTemplate_TextExecuteError(t *testing.T) {
+	svc := NewServiceWithRepository(&MockRepository{}, &MockMailSender{})
+
+	// Valid subject and HTML, but text template references non-existent field
+	tmpl := &EmailTemplate{
+		Subject:  "Valid Subject",
+		BodyHTML: "<p>Valid HTML</p>",
+		BodyText: "{{.NonExistentMethod}}",
+	}
+	data := &TemplateData{}
+
+	_, _, _, err := svc.RenderTemplate(tmpl, data)
+
+	if err == nil {
+		t.Error("expected error when text template execution fails")
+	}
+	if !strings.Contains(err.Error(), "failed to render text") {
+		t.Errorf("error = %q, should contain 'failed to render text'", err.Error())
+	}
+}
+
+func TestDefaultMailSender_WithAuthAndTLS(t *testing.T) {
+	sender := &DefaultMailSender{}
+	config := &SMTPConfig{
+		Host:      "invalid.host.example.com",
+		Port:      587,
+		Username:  "testuser",
+		Password:  "testpass",
+		FromEmail: "test@example.com",
+		UseTLS:    true,
+	}
+
+	m := mail.NewMsg()
+	_ = m.From("test@example.com")
+	_ = m.To("recipient@example.com")
+	m.Subject("Test")
+	m.SetBodyString(mail.TypeTextPlain, "Test body")
+
+	err := sender.SendMail(config, m)
+
+	// Should return an error because the host doesn't exist
+	if err == nil {
+		t.Error("expected error for invalid host with TLS, got nil")
+	}
+}

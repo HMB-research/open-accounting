@@ -1,6 +1,7 @@
 package banking
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -597,5 +598,246 @@ func TestNewService_WithNilPool(t *testing.T) {
 	service := NewService(nil)
 	if service == nil {
 		t.Error("NewService should return a non-nil service even with nil pool")
+	}
+}
+
+func TestMatchPayments_AmountWithin1Percent(t *testing.T) {
+	config := DefaultMatcherConfig()
+	now := time.Now()
+
+	transaction := &BankTransaction{
+		ID:              "trans-1",
+		TransactionDate: now,
+		Amount:          decimal.NewFromFloat(100.00),
+	}
+
+	payments := []PaymentForMatching{
+		{
+			ID:            "pay-close",
+			PaymentNumber: "PMT-001",
+			PaymentDate:   now,
+			Amount:        decimal.NewFromFloat(100.50), // 0.5% difference
+		},
+	}
+
+	suggestions := matchPayments(transaction, payments, config)
+
+	if len(suggestions) == 0 {
+		t.Fatal("Expected at least one suggestion for amount within 1%")
+	}
+
+	found := false
+	for _, s := range suggestions {
+		if s.PaymentID == "pay-close" && strings.Contains(s.MatchReason, "amount within 1%") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Expected to find 'amount within 1%' in match reason")
+	}
+}
+
+func TestMatchPayments_AmountWithin5Percent(t *testing.T) {
+	config := DefaultMatcherConfig()
+	now := time.Now()
+
+	transaction := &BankTransaction{
+		ID:              "trans-1",
+		TransactionDate: now,
+		Amount:          decimal.NewFromFloat(100.00),
+	}
+
+	payments := []PaymentForMatching{
+		{
+			ID:            "pay-close",
+			PaymentNumber: "PMT-001",
+			PaymentDate:   now,
+			Amount:        decimal.NewFromFloat(103.00), // 3% difference
+		},
+	}
+
+	suggestions := matchPayments(transaction, payments, config)
+
+	if len(suggestions) == 0 {
+		t.Fatal("Expected at least one suggestion for amount within 5%")
+	}
+
+	found := false
+	for _, s := range suggestions {
+		if s.PaymentID == "pay-close" && strings.Contains(s.MatchReason, "amount within 5%") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Expected to find 'amount within 5%' in match reason")
+	}
+}
+
+func TestMatchPayments_DateWithin2Days(t *testing.T) {
+	config := DefaultMatcherConfig()
+	now := time.Now()
+
+	transaction := &BankTransaction{
+		ID:              "trans-1",
+		TransactionDate: now,
+		Amount:          decimal.NewFromFloat(100.00),
+	}
+
+	payments := []PaymentForMatching{
+		{
+			ID:            "pay-1",
+			PaymentNumber: "PMT-001",
+			PaymentDate:   now.AddDate(0, 0, -1), // 1 day ago
+			Amount:        decimal.NewFromFloat(100.00),
+		},
+	}
+
+	suggestions := matchPayments(transaction, payments, config)
+
+	if len(suggestions) == 0 {
+		t.Fatal("Expected at least one suggestion")
+	}
+
+	found := false
+	for _, s := range suggestions {
+		if s.PaymentID == "pay-1" && strings.Contains(s.MatchReason, "date within 2 days") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Expected to find 'date within 2 days' in match reason")
+	}
+}
+
+func TestMatchPayments_PartialReferenceMatch(t *testing.T) {
+	config := DefaultMatcherConfig()
+	now := time.Now()
+
+	// Use references that are similar enough to get > 0.5 similarity but < 0.8
+	// "inv123456" vs "inv12345x" would give 8/9 = 88.9% - too high
+	// We need something that gives 50-80% similarity
+	transaction := &BankTransaction{
+		ID:              "trans-1",
+		TransactionDate: now,
+		Amount:          decimal.NewFromFloat(100.00),
+		Reference:       "INVOICE12345", // normalized: invoice12345
+	}
+
+	payments := []PaymentForMatching{
+		{
+			ID:            "pay-partial",
+			PaymentNumber: "PMT-001",
+			PaymentDate:   now,
+			Amount:        decimal.NewFromFloat(100.00),
+			Reference:     "INVO1234500", // normalized: invo1234500 - different enough
+		},
+	}
+
+	suggestions := matchPayments(transaction, payments, config)
+
+	if len(suggestions) == 0 {
+		t.Fatal("Expected at least one suggestion for partial reference match")
+	}
+
+	// The similarity for "invoice12345" (13 chars) vs "invo1234500" (11 chars)
+	// should fall in the 0.5-0.8 range for partial reference match
+	found := false
+	for _, s := range suggestions {
+		if s.PaymentID == "pay-partial" && strings.Contains(s.MatchReason, "partial reference match") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		// Log what reason we got instead
+		for _, s := range suggestions {
+			if s.PaymentID == "pay-partial" {
+				t.Logf("Got match reason: %s", s.MatchReason)
+			}
+		}
+		t.Error("Expected to find 'partial reference match' in match reason")
+	}
+}
+
+func TestMatchPayments_PartialNameMatch(t *testing.T) {
+	config := DefaultMatcherConfig()
+	now := time.Now()
+
+	transaction := &BankTransaction{
+		ID:               "trans-1",
+		TransactionDate:  now,
+		Amount:           decimal.NewFromFloat(100.00),
+		CounterpartyName: "Acme Corporation",
+	}
+
+	payments := []PaymentForMatching{
+		{
+			ID:            "pay-partial",
+			PaymentNumber: "PMT-001",
+			PaymentDate:   now,
+			Amount:        decimal.NewFromFloat(100.00),
+			ContactName:   "ACME Corp Ltd", // Similar but not exact match
+		},
+	}
+
+	suggestions := matchPayments(transaction, payments, config)
+
+	if len(suggestions) == 0 {
+		t.Fatal("Expected at least one suggestion for partial name match")
+	}
+
+	found := false
+	for _, s := range suggestions {
+		if s.PaymentID == "pay-partial" && strings.Contains(s.MatchReason, "partial name match") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Expected to find 'partial name match' in match reason")
+	}
+}
+
+func TestMatchPayments_ConfidenceCappedAt1(t *testing.T) {
+	config := DefaultMatcherConfig()
+	config.ExactAmountBonus = 0.8
+	config.DateProximityWeight = 0.4
+	config.ReferenceMatchWeight = 0.4
+	config.NameMatchWeight = 0.3
+	config.MinConfidence = 0.1
+	now := time.Now()
+
+	// Create a transaction and payment with all matching criteria
+	transaction := &BankTransaction{
+		ID:               "trans-1",
+		TransactionDate:  now,
+		Amount:           decimal.NewFromFloat(100.00),
+		Reference:        "INV-12345",
+		CounterpartyName: "Acme Corp",
+		Description:      "Payment for PMT-001",
+	}
+
+	payments := []PaymentForMatching{
+		{
+			ID:            "pay-perfect",
+			PaymentNumber: "PMT-001",
+			PaymentDate:   now,
+			Amount:        decimal.NewFromFloat(100.00),
+			Reference:     "INV-12345",
+			ContactName:   "Acme Corp",
+		},
+	}
+
+	suggestions := matchPayments(transaction, payments, config)
+
+	if len(suggestions) == 0 {
+		t.Fatal("Expected at least one suggestion")
+	}
+
+	if suggestions[0].Confidence > 1.0 {
+		t.Errorf("Confidence should be capped at 1.0, got %f", suggestions[0].Confidence)
 	}
 }

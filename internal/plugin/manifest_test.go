@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"os"
 	"testing"
 )
 
@@ -284,6 +285,18 @@ func TestManifestValidate(t *testing.T) {
 			},
 			wantErr: true,
 			errMsg:  "frontend.components is required",
+		},
+		{
+			name: "Database missing migrations path",
+			manifest: Manifest{
+				Name:        "my-plugin",
+				DisplayName: "My Plugin",
+				Version:     "1.0.0",
+				Permissions: []string{"database:migrate"},
+				Database:    &DatabaseConfig{Migrations: ""},
+			},
+			wantErr: true,
+			errMsg:  "database.migrations is required",
 		},
 		{
 			name: "Database without permission",
@@ -571,6 +584,184 @@ func TestManifestPathHelpers(t *testing.T) {
 		m := Manifest{Name: "test"}
 		if path := m.GetMigrationPath(pluginDir); path != "" {
 			t.Errorf("GetMigrationPath() on empty = %q, want empty", path)
+		}
+	})
+}
+
+func TestLoadManifest(t *testing.T) {
+	t.Run("Valid manifest file", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		manifestPath := tmpDir + "/plugin.yaml"
+		content := `name: test-plugin
+display_name: Test Plugin
+version: 1.0.0
+description: A test plugin
+`
+		if err := os.WriteFile(manifestPath, []byte(content), 0644); err != nil {
+			t.Fatalf("Failed to write test manifest: %v", err)
+		}
+
+		m, err := LoadManifest(manifestPath)
+		if err != nil {
+			t.Fatalf("LoadManifest() error = %v", err)
+		}
+
+		if m.Name != "test-plugin" {
+			t.Errorf("Name = %q, want %q", m.Name, "test-plugin")
+		}
+		if m.DisplayName != "Test Plugin" {
+			t.Errorf("DisplayName = %q, want %q", m.DisplayName, "Test Plugin")
+		}
+		if m.Version != "1.0.0" {
+			t.Errorf("Version = %q, want %q", m.Version, "1.0.0")
+		}
+		if m.Description != "A test plugin" {
+			t.Errorf("Description = %q, want %q", m.Description, "A test plugin")
+		}
+	})
+
+	t.Run("File not found", func(t *testing.T) {
+		_, err := LoadManifest("/non/existent/path/plugin.yaml")
+		if err == nil {
+			t.Error("LoadManifest() expected error for non-existent file")
+		}
+	})
+
+	t.Run("Invalid YAML content", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		manifestPath := tmpDir + "/plugin.yaml"
+		// Invalid YAML with bad indentation
+		content := `name: test
+  bad: indentation: here`
+		if err := os.WriteFile(manifestPath, []byte(content), 0644); err != nil {
+			t.Fatalf("Failed to write test manifest: %v", err)
+		}
+
+		_, err := LoadManifest(manifestPath)
+		if err == nil {
+			t.Error("LoadManifest() expected error for invalid YAML")
+		}
+	})
+
+	t.Run("Full manifest with all fields", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		manifestPath := tmpDir + "/plugin.yaml"
+		content := `name: expense-tracker
+display_name: Expense Tracker
+version: 2.1.0
+description: Track employee expenses
+author: Test Author
+license: MIT
+homepage: https://github.com/test/expense-tracker
+min_app_version: 1.0.0
+permissions:
+  - invoices:read
+  - routes:register
+  - hooks:register
+backend:
+  package: ./backend
+  entry: NewService
+  hooks:
+    - event: invoice.created
+      handler: OnInvoiceCreated
+  routes:
+    - method: GET
+      path: /expenses
+      handler: ListExpenses
+frontend:
+  components: ./frontend
+  navigation:
+    - label: Expenses
+      icon: receipt
+      path: /expenses
+  slots:
+    - name: dashboard.widgets
+      component: ExpenseWidget.svelte
+database:
+  migrations: ./migrations
+dependencies:
+  - other-plugin
+settings:
+  type: object
+  properties:
+    enabled:
+      type: boolean
+      default: true
+`
+		if err := os.WriteFile(manifestPath, []byte(content), 0644); err != nil {
+			t.Fatalf("Failed to write test manifest: %v", err)
+		}
+
+		m, err := LoadManifest(manifestPath)
+		if err != nil {
+			t.Fatalf("LoadManifest() error = %v", err)
+		}
+
+		if m.Name != "expense-tracker" {
+			t.Errorf("Name = %q, want %q", m.Name, "expense-tracker")
+		}
+		if m.Author != "Test Author" {
+			t.Errorf("Author = %q, want %q", m.Author, "Test Author")
+		}
+		if m.License != "MIT" {
+			t.Errorf("License = %q, want %q", m.License, "MIT")
+		}
+		if m.Backend == nil {
+			t.Fatal("Backend is nil")
+		}
+		if m.Backend.Package != "./backend" {
+			t.Errorf("Backend.Package = %q, want %q", m.Backend.Package, "./backend")
+		}
+		if len(m.Backend.Hooks) != 1 {
+			t.Errorf("Backend.Hooks len = %d, want 1", len(m.Backend.Hooks))
+		}
+		if len(m.Backend.Routes) != 1 {
+			t.Errorf("Backend.Routes len = %d, want 1", len(m.Backend.Routes))
+		}
+		if m.Frontend == nil {
+			t.Fatal("Frontend is nil")
+		}
+		if m.Frontend.Components != "./frontend" {
+			t.Errorf("Frontend.Components = %q, want %q", m.Frontend.Components, "./frontend")
+		}
+		if len(m.Frontend.Navigation) != 1 {
+			t.Errorf("Frontend.Navigation len = %d, want 1", len(m.Frontend.Navigation))
+		}
+		if len(m.Frontend.Slots) != 1 {
+			t.Errorf("Frontend.Slots len = %d, want 1", len(m.Frontend.Slots))
+		}
+		if m.Database == nil {
+			t.Fatal("Database is nil")
+		}
+		if m.Database.Migrations != "./migrations" {
+			t.Errorf("Database.Migrations = %q, want %q", m.Database.Migrations, "./migrations")
+		}
+		if len(m.Dependencies) != 1 {
+			t.Errorf("Dependencies len = %d, want 1", len(m.Dependencies))
+		}
+		if m.Settings == nil {
+			t.Fatal("Settings is nil")
+		}
+		if m.Settings.Type != "object" {
+			t.Errorf("Settings.Type = %q, want %q", m.Settings.Type, "object")
+		}
+	})
+
+	t.Run("Empty file", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		manifestPath := tmpDir + "/plugin.yaml"
+		if err := os.WriteFile(manifestPath, []byte(""), 0644); err != nil {
+			t.Fatalf("Failed to write test manifest: %v", err)
+		}
+
+		m, err := LoadManifest(manifestPath)
+		if err != nil {
+			t.Fatalf("LoadManifest() error = %v", err)
+		}
+
+		// Empty YAML results in empty manifest
+		if m.Name != "" {
+			t.Errorf("Name = %q, want empty", m.Name)
 		}
 	})
 }

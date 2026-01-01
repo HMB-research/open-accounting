@@ -34,7 +34,7 @@ BEGIN
             file_format VARCHAR(50) DEFAULT ''CSV'',
             transactions_imported INTEGER DEFAULT 0,
             transactions_matched INTEGER DEFAULT 0,
-            transactions_skipped INTEGER DEFAULT 0,
+            duplicates_skipped INTEGER DEFAULT 0,
             import_errors TEXT,
             status VARCHAR(20) DEFAULT ''COMPLETED'' CHECK (status IN (''PROCESSING'', ''COMPLETED'', ''FAILED'')),
             created_by UUID,

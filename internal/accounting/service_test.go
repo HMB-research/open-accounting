@@ -41,7 +41,7 @@ func NewMockRepository() *MockRepository {
 	}
 }
 
-func (m *MockRepository) GetAccountByID(ctx context.Context, tenantID, accountID string) (*Account, error) {
+func (m *MockRepository) GetAccountByID(ctx context.Context, schemaName, tenantID, accountID string) (*Account, error) {
 	if m.getAccountErr != nil {
 		return nil, m.getAccountErr
 	}
@@ -52,7 +52,7 @@ func (m *MockRepository) GetAccountByID(ctx context.Context, tenantID, accountID
 	return a, nil
 }
 
-func (m *MockRepository) ListAccounts(ctx context.Context, tenantID string, activeOnly bool) ([]Account, error) {
+func (m *MockRepository) ListAccounts(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]Account, error) {
 	if m.listAccountsErr != nil {
 		return nil, m.listAccountsErr
 	}
@@ -69,7 +69,7 @@ func (m *MockRepository) ListAccounts(ctx context.Context, tenantID string, acti
 	return result, nil
 }
 
-func (m *MockRepository) CreateAccount(ctx context.Context, a *Account) error {
+func (m *MockRepository) CreateAccount(ctx context.Context, schemaName string, a *Account) error {
 	if m.createAccountErr != nil {
 		return m.createAccountErr
 	}
@@ -77,7 +77,7 @@ func (m *MockRepository) CreateAccount(ctx context.Context, a *Account) error {
 	return nil
 }
 
-func (m *MockRepository) GetJournalEntryByID(ctx context.Context, tenantID, entryID string) (*JournalEntry, error) {
+func (m *MockRepository) GetJournalEntryByID(ctx context.Context, schemaName, tenantID, entryID string) (*JournalEntry, error) {
 	if m.getJournalErr != nil {
 		return nil, m.getJournalErr
 	}
@@ -88,7 +88,7 @@ func (m *MockRepository) GetJournalEntryByID(ctx context.Context, tenantID, entr
 	return je, nil
 }
 
-func (m *MockRepository) CreateJournalEntry(ctx context.Context, je *JournalEntry) error {
+func (m *MockRepository) CreateJournalEntry(ctx context.Context, schemaName string, je *JournalEntry) error {
 	if m.createJournalErr != nil {
 		return m.createJournalErr
 	}
@@ -97,11 +97,11 @@ func (m *MockRepository) CreateJournalEntry(ctx context.Context, je *JournalEntr
 	return nil
 }
 
-func (m *MockRepository) CreateJournalEntryTx(ctx context.Context, tx pgx.Tx, je *JournalEntry) error {
-	return m.CreateJournalEntry(ctx, je)
+func (m *MockRepository) CreateJournalEntryTx(ctx context.Context, schemaName string, tx pgx.Tx, je *JournalEntry) error {
+	return m.CreateJournalEntry(ctx, schemaName, je)
 }
 
-func (m *MockRepository) UpdateJournalEntryStatus(ctx context.Context, tenantID, entryID string, status JournalEntryStatus, userID string) error {
+func (m *MockRepository) UpdateJournalEntryStatus(ctx context.Context, schemaName, tenantID, entryID string, status JournalEntryStatus, userID string) error {
 	if m.updateStatusErr != nil {
 		return m.updateStatusErr
 	}
@@ -113,28 +113,28 @@ func (m *MockRepository) UpdateJournalEntryStatus(ctx context.Context, tenantID,
 	return nil
 }
 
-func (m *MockRepository) GetAccountBalance(ctx context.Context, tenantID, accountID string, asOfDate time.Time) (decimal.Decimal, error) {
+func (m *MockRepository) GetAccountBalance(ctx context.Context, schemaName, tenantID, accountID string, asOfDate time.Time) (decimal.Decimal, error) {
 	if m.getBalanceErr != nil {
 		return decimal.Zero, m.getBalanceErr
 	}
 	return decimal.NewFromFloat(1000), nil
 }
 
-func (m *MockRepository) GetTrialBalance(ctx context.Context, tenantID string, asOfDate time.Time) ([]AccountBalance, error) {
+func (m *MockRepository) GetTrialBalance(ctx context.Context, schemaName, tenantID string, asOfDate time.Time) ([]AccountBalance, error) {
 	if m.trialBalanceErr != nil {
 		return nil, m.trialBalanceErr
 	}
 	return m.balances, nil
 }
 
-func (m *MockRepository) GetPeriodBalances(ctx context.Context, tenantID string, startDate, endDate time.Time) ([]AccountBalance, error) {
+func (m *MockRepository) GetPeriodBalances(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]AccountBalance, error) {
 	if m.periodBalanceErr != nil {
 		return nil, m.periodBalanceErr
 	}
 	return m.periodBalances, nil
 }
 
-func (m *MockRepository) VoidJournalEntry(ctx context.Context, tenantID, entryID, userID, reason string, reversal *JournalEntry) error {
+func (m *MockRepository) VoidJournalEntry(ctx context.Context, schemaName, tenantID, entryID, userID, reason string, reversal *JournalEntry) error {
 	if m.voidJournalEntryErr != nil {
 		return m.voidJournalEntryErr
 	}
@@ -160,6 +160,7 @@ func TestService_GetAccount(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
 	svc := NewServiceWithRepo(nil, repo)
+	schemaName := "tenant_test"
 
 	account := &Account{
 		ID:          "acc-1",
@@ -172,25 +173,25 @@ func TestService_GetAccount(t *testing.T) {
 	repo.accounts[account.ID] = account
 
 	t.Run("returns account when found", func(t *testing.T) {
-		result, err := svc.GetAccount(ctx, "tenant-1", "acc-1")
+		result, err := svc.GetAccount(ctx, schemaName, "tenant-1", "acc-1")
 		require.NoError(t, err)
 		assert.Equal(t, "acc-1", result.ID)
 		assert.Equal(t, "Cash", result.Name)
 	})
 
 	t.Run("returns error when not found", func(t *testing.T) {
-		_, err := svc.GetAccount(ctx, "tenant-1", "nonexistent")
+		_, err := svc.GetAccount(ctx, schemaName, "tenant-1", "nonexistent")
 		assert.Error(t, err)
 	})
 
 	t.Run("returns error when wrong tenant", func(t *testing.T) {
-		_, err := svc.GetAccount(ctx, "tenant-2", "acc-1")
+		_, err := svc.GetAccount(ctx, schemaName, "tenant-2", "acc-1")
 		assert.Error(t, err)
 	})
 
 	t.Run("propagates repository error", func(t *testing.T) {
 		repo.getAccountErr = errors.New("database error")
-		_, err := svc.GetAccount(ctx, "tenant-1", "acc-1")
+		_, err := svc.GetAccount(ctx, schemaName, "tenant-1", "acc-1")
 		assert.Error(t, err)
 		repo.getAccountErr = nil
 	})
@@ -200,26 +201,27 @@ func TestService_ListAccounts(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
 	svc := NewServiceWithRepo(nil, repo)
+	schemaName := "tenant_test"
 
 	repo.accounts["acc-1"] = &Account{ID: "acc-1", TenantID: "tenant-1", IsActive: true}
 	repo.accounts["acc-2"] = &Account{ID: "acc-2", TenantID: "tenant-1", IsActive: false}
 	repo.accounts["acc-3"] = &Account{ID: "acc-3", TenantID: "tenant-2", IsActive: true}
 
 	t.Run("lists all accounts for tenant", func(t *testing.T) {
-		result, err := svc.ListAccounts(ctx, "tenant-1", false)
+		result, err := svc.ListAccounts(ctx, schemaName, "tenant-1", false)
 		require.NoError(t, err)
 		assert.Len(t, result, 2)
 	})
 
 	t.Run("lists only active accounts", func(t *testing.T) {
-		result, err := svc.ListAccounts(ctx, "tenant-1", true)
+		result, err := svc.ListAccounts(ctx, schemaName, "tenant-1", true)
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
 	})
 
 	t.Run("propagates repository error", func(t *testing.T) {
 		repo.listAccountsErr = errors.New("database error")
-		_, err := svc.ListAccounts(ctx, "tenant-1", false)
+		_, err := svc.ListAccounts(ctx, schemaName, "tenant-1", false)
 		assert.Error(t, err)
 		repo.listAccountsErr = nil
 	})
@@ -229,6 +231,7 @@ func TestService_CreateAccount(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
 	svc := NewServiceWithRepo(nil, repo)
+	schemaName := "tenant_test"
 
 	t.Run("creates account with generated ID", func(t *testing.T) {
 		req := &CreateAccountRequest{
@@ -238,7 +241,7 @@ func TestService_CreateAccount(t *testing.T) {
 			Description: "Cash account",
 		}
 
-		result, err := svc.CreateAccount(ctx, "tenant-1", req)
+		result, err := svc.CreateAccount(ctx, schemaName, "tenant-1", req)
 		require.NoError(t, err)
 		assert.NotEmpty(t, result.ID)
 		assert.Equal(t, "tenant-1", result.TenantID)
@@ -259,7 +262,7 @@ func TestService_CreateAccount(t *testing.T) {
 			ParentID:    &parentID,
 		}
 
-		result, err := svc.CreateAccount(ctx, "tenant-1", req)
+		result, err := svc.CreateAccount(ctx, schemaName, "tenant-1", req)
 		require.NoError(t, err)
 		assert.Equal(t, &parentID, result.ParentID)
 	})
@@ -271,7 +274,7 @@ func TestService_CreateAccount(t *testing.T) {
 			Name:        "Cash",
 			AccountType: AccountTypeAsset,
 		}
-		_, err := svc.CreateAccount(ctx, "tenant-1", req)
+		_, err := svc.CreateAccount(ctx, schemaName, "tenant-1", req)
 		assert.Error(t, err)
 		repo.createAccountErr = nil
 	})
@@ -281,6 +284,7 @@ func TestService_GetJournalEntry(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
 	svc := NewServiceWithRepo(nil, repo)
+	schemaName := "tenant_test"
 
 	entry := &JournalEntry{
 		ID:          "je-1",
@@ -291,13 +295,13 @@ func TestService_GetJournalEntry(t *testing.T) {
 	repo.journalEntries[entry.ID] = entry
 
 	t.Run("returns entry when found", func(t *testing.T) {
-		result, err := svc.GetJournalEntry(ctx, "tenant-1", "je-1")
+		result, err := svc.GetJournalEntry(ctx, schemaName, "tenant-1", "je-1")
 		require.NoError(t, err)
 		assert.Equal(t, "je-1", result.ID)
 	})
 
 	t.Run("returns error when not found", func(t *testing.T) {
-		_, err := svc.GetJournalEntry(ctx, "tenant-1", "nonexistent")
+		_, err := svc.GetJournalEntry(ctx, schemaName, "tenant-1", "nonexistent")
 		assert.Error(t, err)
 	})
 }
@@ -306,6 +310,7 @@ func TestService_CreateJournalEntry(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
 	svc := NewServiceWithRepo(nil, repo)
+	schemaName := "tenant_test"
 
 	t.Run("creates balanced journal entry", func(t *testing.T) {
 		req := &CreateJournalEntryRequest{
@@ -318,7 +323,7 @@ func TestService_CreateJournalEntry(t *testing.T) {
 			UserID: "user-1",
 		}
 
-		result, err := svc.CreateJournalEntry(ctx, "tenant-1", req)
+		result, err := svc.CreateJournalEntry(ctx, schemaName, "tenant-1", req)
 		require.NoError(t, err)
 		assert.NotEmpty(t, result.ID)
 		assert.Equal(t, "tenant-1", result.TenantID)
@@ -338,7 +343,7 @@ func TestService_CreateJournalEntry(t *testing.T) {
 			UserID: "user-1",
 		}
 
-		result, err := svc.CreateJournalEntry(ctx, "tenant-1", req)
+		result, err := svc.CreateJournalEntry(ctx, schemaName, "tenant-1", req)
 		require.NoError(t, err)
 		assert.Equal(t, "EUR", result.Lines[0].Currency)
 	})
@@ -354,7 +359,7 @@ func TestService_CreateJournalEntry(t *testing.T) {
 			UserID: "user-1",
 		}
 
-		result, err := svc.CreateJournalEntry(ctx, "tenant-1", req)
+		result, err := svc.CreateJournalEntry(ctx, schemaName, "tenant-1", req)
 		require.NoError(t, err)
 		assert.True(t, result.Lines[0].ExchangeRate.Equal(decimal.NewFromInt(1)))
 	})
@@ -370,7 +375,7 @@ func TestService_CreateJournalEntry(t *testing.T) {
 			UserID: "user-1",
 		}
 
-		result, err := svc.CreateJournalEntry(ctx, "tenant-1", req)
+		result, err := svc.CreateJournalEntry(ctx, schemaName, "tenant-1", req)
 		require.NoError(t, err)
 		assert.True(t, result.Lines[0].BaseDebit.Equal(decimal.NewFromFloat(92)))
 	})
@@ -386,7 +391,7 @@ func TestService_CreateJournalEntry(t *testing.T) {
 			UserID: "user-1",
 		}
 
-		_, err := svc.CreateJournalEntry(ctx, "tenant-1", req)
+		_, err := svc.CreateJournalEntry(ctx, schemaName, "tenant-1", req)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "validation failed")
 	})
@@ -399,7 +404,7 @@ func TestService_CreateJournalEntry(t *testing.T) {
 			UserID:      "user-1",
 		}
 
-		_, err := svc.CreateJournalEntry(ctx, "tenant-1", req)
+		_, err := svc.CreateJournalEntry(ctx, schemaName, "tenant-1", req)
 		assert.Error(t, err)
 	})
 
@@ -414,7 +419,7 @@ func TestService_CreateJournalEntry(t *testing.T) {
 			UserID: "user-1",
 		}
 
-		_, err := svc.CreateJournalEntry(ctx, "tenant-1", req)
+		_, err := svc.CreateJournalEntry(ctx, schemaName, "tenant-1", req)
 		assert.Error(t, err)
 	})
 
@@ -432,7 +437,7 @@ func TestService_CreateJournalEntry(t *testing.T) {
 			UserID: "user-1",
 		}
 
-		result, err := svc.CreateJournalEntry(ctx, "tenant-1", req)
+		result, err := svc.CreateJournalEntry(ctx, schemaName, "tenant-1", req)
 		require.NoError(t, err)
 		assert.Equal(t, "INVOICE", result.SourceType)
 		assert.Equal(t, &sourceID, result.SourceID)
@@ -449,7 +454,7 @@ func TestService_CreateJournalEntry(t *testing.T) {
 			},
 			UserID: "user-1",
 		}
-		_, err := svc.CreateJournalEntry(ctx, "tenant-1", req)
+		_, err := svc.CreateJournalEntry(ctx, schemaName, "tenant-1", req)
 		assert.Error(t, err)
 		repo.createJournalErr = nil
 	})
@@ -459,6 +464,7 @@ func TestService_PostJournalEntry(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
 	svc := NewServiceWithRepo(nil, repo)
+	schemaName := "tenant_test"
 
 	t.Run("posts draft entry", func(t *testing.T) {
 		entry := &JournalEntry{
@@ -472,7 +478,7 @@ func TestService_PostJournalEntry(t *testing.T) {
 		}
 		repo.journalEntries[entry.ID] = entry
 
-		err := svc.PostJournalEntry(ctx, "tenant-1", "je-1", "user-1")
+		err := svc.PostJournalEntry(ctx, schemaName, "tenant-1", "je-1", "user-1")
 		require.NoError(t, err)
 		assert.Equal(t, StatusPosted, entry.Status)
 	})
@@ -489,13 +495,13 @@ func TestService_PostJournalEntry(t *testing.T) {
 		}
 		repo.journalEntries[entry.ID] = entry
 
-		err := svc.PostJournalEntry(ctx, "tenant-1", "je-2", "user-1")
+		err := svc.PostJournalEntry(ctx, schemaName, "tenant-1", "je-2", "user-1")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "only draft entries can be posted")
 	})
 
 	t.Run("returns error when entry not found", func(t *testing.T) {
-		err := svc.PostJournalEntry(ctx, "tenant-1", "nonexistent", "user-1")
+		err := svc.PostJournalEntry(ctx, schemaName, "tenant-1", "nonexistent", "user-1")
 		assert.Error(t, err)
 	})
 
@@ -512,7 +518,7 @@ func TestService_PostJournalEntry(t *testing.T) {
 		repo.journalEntries[entry.ID] = entry
 		repo.updateStatusErr = errors.New("database error")
 
-		err := svc.PostJournalEntry(ctx, "tenant-1", "je-3", "user-1")
+		err := svc.PostJournalEntry(ctx, schemaName, "tenant-1", "je-3", "user-1")
 		assert.Error(t, err)
 		repo.updateStatusErr = nil
 	})
@@ -529,7 +535,7 @@ func TestService_PostJournalEntry(t *testing.T) {
 		}
 		repo.journalEntries[entry.ID] = entry
 
-		err := svc.PostJournalEntry(ctx, "tenant-1", "je-4", "user-1")
+		err := svc.PostJournalEntry(ctx, schemaName, "tenant-1", "je-4", "user-1")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "entry validation failed")
 	})
@@ -539,6 +545,7 @@ func TestService_VoidJournalEntry(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
 	svc := NewServiceWithRepo(nil, repo)
+	schemaName := "tenant_test"
 
 	t.Run("voids posted entry and creates reversal", func(t *testing.T) {
 		entry := &JournalEntry{
@@ -553,7 +560,7 @@ func TestService_VoidJournalEntry(t *testing.T) {
 		}
 		repo.journalEntries[entry.ID] = entry
 
-		reversal, err := svc.VoidJournalEntry(ctx, "tenant-1", "je-1", "user-1", "Test void")
+		reversal, err := svc.VoidJournalEntry(ctx, schemaName, "tenant-1", "je-1", "user-1", "Test void")
 		require.NoError(t, err)
 		assert.NotNil(t, reversal)
 		assert.NotEmpty(t, reversal.ID)
@@ -575,13 +582,13 @@ func TestService_VoidJournalEntry(t *testing.T) {
 		}
 		repo.journalEntries[entry.ID] = entry
 
-		_, err := svc.VoidJournalEntry(ctx, "tenant-1", "je-draft", "user-1", "Test void")
+		_, err := svc.VoidJournalEntry(ctx, schemaName, "tenant-1", "je-draft", "user-1", "Test void")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "only posted entries can be voided")
 	})
 
 	t.Run("returns error when entry not found", func(t *testing.T) {
-		_, err := svc.VoidJournalEntry(ctx, "tenant-1", "nonexistent", "user-1", "Test void")
+		_, err := svc.VoidJournalEntry(ctx, schemaName, "tenant-1", "nonexistent", "user-1", "Test void")
 		assert.Error(t, err)
 	})
 
@@ -598,7 +605,7 @@ func TestService_VoidJournalEntry(t *testing.T) {
 		repo.journalEntries[entry.ID] = entry
 		repo.voidJournalEntryErr = errors.New("database error")
 
-		_, err := svc.VoidJournalEntry(ctx, "tenant-1", "je-2", "user-1", "Test void")
+		_, err := svc.VoidJournalEntry(ctx, schemaName, "tenant-1", "je-2", "user-1", "Test void")
 		assert.Error(t, err)
 		repo.voidJournalEntryErr = nil
 	})
@@ -608,16 +615,17 @@ func TestService_GetAccountBalance(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
 	svc := NewServiceWithRepo(nil, repo)
+	schemaName := "tenant_test"
 
 	t.Run("returns balance", func(t *testing.T) {
-		balance, err := svc.GetAccountBalance(ctx, "tenant-1", "acc-1", time.Now())
+		balance, err := svc.GetAccountBalance(ctx, schemaName, "tenant-1", "acc-1", time.Now())
 		require.NoError(t, err)
 		assert.True(t, balance.Equal(decimal.NewFromFloat(1000)))
 	})
 
 	t.Run("propagates repository error", func(t *testing.T) {
 		repo.getBalanceErr = errors.New("database error")
-		_, err := svc.GetAccountBalance(ctx, "tenant-1", "acc-1", time.Now())
+		_, err := svc.GetAccountBalance(ctx, schemaName, "tenant-1", "acc-1", time.Now())
 		assert.Error(t, err)
 		repo.getBalanceErr = nil
 	})
@@ -627,6 +635,7 @@ func TestService_GetTrialBalance(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
 	svc := NewServiceWithRepo(nil, repo)
+	schemaName := "tenant_test"
 
 	repo.balances = []AccountBalance{
 		{AccountID: "acc-1", AccountCode: "1000", AccountName: "Cash", AccountType: AccountTypeAsset, DebitBalance: decimal.NewFromFloat(5000), CreditBalance: decimal.Zero},
@@ -635,7 +644,7 @@ func TestService_GetTrialBalance(t *testing.T) {
 	}
 
 	t.Run("returns trial balance", func(t *testing.T) {
-		result, err := svc.GetTrialBalance(ctx, "tenant-1", time.Now())
+		result, err := svc.GetTrialBalance(ctx, schemaName, "tenant-1", time.Now())
 		require.NoError(t, err)
 		assert.Equal(t, "tenant-1", result.TenantID)
 		assert.Len(t, result.Accounts, 3)
@@ -646,7 +655,7 @@ func TestService_GetTrialBalance(t *testing.T) {
 
 	t.Run("propagates repository error", func(t *testing.T) {
 		repo.trialBalanceErr = errors.New("database error")
-		_, err := svc.GetTrialBalance(ctx, "tenant-1", time.Now())
+		_, err := svc.GetTrialBalance(ctx, schemaName, "tenant-1", time.Now())
 		assert.Error(t, err)
 		repo.trialBalanceErr = nil
 	})
@@ -656,6 +665,7 @@ func TestService_GetBalanceSheet(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
 	svc := NewServiceWithRepo(nil, repo)
+	schemaName := "tenant_test"
 
 	t.Run("generates balanced balance sheet", func(t *testing.T) {
 		repo.balances = []AccountBalance{
@@ -666,7 +676,7 @@ func TestService_GetBalanceSheet(t *testing.T) {
 			{AccountID: "acc-5", AccountCode: "5000", AccountName: "Expenses", AccountType: AccountTypeExpense, NetBalance: decimal.NewFromFloat(2000)},
 		}
 
-		result, err := svc.GetBalanceSheet(ctx, "tenant-1", time.Now())
+		result, err := svc.GetBalanceSheet(ctx, schemaName, "tenant-1", time.Now())
 		require.NoError(t, err)
 		assert.Equal(t, "tenant-1", result.TenantID)
 		assert.Len(t, result.Assets, 1)
@@ -683,7 +693,7 @@ func TestService_GetBalanceSheet(t *testing.T) {
 
 	t.Run("propagates repository error", func(t *testing.T) {
 		repo.trialBalanceErr = errors.New("database error")
-		_, err := svc.GetBalanceSheet(ctx, "tenant-1", time.Now())
+		_, err := svc.GetBalanceSheet(ctx, schemaName, "tenant-1", time.Now())
 		assert.Error(t, err)
 		repo.trialBalanceErr = nil
 	})
@@ -693,6 +703,7 @@ func TestService_GetIncomeStatement(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
 	svc := NewServiceWithRepo(nil, repo)
+	schemaName := "tenant_test"
 
 	t.Run("generates income statement", func(t *testing.T) {
 		repo.periodBalances = []AccountBalance{
@@ -705,7 +716,7 @@ func TestService_GetIncomeStatement(t *testing.T) {
 		startDate := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 		endDate := time.Date(2025, 12, 31, 0, 0, 0, 0, time.UTC)
 
-		result, err := svc.GetIncomeStatement(ctx, "tenant-1", startDate, endDate)
+		result, err := svc.GetIncomeStatement(ctx, schemaName, "tenant-1", startDate, endDate)
 		require.NoError(t, err)
 		assert.Equal(t, "tenant-1", result.TenantID)
 		assert.Equal(t, startDate, result.StartDate)
@@ -719,7 +730,7 @@ func TestService_GetIncomeStatement(t *testing.T) {
 
 	t.Run("propagates repository error", func(t *testing.T) {
 		repo.periodBalanceErr = errors.New("database error")
-		_, err := svc.GetIncomeStatement(ctx, "tenant-1", time.Now(), time.Now())
+		_, err := svc.GetIncomeStatement(ctx, schemaName, "tenant-1", time.Now(), time.Now())
 		assert.Error(t, err)
 		repo.periodBalanceErr = nil
 	})

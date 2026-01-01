@@ -13,6 +13,11 @@ import (
 	"github.com/HMB-research/open-accounting/internal/recurring"
 )
 
+// RecurringService defines the interface for recurring invoice generation
+type RecurringService interface {
+	GenerateDueInvoices(ctx context.Context, tenantID, schemaName, userID string) ([]recurring.GenerationResult, error)
+}
+
 // Config holds scheduler configuration
 type Config struct {
 	// Schedule in cron format (e.g., "0 6 * * *" for 6:00 AM daily)
@@ -33,7 +38,7 @@ func DefaultConfig() Config {
 type Scheduler struct {
 	cron      *cron.Cron
 	repo      Repository
-	recurring *recurring.Service
+	recurring RecurringService
 	config    Config
 	running   bool
 	mu        sync.Mutex
@@ -50,7 +55,7 @@ func NewScheduler(db *pgxpool.Pool, recurringService *recurring.Service, config 
 }
 
 // NewSchedulerWithRepository creates a scheduler with a custom repository (for testing)
-func NewSchedulerWithRepository(repo Repository, recurringService *recurring.Service, config Config) *Scheduler {
+func NewSchedulerWithRepository(repo Repository, recurringService RecurringService, config Config) *Scheduler {
 	return &Scheduler{
 		cron:      cron.New(cron.WithSeconds()),
 		repo:      repo,

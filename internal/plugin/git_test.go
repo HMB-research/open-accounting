@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -242,4 +243,148 @@ func TestGitLabHTTPSRegex(t *testing.T) {
 			assert.Equal(t, tt.matches, result)
 		})
 	}
+}
+
+func TestMatchesSearch(t *testing.T) {
+	tests := []struct {
+		name     string
+		plugin   PluginInfo
+		query    string
+		expected bool
+	}{
+		{
+			name: "Match by name",
+			plugin: PluginInfo{
+				Name:        "invoice-helper",
+				DisplayName: "Invoice Helper",
+				Description: "Helps with invoices",
+				Tags:        []string{"invoicing", "automation"},
+			},
+			query:    "invoice",
+			expected: true,
+		},
+		{
+			name: "Match by display name",
+			plugin: PluginInfo{
+				Name:        "my-plugin",
+				DisplayName: "Awesome Invoice Tool",
+				Description: "Does cool stuff",
+				Tags:        []string{},
+			},
+			query:    "invoice",
+			expected: true,
+		},
+		{
+			name: "Match by description",
+			plugin: PluginInfo{
+				Name:        "helper",
+				DisplayName: "Helper",
+				Description: "A tool for managing invoices",
+				Tags:        []string{},
+			},
+			query:    "invoice",
+			expected: true,
+		},
+		{
+			name: "Match by tag",
+			plugin: PluginInfo{
+				Name:        "tool",
+				DisplayName: "Generic Tool",
+				Description: "Does generic things",
+				Tags:        []string{"accounting", "invoicing"},
+			},
+			query:    "invoicing",
+			expected: true,
+		},
+		{
+			name: "Case insensitive match",
+			plugin: PluginInfo{
+				Name:        "UPPERCASE-PLUGIN",
+				DisplayName: "Uppercase Plugin",
+				Description: "Test plugin",
+				Tags:        []string{},
+			},
+			query:    "uppercase",
+			expected: true,
+		},
+		{
+			name: "No match",
+			plugin: PluginInfo{
+				Name:        "accounting-tool",
+				DisplayName: "Accounting Tool",
+				Description: "For accounting",
+				Tags:        []string{"accounting"},
+			},
+			query:    "invoicing",
+			expected: false,
+		},
+		{
+			name: "Empty query matches all",
+			plugin: PluginInfo{
+				Name:        "any-plugin",
+				DisplayName: "Any Plugin",
+				Description: "Description",
+				Tags:        []string{},
+			},
+			query:    "",
+			expected: true,
+		},
+		{
+			name: "Partial match in name",
+			plugin: PluginInfo{
+				Name:        "invoice-generator",
+				DisplayName: "Generator",
+				Description: "Generates things",
+				Tags:        []string{},
+			},
+			query:    "gener",
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := matchesSearch(tt.plugin, tt.query)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestHasLicenseFile(t *testing.T) {
+	// Create a temporary directory for testing
+	tmpDir := t.TempDir()
+
+	// Test with no license file
+	assert.False(t, hasLicenseFile(tmpDir), "Should return false for directory without license")
+
+	// Test with LICENSE file
+	licenseTests := []string{
+		"LICENSE",
+		"LICENSE.txt",
+		"LICENSE.md",
+		"LICENSE.MIT",
+		"LICENSE.Apache",
+		"COPYING",
+		"COPYING.txt",
+	}
+
+	for _, licenseName := range licenseTests {
+		t.Run(licenseName, func(t *testing.T) {
+			// Create a new temp dir for each test
+			testDir := t.TempDir()
+
+			// Create the license file
+			licensePath := testDir + "/" + licenseName
+			err := os.WriteFile(licensePath, []byte("MIT License"), 0644)
+			require.NoError(t, err)
+
+			assert.True(t, hasLicenseFile(testDir), "Should return true for directory with %s", licenseName)
+		})
+	}
+}
+
+func TestHasLicenseFile_NonExistentDirectory(t *testing.T) {
+	// Test with non-existent directory
+	result := hasLicenseFile("/non/existent/path/that/does/not/exist")
+	assert.False(t, result, "Should return false for non-existent directory")
 }

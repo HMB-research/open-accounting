@@ -1,3 +1,5 @@
+//go:build gorm
+
 package contacts
 
 import (
@@ -50,7 +52,7 @@ func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, 
 
 	if filter != nil {
 		if filter.ContactType != "" {
-			query = query.Where("type = ?", filter.ContactType)
+			query = query.Where("contact_type = ?", filter.ContactType)
 		}
 		if filter.ActiveOnly {
 			query = query.Where("is_active = ?", true)

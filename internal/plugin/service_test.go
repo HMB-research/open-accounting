@@ -1464,3 +1464,376 @@ func TestService_IsPluginEnabledForTenant(t *testing.T) {
 		})
 	}
 }
+
+func TestService_GetTenantPlugins(t *testing.T) {
+	ctx := context.Background()
+	tenantID := uuid.New()
+	pluginID := uuid.New()
+
+	tests := []struct {
+		name        string
+		setupRepo   func() *MockRepository
+		tenantID    uuid.UUID
+		expectCount int
+		expectErr   bool
+	}{
+		{
+			name: "success_empty",
+			setupRepo: func() *MockRepository {
+				return NewMockRepository()
+			},
+			tenantID:    tenantID,
+			expectCount: 0,
+			expectErr:   false,
+		},
+		{
+			name: "success_with_plugins",
+			setupRepo: func() *MockRepository {
+				repo := NewMockRepository()
+				repo.plugins[pluginID] = &Plugin{
+					ID:    pluginID,
+					Name:  "test-plugin",
+					State: StateEnabled,
+				}
+				return repo
+			},
+			tenantID:    tenantID,
+			expectCount: 1,
+			expectErr:   false,
+		},
+		{
+			name: "repository_error",
+			setupRepo: func() *MockRepository {
+				repo := NewMockRepository()
+				repo.listTenantPluginsErr = fmt.Errorf("db error")
+				return repo
+			},
+			tenantID:  tenantID,
+			expectErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := tt.setupRepo()
+			service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+
+			result, err := service.GetTenantPlugins(ctx, tt.tenantID)
+
+			if tt.expectErr {
+				if err == nil {
+					t.Error("expected error but got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(result) != tt.expectCount {
+				t.Errorf("expected %d plugins, got %d", tt.expectCount, len(result))
+			}
+		})
+	}
+}
+
+func TestService_InstallPlugin_InvalidURL(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+
+	// Test with invalid URL
+	_, err := service.InstallPlugin(ctx, "invalid-url")
+	if err == nil {
+		t.Error("expected error for invalid URL")
+	}
+}
+
+func TestService_UninstallPlugin_NotFound(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+
+	err := service.UninstallPlugin(ctx, uuid.New())
+	if err == nil {
+		t.Error("expected error for non-existent plugin")
+	}
+}
+
+func TestService_UninstallPlugin_HasTenants(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+	tenantID := uuid.New()
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:    pluginID,
+		Name:  "test-plugin",
+		State: StateEnabled,
+	}
+	// Add tenant plugin
+	key := fmt.Sprintf("%s:%s", tenantID.String(), pluginID.String())
+	now := time.Now()
+	repo.tenantPlugins[key] = &TenantPlugin{
+		ID:        uuid.New(),
+		TenantID:  tenantID,
+		PluginID:  pluginID,
+		IsEnabled: true,
+		EnabledAt: &now,
+	}
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+
+	err := service.UninstallPlugin(ctx, pluginID)
+	if err == nil {
+		t.Error("expected error when plugin has enabled tenants")
+	}
+}
+
+func TestService_EnablePlugin_NotFound(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+
+	err := service.EnablePlugin(ctx, uuid.New(), []string{})
+	if err == nil {
+		t.Error("expected error for non-existent plugin")
+	}
+}
+
+func TestService_EnablePlugin_AlreadyEnabled(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:       pluginID,
+		Name:     "test-plugin",
+		State:    StateEnabled,
+		Manifest: json.RawMessage(`{"name": "test-plugin", "version": "1.0.0"}`),
+	}
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+
+	err := service.EnablePlugin(ctx, pluginID, []string{})
+	if err == nil {
+		t.Error("expected error for already enabled plugin")
+	}
+}
+
+func TestService_EnablePlugin_InvalidPermissions(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:       pluginID,
+		Name:     "test-plugin",
+		State:    StateInstalled,
+		Manifest: json.RawMessage(`{"name": "test-plugin", "version": "1.0.0"}`),
+	}
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+
+	err := service.EnablePlugin(ctx, pluginID, []string{"invalid:permission"})
+	if err == nil {
+		t.Error("expected error for invalid permissions")
+	}
+}
+
+func TestService_EnablePlugin_MissingRequiredPermission(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+	repo := NewMockRepository()
+	// Plugin with backend hooks requires hooks:register permission
+	repo.plugins[pluginID] = &Plugin{
+		ID:    pluginID,
+		Name:  "test-plugin",
+		State: StateInstalled,
+		Manifest: json.RawMessage(`{
+			"name": "test-plugin",
+			"version": "1.0.0",
+			"backend": {
+				"hooks": [{"event": "invoice.created", "handler": "onInvoice"}]
+			}
+		}`),
+	}
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+
+	// Try to enable without granting hooks:register permission
+	err := service.EnablePlugin(ctx, pluginID, []string{"invoices:read"})
+	if err == nil {
+		t.Error("expected error for missing required permission")
+	}
+}
+
+func TestService_EnablePlugin_Success(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:    pluginID,
+		Name:  "test-plugin",
+		State: StateInstalled,
+		Manifest: json.RawMessage(`{
+			"name": "test-plugin",
+			"version": "1.0.0"
+		}`),
+	}
+	hooks := NewHookRegistry()
+	service := NewServiceWithRepository(repo, hooks, "/tmp/plugins")
+
+	err := service.EnablePlugin(ctx, pluginID, []string{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify plugin is loaded
+	loaded, exists := service.GetLoadedPlugin("test-plugin")
+	if !exists {
+		t.Error("expected plugin to be loaded")
+	}
+	if loaded.Plugin.State != StateEnabled {
+		t.Error("expected plugin state to be enabled")
+	}
+}
+
+func TestService_DisablePlugin_NotFound(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+
+	err := service.DisablePlugin(ctx, uuid.New())
+	if err == nil {
+		t.Error("expected error for non-existent plugin")
+	}
+}
+
+func TestService_DisablePlugin_AlreadyDisabled(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:    pluginID,
+		Name:  "test-plugin",
+		State: StateDisabled,
+	}
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+
+	err := service.DisablePlugin(ctx, pluginID)
+	if err == nil {
+		t.Error("expected error for already disabled plugin")
+	}
+}
+
+func TestService_DisablePlugin_Success(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+	tenantID := uuid.New()
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:    pluginID,
+		Name:  "test-plugin",
+		State: StateEnabled,
+	}
+	// Add tenant plugin
+	key := fmt.Sprintf("%s:%s", tenantID.String(), pluginID.String())
+	now := time.Now()
+	repo.tenantPlugins[key] = &TenantPlugin{
+		ID:        uuid.New(),
+		TenantID:  tenantID,
+		PluginID:  pluginID,
+		IsEnabled: true,
+		EnabledAt: &now,
+	}
+	hooks := NewHookRegistry()
+	service := NewServiceWithRepository(repo, hooks, "/tmp/plugins")
+
+	// First load the plugin
+	service.loadPlugin(repo.plugins[pluginID], &Manifest{Name: "test-plugin", Version: "1.0.0"})
+
+	err := service.DisablePlugin(ctx, pluginID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify plugin is unloaded
+	_, exists := service.GetLoadedPlugin("test-plugin")
+	if exists {
+		t.Error("expected plugin to be unloaded")
+	}
+
+	// Verify tenant plugins are disabled
+	for _, tp := range repo.tenantPlugins {
+		if tp.PluginID == pluginID && tp.IsEnabled {
+			t.Error("expected all tenant plugins to be disabled")
+		}
+	}
+}
+
+func TestService_LoadEnabledPlugins_Empty(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	hooks := NewHookRegistry()
+	service := NewServiceWithRepository(repo, hooks, "/tmp/plugins")
+
+	err := service.LoadEnabledPlugins(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestService_LoadEnabledPlugins_WithPlugins(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:       pluginID,
+		Name:     "test-plugin",
+		State:    StateEnabled,
+		Manifest: json.RawMessage(`{"name": "test-plugin", "version": "1.0.0"}`),
+	}
+	hooks := NewHookRegistry()
+	service := NewServiceWithRepository(repo, hooks, "/tmp/plugins")
+
+	err := service.LoadEnabledPlugins(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify plugin is loaded
+	loaded, exists := service.GetLoadedPlugin("test-plugin")
+	if !exists {
+		t.Error("expected plugin to be loaded")
+	}
+	if loaded == nil {
+		t.Error("expected loaded plugin to not be nil")
+	}
+}
+
+func TestService_LoadEnabledPlugins_InvalidManifest(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:       pluginID,
+		Name:     "test-plugin",
+		State:    StateEnabled,
+		Manifest: json.RawMessage(`{invalid json`),
+	}
+	hooks := NewHookRegistry()
+	service := NewServiceWithRepository(repo, hooks, "/tmp/plugins")
+
+	// Should not return error, just log warning
+	err := service.LoadEnabledPlugins(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestService_LoadEnabledPlugins_RepoError(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.listEnabledPluginsErr = fmt.Errorf("db error")
+	hooks := NewHookRegistry()
+	service := NewServiceWithRepository(repo, hooks, "/tmp/plugins")
+
+	err := service.LoadEnabledPlugins(ctx)
+	if err == nil {
+		t.Error("expected error from repository")
+	}
+}
