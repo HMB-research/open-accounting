@@ -218,6 +218,9 @@ test.describe('Demo User - Dashboard Integration', () => {
 });
 
 test.describe('Demo User - Error Handling', () => {
+	// Skip in CI environments - requires production demo user
+	test.skip(({ }, testInfo) => !!process.env.CI, 'Demo tests require production demo user - skipping in CI');
+
 	test.use({ storageState: { cookies: [], origins: [] } });
 
 	test('should handle API errors gracefully', async ({ page }) => {
