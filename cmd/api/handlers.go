@@ -1081,7 +1081,7 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 }
 
 // getDemoSeedSQL returns the SQL to seed the demo database
-// This is a minimal version - the full seed is in scripts/demo-seed.sql
+// This creates the demo user, tenant, schema, and sample data
 func getDemoSeedSQL() string {
 	return `
 -- Demo User (password: demo123)
@@ -1125,5 +1125,58 @@ VALUES (
     'admin',
     true
 ) ON CONFLICT (tenant_id, user_id) DO NOTHING;
+
+-- Create tenant schema with all tables
+SELECT create_tenant_schema('tenant_acme');
+
+-- Chart of Accounts (Estonian standard)
+INSERT INTO tenant_acme.accounts (id, tenant_id, code, name, account_type, is_system) VALUES
+('c0000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '1000', 'Cash', 'ASSET', true),
+('c0000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '1100', 'Bank Account - EUR', 'ASSET', true),
+('c0000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '1200', 'Accounts Receivable', 'ASSET', true),
+('c0000000-0000-0000-0002-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '2000', 'Accounts Payable', 'LIABILITY', true),
+('c0000000-0000-0000-0002-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '2100', 'VAT Payable', 'LIABILITY', true),
+('c0000000-0000-0000-0003-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '3000', 'Share Capital', 'EQUITY', true),
+('c0000000-0000-0000-0003-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '3100', 'Retained Earnings', 'EQUITY', true),
+('c0000000-0000-0000-0004-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '4000', 'Sales Revenue', 'REVENUE', true),
+('c0000000-0000-0000-0004-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '4100', 'Service Revenue', 'REVENUE', true),
+('c0000000-0000-0000-0005-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '5000', 'Cost of Goods Sold', 'EXPENSE', true),
+('c0000000-0000-0000-0005-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '6000', 'Salaries Expense', 'EXPENSE', true)
+ON CONFLICT DO NOTHING;
+
+-- Contacts
+INSERT INTO tenant_acme.contacts (id, tenant_id, code, name, contact_type, reg_code, vat_number, email, phone, address_line1, city, postal_code, country_code, payment_terms_days) VALUES
+('d0000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'C001', 'TechStart OÜ', 'CUSTOMER', '14567890', 'EE145678901', 'info@techstart.ee', '+372 5234 5678', 'Pärnu mnt 15', 'Tallinn', '10141', 'EE', 14),
+('d0000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'C002', 'Nordic Solutions AS', 'CUSTOMER', '98765432', 'EE987654321', 'orders@nordic.ee', '+372 5345 6789', 'Tartu mnt 83', 'Tallinn', '10115', 'EE', 30),
+('d0000000-0000-0000-0002-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'S001', 'Office Supplies Ltd', 'SUPPLIER', '33445566', NULL, 'orders@officesupplies.ee', '+372 5678 9012', 'Peterburi tee 71', 'Tallinn', '11415', 'EE', 30)
+ON CONFLICT DO NOTHING;
+
+-- Invoices
+INSERT INTO tenant_acme.invoices (id, tenant_id, invoice_number, invoice_type, contact_id, issue_date, due_date, subtotal, vat_amount, total, base_subtotal, base_vat_amount, base_total, amount_paid, status, created_by) VALUES
+('e0000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'INV-2024-001', 'SALES', 'd0000000-0000-0000-0001-000000000001'::uuid, '2024-11-01', '2024-11-15', 2500.00, 550.00, 3050.00, 2500.00, 550.00, 3050.00, 3050.00, 'PAID', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('e0000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'INV-2024-002', 'SALES', 'd0000000-0000-0000-0001-000000000002'::uuid, '2024-12-01', '2024-12-15', 3200.00, 704.00, 3904.00, 3200.00, 704.00, 3904.00, 0.00, 'SENT', 'a0000000-0000-0000-0000-000000000001'::uuid)
+ON CONFLICT DO NOTHING;
+
+-- Invoice Lines
+INSERT INTO tenant_acme.invoice_lines (tenant_id, invoice_id, line_number, description, quantity, unit, unit_price, vat_rate, line_subtotal, line_vat, line_total, account_id) VALUES
+('b0000000-0000-0000-0000-000000000001'::uuid, 'e0000000-0000-0000-0001-000000000001'::uuid, 1, 'Software Development Services', 50, 'hours', 50.00, 22.00, 2500.00, 550.00, 3050.00, 'c0000000-0000-0000-0004-000000000002'::uuid),
+('b0000000-0000-0000-0000-000000000001'::uuid, 'e0000000-0000-0000-0001-000000000002'::uuid, 1, 'Custom Integration Development', 40, 'hours', 80.00, 22.00, 3200.00, 704.00, 3904.00, 'c0000000-0000-0000-0004-000000000002'::uuid)
+ON CONFLICT DO NOTHING;
+
+-- Payments
+INSERT INTO tenant_acme.payments (id, tenant_id, payment_number, payment_type, contact_id, payment_date, amount, base_amount, payment_method, reference, created_by) VALUES
+('f0000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'PAY-2024-001', 'RECEIVED', 'd0000000-0000-0000-0001-000000000001'::uuid, '2024-11-12', 3050.00, 3050.00, 'Bank Transfer', 'INV-2024-001', 'a0000000-0000-0000-0000-000000000001'::uuid)
+ON CONFLICT DO NOTHING;
+
+-- Fiscal Years
+INSERT INTO tenant_acme.fiscal_years (id, tenant_id, name, start_date, end_date, is_closed) VALUES
+('90000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'FY 2024', '2024-01-01', '2024-12-31', false),
+('90000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'FY 2025', '2025-01-01', '2025-12-31', false)
+ON CONFLICT DO NOTHING;
+
+-- Bank Accounts
+INSERT INTO tenant_acme.bank_accounts (id, tenant_id, name, account_number, bank_name, currency, opening_balance, current_balance, is_active) VALUES
+('80000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Main EUR Account', 'EE123456789012345678', 'Swedbank', 'EUR', 50000.00, 53050.00, true)
+ON CONFLICT DO NOTHING;
 `
 }
