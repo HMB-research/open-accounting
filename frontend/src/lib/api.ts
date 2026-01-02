@@ -404,6 +404,20 @@ class ApiClient {
 		return this.request<AgingReport>('GET', `/api/v1/tenants/${tenantId}/reports/aging/payables`);
 	}
 
+	async getRecentActivity(tenantId: string, limit = 10) {
+		return this.request<ActivityItem[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/analytics/activity?limit=${limit}`
+		);
+	}
+
+	async getCashFlowAnalytics(tenantId: string, startDate: string, endDate: string) {
+		return this.request<CashFlowChart>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/analytics/cash-flow?start_date=${startDate}&end_date=${endDate}`
+		);
+	}
+
 	// Recurring Invoice endpoints
 	async listRecurringInvoices(tenantId: string, activeOnly = false) {
 		const query = activeOnly ? '?active_only=true' : '';
@@ -1374,6 +1388,17 @@ export interface AgingReport {
 	as_of_date: string;
 	total: Decimal;
 	buckets: AgingBucket[];
+}
+
+export type ActivityType = 'INVOICE' | 'PAYMENT' | 'ENTRY' | 'CONTACT';
+
+export interface ActivityItem {
+	id: string;
+	type: ActivityType;
+	action: string;
+	description: string;
+	amount?: string;
+	created_at: string;
 }
 
 // Recurring Invoice types
