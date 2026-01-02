@@ -6,13 +6,69 @@
 	let email = $state('');
 	let password = $state('');
 	let error = $state('');
+	let errorType = $state<'auth' | 'network' | 'server' | 'unknown'>('unknown');
 	let isLoading = $state(false);
 	let isRegister = $state(false);
 	let name = $state('');
 
+	function parseError(err: unknown): { message: string; type: 'auth' | 'network' | 'server' | 'unknown' } {
+		if (err instanceof Error) {
+			const msg = err.message.toLowerCase();
+
+			// Network/connection errors
+			if (msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('network')) {
+				return {
+					message: m.auth_errorNetwork?.() || 'Unable to connect to server. Please check your internet connection.',
+					type: 'network'
+				};
+			}
+
+			// JSON parsing error (usually means server returned HTML error page)
+			if (msg.includes('unexpected token') || msg.includes('json') || msg.includes('<!doctype')) {
+				return {
+					message: m.auth_errorServer?.() || 'Server configuration error. Please try again later.',
+					type: 'server'
+				};
+			}
+
+			// Authentication errors
+			if (msg.includes('invalid') || msg.includes('credentials') || msg.includes('unauthorized')) {
+				return {
+					message: m.auth_errorInvalidCredentials?.() || 'Invalid email or password. Please try again.',
+					type: 'auth'
+				};
+			}
+
+			// Email already exists
+			if (msg.includes('email') && msg.includes('exists')) {
+				return {
+					message: m.auth_errorEmailExists?.() || 'An account with this email already exists.',
+					type: 'auth'
+				};
+			}
+
+			// Rate limiting
+			if (msg.includes('rate') || msg.includes('too many')) {
+				return {
+					message: m.auth_errorRateLimit?.() || 'Too many attempts. Please wait a moment and try again.',
+					type: 'auth'
+				};
+			}
+
+			// Generic error with original message
+			return { message: err.message, type: 'unknown' };
+		}
+
+		return {
+			message: m.auth_errorUnknown?.() || 'An unexpected error occurred. Please try again.',
+			type: 'unknown'
+		};
+	}
+
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
 		error = '';
+		errorType = 'unknown';
 		isLoading = true;
 
 		try {
@@ -22,7 +78,9 @@
 			await api.login(email, password);
 			window.location.href = '/dashboard';
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'An error occurred';
+			const parsed = parseError(err);
+			error = parsed.message;
+			errorType = parsed.type;
 		} finally {
 			isLoading = false;
 		}
@@ -44,7 +102,18 @@
 		</p>
 
 		{#if error}
-			<div class="alert alert-error">{error}</div>
+			<div class="alert alert-error" class:alert-warning={errorType === 'network' || errorType === 'server'}>
+				<span class="error-icon">
+					{#if errorType === 'network'}
+						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+					{:else if errorType === 'server'}
+						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+					{:else}
+						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+					{/if}
+				</span>
+				<span class="error-message">{error}</span>
+			</div>
 		{/if}
 
 		<form onsubmit={handleSubmit}>
@@ -165,5 +234,36 @@
 
 	.link-btn:hover {
 		text-decoration: underline;
+	}
+
+	.alert {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.75rem;
+		padding: 0.875rem 1rem;
+		border-radius: 0.5rem;
+		margin-bottom: 1rem;
+	}
+
+	.alert-error {
+		background-color: #fef2f2;
+		border: 1px solid #fecaca;
+		color: #dc2626;
+	}
+
+	.alert-warning {
+		background-color: #fffbeb;
+		border: 1px solid #fde68a;
+		color: #d97706;
+	}
+
+	.error-icon {
+		flex-shrink: 0;
+		margin-top: 0.125rem;
+	}
+
+	.error-message {
+		font-size: 0.875rem;
+		line-height: 1.5;
 	}
 </style>
