@@ -33,6 +33,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/scheduler"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
+	secmiddleware "github.com/HMB-research/open-accounting/internal/middleware"
 )
 
 // Config holds the application configuration
@@ -221,6 +222,9 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
+
+	// Security headers
+	r.Use(secmiddleware.SecurityHeaders)
 
 	// CORS - Configure allowed origins via ALLOWED_ORIGINS env var
 	// If you see CORS errors, ensure your frontend origin is in ALLOWED_ORIGINS
