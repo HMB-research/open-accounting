@@ -95,3 +95,62 @@ test.describe('Authentication - Login Flow', () => {
 		expect(isOnDashboard || isOnLogin).toBeTruthy();
 	});
 });
+
+test.describe('Authentication - Demo Credentials', () => {
+	test.use({ storageState: { cookies: [], origins: [] } });
+
+	test('should allow short passwords for login (demo: demo123)', async ({ page }) => {
+		await page.goto('/login');
+
+		// Demo password is 7 characters - should be accepted for login
+		const passwordInput = page.getByLabel(/password/i);
+		await page.getByLabel(/email/i).fill('demo@example.com');
+		await passwordInput.fill('demo123');
+
+		// Password input should NOT have minlength validation in login mode
+		const minlength = await passwordInput.getAttribute('minlength');
+		expect(minlength).toBeNull();
+
+		// Form should be submittable (button not disabled by validation)
+		const submitButton = page.getByRole('button', { name: /sign in|login/i });
+		await expect(submitButton).toBeEnabled();
+	});
+
+	test('should require 8 character minimum for registration', async ({ page }) => {
+		await page.goto('/login');
+
+		// Switch to register mode
+		await page.getByRole('button', { name: /register|sign up|create account/i }).click();
+		await page.waitForTimeout(300);
+
+		const passwordInput = page.getByLabel(/password/i);
+
+		// Password input SHOULD have minlength validation in register mode
+		const minlength = await passwordInput.getAttribute('minlength');
+		expect(minlength).toBe('8');
+	});
+
+	test('should attempt demo login without validation error', async ({ page }) => {
+		await page.goto('/login');
+
+		// Fill demo credentials
+		await page.getByLabel(/email/i).fill('demo@example.com');
+		await page.getByLabel(/password/i).fill('demo123');
+
+		// Click login - should not show browser validation error
+		await page.getByRole('button', { name: /sign in|login/i }).click();
+
+		// Wait for API response
+		await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+
+		// If still on login page, password field should be valid (no browser validation error)
+		if (page.url().includes('/login')) {
+			const validationMsg = await page.evaluate(() => {
+				const input = document.querySelector('input[type="password"]') as HTMLInputElement;
+				return input?.validationMessage || '';
+			});
+			// Should NOT have "minimum length" validation message
+			expect(validationMsg).not.toMatch(/minimum|too short|at least/i);
+		}
+	});
+});

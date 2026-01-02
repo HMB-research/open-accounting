@@ -56,6 +56,7 @@
 	"auth_signInPrompt": "Sign in to your account",
 	"auth_noAccount": "Don't have an account?",
 	"auth_hasAccount": "Already have an account?",
+	"auth_passwordMinLength": "Min 8 characters",
 	"dashboard_title": "Dashboard",
 	"dashboard_revenue": "Revenue",
 	"dashboard_expenses": "Expenses",

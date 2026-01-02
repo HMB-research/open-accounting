@@ -82,8 +82,8 @@
 					id="password"
 					bind:value={password}
 					required
-					minlength="8"
-					placeholder="Min 8 characters"
+					minlength={isRegister ? 8 : undefined}
+					placeholder={isRegister ? m.auth_passwordMinLength() : m.auth_password()}
 				/>
 			</div>
 
