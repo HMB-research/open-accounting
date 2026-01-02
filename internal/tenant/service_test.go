@@ -3,6 +3,7 @@ package tenant
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -1444,4 +1445,34 @@ func TestService_CreateUser_PasswordTooLong(t *testing.T) {
 	// bcrypt returns error for passwords > 72 bytes
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "hash password")
+}
+
+func TestService_CreateUser_BcryptCost(t *testing.T) {
+	repo := NewMockRepository()
+	svc := NewServiceWithRepository(repo)
+
+	_, err := svc.CreateUser(context.Background(), &CreateUserRequest{
+		Email:    "bcrypttest@example.com",
+		Password: "testpassword123",
+		Name:     "Test User",
+	})
+	require.NoError(t, err)
+
+	// Get the created user and check hash format
+	user, exists := repo.users[""]
+	// Find the user by iterating since ID is generated
+	for _, u := range repo.users {
+		if u.Email == "bcrypttest@example.com" {
+			user = u
+			exists = true
+			break
+		}
+	}
+	require.True(t, exists, "User should be created")
+
+	// bcrypt hash format: $2a$<cost>$<salt+hash>
+	// Cost 12 should produce $2a$12$...
+	if !strings.HasPrefix(user.PasswordHash, "$2a$12$") {
+		t.Errorf("Expected bcrypt cost 12 ($2a$12$...), got hash prefix: %s", user.PasswordHash[:7])
+	}
 }
