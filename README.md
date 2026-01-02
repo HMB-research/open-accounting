@@ -28,7 +28,7 @@ Try Open Accounting without installing anything:
 
 | Credential | Value |
 |------------|-------|
-| **Email** | `demo@openaccounting.io` |
+| **Email** | `demo@example.com` |
 | **Password** | `demo123` |
 
 > Demo resets hourly. Feel free to create invoices, contacts, and explore all features!

@@ -122,7 +122,7 @@
 		<h2>Try the Demo</h2>
 		<p>Explore Open Accounting with our demo account. No signup required.</p>
 		<div class="demo-credentials">
-			<p><strong>Email:</strong> demo@openaccounting.io</p>
+			<p><strong>Email:</strong> demo@example.com</p>
 			<p><strong>Password:</strong> demo123</p>
 		</div>
 		<a href="/login" class="btn btn-primary btn-lg">Try Demo</a>

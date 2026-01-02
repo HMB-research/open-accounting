@@ -114,7 +114,7 @@ CMD ["crond", "-f", "-l", "2"]
 
 | Field | Value |
 |-------|-------|
-| Email | `demo@openaccounting.io` |
+| Email | `demo@example.com` |
 | Password | `demo123` |
 | Organization | Acme Corporation |
 
