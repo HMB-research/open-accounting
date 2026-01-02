@@ -404,7 +404,7 @@
 					<p class="text-muted">{m.email_noEmailsSent()}</p>
 				{:else}
 					<div class="table-container">
-						<table class="table">
+						<table class="table table-mobile-cards">
 							<thead>
 								<tr>
 									<th>{m.common_date()}</th>
@@ -417,16 +417,16 @@
 							<tbody>
 								{#each emailLog as log}
 									<tr>
-										<td>{formatDate(log.created_at)}</td>
-										<td>{templateTypeName(log.email_type as TemplateType)}</td>
-										<td>
+										<td data-label={m.common_date()}>{formatDate(log.created_at)}</td>
+										<td data-label={m.email_type()}>{templateTypeName(log.email_type as TemplateType)}</td>
+										<td data-label={m.email_recipient()}>
 											{log.recipient_name || log.recipient_email}
 											{#if log.recipient_name}
 												<br /><small class="text-muted">{log.recipient_email}</small>
 											{/if}
 										</td>
-										<td>{log.subject}</td>
-										<td>
+										<td data-label={m.email_subject()}>{log.subject}</td>
+										<td data-label={m.common_status()}>
 											<span class="badge {statusBadgeClass(log.status)}">
 												{log.status}
 											</span>
@@ -630,5 +630,50 @@
 		padding: 1rem;
 		border-radius: var(--radius-md);
 		margin-bottom: 1rem;
+	}
+
+	/* Mobile styles */
+	@media (max-width: 768px) {
+		.header {
+			flex-direction: column;
+			align-items: stretch;
+			gap: 1rem;
+		}
+
+		h1 {
+			font-size: 1.5rem;
+		}
+
+		.tabs {
+			flex-wrap: wrap;
+		}
+
+		.tabs button {
+			flex: 1;
+			min-width: 100px;
+			min-height: 44px;
+			justify-content: center;
+		}
+
+		.form-row {
+			flex-direction: column;
+		}
+
+		.templates-layout {
+			grid-template-columns: 1fr;
+		}
+
+		.template-item {
+			min-height: 44px;
+		}
+
+		.textarea {
+			min-height: 200px;
+		}
+
+		.btn {
+			min-height: 44px;
+			justify-content: center;
+		}
 	}
 </style>
