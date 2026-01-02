@@ -4,18 +4,24 @@ import { test, expect } from '@playwright/test';
  * Demo Dashboard Integration Tests
  *
  * These tests verify the demo user experience on the live demo environment.
- * They are SKIPPED in CI because:
+ * They are SKIPPED by default because:
  * 1. The demo user (demo@example.com) only exists in the Railway production database
- * 2. CI uses a fresh database without demo seed data
+ * 2. Local/CI environments don't have demo seed data
  *
- * To run these tests locally against the live demo:
- *   PUBLIC_API_URL=https://open-accounting-api.up.railway.app npx playwright test demo-dashboard
+ * To run these tests against the live demo:
+ *   npm run test:e2e:demo
+ * Or directly:
+ *   npx playwright test --config=playwright.demo.config.ts demo-dashboard
  */
 
-// Skip these tests in CI - they require the demo user which only exists in production
+// Check if we're running against the demo environment
+const isDemoEnvironment = process.env.PUBLIC_API_URL?.includes('railway.app') ||
+	process.env.TEST_DEMO === 'true';
+
+// Skip these tests unless targeting the demo environment
 test.describe('Demo User - Dashboard Integration', () => {
-	// Skip in CI environments
-	test.skip(({ }, testInfo) => !!process.env.CI, 'Demo tests require production demo user - skipping in CI');
+	// Skip unless explicitly running against demo environment
+	test.skip(() => !isDemoEnvironment, 'Demo tests require production demo user - use npm run test:e2e:demo');
 
 	// Start fresh without any stored auth state
 	test.use({ storageState: { cookies: [], origins: [] } });
@@ -218,8 +224,8 @@ test.describe('Demo User - Dashboard Integration', () => {
 });
 
 test.describe('Demo User - Error Handling', () => {
-	// Skip in CI environments - requires production demo user
-	test.skip(({ }, testInfo) => !!process.env.CI, 'Demo tests require production demo user - skipping in CI');
+	// Skip unless explicitly running against demo environment
+	test.skip(() => !isDemoEnvironment, 'Demo tests require production demo user - use npm run test:e2e:demo');
 
 	test.use({ storageState: { cookies: [], origins: [] } });
 
