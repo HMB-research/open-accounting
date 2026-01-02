@@ -25,6 +25,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
+	secmiddleware "github.com/HMB-research/open-accounting/internal/middleware"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/pdf"
@@ -33,7 +34,6 @@ import (
 	"github.com/HMB-research/open-accounting/internal/scheduler"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
-	secmiddleware "github.com/HMB-research/open-accounting/internal/middleware"
 )
 
 // Config holds the application configuration

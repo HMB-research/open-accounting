@@ -16,8 +16,8 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
-	"github.com/HMB-research/open-accounting/internal/apierror"
 	"github.com/HMB-research/open-accounting/internal/analytics"
+	"github.com/HMB-research/open-accounting/internal/apierror"
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
