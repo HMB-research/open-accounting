@@ -5,28 +5,44 @@
 		type TenantMembership,
 		type Tenant,
 		type DashboardSummary,
-		type RevenueExpenseChart
+		type RevenueExpenseChart,
+		type CashFlowChart,
+		type ActivityItem
 	} from '$lib/api';
 	import { Chart, registerables } from 'chart.js';
 	import Decimal from 'decimal.js';
 	import OnboardingWizard from '$lib/components/OnboardingWizard.svelte';
+	import PeriodSelector from '$lib/components/PeriodSelector.svelte';
+	import ActivityFeed from '$lib/components/ActivityFeed.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 
 	Chart.register(...registerables);
+
+	type Period = 'THIS_MONTH' | 'LAST_MONTH' | 'THIS_QUARTER' | 'THIS_YEAR' | 'CUSTOM';
 
 	let tenants = $state<TenantMembership[]>([]);
 	let selectedTenant = $state<Tenant | null>(null);
 	let showOnboarding = $state(false);
 	let summary = $state<DashboardSummary | null>(null);
 	let chartData = $state<RevenueExpenseChart | null>(null);
+	let cashFlowData = $state<CashFlowChart | null>(null);
+	let activityItems = $state<ActivityItem[]>([]);
 	let isLoading = $state(true);
 	let isLoadingAnalytics = $state(false);
+	let isLoadingActivity = $state(false);
 	let error = $state('');
 	let showCreateTenant = $state(false);
 	let newTenantName = $state('');
 	let newTenantSlug = $state('');
 	let chartCanvas: HTMLCanvasElement;
+	let cashFlowCanvas: HTMLCanvasElement;
 	let chartInstance: Chart | null = null;
+	let cashFlowChartInstance: Chart | null = null;
+
+	// Period selector state
+	let selectedPeriod = $state<Period>('THIS_MONTH');
+	let startDate = $state('');
+	let endDate = $state('');
 
 	onMount(async () => {
 		try {
@@ -75,19 +91,84 @@
 		}
 	});
 
+	$effect(() => {
+		if (cashFlowData && cashFlowCanvas) {
+			renderCashFlowChart();
+		}
+	});
+
 	async function loadAnalytics(tenantId: string) {
 		isLoadingAnalytics = true;
+		isLoadingActivity = true;
 		try {
-			const [summaryData, chartResponse] = await Promise.all([
+			const [summaryData, chartResponse, activityData] = await Promise.all([
 				api.getDashboardSummary(tenantId),
-				api.getRevenueExpenseChart(tenantId, 6)
+				api.getRevenueExpenseChart(tenantId, 6),
+				api.getRecentActivity(tenantId, 10)
 			]);
 			summary = summaryData;
 			chartData = chartResponse;
+			activityItems = activityData;
+
+			// Load cash flow with current period
+			await loadCashFlow(tenantId);
 		} catch (err) {
 			console.error('Failed to load analytics:', err);
 		} finally {
 			isLoadingAnalytics = false;
+			isLoadingActivity = false;
+		}
+	}
+
+	async function loadCashFlow(tenantId: string) {
+		try {
+			// Calculate dates based on selected period
+			const now = new Date();
+			let start: Date;
+			let end: Date = new Date(now.getFullYear(), now.getMonth() + 1, 0); // End of current month
+
+			switch (selectedPeriod) {
+				case 'THIS_MONTH':
+					start = new Date(now.getFullYear(), now.getMonth(), 1);
+					break;
+				case 'LAST_MONTH':
+					start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+					end = new Date(now.getFullYear(), now.getMonth(), 0);
+					break;
+				case 'THIS_QUARTER':
+					const quarter = Math.floor(now.getMonth() / 3);
+					start = new Date(now.getFullYear(), quarter * 3, 1);
+					break;
+				case 'THIS_YEAR':
+					start = new Date(now.getFullYear(), 0, 1);
+					break;
+				case 'CUSTOM':
+					if (startDate && endDate) {
+						start = new Date(startDate);
+						end = new Date(endDate);
+					} else {
+						start = new Date(now.getFullYear(), now.getMonth(), 1);
+					}
+					break;
+				default:
+					start = new Date(now.getFullYear(), now.getMonth(), 1);
+			}
+
+			const startStr = start.toISOString().split('T')[0];
+			const endStr = end.toISOString().split('T')[0];
+
+			cashFlowData = await api.getCashFlowAnalytics(tenantId, startStr, endStr);
+		} catch (err) {
+			console.error('Failed to load cash flow:', err);
+		}
+	}
+
+	function handlePeriodChange(period: Period, start: string, end: string) {
+		selectedPeriod = period;
+		startDate = start;
+		endDate = end;
+		if (selectedTenant) {
+			loadCashFlow(selectedTenant.id);
 		}
 	}
 
@@ -116,6 +197,54 @@
 					{
 						label: 'Expenses',
 						data: chartData.expenses.map((d) => (d instanceof Decimal ? d.toNumber() : Number(d))),
+						backgroundColor: 'rgba(239, 68, 68, 0.7)',
+						borderColor: 'rgb(239, 68, 68)',
+						borderWidth: 1
+					}
+				]
+			},
+			options: {
+				responsive: true,
+				maintainAspectRatio: false,
+				plugins: {
+					legend: {
+						position: 'bottom'
+					}
+				},
+				scales: {
+					y: {
+						beginAtZero: true
+					}
+				}
+			}
+		});
+	}
+
+	function renderCashFlowChart() {
+		if (!cashFlowData || !cashFlowCanvas) return;
+
+		if (cashFlowChartInstance) {
+			cashFlowChartInstance.destroy();
+		}
+
+		const ctx = cashFlowCanvas.getContext('2d');
+		if (!ctx) return;
+
+		cashFlowChartInstance = new Chart(ctx, {
+			type: 'bar',
+			data: {
+				labels: cashFlowData.labels,
+				datasets: [
+					{
+						label: m.dashboard_inflow(),
+						data: cashFlowData.inflows.map((d) => (d instanceof Decimal ? d.toNumber() : Number(d))),
+						backgroundColor: 'rgba(34, 197, 94, 0.7)',
+						borderColor: 'rgb(34, 197, 94)',
+						borderWidth: 1
+					},
+					{
+						label: m.dashboard_outflow(),
+						data: cashFlowData.outflows.map((d) => (d instanceof Decimal ? d.toNumber() : Number(d))),
 						backgroundColor: 'rgba(239, 68, 68, 0.7)',
 						borderColor: 'rgb(239, 68, 68)',
 						borderWidth: 1
@@ -279,7 +408,43 @@
 				<div class="summary-loading">{m.common_loading()}</div>
 			{/if}
 
-			<!-- Chart -->
+			<!-- Period Selector and Cash Flow Chart -->
+			<div class="analytics-section">
+				<div class="card chart-card cash-flow-card">
+					<div class="chart-header">
+						<h3>{m.dashboard_cashFlow()}</h3>
+						<PeriodSelector
+							bind:value={selectedPeriod}
+							bind:startDate={startDate}
+							bind:endDate={endDate}
+							onchange={handlePeriodChange}
+						/>
+					</div>
+					<div class="chart-container">
+						<canvas bind:this={cashFlowCanvas}></canvas>
+					</div>
+					{#if cashFlowData}
+						<div class="cash-flow-summary">
+							<div class="cf-stat positive">
+								<span class="cf-label">{m.dashboard_inflow()}</span>
+								<span class="cf-value">{formatCurrency(cashFlowData.inflows.reduce((a, b) => Number(a) + Number(b), 0))}</span>
+							</div>
+							<div class="cf-stat negative">
+								<span class="cf-label">{m.dashboard_outflow()}</span>
+								<span class="cf-value">{formatCurrency(cashFlowData.outflows.reduce((a, b) => Number(a) + Number(b), 0))}</span>
+							</div>
+							<div class="cf-stat" class:positive={cashFlowData.inflows.reduce((a, b) => Number(a) + Number(b), 0) - cashFlowData.outflows.reduce((a, b) => Number(a) + Number(b), 0) >= 0} class:negative={cashFlowData.inflows.reduce((a, b) => Number(a) + Number(b), 0) - cashFlowData.outflows.reduce((a, b) => Number(a) + Number(b), 0) < 0}>
+								<span class="cf-label">{m.dashboard_netChange()}</span>
+								<span class="cf-value">{formatCurrency(cashFlowData.inflows.reduce((a, b) => Number(a) + Number(b), 0) - cashFlowData.outflows.reduce((a, b) => Number(a) + Number(b), 0))}</span>
+							</div>
+						</div>
+					{/if}
+				</div>
+
+				<ActivityFeed items={activityItems} loading={isLoadingActivity} />
+			</div>
+
+			<!-- Revenue vs Expenses Chart -->
 			<div class="card chart-card">
 				<h3>{m.dashboard_revenueVsExpenses()}</h3>
 				<div class="chart-container">
@@ -559,8 +724,39 @@
 		color: #ef4444;
 	}
 
+	.analytics-section {
+		display: grid;
+		grid-template-columns: 2fr 1fr;
+		gap: 1.5rem;
+		margin-bottom: 1.5rem;
+	}
+
+	@media (max-width: 1024px) {
+		.analytics-section {
+			grid-template-columns: 1fr;
+		}
+	}
+
 	.chart-card {
 		margin-bottom: 1.5rem;
+	}
+
+	.cash-flow-card {
+		margin-bottom: 0;
+	}
+
+	.chart-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 1rem;
+		gap: 1rem;
+		flex-wrap: wrap;
+	}
+
+	.chart-header h3 {
+		margin: 0;
+		font-size: 1rem;
 	}
 
 	.chart-card h3 {
@@ -570,6 +766,39 @@
 
 	.chart-container {
 		height: 300px;
+	}
+
+	.cash-flow-summary {
+		display: flex;
+		justify-content: space-around;
+		margin-top: 1rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--color-border);
+	}
+
+	.cf-stat {
+		text-align: center;
+	}
+
+	.cf-label {
+		display: block;
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+		margin-bottom: 0.25rem;
+	}
+
+	.cf-value {
+		font-size: 1rem;
+		font-weight: 600;
+		font-family: var(--font-mono);
+	}
+
+	.cf-stat.positive .cf-value {
+		color: #22c55e;
+	}
+
+	.cf-stat.negative .cf-value {
+		color: #ef4444;
 	}
 
 	.quick-links h3 {
