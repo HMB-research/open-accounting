@@ -297,6 +297,50 @@ jobs:
           path: frontend/playwright-report/
           retention-days: 7
 
+  # Demo E2E tests run against the live Railway demo environment
+  e2e-demo:
+    runs-on: ubuntu-latest
+    needs: [changes, frontend]
+    continue-on-error: true  # Demo tests are informational - don't block deployment
+    if: |
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Demo E2E tests
+        working-directory: frontend
+        run: npx playwright test --config=playwright.demo.config.ts --project=demo-chromium
+        env:
+          CI: true
+          TEST_DEMO: 'true'
+          PUBLIC_API_URL: https://open-accounting-api.up.railway.app
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-demo-report
+          path: frontend/playwright-report/
+          retention-days: 7
+
   docker:
     runs-on: ubuntu-latest
     needs: [changes, test, lint, frontend]
