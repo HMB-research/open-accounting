@@ -24,7 +24,7 @@
 
 Try Open Accounting without installing anything:
 
-**[open-accounting-demo.up.railway.app](https://open-accounting-demo.up.railway.app)**
+**[open-accounting.up.railway.app](https://open-accounting.up.railway.app)**
 
 | Credential | Value |
 |------------|-------|
