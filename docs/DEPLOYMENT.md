@@ -11,12 +11,26 @@ This guide covers deploying Open Accounting to production environments.
 
 ## Environment Variables
 
+### Backend API
+
 | Variable | Required | Description | Example |
 |----------|----------|-------------|---------|
 | `DATABASE_URL` | Yes | PostgreSQL connection string | `postgres://user:pass@host:5432/db?sslmode=require` |
 | `JWT_SECRET` | Yes | Secret key for JWT signing (min 32 chars) | `your-super-secret-key-min-32-chars` |
 | `PORT` | No | API server port | `8080` |
-| `ALLOWED_ORIGINS` | No | CORS allowed origins | `https://app.example.com` |
+| `ALLOWED_ORIGINS` | Yes* | CORS allowed origins (comma-separated) | `https://app.example.com,https://admin.example.com` |
+| `CORS_DEBUG` | No | Enable verbose CORS logging | `true` |
+| `DEMO_RESET_SECRET` | No | Secret key for demo reset endpoint | `your-reset-secret` |
+
+*Required for production deployments where frontend and API are on different domains.
+
+### Frontend
+
+| Variable | Required | Description | Example |
+|----------|----------|-------------|---------|
+| `PUBLIC_API_URL` | Yes | Backend API URL (must include `https://`) | `https://api.example.com` |
+
+> **Note:** If `PUBLIC_API_URL` is set without a protocol (e.g., `api.example.com`), the frontend will automatically prepend `https://`.
 
 ## Docker Deployment
 
@@ -253,6 +267,100 @@ spec:
   - port: 80
     targetPort: 8080
   type: ClusterIP
+```
+
+## Railway Deployment
+
+Railway provides a simple PaaS deployment option. The project includes Railway configuration files.
+
+### Services Setup
+
+Deploy two separate services:
+
+1. **Backend API** (`open-accounting-api`)
+   - Root directory: `/` (uses Go backend)
+   - Environment variables:
+     ```
+     DATABASE_URL=<from Railway PostgreSQL>
+     JWT_SECRET=<generate secure 32+ char secret>
+     ALLOWED_ORIGINS=https://your-frontend.up.railway.app
+     ```
+
+2. **Frontend** (`open-accounting`)
+   - Root directory: `/frontend`
+   - Environment variables:
+     ```
+     PUBLIC_API_URL=https://your-api.up.railway.app
+     ```
+
+3. **PostgreSQL Database**
+   - Add PostgreSQL plugin from Railway dashboard
+   - Copy `DATABASE_URL` to API service
+
+### Demo Mode (Optional)
+
+For demo deployments with sample data and hourly reset:
+
+```
+DEMO_MODE=true
+DEMO_RESET_SECRET=<your-secret-key>
+```
+
+Trigger reset via: `POST /api/v1/demo/reset` with `X-Reset-Secret` header.
+
+## CORS Troubleshooting
+
+If you encounter CORS errors like:
+
+```
+Access to fetch at 'https://api.example.com/...' has been blocked by CORS policy:
+No 'Access-Control-Allow-Origin' header is present on the requested resource.
+```
+
+### Common Causes & Solutions
+
+1. **Missing ALLOWED_ORIGINS**
+   - Ensure `ALLOWED_ORIGINS` includes your frontend URL
+   - Example: `ALLOWED_ORIGINS=https://app.example.com`
+
+2. **Multiple Origins**
+   - Use comma-separated values (no spaces around commas)
+   - Example: `ALLOWED_ORIGINS=https://app.example.com,https://staging.example.com`
+
+3. **Protocol Mismatch**
+   - Ensure both URLs use `https://`
+   - `http://` and `https://` are treated as different origins
+
+4. **Trailing Slashes**
+   - Don't include trailing slashes in origins
+   - Correct: `https://app.example.com`
+   - Wrong: `https://app.example.com/`
+
+### Debugging
+
+Enable verbose CORS logging:
+```
+CORS_DEBUG=true
+```
+
+Check API logs at startup for:
+```
+CORS configuration allowed_origins=["http://localhost:5173","https://app.example.com"]
+```
+
+### Verify Configuration
+
+```bash
+# Test preflight request
+curl -X OPTIONS https://api.example.com/api/v1/auth/login \
+  -H "Origin: https://app.example.com" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: Content-Type" \
+  -v
+
+# Should return headers including:
+# Access-Control-Allow-Origin: https://app.example.com
+# Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
 ```
 
 ## Security Checklist
