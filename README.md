@@ -20,6 +20,21 @@
 
 ---
 
+## 🎮 Live Demo
+
+Try Open Accounting without installing anything:
+
+**[open-accounting-demo.up.railway.app](https://open-accounting-demo.up.railway.app)**
+
+| Credential | Value |
+|------------|-------|
+| **Email** | `demo@example.com` |
+| **Password** | `demo123` |
+
+> Demo resets hourly. Feel free to create invoices, contacts, and explore all features!
+
+---
+
 ## What is Open Accounting?
 
 Open Accounting is a **self-hosted, multi-tenant accounting platform** designed for small to medium businesses, accountants managing multiple clients, and SaaS builders who need embedded accounting. Built with modern technologies and focused on **Estonian/EU compliance**, it provides:
@@ -43,6 +58,7 @@ Open Accounting is a **self-hosted, multi-tenant accounting platform** designed 
 | **Trial Balance** | Real-time balance reports as of any date |
 | **Balance Sheet** | Assets, liabilities, and equity statement |
 | **Income Statement** | Revenue and expense summary (P&L) |
+| **Report Exports** | Export to Excel, CSV, or PDF formats |
 | **VAT Tracking** | Date-aware VAT rates for proper EU compliance |
 
 ### Business Operations
@@ -235,11 +251,12 @@ open-accounting/
 - [x] API rate limiting
 - [x] Plugin marketplace system
 - [x] Internationalization (English/Estonian) with Paraglide-JS
+- [x] Mobile-responsive frontend with touch-friendly UI
+- [x] Report exports (Excel, CSV, PDF)
 
 ### Planned 📋
 - [ ] E-invoice support (Peppol) — *requires external Access Point*
 - [ ] Inventory management
-- [ ] Mobile-responsive frontend
 
 ---
 
