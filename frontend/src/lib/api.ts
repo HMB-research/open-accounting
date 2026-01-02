@@ -1,7 +1,8 @@
 import { browser } from '$app/environment';
+import { PUBLIC_API_URL } from '$env/static/public';
 import Decimal from 'decimal.js';
 
-const API_BASE = import.meta.env.PUBLIC_API_URL || 'http://localhost:8080';
+const API_BASE = PUBLIC_API_URL || 'http://localhost:8080';
 
 interface TokenResponse {
 	access_token: string;
