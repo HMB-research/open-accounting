@@ -1,6 +1,22 @@
 import { test, expect } from '@playwright/test';
 
+/**
+ * Demo Dashboard Integration Tests
+ *
+ * These tests verify the demo user experience on the live demo environment.
+ * They are SKIPPED in CI because:
+ * 1. The demo user (demo@example.com) only exists in the Railway production database
+ * 2. CI uses a fresh database without demo seed data
+ *
+ * To run these tests locally against the live demo:
+ *   PUBLIC_API_URL=https://open-accounting-api.up.railway.app npx playwright test demo-dashboard
+ */
+
+// Skip these tests in CI - they require the demo user which only exists in production
 test.describe('Demo User - Dashboard Integration', () => {
+	// Skip in CI environments
+	test.skip(({ }, testInfo) => !!process.env.CI, 'Demo tests require production demo user - skipping in CI');
+
 	// Start fresh without any stored auth state
 	test.use({ storageState: { cookies: [], origins: [] } });
 
