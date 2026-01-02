@@ -119,9 +119,29 @@ test.describe('Authentication - Demo Credentials', () => {
 	test('should require 8 character minimum for registration', async ({ page }) => {
 		await page.goto('/login');
 
-		// Switch to register mode
-		await page.getByRole('button', { name: /register|sign up|create account/i }).click();
-		await page.waitForTimeout(300);
+		// Wait for page to fully load
+		await page.waitForLoadState('networkidle');
+
+		// Click the "Create Account" button via JavaScript (Svelte 5 event handlers)
+		await page.evaluate(() => {
+			const buttons = document.querySelectorAll('button.link-btn');
+			for (const btn of buttons) {
+				if (btn.textContent?.toLowerCase().includes('create account')) {
+					(btn as HTMLButtonElement).click();
+					break;
+				}
+			}
+		});
+
+		// Wait for the Name field to appear (only visible in register mode)
+		try {
+			await page.waitForSelector('input#name', { timeout: 3000 });
+		} catch {
+			// If name field doesn't appear, the toggle didn't work
+			// Take a screenshot for debugging
+			const heading = await page.locator('h2').first().textContent();
+			throw new Error(`Mode toggle failed. Current heading: "${heading}"`);
+		}
 
 		const passwordInput = page.getByLabel(/password/i);
 
