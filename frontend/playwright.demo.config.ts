@@ -12,7 +12,7 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
 	testDir: './e2e',
-	testMatch: 'demo-env.spec.ts',
+	testMatch: ['demo-env.spec.ts', 'demo-dashboard.spec.ts'],
 	fullyParallel: false, // Run sequentially to avoid rate limiting
 	forbidOnly: !!process.env.CI,
 	retries: 2, // Retry on network flakiness
