@@ -112,10 +112,20 @@ class ApiClient {
 			throw new Error('Session expired. Please log in again.');
 		}
 
-		const data = await response.json();
+		let data: unknown;
+		try {
+			const text = await response.text();
+			data = text ? JSON.parse(text) : {};
+		} catch (parseError) {
+			// Server returned non-JSON response (HTML error page, etc.)
+			if (!response.ok) {
+				throw new Error(`Request failed with status ${response.status}`);
+			}
+			throw new Error('Invalid JSON response from server');
+		}
 
 		if (!response.ok) {
-			throw new Error((data as ApiError).error || 'Request failed');
+			throw new Error((data as ApiError).error || `Request failed with status ${response.status}`);
 		}
 
 		return this.parseDecimals(data) as T;
