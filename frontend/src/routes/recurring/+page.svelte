@@ -235,7 +235,7 @@
 		</div>
 	{:else}
 		<div class="table-container">
-			<table class="table">
+			<table class="table table-mobile-cards">
 				<thead>
 					<tr>
 						<th>{m.common_name()}</th>
@@ -251,17 +251,17 @@
 				<tbody>
 					{#each recurringInvoices as invoice}
 						<tr>
-							<td>
+							<td data-label={m.common_name()}>
 								<strong>{invoice.name}</strong>
 								{#if invoice.reference}
 									<br /><small class="text-muted">{invoice.reference}</small>
 								{/if}
 							</td>
-							<td>{invoice.contact_name || '-'}</td>
-							<td>{frequencyLabel(invoice.frequency)}</td>
-							<td>{formatDate(invoice.next_generation_date)}</td>
-							<td>{invoice.generated_count}</td>
-							<td>
+							<td data-label={m.recurring_contact()}>{invoice.contact_name || '-'}</td>
+							<td data-label={m.recurring_frequency()}>{frequencyLabel(invoice.frequency)}</td>
+							<td data-label={m.recurring_nextGeneration()}>{formatDate(invoice.next_generation_date)}</td>
+							<td data-label={m.recurring_generated()}>{invoice.generated_count}</td>
+							<td data-label={m.common_email()}>
 								{#if invoice.send_email_on_generation}
 									<span class="badge badge-info" title={m.recurring_emailEnabled()}>
 										{invoice.attach_pdf_to_email ? '📧📎' : '📧'}
@@ -270,12 +270,12 @@
 									<span class="text-muted">-</span>
 								{/if}
 							</td>
-							<td>
+							<td data-label={m.common_status()}>
 								<span class="badge" class:badge-success={invoice.is_active} class:badge-muted={!invoice.is_active}>
 									{invoice.is_active ? m.recurring_active() : m.recurring_paused()}
 								</span>
 							</td>
-							<td class="actions">
+							<td class="actions actions-cell">
 								<button
 									class="btn btn-secondary btn-sm"
 									onclick={() => handleGenerate(invoice)}

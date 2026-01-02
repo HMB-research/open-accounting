@@ -193,8 +193,8 @@
 			</a>
 		</div>
 	{:else}
-		<div class="card">
-			<table class="table">
+		<div class="card table-container">
+			<table class="table table-mobile-cards">
 				<thead>
 					<tr>
 						<th>{m.tsd_period()}</th>
@@ -215,11 +215,11 @@
 							.add(new Decimal(declaration.total_unemployment_employee))
 							.add(new Decimal(declaration.total_funded_pension))}
 						<tr>
-							<td class="period">
+							<td class="period" data-label={m.tsd_period()}>
 								{getMonthName(declaration.period_month)}
 								{declaration.period_year}
 							</td>
-							<td>
+							<td data-label={m.tsd_status()}>
 								<span class="badge {statusBadgeClass[declaration.status]}">
 									{getStatusLabel(declaration.status)}
 								</span>
@@ -229,12 +229,12 @@
 									</div>
 								{/if}
 							</td>
-							<td class="text-right mono">{formatDecimal(declaration.total_payments)}</td>
-							<td class="text-right mono">{formatDecimal(declaration.total_income_tax)}</td>
-							<td class="text-right mono">{formatDecimal(declaration.total_social_tax)}</td>
-							<td class="text-right mono total-taxes">{formatDecimal(totalTaxes)}</td>
-							<td class="mono reference">{declaration.emta_reference || '-'}</td>
-							<td class="actions">
+							<td class="text-right mono" data-label={m.tsd_totalPayments()}>{formatDecimal(declaration.total_payments)}</td>
+							<td class="text-right mono" data-label={m.tsd_incomeTax()}>{formatDecimal(declaration.total_income_tax)}</td>
+							<td class="text-right mono" data-label={m.tsd_socialTax()}>{formatDecimal(declaration.total_social_tax)}</td>
+							<td class="text-right mono total-taxes" data-label={m.tsd_totalTaxes()}>{formatDecimal(totalTaxes)}</td>
+							<td class="mono reference" data-label={m.tsd_emtaReference()}>{declaration.emta_reference || '-'}</td>
+							<td class="actions actions-cell">
 								<button class="btn btn-small" onclick={() => downloadXML(declaration)}>
 									XML
 								</button>
@@ -581,5 +581,70 @@
 		justify-content: flex-end;
 		gap: 0.5rem;
 		margin-top: 1.5rem;
+	}
+
+	.table-container {
+		overflow-x: auto;
+	}
+
+	/* Mobile styles */
+	@media (max-width: 768px) {
+		h1 {
+			font-size: 1.5rem;
+		}
+
+		.filter-row {
+			flex-direction: column;
+			align-items: stretch;
+		}
+
+		.filter-row .input {
+			width: 100%;
+		}
+
+		.info-banner {
+			flex-direction: column;
+		}
+
+		.actions {
+			flex-direction: column;
+			gap: 0.5rem;
+		}
+
+		.actions .btn {
+			min-height: 44px;
+			width: 100%;
+			justify-content: center;
+		}
+
+		.btn-small {
+			padding: 0.5rem 0.75rem;
+			font-size: 0.875rem;
+		}
+
+		.modal-backdrop {
+			align-items: flex-end;
+			padding: 0;
+		}
+
+		.modal {
+			max-width: 100%;
+			border-radius: 1rem 1rem 0 0;
+			margin: 0;
+		}
+
+		.modal-actions {
+			flex-direction: column;
+		}
+
+		.modal-actions .btn {
+			width: 100%;
+			min-height: 44px;
+			justify-content: center;
+		}
+
+		.workflow-steps {
+			gap: 1.5rem;
+		}
 	}
 </style>

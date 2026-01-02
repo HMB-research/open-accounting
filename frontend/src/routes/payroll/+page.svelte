@@ -220,8 +220,8 @@
 			</p>
 		</div>
 	{:else}
-		<div class="card">
-			<table class="table">
+		<div class="card table-container">
+			<table class="table table-mobile-cards">
 				<thead>
 					<tr>
 						<th>{m.payroll_period()}</th>
@@ -235,16 +235,16 @@
 				<tbody>
 					{#each payrollRuns as run}
 						<tr>
-							<td class="period">{getMonthName(run.period_month)} {run.period_year}</td>
-							<td>
+							<td class="period" data-label={m.payroll_period()}>{getMonthName(run.period_month)} {run.period_year}</td>
+							<td data-label={m.payroll_status()}>
 								<span class="badge {statusBadgeClass[run.status]}">
 									{getStatusLabel(run.status)}
 								</span>
 							</td>
-							<td class="text-right mono">{formatDecimal(run.total_gross)}</td>
-							<td class="text-right mono">{formatDecimal(run.total_net)}</td>
-							<td class="text-right mono">{formatDecimal(run.total_employer_cost)}</td>
-							<td class="actions">
+							<td class="text-right mono" data-label={m.payroll_grossTotal()}>{formatDecimal(run.total_gross)}</td>
+							<td class="text-right mono" data-label={m.payroll_netTotal()}>{formatDecimal(run.total_net)}</td>
+							<td class="text-right mono" data-label={m.payroll_employerCost()}>{formatDecimal(run.total_employer_cost)}</td>
+							<td class="actions actions-cell">
 								<button class="btn btn-small" onclick={() => viewPayslips(run)}>{m.payroll_payslips()}</button>
 								{#if canCalculate(run)}
 									<button class="btn btn-small btn-primary" onclick={() => calculatePayroll(run)}>
