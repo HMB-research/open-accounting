@@ -406,6 +406,59 @@ test.describe('Demo Environment - Onboarding Wizard', () => {
 			await expect(step1Active).toBeVisible();
 		}
 	});
+
+	test('Onboarding wizard can be completed to reach dashboard', async ({ page }) => {
+		// This test requires a valid demo user - uses shared login helper
+		await loginAsDemo(page);
+
+		// Check if onboarding wizard is showing
+		const wizardOverlay = page.locator('.onboarding-overlay, .onboarding-wizard');
+		const hasWizard = await wizardOverlay.isVisible({ timeout: 5000 }).catch(() => false);
+
+		if (hasWizard) {
+			// Step 1: Company Info - fill required field and continue
+			const companyNameInput = page.getByLabel(/company name/i);
+			if (await companyNameInput.isVisible()) {
+				await companyNameInput.fill('E2E Test Company');
+			}
+			const continueBtn = page.getByRole('button', { name: /continue|next/i });
+			await continueBtn.click();
+			await page.waitForTimeout(500);
+
+			// Step 2: Branding - skip or continue
+			const step2Continue = page.getByRole('button', { name: /continue|next/i });
+			if (await step2Continue.isVisible()) {
+				await step2Continue.click();
+				await page.waitForTimeout(500);
+			}
+
+			// Step 3: First Contact - skip or continue
+			const step3Continue = page.getByRole('button', { name: /skip|continue/i });
+			if (await step3Continue.isVisible()) {
+				await step3Continue.click();
+				await page.waitForTimeout(500);
+			}
+
+			// Step 4: Complete - click "Go to Dashboard"
+			const goToDashboard = page.getByRole('button', { name: /go to dashboard|finish|complete/i });
+			if (await goToDashboard.isVisible()) {
+				await goToDashboard.click();
+				await page.waitForTimeout(1000);
+			}
+
+			// Verify wizard is now hidden
+			await expect(wizardOverlay).not.toBeVisible({ timeout: 10000 });
+		}
+
+		// Final verification: Should be on dashboard without wizard overlay
+		await expect(page).toHaveURL(/dashboard/);
+		const dashboardContent = page.locator('main, .dashboard, [class*="content"]').first();
+		await expect(dashboardContent).toBeVisible();
+
+		// Verify onboarding wizard is NOT showing
+		const wizardAfter = page.locator('.onboarding-overlay');
+		await expect(wizardAfter).not.toBeVisible();
+	});
 });
 
 test.describe('Demo Environment - Performance', () => {
