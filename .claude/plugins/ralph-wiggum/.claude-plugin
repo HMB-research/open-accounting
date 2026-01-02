@@ -1,8 +1,0 @@
-{
-  "name": "ralph-wiggum",
-  "version": "1.0.0",
-  "description": "Self-referential iterative development loops for Claude Code",
-  "author": "Open Accounting",
-  "hooks": "hooks/hooks.json",
-  "commands": "commands/"
-}
