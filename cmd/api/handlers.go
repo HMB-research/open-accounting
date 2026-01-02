@@ -1094,8 +1094,8 @@ VALUES (
     true
 ) ON CONFLICT (email) DO NOTHING;
 
--- Demo Tenant (onboarding_completed is a separate column, not just in settings)
-INSERT INTO tenants (id, name, slug, schema_name, settings, is_active, onboarding_completed)
+-- Demo Tenant
+INSERT INTO tenants (id, name, slug, schema_name, settings, is_active)
 VALUES (
     'b0000000-0000-0000-0000-000000000001'::uuid,
     'Acme Corporation',
@@ -1113,9 +1113,16 @@ VALUES (
         "default_payment_terms": 14,
         "pdf_primary_color": "#4f46e5"
     }'::jsonb,
-    true,
     true
-) ON CONFLICT (slug) DO UPDATE SET onboarding_completed = true;
+) ON CONFLICT (slug) DO NOTHING;
+
+-- Mark onboarding as complete (column added in migration 009, safe to fail if column missing)
+DO $$ BEGIN
+    UPDATE tenants SET onboarding_completed = true WHERE id = 'b0000000-0000-0000-0000-000000000001'::uuid;
+EXCEPTION WHEN undefined_column THEN
+    -- Column doesn't exist yet (migration 009 not run), skip
+    NULL;
+END $$;
 
 -- Link demo user to tenant
 INSERT INTO tenant_users (tenant_id, user_id, role, is_default)
