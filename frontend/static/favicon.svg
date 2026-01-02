@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4f46e5"/>
+      <stop offset="100%" style="stop-color:#6366f1"/>
+    </linearGradient>
+  </defs>
+  <!-- Background rounded square -->
+  <rect x="2" y="2" width="28" height="28" rx="6" fill="url(#grad)"/>
+  <!-- Ledger lines representing accounting -->
+  <line x1="8" y1="10" x2="24" y2="10" stroke="white" stroke-width="2" stroke-linecap="round"/>
+  <line x1="8" y1="16" x2="24" y2="16" stroke="white" stroke-width="2" stroke-linecap="round"/>
+  <line x1="8" y1="22" x2="18" y2="22" stroke="white" stroke-width="2" stroke-linecap="round"/>
+  <!-- Checkmark for completed/balanced -->
+  <path d="M19 20 L22 23 L26 17" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>
