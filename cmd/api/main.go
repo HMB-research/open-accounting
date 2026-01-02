@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -172,11 +173,20 @@ func loadConfig() *Config {
 		log.Warn().Msg("Using default JWT_SECRET - change this in production!")
 	}
 
+	// ALLOWED_ORIGINS supports comma-separated list of origins
+	// Example: "https://app.example.com,https://admin.example.com"
 	origins := os.Getenv("ALLOWED_ORIGINS")
 	allowedOrigins := []string{"http://localhost:5173", "http://localhost:3000"}
 	if origins != "" {
-		allowedOrigins = append(allowedOrigins, origins)
+		// Split by comma and trim whitespace
+		for _, origin := range strings.Split(origins, ",") {
+			origin = strings.TrimSpace(origin)
+			if origin != "" {
+				allowedOrigins = append(allowedOrigins, origin)
+			}
+		}
 	}
+	log.Info().Strs("allowed_origins", allowedOrigins).Msg("CORS configuration")
 
 	return &Config{
 		Port:           port,
@@ -198,7 +208,10 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
 
-	// CORS
+	// CORS - Configure allowed origins via ALLOWED_ORIGINS env var
+	// If you see CORS errors, ensure your frontend origin is in ALLOWED_ORIGINS
+	// Example: ALLOWED_ORIGINS="https://app.example.com,https://admin.example.com"
+	corsDebug := os.Getenv("CORS_DEBUG") == "true"
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.AllowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
@@ -206,6 +219,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 		ExposedHeaders:   []string{"Link", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset", "Retry-After"},
 		AllowCredentials: true,
 		MaxAge:           300,
+		Debug:            corsDebug,
 	}))
 
 	// Rate limiting (100 requests/minute, burst 10)
