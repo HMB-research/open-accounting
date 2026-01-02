@@ -104,10 +104,17 @@ class ApiClient {
 		});
 
 		// Handle token refresh on 401
-		if (response.status === 401 && this.refreshToken && !skipAuth) {
-			const refreshed = await this.refreshAccessToken();
-			if (refreshed) {
-				return this.request(method, path, body, false);
+		if (response.status === 401 && !skipAuth) {
+			if (this.refreshToken) {
+				const refreshed = await this.refreshAccessToken();
+				if (refreshed) {
+					return this.request(method, path, body, false);
+				}
+			}
+			// Refresh failed or no refresh token - clear tokens and redirect to login
+			this.clearTokens();
+			if (browser) {
+				window.location.href = '/login';
 			}
 			throw new Error('Session expired. Please log in again.');
 		}
