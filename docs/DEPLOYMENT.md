@@ -20,6 +20,7 @@ This guide covers deploying Open Accounting to production environments.
 | `PORT` | No | API server port | `8080` |
 | `ALLOWED_ORIGINS` | Yes* | CORS allowed origins (comma-separated) | `https://app.example.com,https://admin.example.com` |
 | `CORS_DEBUG` | No | Enable verbose CORS logging | `true` |
+| `LOG_LEVEL` | No | Log verbosity (trace, debug, info, warn, error) | `debug` |
 | `DEMO_RESET_SECRET` | No | Secret key for demo reset endpoint | `your-reset-secret` |
 
 *Required for production deployments where frontend and API are on different domains.

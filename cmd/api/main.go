@@ -49,6 +49,20 @@ func main() {
 	// Configure logging
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 
+	// Set log level from environment (default: info)
+	// Valid levels: trace, debug, info, warn, error, fatal, panic
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		logLevel = "info"
+	}
+	level, err := zerolog.ParseLevel(logLevel)
+	if err != nil {
+		log.Warn().Str("level", logLevel).Msg("Invalid LOG_LEVEL, defaulting to info")
+		level = zerolog.InfoLevel
+	}
+	zerolog.SetGlobalLevel(level)
+	log.Info().Str("level", level.String()).Msg("Log level configured")
+
 	// Load configuration
 	cfg := loadConfig()
 
