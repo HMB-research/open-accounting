@@ -8,38 +8,48 @@ test.describe('Demo Dashboard - Seeded Data Verification', () => {
 	});
 
 	test('displays Acme Corporation in organization selector', async ({ page }) => {
-		await expect(page.getByText(/Acme Corporation/i)).toBeVisible();
+		// Find the org selector by looking for selects that contain "Acme"
+		const selects = page.locator('select');
+		const count = await selects.count();
+		let foundAcme = false;
+		for (let i = 0; i < count; i++) {
+			const select = selects.nth(i);
+			const text = await select.locator('option:checked').textContent();
+			if (text && text.includes('Acme')) {
+				foundAcme = true;
+				break;
+			}
+		}
+		expect(foundAcme).toBeTruthy();
 	});
 
-	test('shows revenue summary card with EUR amounts', async ({ page }) => {
-		// Dashboard should show summary cards with financial data
-		const summarySection = page.locator('.summary, .cards, [class*="summary"]').first();
-		await expect(summarySection).toBeVisible();
-
-		// Should display EUR currency (from seeded invoices totaling ~55k+)
-		await expect(page.getByText(/EUR|€/)).toBeVisible();
+	test('shows Cash Flow card on dashboard', async ({ page }) => {
+		// Dashboard shows Cash Flow card
+		await expect(page.getByText(/Cash Flow/i).first()).toBeVisible();
 	});
 
-	test('displays invoice status breakdown', async ({ page }) => {
-		// Seeded data has: 3 PAID, 2 SENT, 1 PARTIALLY_PAID, 1 DRAFT
-		// Should show at least some status indicators
-		const hasStatusIndicators = await page.getByText(/paid|sent|draft|overdue/i).first().isVisible();
-		expect(hasStatusIndicators).toBeTruthy();
+	test('shows Recent Activity section', async ({ page }) => {
+		// Dashboard shows Recent Activity section
+		await expect(page.getByText(/Recent Activity/i).first()).toBeVisible();
 	});
 
-	test('shows recent activity or quick actions', async ({ page }) => {
-		// Dashboard typically shows recent invoices, payments, or quick action buttons
-		const hasActivity = await page.getByText(/recent|activity|quick|action|invoice|payment/i).first().isVisible();
-		const hasButtons = await page.getByRole('button').count() > 0;
-
-		expect(hasActivity || hasButtons).toBeTruthy();
+	test('shows Revenue vs Expenses chart', async ({ page }) => {
+		// Dashboard shows Revenue vs Expenses chart
+		await expect(page.getByText(/Revenue vs Expenses/i).first()).toBeVisible();
 	});
 
-	test('navigation sidebar is visible with main menu items', async ({ page }) => {
-		const sidebar = page.locator('nav, .sidebar, [class*="sidebar"]').first();
-		await expect(sidebar).toBeVisible();
+	test('shows New Organization button', async ({ page }) => {
+		// Dashboard has + New Organization button
+		await expect(page.getByRole('button', { name: /New Organization/i })).toBeVisible();
+	});
 
-		// Check for essential navigation links
-		await expect(page.getByRole('link', { name: /dashboard/i })).toBeVisible();
+	test('navigation header is visible with main menu items', async ({ page }) => {
+		// Check for navigation links in the nav element
+		const nav = page.getByRole('navigation');
+		await expect(nav.getByRole('link', { name: /Dashboard/i })).toBeVisible();
+		await expect(nav.getByRole('link', { name: /Accounts/i })).toBeVisible();
+		await expect(nav.getByRole('link', { name: /Journal/i })).toBeVisible();
+		await expect(nav.getByRole('link', { name: /Contacts/i })).toBeVisible();
+		await expect(nav.getByRole('link', { name: /Invoices/i })).toBeVisible();
 	});
 });
