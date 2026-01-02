@@ -10,7 +10,7 @@ INSERT INTO users (id, email, password_hash, name, is_active)
 VALUES (
     'a0000000-0000-0000-0000-000000000001'::uuid,
     'demo@example.com',
-    '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZRGdjGj/n3.Q1bJjC.KLybxFg8m3K', -- demo123
+    '$2a$10$m/V.x2rKPDFQj6xo9voXAeCXJBua.EzF.A3v1bnreBdgbAaKBcsTu', -- demo123
     'Demo User',
     true
 ) ON CONFLICT (email) DO NOTHING;
