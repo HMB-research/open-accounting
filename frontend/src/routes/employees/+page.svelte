@@ -185,8 +185,8 @@
 			<p>{m.employees_emptyState()}</p>
 		</div>
 	{:else}
-		<div class="card">
-			<table class="table">
+		<div class="card table-container">
+			<table class="table table-mobile-cards">
 				<thead>
 					<tr>
 						<th>{m.employees_name()}</th>
@@ -201,33 +201,33 @@
 				<tbody>
 					{#each employees as employee}
 						<tr class:inactive={!employee.is_active}>
-							<td class="name">
+							<td class="name" data-label={m.employees_name()}>
 								{employee.last_name}, {employee.first_name}
 								{#if employee.email}
 									<div class="email-sub">{employee.email}</div>
 								{/if}
 							</td>
-							<td class="mono">{employee.personal_code || '-'}</td>
-							<td>
+							<td class="mono" data-label={m.employees_personalCode()}>{employee.personal_code || '-'}</td>
+							<td data-label={m.employees_position()}>
 								{employee.position || '-'}
 								{#if employee.department}
 									<div class="dept-sub">{employee.department}</div>
 								{/if}
 							</td>
-							<td>
+							<td data-label={m.employees_type()}>
 								<span class="badge {typeBadgeClass[employee.employment_type]}">
 									{getTypeLabel(employee.employment_type)}
 								</span>
 							</td>
-							<td>
+							<td data-label={m.employees_basicExemption()}>
 								{#if employee.apply_basic_exemption}
 									{formatDecimal(employee.basic_exemption_amount)}
 								{:else}
 									<span class="text-muted">{m.employees_notApplied()}</span>
 								{/if}
 							</td>
-							<td>{formatPercent(employee.funded_pension_rate)}</td>
-							<td>
+							<td data-label={m.employees_pensionRate()}>{formatPercent(employee.funded_pension_rate)}</td>
+							<td data-label={m.employees_status()}>
 								<span class="badge {employee.is_active ? 'badge-active' : 'badge-inactive'}">
 									{employee.is_active ? m.employees_active() : m.employees_inactive()}
 								</span>
@@ -572,5 +572,58 @@
 		margin-top: 1.5rem;
 		padding-top: 1rem;
 		border-top: 1px solid var(--color-border);
+	}
+
+	/* Mobile styles */
+	@media (max-width: 768px) {
+		.header {
+			flex-direction: column;
+			align-items: stretch;
+			gap: 1rem;
+		}
+
+		.header h1 {
+			font-size: 1.5rem;
+		}
+
+		.header .btn {
+			width: 100%;
+			justify-content: center;
+			min-height: 44px;
+		}
+
+		.filter-row {
+			flex-direction: column;
+			align-items: stretch;
+		}
+
+		.checkbox-label {
+			padding: 0.5rem 0;
+		}
+
+		.form-row {
+			flex-direction: column;
+		}
+
+		.modal {
+			margin: 0;
+			max-width: 100%;
+			border-radius: 1rem 1rem 0 0;
+		}
+
+		.modal-backdrop {
+			align-items: flex-end;
+			padding: 0;
+		}
+
+		.modal-actions {
+			flex-direction: column;
+		}
+
+		.modal-actions .btn {
+			width: 100%;
+			min-height: 44px;
+			justify-content: center;
+		}
 	}
 </style>
