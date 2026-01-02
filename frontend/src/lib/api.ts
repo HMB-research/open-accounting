@@ -23,7 +23,15 @@ import Decimal from 'decimal.js';
  * @returns The API base URL from PUBLIC_API_URL env var, or localhost:8080 as fallback
  */
 export function getApiBase(): string {
-	return env.PUBLIC_API_URL || 'http://localhost:8080';
+	let url = env.PUBLIC_API_URL || 'http://localhost:8080';
+
+	// Ensure URL has a protocol - if missing, add https://
+	// This prevents URLs like "example.com/api" being treated as relative paths
+	if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+		url = `https://${url}`;
+	}
+
+	return url;
 }
 
 interface TokenResponse {
