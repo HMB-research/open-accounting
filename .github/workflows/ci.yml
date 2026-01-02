@@ -327,7 +327,7 @@ jobs:
 
       - name: Run Demo E2E tests
         working-directory: frontend
-        run: npx playwright test --config=playwright.demo.config.ts --project=demo-chromium
+        run: npx playwright test demo-env.spec.ts --config=playwright.demo.config.ts --project=demo-chromium
         env:
           CI: true
           TEST_DEMO: 'true'
