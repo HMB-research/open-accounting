@@ -45,6 +45,7 @@
   "dependencies": {
     "@inlang/paraglide-js": "^2.7.1",
     "chart.js": "^4.5.1",
-    "decimal.js": "^10.4.3"
+    "decimal.js": "^10.4.3",
+    "xlsx": "^0.18.5"
   }
 }

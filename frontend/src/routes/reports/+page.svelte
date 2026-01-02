@@ -4,6 +4,7 @@
 	import { api, type TrialBalance, type AccountBalance, type BalanceSheet, type IncomeStatement } from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
+	import ExportButton from '$lib/components/ExportButton.svelte';
 
 	let tenantId = $derived($page.url.searchParams.get('tenant') || '');
 	let isLoading = $state(false);
@@ -106,6 +107,156 @@
 	function printReport() {
 		window.print();
 	}
+
+	// Export data preparation functions
+	function getTrialBalanceExportData(): { data: Record<string, unknown>[][]; headers: string[][] } {
+		if (!trialBalance) return { data: [[]], headers: [[]] };
+
+		const rows: Record<string, unknown>[] = [];
+		const groupedAccounts = groupByType(trialBalance.accounts);
+
+		for (const [type, accounts] of Object.entries(groupedAccounts)) {
+			if (accounts.length > 0) {
+				// Add section header
+				rows.push({
+					code: getTypeLabel(type),
+					name: '',
+					debit: '',
+					credit: ''
+				});
+
+				for (const account of accounts) {
+					const { debit, credit } = formatBalance(account);
+					rows.push({
+						code: account.account_code,
+						name: account.account_name,
+						debit: debit === '-' ? '' : debit,
+						credit: credit === '-' ? '' : credit
+					});
+				}
+			}
+		}
+
+		// Add totals
+		rows.push({
+			code: m.reports_totals(),
+			name: '',
+			debit: formatAmount(trialBalance.total_debits),
+			credit: formatAmount(trialBalance.total_credits)
+		});
+
+		return {
+			data: [rows],
+			headers: [[m.reports_accountCode(), m.reports_accountName(), m.accounts_debit(), m.accounts_credit()]]
+		};
+	}
+
+	function getBalanceSheetExportData(): { data: Record<string, unknown>[][]; headers: string[][] } {
+		if (!balanceSheet) return { data: [[]], headers: [[]] };
+
+		const rows: Record<string, unknown>[] = [];
+
+		// Assets
+		rows.push({ account: m.accounts_assets(), balance: '' });
+		for (const account of balanceSheet.assets) {
+			rows.push({
+				account: `  ${account.account_code} - ${account.account_name}`,
+				balance: formatAmount(account.net_balance)
+			});
+		}
+		rows.push({ account: m.reports_totalAssets(), balance: formatAmount(balanceSheet.total_assets) });
+		rows.push({ account: '', balance: '' });
+
+		// Liabilities
+		rows.push({ account: m.accounts_liabilities(), balance: '' });
+		for (const account of balanceSheet.liabilities) {
+			rows.push({
+				account: `  ${account.account_code} - ${account.account_name}`,
+				balance: formatAmount(account.net_balance.abs())
+			});
+		}
+		rows.push({ account: m.reports_totalLiabilities(), balance: formatAmount(balanceSheet.total_liabilities) });
+		rows.push({ account: '', balance: '' });
+
+		// Equity
+		rows.push({ account: m.accounts_equities(), balance: '' });
+		for (const account of balanceSheet.equity) {
+			rows.push({
+				account: `  ${account.account_code} - ${account.account_name}`,
+				balance: formatAmount(account.net_balance.abs())
+			});
+		}
+		if (!balanceSheet.retained_earnings.isZero()) {
+			rows.push({
+				account: `  ${m.reports_retainedEarnings()}`,
+				balance: formatAmount(balanceSheet.retained_earnings)
+			});
+		}
+		rows.push({ account: m.reports_totalEquity(), balance: formatAmount(balanceSheet.total_equity) });
+
+		return {
+			data: [rows],
+			headers: [[m.reports_account(), m.reports_balance()]]
+		};
+	}
+
+	function getIncomeStatementExportData(): { data: Record<string, unknown>[][]; headers: string[][] } {
+		if (!incomeStatement) return { data: [[]], headers: [[]] };
+
+		const rows: Record<string, unknown>[] = [];
+
+		// Revenue
+		rows.push({ account: m.accounts_revenues(), amount: '' });
+		for (const account of incomeStatement.revenue) {
+			rows.push({
+				account: `  ${account.account_code} - ${account.account_name}`,
+				amount: formatAmount(account.net_balance.abs())
+			});
+		}
+		rows.push({ account: m.reports_totalRevenue(), amount: formatAmount(incomeStatement.total_revenue) });
+		rows.push({ account: '', amount: '' });
+
+		// Expenses
+		rows.push({ account: m.accounts_expenses(), amount: '' });
+		for (const account of incomeStatement.expenses) {
+			rows.push({
+				account: `  ${account.account_code} - ${account.account_name}`,
+				amount: formatAmount(account.net_balance)
+			});
+		}
+		rows.push({ account: m.reports_totalExpenses(), amount: formatAmount(incomeStatement.total_expenses) });
+		rows.push({ account: '', amount: '' });
+
+		// Net Income
+		rows.push({ account: m.reports_netIncome(), amount: formatAmount(incomeStatement.net_income) });
+
+		return {
+			data: [rows],
+			headers: [[m.reports_account(), m.reports_amount()]]
+		};
+	}
+
+	function getExportFilename(): string {
+		const date = new Date().toISOString().split('T')[0];
+		if (selectedReport === 'trial-balance') {
+			return `trial-balance-${asOfDate}`;
+		} else if (selectedReport === 'balance-sheet') {
+			return `balance-sheet-${asOfDate}`;
+		} else {
+			return `income-statement-${startDate}-to-${endDate}`;
+		}
+	}
+
+	let exportData = $derived.by(() => {
+		if (selectedReport === 'trial-balance' && trialBalance) {
+			return getTrialBalanceExportData();
+		} else if (selectedReport === 'balance-sheet' && balanceSheet) {
+			return getBalanceSheetExportData();
+		} else if (selectedReport === 'income-statement' && incomeStatement) {
+			return getIncomeStatementExportData();
+		}
+		return { data: [[]], headers: [[]] };
+	});
 </script>
 
 <svelte:head>
@@ -116,7 +267,13 @@
 	<div class="header">
 		<h1>{m.reports_financialReports()}</h1>
 		{#if trialBalance || balanceSheet || incomeStatement}
-			<button class="btn btn-secondary" onclick={printReport}>{m.reports_print()}</button>
+			<div class="header-actions">
+				<ExportButton
+					data={exportData.data}
+					headers={exportData.headers}
+					filename={getExportFilename()}
+				/>
+			</div>
 		{/if}
 	</div>
 
@@ -459,6 +616,11 @@
 
 	h1 {
 		font-size: 1.75rem;
+	}
+
+	.header-actions {
+		display: flex;
+		gap: 0.5rem;
 	}
 
 	.empty-state {
