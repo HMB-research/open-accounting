@@ -1198,9 +1198,9 @@ INSERT INTO tenant_acme.fiscal_years (id, tenant_id, name, start_date, end_date,
 ('90000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'FY 2025', '2025-01-01', '2025-12-31', false)
 ON CONFLICT DO NOTHING;
 
--- Bank Accounts
-INSERT INTO tenant_acme.bank_accounts (id, tenant_id, name, account_number, bank_name, currency, opening_balance, current_balance, is_active) VALUES
-('80000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Main EUR Account', 'EE123456789012345678', 'Swedbank', 'EUR', 50000.00, 53050.00, true)
+-- Bank Accounts (schema has: id, tenant_id, name, account_number, bank_name, swift_code, currency, gl_account_id, is_default, is_active)
+INSERT INTO tenant_acme.bank_accounts (id, tenant_id, name, account_number, bank_name, currency, is_default, is_active) VALUES
+('80000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Main EUR Account', 'EE123456789012345678', 'Swedbank', 'EUR', true, true)
 ON CONFLICT DO NOTHING;
 `
 }
