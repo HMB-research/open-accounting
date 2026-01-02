@@ -100,6 +100,7 @@ func main() {
 
 	// Create handlers
 	handlers := &Handlers{
+		pool:              pool,
 		tokenService:      tokenService,
 		tenantService:     tenantService,
 		accountingService: accountingService,
@@ -215,6 +216,9 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("OK"))
 	})
+
+	// Demo reset endpoint (protected by secret key)
+	r.Post("/api/demo/reset", h.DemoReset)
 
 	// Swagger documentation
 	r.Get("/swagger/*", httpSwagger.Handler(

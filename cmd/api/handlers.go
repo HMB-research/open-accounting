@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
@@ -28,6 +30,7 @@ import (
 
 // Handlers contains all HTTP handlers
 type Handlers struct {
+	pool              *pgxpool.Pool
 	tokenService      *auth.TokenService
 	tenantService     *tenant.Service
 	accountingService *accounting.Service
@@ -992,4 +995,135 @@ func (h *Handlers) HandleExportKMD(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/xml")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=KMD_%s_%s.xml", year, month))
 	_, _ = w.Write(xml)
+}
+
+// DemoReset resets the demo database to initial state
+// @Summary Reset demo database
+// @Description Reset the demo database to initial state (requires DEMO_RESET_SECRET)
+// @Tags Demo
+// @Accept json
+// @Produce json
+// @Param X-Demo-Secret header string true "Demo reset secret key"
+// @Success 200 {object} object{status=string,message=string}
+// @Failure 401 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /api/demo/reset [post]
+func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
+	// Check if demo mode is enabled
+	if os.Getenv("DEMO_MODE") != "true" {
+		respondError(w, http.StatusForbidden, "Demo mode is not enabled")
+		return
+	}
+
+	// Validate secret key
+	secret := os.Getenv("DEMO_RESET_SECRET")
+	if secret == "" {
+		respondError(w, http.StatusForbidden, "Demo reset not configured")
+		return
+	}
+
+	providedSecret := r.Header.Get("X-Demo-Secret")
+	if providedSecret == "" {
+		providedSecret = r.URL.Query().Get("secret")
+	}
+
+	if providedSecret != secret {
+		respondError(w, http.StatusUnauthorized, "Invalid or missing secret key")
+		return
+	}
+
+	ctx := r.Context()
+
+	// Demo user and tenant IDs (matching demo-seed.sql)
+	demoUserID := "a0000000-0000-0000-0000-000000000001"
+	demoTenantID := "b0000000-0000-0000-0000-000000000001"
+
+	// Drop tenant schema
+	_, err := h.pool.Exec(ctx, "DROP SCHEMA IF EXISTS tenant_acme CASCADE")
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to drop tenant schema: "+err.Error())
+		return
+	}
+
+	// Delete demo data from public tables
+	_, err = h.pool.Exec(ctx, "DELETE FROM tenant_users WHERE tenant_id = $1", demoTenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to clean tenant_users: "+err.Error())
+		return
+	}
+
+	_, err = h.pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1", demoTenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to clean tenants: "+err.Error())
+		return
+	}
+
+	_, err = h.pool.Exec(ctx, "DELETE FROM users WHERE id = $1", demoUserID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to clean users: "+err.Error())
+		return
+	}
+
+	// Re-seed demo data by executing the seed SQL
+	// Note: In production, you might want to read from a file or embedded resource
+	seedSQL := getDemoSeedSQL()
+	_, err = h.pool.Exec(ctx, seedSQL)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to seed demo data: "+err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{
+		"status":  "success",
+		"message": "Demo database reset successfully",
+	})
+}
+
+// getDemoSeedSQL returns the SQL to seed the demo database
+// This is a minimal version - the full seed is in scripts/demo-seed.sql
+func getDemoSeedSQL() string {
+	return `
+-- Demo User (password: demo123)
+INSERT INTO users (id, email, password_hash, name, is_active)
+VALUES (
+    'a0000000-0000-0000-0000-000000000001'::uuid,
+    'demo@example.com',
+    '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZRGdjGj/n3.Q1bJjC.KLybxFg8m3K',
+    'Demo User',
+    true
+) ON CONFLICT (email) DO NOTHING;
+
+-- Demo Tenant
+INSERT INTO tenants (id, name, slug, schema_name, settings, is_active)
+VALUES (
+    'b0000000-0000-0000-0000-000000000001'::uuid,
+    'Acme Corporation',
+    'acme',
+    'tenant_acme',
+    '{
+        "reg_code": "12345678",
+        "vat_number": "EE123456789",
+        "address": "Viru väljak 2, 10111 Tallinn",
+        "email": "info@acme.example.com",
+        "phone": "+372 5123 4567",
+        "bank_details": "Swedbank EE123456789012345678",
+        "invoice_prefix": "INV-",
+        "invoice_footer": "Thank you for your business!",
+        "default_payment_terms": 14,
+        "pdf_primary_color": "#4f46e5",
+        "onboarding_completed": true
+    }'::jsonb,
+    true
+) ON CONFLICT (slug) DO NOTHING;
+
+-- Link demo user to tenant
+INSERT INTO tenant_users (tenant_id, user_id, role, is_default)
+VALUES (
+    'b0000000-0000-0000-0000-000000000001'::uuid,
+    'a0000000-0000-0000-0000-000000000001'::uuid,
+    'admin',
+    true
+) ON CONFLICT (tenant_id, user_id) DO NOTHING;
+`
 }

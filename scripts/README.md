@@ -67,7 +67,28 @@ psql $DATABASE_URL -f scripts/demo-seed.sql
 
 ### Automatic Hourly Reset
 
-For public demos, enable automatic hourly resets:
+For public demos, enable automatic hourly resets using the API endpoint:
+
+#### Option 1: API Endpoint (Recommended for Railway)
+
+1. Set environment variables:
+   ```bash
+   DEMO_MODE=true
+   DEMO_RESET_SECRET=your-secret-key-here
+   ```
+
+2. Use an external cron service (e.g., cron-job.org) to call:
+   ```bash
+   curl -X POST https://your-api.up.railway.app/api/demo/reset \
+     -H "X-Demo-Secret: your-secret-key-here"
+   ```
+
+   Or with query parameter:
+   ```bash
+   curl -X POST "https://your-api.up.railway.app/api/demo/reset?secret=your-secret-key-here"
+   ```
+
+#### Option 2: Shell Script (for Docker/self-hosted)
 
 1. Set environment variable:
    ```bash
