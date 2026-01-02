@@ -8,6 +8,8 @@ const authFile = './e2e/.auth/user.json';
  */
 export default defineConfig({
 	testDir: './e2e',
+	// Exclude demo environment tests - run them with: npm run test:e2e:demo
+	testIgnore: ['**/demo-env.spec.ts'],
 	fullyParallel: true,
 	forbidOnly: !!process.env.CI,
 	retries: process.env.CI ? 2 : 0,
