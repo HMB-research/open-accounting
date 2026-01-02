@@ -114,14 +114,14 @@ class ApiClient {
 
 		let data: unknown;
 		try {
-			const text = await response.text();
-			data = text ? JSON.parse(text) : {};
-		} catch (parseError) {
-			// Server returned non-JSON response (HTML error page, etc.)
+			data = await response.json();
+		} catch {
+			// Server returned non-JSON response (HTML error page, empty body, etc.)
 			if (!response.ok) {
 				throw new Error(`Request failed with status ${response.status}`);
 			}
-			throw new Error('Invalid JSON response from server');
+			// For successful responses with no/invalid JSON, return empty object
+			data = {};
 		}
 
 		if (!response.ok) {
