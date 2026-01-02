@@ -27,12 +27,8 @@ COPY --from=builder /app/package*.json ./
 # Install production dependencies only
 RUN npm ci --omit=dev
 
-# Create non-root user
-RUN addgroup -g 1000 -S appgroup && \
-    adduser -u 1000 -S appuser -G appgroup && \
-    chown -R appuser:appgroup /app
-
-USER appuser
+# Use the built-in node user (already exists in node:alpine)
+USER node
 
 EXPOSE 3000
 
