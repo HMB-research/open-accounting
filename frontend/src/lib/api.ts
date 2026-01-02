@@ -2,7 +2,29 @@ import { browser } from '$app/environment';
 import { env } from '$env/dynamic/public';
 import Decimal from 'decimal.js';
 
-const API_BASE = env.PUBLIC_API_URL || 'http://localhost:8080';
+/**
+ * Get the API base URL.
+ *
+ * IMPORTANT: This must be a function (lazy evaluation) instead of a constant.
+ *
+ * Root Cause:
+ * -----------
+ * $env/dynamic/public reads environment variables at runtime on the server,
+ * then injects them into the client during SSR hydration. If we read the value
+ * at module initialization time (const API_BASE = env.PUBLIC_API_URL), the client
+ * may not have the values yet (before hydration completes), resulting in undefined
+ * and falling back to localhost:8080.
+ *
+ * Solution:
+ * ---------
+ * Use a function that reads the env value when actually needed (at request time),
+ * not at module initialization time. This ensures the value is read after hydration.
+ *
+ * @returns The API base URL from PUBLIC_API_URL env var, or localhost:8080 as fallback
+ */
+export function getApiBase(): string {
+	return env.PUBLIC_API_URL || 'http://localhost:8080';
+}
 
 interface TokenResponse {
 	access_token: string;
@@ -67,7 +89,7 @@ class ApiClient {
 			headers['Authorization'] = `Bearer ${this.accessToken}`;
 		}
 
-		const response = await fetch(`${API_BASE}${path}`, {
+		const response = await fetch(`${getApiBase()}${path}`, {
 			method,
 			headers,
 			body: body ? JSON.stringify(body) : undefined
@@ -325,7 +347,7 @@ class ApiClient {
 		}
 
 		const response = await fetch(
-			`${API_BASE}/api/v1/tenants/${tenantId}/invoices/${invoiceId}/pdf`,
+			`${getApiBase()}/api/v1/tenants/${tenantId}/invoices/${invoiceId}/pdf`,
 			{ headers }
 		);
 
@@ -703,7 +725,7 @@ class ApiClient {
 		}
 
 		const response = await fetch(
-			`${API_BASE}/api/v1/tenants/${tenantId}/tax/kmd/${year}/${month}/xml`,
+			`${getApiBase()}/api/v1/tenants/${tenantId}/tax/kmd/${year}/${month}/xml`,
 			{ headers }
 		);
 
@@ -823,7 +845,7 @@ class ApiClient {
 		}
 
 		const response = await fetch(
-			`${API_BASE}/api/v1/tenants/${tenantId}/tsd/${year}/${month}/xml`,
+			`${getApiBase()}/api/v1/tenants/${tenantId}/tsd/${year}/${month}/xml`,
 			{ headers }
 		);
 
@@ -849,7 +871,7 @@ class ApiClient {
 		}
 
 		const response = await fetch(
-			`${API_BASE}/api/v1/tenants/${tenantId}/tsd/${year}/${month}/csv`,
+			`${getApiBase()}/api/v1/tenants/${tenantId}/tsd/${year}/${month}/csv`,
 			{ headers }
 		);
 

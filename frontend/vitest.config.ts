@@ -24,7 +24,8 @@ export default defineConfig({
 	resolve: {
 		alias: {
 			$lib: '/src/lib',
-			$app: '/src/tests/mocks/app'
+			$app: '/src/tests/mocks/app',
+			'$env/dynamic/public': '/src/tests/mocks/env/dynamic/public'
 		}
 	}
 });
