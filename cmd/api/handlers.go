@@ -1094,8 +1094,8 @@ VALUES (
     true
 ) ON CONFLICT (email) DO NOTHING;
 
--- Demo Tenant
-INSERT INTO tenants (id, name, slug, schema_name, settings, is_active)
+-- Demo Tenant (onboarding_completed is a separate column, not just in settings)
+INSERT INTO tenants (id, name, slug, schema_name, settings, is_active, onboarding_completed)
 VALUES (
     'b0000000-0000-0000-0000-000000000001'::uuid,
     'Acme Corporation',
@@ -1111,11 +1111,11 @@ VALUES (
         "invoice_prefix": "INV-",
         "invoice_footer": "Thank you for your business!",
         "default_payment_terms": 14,
-        "pdf_primary_color": "#4f46e5",
-        "onboarding_completed": true
+        "pdf_primary_color": "#4f46e5"
     }'::jsonb,
+    true,
     true
-) ON CONFLICT (slug) DO NOTHING;
+) ON CONFLICT (slug) DO UPDATE SET onboarding_completed = true;
 
 -- Link demo user to tenant
 INSERT INTO tenant_users (tenant_id, user_id, role, is_default)
