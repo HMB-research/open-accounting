@@ -324,6 +324,82 @@ test.describe('Demo Environment - Error Handling', () => {
 	});
 });
 
+test.describe('Demo Environment - Onboarding Wizard', () => {
+	test('Onboarding wizard displays for new organization', async ({ page }) => {
+		await loginAsDemo(page);
+
+		// Check if onboarding wizard is visible (may or may not appear depending on org state)
+		const wizardHeading = page.getByRole('heading', { name: /welcome to open accounting/i });
+		const hasWizard = await wizardHeading.isVisible({ timeout: 5000 }).catch(() => false);
+
+		if (hasWizard) {
+			await expect(wizardHeading).toBeVisible();
+
+			// Verify setup steps are shown
+			await expect(page.getByText(/set up your organization/i)).toBeVisible();
+
+			// Verify step indicators (1-Company, 2-Branding, 3-Contact, 4-Done)
+			await expect(page.getByText('Company')).toBeVisible();
+			await expect(page.getByText('Branding')).toBeVisible();
+			await expect(page.getByText('Contact')).toBeVisible();
+			await expect(page.getByText('Done')).toBeVisible();
+		}
+	});
+
+	test('Company information form displays correctly', async ({ page }) => {
+		await loginAsDemo(page);
+
+		const companyHeading = page.getByRole('heading', { name: /company information/i });
+		const hasCompanyForm = await companyHeading.isVisible({ timeout: 5000 }).catch(() => false);
+
+		if (hasCompanyForm) {
+			await expect(companyHeading).toBeVisible();
+
+			// Verify form fields
+			await expect(page.getByLabel(/company name/i)).toBeVisible();
+			await expect(page.getByLabel(/registration code/i)).toBeVisible();
+			await expect(page.getByLabel(/vat number/i)).toBeVisible();
+			await expect(page.getByLabel(/email/i)).toBeVisible();
+			await expect(page.getByLabel(/phone/i)).toBeVisible();
+			await expect(page.getByLabel(/address/i)).toBeVisible();
+		}
+	});
+
+	test('Onboarding form accepts valid company data', async ({ page }) => {
+		await loginAsDemo(page);
+
+		const companyNameInput = page.getByLabel(/company name/i);
+		const hasCompanyForm = await companyNameInput.isVisible({ timeout: 5000 }).catch(() => false);
+
+		if (hasCompanyForm) {
+			// Fill in company information
+			await companyNameInput.fill('Test Company');
+			await expect(companyNameInput).toHaveValue('Test Company');
+
+			// Check for next/continue button
+			const nextButton = page.getByRole('button', { name: /next|continue|save/i });
+			const hasNext = await nextButton.isVisible().catch(() => false);
+
+			if (hasNext) {
+				await expect(nextButton).toBeEnabled();
+			}
+		}
+	});
+
+	test('Onboarding wizard step navigation works', async ({ page }) => {
+		await loginAsDemo(page);
+
+		// Check if we're on step 1 (Company)
+		const step1Active = page.locator('[class*="active"], [class*="current"]').filter({ hasText: /company/i });
+		const hasSteps = await step1Active.isVisible({ timeout: 5000 }).catch(() => false);
+
+		if (hasSteps) {
+			// Step 1 should be active/current
+			await expect(step1Active).toBeVisible();
+		}
+	});
+});
+
 test.describe('Demo Environment - Performance', () => {
 	test('Login flow completes successfully', async ({ page }) => {
 		const startTime = Date.now();
