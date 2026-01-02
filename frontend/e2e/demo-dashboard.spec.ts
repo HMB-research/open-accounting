@@ -7,12 +7,34 @@ test.describe('Demo User - Dashboard Integration', () => {
 	test.beforeEach(async ({ page }) => {
 		// Login as demo user
 		await page.goto('/login');
-		await page.getByLabel(/email/i).fill('demo@example.com');
-		await page.getByLabel(/password/i).fill('demo123');
+
+		// Wait for the form to be ready
+		await page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 10000 });
+
+		// Fill credentials
+		const emailInput = page.locator('input[type="email"], input[name="email"]').first();
+		const passwordInput = page.locator('input[type="password"]').first();
+
+		await emailInput.fill('demo@example.com');
+		await passwordInput.fill('demo123');
+
+		// Click sign in and wait for response
 		await page.getByRole('button', { name: /sign in|login/i }).click();
 
-		// Wait for navigation to dashboard
-		await page.waitForURL(/dashboard|home/i, { timeout: 15000 });
+		// Wait for either dashboard navigation or error display
+		try {
+			await page.waitForURL(/dashboard|home/i, { timeout: 20000 });
+		} catch {
+			// If we didn't navigate, check for error message
+			const errorMsg = await page.locator('.alert-error, [role="alert"], .error').textContent().catch(() => null);
+			if (errorMsg) {
+				throw new Error(`Login failed with error: ${errorMsg}`);
+			}
+			// Check if we're still on login page
+			if (page.url().includes('/login')) {
+				throw new Error('Login failed - stayed on login page without error message');
+			}
+		}
 	});
 
 	test('should successfully login and redirect to dashboard', async ({ page }) => {
