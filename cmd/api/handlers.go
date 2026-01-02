@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog/log"
 	"github.com/shopspring/decimal"
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
@@ -1010,8 +1011,11 @@ func (h *Handlers) HandleExportKMD(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} object{error=string}
 // @Router /api/demo/reset [post]
 func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
+	log.Info().Msg("Demo reset requested")
+
 	// Check if demo mode is enabled
 	if os.Getenv("DEMO_MODE") != "true" {
+		log.Warn().Msg("Demo reset rejected: DEMO_MODE not enabled")
 		respondError(w, http.StatusForbidden, "Demo mode is not enabled")
 		return
 	}
@@ -1019,6 +1023,7 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 	// Validate secret key
 	secret := os.Getenv("DEMO_RESET_SECRET")
 	if secret == "" {
+		log.Warn().Msg("Demo reset rejected: DEMO_RESET_SECRET not configured")
 		respondError(w, http.StatusForbidden, "Demo reset not configured")
 		return
 	}
@@ -1029,6 +1034,7 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if providedSecret != secret {
+		log.Warn().Msg("Demo reset rejected: invalid secret")
 		respondError(w, http.StatusUnauthorized, "Invalid or missing secret key")
 		return
 	}
@@ -1039,41 +1045,52 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 	demoUserID := "a0000000-0000-0000-0000-000000000001"
 	demoTenantID := "b0000000-0000-0000-0000-000000000001"
 
+	log.Info().Msg("Demo reset: dropping tenant schema")
 	// Drop tenant schema
 	_, err := h.pool.Exec(ctx, "DROP SCHEMA IF EXISTS tenant_acme CASCADE")
 	if err != nil {
+		log.Error().Err(err).Msg("Demo reset failed: drop schema")
 		respondError(w, http.StatusInternalServerError, "Failed to drop tenant schema: "+err.Error())
 		return
 	}
 
+	log.Info().Msg("Demo reset: cleaning tenant_users")
 	// Delete demo data from public tables
 	_, err = h.pool.Exec(ctx, "DELETE FROM tenant_users WHERE tenant_id = $1", demoTenantID)
 	if err != nil {
+		log.Error().Err(err).Msg("Demo reset failed: clean tenant_users")
 		respondError(w, http.StatusInternalServerError, "Failed to clean tenant_users: "+err.Error())
 		return
 	}
 
+	log.Info().Msg("Demo reset: cleaning tenants")
 	_, err = h.pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1", demoTenantID)
 	if err != nil {
+		log.Error().Err(err).Msg("Demo reset failed: clean tenants")
 		respondError(w, http.StatusInternalServerError, "Failed to clean tenants: "+err.Error())
 		return
 	}
 
+	log.Info().Msg("Demo reset: cleaning users")
 	_, err = h.pool.Exec(ctx, "DELETE FROM users WHERE id = $1", demoUserID)
 	if err != nil {
+		log.Error().Err(err).Msg("Demo reset failed: clean users")
 		respondError(w, http.StatusInternalServerError, "Failed to clean users: "+err.Error())
 		return
 	}
 
+	log.Info().Msg("Demo reset: seeding demo data")
 	// Re-seed demo data by executing the seed SQL
 	// Note: In production, you might want to read from a file or embedded resource
 	seedSQL := getDemoSeedSQL()
 	_, err = h.pool.Exec(ctx, seedSQL)
 	if err != nil {
+		log.Error().Err(err).Str("sql_preview", seedSQL[:500]).Msg("Demo reset failed: seed data")
 		respondError(w, http.StatusInternalServerError, "Failed to seed demo data: "+err.Error())
 		return
 	}
 
+	log.Info().Msg("Demo reset completed successfully")
 	respondJSON(w, http.StatusOK, map[string]string{
 		"status":  "success",
 		"message": "Demo database reset successfully",
