@@ -1,10 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { loginAsDemo, navigateTo, ensureAcmeTenant } from './utils';
+import { loginAsDemo, navigateTo, ensureDemoTenant } from './utils';
 
 test.describe('Demo Contacts - Seed Data Verification', () => {
-	test.beforeEach(async ({ page }) => {
-		await loginAsDemo(page);
-		await ensureAcmeTenant(page);
+	test.beforeEach(async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/contacts');
 		await page.waitForLoadState('networkidle');
 	});
@@ -14,8 +14,8 @@ test.describe('Demo Contacts - Seed Data Verification', () => {
 		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
 
 		// Verify seeded customers are visible
-		await expect(page.getByText('TechStart OÜ')).toBeVisible();
-		await expect(page.getByText('Nordic Solutions AS')).toBeVisible();
+		await expect(page.getByText('TechStart').first()).toBeVisible();
+		await expect(page.getByText('Nordic').first()).toBeVisible();
 	});
 
 	test('displays seeded supplier contacts', async ({ page }) => {

@@ -1,10 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { loginAsDemo, navigateTo, ensureAcmeTenant } from './utils';
+import { loginAsDemo, navigateTo, ensureDemoTenant } from './utils';
 
 test.describe('Demo Settings - Page Structure Verification', () => {
-	test.beforeEach(async ({ page }) => {
-		await loginAsDemo(page);
-		await ensureAcmeTenant(page);
+	test.beforeEach(async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/settings');
 		await page.waitForTimeout(2000);
 	});

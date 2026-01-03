@@ -1,10 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { loginAsDemo, navigateTo, ensureAcmeTenant } from './utils';
+import { loginAsDemo, navigateTo, ensureDemoTenant } from './utils';
 
 test.describe('Demo Employees - Seed Data Verification', () => {
-	test.beforeEach(async ({ page }) => {
-		await loginAsDemo(page);
-		await ensureAcmeTenant(page);
+	test.beforeEach(async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/employees');
 		await page.waitForLoadState('networkidle');
 	});

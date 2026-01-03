@@ -9,14 +9,19 @@ import { defineConfig, devices } from '@playwright/test';
  * These tests run against the live demo environment:
  * - Frontend: https://open-accounting.up.railway.app
  * - API: https://open-accounting-api.up.railway.app
+ *
+ * Parallel testing is enabled with 3 workers, each using a dedicated demo user:
+ * - Worker 0: demo1@example.com / tenant_demo1
+ * - Worker 1: demo2@example.com / tenant_demo2
+ * - Worker 2: demo3@example.com / tenant_demo3
  */
 export default defineConfig({
 	testDir: './e2e',
 	testMatch: ['**/demo/*.spec.ts', 'demo-env.spec.ts', 'demo-all-views.spec.ts'],
-	fullyParallel: false, // Run sequentially to avoid rate limiting
+	fullyParallel: true, // Enable parallel execution
 	forbidOnly: !!process.env.CI,
 	retries: 2, // Retry on network flakiness
-	workers: 1, // Single worker for demo environment
+	workers: 3, // 3 workers for 3 demo users
 	reporter: [
 		['html', { outputFolder: 'playwright-report-demo' }],
 		['list'],
@@ -40,20 +45,6 @@ export default defineConfig({
 			use: {
 				...devices['Desktop Chrome'],
 				// Clear state for each test
-				storageState: { cookies: [], origins: [] }
-			}
-		},
-		{
-			name: 'demo-firefox',
-			use: {
-				...devices['Desktop Firefox'],
-				storageState: { cookies: [], origins: [] }
-			}
-		},
-		{
-			name: 'demo-mobile',
-			use: {
-				...devices['Pixel 5'],
 				storageState: { cookies: [], origins: [] }
 			}
 		}

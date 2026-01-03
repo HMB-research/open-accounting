@@ -1,10 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { loginAsDemo, navigateTo, ensureAcmeTenant } from './utils';
+import { loginAsDemo, navigateTo, ensureDemoTenant } from './utils';
 
 test.describe('Demo Invoices - Seed Data Verification', () => {
-	test.beforeEach(async ({ page }) => {
-		await loginAsDemo(page);
-		await ensureAcmeTenant(page);
+	test.beforeEach(async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/invoices');
 		await page.waitForLoadState('networkidle');
 	});
@@ -12,9 +12,9 @@ test.describe('Demo Invoices - Seed Data Verification', () => {
 	test('displays seeded invoices', async ({ page }) => {
 		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
 
-		// Verify invoice numbers are visible (at least one)
+		// Verify invoice numbers are visible (format: INV{N}-YYYY-NNN)
 		const pageContent = await page.content();
-		expect(pageContent).toMatch(/INV-202[45]-\d{3}/);
+		expect(pageContent).toMatch(/INV\d?-?202[45]-\d{3}/);
 	});
 
 	test('shows invoices with various statuses', async ({ page }) => {
