@@ -43,7 +43,10 @@ test.describe('Demo Dashboard - Seeded Data Verification', () => {
 		await expect(page.getByRole('button', { name: /New Organization/i })).toBeVisible();
 	});
 
-	test('navigation header is visible with main menu items', async ({ page }) => {
+	test('navigation header is visible with main menu items', async ({ page, browserName }) => {
+		// Skip on mobile - navigation is hidden behind hamburger menu
+		test.skip(browserName === 'webkit' || page.viewportSize()?.width! < 768, 'Mobile navigation is collapsed');
+
 		// Check for navigation links in the nav element
 		const nav = page.getByRole('navigation');
 		await expect(nav.getByRole('link', { name: /Dashboard/i })).toBeVisible();

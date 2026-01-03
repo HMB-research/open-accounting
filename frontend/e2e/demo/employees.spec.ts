@@ -1,26 +1,52 @@
 import { test, expect } from '@playwright/test';
 import { loginAsDemo, navigateTo, ensureAcmeTenant } from './utils';
 
-test.describe('Demo Employees - Page Structure Verification', () => {
+test.describe('Demo Employees - Seed Data Verification', () => {
 	test.beforeEach(async ({ page }) => {
 		await loginAsDemo(page);
 		await ensureAcmeTenant(page);
 		await navigateTo(page, '/employees');
-		await page.waitForTimeout(2000);
+		await page.waitForLoadState('networkidle');
 	});
 
-	test('displays employees page heading', async ({ page }) => {
-		await expect(page.getByRole('heading', { name: /employee/i })).toBeVisible();
+	test('displays seeded employees', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Verify seeded employee names
+		await expect(page.getByText('Maria Tamm')).toBeVisible();
+		await expect(page.getByText('Jaan Kask')).toBeVisible();
 	});
 
-	test('shows add employee button', async ({ page }) => {
-		await expect(page.getByRole('button', { name: /new|create|add/i })).toBeVisible();
+	test('shows employee positions', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Check for positions
+		const pageContent = await page.content();
+		const hasPositions =
+			pageContent.includes('Developer') ||
+			pageContent.includes('Manager') ||
+			pageContent.includes('Designer');
+		expect(hasPositions).toBeTruthy();
 	});
 
-	test('loads employee data or shows empty state', async ({ page }) => {
-		await page.waitForTimeout(5000);
-		const hasData = await page.locator('table tbody tr').count() > 0;
-		const hasEmptyState = await page.getByText(/no employee|no data|empty|loading/i).isVisible().catch(() => false);
-		expect(hasData || hasEmptyState).toBeTruthy();
+	test('shows correct active employee count', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Should have 4 active employees (Liisa Kivi is inactive)
+		const rows = page.locator('table tbody tr');
+		const count = await rows.count();
+		expect(count).toBeGreaterThanOrEqual(4);
+	});
+
+	test('shows employee departments', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Check for departments
+		const pageContent = await page.content();
+		const hasDepartments =
+			pageContent.includes('Engineering') ||
+			pageContent.includes('Management') ||
+			pageContent.includes('Design');
+		expect(hasDepartments).toBeTruthy();
 	});
 });

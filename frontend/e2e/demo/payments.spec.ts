@@ -1,26 +1,44 @@
 import { test, expect } from '@playwright/test';
 import { loginAsDemo, navigateTo, ensureAcmeTenant } from './utils';
 
-test.describe('Demo Payments - Page Structure Verification', () => {
+test.describe('Demo Payments - Seed Data Verification', () => {
 	test.beforeEach(async ({ page }) => {
 		await loginAsDemo(page);
 		await ensureAcmeTenant(page);
 		await navigateTo(page, '/payments');
-		await page.waitForTimeout(2000);
+		await page.waitForLoadState('networkidle');
 	});
 
-	test('displays payments page heading', async ({ page }) => {
-		await expect(page.getByRole('heading', { name: /payment/i })).toBeVisible();
+	test('displays seeded payments', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Verify payment numbers
+		const pageContent = await page.content();
+		expect(pageContent).toMatch(/PAY-2024-\d{3}/);
 	});
 
-	test('shows record payment button', async ({ page }) => {
-		await expect(page.getByRole('button', { name: /new|create|add|record/i })).toBeVisible();
+	test('shows payment amounts', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Check for payment amounts (in EUR format)
+		const pageContent = await page.content();
+		expect(pageContent).toMatch(/[\d,]+\.\d{2}/);
 	});
 
-	test('loads payment data or shows empty state', async ({ page }) => {
-		await page.waitForTimeout(5000);
-		const hasData = await page.locator('table tbody tr').count() > 0;
-		const hasEmptyState = await page.getByText(/no payment|no data|empty|loading/i).isVisible().catch(() => false);
-		expect(hasData || hasEmptyState).toBeTruthy();
+	test('shows correct payment count', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Should have at least 4 payments
+		const rows = page.locator('table tbody tr');
+		const count = await rows.count();
+		expect(count).toBeGreaterThanOrEqual(4);
+	});
+
+	test('shows customer names for payments', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Check for customer names
+		const pageContent = await page.content();
+		expect(pageContent.includes('TechStart') || pageContent.includes('Nordic') || pageContent.includes('Baltic')).toBeTruthy();
 	});
 });

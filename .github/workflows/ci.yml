@@ -325,9 +325,30 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
+      - name: Reset demo database
+        run: |
+          if [ -n "$DEMO_RESET_SECRET" ]; then
+            echo "Triggering demo database reset..."
+            response=$(curl -s -w "\n%{http_code}" -X POST https://open-accounting-api.up.railway.app/api/demo/reset \
+              -H "Content-Type: application/json" \
+              -H "X-Demo-Secret: $DEMO_RESET_SECRET")
+            http_code=$(echo "$response" | tail -1)
+            body=$(echo "$response" | head -n -1)
+            echo "Response: $body"
+            if [ "$http_code" != "200" ]; then
+              echo "Warning: Demo reset failed with status $http_code"
+            else
+              echo "Demo database reset successfully"
+            fi
+          else
+            echo "DEMO_RESET_SECRET not set, skipping demo reset"
+          fi
+        env:
+          DEMO_RESET_SECRET: ${{ secrets.DEMO_RESET_SECRET }}
+
       - name: Run Demo E2E tests
         working-directory: frontend
-        run: npx playwright test demo-env.spec.ts --config=playwright.demo.config.ts --project=demo-chromium
+        run: npx playwright test --config=playwright.demo.config.ts --project=demo-chromium
         env:
           CI: true
           TEST_DEMO: 'true'

@@ -1,28 +1,44 @@
 import { test, expect } from '@playwright/test';
 import { loginAsDemo, navigateTo, ensureAcmeTenant } from './utils';
 
-test.describe('Demo TSD Declarations - Page Structure Verification', () => {
+test.describe('Demo TSD Declarations - Seed Data Verification', () => {
 	test.beforeEach(async ({ page }) => {
 		await loginAsDemo(page);
 		await ensureAcmeTenant(page);
 		await navigateTo(page, '/tsd');
-		await page.waitForTimeout(2000);
+		await page.waitForLoadState('networkidle');
 	});
 
-	test('displays TSD page heading', async ({ page }) => {
-		await expect(page.getByRole('heading', { name: /tsd|declaration|tax/i })).toBeVisible();
+	test('displays seeded TSD declarations', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Verify TSD periods (2024)
+		const pageContent = await page.content();
+		expect(pageContent.includes('2024')).toBeTruthy();
 	});
 
-	test('shows export or create button', async ({ page }) => {
-		const hasExport = await page.getByRole('button', { name: /export|xml|download/i }).isVisible().catch(() => false);
-		const hasCreate = await page.getByRole('button', { name: /new|create|add/i }).isVisible().catch(() => false);
-		expect(hasExport || hasCreate).toBeTruthy();
+	test('shows declaration statuses', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Should show SUBMITTED and DRAFT statuses
+		const pageContent = await page.content().then(c => c.toLowerCase());
+		expect(pageContent.includes('submitted') || pageContent.includes('draft')).toBeTruthy();
 	});
 
-	test('loads TSD data or shows empty state', async ({ page }) => {
-		await page.waitForTimeout(5000);
-		const hasData = await page.locator('table tbody tr').count() > 0;
-		const hasEmptyState = await page.getByText(/no tsd|no declaration|no data|empty|loading/i).isVisible().catch(() => false);
-		expect(hasData || hasEmptyState).toBeTruthy();
+	test('shows correct declaration count', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Should have at least 3 TSD declarations
+		const rows = page.locator('table tbody tr');
+		const count = await rows.count();
+		expect(count).toBeGreaterThanOrEqual(3);
+	});
+
+	test('shows tax amounts', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Check for tax amounts
+		const pageContent = await page.content();
+		expect(pageContent).toMatch(/[\d,]+\.\d{2}/);
 	});
 });

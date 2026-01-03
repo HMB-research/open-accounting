@@ -1,28 +1,48 @@
 import { test, expect } from '@playwright/test';
 import { loginAsDemo, navigateTo, ensureAcmeTenant } from './utils';
 
-test.describe('Demo Banking - Page Structure Verification', () => {
+test.describe('Demo Banking - Seed Data Verification', () => {
 	test.beforeEach(async ({ page }) => {
 		await loginAsDemo(page);
 		await ensureAcmeTenant(page);
 		await navigateTo(page, '/banking');
-		await page.waitForTimeout(2000);
+		await page.waitForLoadState('networkidle');
 	});
 
-	test('displays banking page heading', async ({ page }) => {
-		await expect(page.getByRole('heading', { name: /bank/i })).toBeVisible();
+	test('displays bank accounts', async ({ page }) => {
+		await page.waitForTimeout(3000);
+
+		// Verify bank account names
+		const pageContent = await page.content();
+		expect(pageContent.includes('Main EUR') || pageContent.includes('Savings') || pageContent.includes('Swedbank') || pageContent.includes('SEB')).toBeTruthy();
 	});
 
-	test('shows import button or bank selector', async ({ page }) => {
-		const hasImport = await page.getByRole('button', { name: /import/i }).isVisible().catch(() => false);
-		const hasSelector = await page.getByRole('combobox').first().isVisible().catch(() => false);
-		expect(hasImport || hasSelector).toBeTruthy();
+	test('shows bank transactions', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Should have bank transactions
+		const rows = page.locator('table tbody tr');
+		const count = await rows.count();
+		expect(count).toBeGreaterThanOrEqual(1);
 	});
 
-	test('loads banking data or shows empty state', async ({ page }) => {
-		await page.waitForTimeout(5000);
-		const hasData = await page.locator('table tbody tr').count() > 0;
-		const hasEmptyState = await page.getByText(/no transaction|no data|empty|loading|no bank/i).isVisible().catch(() => false);
-		expect(hasData || hasEmptyState).toBeTruthy();
+	test('shows transaction amounts', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Check for amounts
+		const pageContent = await page.content();
+		expect(pageContent).toMatch(/[\d,]+\.\d{2}/);
+	});
+
+	test('shows transaction statuses', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Check for status indicators
+		const pageContent = await page.content().then(c => c.toLowerCase());
+		const hasStatuses =
+			pageContent.includes('matched') ||
+			pageContent.includes('unmatched') ||
+			pageContent.includes('reconciled');
+		expect(hasStatuses).toBeTruthy();
 	});
 });
