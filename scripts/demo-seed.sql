@@ -207,9 +207,9 @@ ON CONFLICT DO NOTHING;
 -- BANK ACCOUNTS
 -- =============================================================================
 
-INSERT INTO tenant_acme.bank_accounts (id, tenant_id, name, account_number, bank_name, currency, opening_balance, current_balance, is_active) VALUES
-('80000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Main EUR Account', 'EE123456789012345678', 'Swedbank', 'EUR', 50000.00, 72189.00, true),
-('80000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Savings Account', 'EE987654321098765432', 'SEB', 'EUR', 10000.00, 10000.00, true)
+INSERT INTO tenant_acme.bank_accounts (id, tenant_id, name, account_number, bank_name, currency, is_active) VALUES
+('80000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Main EUR Account', 'EE123456789012345678', 'Swedbank', 'EUR', true),
+('80000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Savings Account', 'EE987654321098765432', 'SEB', 'EUR', true)
 ON CONFLICT DO NOTHING;
 
 -- =============================================================================
