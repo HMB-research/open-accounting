@@ -13,12 +13,13 @@ func TestDemoSeedSQL_ValidSchema(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	ctx := context.Background()
 
-	// First, clean up any existing demo data
-	demoUserID := "a0000000-0000-0000-0000-000000000001"
-	demoTenantID := "b0000000-0000-0000-0000-000000000001"
+	// Test with demo user 1 (the UUIDs get modified by generateDemoSeedForUser)
+	demoUserID := "a0000000-0000-0000-0000-000000000011"
+	demoTenantID := "b0000000-0000-0000-0000-000000000011"
+	schemaName := "tenant_demo1"
 
 	// Drop tenant schema if exists
-	_, err := pool.Exec(ctx, "DROP SCHEMA IF EXISTS tenant_acme CASCADE")
+	_, err := pool.Exec(ctx, "DROP SCHEMA IF EXISTS "+schemaName+" CASCADE")
 	if err != nil {
 		t.Fatalf("Failed to drop tenant schema: %v", err)
 	}
@@ -28,8 +29,8 @@ func TestDemoSeedSQL_ValidSchema(t *testing.T) {
 	_, _ = pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1", demoTenantID)
 	_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id = $1", demoUserID)
 
-	// Execute the seed SQL
-	seedSQL := getDemoSeedSQL()
+	// Execute the seed SQL for user 1
+	seedSQL := generateDemoSeedForUser(getDemoSeedTemplate(), 1)
 	_, err = pool.Exec(ctx, seedSQL)
 	if err != nil {
 		t.Fatalf("Demo seed SQL failed: %v", err)
@@ -68,17 +69,17 @@ func TestDemoSeedSQL_ValidSchema(t *testing.T) {
 
 	// Verify tenant schema was created
 	var schemaExists bool
-	err = pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM information_schema.schemata WHERE schema_name = 'tenant_acme')").Scan(&schemaExists)
+	err = pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM information_schema.schemata WHERE schema_name = $1)", schemaName).Scan(&schemaExists)
 	if err != nil {
 		t.Fatalf("Failed to check schema: %v", err)
 	}
 	if !schemaExists {
-		t.Error("Expected tenant_acme schema to exist")
+		t.Errorf("Expected %s schema to exist", schemaName)
 	}
 
 	// Verify accounts were created
 	var accountCount int
-	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM tenant_acme.accounts").Scan(&accountCount)
+	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM "+schemaName+".accounts").Scan(&accountCount)
 	if err != nil {
 		t.Fatalf("Failed to query accounts: %v", err)
 	}
@@ -88,7 +89,7 @@ func TestDemoSeedSQL_ValidSchema(t *testing.T) {
 
 	// Verify contacts were created
 	var contactCount int
-	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM tenant_acme.contacts").Scan(&contactCount)
+	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM "+schemaName+".contacts").Scan(&contactCount)
 	if err != nil {
 		t.Fatalf("Failed to query contacts: %v", err)
 	}
@@ -98,7 +99,7 @@ func TestDemoSeedSQL_ValidSchema(t *testing.T) {
 
 	// Verify invoices were created
 	var invoiceCount int
-	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM tenant_acme.invoices").Scan(&invoiceCount)
+	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM "+schemaName+".invoices").Scan(&invoiceCount)
 	if err != nil {
 		t.Fatalf("Failed to query invoices: %v", err)
 	}
@@ -108,7 +109,7 @@ func TestDemoSeedSQL_ValidSchema(t *testing.T) {
 
 	// Verify bank accounts were created
 	var bankAccountCount int
-	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM tenant_acme.bank_accounts").Scan(&bankAccountCount)
+	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM "+schemaName+".bank_accounts").Scan(&bankAccountCount)
 	if err != nil {
 		t.Fatalf("Failed to query bank_accounts: %v", err)
 	}
@@ -117,7 +118,7 @@ func TestDemoSeedSQL_ValidSchema(t *testing.T) {
 	}
 
 	// Cleanup
-	_, _ = pool.Exec(ctx, "DROP SCHEMA IF EXISTS tenant_acme CASCADE")
+	_, _ = pool.Exec(ctx, "DROP SCHEMA IF EXISTS "+schemaName+" CASCADE")
 	_, _ = pool.Exec(ctx, "DELETE FROM tenant_users WHERE tenant_id = $1", demoTenantID)
 	_, _ = pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1", demoTenantID)
 	_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id = $1", demoUserID)
