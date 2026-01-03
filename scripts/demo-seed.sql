@@ -3,14 +3,14 @@
 -- Run with: psql $DATABASE_URL -f scripts/demo-seed.sql
 
 -- =============================================================================
--- DEMO USER (password: demo123)
+-- DEMO USER (password: demo12345)
 -- =============================================================================
 
 INSERT INTO users (id, email, password_hash, name, is_active)
 VALUES (
     'a0000000-0000-0000-0000-000000000001'::uuid,
     'demo@example.com',
-    '$2a$10$m/V.x2rKPDFQj6xo9voXAeCXJBua.EzF.A3v1bnreBdgbAaKBcsTu', -- demo123
+    '$2a$10$NDz5VvAjksvnHzAq1p892.rZedeCGsy08iEiYzMUWcudFe7XH08pi', -- demo12345
     'Demo User',
     true
 ) ON CONFLICT (email) DO NOTHING;
