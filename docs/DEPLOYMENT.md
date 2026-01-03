@@ -307,7 +307,7 @@ DEMO_MODE=true
 DEMO_RESET_SECRET=<your-secret-key>
 ```
 
-Trigger reset via: `POST /api/v1/demo/reset` with `X-Reset-Secret` header.
+Trigger reset via: `POST /api/demo/reset` with `X-Demo-Secret` header.
 
 ## CORS Troubleshooting
 
