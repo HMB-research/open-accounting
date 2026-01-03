@@ -1,10 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { loginAsDemo, navigateTo, ensureAcmeTenant } from './utils';
+import { loginAsDemo, navigateTo, ensureDemoTenant } from './utils';
 
 test.describe('Demo Payments - Seed Data Verification', () => {
-	test.beforeEach(async ({ page }) => {
-		await loginAsDemo(page);
-		await ensureAcmeTenant(page);
+	test.beforeEach(async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/payments');
 		await page.waitForLoadState('networkidle');
 	});
@@ -12,9 +12,9 @@ test.describe('Demo Payments - Seed Data Verification', () => {
 	test('displays seeded payments', async ({ page }) => {
 		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
 
-		// Verify payment numbers
+		// Verify payment numbers (format: PAY{N}-YYYY-NNN)
 		const pageContent = await page.content();
-		expect(pageContent).toMatch(/PAY-2024-\d{3}/);
+		expect(pageContent).toMatch(/PAY\d?-?2024-\d{3}/);
 	});
 
 	test('shows payment amounts', async ({ page }) => {

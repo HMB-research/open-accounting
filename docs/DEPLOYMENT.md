@@ -309,6 +309,20 @@ DEMO_RESET_SECRET=<your-secret-key>
 
 Trigger reset via: `POST /api/demo/reset` with `X-Demo-Secret` header.
 
+#### Multi-User Demo Setup
+
+The demo environment supports 3 parallel users for E2E testing:
+
+| User | Email | Password | Tenant |
+|------|-------|----------|--------|
+| Demo 1 | demo1@example.com | demo12345 | demo1 |
+| Demo 2 | demo2@example.com | demo12345 | demo2 |
+| Demo 3 | demo3@example.com | demo12345 | demo3 |
+
+Each demo user has isolated data in separate PostgreSQL schemas (`tenant_demo1`, `tenant_demo2`, `tenant_demo3`), enabling parallel E2E test execution without data conflicts.
+
+The demo reset endpoint (`POST /api/demo/reset`) resets all 3 demo tenants simultaneously.
+
 ## CORS Troubleshooting
 
 If you encounter CORS errors like:

@@ -1,26 +1,27 @@
 import { test, expect } from '@playwright/test';
-import { loginAsDemo, ensureAcmeTenant } from './utils';
+import { loginAsDemo, ensureDemoTenant, getDemoCredentials } from './utils';
 
 test.describe('Demo Dashboard - Seeded Data Verification', () => {
-	test.beforeEach(async ({ page }) => {
-		await loginAsDemo(page);
-		await ensureAcmeTenant(page);
+	test.beforeEach(async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await ensureDemoTenant(page, testInfo);
 	});
 
-	test('displays Acme Corporation in organization selector', async ({ page }) => {
-		// Find the org selector by looking for selects that contain "Acme"
+	test('displays Demo Company in organization selector', async ({ page }, testInfo) => {
+		const creds = getDemoCredentials(testInfo);
+		// Find the org selector by looking for selects that contain the demo tenant name
 		const selects = page.locator('select');
 		const count = await selects.count();
-		let foundAcme = false;
+		let foundDemo = false;
 		for (let i = 0; i < count; i++) {
 			const select = selects.nth(i);
 			const text = await select.locator('option:checked').textContent();
-			if (text && text.includes('Acme')) {
-				foundAcme = true;
+			if (text && text.toLowerCase().includes('demo')) {
+				foundDemo = true;
 				break;
 			}
 		}
-		expect(foundAcme).toBeTruthy();
+		expect(foundDemo).toBeTruthy();
 	});
 
 	test('shows Cash Flow card on dashboard', async ({ page }) => {
