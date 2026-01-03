@@ -1041,9 +1041,9 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// Demo user and tenant IDs (matching demo-seed.sql)
-	demoUserID := "a0000000-0000-0000-0000-000000000001"
-	demoTenantID := "b0000000-0000-0000-0000-000000000001"
+	// Demo identifiers - use email/slug for lookup since IDs might differ
+	demoEmail := "demo@example.com"
+	demoSlug := "acme"
 
 	log.Info().Msg("Demo reset: dropping tenant schema")
 	// Drop tenant schema
@@ -1054,25 +1054,25 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Info().Msg("Demo reset: cleaning tenant_users")
-	// Delete demo data from public tables
-	_, err = h.pool.Exec(ctx, "DELETE FROM tenant_users WHERE tenant_id = $1", demoTenantID)
+	log.Info().Msg("Demo reset: cleaning tenant_users by slug")
+	// Delete demo data from public tables - use slug/email to find the right records
+	_, err = h.pool.Exec(ctx, "DELETE FROM tenant_users WHERE tenant_id IN (SELECT id FROM tenants WHERE slug = $1)", demoSlug)
 	if err != nil {
 		log.Error().Err(err).Msg("Demo reset failed: clean tenant_users")
 		respondError(w, http.StatusInternalServerError, "Failed to clean tenant_users: "+err.Error())
 		return
 	}
 
-	log.Info().Msg("Demo reset: cleaning tenants")
-	_, err = h.pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1", demoTenantID)
+	log.Info().Msg("Demo reset: cleaning tenants by slug")
+	_, err = h.pool.Exec(ctx, "DELETE FROM tenants WHERE slug = $1", demoSlug)
 	if err != nil {
 		log.Error().Err(err).Msg("Demo reset failed: clean tenants")
 		respondError(w, http.StatusInternalServerError, "Failed to clean tenants: "+err.Error())
 		return
 	}
 
-	log.Info().Msg("Demo reset: cleaning users")
-	_, err = h.pool.Exec(ctx, "DELETE FROM users WHERE id = $1", demoUserID)
+	log.Info().Msg("Demo reset: cleaning users by email")
+	_, err = h.pool.Exec(ctx, "DELETE FROM users WHERE email = $1", demoEmail)
 	if err != nil {
 		log.Error().Err(err).Msg("Demo reset failed: clean users")
 		respondError(w, http.StatusInternalServerError, "Failed to clean users: "+err.Error())
