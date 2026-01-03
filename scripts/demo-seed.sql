@@ -1,6 +1,14 @@
 -- Open Accounting Demo Seed Data
 -- This creates sample data for demonstration purposes
 -- Run with: psql $DATABASE_URL -f scripts/demo-seed.sql
+--
+-- NOTE: This script seeds a single demo tenant (Acme Corporation).
+-- For parallel E2E testing, the backend /api/demo/reset endpoint
+-- dynamically generates 3 isolated demo tenants:
+--   - demo1@example.com / demo1 / tenant_demo1
+--   - demo2@example.com / demo2 / tenant_demo2
+--   - demo3@example.com / demo3 / tenant_demo3
+-- See cmd/api/handlers.go for the multi-user seed implementation.
 
 -- =============================================================================
 -- DEMO USER (password: demo12345)
@@ -360,7 +368,7 @@ BEGIN
     RAISE NOTICE '';
     RAISE NOTICE 'Demo Login Credentials:';
     RAISE NOTICE '  Email: demo@example.com';
-    RAISE NOTICE '  Password: demo123';
+    RAISE NOTICE '  Password: demo12345';
     RAISE NOTICE '';
     RAISE NOTICE 'Demo Organization: Acme Corporation';
     RAISE NOTICE '';

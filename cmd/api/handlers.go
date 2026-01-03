@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -1041,49 +1042,60 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// Demo identifiers - use email/slug for lookup since IDs might differ
-	demoEmail := "demo@example.com"
-	demoSlug := "acme"
-
-	log.Info().Msg("Demo reset: dropping tenant schema")
-	// Drop tenant schema
-	_, err := h.pool.Exec(ctx, "DROP SCHEMA IF EXISTS tenant_acme CASCADE")
-	if err != nil {
-		log.Error().Err(err).Msg("Demo reset failed: drop schema")
-		respondError(w, http.StatusInternalServerError, "Failed to drop tenant schema: "+err.Error())
-		return
+	// Demo identifiers for 3 parallel test users
+	demoUsers := []struct {
+		email  string
+		slug   string
+		schema string
+	}{
+		{"demo1@example.com", "demo1", "tenant_demo1"},
+		{"demo2@example.com", "demo2", "tenant_demo2"},
+		{"demo3@example.com", "demo3", "tenant_demo3"},
 	}
 
-	log.Info().Msg("Demo reset: cleaning tenant_users by slug")
-	// Delete demo data from public tables - use slug/email to find the right records
-	_, err = h.pool.Exec(ctx, "DELETE FROM tenant_users WHERE tenant_id IN (SELECT id FROM tenants WHERE slug = $1)", demoSlug)
-	if err != nil {
-		log.Error().Err(err).Msg("Demo reset failed: clean tenant_users")
-		respondError(w, http.StatusInternalServerError, "Failed to clean tenant_users: "+err.Error())
-		return
+	// Drop all demo tenant schemas
+	for _, demo := range demoUsers {
+		log.Info().Str("schema", demo.schema).Msg("Demo reset: dropping tenant schema")
+		_, err := h.pool.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", demo.schema))
+		if err != nil {
+			log.Error().Err(err).Str("schema", demo.schema).Msg("Demo reset failed: drop schema")
+			respondError(w, http.StatusInternalServerError, "Failed to drop tenant schema: "+err.Error())
+			return
+		}
 	}
 
-	log.Info().Msg("Demo reset: cleaning tenants by slug")
-	_, err = h.pool.Exec(ctx, "DELETE FROM tenants WHERE slug = $1", demoSlug)
-	if err != nil {
-		log.Error().Err(err).Msg("Demo reset failed: clean tenants")
-		respondError(w, http.StatusInternalServerError, "Failed to clean tenants: "+err.Error())
-		return
-	}
+	// Delete demo data from public tables
+	for _, demo := range demoUsers {
+		log.Info().Str("slug", demo.slug).Msg("Demo reset: cleaning tenant_users by slug")
+		_, err := h.pool.Exec(ctx, "DELETE FROM tenant_users WHERE tenant_id IN (SELECT id FROM tenants WHERE slug = $1)", demo.slug)
+		if err != nil {
+			log.Error().Err(err).Msg("Demo reset failed: clean tenant_users")
+			respondError(w, http.StatusInternalServerError, "Failed to clean tenant_users: "+err.Error())
+			return
+		}
 
-	log.Info().Msg("Demo reset: cleaning users by email")
-	_, err = h.pool.Exec(ctx, "DELETE FROM users WHERE email = $1", demoEmail)
-	if err != nil {
-		log.Error().Err(err).Msg("Demo reset failed: clean users")
-		respondError(w, http.StatusInternalServerError, "Failed to clean users: "+err.Error())
-		return
+		log.Info().Str("slug", demo.slug).Msg("Demo reset: cleaning tenants by slug")
+		_, err = h.pool.Exec(ctx, "DELETE FROM tenants WHERE slug = $1", demo.slug)
+		if err != nil {
+			log.Error().Err(err).Msg("Demo reset failed: clean tenants")
+			respondError(w, http.StatusInternalServerError, "Failed to clean tenants: "+err.Error())
+			return
+		}
+
+		log.Info().Str("email", demo.email).Msg("Demo reset: cleaning users by email")
+		_, err = h.pool.Exec(ctx, "DELETE FROM users WHERE email = $1", demo.email)
+		if err != nil {
+			log.Error().Err(err).Msg("Demo reset failed: clean users")
+			respondError(w, http.StatusInternalServerError, "Failed to clean users: "+err.Error())
+			return
+		}
 	}
 
 	log.Info().Msg("Demo reset: seeding demo data")
 	// Re-seed demo data by executing the seed SQL
 	// Note: In production, you might want to read from a file or embedded resource
 	seedSQL := getDemoSeedSQL()
-	_, err = h.pool.Exec(ctx, seedSQL)
+	_, err := h.pool.Exec(ctx, seedSQL)
 	if err != nil {
 		log.Error().Err(err).Str("sql_preview", seedSQL[:500]).Msg("Demo reset failed: seed data")
 		respondError(w, http.StatusInternalServerError, "Failed to seed demo data: "+err.Error())
@@ -1097,10 +1109,71 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// getDemoSeedSQL returns the SQL to seed the demo database
-// This creates the demo user, tenant, schema, and comprehensive sample data
-// Synced with scripts/demo-seed.sql for consistency
+// getDemoSeedSQL returns the SQL to seed the demo database for all 3 demo users
+// This creates demo users, tenants, schemas, and comprehensive sample data
 func getDemoSeedSQL() string {
+	var sql strings.Builder
+	template := getDemoSeedTemplate()
+
+	// Generate seed data for all 3 demo users
+	for userNum := 1; userNum <= 3; userNum++ {
+		sql.WriteString(generateDemoSeedForUser(template, userNum))
+	}
+
+	return sql.String()
+}
+
+// generateDemoSeedForUser adapts the template for a specific user number
+func generateDemoSeedForUser(template string, userNum int) string {
+	n := fmt.Sprintf("%d", userNum)
+
+	// Replace identifiers
+	result := strings.ReplaceAll(template, "demo@example.com", fmt.Sprintf("demo%s@example.com", n))
+	result = strings.ReplaceAll(result, "'acme'", fmt.Sprintf("'demo%s'", n))
+	result = strings.ReplaceAll(result, "tenant_acme", fmt.Sprintf("tenant_demo%s", n))
+	result = strings.ReplaceAll(result, "Acme Corporation", fmt.Sprintf("Demo Company %s", n))
+	result = strings.ReplaceAll(result, "@acme.ee", fmt.Sprintf("@demo%s.example.com", n))
+	result = strings.ReplaceAll(result, "info@acme.example.com", fmt.Sprintf("info@demo%s.example.com", n))
+
+	// Replace UUID prefixes to ensure uniqueness per user
+	// User ID prefix
+	result = strings.ReplaceAll(result, "a0000000-0000-0000-0000-", fmt.Sprintf("a0000000-0000-0000-000%s-", n))
+	// Tenant ID prefix
+	result = strings.ReplaceAll(result, "b0000000-0000-0000-0000-", fmt.Sprintf("b0000000-0000-0000-000%s-", n))
+	// Account IDs
+	result = strings.ReplaceAll(result, "c0000000-0000-0000-", fmt.Sprintf("c%s000000-0000-0000-", n))
+	// Contact IDs
+	result = strings.ReplaceAll(result, "d0000000-0000-0000-", fmt.Sprintf("d%s000000-0000-0000-", n))
+	// Invoice IDs
+	result = strings.ReplaceAll(result, "e0000000-0000-0000-", fmt.Sprintf("e%s000000-0000-0000-", n))
+	// Payment IDs
+	result = strings.ReplaceAll(result, "f0000000-0000-0000-", fmt.Sprintf("f%s000000-0000-0000-", n))
+	// Employee IDs (70-79)
+	result = strings.ReplaceAll(result, "70000000-0000-0000-", fmt.Sprintf("7%s000000-0000-0000-", n))
+	result = strings.ReplaceAll(result, "71000000-0000-0000-", fmt.Sprintf("71%s00000-0000-0000-", n))
+	result = strings.ReplaceAll(result, "72000000-0000-0000-", fmt.Sprintf("72%s00000-0000-0000-", n))
+	result = strings.ReplaceAll(result, "73000000-0000-0000-", fmt.Sprintf("73%s00000-0000-0000-", n))
+	result = strings.ReplaceAll(result, "74000000-0000-0000-", fmt.Sprintf("74%s00000-0000-0000-", n))
+	result = strings.ReplaceAll(result, "75000000-0000-0000-", fmt.Sprintf("75%s00000-0000-0000-", n))
+	result = strings.ReplaceAll(result, "76000000-0000-0000-", fmt.Sprintf("76%s00000-0000-0000-", n))
+	result = strings.ReplaceAll(result, "77000000-0000-0000-", fmt.Sprintf("77%s00000-0000-0000-", n))
+	result = strings.ReplaceAll(result, "78000000-0000-0000-", fmt.Sprintf("78%s00000-0000-0000-", n))
+	result = strings.ReplaceAll(result, "79000000-0000-0000-", fmt.Sprintf("79%s00000-0000-0000-", n))
+	// Fiscal year and bank account IDs
+	result = strings.ReplaceAll(result, "80000000-0000-0000-", fmt.Sprintf("8%s000000-0000-0000-", n))
+	result = strings.ReplaceAll(result, "90000000-0000-0000-", fmt.Sprintf("9%s000000-0000-0000-", n))
+
+	// Make invoice numbers unique per user
+	result = strings.ReplaceAll(result, "INV-2024-", fmt.Sprintf("INV%s-2024-", n))
+	result = strings.ReplaceAll(result, "INV-2025-", fmt.Sprintf("INV%s-2025-", n))
+	result = strings.ReplaceAll(result, "PAY-2024-", fmt.Sprintf("PAY%s-2024-", n))
+	result = strings.ReplaceAll(result, "JE-2024-", fmt.Sprintf("JE%s-2024-", n))
+
+	return result
+}
+
+// getDemoSeedTemplate returns the SQL template for seeding one demo user
+func getDemoSeedTemplate() string {
 	return `
 -- Demo User (password: demo12345)
 INSERT INTO users (id, email, password_hash, name, is_active)
