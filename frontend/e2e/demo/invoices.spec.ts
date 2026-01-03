@@ -1,34 +1,49 @@
 import { test, expect } from '@playwright/test';
 import { loginAsDemo, navigateTo, ensureAcmeTenant } from './utils';
 
-test.describe('Demo Invoices - Page Structure Verification', () => {
+test.describe('Demo Invoices - Seed Data Verification', () => {
 	test.beforeEach(async ({ page }) => {
 		await loginAsDemo(page);
 		await ensureAcmeTenant(page);
 		await navigateTo(page, '/invoices');
-		await page.waitForTimeout(2000);
+		await page.waitForLoadState('networkidle');
 	});
 
-	test('displays invoices page heading', async ({ page }) => {
-		await expect(page.getByRole('heading', { name: /invoice/i })).toBeVisible();
+	test('displays seeded invoices', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Verify invoice numbers are visible (at least one)
+		const pageContent = await page.content();
+		expect(pageContent).toMatch(/INV-202[45]-\d{3}/);
 	});
 
-	test('shows create invoice button', async ({ page }) => {
-		await expect(page.getByRole('button', { name: /new|create|add/i })).toBeVisible();
+	test('shows invoices with various statuses', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Check for status indicators (PAID, SENT, DRAFT)
+		const pageContent = await page.content();
+		const hasStatuses =
+			pageContent.toLowerCase().includes('paid') ||
+			pageContent.toLowerCase().includes('sent') ||
+			pageContent.toLowerCase().includes('draft');
+		expect(hasStatuses).toBeTruthy();
 	});
 
-	test('shows status filter or tabs', async ({ page }) => {
-		// Invoice page should have status filtering
-		const hasFilter = await page.getByRole('combobox').first().isVisible().catch(() => false);
-		const hasTabs = await page.getByRole('tab').first().isVisible().catch(() => false);
-		const hasStatusText = await page.getByText(/all|draft|sent|paid/i).first().isVisible().catch(() => false);
-		expect(hasFilter || hasTabs || hasStatusText).toBeTruthy();
+	test('shows correct invoice count', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Should have at least 9 invoices
+		const rows = page.locator('table tbody tr');
+		const count = await rows.count();
+		expect(count).toBeGreaterThanOrEqual(9);
 	});
 
-	test('loads invoice data or shows empty state', async ({ page }) => {
-		await page.waitForTimeout(5000);
-		const hasData = await page.locator('table tbody tr').count() > 0;
-		const hasEmptyState = await page.getByText(/no invoice|no data|empty|loading/i).isVisible().catch(() => false);
-		expect(hasData || hasEmptyState).toBeTruthy();
+	test('invoices show customer names', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Check for seeded customer names
+		const hasTechStart = await page.getByText('TechStart').isVisible().catch(() => false);
+		const hasNordic = await page.getByText('Nordic').isVisible().catch(() => false);
+		expect(hasTechStart || hasNordic).toBeTruthy();
 	});
 });

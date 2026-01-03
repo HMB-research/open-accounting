@@ -3,7 +3,7 @@ import { Page, expect } from '@playwright/test';
 export const DEMO_URL = 'https://open-accounting.up.railway.app';
 export const DEMO_API_URL = 'https://open-accounting-api.up.railway.app';
 export const DEMO_EMAIL = 'demo@example.com';
-export const DEMO_PASSWORD = 'demo123';
+export const DEMO_PASSWORD = 'demo12345';
 
 export async function loginAsDemo(page: Page): Promise<void> {
 	await page.goto(`${DEMO_URL}/login`);

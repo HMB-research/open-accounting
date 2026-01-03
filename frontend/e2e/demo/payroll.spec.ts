@@ -1,26 +1,44 @@
 import { test, expect } from '@playwright/test';
 import { loginAsDemo, navigateTo, ensureAcmeTenant } from './utils';
 
-test.describe('Demo Payroll - Page Structure Verification', () => {
+test.describe('Demo Payroll - Seed Data Verification', () => {
 	test.beforeEach(async ({ page }) => {
 		await loginAsDemo(page);
 		await ensureAcmeTenant(page);
 		await navigateTo(page, '/payroll');
-		await page.waitForTimeout(2000);
+		await page.waitForLoadState('networkidle');
 	});
 
-	test('displays payroll page heading', async ({ page }) => {
-		await expect(page.getByRole('heading', { name: /payroll/i })).toBeVisible();
+	test('displays payroll runs', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Verify payroll periods (Oct, Nov, Dec 2024)
+		const pageContent = await page.content();
+		expect(pageContent.includes('2024') || pageContent.includes('October') || pageContent.includes('November') || pageContent.includes('December')).toBeTruthy();
 	});
 
-	test('shows create payroll run button', async ({ page }) => {
-		await expect(page.getByRole('button', { name: /new|create|add/i })).toBeVisible();
+	test('shows payroll statuses', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Should show PAID and APPROVED statuses
+		const pageContent = await page.content().then(c => c.toLowerCase());
+		expect(pageContent.includes('paid') || pageContent.includes('approved')).toBeTruthy();
 	});
 
-	test('loads payroll data or shows empty state', async ({ page }) => {
-		await page.waitForTimeout(5000);
-		const hasData = await page.locator('table tbody tr').count() > 0;
-		const hasEmptyState = await page.getByText(/no payroll|no data|empty|loading/i).isVisible().catch(() => false);
-		expect(hasData || hasEmptyState).toBeTruthy();
+	test('shows correct payroll run count', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Should have at least 3 payroll runs
+		const rows = page.locator('table tbody tr');
+		const count = await rows.count();
+		expect(count).toBeGreaterThanOrEqual(3);
+	});
+
+	test('shows total amounts', async ({ page }) => {
+		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
+		// Check for amount values
+		const pageContent = await page.content();
+		expect(pageContent).toMatch(/[\d,]+\.\d{2}/);
 	});
 });
