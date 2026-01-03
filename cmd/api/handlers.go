@@ -1102,12 +1102,12 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 // Synced with scripts/demo-seed.sql for consistency
 func getDemoSeedSQL() string {
 	return `
--- Demo User (password: demo123)
+-- Demo User (password: demo12345)
 INSERT INTO users (id, email, password_hash, name, is_active)
 VALUES (
     'a0000000-0000-0000-0000-000000000001'::uuid,
     'demo@example.com',
-    '$2a$10$m/V.x2rKPDFQj6xo9voXAeCXJBua.EzF.A3v1bnreBdgbAaKBcsTu',
+    '$2a$10$NDz5VvAjksvnHzAq1p892.rZedeCGsy08iEiYzMUWcudFe7XH08pi',
     'Demo User',
     true
 ) ON CONFLICT (email) DO NOTHING;
