@@ -14,8 +14,10 @@ func TestDemoSeedSQL_ValidSchema(t *testing.T) {
 	ctx := context.Background()
 
 	// Test with demo user 1 (the UUIDs get modified by generateDemoSeedForUser)
-	demoUserID := "a0000000-0000-0000-0000-000000000011"
-	demoTenantID := "b0000000-0000-0000-0000-000000000011"
+	// The replacement changes "a0000000-0000-0000-0000-" to "a0000000-0000-0000-0001-" for user 1
+	// So original "a0000000-0000-0000-0000-000000000001" becomes "a0000000-0000-0000-0001-000000000001"
+	demoUserID := "a0000000-0000-0000-0001-000000000001"
+	demoTenantID := "b0000000-0000-0000-0001-000000000001"
 	schemaName := "tenant_demo1"
 
 	// Drop tenant schema if exists
