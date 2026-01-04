@@ -297,6 +297,97 @@ jobs:
           path: frontend/playwright-report/
           retention-days: 7
 
+  # Demo E2E tests run against local database with seeded demo data
+  # This verifies demo data setup works correctly on every PR
+  e2e-demo-local:
+    runs-on: ubuntu-latest
+    needs: [changes]
+    continue-on-error: true  # Demo tests are informational
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || github.ref == 'refs/heads/main'
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: openaccounting_demo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Build backend
+        run: |
+          CGO_ENABLED=0 go build -o api ./cmd/api
+          CGO_ENABLED=0 go build -o migrate ./cmd/migrate
+
+      - name: Run migrations
+        run: ./migrate -db "postgres://test:test@localhost:5432/openaccounting_demo?sslmode=disable"
+
+      - name: Seed demo data
+        run: |
+          psql "postgres://test:test@localhost:5432/openaccounting_demo?sslmode=disable" -f scripts/demo-seed.sql
+        env:
+          PGPASSWORD: test
+
+      - name: Start backend in demo mode
+        run: |
+          ./api &
+          sleep 5
+        env:
+          DATABASE_URL: postgres://test:test@localhost:5432/openaccounting_demo?sslmode=disable
+          JWT_SECRET: test-secret-key-for-ci
+          PORT: 8080
+          DEMO_MODE: 'true'
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Run Demo E2E tests
+        working-directory: frontend
+        run: npx playwright test --config=playwright.demo.config.ts --project=demo-chromium
+        env:
+          CI: true
+          BASE_URL: http://localhost:5173
+          PUBLIC_API_URL: http://localhost:8080
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-demo-local-report
+          path: frontend/playwright-report-demo/
+          retention-days: 7
+
   # Demo E2E tests run against the live Railway demo environment
   e2e-demo:
     runs-on: ubuntu-latest
