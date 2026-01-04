@@ -1136,6 +1136,155 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// DemoStatusResponse represents the demo data status
+type DemoStatusResponse struct {
+	User              int          `json:"user"`
+	Accounts          EntityStatus `json:"accounts"`
+	Contacts          EntityStatus `json:"contacts"`
+	Invoices          EntityStatus `json:"invoices"`
+	Employees         EntityStatus `json:"employees"`
+	Payments          EntityStatus `json:"payments"`
+	JournalEntries    EntityStatus `json:"journalEntries"`
+	BankAccounts      EntityStatus `json:"bankAccounts"`
+	RecurringInvoices EntityStatus `json:"recurringInvoices"`
+	PayrollRuns       EntityStatus `json:"payrollRuns"`
+	TsdDeclarations   EntityStatus `json:"tsdDeclarations"`
+}
+
+// EntityStatus represents count and key identifiers for an entity type
+type EntityStatus struct {
+	Count int      `json:"count"`
+	Keys  []string `json:"keys"`
+}
+
+// DemoStatus returns counts and key identifiers for demo data verification
+// @Summary Get demo data status
+// @Description Get counts and key identifiers for demo data verification
+// @Tags Demo
+// @Produce json
+// @Param user query int true "Demo user number (1-3)"
+// @Param X-Demo-Secret header string true "Demo secret key"
+// @Success 200 {object} DemoStatusResponse
+// @Failure 400 {object} object{error=string}
+// @Failure 401 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Router /api/demo/status [get]
+func (h *Handlers) DemoStatus(w http.ResponseWriter, r *http.Request) {
+	// Check if demo mode is enabled
+	if os.Getenv("DEMO_MODE") != "true" {
+		respondError(w, http.StatusForbidden, "Demo mode is not enabled")
+		return
+	}
+
+	// Validate secret key
+	secret := os.Getenv("DEMO_RESET_SECRET")
+	if secret == "" {
+		respondError(w, http.StatusForbidden, "Demo status not configured")
+		return
+	}
+
+	providedSecret := r.Header.Get("X-Demo-Secret")
+	if providedSecret != secret {
+		respondError(w, http.StatusUnauthorized, "Invalid or missing secret key")
+		return
+	}
+
+	// Parse required user parameter
+	userParam := r.URL.Query().Get("user")
+	if userParam == "" {
+		respondError(w, http.StatusBadRequest, "User parameter is required")
+		return
+	}
+
+	userNum, err := strconv.Atoi(userParam)
+	if err != nil || userNum < 1 || userNum > 3 {
+		respondError(w, http.StatusBadRequest, "Invalid user parameter. Must be 1, 2, or 3")
+		return
+	}
+
+	schema := fmt.Sprintf("tenant_demo%d", userNum)
+	ctx := r.Context()
+
+	response := DemoStatusResponse{User: userNum}
+
+	// Query each entity count and keys
+	response.Accounts = h.getEntityStatus(ctx, schema, "accounts", "name")
+	response.Contacts = h.getEntityStatus(ctx, schema, "contacts", "name")
+	response.Invoices = h.getEntityStatus(ctx, schema, "invoices", "invoice_number")
+	response.Employees = h.getEntityStatusConcat(ctx, schema, "employees", "first_name", "last_name")
+	response.Payments = h.getEntityStatus(ctx, schema, "payments", "payment_number")
+	response.JournalEntries = h.getEntityStatus(ctx, schema, "journal_entries", "entry_number")
+	response.BankAccounts = h.getEntityStatus(ctx, schema, "bank_accounts", "name")
+	response.RecurringInvoices = h.getEntityStatus(ctx, schema, "recurring_invoices", "name")
+	response.PayrollRuns = h.getEntityStatusPeriod(ctx, schema, "payroll_runs")
+	response.TsdDeclarations = h.getEntityStatusPeriod(ctx, schema, "tsd_declarations")
+
+	respondJSON(w, http.StatusOK, response)
+}
+
+func (h *Handlers) getEntityStatus(ctx context.Context, schema, table, keyColumn string) EntityStatus {
+	var count int
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", schema, table)
+	_ = h.pool.QueryRow(ctx, query).Scan(&count)
+
+	var keys []string
+	keysQuery := fmt.Sprintf("SELECT %s FROM %s.%s ORDER BY %s LIMIT 10", keyColumn, schema, table, keyColumn)
+	rows, _ := h.pool.Query(ctx, keysQuery)
+	if rows != nil {
+		defer rows.Close()
+		for rows.Next() {
+			var key string
+			if rows.Scan(&key) == nil {
+				keys = append(keys, key)
+			}
+		}
+	}
+
+	return EntityStatus{Count: count, Keys: keys}
+}
+
+func (h *Handlers) getEntityStatusConcat(ctx context.Context, schema, table, col1, col2 string) EntityStatus {
+	var count int
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", schema, table)
+	_ = h.pool.QueryRow(ctx, query).Scan(&count)
+
+	var keys []string
+	keysQuery := fmt.Sprintf("SELECT %s || ' ' || %s FROM %s.%s ORDER BY %s LIMIT 10", col1, col2, schema, table, col1)
+	rows, _ := h.pool.Query(ctx, keysQuery)
+	if rows != nil {
+		defer rows.Close()
+		for rows.Next() {
+			var key string
+			if rows.Scan(&key) == nil {
+				keys = append(keys, key)
+			}
+		}
+	}
+
+	return EntityStatus{Count: count, Keys: keys}
+}
+
+func (h *Handlers) getEntityStatusPeriod(ctx context.Context, schema, table string) EntityStatus {
+	var count int
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", schema, table)
+	_ = h.pool.QueryRow(ctx, query).Scan(&count)
+
+	var keys []string
+	keysQuery := fmt.Sprintf("SELECT period_year || '-' || LPAD(period_month::text, 2, '0') FROM %s.%s ORDER BY period_year, period_month LIMIT 10", schema, table)
+	rows, _ := h.pool.Query(ctx, keysQuery)
+	if rows != nil {
+		defer rows.Close()
+		for rows.Next() {
+			var key string
+			if rows.Scan(&key) == nil {
+				keys = append(keys, key)
+			}
+		}
+	}
+
+	return EntityStatus{Count: count, Keys: keys}
+}
+
 // getDemoSeedSQL returns the SQL to seed the demo database for all 3 demo users
 // This creates demo users, tenants, schemas, and comprehensive sample data
 func getDemoSeedSQL() string {

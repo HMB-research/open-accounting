@@ -245,8 +245,9 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 		_, _ = w.Write([]byte("OK"))
 	})
 
-	// Demo reset endpoint (protected by secret key)
+	// Demo endpoints (protected by secret key)
 	r.Post("/api/demo/reset", h.DemoReset)
+	r.Get("/api/demo/status", h.DemoStatus)
 
 	// Swagger documentation
 	r.Get("/swagger/*", httpSwagger.Handler(
