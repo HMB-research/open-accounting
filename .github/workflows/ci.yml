@@ -352,12 +352,6 @@ jobs:
       - name: Run migrations
         run: ./migrate -db "postgres://test:test@localhost:5432/openaccounting_demo?sslmode=disable"
 
-      - name: Seed demo data
-        run: |
-          psql "postgres://test:test@localhost:5432/openaccounting_demo?sslmode=disable" -f scripts/demo-seed.sql
-        env:
-          PGPASSWORD: test
-
       - name: Start backend in demo mode
         run: |
           ./api &
@@ -367,6 +361,22 @@ jobs:
           JWT_SECRET: test-secret-key-for-ci
           PORT: 8080
           DEMO_MODE: 'true'
+          DEMO_RESET_SECRET: test-demo-secret
+
+      - name: Seed demo data via API
+        run: |
+          echo "Calling demo reset endpoint to seed all 3 demo users..."
+          response=$(curl -s -w "\n%{http_code}" -X POST http://localhost:8080/api/demo/reset \
+            -H "Content-Type: application/json" \
+            -H "X-Demo-Secret: test-demo-secret")
+          http_code=$(echo "$response" | tail -1)
+          body=$(echo "$response" | head -n -1)
+          echo "Response: $body"
+          if [ "$http_code" != "200" ]; then
+            echo "Error: Demo reset failed with status $http_code"
+            exit 1
+          fi
+          echo "Demo data seeded successfully"
 
       - name: Build frontend
         working-directory: frontend
