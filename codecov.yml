@@ -1,0 +1,19 @@
+coverage:
+  status:
+    project:
+      default:
+        # Overall project coverage threshold
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        # Patch coverage for PRs - set to informational
+        # HTTP handlers and database code are better tested with integration tests
+        target: auto
+        threshold: 50%
+        informational: true
+
+comment:
+  layout: "header, diff, flags, components, footer"
+  behavior: default
+  require_changes: true
