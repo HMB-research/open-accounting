@@ -5,7 +5,7 @@ test.describe('Demo Reports - Page Structure Verification', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await loginAsDemo(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
-		await navigateTo(page, '/reports');
+		await navigateTo(page, '/reports', testInfo);
 		await page.waitForTimeout(2000);
 	});
 

@@ -5,7 +5,7 @@ test.describe('Demo Settings - Page Structure Verification', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await loginAsDemo(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
-		await navigateTo(page, '/settings');
+		await navigateTo(page, '/settings', testInfo);
 		await page.waitForTimeout(2000);
 	});
 
@@ -22,8 +22,8 @@ test.describe('Demo Settings - Page Structure Verification', () => {
 		expect(hasCompany || hasEmail || hasLinks).toBeTruthy();
 	});
 
-	test('can navigate to company settings', async ({ page }) => {
-		await navigateTo(page, '/settings/company');
+	test('can navigate to company settings', async ({ page }, testInfo) => {
+		await navigateTo(page, '/settings/company', testInfo);
 		await page.waitForTimeout(2000);
 		const hasContent = await page.locator('input').first().isVisible().catch(() => false);
 		const hasForm = await page.getByRole('form').isVisible().catch(() => false);

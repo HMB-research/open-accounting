@@ -5,7 +5,7 @@ test.describe('Demo Payroll - Seed Data Verification', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await loginAsDemo(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
-		await navigateTo(page, '/payroll');
+		await navigateTo(page, '/payroll', testInfo);
 		await page.waitForLoadState('networkidle');
 	});
 

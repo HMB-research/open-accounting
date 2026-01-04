@@ -5,10 +5,11 @@ export const DEMO_URL = process.env.BASE_URL || 'https://open-accounting.up.rail
 export const DEMO_API_URL = process.env.PUBLIC_API_URL || 'https://open-accounting-api.up.railway.app';
 
 // Demo credentials mapped by worker index (0-2)
+// Tenant IDs follow the pattern: b0000000-0000-0000-000X-000000000001 where X is user number
 export const DEMO_CREDENTIALS = [
-	{ email: 'demo1@example.com', password: 'demo12345', tenantSlug: 'demo1', tenantName: 'Demo Company 1' },
-	{ email: 'demo2@example.com', password: 'demo12345', tenantSlug: 'demo2', tenantName: 'Demo Company 2' },
-	{ email: 'demo3@example.com', password: 'demo12345', tenantSlug: 'demo3', tenantName: 'Demo Company 3' }
+	{ email: 'demo1@example.com', password: 'demo12345', tenantSlug: 'demo1', tenantName: 'Demo Company 1', tenantId: 'b0000000-0000-0000-0001-000000000001' },
+	{ email: 'demo2@example.com', password: 'demo12345', tenantSlug: 'demo2', tenantName: 'Demo Company 2', tenantId: 'b0000000-0000-0000-0002-000000000001' },
+	{ email: 'demo3@example.com', password: 'demo12345', tenantSlug: 'demo3', tenantName: 'Demo Company 3', tenantId: 'b0000000-0000-0000-0003-000000000001' }
 ] as const;
 
 /**
@@ -35,8 +36,15 @@ export async function loginAsDemo(page: Page, testInfo: TestInfo): Promise<void>
 	await page.waitForLoadState('networkidle');
 }
 
-export async function navigateTo(page: Page, path: string): Promise<void> {
-	await page.goto(`${DEMO_URL}${path}`);
+export async function navigateTo(page: Page, path: string, testInfo?: TestInfo): Promise<void> {
+	let url = `${DEMO_URL}${path}`;
+	// Append tenant ID if testInfo is provided and path doesn't already have query params
+	if (testInfo) {
+		const creds = getDemoCredentials(testInfo);
+		const separator = path.includes('?') ? '&' : '?';
+		url = `${url}${separator}tenant=${creds.tenantId}`;
+	}
+	await page.goto(url);
 	await page.waitForLoadState('networkidle');
 	await page.waitForTimeout(500);
 }
