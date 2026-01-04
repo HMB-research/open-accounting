@@ -1,7 +1,8 @@
 import { Page, expect, TestInfo } from '@playwright/test';
 
-export const DEMO_URL = 'https://open-accounting.up.railway.app';
-export const DEMO_API_URL = 'https://open-accounting-api.up.railway.app';
+// Use environment variables for local testing, fall back to Railway for remote demo testing
+export const DEMO_URL = process.env.BASE_URL || 'https://open-accounting.up.railway.app';
+export const DEMO_API_URL = process.env.PUBLIC_API_URL || 'https://open-accounting-api.up.railway.app';
 
 // Demo credentials mapped by worker index (0-2)
 export const DEMO_CREDENTIALS = [
