@@ -1,5 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
+// Use environment variables for local testing, fall back to Railway for remote demo testing
+const baseURL = process.env.BASE_URL || 'https://open-accounting.up.railway.app';
+const isLocalTesting = baseURL.includes('localhost');
+
 /**
  * Playwright configuration for Demo Environment E2E tests
  *
@@ -9,6 +13,10 @@ import { defineConfig, devices } from '@playwright/test';
  * These tests run against the live demo environment:
  * - Frontend: https://open-accounting.up.railway.app
  * - API: https://open-accounting-api.up.railway.app
+ *
+ * Or against local environment when BASE_URL is set to localhost:
+ * - Frontend: http://localhost:5173
+ * - API: http://localhost:8080
  *
  * Parallel testing is enabled with 3 workers, each using a dedicated demo user:
  * - Worker 0: demo1@example.com / tenant_demo1
@@ -30,7 +38,7 @@ export default defineConfig({
 	timeout: 60000, // Longer timeout for remote environment
 
 	use: {
-		baseURL: 'https://open-accounting.up.railway.app',
+		baseURL,
 		trace: 'on-first-retry',
 		screenshot: 'only-on-failure',
 		video: 'retain-on-failure',
@@ -48,7 +56,15 @@ export default defineConfig({
 				storageState: { cookies: [], origins: [] }
 			}
 		}
-	]
+	],
 
-	// No webServer - we're testing against live demo
+	// Start dev server when testing locally
+	...(isLocalTesting && {
+		webServer: {
+			command: 'npm run dev',
+			url: baseURL,
+			reuseExistingServer: !process.env.CI,
+			timeout: 120000
+		}
+	})
 });
