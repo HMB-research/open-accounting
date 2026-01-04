@@ -52,6 +52,9 @@ docs/swagger.yaml
 .claude/
 **/.claude/
 
+# Git worktrees
+.worktrees/
+
 # Test artifacts
 coverage/
 *.lcov
