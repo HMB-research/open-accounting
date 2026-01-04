@@ -15,7 +15,7 @@ test.describe('Demo Data Reset Verification', () => {
 
 	test.describe('Initial State Verification', () => {
 		test('has correct account count and key accounts', async ({}, testInfo) => {
-			const userNum = (testInfo.parallelIndex % 3) + 1;
+			const userNum = (testInfo.parallelIndex % 3) + 2;
 			const status = await getDemoStatus(userNum);
 
 			expect(status.accounts.count).toBe(EXPECTED_DEMO_DATA.accounts.count);
@@ -25,7 +25,7 @@ test.describe('Demo Data Reset Verification', () => {
 		});
 
 		test('has correct contact count and key contacts', async ({}, testInfo) => {
-			const userNum = (testInfo.parallelIndex % 3) + 1;
+			const userNum = (testInfo.parallelIndex % 3) + 2;
 			const status = await getDemoStatus(userNum);
 
 			expect(status.contacts.count).toBe(EXPECTED_DEMO_DATA.contacts.count);
@@ -35,7 +35,7 @@ test.describe('Demo Data Reset Verification', () => {
 		});
 
 		test('has correct invoice count and key invoices', async ({}, testInfo) => {
-			const userNum = (testInfo.parallelIndex % 3) + 1;
+			const userNum = (testInfo.parallelIndex % 3) + 2;
 			const status = await getDemoStatus(userNum);
 
 			expect(status.invoices.count).toBe(EXPECTED_DEMO_DATA.invoices.count);
@@ -43,7 +43,7 @@ test.describe('Demo Data Reset Verification', () => {
 		});
 
 		test('has correct employee count and key employees', async ({}, testInfo) => {
-			const userNum = (testInfo.parallelIndex % 3) + 1;
+			const userNum = (testInfo.parallelIndex % 3) + 2;
 			const status = await getDemoStatus(userNum);
 
 			expect(status.employees.count).toBe(EXPECTED_DEMO_DATA.employees.count);
@@ -53,7 +53,7 @@ test.describe('Demo Data Reset Verification', () => {
 		});
 
 		test('has correct payment count and key payments', async ({}, testInfo) => {
-			const userNum = (testInfo.parallelIndex % 3) + 1;
+			const userNum = (testInfo.parallelIndex % 3) + 2;
 			const status = await getDemoStatus(userNum);
 
 			expect(status.payments.count).toBe(EXPECTED_DEMO_DATA.payments.count);
@@ -61,7 +61,7 @@ test.describe('Demo Data Reset Verification', () => {
 		});
 
 		test('has correct journal entry count and key entries', async ({}, testInfo) => {
-			const userNum = (testInfo.parallelIndex % 3) + 1;
+			const userNum = (testInfo.parallelIndex % 3) + 2;
 			const status = await getDemoStatus(userNum);
 
 			expect(status.journalEntries.count).toBe(EXPECTED_DEMO_DATA.journalEntries.count);
@@ -69,7 +69,7 @@ test.describe('Demo Data Reset Verification', () => {
 		});
 
 		test('has correct bank account count', async ({}, testInfo) => {
-			const userNum = (testInfo.parallelIndex % 3) + 1;
+			const userNum = (testInfo.parallelIndex % 3) + 2;
 			const status = await getDemoStatus(userNum);
 
 			expect(status.bankAccounts.count).toBe(EXPECTED_DEMO_DATA.bankAccounts.count);
@@ -79,7 +79,7 @@ test.describe('Demo Data Reset Verification', () => {
 		});
 
 		test('has correct recurring invoice count', async ({}, testInfo) => {
-			const userNum = (testInfo.parallelIndex % 3) + 1;
+			const userNum = (testInfo.parallelIndex % 3) + 2;
 			const status = await getDemoStatus(userNum);
 
 			expect(status.recurringInvoices.count).toBe(EXPECTED_DEMO_DATA.recurringInvoices.count);
@@ -89,7 +89,7 @@ test.describe('Demo Data Reset Verification', () => {
 		});
 
 		test('has correct payroll run count', async ({}, testInfo) => {
-			const userNum = (testInfo.parallelIndex % 3) + 1;
+			const userNum = (testInfo.parallelIndex % 3) + 2;
 			const status = await getDemoStatus(userNum);
 
 			expect(status.payrollRuns.count).toBe(EXPECTED_DEMO_DATA.payrollRuns.count);
@@ -99,7 +99,7 @@ test.describe('Demo Data Reset Verification', () => {
 		});
 
 		test('has correct TSD declaration count', async ({}, testInfo) => {
-			const userNum = (testInfo.parallelIndex % 3) + 1;
+			const userNum = (testInfo.parallelIndex % 3) + 2;
 			const status = await getDemoStatus(userNum);
 
 			expect(status.tsdDeclarations.count).toBe(EXPECTED_DEMO_DATA.tsdDeclarations.count);
@@ -111,7 +111,7 @@ test.describe('Demo Data Reset Verification', () => {
 
 	test.describe('Reset Functionality', () => {
 		test('reset is idempotent', async ({}, testInfo) => {
-			const userNum = (testInfo.parallelIndex % 3) + 1;
+			const userNum = (testInfo.parallelIndex % 3) + 2;
 
 			// Reset twice
 			await triggerDemoReset(userNum);
@@ -128,7 +128,7 @@ test.describe('Demo Data Reset Verification', () => {
 		});
 
 		test('reset restores expected counts', async ({}, testInfo) => {
-			const userNum = (testInfo.parallelIndex % 3) + 1;
+			const userNum = (testInfo.parallelIndex % 3) + 2;
 
 			// Trigger reset
 			await triggerDemoReset(userNum);
