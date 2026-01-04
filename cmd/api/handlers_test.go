@@ -173,10 +173,10 @@ func TestHealthEndpoint(t *testing.T) {
 
 func TestGenerateDemoSeedForUser(t *testing.T) {
 	tests := []struct {
-		name     string
-		userNum  int
-		template string
-		contains []string
+		name        string
+		userNum     int
+		template    string
+		contains    []string
 		notContains []string
 	}{
 		{
@@ -242,8 +242,8 @@ func TestGenerateDemoSeedForUser(t *testing.T) {
 			contains: []string{"f2000000-0000-0000-0000-000000000001"},
 		},
 		{
-			name:     "employee id replacements",
-			userNum:  1,
+			name:    "employee id replacements",
+			userNum: 1,
 			// Note: replacements cascade - 70000000 becomes 71000000 then 71100000
 			template: "72000000-0000-0000-0000-000000000001",
 			contains: []string{
