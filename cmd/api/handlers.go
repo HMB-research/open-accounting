@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1043,7 +1044,7 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Demo identifiers for 3 parallel test users
-	demoUsers := []struct {
+	allDemoUsers := []struct {
 		email  string
 		slug   string
 		schema string
@@ -1053,7 +1054,33 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 		{"demo3@example.com", "demo3", "tenant_demo3"},
 	}
 
-	// Drop all demo tenant schemas
+	// Parse optional user parameter for single-user reset
+	var demoUsers []struct {
+		email  string
+		slug   string
+		schema string
+	}
+
+	userParam := r.URL.Query().Get("user")
+	if userParam != "" {
+		userNum, err := strconv.Atoi(userParam)
+		if err != nil || userNum < 1 || userNum > 3 {
+			log.Warn().Str("user", userParam).Msg("Demo reset rejected: invalid user parameter")
+			respondError(w, http.StatusBadRequest, "Invalid user parameter. Must be 1, 2, or 3")
+			return
+		}
+		demoUsers = []struct {
+			email  string
+			slug   string
+			schema string
+		}{allDemoUsers[userNum-1]}
+		log.Info().Int("user", userNum).Msg("Demo reset: resetting single user")
+	} else {
+		demoUsers = allDemoUsers
+		log.Info().Msg("Demo reset: resetting all users")
+	}
+
+	// Drop demo tenant schemas
 	for _, demo := range demoUsers {
 		log.Info().Str("schema", demo.schema).Msg("Demo reset: dropping tenant schema")
 		_, err := h.pool.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", demo.schema))
