@@ -5,7 +5,7 @@ test.describe('Demo Contacts - Seed Data Verification', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await loginAsDemo(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
-		await navigateTo(page, '/contacts');
+		await navigateTo(page, '/contacts', testInfo);
 		await page.waitForLoadState('networkidle');
 	});
 

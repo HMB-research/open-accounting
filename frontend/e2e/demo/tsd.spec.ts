@@ -5,7 +5,7 @@ test.describe('Demo TSD Declarations - Seed Data Verification', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await loginAsDemo(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
-		await navigateTo(page, '/tsd');
+		await navigateTo(page, '/tsd', testInfo);
 		await page.waitForLoadState('networkidle');
 	});
 

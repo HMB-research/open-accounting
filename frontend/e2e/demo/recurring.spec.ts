@@ -5,7 +5,7 @@ test.describe('Demo Recurring Invoices - Seed Data Verification', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await loginAsDemo(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
-		await navigateTo(page, '/recurring');
+		await navigateTo(page, '/recurring', testInfo);
 		await page.waitForLoadState('networkidle');
 	});
 

@@ -5,7 +5,7 @@ test.describe('Demo Journal Entries - Seed Data Verification', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await loginAsDemo(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
-		await navigateTo(page, '/journal');
+		await navigateTo(page, '/journal', testInfo);
 		await page.waitForLoadState('networkidle');
 	});
 
