@@ -80,7 +80,7 @@ func (r *PostgresRepository) CreateBankAccount(ctx context.Context, schemaName s
 func (r *PostgresRepository) GetBankAccount(ctx context.Context, schemaName, tenantID, accountID string) (*BankAccount, error) {
 	var account BankAccount
 	err := r.db.QueryRow(ctx, fmt.Sprintf(`
-		SELECT id, tenant_id, name, account_number, bank_name, swift_code, currency, gl_account_id, is_default, is_active, created_at
+		SELECT id, tenant_id, name, account_number, COALESCE(bank_name, ''), COALESCE(swift_code, ''), currency, gl_account_id, is_default, is_active, created_at
 		FROM %s.bank_accounts
 		WHERE id = $1 AND tenant_id = $2
 	`, schemaName), accountID, tenantID).Scan(
@@ -99,7 +99,7 @@ func (r *PostgresRepository) GetBankAccount(ctx context.Context, schemaName, ten
 // ListBankAccounts lists all bank accounts for a tenant
 func (r *PostgresRepository) ListBankAccounts(ctx context.Context, schemaName, tenantID string, filter *BankAccountFilter) ([]BankAccount, error) {
 	query := fmt.Sprintf(`
-		SELECT id, tenant_id, name, account_number, bank_name, swift_code, currency, gl_account_id, is_default, is_active, created_at
+		SELECT id, tenant_id, name, account_number, COALESCE(bank_name, ''), COALESCE(swift_code, ''), currency, gl_account_id, is_default, is_active, created_at
 		FROM %s.bank_accounts
 		WHERE tenant_id = $1
 	`, schemaName)
@@ -210,8 +210,8 @@ func (r *PostgresRepository) CalculateAccountBalance(ctx context.Context, schema
 func (r *PostgresRepository) ListTransactions(ctx context.Context, schemaName, tenantID string, filter *TransactionFilter) ([]BankTransaction, error) {
 	query := fmt.Sprintf(`
 		SELECT id, tenant_id, bank_account_id, transaction_date, value_date, amount, currency,
-			   description, reference, counterparty_name, counterparty_account, status,
-			   matched_payment_id, journal_entry_id, reconciliation_id, imported_at, external_id
+			   COALESCE(description, ''), COALESCE(reference, ''), COALESCE(counterparty_name, ''), COALESCE(counterparty_account, ''), status,
+			   matched_payment_id, journal_entry_id, reconciliation_id, imported_at, COALESCE(external_id, '')
 		FROM %s.bank_transactions
 		WHERE tenant_id = $1
 	`, schemaName)
@@ -284,8 +284,8 @@ func (r *PostgresRepository) GetTransaction(ctx context.Context, schemaName, ten
 	var t BankTransaction
 	err := r.db.QueryRow(ctx, fmt.Sprintf(`
 		SELECT id, tenant_id, bank_account_id, transaction_date, value_date, amount, currency,
-			   description, reference, counterparty_name, counterparty_account, status,
-			   matched_payment_id, journal_entry_id, reconciliation_id, imported_at, external_id
+			   COALESCE(description, ''), COALESCE(reference, ''), COALESCE(counterparty_name, ''), COALESCE(counterparty_account, ''), status,
+			   matched_payment_id, journal_entry_id, reconciliation_id, imported_at, COALESCE(external_id, '')
 		FROM %s.bank_transactions
 		WHERE id = $1 AND tenant_id = $2
 	`, schemaName), transactionID, tenantID).Scan(

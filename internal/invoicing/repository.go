@@ -90,7 +90,7 @@ func (r *PostgresRepository) GetByID(ctx context.Context, schemaName, tenantID, 
 		SELECT id, tenant_id, invoice_number, invoice_type, contact_id, issue_date, due_date,
 		       currency, exchange_rate, subtotal, vat_amount, total,
 		       base_subtotal, base_vat_amount, base_total, amount_paid, status,
-		       reference, notes, journal_entry_id, einvoice_sent_at, einvoice_id,
+		       COALESCE(reference, ''), COALESCE(notes, ''), journal_entry_id, einvoice_sent_at, einvoice_id,
 		       created_at, created_by, updated_at
 		FROM %s.invoices
 		WHERE id = $1 AND tenant_id = $2
@@ -110,7 +110,7 @@ func (r *PostgresRepository) GetByID(ctx context.Context, schemaName, tenantID, 
 	}
 
 	rows, err := r.db.Query(ctx, fmt.Sprintf(`
-		SELECT id, tenant_id, invoice_id, line_number, description, quantity, unit,
+		SELECT id, tenant_id, invoice_id, line_number, COALESCE(description, ''), quantity, COALESCE(unit, ''),
 		       unit_price, discount_percent, vat_rate, line_subtotal, line_vat, line_total,
 		       account_id, product_id
 		FROM %s.invoice_lines
@@ -143,7 +143,7 @@ func (r *PostgresRepository) List(ctx context.Context, schemaName, tenantID stri
 		SELECT id, tenant_id, invoice_number, invoice_type, contact_id, issue_date, due_date,
 		       currency, exchange_rate, subtotal, vat_amount, total,
 		       base_subtotal, base_vat_amount, base_total, amount_paid, status,
-		       reference, notes, journal_entry_id, einvoice_sent_at, einvoice_id,
+		       COALESCE(reference, ''), COALESCE(notes, ''), journal_entry_id, einvoice_sent_at, einvoice_id,
 		       created_at, created_by, updated_at
 		FROM %s.invoices
 		WHERE tenant_id = $1
