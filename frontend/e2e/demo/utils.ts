@@ -4,12 +4,17 @@ import { Page, expect, TestInfo } from '@playwright/test';
 export const DEMO_URL = process.env.BASE_URL || 'https://open-accounting.up.railway.app';
 export const DEMO_API_URL = process.env.PUBLIC_API_URL || 'https://open-accounting-api.up.railway.app';
 
-// Demo credentials mapped by worker index (0-2)
+// Demo user reserved for end users (README documentation)
+// This user should NOT be used by automated tests to avoid conflicts
+export const END_USER_DEMO = { email: 'demo1@example.com', password: 'demo12345', tenantSlug: 'demo1', tenantName: 'Demo Company 1', tenantId: 'b0000000-0000-0000-0001-000000000001' };
+
+// Demo credentials for E2E tests only (demo2, demo3, demo4)
 // Tenant IDs follow the pattern: b0000000-0000-0000-000X-000000000001 where X is user number
+// NOTE: demo1 is reserved for end users - tests use demo2, demo3, demo4 only
 export const DEMO_CREDENTIALS = [
-	{ email: 'demo1@example.com', password: 'demo12345', tenantSlug: 'demo1', tenantName: 'Demo Company 1', tenantId: 'b0000000-0000-0000-0001-000000000001' },
 	{ email: 'demo2@example.com', password: 'demo12345', tenantSlug: 'demo2', tenantName: 'Demo Company 2', tenantId: 'b0000000-0000-0000-0002-000000000001' },
-	{ email: 'demo3@example.com', password: 'demo12345', tenantSlug: 'demo3', tenantName: 'Demo Company 3', tenantId: 'b0000000-0000-0000-0003-000000000001' }
+	{ email: 'demo3@example.com', password: 'demo12345', tenantSlug: 'demo3', tenantName: 'Demo Company 3', tenantId: 'b0000000-0000-0000-0003-000000000001' },
+	{ email: 'demo4@example.com', password: 'demo12345', tenantSlug: 'demo4', tenantName: 'Demo Company 4', tenantId: 'b0000000-0000-0000-0004-000000000001' }
 ] as const;
 
 /**
@@ -73,7 +78,8 @@ export async function ensureDemoTenant(page: Page, testInfo: TestInfo): Promise<
 }
 
 // Keep backward-compatible exports for gradual migration
-export const DEMO_EMAIL = 'demo1@example.com';
+// NOTE: Using demo2 for tests, demo1 is reserved for end users
+export const DEMO_EMAIL = 'demo2@example.com';
 export const DEMO_PASSWORD = 'demo12345';
 
 /**
