@@ -1,8 +1,42 @@
 definitions:
-  github_com_openaccounting_openaccounting_internal_accounting.Account:
+  cmd_api.DemoStatusResponse:
+    properties:
+      accounts:
+        $ref: '#/definitions/cmd_api.EntityStatus'
+      bankAccounts:
+        $ref: '#/definitions/cmd_api.EntityStatus'
+      contacts:
+        $ref: '#/definitions/cmd_api.EntityStatus'
+      employees:
+        $ref: '#/definitions/cmd_api.EntityStatus'
+      invoices:
+        $ref: '#/definitions/cmd_api.EntityStatus'
+      journalEntries:
+        $ref: '#/definitions/cmd_api.EntityStatus'
+      payments:
+        $ref: '#/definitions/cmd_api.EntityStatus'
+      payrollRuns:
+        $ref: '#/definitions/cmd_api.EntityStatus'
+      recurringInvoices:
+        $ref: '#/definitions/cmd_api.EntityStatus'
+      tsdDeclarations:
+        $ref: '#/definitions/cmd_api.EntityStatus'
+      user:
+        type: integer
+    type: object
+  cmd_api.EntityStatus:
+    properties:
+      count:
+        type: integer
+      keys:
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.Account:
     properties:
       account_type:
-        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.AccountType'
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.AccountType'
       code:
         type: string
       created_at:
@@ -22,7 +56,7 @@ definitions:
       tenant_id:
         type: string
     type: object
-  github_com_openaccounting_openaccounting_internal_accounting.AccountBalance:
+  github_com_HMB-research_open-accounting_internal_accounting.AccountBalance:
     properties:
       account_code:
         type: string
@@ -31,7 +65,7 @@ definitions:
       account_name:
         type: string
       account_type:
-        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.AccountType'
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.AccountType'
       credit_balance:
         type: number
       debit_balance:
@@ -39,7 +73,7 @@ definitions:
       net_balance:
         type: number
     type: object
-  github_com_openaccounting_openaccounting_internal_accounting.AccountType:
+  github_com_HMB-research_open-accounting_internal_accounting.AccountType:
     enum:
     - ASSET
     - LIABILITY
@@ -53,10 +87,41 @@ definitions:
     - AccountTypeEquity
     - AccountTypeRevenue
     - AccountTypeExpense
-  github_com_openaccounting_openaccounting_internal_accounting.CreateAccountRequest:
+  github_com_HMB-research_open-accounting_internal_accounting.BalanceSheet:
+    properties:
+      as_of_date:
+        type: string
+      assets:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.AccountBalance'
+        type: array
+      equity:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.AccountBalance'
+        type: array
+      generated_at:
+        type: string
+      is_balanced:
+        type: boolean
+      liabilities:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.AccountBalance'
+        type: array
+      retained_earnings:
+        type: number
+      tenant_id:
+        type: string
+      total_assets:
+        type: number
+      total_equity:
+        type: number
+      total_liabilities:
+        type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.CreateAccountRequest:
     properties:
       account_type:
-        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.AccountType'
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.AccountType'
       code:
         type: string
       description:
@@ -66,7 +131,7 @@ definitions:
       parent_id:
         type: string
     type: object
-  github_com_openaccounting_openaccounting_internal_accounting.CreateJournalEntryLineReq:
+  github_com_HMB-research_open-accounting_internal_accounting.CreateJournalEntryLineReq:
     properties:
       account_id:
         type: string
@@ -81,7 +146,7 @@ definitions:
       exchange_rate:
         type: number
     type: object
-  github_com_openaccounting_openaccounting_internal_accounting.CreateJournalEntryRequest:
+  github_com_HMB-research_open-accounting_internal_accounting.CreateJournalEntryRequest:
     properties:
       description:
         type: string
@@ -89,7 +154,7 @@ definitions:
         type: string
       lines:
         items:
-          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.CreateJournalEntryLineReq'
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CreateJournalEntryLineReq'
         type: array
       reference:
         type: string
@@ -98,7 +163,32 @@ definitions:
       source_type:
         type: string
     type: object
-  github_com_openaccounting_openaccounting_internal_accounting.JournalEntry:
+  github_com_HMB-research_open-accounting_internal_accounting.IncomeStatement:
+    properties:
+      end_date:
+        type: string
+      expenses:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.AccountBalance'
+        type: array
+      generated_at:
+        type: string
+      net_income:
+        type: number
+      revenue:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.AccountBalance'
+        type: array
+      start_date:
+        type: string
+      tenant_id:
+        type: string
+      total_expenses:
+        type: number
+      total_revenue:
+        type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.JournalEntry:
     properties:
       created_at:
         type: string
@@ -114,7 +204,7 @@ definitions:
         type: string
       lines:
         items:
-          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.JournalEntryLine'
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryLine'
         type: array
       posted_at:
         type: string
@@ -127,7 +217,7 @@ definitions:
       source_type:
         type: string
       status:
-        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.JournalEntryStatus'
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryStatus'
       tenant_id:
         type: string
       void_reason:
@@ -137,10 +227,10 @@ definitions:
       voided_by:
         type: string
     type: object
-  github_com_openaccounting_openaccounting_internal_accounting.JournalEntryLine:
+  github_com_HMB-research_open-accounting_internal_accounting.JournalEntryLine:
     properties:
       account:
-        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.Account'
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.Account'
       account_id:
         type: string
       base_credit:
@@ -164,7 +254,7 @@ definitions:
       tenant_id:
         type: string
     type: object
-  github_com_openaccounting_openaccounting_internal_accounting.JournalEntryStatus:
+  github_com_HMB-research_open-accounting_internal_accounting.JournalEntryStatus:
     enum:
     - DRAFT
     - POSTED
@@ -174,11 +264,11 @@ definitions:
     - StatusDraft
     - StatusPosted
     - StatusVoided
-  github_com_openaccounting_openaccounting_internal_accounting.TrialBalance:
+  github_com_HMB-research_open-accounting_internal_accounting.TrialBalance:
     properties:
       accounts:
         items:
-          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.AccountBalance'
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.AccountBalance'
         type: array
       as_of_date:
         type: string
@@ -193,7 +283,358 @@ definitions:
       total_debits:
         type: number
     type: object
-  github_com_openaccounting_openaccounting_internal_contacts.Contact:
+  github_com_HMB-research_open-accounting_internal_analytics.AgingBucket:
+    properties:
+      amount:
+        type: number
+      count:
+        type: integer
+      label:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_analytics.AgingReport:
+    properties:
+      as_of_date:
+        type: string
+      buckets:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_analytics.AgingBucket'
+        type: array
+      by_contact:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_analytics.ContactAging'
+        type: array
+      report_type:
+        description: '"receivables" or "payables"'
+        type: string
+      total:
+        type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_analytics.CashFlowChart:
+    properties:
+      inflows:
+        items:
+          type: number
+        type: array
+      labels:
+        items:
+          type: string
+        type: array
+      net:
+        items:
+          type: number
+        type: array
+      outflows:
+        items:
+          type: number
+        type: array
+    type: object
+  github_com_HMB-research_open-accounting_internal_analytics.ContactAging:
+    properties:
+      contact_id:
+        type: string
+      contact_name:
+        type: string
+      current:
+        type: number
+      days_1_30:
+        type: number
+      days_31_60:
+        type: number
+      days_61_90:
+        type: number
+      days_90_plus:
+        type: number
+      total:
+        type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_analytics.DashboardSummary:
+    properties:
+      draft_invoices:
+        description: Invoice counts
+        type: integer
+      expenses_change:
+        description: '% change from previous period'
+        type: number
+      net_income:
+        type: number
+      overdue_invoices:
+        type: integer
+      overdue_payables:
+        type: number
+      overdue_receivables:
+        type: number
+      pending_invoices:
+        type: integer
+      period_end:
+        type: string
+      period_start:
+        description: Period
+        type: string
+      revenue_change:
+        description: '% change from previous period'
+        type: number
+      total_expenses:
+        type: number
+      total_payables:
+        type: number
+      total_receivables:
+        description: Receivables and payables
+        type: number
+      total_revenue:
+        description: Revenue and expenses
+        type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_analytics.RevenueExpenseChart:
+    properties:
+      expenses:
+        items:
+          type: number
+        type: array
+      labels:
+        items:
+          type: string
+        type: array
+      revenue:
+        items:
+          type: number
+        type: array
+    type: object
+  github_com_HMB-research_open-accounting_internal_banking.BankAccount:
+    properties:
+      account_number:
+        type: string
+      balance:
+        description: Calculated field
+        type: number
+      bank_name:
+        type: string
+      created_at:
+        type: string
+      currency:
+        type: string
+      gl_account_id:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      is_default:
+        type: boolean
+      name:
+        type: string
+      swift_code:
+        type: string
+      tenant_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_banking.BankReconciliation:
+    properties:
+      bank_account_id:
+        type: string
+      closing_balance:
+        type: number
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      id:
+        type: string
+      opening_balance:
+        type: number
+      statement_date:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.ReconciliationStatus'
+      tenant_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_banking.BankStatementImport:
+    properties:
+      bank_account_id:
+        type: string
+      created_at:
+        type: string
+      duplicates_skipped:
+        type: integer
+      file_name:
+        type: string
+      id:
+        type: string
+      tenant_id:
+        type: string
+      transactions_imported:
+        type: integer
+      transactions_matched:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_banking.BankTransaction:
+    properties:
+      amount:
+        type: number
+      bank_account_id:
+        type: string
+      counterparty_account:
+        type: string
+      counterparty_name:
+        type: string
+      currency:
+        type: string
+      description:
+        type: string
+      external_id:
+        type: string
+      id:
+        type: string
+      imported_at:
+        type: string
+      journal_entry_id:
+        type: string
+      matched_payment_id:
+        type: string
+      reconciliation_id:
+        type: string
+      reference:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.TransactionStatus'
+      tenant_id:
+        type: string
+      transaction_date:
+        type: string
+      value_date:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_banking.CSVTransactionRow:
+    properties:
+      amount:
+        type: string
+      counterparty_account:
+        type: string
+      counterparty_name:
+        type: string
+      date:
+        type: string
+      description:
+        type: string
+      external_id:
+        type: string
+      reference:
+        type: string
+      value_date:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_banking.CreateBankAccountRequest:
+    properties:
+      account_number:
+        type: string
+      bank_name:
+        type: string
+      currency:
+        type: string
+      gl_account_id:
+        type: string
+      is_default:
+        type: boolean
+      name:
+        type: string
+      swift_code:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_banking.CreateReconciliationRequest:
+    properties:
+      closing_balance:
+        type: number
+      opening_balance:
+        type: number
+      statement_date:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_banking.ImportCSVRequest:
+    properties:
+      skip_duplicates:
+        type: boolean
+      transactions:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.CSVTransactionRow'
+        type: array
+    type: object
+  github_com_HMB-research_open-accounting_internal_banking.ImportResult:
+    properties:
+      duplicates_skipped:
+        type: integer
+      errors:
+        items:
+          type: string
+        type: array
+      import_id:
+        type: string
+      transactions_imported:
+        type: integer
+      transactions_matched:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_banking.MatchSuggestion:
+    properties:
+      amount:
+        type: number
+      confidence:
+        description: 0.0 - 1.0
+        type: number
+      contact_name:
+        type: string
+      match_reason:
+        type: string
+      payment_date:
+        type: string
+      payment_id:
+        type: string
+      payment_number:
+        type: string
+      reference:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_banking.MatchTransactionRequest:
+    properties:
+      payment_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_banking.ReconciliationStatus:
+    enum:
+    - IN_PROGRESS
+    - COMPLETED
+    type: string
+    x-enum-varnames:
+    - ReconciliationInProgress
+    - ReconciliationCompleted
+  github_com_HMB-research_open-accounting_internal_banking.TransactionStatus:
+    enum:
+    - UNMATCHED
+    - MATCHED
+    - RECONCILED
+    type: string
+    x-enum-varnames:
+    - StatusUnmatched
+    - StatusMatched
+    - StatusReconciled
+  github_com_HMB-research_open-accounting_internal_banking.UpdateBankAccountRequest:
+    properties:
+      bank_name:
+        type: string
+      gl_account_id:
+        type: string
+      is_active:
+        type: boolean
+      is_default:
+        type: boolean
+      name:
+        type: string
+      swift_code:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_contacts.Contact:
     properties:
       address_line1:
         type: string
@@ -204,7 +645,7 @@ definitions:
       code:
         type: string
       contact_type:
-        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_contacts.ContactType'
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_contacts.ContactType'
       country_code:
         type: string
       created_at:
@@ -238,7 +679,7 @@ definitions:
       vat_number:
         type: string
     type: object
-  github_com_openaccounting_openaccounting_internal_contacts.ContactType:
+  github_com_HMB-research_open-accounting_internal_contacts.ContactType:
     enum:
     - CUSTOMER
     - SUPPLIER
@@ -248,7 +689,7 @@ definitions:
     - ContactTypeCustomer
     - ContactTypeSupplier
     - ContactTypeBoth
-  github_com_openaccounting_openaccounting_internal_contacts.CreateContactRequest:
+  github_com_HMB-research_open-accounting_internal_contacts.CreateContactRequest:
     properties:
       address_line1:
         type: string
@@ -259,7 +700,7 @@ definitions:
       code:
         type: string
       contact_type:
-        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_contacts.ContactType'
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_contacts.ContactType'
       country_code:
         type: string
       credit_limit:
@@ -283,7 +724,7 @@ definitions:
       vat_number:
         type: string
     type: object
-  github_com_openaccounting_openaccounting_internal_contacts.UpdateContactRequest:
+  github_com_HMB-research_open-accounting_internal_contacts.UpdateContactRequest:
     properties:
       address_line1:
         type: string
@@ -316,7 +757,164 @@ definitions:
       vat_number:
         type: string
     type: object
-  github_com_openaccounting_openaccounting_internal_invoicing.CreateInvoiceLineRequest:
+  github_com_HMB-research_open-accounting_internal_email.EmailLog:
+    properties:
+      created_at:
+        type: string
+      email_type:
+        type: string
+      error_message:
+        type: string
+      id:
+        type: string
+      recipient_email:
+        type: string
+      recipient_name:
+        type: string
+      related_id:
+        description: Invoice ID or Payment ID
+        type: string
+      sent_at:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_email.EmailStatus'
+      subject:
+        type: string
+      tenant_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_email.EmailSentResponse:
+    properties:
+      log_id:
+        type: string
+      message:
+        type: string
+      success:
+        type: boolean
+    type: object
+  github_com_HMB-research_open-accounting_internal_email.EmailStatus:
+    enum:
+    - PENDING
+    - SENT
+    - FAILED
+    type: string
+    x-enum-varnames:
+    - StatusPending
+    - StatusSent
+    - StatusFailed
+  github_com_HMB-research_open-accounting_internal_email.EmailTemplate:
+    properties:
+      body_html:
+        type: string
+      body_text:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      subject:
+        type: string
+      template_type:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_email.TemplateType'
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_email.SMTPConfig:
+    properties:
+      smtp_from_email:
+        type: string
+      smtp_from_name:
+        type: string
+      smtp_host:
+        type: string
+      smtp_password:
+        type: string
+      smtp_port:
+        type: integer
+      smtp_use_tls:
+        type: boolean
+      smtp_username:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_email.SendInvoiceRequest:
+    properties:
+      attach_pdf:
+        type: boolean
+      message:
+        type: string
+      recipient_email:
+        type: string
+      recipient_name:
+        type: string
+      subject:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_email.SendPaymentReceiptRequest:
+    properties:
+      message:
+        type: string
+      recipient_email:
+        type: string
+      recipient_name:
+        type: string
+      subject:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_email.TemplateType:
+    enum:
+    - INVOICE_SEND
+    - PAYMENT_RECEIPT
+    - OVERDUE_REMINDER
+    type: string
+    x-enum-varnames:
+    - TemplateInvoiceSend
+    - TemplatePaymentReceipt
+    - TemplateOverdueReminder
+  github_com_HMB-research_open-accounting_internal_email.TestSMTPRequest:
+    properties:
+      recipient_email:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_email.TestSMTPResponse:
+    properties:
+      message:
+        type: string
+      success:
+        type: boolean
+    type: object
+  github_com_HMB-research_open-accounting_internal_email.UpdateSMTPConfigRequest:
+    properties:
+      smtp_from_email:
+        type: string
+      smtp_from_name:
+        type: string
+      smtp_host:
+        type: string
+      smtp_password:
+        type: string
+      smtp_port:
+        type: integer
+      smtp_use_tls:
+        type: boolean
+      smtp_username:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_email.UpdateTemplateRequest:
+    properties:
+      body_html:
+        type: string
+      body_text:
+        type: string
+      is_active:
+        type: boolean
+      subject:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_invoicing.CreateInvoiceLineRequest:
     properties:
       account_id:
         type: string
@@ -335,7 +933,7 @@ definitions:
       vat_rate:
         type: number
     type: object
-  github_com_openaccounting_openaccounting_internal_invoicing.CreateInvoiceRequest:
+  github_com_HMB-research_open-accounting_internal_invoicing.CreateInvoiceRequest:
     properties:
       contact_id:
         type: string
@@ -346,19 +944,19 @@ definitions:
       exchange_rate:
         type: number
       invoice_type:
-        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_invoicing.InvoiceType'
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.InvoiceType'
       issue_date:
         type: string
       lines:
         items:
-          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_invoicing.CreateInvoiceLineRequest'
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.CreateInvoiceLineRequest'
         type: array
       notes:
         type: string
       reference:
         type: string
     type: object
-  github_com_openaccounting_openaccounting_internal_invoicing.Invoice:
+  github_com_HMB-research_open-accounting_internal_invoicing.Invoice:
     properties:
       amount_paid:
         type: number
@@ -369,7 +967,7 @@ definitions:
       base_vat_amount:
         type: number
       contact:
-        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_contacts.Contact'
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_contacts.Contact'
       contact_id:
         type: string
       created_at:
@@ -391,21 +989,21 @@ definitions:
       invoice_number:
         type: string
       invoice_type:
-        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_invoicing.InvoiceType'
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.InvoiceType'
       issue_date:
         type: string
       journal_entry_id:
         type: string
       lines:
         items:
-          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_invoicing.InvoiceLine'
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.InvoiceLine'
         type: array
       notes:
         type: string
       reference:
         type: string
       status:
-        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_invoicing.InvoiceStatus'
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.InvoiceStatus'
       subtotal:
         type: number
       tenant_id:
@@ -417,7 +1015,7 @@ definitions:
       vat_amount:
         type: number
     type: object
-  github_com_openaccounting_openaccounting_internal_invoicing.InvoiceLine:
+  github_com_HMB-research_open-accounting_internal_invoicing.InvoiceLine:
     properties:
       account_id:
         type: string
@@ -450,7 +1048,7 @@ definitions:
       vat_rate:
         type: number
     type: object
-  github_com_openaccounting_openaccounting_internal_invoicing.InvoiceStatus:
+  github_com_HMB-research_open-accounting_internal_invoicing.InvoiceStatus:
     enum:
     - DRAFT
     - SENT
@@ -466,7 +1064,7 @@ definitions:
     - StatusPaid
     - StatusOverdue
     - StatusVoided
-  github_com_openaccounting_openaccounting_internal_invoicing.InvoiceType:
+  github_com_HMB-research_open-accounting_internal_invoicing.InvoiceType:
     enum:
     - SALES
     - PURCHASE
@@ -476,18 +1074,18 @@ definitions:
     - InvoiceTypeSales
     - InvoiceTypePurchase
     - InvoiceTypeCreditNote
-  github_com_openaccounting_openaccounting_internal_payments.AllocationRequest:
+  github_com_HMB-research_open-accounting_internal_payments.AllocationRequest:
     properties:
       amount:
         type: number
       invoice_id:
         type: string
     type: object
-  github_com_openaccounting_openaccounting_internal_payments.CreatePaymentRequest:
+  github_com_HMB-research_open-accounting_internal_payments.CreatePaymentRequest:
     properties:
       allocations:
         items:
-          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_payments.AllocationRequest'
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payments.AllocationRequest'
         type: array
       amount:
         type: number
@@ -506,15 +1104,15 @@ definitions:
       payment_method:
         type: string
       payment_type:
-        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_payments.PaymentType'
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payments.PaymentType'
       reference:
         type: string
     type: object
-  github_com_openaccounting_openaccounting_internal_payments.Payment:
+  github_com_HMB-research_open-accounting_internal_payments.Payment:
     properties:
       allocations:
         items:
-          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_payments.PaymentAllocation'
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payments.PaymentAllocation'
         type: array
       amount:
         type: number
@@ -545,13 +1143,13 @@ definitions:
       payment_number:
         type: string
       payment_type:
-        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_payments.PaymentType'
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payments.PaymentType'
       reference:
         type: string
       tenant_id:
         type: string
     type: object
-  github_com_openaccounting_openaccounting_internal_payments.PaymentAllocation:
+  github_com_HMB-research_open-accounting_internal_payments.PaymentAllocation:
     properties:
       amount:
         type: number
@@ -566,7 +1164,7 @@ definitions:
       tenant_id:
         type: string
     type: object
-  github_com_openaccounting_openaccounting_internal_payments.PaymentType:
+  github_com_HMB-research_open-accounting_internal_payments.PaymentType:
     enum:
     - RECEIVED
     - MADE
@@ -574,7 +1172,868 @@ definitions:
     x-enum-varnames:
     - PaymentTypeReceived
     - PaymentTypeMade
-  github_com_openaccounting_openaccounting_internal_tenant.Tenant:
+  github_com_HMB-research_open-accounting_internal_payroll.CreateEmployeeRequest:
+    properties:
+      address:
+        type: string
+      apply_basic_exemption:
+        type: boolean
+      bank_account:
+        type: string
+      basic_exemption_amount:
+        type: number
+      department:
+        type: string
+      email:
+        type: string
+      employee_number:
+        type: string
+      employment_type:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.EmploymentType'
+      first_name:
+        type: string
+      funded_pension_rate:
+        type: number
+      last_name:
+        type: string
+      personal_code:
+        type: string
+      phone:
+        type: string
+      position:
+        type: string
+      start_date:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_payroll.CreatePayrollRunRequest:
+    properties:
+      notes:
+        type: string
+      payment_date:
+        type: string
+      period_month:
+        type: integer
+      period_year:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_payroll.Employee:
+    properties:
+      address:
+        type: string
+      apply_basic_exemption:
+        type: boolean
+      bank_account:
+        description: IBAN
+        type: string
+      basic_exemption_amount:
+        type: number
+      created_at:
+        type: string
+      department:
+        type: string
+      email:
+        type: string
+      employee_number:
+        type: string
+      employment_type:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.EmploymentType'
+      end_date:
+        type: string
+      first_name:
+        type: string
+      funded_pension_rate:
+        type: number
+      id:
+        type: string
+      is_active:
+        type: boolean
+      last_name:
+        type: string
+      personal_code:
+        description: Estonian isikukood
+        type: string
+      phone:
+        type: string
+      position:
+        type: string
+      start_date:
+        description: Employment details
+        type: string
+      tax_residency:
+        description: Tax settings
+        type: string
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_payroll.EmploymentType:
+    enum:
+    - FULL_TIME
+    - PART_TIME
+    - CONTRACT
+    type: string
+    x-enum-varnames:
+    - EmploymentFullTime
+    - EmploymentPartTime
+    - EmploymentContract
+  github_com_HMB-research_open-accounting_internal_payroll.PayrollRun:
+    properties:
+      approved_at:
+        type: string
+      approved_by:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      id:
+        type: string
+      notes:
+        type: string
+      payment_date:
+        type: string
+      payslips:
+        description: Loaded relations
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.Payslip'
+        type: array
+      period_month:
+        type: integer
+      period_year:
+        type: integer
+      status:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.PayrollStatus'
+      tenant_id:
+        type: string
+      total_employer_cost:
+        type: number
+      total_gross:
+        type: number
+      total_net:
+        type: number
+      updated_at:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_payroll.PayrollStatus:
+    enum:
+    - DRAFT
+    - CALCULATED
+    - APPROVED
+    - PAID
+    - DECLARED
+    type: string
+    x-enum-varnames:
+    - PayrollDraft
+    - PayrollCalculated
+    - PayrollApproved
+    - PayrollPaid
+    - PayrollDeclared
+  github_com_HMB-research_open-accounting_internal_payroll.Payslip:
+    properties:
+      basic_exemption_applied:
+        description: Tax calculation details
+        type: number
+      created_at:
+        type: string
+      employee:
+        allOf:
+        - $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.Employee'
+        description: Loaded relations
+      employee_id:
+        type: string
+      funded_pension:
+        type: number
+      gross_salary:
+        description: Earnings
+        type: number
+      id:
+        type: string
+      income_tax:
+        description: Employee deductions (withheld from gross)
+        type: number
+      net_salary:
+        description: Net pay (what employee receives)
+        type: number
+      other_deductions:
+        type: number
+      paid_at:
+        type: string
+      payment_status:
+        type: string
+      payroll_run_id:
+        type: string
+      social_tax:
+        description: Employer costs (on top of gross)
+        type: number
+      taxable_income:
+        type: number
+      tenant_id:
+        type: string
+      total_employer_cost:
+        description: Total cost to employer
+        type: number
+      unemployment_insurance_employee:
+        type: number
+      unemployment_insurance_employer:
+        type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_payroll.TSDDeclaration:
+    properties:
+      created_at:
+        type: string
+      emta_reference:
+        type: string
+      id:
+        type: string
+      payroll_run_id:
+        type: string
+      period_month:
+        type: integer
+      period_year:
+        type: integer
+      rows:
+        description: Loaded relations
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.TSDRow'
+        type: array
+      status:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.TSDStatus'
+      submitted_at:
+        type: string
+      tenant_id:
+        type: string
+      total_funded_pension:
+        type: number
+      total_income_tax:
+        type: number
+      total_payments:
+        description: Totals for the declaration
+        type: number
+      total_social_tax:
+        type: number
+      total_unemployment_employee:
+        type: number
+      total_unemployment_employer:
+        type: number
+      updated_at:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_payroll.TSDRow:
+    properties:
+      basic_exemption:
+        type: number
+      created_at:
+        type: string
+      declaration_id:
+        type: string
+      employee_id:
+        type: string
+      first_name:
+        type: string
+      funded_pension:
+        type: number
+      gross_payment:
+        type: number
+      id:
+        type: string
+      income_tax:
+        description: Taxes
+        type: number
+      last_name:
+        type: string
+      payment_type:
+        description: Payment details
+        type: string
+      personal_code:
+        description: Employee identification
+        type: string
+      social_tax:
+        type: number
+      taxable_amount:
+        type: number
+      tenant_id:
+        type: string
+      unemployment_insurance_employee:
+        type: number
+      unemployment_insurance_employer:
+        type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_payroll.TSDStatus:
+    enum:
+    - DRAFT
+    - SUBMITTED
+    - ACCEPTED
+    - REJECTED
+    type: string
+    x-enum-varnames:
+    - TSDDraft
+    - TSDSubmitted
+    - TSDAccepted
+    - TSDRejected
+  github_com_HMB-research_open-accounting_internal_payroll.TaxCalculation:
+    properties:
+      basic_exemption:
+        type: number
+      funded_pension:
+        type: number
+      gross_salary:
+        type: number
+      income_tax:
+        description: Employee deductions
+        type: number
+      net_salary:
+        type: number
+      social_tax:
+        description: Employer costs
+        type: number
+      taxable_income:
+        type: number
+      total_deductions:
+        type: number
+      total_employer_cost:
+        type: number
+      unemployment_employee:
+        type: number
+      unemployment_employer:
+        type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_payroll.UpdateEmployeeRequest:
+    properties:
+      address:
+        type: string
+      apply_basic_exemption:
+        type: boolean
+      bank_account:
+        type: string
+      basic_exemption_amount:
+        type: number
+      department:
+        type: string
+      email:
+        type: string
+      employee_number:
+        type: string
+      employment_type:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.EmploymentType'
+      end_date:
+        type: string
+      first_name:
+        type: string
+      funded_pension_rate:
+        type: number
+      is_active:
+        type: boolean
+      last_name:
+        type: string
+      personal_code:
+        type: string
+      phone:
+        type: string
+      position:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_plugin.CreateRegistryRequest:
+    properties:
+      description:
+        type: string
+      name:
+        maxLength: 255
+        minLength: 1
+        type: string
+      url:
+        type: string
+    required:
+    - name
+    - url
+    type: object
+  github_com_HMB-research_open-accounting_internal_plugin.EnablePluginRequest:
+    properties:
+      granted_permissions:
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_HMB-research_open-accounting_internal_plugin.InstallPluginRequest:
+    properties:
+      repository_url:
+        type: string
+    required:
+    - repository_url
+    type: object
+  github_com_HMB-research_open-accounting_internal_plugin.Permission:
+    properties:
+      category:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.PermissionCategory'
+      description:
+        type: string
+      name:
+        type: string
+      risk:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.PermissionRisk'
+    type: object
+  github_com_HMB-research_open-accounting_internal_plugin.PermissionCategory:
+    enum:
+    - data
+    - system
+    - database
+    - dangerous
+    type: string
+    x-enum-varnames:
+    - CategoryDataAccess
+    - CategorySystem
+    - CategoryDatabase
+    - CategoryDangerous
+  github_com_HMB-research_open-accounting_internal_plugin.PermissionRisk:
+    enum:
+    - low
+    - medium
+    - high
+    - critical
+    type: string
+    x-enum-varnames:
+    - RiskLow
+    - RiskMedium
+    - RiskHigh
+    - RiskCritical
+  github_com_HMB-research_open-accounting_internal_plugin.Plugin:
+    properties:
+      author:
+        type: string
+      description:
+        type: string
+      display_name:
+        type: string
+      granted_permissions:
+        items:
+          type: string
+        type: array
+      homepage_url:
+        type: string
+      id:
+        type: string
+      installed_at:
+        type: string
+      license:
+        type: string
+      manifest:
+        items:
+          type: integer
+        type: array
+      name:
+        type: string
+      repository_type:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.RepositoryType'
+      repository_url:
+        type: string
+      state:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.PluginState'
+      updated_at:
+        type: string
+      version:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_plugin.PluginInfo:
+    properties:
+      author:
+        type: string
+      description:
+        type: string
+      display_name:
+        type: string
+      downloads:
+        type: integer
+      license:
+        type: string
+      name:
+        type: string
+      repository:
+        type: string
+      stars:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+      version:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_plugin.PluginSearchResult:
+    properties:
+      plugin:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.PluginInfo'
+      registry:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_plugin.PluginState:
+    enum:
+    - installed
+    - enabled
+    - disabled
+    - failed
+    type: string
+    x-enum-varnames:
+    - StateInstalled
+    - StateEnabled
+    - StateDisabled
+    - StateFailed
+  github_com_HMB-research_open-accounting_internal_plugin.Registry:
+    properties:
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      is_official:
+        type: boolean
+      last_synced_at:
+        type: string
+      name:
+        type: string
+      updated_at:
+        type: string
+      url:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_plugin.RepositoryType:
+    enum:
+    - github
+    - gitlab
+    type: string
+    x-enum-varnames:
+    - RepoGitHub
+    - RepoGitLab
+  github_com_HMB-research_open-accounting_internal_plugin.TenantPlugin:
+    properties:
+      created_at:
+        type: string
+      enabled_at:
+        type: string
+      id:
+        type: string
+      is_enabled:
+        type: boolean
+      plugin:
+        allOf:
+        - $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.Plugin'
+        description: Joined fields
+      plugin_id:
+        type: string
+      settings:
+        items:
+          type: integer
+        type: array
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_plugin.TenantPluginSettingsRequest:
+    properties:
+      settings:
+        items:
+          type: integer
+        type: array
+    type: object
+  github_com_HMB-research_open-accounting_internal_recurring.CreateFromInvoiceRequest:
+    properties:
+      end_date:
+        type: string
+      frequency:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_recurring.Frequency'
+      invoice_id:
+        type: string
+      name:
+        type: string
+      payment_terms_days:
+        type: integer
+      start_date:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_recurring.CreateRecurringInvoiceLineRequest:
+    properties:
+      account_id:
+        type: string
+      description:
+        type: string
+      discount_percent:
+        type: number
+      product_id:
+        type: string
+      quantity:
+        type: number
+      unit:
+        type: string
+      unit_price:
+        type: number
+      vat_rate:
+        type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_recurring.CreateRecurringInvoiceRequest:
+    properties:
+      attach_pdf_to_email:
+        description: Pointer to allow default true
+        type: boolean
+      contact_id:
+        type: string
+      currency:
+        type: string
+      email_message:
+        type: string
+      email_subject_override:
+        type: string
+      email_template_type:
+        type: string
+      end_date:
+        type: string
+      frequency:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_recurring.Frequency'
+      invoice_type:
+        type: string
+      lines:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_recurring.CreateRecurringInvoiceLineRequest'
+        type: array
+      name:
+        type: string
+      notes:
+        type: string
+      payment_terms_days:
+        type: integer
+      recipient_email_override:
+        type: string
+      reference:
+        type: string
+      send_email_on_generation:
+        description: Email configuration
+        type: boolean
+      start_date:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_recurring.Frequency:
+    enum:
+    - WEEKLY
+    - BIWEEKLY
+    - MONTHLY
+    - QUARTERLY
+    - YEARLY
+    type: string
+    x-enum-varnames:
+    - FrequencyWeekly
+    - FrequencyBiweekly
+    - FrequencyMonthly
+    - FrequencyQuarterly
+    - FrequencyYearly
+  github_com_HMB-research_open-accounting_internal_recurring.GenerationResult:
+    properties:
+      email_error:
+        type: string
+      email_log_id:
+        type: string
+      email_sent:
+        description: Email delivery status
+        type: boolean
+      email_status:
+        description: SENT, FAILED, SKIPPED, NO_CONFIG
+        type: string
+      generated_invoice_id:
+        type: string
+      generated_invoice_number:
+        type: string
+      recurring_invoice_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_recurring.RecurringInvoice:
+    properties:
+      attach_pdf_to_email:
+        type: boolean
+      contact_id:
+        type: string
+      contact_name:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      currency:
+        type: string
+      email_message:
+        type: string
+      email_subject_override:
+        type: string
+      email_template_type:
+        type: string
+      end_date:
+        type: string
+      frequency:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_recurring.Frequency'
+      generated_count:
+        type: integer
+      id:
+        type: string
+      invoice_type:
+        type: string
+      is_active:
+        type: boolean
+      last_generated_at:
+        type: string
+      lines:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_recurring.RecurringInvoiceLine'
+        type: array
+      name:
+        type: string
+      next_generation_date:
+        type: string
+      notes:
+        type: string
+      payment_terms_days:
+        type: integer
+      recipient_email_override:
+        type: string
+      reference:
+        type: string
+      send_email_on_generation:
+        description: Email configuration for automatic sending
+        type: boolean
+      start_date:
+        type: string
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_recurring.RecurringInvoiceLine:
+    properties:
+      account_id:
+        type: string
+      description:
+        type: string
+      discount_percent:
+        type: number
+      id:
+        type: string
+      line_number:
+        type: integer
+      product_id:
+        type: string
+      quantity:
+        type: number
+      recurring_invoice_id:
+        type: string
+      unit:
+        type: string
+      unit_price:
+        type: number
+      vat_rate:
+        type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_recurring.UpdateRecurringInvoiceRequest:
+    properties:
+      attach_pdf_to_email:
+        type: boolean
+      contact_id:
+        type: string
+      email_message:
+        type: string
+      email_subject_override:
+        type: string
+      email_template_type:
+        type: string
+      end_date:
+        type: string
+      frequency:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_recurring.Frequency'
+      lines:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_recurring.CreateRecurringInvoiceLineRequest'
+        type: array
+      name:
+        type: string
+      notes:
+        type: string
+      payment_terms_days:
+        type: integer
+      recipient_email_override:
+        type: string
+      reference:
+        type: string
+      send_email_on_generation:
+        description: Email configuration
+        type: boolean
+    type: object
+  github_com_HMB-research_open-accounting_internal_tax.CreateKMDRequest:
+    properties:
+      month:
+        type: integer
+      year:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_tax.KMDDeclaration:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      month:
+        type: integer
+      rows:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tax.KMDRow'
+        type: array
+      status:
+        description: DRAFT, SUBMITTED, ACCEPTED
+        type: string
+      submitted_at:
+        type: string
+      tenant_id:
+        type: string
+      total_input_vat:
+        type: number
+      total_output_vat:
+        type: number
+      updated_at:
+        type: string
+      year:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_tax.KMDRow:
+    properties:
+      code:
+        description: KMD row code (1, 2, 3, etc.)
+        type: string
+      description:
+        description: Row description
+        type: string
+      tax_amount:
+        description: VAT amount (käibemaks)
+        type: number
+      tax_base:
+        description: Taxable amount (maksustatav käive)
+        type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_tenant.AcceptInvitationRequest:
+    properties:
+      name:
+        description: Required if user doesn't exist
+        type: string
+      password:
+        description: Required if user doesn't exist
+        type: string
+      token:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_tenant.CreateInvitationRequest:
+    properties:
+      email:
+        type: string
+      role:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_tenant.Tenant:
     properties:
       created_at:
         type: string
@@ -584,18 +2043,31 @@ definitions:
         type: boolean
       name:
         type: string
+      onboarding_completed:
+        type: boolean
       schema_name:
         type: string
       settings:
-        $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_tenant.TenantSettings'
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tenant.TenantSettings'
       slug:
         type: string
       updated_at:
         type: string
     type: object
-  github_com_openaccounting_openaccounting_internal_tenant.TenantSettings:
+  github_com_HMB-research_open-accounting_internal_tenant.TenantMembership:
+    properties:
+      is_default:
+        type: boolean
+      role:
+        type: string
+      tenant:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tenant.Tenant'
+    type: object
+  github_com_HMB-research_open-accounting_internal_tenant.TenantSettings:
     properties:
       address:
+        type: string
+      bank_details:
         type: string
       country_code:
         type: string
@@ -610,7 +2082,14 @@ definitions:
       fiscal_year_start_month:
         description: 1-12
         type: integer
+      invoice_terms:
+        type: string
       logo:
+        type: string
+      pdf_footer_text:
+        type: string
+      pdf_primary_color:
+        description: PDF/Invoice settings
         type: string
       phone:
         type: string
@@ -623,9 +2102,471 @@ definitions:
       vat_number:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_tenant.TenantUser:
+    properties:
+      created_at:
+        type: string
+      is_default:
+        type: boolean
+      role:
+        type: string
+      tenant_id:
+        type: string
+      user_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_tenant.UserInvitation:
+    properties:
+      accepted_at:
+        type: string
+      created_at:
+        type: string
+      email:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      invited_by:
+        type: string
+      role:
+        type: string
+      tenant_id:
+        type: string
+      tenant_name:
+        type: string
+    type: object
 info:
   contact: {}
 paths:
+  /admin/plugin-registries:
+    get:
+      description: Get all plugin registries (marketplaces)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.Registry'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List plugin registries
+      tags:
+      - Plugins
+    post:
+      consumes:
+      - application/json
+      description: Add a new plugin registry (marketplace source)
+      parameters:
+      - description: Registry details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.CreateRegistryRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.Registry'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Add plugin registry
+      tags:
+      - Plugins
+  /admin/plugin-registries/{id}:
+    delete:
+      description: Remove a plugin registry (cannot remove official registries)
+      parameters:
+      - description: Registry ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Remove plugin registry
+      tags:
+      - Plugins
+  /admin/plugin-registries/{id}/sync:
+    post:
+      description: Fetch latest plugin list from a registry
+      parameters:
+      - description: Registry ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Sync plugin registry
+      tags:
+      - Plugins
+  /admin/plugins:
+    get:
+      description: Get all plugins installed on the instance
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.Plugin'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List installed plugins
+      tags:
+      - Plugins
+  /admin/plugins/{id}:
+    delete:
+      description: Remove an installed plugin (must not be enabled for any tenant)
+      parameters:
+      - description: Plugin ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Uninstall plugin
+      tags:
+      - Plugins
+    get:
+      description: Get details of an installed plugin
+      parameters:
+      - description: Plugin ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.Plugin'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get plugin details
+      tags:
+      - Plugins
+  /admin/plugins/{id}/disable:
+    post:
+      description: Disable a plugin for the entire instance
+      parameters:
+      - description: Plugin ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Disable plugin
+      tags:
+      - Plugins
+  /admin/plugins/{id}/enable:
+    post:
+      consumes:
+      - application/json
+      description: Enable a plugin for the instance with specified permissions
+      parameters:
+      - description: Plugin ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Permissions to grant
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.EnablePluginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Enable plugin
+      tags:
+      - Plugins
+  /admin/plugins/install:
+    post:
+      consumes:
+      - application/json
+      description: Install a plugin from a Git repository
+      parameters:
+      - description: Repository URL
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.InstallPluginRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.Plugin'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Install plugin
+      tags:
+      - Plugins
+  /admin/plugins/permissions:
+    get:
+      description: Get all available plugin permissions with descriptions
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.Permission'
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List available permissions
+      tags:
+      - Plugins
+  /admin/plugins/search:
+    get:
+      description: Search for plugins across all active registries
+      parameters:
+      - description: Search query
+        in: query
+        name: q
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.PluginSearchResult'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Search plugins
+      tags:
+      - Plugins
+  /api/demo/reset:
+    post:
+      consumes:
+      - application/json
+      description: Reset the demo database to initial state (requires DEMO_RESET_SECRET)
+      parameters:
+      - description: Demo reset secret key
+        in: header
+        name: X-Demo-Secret
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              message:
+                type: string
+              status:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      summary: Reset demo database
+      tags:
+      - Demo
+  /api/demo/status:
+    get:
+      description: Get counts and key identifiers for demo data verification
+      parameters:
+      - description: Demo user number (1-3)
+        in: query
+        name: user
+        required: true
+        type: integer
+      - description: Demo secret key
+        in: header
+        name: X-Demo-Secret
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/cmd_api.DemoStatusResponse'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      summary: Get demo data status
+      tags:
+      - Demo
   /auth/login:
     post:
       consumes:
@@ -764,6 +2705,61 @@ paths:
       summary: Register new user
       tags:
       - Auth
+  /invitations/{token}:
+    get:
+      description: Get invitation details for the invitation acceptance page
+      parameters:
+      - description: Invitation token
+        in: path
+        name: token
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tenant.UserInvitation'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      summary: Get invitation by token
+      tags:
+      - Invitations
+  /invitations/accept:
+    post:
+      consumes:
+      - application/json
+      description: Accept an invitation to join a tenant organization
+      parameters:
+      - description: Acceptance details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tenant.AcceptInvitationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tenant.TenantMembership'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      summary: Accept invitation
+      tags:
+      - Invitations
   /me:
     get:
       description: Get the currently authenticated user's profile
@@ -851,7 +2847,7 @@ paths:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_tenant.Tenant'
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tenant.Tenant'
         "400":
           description: Bad Request
           schema:
@@ -886,7 +2882,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_tenant.Tenant'
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tenant.Tenant'
         "403":
           description: Forbidden
           schema:
@@ -926,7 +2922,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.Account'
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.Account'
             type: array
         "500":
           description: Internal Server Error
@@ -955,14 +2951,14 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.CreateAccountRequest'
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CreateAccountRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.Account'
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.Account'
         "400":
           description: Bad Request
           schema:
@@ -995,7 +2991,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.Account'
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.Account'
         "404":
           description: Not Found
           schema:
@@ -1008,6 +3004,735 @@ paths:
       summary: Get account
       tags:
       - Accounts
+  /tenants/{tenantID}/analytics/cash-flow:
+    get:
+      description: Get monthly cash inflows and outflows for charting
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Number of months (default 12)
+        in: query
+        name: months
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_analytics.CashFlowChart'
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get cash flow chart data
+      tags:
+      - Analytics
+  /tenants/{tenantID}/analytics/dashboard:
+    get:
+      description: Get key metrics including revenue, expenses, receivables, and invoice
+        counts
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_analytics.DashboardSummary'
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get dashboard summary
+      tags:
+      - Analytics
+  /tenants/{tenantID}/analytics/revenue-expense:
+    get:
+      description: Get monthly revenue and expense data for charting
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Number of months (default 12)
+        in: query
+        name: months
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_analytics.RevenueExpenseChart'
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get revenue/expense chart data
+      tags:
+      - Analytics
+  /tenants/{tenantID}/bank-accounts:
+    get:
+      description: Get all bank accounts for a tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankAccount'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List bank accounts
+      tags:
+      - Banking
+    post:
+      consumes:
+      - application/json
+      description: Create a new bank account
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Bank account details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.CreateBankAccountRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankAccount'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create bank account
+      tags:
+      - Banking
+  /tenants/{tenantID}/bank-accounts/{accountID}:
+    delete:
+      description: Delete a bank account (only if no transactions)
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Bank Account ID
+        in: path
+        name: accountID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete bank account
+      tags:
+      - Banking
+    get:
+      description: Get bank account details by ID
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Bank Account ID
+        in: path
+        name: accountID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankAccount'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get bank account
+      tags:
+      - Banking
+    put:
+      consumes:
+      - application/json
+      description: Update bank account details
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Bank Account ID
+        in: path
+        name: accountID
+        required: true
+        type: string
+      - description: Bank account updates
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.UpdateBankAccountRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankAccount'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update bank account
+      tags:
+      - Banking
+  /tenants/{tenantID}/bank-accounts/{accountID}/auto-match:
+    post:
+      description: Automatically match unmatched bank transactions to payments
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Bank Account ID
+        in: path
+        name: accountID
+        required: true
+        type: string
+      - description: Minimum confidence threshold (0-1, default 0.7)
+        in: query
+        name: min_confidence
+        type: number
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              matched:
+                type: integer
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Auto-match transactions
+      tags:
+      - Banking
+  /tenants/{tenantID}/bank-accounts/{accountID}/import:
+    post:
+      consumes:
+      - application/json
+      description: Import bank transactions from CSV data
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Bank Account ID
+        in: path
+        name: accountID
+        required: true
+        type: string
+      - description: Import data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.ImportCSVRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.ImportResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Import bank transactions
+      tags:
+      - Banking
+  /tenants/{tenantID}/bank-accounts/{accountID}/import-history:
+    get:
+      description: Get bank statement import history for an account
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Bank Account ID
+        in: path
+        name: accountID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankStatementImport'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get import history
+      tags:
+      - Banking
+  /tenants/{tenantID}/bank-accounts/{accountID}/reconciliation:
+    post:
+      consumes:
+      - application/json
+      description: Start a new bank reconciliation session
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Bank Account ID
+        in: path
+        name: accountID
+        required: true
+        type: string
+      - description: Reconciliation details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.CreateReconciliationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankReconciliation'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create reconciliation
+      tags:
+      - Banking
+  /tenants/{tenantID}/bank-accounts/{accountID}/reconciliations:
+    get:
+      description: Get reconciliation history for a bank account
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Bank Account ID
+        in: path
+        name: accountID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankReconciliation'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List reconciliations
+      tags:
+      - Banking
+  /tenants/{tenantID}/bank-accounts/{accountID}/transactions:
+    get:
+      description: Get bank transactions for a bank account with filters
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Bank Account ID
+        in: path
+        name: accountID
+        required: true
+        type: string
+      - description: Filter by status (UNMATCHED, MATCHED, RECONCILED)
+        in: query
+        name: status
+        type: string
+      - description: Filter from date (YYYY-MM-DD)
+        in: query
+        name: from_date
+        type: string
+      - description: Filter to date (YYYY-MM-DD)
+        in: query
+        name: to_date
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankTransaction'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List bank transactions
+      tags:
+      - Banking
+  /tenants/{tenantID}/bank-transactions/{transactionID}:
+    get:
+      description: Get bank transaction details by ID
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Transaction ID
+        in: path
+        name: transactionID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankTransaction'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get bank transaction
+      tags:
+      - Banking
+  /tenants/{tenantID}/bank-transactions/{transactionID}/create-payment:
+    post:
+      description: Create a new payment from a bank transaction and link them
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Transaction ID
+        in: path
+        name: transactionID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              payment_id:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create payment from transaction
+      tags:
+      - Banking
+  /tenants/{tenantID}/bank-transactions/{transactionID}/match:
+    post:
+      consumes:
+      - application/json
+      description: Match a bank transaction to a payment
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Transaction ID
+        in: path
+        name: transactionID
+        required: true
+        type: string
+      - description: Match details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.MatchTransactionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Match bank transaction
+      tags:
+      - Banking
+  /tenants/{tenantID}/bank-transactions/{transactionID}/suggestions:
+    get:
+      description: Get payment match suggestions for a bank transaction
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Transaction ID
+        in: path
+        name: transactionID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.MatchSuggestion'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get match suggestions
+      tags:
+      - Banking
+  /tenants/{tenantID}/bank-transactions/{transactionID}/unmatch:
+    post:
+      description: Remove the payment match from a bank transaction
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Transaction ID
+        in: path
+        name: transactionID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Unmatch bank transaction
+      tags:
+      - Banking
+  /tenants/{tenantID}/complete-onboarding:
+    post:
+      description: Mark the tenant's onboarding wizard as completed
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              success:
+                type: boolean
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Complete onboarding
+      tags:
+      - Tenants
   /tenants/{tenantID}/contacts:
     get:
       description: Get all contacts (customers/suppliers) for a tenant
@@ -1036,7 +3761,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_contacts.Contact'
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_contacts.Contact'
             type: array
         "500":
           description: Internal Server Error
@@ -1065,14 +3790,14 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_contacts.CreateContactRequest'
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_contacts.CreateContactRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_contacts.Contact'
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_contacts.Contact'
         "400":
           description: Bad Request
           schema:
@@ -1140,7 +3865,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_contacts.Contact'
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_contacts.Contact'
         "404":
           description: Not Found
           schema:
@@ -1173,14 +3898,14 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_contacts.UpdateContactRequest'
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_contacts.UpdateContactRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_contacts.Contact'
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_contacts.Contact'
         "400":
           description: Bad Request
           schema:
@@ -1193,6 +3918,424 @@ paths:
       summary: Update contact
       tags:
       - Contacts
+  /tenants/{tenantID}/email-log:
+    get:
+      description: Get the email sending history for a tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Number of entries to return (default 50)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_email.EmailLog'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get email log
+      tags:
+      - Email
+  /tenants/{tenantID}/email-templates:
+    get:
+      description: Get all email templates for a tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_email.EmailTemplate'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List email templates
+      tags:
+      - Email
+  /tenants/{tenantID}/email-templates/{templateType}:
+    put:
+      consumes:
+      - application/json
+      description: Update an email template for a tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Template type (INVOICE_SEND, PAYMENT_RECEIPT, OVERDUE_REMINDER)
+        in: path
+        name: templateType
+        required: true
+        type: string
+      - description: Template content
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_email.UpdateTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_email.EmailTemplate'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update email template
+      tags:
+      - Email
+  /tenants/{tenantID}/employees:
+    get:
+      description: Get all employees for the payroll system
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Filter for active employees only
+        in: query
+        name: active_only
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.Employee'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List employees
+      tags:
+      - Payroll
+    post:
+      consumes:
+      - application/json
+      description: Create a new employee in the payroll system
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Employee details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.CreateEmployeeRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.Employee'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create employee
+      tags:
+      - Payroll
+  /tenants/{tenantID}/employees/{employeeID}:
+    get:
+      description: Get employee details by ID
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Employee ID
+        in: path
+        name: employeeID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.Employee'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get employee
+      tags:
+      - Payroll
+    put:
+      consumes:
+      - application/json
+      description: Update an existing employee's details
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Employee ID
+        in: path
+        name: employeeID
+        required: true
+        type: string
+      - description: Updated employee details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.UpdateEmployeeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.Employee'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update employee
+      tags:
+      - Payroll
+  /tenants/{tenantID}/employees/{employeeID}/salary:
+    post:
+      consumes:
+      - application/json
+      description: Set or update the base salary for an employee
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Employee ID
+        in: path
+        name: employeeID
+        required: true
+        type: string
+      - description: Salary details
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            amount:
+              type: number
+            effective_from:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Set base salary
+      tags:
+      - Payroll
+  /tenants/{tenantID}/invitations:
+    get:
+      description: Get all pending invitations for a tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tenant.UserInvitation'
+            type: array
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List invitations
+      tags:
+      - Invitations
+    post:
+      consumes:
+      - application/json
+      description: Invite a user to join the tenant organization
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Invitation details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tenant.CreateInvitationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tenant.UserInvitation'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create invitation
+      tags:
+      - Invitations
+  /tenants/{tenantID}/invitations/{invitationID}:
+    delete:
+      description: Revoke a pending invitation
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Invitation ID
+        in: path
+        name: invitationID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Revoke invitation
+      tags:
+      - Invitations
   /tenants/{tenantID}/invoices:
     get:
       description: Get all invoices for a tenant with optional filtering
@@ -1233,7 +4376,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_invoicing.Invoice'
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.Invoice'
             type: array
         "500":
           description: Internal Server Error
@@ -1262,14 +4405,14 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_invoicing.CreateInvoiceRequest'
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.CreateInvoiceRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_invoicing.Invoice'
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.Invoice'
         "400":
           description: Bad Request
           schema:
@@ -1302,7 +4445,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_invoicing.Invoice'
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.Invoice'
         "404":
           description: Not Found
           schema:
@@ -1313,6 +4456,87 @@ paths:
       security:
       - BearerAuth: []
       summary: Get invoice
+      tags:
+      - Invoices
+  /tenants/{tenantID}/invoices/{invoiceID}/email:
+    post:
+      consumes:
+      - application/json
+      description: Send an invoice to a recipient via email
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Invoice ID
+        in: path
+        name: invoiceID
+        required: true
+        type: string
+      - description: Email details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_email.SendInvoiceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_email.EmailSentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Email invoice
+      tags:
+      - Email
+  /tenants/{tenantID}/invoices/{invoiceID}/pdf:
+    get:
+      description: Generate and download a PDF for an invoice
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Invoice ID
+        in: path
+        name: invoiceID
+        required: true
+        type: string
+      produces:
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Download invoice PDF
       tags:
       - Invoices
   /tenants/{tenantID}/invoices/{invoiceID}/send:
@@ -1403,14 +4627,14 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.CreateJournalEntryRequest'
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CreateJournalEntryRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.JournalEntry'
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntry'
         "400":
           description: Bad Request
           schema:
@@ -1443,7 +4667,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.JournalEntry'
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntry'
         "404":
           description: Not Found
           schema:
@@ -1523,7 +4747,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.JournalEntry'
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntry'
         "400":
           description: Bad Request
           schema:
@@ -1568,7 +4792,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_payments.Payment'
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payments.Payment'
             type: array
         "500":
           description: Internal Server Error
@@ -1597,14 +4821,14 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_payments.CreatePaymentRequest'
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payments.CreatePaymentRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_payments.Payment'
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payments.Payment'
         "400":
           description: Bad Request
           schema:
@@ -1637,7 +4861,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_payments.Payment'
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payments.Payment'
         "404":
           description: Not Found
           schema:
@@ -1699,6 +4923,47 @@ paths:
       summary: Allocate payment
       tags:
       - Payments
+  /tenants/{tenantID}/payments/{paymentID}/email-receipt:
+    post:
+      consumes:
+      - application/json
+      description: Send a payment receipt to a recipient via email
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Payment ID
+        in: path
+        name: paymentID
+        required: true
+        type: string
+      - description: Email details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_email.SendPaymentReceiptRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_email.EmailSentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Email payment receipt
+      tags:
+      - Email
   /tenants/{tenantID}/payments/unallocated:
     get:
       description: Get payments with remaining unallocated amounts
@@ -1719,7 +4984,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_payments.Payment'
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payments.Payment'
             type: array
         "500":
           description: Internal Server Error
@@ -1733,6 +4998,895 @@ paths:
       summary: Get unallocated payments
       tags:
       - Payments
+  /tenants/{tenantID}/payroll-runs:
+    get:
+      description: Get all payroll runs for a tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Filter by year
+        in: query
+        name: year
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.PayrollRun'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List payroll runs
+      tags:
+      - Payroll
+    post:
+      consumes:
+      - application/json
+      description: Create a new monthly payroll run
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Payroll run details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.CreatePayrollRunRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.PayrollRun'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create payroll run
+      tags:
+      - Payroll
+  /tenants/{tenantID}/payroll-runs/{runID}:
+    get:
+      description: Get payroll run details by ID
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Payroll Run ID
+        in: path
+        name: runID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.PayrollRun'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get payroll run
+      tags:
+      - Payroll
+  /tenants/{tenantID}/payroll-runs/{runID}/approve:
+    post:
+      description: Approve a calculated payroll run for payment
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Payroll Run ID
+        in: path
+        name: runID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Approve payroll
+      tags:
+      - Payroll
+  /tenants/{tenantID}/payroll-runs/{runID}/calculate:
+    post:
+      description: Calculate payslips for all active employees in a payroll run
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Payroll Run ID
+        in: path
+        name: runID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.PayrollRun'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Calculate payroll
+      tags:
+      - Payroll
+  /tenants/{tenantID}/payroll-runs/{runID}/payslips:
+    get:
+      description: Get all payslips for a specific payroll run
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Payroll Run ID
+        in: path
+        name: runID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.Payslip'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get payslips
+      tags:
+      - Payroll
+  /tenants/{tenantID}/payroll-runs/{runID}/tsd:
+    post:
+      description: Generate an Estonian TSD tax declaration from a payroll run
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Payroll Run ID
+        in: path
+        name: runID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.TSDDeclaration'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Generate TSD declaration
+      tags:
+      - Payroll
+  /tenants/{tenantID}/payroll/tax-preview:
+    post:
+      consumes:
+      - application/json
+      description: Preview Estonian tax calculations for a given gross salary
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Calculation parameters
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            apply_basic_exemption:
+              type: boolean
+            funded_pension_rate:
+              type: number
+            gross_salary:
+              type: number
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.TaxCalculation'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Calculate tax preview
+      tags:
+      - Payroll
+  /tenants/{tenantID}/plugins:
+    get:
+      description: Get all plugins available for a tenant with their enablement status
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.TenantPlugin'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List tenant plugins
+      tags:
+      - Plugins
+  /tenants/{tenantID}/plugins/{pluginID}/disable:
+    post:
+      description: Disable a plugin for a specific tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Plugin ID
+        in: path
+        name: pluginID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Disable plugin for tenant
+      tags:
+      - Plugins
+  /tenants/{tenantID}/plugins/{pluginID}/enable:
+    post:
+      consumes:
+      - application/json
+      description: Enable an installed plugin for a specific tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Plugin ID
+        in: path
+        name: pluginID
+        required: true
+        type: string
+      - description: Initial settings
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.TenantPluginSettingsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Enable plugin for tenant
+      tags:
+      - Plugins
+  /tenants/{tenantID}/plugins/{pluginID}/settings:
+    get:
+      description: Get the settings for a plugin for a specific tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Plugin ID
+        in: path
+        name: pluginID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get tenant plugin settings
+      tags:
+      - Plugins
+    put:
+      consumes:
+      - application/json
+      description: Update the settings for a plugin for a specific tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Plugin ID
+        in: path
+        name: pluginID
+        required: true
+        type: string
+      - description: Settings object
+        in: body
+        name: request
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update tenant plugin settings
+      tags:
+      - Plugins
+  /tenants/{tenantID}/reconciliations/{reconciliationID}:
+    get:
+      description: Get reconciliation details by ID
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Reconciliation ID
+        in: path
+        name: reconciliationID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankReconciliation'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get reconciliation
+      tags:
+      - Banking
+  /tenants/{tenantID}/reconciliations/{reconciliationID}/complete:
+    post:
+      description: Mark a reconciliation session as complete
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Reconciliation ID
+        in: path
+        name: reconciliationID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Complete reconciliation
+      tags:
+      - Banking
+  /tenants/{tenantID}/recurring-invoices:
+    get:
+      description: Get all recurring invoice templates for a tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Filter for active recurring invoices only
+        in: query
+        name: active_only
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_recurring.RecurringInvoice'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List recurring invoices
+      tags:
+      - Recurring
+    post:
+      consumes:
+      - application/json
+      description: Create a new recurring invoice template
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Recurring invoice details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_recurring.CreateRecurringInvoiceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_recurring.RecurringInvoice'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create recurring invoice
+      tags:
+      - Recurring
+  /tenants/{tenantID}/recurring-invoices/{recurringID}:
+    delete:
+      description: Delete a recurring invoice template
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Recurring Invoice ID
+        in: path
+        name: recurringID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete recurring invoice
+      tags:
+      - Recurring
+    get:
+      description: Get recurring invoice details by ID
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Recurring Invoice ID
+        in: path
+        name: recurringID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_recurring.RecurringInvoice'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get recurring invoice
+      tags:
+      - Recurring
+    put:
+      consumes:
+      - application/json
+      description: Update recurring invoice details
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Recurring Invoice ID
+        in: path
+        name: recurringID
+        required: true
+        type: string
+      - description: Updated details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_recurring.UpdateRecurringInvoiceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_recurring.RecurringInvoice'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update recurring invoice
+      tags:
+      - Recurring
+  /tenants/{tenantID}/recurring-invoices/{recurringID}/generate:
+    post:
+      description: Manually trigger generation of an invoice from a recurring invoice
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Recurring Invoice ID
+        in: path
+        name: recurringID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_recurring.GenerationResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Generate invoice from recurring template
+      tags:
+      - Recurring
+  /tenants/{tenantID}/recurring-invoices/{recurringID}/pause:
+    post:
+      description: Pause automatic generation of a recurring invoice
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Recurring Invoice ID
+        in: path
+        name: recurringID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Pause recurring invoice
+      tags:
+      - Recurring
+  /tenants/{tenantID}/recurring-invoices/{recurringID}/resume:
+    post:
+      description: Resume automatic generation of a paused recurring invoice
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Recurring Invoice ID
+        in: path
+        name: recurringID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Resume recurring invoice
+      tags:
+      - Recurring
+  /tenants/{tenantID}/recurring-invoices/from-invoice/{invoiceID}:
+    post:
+      consumes:
+      - application/json
+      description: Create a new recurring invoice template based on an existing invoice
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Invoice ID to use as template
+        in: path
+        name: invoiceID
+        required: true
+        type: string
+      - description: Recurring invoice settings
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_recurring.CreateFromInvoiceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_recurring.RecurringInvoice'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create recurring invoice from existing invoice
+      tags:
+      - Recurring
+  /tenants/{tenantID}/recurring-invoices/generate-due:
+    post:
+      description: Trigger generation of all recurring invoices that are due
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_recurring.GenerationResult'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Generate all due invoices
+      tags:
+      - Recurring
   /tenants/{tenantID}/reports/account-balance/{accountID}:
     get:
       description: Get the balance of a specific account as of a date
@@ -1784,6 +5938,146 @@ paths:
       summary: Get account balance
       tags:
       - Reports
+  /tenants/{tenantID}/reports/aging/payables:
+    get:
+      description: Get aging breakdown for accounts payable
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_analytics.AgingReport'
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get payables aging report
+      tags:
+      - Reports
+  /tenants/{tenantID}/reports/aging/receivables:
+    get:
+      description: Get aging breakdown for accounts receivable
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_analytics.AgingReport'
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get receivables aging report
+      tags:
+      - Reports
+  /tenants/{tenantID}/reports/balance-sheet:
+    get:
+      description: Get balance sheet report as of a specific date
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: As of date (YYYY-MM-DD)
+        in: query
+        name: as_of
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.BalanceSheet'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get balance sheet
+      tags:
+      - Reports
+  /tenants/{tenantID}/reports/income-statement:
+    get:
+      description: Get income statement (P&L) report for a specific period
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Start date (YYYY-MM-DD)
+        in: query
+        name: start
+        required: true
+        type: string
+      - description: End date (YYYY-MM-DD)
+        in: query
+        name: end
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.IncomeStatement'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get income statement
+      tags:
+      - Reports
   /tenants/{tenantID}/reports/trial-balance:
     get:
       description: Get trial balance report as of a specific date
@@ -1803,7 +6097,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_openaccounting_openaccounting_internal_accounting.TrialBalance'
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.TrialBalance'
         "400":
           description: Bad Request
           schema:
@@ -1823,4 +6117,567 @@ paths:
       summary: Get trial balance
       tags:
       - Reports
+  /tenants/{tenantID}/settings/smtp:
+    get:
+      description: Get the SMTP email settings for a tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_email.SMTPConfig'
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get SMTP configuration
+      tags:
+      - Email
+    put:
+      consumes:
+      - application/json
+      description: Update the SMTP email settings for a tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: SMTP settings
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_email.UpdateSMTPConfigRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update SMTP configuration
+      tags:
+      - Email
+  /tenants/{tenantID}/settings/smtp/test:
+    post:
+      consumes:
+      - application/json
+      description: Send a test email to verify SMTP settings
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Test email recipient
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_email.TestSMTPRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_email.TestSMTPResponse'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Test SMTP configuration
+      tags:
+      - Email
+  /tenants/{tenantID}/tax/kmd:
+    get:
+      description: Get all KMD declarations for a tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tax.KMDDeclaration'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List KMD declarations
+      tags:
+      - Tax
+    post:
+      consumes:
+      - application/json
+      description: Generate an Estonian VAT declaration (KMD) for a specific period
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Period to generate
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tax.CreateKMDRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tax.KMDDeclaration'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Generate KMD declaration
+      tags:
+      - Tax
+  /tenants/{tenantID}/tax/kmd/{year}/{month}/xml:
+    get:
+      description: Export a KMD declaration to Estonian e-MTA XML format
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Year
+        in: path
+        name: year
+        required: true
+        type: string
+      - description: Month
+        in: path
+        name: month
+        required: true
+        type: string
+      produces:
+      - application/xml
+      responses:
+        "200":
+          description: XML file
+          schema:
+            type: file
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Export KMD to XML
+      tags:
+      - Tax
+  /tenants/{tenantID}/tsd:
+    get:
+      description: Get all TSD declarations for a tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.TSDDeclaration'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List TSD declarations
+      tags:
+      - Payroll
+  /tenants/{tenantID}/tsd/{year}/{month}:
+    get:
+      description: Get a TSD declaration for a specific period
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Year
+        in: path
+        name: year
+        required: true
+        type: integer
+      - description: Month
+        in: path
+        name: month
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.TSDDeclaration'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get TSD declaration
+      tags:
+      - Payroll
+  /tenants/{tenantID}/tsd/{year}/{month}/csv:
+    get:
+      description: Export a TSD declaration to CSV format
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Year
+        in: path
+        name: year
+        required: true
+        type: integer
+      - description: Month
+        in: path
+        name: month
+        required: true
+        type: integer
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: CSV file
+          schema:
+            type: file
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Export TSD to CSV
+      tags:
+      - Payroll
+  /tenants/{tenantID}/tsd/{year}/{month}/submit:
+    post:
+      consumes:
+      - application/json
+      description: Mark a TSD declaration as submitted to e-MTA
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Year
+        in: path
+        name: year
+        required: true
+        type: integer
+      - description: Month
+        in: path
+        name: month
+        required: true
+        type: integer
+      - description: EMTA reference
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            emta_reference:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Mark TSD as submitted
+      tags:
+      - Payroll
+  /tenants/{tenantID}/tsd/{year}/{month}/xml:
+    get:
+      description: Export a TSD declaration to Estonian e-MTA XML format
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Year
+        in: path
+        name: year
+        required: true
+        type: integer
+      - description: Month
+        in: path
+        name: month
+        required: true
+        type: integer
+      produces:
+      - application/xml
+      responses:
+        "200":
+          description: XML file
+          schema:
+            type: file
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Export TSD to XML
+      tags:
+      - Payroll
+  /tenants/{tenantID}/users:
+    get:
+      description: Get all users who are members of a tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tenant.TenantUser'
+            type: array
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List tenant users
+      tags:
+      - Users
+  /tenants/{tenantID}/users/{userID}:
+    delete:
+      description: Remove a user from the tenant organization
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: User ID
+        in: path
+        name: userID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Remove user from tenant
+      tags:
+      - Users
+  /tenants/{tenantID}/users/{userID}/role:
+    put:
+      consumes:
+      - application/json
+      description: Update a user's role in the tenant organization
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: User ID
+        in: path
+        name: userID
+        required: true
+        type: string
+      - description: New role
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            role:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update user role
+      tags:
+      - Users
 swagger: "2.0"

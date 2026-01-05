@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
 	import {
 		api,
 		type TenantMembership,
@@ -48,10 +50,28 @@
 		try {
 			tenants = await api.getMyTenants();
 			if (tenants.length > 0) {
-				selectedTenant = tenants.find((t) => t.is_default)?.tenant || tenants[0].tenant;
+				// Check for tenant ID in URL parameter first
+				const urlTenantId = $page.url.searchParams.get('tenant');
+				if (urlTenantId) {
+					const urlTenant = tenants.find((t) => t.tenant.id === urlTenantId)?.tenant;
+					if (urlTenant) {
+						selectedTenant = urlTenant;
+					} else {
+						// URL tenant not found in user's tenants, fall back to default
+						selectedTenant = tenants.find((t) => t.is_default)?.tenant || tenants[0].tenant;
+					}
+				} else {
+					selectedTenant = tenants.find((t) => t.is_default)?.tenant || tenants[0].tenant;
+				}
 				// Show onboarding wizard if tenant hasn't completed onboarding
 				if (selectedTenant && !selectedTenant.onboarding_completed) {
 					showOnboarding = true;
+				}
+				// Update URL with tenant ID if not already present
+				if (selectedTenant && !urlTenantId) {
+					const url = new URL($page.url);
+					url.searchParams.set('tenant', selectedTenant.id);
+					goto(url.toString(), { replaceState: true, noScroll: true });
 				}
 			}
 		} catch (err) {
@@ -341,6 +361,12 @@
 				onchange={(e) => {
 					const id = (e.target as HTMLSelectElement).value;
 					selectedTenant = tenants.find((t) => t.tenant.id === id)?.tenant || null;
+					// Update URL with new tenant ID
+					if (selectedTenant) {
+						const url = new URL($page.url);
+						url.searchParams.set('tenant', selectedTenant.id);
+						goto(url.toString(), { replaceState: true, noScroll: true });
+					}
 				}}
 			>
 				{#each tenants as membership}

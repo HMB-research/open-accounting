@@ -28,10 +28,10 @@ Try Open Accounting without installing anything:
 
 | Credential | Value |
 |------------|-------|
-| **Email** | `demo@example.com` |
-| **Password** | `demo123` |
+| **Email** | `demo1@example.com` |
+| **Password** | `demo12345` |
 
-> Demo resets hourly. Feel free to create invoices, contacts, and explore all features!
+> Demo data can be reset via API. Feel free to create invoices, contacts, and explore all features!
 
 ---
 

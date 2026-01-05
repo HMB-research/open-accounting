@@ -99,13 +99,13 @@ test.describe('Authentication - Login Flow', () => {
 test.describe('Authentication - Demo Credentials', () => {
 	test.use({ storageState: { cookies: [], origins: [] } });
 
-	test('should allow short passwords for login (demo: demo123)', async ({ page }) => {
+	test('should allow passwords for login (demo: demo12345)', async ({ page }) => {
 		await page.goto('/login');
 
-		// Demo password is 7 characters - should be accepted for login
+		// Demo password is 9 characters
 		const passwordInput = page.getByLabel(/password/i);
-		await page.getByLabel(/email/i).fill('demo@example.com');
-		await passwordInput.fill('demo123');
+		await page.getByLabel(/email/i).fill('demo1@example.com');
+		await passwordInput.fill('demo12345');
 
 		// Password input should NOT have minlength validation in login mode
 		const minlength = await passwordInput.getAttribute('minlength');
@@ -154,8 +154,8 @@ test.describe('Authentication - Demo Credentials', () => {
 		await page.goto('/login');
 
 		// Fill demo credentials
-		await page.getByLabel(/email/i).fill('demo@example.com');
-		await page.getByLabel(/password/i).fill('demo123');
+		await page.getByLabel(/email/i).fill('demo1@example.com');
+		await page.getByLabel(/password/i).fill('demo12345');
 
 		// Click login - should not show browser validation error
 		await page.getByRole('button', { name: /sign in|login/i }).click();

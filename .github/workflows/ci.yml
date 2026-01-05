@@ -355,7 +355,22 @@ jobs:
       - name: Start backend in demo mode
         run: |
           ./api &
-          sleep 5
+          API_PID=$!
+          echo "Started API server with PID $API_PID"
+
+          # Wait for API to be ready with health check
+          echo "Waiting for API to be ready..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8080/health > /dev/null 2>&1; then
+              echo "API is ready after $i seconds"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "API failed to start after 30 seconds"
+              exit 1
+            fi
+            sleep 1
+          done
         env:
           DATABASE_URL: postgres://test:test@localhost:5432/openaccounting_demo?sslmode=disable
           JWT_SECRET: test-secret-key-for-ci
@@ -365,7 +380,7 @@ jobs:
 
       - name: Seed demo data via API
         run: |
-          echo "Calling demo reset endpoint to seed all 3 demo users..."
+          echo "Calling demo reset endpoint to seed all 4 demo users..."
           response=$(curl -s -w "\n%{http_code}" -X POST http://localhost:8080/api/demo/reset \
             -H "Content-Type: application/json" \
             -H "X-Demo-Secret: test-demo-secret")

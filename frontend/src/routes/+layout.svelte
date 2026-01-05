@@ -48,6 +48,11 @@
 		return tenantId ? `${item.path}?tenant=${tenantId}` : item.path;
 	}
 
+	function getNavUrl(path: string): string {
+		const tenantId = $page.url.searchParams.get('tenant');
+		return tenantId ? `${path}?tenant=${tenantId}` : path;
+	}
+
 	function toggleMobileMenu() {
 		mobileMenuOpen = !mobileMenuOpen;
 		if (!mobileMenuOpen) {
@@ -73,19 +78,19 @@
 
 				<!-- Desktop Navigation -->
 				<div class="nav-links hide-mobile-flex">
-					<a href="/dashboard">{m.nav_dashboard()}</a>
-					<a href="/accounts">{m.nav_accounts()}</a>
-					<a href="/journal">{m.nav_journal()}</a>
-					<a href="/contacts">{m.nav_contacts()}</a>
-					<a href="/invoices">{m.nav_invoices()}</a>
-					<a href="/payments">{m.nav_payments()}</a>
-					<a href="/reports">{m.nav_reports()}</a>
+					<a href={getNavUrl('/dashboard')}>{m.nav_dashboard()}</a>
+					<a href={getNavUrl('/accounts')}>{m.nav_accounts()}</a>
+					<a href={getNavUrl('/journal')}>{m.nav_journal()}</a>
+					<a href={getNavUrl('/contacts')}>{m.nav_contacts()}</a>
+					<a href={getNavUrl('/invoices')}>{m.nav_invoices()}</a>
+					<a href={getNavUrl('/payments')}>{m.nav_payments()}</a>
+					<a href={getNavUrl('/reports')}>{m.nav_reports()}</a>
 					<div class="nav-dropdown">
 						<span class="nav-dropdown-trigger">{m.nav_payroll()}</span>
 						<div class="nav-dropdown-menu">
-							<a href="/employees">{m.nav_employees()}</a>
-							<a href="/payroll">{m.nav_payrollRuns()}</a>
-							<a href="/tsd">{m.nav_tsd()}</a>
+							<a href={getNavUrl('/employees')}>{m.nav_employees()}</a>
+							<a href={getNavUrl('/payroll')}>{m.nav_payrollRuns()}</a>
+							<a href={getNavUrl('/tsd')}>{m.nav_tsd()}</a>
 						</div>
 					</div>
 					{#if pluginNavItems.length > 0}
@@ -98,8 +103,8 @@
 					<div class="nav-dropdown">
 						<span class="nav-dropdown-trigger">{m.nav_admin()}</span>
 						<div class="nav-dropdown-menu">
-							<a href="/admin/plugins">{m.nav_plugins()}</a>
-							<a href="/settings">{m.nav_settings()}</a>
+							<a href={getNavUrl('/admin/plugins')}>{m.nav_plugins()}</a>
+							<a href={getNavUrl('/settings')}>{m.nav_settings()}</a>
 						</div>
 					</div>
 					<LanguageSelector />
@@ -126,13 +131,13 @@
 					<button class="mobile-nav-close" onclick={closeMobileMenu} aria-label="Close menu">×</button>
 				</div>
 				<div class="mobile-nav-content">
-					<a href="/dashboard" class="mobile-nav-link">{m.nav_dashboard()}</a>
-					<a href="/accounts" class="mobile-nav-link">{m.nav_accounts()}</a>
-					<a href="/journal" class="mobile-nav-link">{m.nav_journal()}</a>
-					<a href="/contacts" class="mobile-nav-link">{m.nav_contacts()}</a>
-					<a href="/invoices" class="mobile-nav-link">{m.nav_invoices()}</a>
-					<a href="/payments" class="mobile-nav-link">{m.nav_payments()}</a>
-					<a href="/reports" class="mobile-nav-link">{m.nav_reports()}</a>
+					<a href={getNavUrl('/dashboard')} class="mobile-nav-link">{m.nav_dashboard()}</a>
+					<a href={getNavUrl('/accounts')} class="mobile-nav-link">{m.nav_accounts()}</a>
+					<a href={getNavUrl('/journal')} class="mobile-nav-link">{m.nav_journal()}</a>
+					<a href={getNavUrl('/contacts')} class="mobile-nav-link">{m.nav_contacts()}</a>
+					<a href={getNavUrl('/invoices')} class="mobile-nav-link">{m.nav_invoices()}</a>
+					<a href={getNavUrl('/payments')} class="mobile-nav-link">{m.nav_payments()}</a>
+					<a href={getNavUrl('/reports')} class="mobile-nav-link">{m.nav_reports()}</a>
 
 					<!-- Payroll Accordion -->
 					<div class="mobile-nav-accordion">
@@ -142,9 +147,9 @@
 						</button>
 						{#if expandedDropdown === 'payroll'}
 							<div class="mobile-nav-accordion-content">
-								<a href="/employees" class="mobile-nav-link sub">{m.nav_employees()}</a>
-								<a href="/payroll" class="mobile-nav-link sub">{m.nav_payrollRuns()}</a>
-								<a href="/tsd" class="mobile-nav-link sub">{m.nav_tsd()}</a>
+								<a href={getNavUrl('/employees')} class="mobile-nav-link sub">{m.nav_employees()}</a>
+								<a href={getNavUrl('/payroll')} class="mobile-nav-link sub">{m.nav_payrollRuns()}</a>
+								<a href={getNavUrl('/tsd')} class="mobile-nav-link sub">{m.nav_tsd()}</a>
 							</div>
 						{/if}
 					</div>
@@ -167,8 +172,8 @@
 						</button>
 						{#if expandedDropdown === 'admin'}
 							<div class="mobile-nav-accordion-content">
-								<a href="/admin/plugins" class="mobile-nav-link sub">{m.nav_plugins()}</a>
-								<a href="/settings" class="mobile-nav-link sub">{m.nav_settings()}</a>
+								<a href={getNavUrl('/admin/plugins')} class="mobile-nav-link sub">{m.nav_plugins()}</a>
+								<a href={getNavUrl('/settings')} class="mobile-nav-link sub">{m.nav_settings()}</a>
 							</div>
 						{/if}
 					</div>
