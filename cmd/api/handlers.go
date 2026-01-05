@@ -32,6 +32,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/recurring"
+	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -57,6 +58,7 @@ type Handlers struct {
 	ordersService     *orders.Service
 	assetsService     *assets.Service
 	inventoryService  *inventory.Service
+	reportsService    *reports.Service
 }
 
 // getSchemaName returns the schema name for a tenant
@@ -901,6 +903,59 @@ func (h *Handlers) GetIncomeStatement(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, is)
+}
+
+// GetCashFlowStatement returns the cash flow statement for a tenant
+// @Summary Get cash flow statement
+// @Description Get cash flow statement report for a specific period (Estonian standard)
+// @Tags Reports
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param start_date query string true "Start date (YYYY-MM-DD)"
+// @Param end_date query string true "End date (YYYY-MM-DD)"
+// @Success 200 {object} reports.CashFlowStatement
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/reports/cash-flow [get]
+func (h *Handlers) GetCashFlowStatement(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+
+	startDateStr := r.URL.Query().Get("start_date")
+	endDateStr := r.URL.Query().Get("end_date")
+
+	if startDateStr == "" || endDateStr == "" {
+		respondError(w, http.StatusBadRequest, "start_date and end_date parameters are required")
+		return
+	}
+
+	// Validate date formats
+	_, err := time.Parse("2006-01-02", startDateStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid start_date format. Use YYYY-MM-DD")
+		return
+	}
+
+	_, err = time.Parse("2006-01-02", endDateStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid end_date format. Use YYYY-MM-DD")
+		return
+	}
+
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+	req := &reports.CashFlowRequest{
+		StartDate: startDateStr,
+		EndDate:   endDateStr,
+	}
+
+	result, err := h.reportsService.GenerateCashFlowStatement(r.Context(), tenantID, schemaName, req)
+	if err != nil {
+		log.Error().Err(err).Str("tenant", tenantID).Msg("Failed to generate cash flow statement")
+		respondError(w, http.StatusInternalServerError, "Failed to generate cash flow statement")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
 }
 
 // Custom JSON marshaling for decimal values

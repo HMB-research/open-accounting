@@ -35,6 +35,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/recurring"
+	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/scheduler"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
@@ -102,6 +103,7 @@ func main() {
 	quotesService := quotes.NewService(pool)
 	ordersService := orders.NewService(pool)
 	assetsService := assets.NewService(pool)
+	reportsService := reports.NewService(pool)
 	inventoryService := inventory.NewService(pool)
 
 	// Load enabled plugins on startup
@@ -143,6 +145,7 @@ func main() {
 		ordersService:     ordersService,
 		assetsService:     assetsService,
 		inventoryService:  inventoryService,
+		reportsService:    reportsService,
 	}
 
 	// Setup router
@@ -423,6 +426,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/reports/account-balance/{accountID}", h.GetAccountBalance)
 				r.Get("/reports/balance-sheet", h.GetBalanceSheet)
 				r.Get("/reports/income-statement", h.GetIncomeStatement)
+				r.Get("/reports/cash-flow", h.GetCashFlowStatement)
 
 				// Analytics
 				r.Get("/analytics/dashboard", h.GetDashboardSummary)
