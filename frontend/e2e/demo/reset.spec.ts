@@ -8,7 +8,11 @@ import {
 	getExpectedJournalEntryKey
 } from './api';
 
+// Skip all reset tests if DEMO_RESET_SECRET is not provided
+const DEMO_SECRET = process.env.DEMO_RESET_SECRET;
 test.describe('Demo Data Reset Verification', () => {
+	test.skip(!DEMO_SECRET, 'DEMO_RESET_SECRET environment variable required');
+
 	test.describe('Initial State Verification', () => {
 		test('has correct account count and key accounts', async ({}, testInfo) => {
 			const userNum = (testInfo.parallelIndex % 3) + 1;

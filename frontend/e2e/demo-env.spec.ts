@@ -38,6 +38,7 @@ async function loginAsDemo(page: import('@playwright/test').Page) {
 
 	// Wait for navigation to dashboard
 	await page.waitForURL(/dashboard/, { timeout: 30000 });
+	await page.waitForLoadState('networkidle');
 }
 
 // Helper to navigate with tenant parameter

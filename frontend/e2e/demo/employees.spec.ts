@@ -12,9 +12,9 @@ test.describe('Demo Employees - Seed Data Verification', () => {
 	test('displays seeded employees', async ({ page }) => {
 		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
 
-		// Verify seeded employee names
-		await expect(page.getByText('Maria Tamm')).toBeVisible();
-		await expect(page.getByText('Jaan Kask')).toBeVisible();
+		// Verify seeded employee names (displayed as "LastName, FirstName")
+		await expect(page.getByText('Tamm, Maria')).toBeVisible();
+		await expect(page.getByText('Kask, Jaan')).toBeVisible();
 	});
 
 	test('shows employee positions', async ({ page }) => {

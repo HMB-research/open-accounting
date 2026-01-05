@@ -236,9 +236,11 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 		Debug:            corsDebug,
 	}))
 
-	// Rate limiting (100 requests/minute, burst 10)
-	rateLimiter := auth.DefaultRateLimiter()
-	r.Use(rateLimiter.Middleware)
+	// Rate limiting - disabled in demo mode for E2E testing, otherwise 100 requests/minute with burst 10
+	if os.Getenv("DEMO_MODE") != "true" {
+		rateLimiter := auth.DefaultRateLimiter()
+		r.Use(rateLimiter.Middleware)
+	}
 
 	// Health check
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {

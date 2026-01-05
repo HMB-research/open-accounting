@@ -6,13 +6,12 @@ test.describe('Demo Settings - Page Structure Verification', () => {
 		await loginAsDemo(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/settings', testInfo);
-		await page.waitForTimeout(2000);
+		await page.waitForLoadState('networkidle');
 	});
 
 	test('displays settings page heading or cards', async ({ page }) => {
-		const hasHeading = await page.getByRole('heading', { name: /setting/i }).isVisible().catch(() => false);
-		const hasCards = await page.getByText(/company|email|plugin/i).first().isVisible().catch(() => false);
-		expect(hasHeading || hasCards).toBeTruthy();
+		// Wait for heading (level 1) to be visible
+		await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 10000 });
 	});
 
 	test('shows settings navigation options', async ({ page }) => {

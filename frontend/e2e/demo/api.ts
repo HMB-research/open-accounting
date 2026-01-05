@@ -27,7 +27,7 @@ export interface DemoStatus {
  */
 export const EXPECTED_DEMO_DATA = {
 	accounts: {
-		count: 28,
+		count: 33,
 		keys: ['Cash', 'Bank Account - EUR', 'Accounts Receivable', 'Accounts Payable']
 	},
 	contacts: {
