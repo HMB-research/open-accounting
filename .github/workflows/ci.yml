@@ -380,7 +380,7 @@ jobs:
 
       - name: Seed demo data via API
         run: |
-          echo "Calling demo reset endpoint to seed all 3 demo users..."
+          echo "Calling demo reset endpoint to seed all 4 demo users..."
           response=$(curl -s -w "\n%{http_code}" -X POST http://localhost:8080/api/demo/reset \
             -H "Content-Type: application/json" \
             -H "X-Demo-Secret: test-demo-secret")

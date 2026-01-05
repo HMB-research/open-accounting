@@ -1288,14 +1288,14 @@ func (h *Handlers) getEntityStatusPeriod(ctx context.Context, schema, table stri
 	return EntityStatus{Count: count, Keys: keys}
 }
 
-// getDemoSeedSQL returns the SQL to seed the demo database for all 3 demo users
+// getDemoSeedSQL returns the SQL to seed the demo database for all 4 demo users
 // This creates demo users, tenants, schemas, and comprehensive sample data
 func getDemoSeedSQL() string {
 	var sql strings.Builder
 	template := getDemoSeedTemplate()
 
-	// Generate seed data for all 3 demo users
-	for userNum := 1; userNum <= 3; userNum++ {
+	// Generate seed data for all 4 demo users (demo1-4)
+	for userNum := 1; userNum <= 4; userNum++ {
 		sql.WriteString(generateDemoSeedForUser(template, userNum))
 	}
 
