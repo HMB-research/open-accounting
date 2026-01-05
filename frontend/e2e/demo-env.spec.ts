@@ -49,6 +49,14 @@ async function navigateToPage(page: import('@playwright/test').Page, path: strin
 	await page.waitForLoadState('networkidle');
 }
 
+// Helper to navigate with tenant parameter
+async function navigateToPage(page: import('@playwright/test').Page, path: string) {
+	const separator = path.includes('?') ? '&' : '?';
+	const url = `${DEMO_URL}${path}${separator}tenant=${DEMO_TENANT_ID}`;
+	await page.goto(url);
+	await page.waitForLoadState('networkidle');
+}
+
 test.describe('Demo Environment - Health Checks', () => {
 	test('API health endpoint responds', async ({ request }) => {
 		const response = await request.get(`${DEMO_API}/health`);
