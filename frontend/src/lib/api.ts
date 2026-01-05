@@ -1007,6 +1007,14 @@ class ApiClient {
 		window.URL.revokeObjectURL(url);
 	}
 
+	// Cash Flow Statement endpoint
+	async getCashFlowStatement(tenantId: string, startDate: string, endDate: string) {
+		return this.request<CashFlowStatement>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/reports/cash-flow?start_date=${startDate}&end_date=${endDate}`
+		);
+	}
+
 	// Payroll - Employee endpoints
 	async listEmployees(tenantId: string, activeOnly = false) {
 		const query = activeOnly ? '?active_only=true' : '';
@@ -2504,6 +2512,31 @@ export interface KMDDeclaration {
 export interface CreateKMDRequest {
 	year: number;
 	month: number;
+}
+
+// Cash Flow types
+export interface CashFlowItem {
+	code: string;
+	description: string;
+	description_et: string;
+	amount: string;
+	is_subtotal: boolean;
+}
+
+export interface CashFlowStatement {
+	tenant_id: string;
+	start_date: string;
+	end_date: string;
+	operating_activities: CashFlowItem[];
+	investing_activities: CashFlowItem[];
+	financing_activities: CashFlowItem[];
+	total_operating: string;
+	total_investing: string;
+	total_financing: string;
+	net_cash_change: string;
+	opening_cash: string;
+	closing_cash: string;
+	generated_at: string;
 }
 
 // Payroll types
