@@ -121,14 +121,21 @@
 		isLoadingAnalytics = true;
 		isLoadingActivity = true;
 		try {
-			const [summaryData, chartResponse, activityData] = await Promise.all([
+			// Load summary and chart data (required)
+			const [summaryData, chartResponse] = await Promise.all([
 				api.getDashboardSummary(tenantId),
-				api.getRevenueExpenseChart(tenantId, 6),
-				api.getRecentActivity(tenantId, 10)
+				api.getRevenueExpenseChart(tenantId, 6)
 			]);
 			summary = summaryData;
 			chartData = chartResponse;
-			activityItems = activityData;
+
+			// Load activity separately (optional, endpoint may not exist)
+			try {
+				activityItems = await api.getRecentActivity(tenantId, 10);
+			} catch {
+				// Activity endpoint not available, use empty array
+				activityItems = [];
+			}
 
 			// Load cash flow with current period
 			await loadCashFlow(tenantId);
@@ -208,18 +215,28 @@
 				labels: chartData.labels,
 				datasets: [
 					{
-						label: 'Revenue',
+						label: m.dashboard_revenue(),
 						data: chartData.revenue.map((d) => (d instanceof Decimal ? d.toNumber() : Number(d))),
 						backgroundColor: 'rgba(34, 197, 94, 0.7)',
 						borderColor: 'rgb(34, 197, 94)',
 						borderWidth: 1
 					},
 					{
-						label: 'Expenses',
+						label: m.dashboard_expenses(),
 						data: chartData.expenses.map((d) => (d instanceof Decimal ? d.toNumber() : Number(d))),
 						backgroundColor: 'rgba(239, 68, 68, 0.7)',
 						borderColor: 'rgb(239, 68, 68)',
 						borderWidth: 1
+					},
+					{
+						type: 'line',
+						label: m.dashboard_profit_loss(),
+						data: chartData.profit.map((d) => (d instanceof Decimal ? d.toNumber() : Number(d))),
+						borderColor: 'rgb(59, 130, 246)',
+						backgroundColor: 'rgba(59, 130, 246, 0.1)',
+						borderWidth: 2,
+						fill: false,
+						tension: 0.1
 					}
 				]
 			},

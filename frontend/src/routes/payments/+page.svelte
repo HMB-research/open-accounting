@@ -142,7 +142,8 @@
 
 	function getUnallocatedAmount(payment: Payment): Decimal {
 		const total = payment.amount;
-		const allocated = payment.allocations.reduce(
+		const allocations = payment.allocations || [];
+		const allocated = allocations.reduce(
 			(sum, a) => sum.plus(a.amount),
 			new Decimal(0)
 		);
