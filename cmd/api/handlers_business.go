@@ -19,6 +19,11 @@ import (
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/tenant"
+
+	// Blank imports for swagger annotations
+	_ "github.com/HMB-research/open-accounting/internal/accounting"
+	_ "github.com/HMB-research/open-accounting/internal/analytics"
+	_ "github.com/HMB-research/open-accounting/internal/tax"
 )
 
 // =============================================================================
