@@ -31,14 +31,44 @@ export function getDemoCredentials(testInfo: TestInfo) {
  */
 export async function loginAsDemo(page: Page, testInfo: TestInfo): Promise<void> {
 	const creds = getDemoCredentials(testInfo);
+	const startTime = Date.now();
 
+	// Navigate to login page
 	await page.goto(`${DEMO_URL}/login`);
 	await page.waitForLoadState('networkidle');
-	await page.getByLabel(/email/i).fill(creds.email);
-	await page.getByLabel(/password/i).fill(creds.password);
-	await page.getByRole('button', { name: /sign in|login/i }).click();
-	await page.waitForURL(/dashboard/, { timeout: 30000 });
+
+	// Wait for form elements to be ready
+	await page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 10000 });
+
+	// Fill credentials
+	const emailInput = page.locator('input[type="email"], input[name="email"]').first();
+	const passwordInput = page.locator('input[type="password"]').first();
+	await emailInput.fill(creds.email);
+	await passwordInput.fill(creds.password);
+
+	// Click sign in and wait for navigation
+	const signInButton = page.getByRole('button', { name: /sign in|login/i });
+	await signInButton.click();
+
+	// Wait for navigation with better error handling
+	try {
+		await page.waitForURL(/dashboard/, { timeout: 30000 });
+	} catch (error) {
+		// Check if we're still on login page with an error
+		const errorAlert = page.locator('.alert-error, [role="alert"]');
+		const hasError = await errorAlert.isVisible().catch(() => false);
+		if (hasError) {
+			const errorText = await errorAlert.textContent().catch(() => 'Unknown error');
+			throw new Error(`Login failed for ${creds.email}: ${errorText}`);
+		}
+
+		// Check current URL for debugging
+		const currentUrl = page.url();
+		throw new Error(`Login navigation timeout for ${creds.email}. Current URL: ${currentUrl}`);
+	}
+
 	await page.waitForLoadState('networkidle');
+	console.log(`Login completed in ${Date.now() - startTime}ms for ${creds.email}`);
 }
 
 export async function navigateTo(page: Page, path: string, testInfo?: TestInfo): Promise<void> {
