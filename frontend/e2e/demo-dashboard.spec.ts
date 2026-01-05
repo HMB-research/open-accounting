@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
  *
  * These tests verify the demo user experience on the live demo environment.
  * They are SKIPPED by default because:
- * 1. The demo user (demo@example.com) only exists in the Railway production database
+ * 1. The demo user (demo1@example.com) only exists in the Railway production database
  * 2. Local/CI environments don't have demo seed data
  *
  * To run these tests against the live demo:
@@ -37,8 +37,8 @@ test.describe('Demo User - Dashboard Integration', () => {
 		const emailInput = page.locator('input[type="email"], input[name="email"]').first();
 		const passwordInput = page.locator('input[type="password"]').first();
 
-		await emailInput.fill('demo@example.com');
-		await passwordInput.fill('demo123');
+		await emailInput.fill('demo1@example.com');
+		await passwordInput.fill('demo12345');
 
 		// Click sign in and wait for response
 		await page.getByRole('button', { name: /sign in|login/i }).click();
@@ -232,8 +232,8 @@ test.describe('Demo User - Error Handling', () => {
 	test('should handle API errors gracefully', async ({ page }) => {
 		// Login first
 		await page.goto('/login');
-		await page.getByLabel(/email/i).fill('demo@example.com');
-		await page.getByLabel(/password/i).fill('demo123');
+		await page.getByLabel(/email/i).fill('demo1@example.com');
+		await page.getByLabel(/password/i).fill('demo12345');
 		await page.getByRole('button', { name: /sign in|login/i }).click();
 
 		await page.waitForURL(/dashboard|home/i, { timeout: 15000 });
