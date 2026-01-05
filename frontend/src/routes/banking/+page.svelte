@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/stores';
 	import { api, type BankAccount, type BankTransaction, type MatchSuggestion } from '$lib/api';
 	import { goto } from '$app/navigation';
 	import * as m from '$lib/paraglide/messages.js';
@@ -30,8 +31,29 @@
 	let statusFilter = $state<'all' | 'UNMATCHED' | 'MATCHED' | 'RECONCILED'>('all');
 
 	$effect(() => {
-		loadData();
+		const urlTenantId = $page.url.searchParams.get('tenant');
+		if (urlTenantId) {
+			tenantId = urlTenantId;
+			loadBankAccounts();
+		} else {
+			loadData();
+		}
 	});
+
+	async function loadBankAccounts() {
+		loading = true;
+		error = null;
+		try {
+			bankAccounts = await api.listBankAccounts(tenantId);
+			if (bankAccounts.length > 0 && !selectedAccount) {
+				selectedAccount = bankAccounts[0];
+			}
+		} catch (e) {
+			error = e instanceof Error ? e.message : m.banking_failedToLoad();
+		} finally {
+			loading = false;
+		}
+	}
 
 	async function loadData() {
 		loading = true;

@@ -389,6 +389,7 @@ jobs:
           CI: true
           BASE_URL: http://localhost:5173
           PUBLIC_API_URL: http://localhost:8080
+          DEMO_RESET_SECRET: test-demo-secret
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4
@@ -454,6 +455,7 @@ jobs:
           CI: true
           TEST_DEMO: 'true'
           PUBLIC_API_URL: https://open-accounting-api.up.railway.app
+          DEMO_RESET_SECRET: ${{ secrets.DEMO_RESET_SECRET }}
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4

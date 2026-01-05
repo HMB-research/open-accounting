@@ -11,6 +11,8 @@ services:
       - DATABASE_URL=postgres://openaccounting:openaccounting@db:5432/openaccounting?sslmode=disable
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
       - ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+      - DEMO_MODE=true
+      - DEMO_RESET_SECRET=${DEMO_RESET_SECRET:-test-demo-secret}
     depends_on:
       db:
         condition: service_healthy

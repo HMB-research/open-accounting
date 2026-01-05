@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/stores';
 	import { api, type KMDDeclaration } from '$lib/api';
 	import { goto } from '$app/navigation';
 	import Decimal from 'decimal.js';
@@ -21,12 +22,18 @@
 		loading = true;
 		error = null;
 		try {
-			const memberships = await api.getMyTenants();
-			if (memberships.length === 0) {
-				error = m.tax_noTenantAvailable();
-				return;
+			// Check URL param for tenant first
+			const urlTenantId = $page.url.searchParams.get('tenant');
+			if (urlTenantId) {
+				tenantId = urlTenantId;
+			} else {
+				const memberships = await api.getMyTenants();
+				if (memberships.length === 0) {
+					error = m.tax_noTenantAvailable();
+					return;
+				}
+				tenantId = memberships[0].tenant.id;
 			}
-			tenantId = memberships[0].tenant.id;
 			declarations = await api.listKMD(tenantId);
 		} catch (e) {
 			error = e instanceof Error ? e.message : m.tax_failedToLoad();

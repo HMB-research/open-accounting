@@ -51,8 +51,8 @@ func (r *PostgresRepository) GetByID(ctx context.Context, schemaName, tenantID, 
 	var p Payment
 	err := r.db.QueryRow(ctx, fmt.Sprintf(`
 		SELECT id, tenant_id, payment_number, payment_type, contact_id, payment_date,
-		       amount, currency, exchange_rate, base_amount, payment_method, bank_account,
-		       reference, notes, journal_entry_id, created_at, created_by
+		       amount, currency, exchange_rate, base_amount, COALESCE(payment_method, ''), COALESCE(bank_account, ''),
+		       COALESCE(reference, ''), COALESCE(notes, ''), journal_entry_id, created_at, created_by
 		FROM %s.payments
 		WHERE id = $1 AND tenant_id = $2
 	`, schemaName), paymentID, tenantID).Scan(
@@ -74,8 +74,8 @@ func (r *PostgresRepository) GetByID(ctx context.Context, schemaName, tenantID, 
 func (r *PostgresRepository) List(ctx context.Context, schemaName, tenantID string, filter *PaymentFilter) ([]Payment, error) {
 	query := fmt.Sprintf(`
 		SELECT id, tenant_id, payment_number, payment_type, contact_id, payment_date,
-		       amount, currency, exchange_rate, base_amount, payment_method, bank_account,
-		       reference, notes, journal_entry_id, created_at, created_by
+		       amount, currency, exchange_rate, base_amount, COALESCE(payment_method, ''), COALESCE(bank_account, ''),
+		       COALESCE(reference, ''), COALESCE(notes, ''), journal_entry_id, created_at, created_by
 		FROM %s.payments
 		WHERE tenant_id = $1
 	`, schemaName)
@@ -189,8 +189,8 @@ func (r *PostgresRepository) GetNextPaymentNumber(ctx context.Context, schemaNam
 func (r *PostgresRepository) GetUnallocatedPayments(ctx context.Context, schemaName, tenantID string, paymentType PaymentType) ([]Payment, error) {
 	query := fmt.Sprintf(`
 		SELECT p.id, p.tenant_id, p.payment_number, p.payment_type, p.contact_id, p.payment_date,
-		       p.amount, p.currency, p.exchange_rate, p.base_amount, p.payment_method, p.bank_account,
-		       p.reference, p.notes, p.journal_entry_id, p.created_at, p.created_by
+		       p.amount, p.currency, p.exchange_rate, p.base_amount, COALESCE(p.payment_method, ''), COALESCE(p.bank_account, ''),
+		       COALESCE(p.reference, ''), COALESCE(p.notes, ''), p.journal_entry_id, p.created_at, p.created_by
 		FROM %s.payments p
 		WHERE p.tenant_id = $1 AND p.payment_type = $2
 		  AND p.amount > COALESCE((

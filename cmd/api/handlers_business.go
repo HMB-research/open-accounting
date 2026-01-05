@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -193,6 +194,7 @@ func (h *Handlers) ListContacts(w http.ResponseWriter, r *http.Request) {
 
 	contactsList, err := h.contactsService.List(r.Context(), tenantID, schemaName, filter)
 	if err != nil {
+		log.Printf("Failed to list contacts for tenant %s (schema: %s): %v", tenantID, schemaName, err)
 		respondError(w, http.StatusInternalServerError, "Failed to list contacts")
 		return
 	}
