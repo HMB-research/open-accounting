@@ -1043,7 +1043,9 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// Demo identifiers for 3 parallel test users
+	// Demo identifiers for 4 demo users:
+	// - demo1: Reserved for end users (README documentation)
+	// - demo2, demo3, demo4: Used by E2E tests (3 parallel workers)
 	allDemoUsers := []struct {
 		email  string
 		slug   string
@@ -1052,6 +1054,7 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 		{"demo1@example.com", "demo1", "tenant_demo1"},
 		{"demo2@example.com", "demo2", "tenant_demo2"},
 		{"demo3@example.com", "demo3", "tenant_demo3"},
+		{"demo4@example.com", "demo4", "tenant_demo4"},
 	}
 
 	// Parse optional user parameter for single-user reset
@@ -1064,9 +1067,9 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 	userParam := r.URL.Query().Get("user")
 	if userParam != "" {
 		userNum, err := strconv.Atoi(userParam)
-		if err != nil || userNum < 1 || userNum > 3 {
+		if err != nil || userNum < 1 || userNum > 4 {
 			log.Warn().Str("user", userParam).Msg("Demo reset rejected: invalid user parameter")
-			respondError(w, http.StatusBadRequest, "Invalid user parameter. Must be 1, 2, or 3")
+			respondError(w, http.StatusBadRequest, "Invalid user parameter. Must be 1, 2, 3, or 4")
 			return
 		}
 		demoUsers = []struct {
@@ -1197,8 +1200,8 @@ func (h *Handlers) DemoStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userNum, err := strconv.Atoi(userParam)
-	if err != nil || userNum < 1 || userNum > 3 {
-		respondError(w, http.StatusBadRequest, "Invalid user parameter. Must be 1, 2, or 3")
+	if err != nil || userNum < 1 || userNum > 4 {
+		respondError(w, http.StatusBadRequest, "Invalid user parameter. Must be 1, 2, 3, or 4")
 		return
 	}
 
@@ -1285,14 +1288,14 @@ func (h *Handlers) getEntityStatusPeriod(ctx context.Context, schema, table stri
 	return EntityStatus{Count: count, Keys: keys}
 }
 
-// getDemoSeedSQL returns the SQL to seed the demo database for all 3 demo users
+// getDemoSeedSQL returns the SQL to seed the demo database for all 4 demo users
 // This creates demo users, tenants, schemas, and comprehensive sample data
 func getDemoSeedSQL() string {
 	var sql strings.Builder
 	template := getDemoSeedTemplate()
 
-	// Generate seed data for all 3 demo users
-	for userNum := 1; userNum <= 3; userNum++ {
+	// Generate seed data for all 4 demo users (demo1-4)
+	for userNum := 1; userNum <= 4; userNum++ {
 		sql.WriteString(generateDemoSeedForUser(template, userNum))
 	}
 

@@ -4,12 +4,17 @@ import { Page, expect, TestInfo } from '@playwright/test';
 export const DEMO_URL = process.env.BASE_URL || 'https://open-accounting.up.railway.app';
 export const DEMO_API_URL = process.env.PUBLIC_API_URL || 'https://open-accounting-api.up.railway.app';
 
-// Demo credentials mapped by worker index (0-2)
+// Demo user reserved for end users (README documentation)
+// This user should NOT be used by automated tests to avoid conflicts
+export const END_USER_DEMO = { email: 'demo1@example.com', password: 'demo12345', tenantSlug: 'demo1', tenantName: 'Demo Company 1', tenantId: 'b0000000-0000-0000-0001-000000000001' };
+
+// Demo credentials for E2E tests only (demo2, demo3, demo4)
 // Tenant IDs follow the pattern: b0000000-0000-0000-000X-000000000001 where X is user number
+// NOTE: demo1 is reserved for end users - tests use demo2, demo3, demo4 only
 export const DEMO_CREDENTIALS = [
-	{ email: 'demo1@example.com', password: 'demo12345', tenantSlug: 'demo1', tenantName: 'Demo Company 1', tenantId: 'b0000000-0000-0000-0001-000000000001' },
 	{ email: 'demo2@example.com', password: 'demo12345', tenantSlug: 'demo2', tenantName: 'Demo Company 2', tenantId: 'b0000000-0000-0000-0002-000000000001' },
-	{ email: 'demo3@example.com', password: 'demo12345', tenantSlug: 'demo3', tenantName: 'Demo Company 3', tenantId: 'b0000000-0000-0000-0003-000000000001' }
+	{ email: 'demo3@example.com', password: 'demo12345', tenantSlug: 'demo3', tenantName: 'Demo Company 3', tenantId: 'b0000000-0000-0000-0003-000000000001' },
+	{ email: 'demo4@example.com', password: 'demo12345', tenantSlug: 'demo4', tenantName: 'Demo Company 4', tenantId: 'b0000000-0000-0000-0004-000000000001' }
 ] as const;
 
 /**
@@ -26,14 +31,44 @@ export function getDemoCredentials(testInfo: TestInfo) {
  */
 export async function loginAsDemo(page: Page, testInfo: TestInfo): Promise<void> {
 	const creds = getDemoCredentials(testInfo);
+	const startTime = Date.now();
 
+	// Navigate to login page
 	await page.goto(`${DEMO_URL}/login`);
 	await page.waitForLoadState('networkidle');
-	await page.getByLabel(/email/i).fill(creds.email);
-	await page.getByLabel(/password/i).fill(creds.password);
-	await page.getByRole('button', { name: /sign in|login/i }).click();
-	await page.waitForURL(/dashboard/, { timeout: 30000 });
+
+	// Wait for form elements to be ready
+	await page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 10000 });
+
+	// Fill credentials
+	const emailInput = page.locator('input[type="email"], input[name="email"]').first();
+	const passwordInput = page.locator('input[type="password"]').first();
+	await emailInput.fill(creds.email);
+	await passwordInput.fill(creds.password);
+
+	// Click sign in and wait for navigation
+	const signInButton = page.getByRole('button', { name: /sign in|login/i });
+	await signInButton.click();
+
+	// Wait for navigation with better error handling
+	try {
+		await page.waitForURL(/dashboard/, { timeout: 30000 });
+	} catch (error) {
+		// Check if we're still on login page with an error
+		const errorAlert = page.locator('.alert-error, [role="alert"]');
+		const hasError = await errorAlert.isVisible().catch(() => false);
+		if (hasError) {
+			const errorText = await errorAlert.textContent().catch(() => 'Unknown error');
+			throw new Error(`Login failed for ${creds.email}: ${errorText}`);
+		}
+
+		// Check current URL for debugging
+		const currentUrl = page.url();
+		throw new Error(`Login navigation timeout for ${creds.email}. Current URL: ${currentUrl}`);
+	}
+
 	await page.waitForLoadState('networkidle');
+	console.log(`Login completed in ${Date.now() - startTime}ms for ${creds.email}`);
 }
 
 export async function navigateTo(page: Page, path: string, testInfo?: TestInfo): Promise<void> {
@@ -73,7 +108,8 @@ export async function ensureDemoTenant(page: Page, testInfo: TestInfo): Promise<
 }
 
 // Keep backward-compatible exports for gradual migration
-export const DEMO_EMAIL = 'demo1@example.com';
+// NOTE: Using demo2 for tests, demo1 is reserved for end users
+export const DEMO_EMAIL = 'demo2@example.com';
 export const DEMO_PASSWORD = 'demo12345';
 
 /**
