@@ -1572,10 +1572,10 @@ INSERT INTO tenant_acme.tsd_declarations (id, tenant_id, period_year, period_mon
 ON CONFLICT DO NOTHING;
 
 -- Recurring Invoices (3 total)
-INSERT INTO tenant_acme.recurring_invoices (id, tenant_id, name, contact_id, frequency, start_date, end_date, next_generation_date, payment_terms_days, currency, notes, is_active, last_generated_at, invoices_generated, created_by) VALUES
-('75000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Monthly Support - TechStart', 'd0000000-0000-0000-0001-000000000001'::uuid, 'MONTHLY', '2024-01-01', '2024-12-31', '2025-01-01', 14, 'EUR', 'Monthly IT support package', true, '2024-12-01', 12, 'a0000000-0000-0000-0000-000000000001'::uuid),
-('75000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Quarterly Retainer - Nordic', 'd0000000-0000-0000-0001-000000000002'::uuid, 'QUARTERLY', '2024-01-01', NULL, '2025-01-01', 30, 'EUR', 'Quarterly consulting retainer', true, '2024-10-01', 4, 'a0000000-0000-0000-0000-000000000001'::uuid),
-('75000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Annual License - GreenTech', 'd0000000-0000-0000-0001-000000000004'::uuid, 'YEARLY', '2024-06-01', NULL, '2025-06-01', 30, 'EUR', 'Annual software license', true, '2024-06-01', 1, 'a0000000-0000-0000-0000-000000000001'::uuid)
+INSERT INTO tenant_acme.recurring_invoices (id, tenant_id, name, contact_id, invoice_type, frequency, start_date, end_date, next_generation_date, payment_terms_days, currency, notes, is_active, last_generated_at, generated_count, created_by) VALUES
+('75000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Monthly Support - TechStart', 'd0000000-0000-0000-0001-000000000001'::uuid, 'SALES', 'MONTHLY', '2024-01-01', '2024-12-31', '2025-01-01', 14, 'EUR', 'Monthly IT support package', true, '2024-12-01', 12, 'a0000000-0000-0000-0000-000000000001'::uuid),
+('75000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Quarterly Retainer - Nordic', 'd0000000-0000-0000-0001-000000000002'::uuid, 'SALES', 'QUARTERLY', '2024-01-01', NULL, '2025-01-01', 30, 'EUR', 'Quarterly consulting retainer', true, '2024-10-01', 4, 'a0000000-0000-0000-0000-000000000001'::uuid),
+('75000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Annual License - GreenTech', 'd0000000-0000-0000-0001-000000000004'::uuid, 'SALES', 'YEARLY', '2024-06-01', NULL, '2025-06-01', 30, 'EUR', 'Annual software license', true, '2024-06-01', 1, 'a0000000-0000-0000-0000-000000000001'::uuid)
 ON CONFLICT DO NOTHING;
 
 INSERT INTO tenant_acme.recurring_invoice_lines (id, tenant_id, recurring_invoice_id, line_number, description, quantity, unit_price, vat_rate, account_id) VALUES
