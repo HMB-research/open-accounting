@@ -17,6 +17,7 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/analytics"
+	"github.com/HMB-research/open-accounting/internal/apierror"
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
@@ -69,6 +70,10 @@ func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 }
 
 func respondError(w http.ResponseWriter, status int, message string) {
+	// Sanitize error messages for 5xx errors to prevent information leakage
+	if status >= 500 {
+		message = apierror.Sanitize(message)
+	}
 	respondJSON(w, status, map[string]string{"error": message})
 }
 

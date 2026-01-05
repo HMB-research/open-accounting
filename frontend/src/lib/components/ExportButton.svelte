@@ -1,5 +1,5 @@
 <script lang="ts">
-	import * as XLSX from 'xlsx';
+	import ExcelJS from 'exceljs';
 	import * as m from '$lib/paraglide/messages.js';
 
 	interface Props {
@@ -12,21 +12,15 @@
 	let { data, headers, filename, sheetNames = ['Sheet1'] }: Props = $props();
 	let isOpen = $state(false);
 
-	function exportToExcel() {
-		const wb = XLSX.utils.book_new();
+	async function exportToExcel() {
+		const workbook = new ExcelJS.Workbook();
 
 		data.forEach((sheetData, index) => {
 			const sheetHeaders = headers[index] || headers[0];
-			const wsData = [sheetHeaders, ...sheetData.map(row =>
-				sheetHeaders.map((_, colIndex) => {
-					const value = Object.values(row)[colIndex];
-					return value !== undefined ? value : '';
-				})
-			)];
-			const ws = XLSX.utils.aoa_to_sheet(wsData);
+			const worksheet = workbook.addWorksheet(sheetNames[index] || `Sheet${index + 1}`);
 
-			// Auto-size columns
-			const colWidths = sheetHeaders.map((header, colIndex) => {
+			// Set columns with headers and auto-width
+			worksheet.columns = sheetHeaders.map((header, colIndex) => {
 				const maxLength = Math.max(
 					header.length,
 					...sheetData.map(row => {
@@ -34,14 +28,32 @@
 						return value !== undefined ? String(value).length : 0;
 					})
 				);
-				return { wch: Math.min(maxLength + 2, 50) };
+				return {
+					header: header,
+					key: `col${colIndex}`,
+					width: Math.min(maxLength + 2, 50)
+				};
 			});
-			ws['!cols'] = colWidths;
 
-			XLSX.utils.book_append_sheet(wb, ws, sheetNames[index] || `Sheet${index + 1}`);
+			// Add data rows
+			sheetData.forEach(row => {
+				const rowData: Record<string, unknown> = {};
+				sheetHeaders.forEach((_, colIndex) => {
+					const value = Object.values(row)[colIndex];
+					rowData[`col${colIndex}`] = value !== undefined ? value : '';
+				});
+				worksheet.addRow(rowData);
+			});
 		});
 
-		XLSX.writeFile(wb, `${filename}.xlsx`);
+		const buffer = await workbook.xlsx.writeBuffer();
+		const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `${filename}.xlsx`;
+		a.click();
+		URL.revokeObjectURL(url);
 		isOpen = false;
 	}
 

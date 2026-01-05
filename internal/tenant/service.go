@@ -206,8 +206,8 @@ func (s *Service) GetUserRole(ctx context.Context, tenantID, userID string) (str
 
 // CreateUser creates a new user
 func (s *Service) CreateUser(ctx context.Context, req *CreateUserRequest) (*User, error) {
-	// Hash password
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	// Hash password with cost 12 (stronger than default 10)
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
