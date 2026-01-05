@@ -1404,6 +1404,7 @@ SELECT create_tenant_schema('tenant_acme');
 
 -- Add tables from later migrations
 SELECT add_recurring_tables_to_schema('tenant_acme');
+SELECT fix_recurring_invoices_schema('tenant_acme');
 SELECT add_email_tables_to_schema('tenant_acme');
 SELECT add_reconciliation_tables_to_schema('tenant_acme');
 SELECT add_payroll_tables('tenant_acme');

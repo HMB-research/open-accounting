@@ -56,5 +56,5 @@ BEGIN
 END;
 $$;
 
--- Clean up
-DROP FUNCTION IF EXISTS fix_recurring_invoices_schema(TEXT);
+-- Note: Keeping the function as it's called by demo seed SQL
+-- DROP FUNCTION IF EXISTS fix_recurring_invoices_schema(TEXT);
