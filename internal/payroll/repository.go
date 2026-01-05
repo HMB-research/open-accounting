@@ -106,8 +106,8 @@ func (r *PostgresRepository) CreateEmployee(ctx context.Context, schemaName stri
 // GetEmployee retrieves an employee by ID
 func (r *PostgresRepository) GetEmployee(ctx context.Context, schemaName, tenantID, employeeID string) (*Employee, error) {
 	query := fmt.Sprintf(`
-		SELECT id, tenant_id, employee_number, first_name, last_name, personal_code,
-			email, phone, address, bank_account, start_date, end_date, position, department,
+		SELECT id, tenant_id, COALESCE(employee_number, ''), first_name, last_name, COALESCE(personal_code, ''),
+			COALESCE(email, ''), COALESCE(phone, ''), COALESCE(address, ''), COALESCE(bank_account, ''), start_date, end_date, COALESCE(position, ''), COALESCE(department, ''),
 			employment_type, tax_residency, apply_basic_exemption, basic_exemption_amount,
 			funded_pension_rate, is_active, created_at, updated_at
 		FROM %s.employees
@@ -135,8 +135,8 @@ func (r *PostgresRepository) GetEmployee(ctx context.Context, schemaName, tenant
 // ListEmployees returns employees for a tenant
 func (r *PostgresRepository) ListEmployees(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]Employee, error) {
 	query := fmt.Sprintf(`
-		SELECT id, tenant_id, employee_number, first_name, last_name, personal_code,
-			email, phone, address, bank_account, start_date, end_date, position, department,
+		SELECT id, tenant_id, COALESCE(employee_number, ''), first_name, last_name, COALESCE(personal_code, ''),
+			COALESCE(email, ''), COALESCE(phone, ''), COALESCE(address, ''), COALESCE(bank_account, ''), start_date, end_date, COALESCE(position, ''), COALESCE(department, ''),
 			employment_type, tax_residency, apply_basic_exemption, basic_exemption_amount,
 			funded_pension_rate, is_active, created_at, updated_at
 		FROM %s.employees

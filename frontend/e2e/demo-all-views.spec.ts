@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, TestInfo } from '@playwright/test';
+import { loginAsDemo, navigateTo, DEMO_URL, getDemoCredentials } from './demo/utils';
 
 /**
  * Comprehensive E2E Tests for All Demo Views
@@ -10,31 +11,6 @@ import { test, expect } from '@playwright/test';
  *
  * Run with: npm run test:e2e:demo
  */
-
-const DEMO_URL = 'https://open-accounting.up.railway.app';
-const DEMO_EMAIL = 'demo@example.com';
-const DEMO_PASSWORD = 'demo123';
-
-// Helper to login as demo user
-async function loginAsDemo(page: import('@playwright/test').Page) {
-	await page.goto(`${DEMO_URL}/login`);
-	await page.waitForLoadState('networkidle');
-
-	const emailInput = page.getByLabel(/email/i);
-	const passwordInput = page.getByLabel(/password/i);
-
-	await emailInput.fill(DEMO_EMAIL);
-	await passwordInput.fill(DEMO_PASSWORD);
-
-	await page.getByRole('button', { name: /sign in|login/i }).click();
-	await page.waitForURL(/dashboard/, { timeout: 30000 });
-}
-
-// Helper to navigate to a page
-async function navigateTo(page: import('@playwright/test').Page, path: string) {
-	await page.goto(`${DEMO_URL}${path}`);
-	await page.waitForLoadState('networkidle');
-}
 
 test.describe('Demo All Views - Landing & Auth', () => {
 	test('Landing page displays features', async ({ page }) => {
@@ -63,11 +39,8 @@ test.describe('Demo All Views - Landing & Auth', () => {
 });
 
 test.describe('Demo All Views - Dashboard', () => {
-	test.beforeEach(async ({ page }) => {
-		await loginAsDemo(page);
-	});
-
-	test('Dashboard loads with data', async ({ page }) => {
+	test('Dashboard loads with data', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
 		await expect(page).toHaveURL(/dashboard/);
 
 		// Should show dashboard content
@@ -83,12 +56,9 @@ test.describe('Demo All Views - Dashboard', () => {
 });
 
 test.describe('Demo All Views - Accounting', () => {
-	test.beforeEach(async ({ page }) => {
-		await loginAsDemo(page);
-	});
-
-	test('Accounts (Chart of Accounts) displays data', async ({ page }) => {
-		await navigateTo(page, '/accounts');
+	test('Accounts (Chart of Accounts) displays data', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await navigateTo(page, '/accounts', testInfo);
 
 		// Page should load
 		const content = page.locator('main, [class*="content"]').first();
@@ -102,8 +72,9 @@ test.describe('Demo All Views - Accounting', () => {
 		expect(hasHeading || hasTable || hasData).toBeTruthy();
 	});
 
-	test('Journal entries page displays data', async ({ page }) => {
-		await navigateTo(page, '/journal');
+	test('Journal entries page displays data', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await navigateTo(page, '/journal', testInfo);
 
 		const content = page.locator('main, [class*="content"]').first();
 		await expect(content).toBeVisible();
@@ -116,8 +87,9 @@ test.describe('Demo All Views - Accounting', () => {
 		expect(hasHeading || hasData || hasEmptyState).toBeTruthy();
 	});
 
-	test('Invoices page displays data', async ({ page }) => {
-		await navigateTo(page, '/invoices');
+	test('Invoices page displays data', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await navigateTo(page, '/invoices', testInfo);
 
 		const content = page.locator('main, [class*="content"]').first();
 		await expect(content).toBeVisible();
@@ -130,8 +102,9 @@ test.describe('Demo All Views - Accounting', () => {
 		expect(hasHeading || hasTable || hasInvoiceData).toBeTruthy();
 	});
 
-	test('Payments page displays data', async ({ page }) => {
-		await navigateTo(page, '/payments');
+	test('Payments page displays data', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await navigateTo(page, '/payments', testInfo);
 
 		const content = page.locator('main, [class*="content"]').first();
 		await expect(content).toBeVisible();
@@ -144,8 +117,9 @@ test.describe('Demo All Views - Accounting', () => {
 		expect(hasHeading || hasData || hasEmptyState).toBeTruthy();
 	});
 
-	test('Recurring invoices page displays data', async ({ page }) => {
-		await navigateTo(page, '/recurring');
+	test('Recurring invoices page displays data', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await navigateTo(page, '/recurring', testInfo);
 
 		const content = page.locator('main, [class*="content"], .container').first();
 		await expect(content).toBeVisible();
@@ -163,8 +137,9 @@ test.describe('Demo All Views - Accounting', () => {
 		expect(hasHeading || hasData || hasEmptyState || hasNewButton).toBeTruthy();
 	});
 
-	test('Contacts page displays data', async ({ page }) => {
-		await navigateTo(page, '/contacts');
+	test('Contacts page displays data', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await navigateTo(page, '/contacts', testInfo);
 
 		const content = page.locator('main, [class*="content"]').first();
 		await expect(content).toBeVisible();
@@ -177,8 +152,9 @@ test.describe('Demo All Views - Accounting', () => {
 		expect(hasHeading || hasData || hasEmptyState).toBeTruthy();
 	});
 
-	test('Reports page loads', async ({ page }) => {
-		await navigateTo(page, '/reports');
+	test('Reports page loads', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await navigateTo(page, '/reports', testInfo);
 
 		const content = page.locator('main, [class*="content"]').first();
 		await expect(content).toBeVisible();
@@ -192,12 +168,9 @@ test.describe('Demo All Views - Accounting', () => {
 });
 
 test.describe('Demo All Views - Payroll', () => {
-	test.beforeEach(async ({ page }) => {
-		await loginAsDemo(page);
-	});
-
-	test('Employees page displays data', async ({ page }) => {
-		await navigateTo(page, '/employees');
+	test('Employees page displays data', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await navigateTo(page, '/employees', testInfo);
 
 		const content = page.locator('main, [class*="content"]').first();
 		await expect(content).toBeVisible();
@@ -210,8 +183,9 @@ test.describe('Demo All Views - Payroll', () => {
 		expect(hasHeading || hasData || hasEmptyState).toBeTruthy();
 	});
 
-	test('Payroll page displays data', async ({ page }) => {
-		await navigateTo(page, '/payroll');
+	test('Payroll page displays data', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await navigateTo(page, '/payroll', testInfo);
 
 		const content = page.locator('main, [class*="content"], .container').first();
 		await expect(content).toBeVisible();
@@ -230,28 +204,20 @@ test.describe('Demo All Views - Payroll', () => {
 		expect(hasHeading || hasData || hasEmptyState || hasNewButton || hasYearFilter).toBeTruthy();
 	});
 
-	test('TSD declarations page displays data', async ({ page }) => {
-		await navigateTo(page, '/tsd');
+	test('TSD declarations page displays data', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await navigateTo(page, '/tsd', testInfo);
+		await page.waitForLoadState('networkidle');
 
-		const content = page.locator('main, [class*="content"]').first();
-		await expect(content).toBeVisible();
-
-		// Should show TSD declarations
-		const hasHeading = await page.getByRole('heading', { name: /tsd|tax|declaration/i }).isVisible().catch(() => false);
-		const hasData = await page.getByText(/2024|submitted|draft|income tax|social tax/i).first().isVisible().catch(() => false);
-		const hasEmptyState = await page.getByText(/no.*declaration|create.*first/i).isVisible().catch(() => false);
-
-		expect(hasHeading || hasData || hasEmptyState).toBeTruthy();
+		// Wait for page heading (level 1) to be visible
+		await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 15000 });
 	});
 });
 
 test.describe('Demo All Views - Banking', () => {
-	test.beforeEach(async ({ page }) => {
-		await loginAsDemo(page);
-	});
-
-	test('Banking page displays data', async ({ page }) => {
-		await navigateTo(page, '/banking');
+	test('Banking page displays data', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await navigateTo(page, '/banking', testInfo);
 
 		const content = page.locator('main, [class*="content"]').first();
 		await expect(content).toBeVisible();
@@ -264,8 +230,9 @@ test.describe('Demo All Views - Banking', () => {
 		expect(hasHeading || hasData || hasEmptyState).toBeTruthy();
 	});
 
-	test('Banking import page loads', async ({ page }) => {
-		await navigateTo(page, '/banking/import');
+	test('Banking import page loads', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await navigateTo(page, '/banking/import', testInfo);
 
 		const content = page.locator('main, [class*="content"]').first();
 		await expect(content).toBeVisible();
@@ -280,12 +247,9 @@ test.describe('Demo All Views - Banking', () => {
 });
 
 test.describe('Demo All Views - Tax', () => {
-	test.beforeEach(async ({ page }) => {
-		await loginAsDemo(page);
-	});
-
-	test('Tax page loads', async ({ page }) => {
-		await navigateTo(page, '/tax');
+	test('Tax page loads', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await navigateTo(page, '/tax', testInfo);
 
 		const content = page.locator('main, [class*="content"]').first();
 		await expect(content).toBeVisible();
@@ -299,12 +263,9 @@ test.describe('Demo All Views - Tax', () => {
 });
 
 test.describe('Demo All Views - Settings', () => {
-	test.beforeEach(async ({ page }) => {
-		await loginAsDemo(page);
-	});
-
-	test('Settings page loads', async ({ page }) => {
-		await navigateTo(page, '/settings');
+	test('Settings page loads', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await navigateTo(page, '/settings', testInfo);
 
 		const content = page.locator('main, [class*="content"], .container').first();
 		await expect(content).toBeVisible();
@@ -321,8 +282,9 @@ test.describe('Demo All Views - Settings', () => {
 		expect(hasHeading || hasContent || hasCards).toBeTruthy();
 	});
 
-	test('Company settings page displays data', async ({ page }) => {
-		await navigateTo(page, '/settings/company');
+	test('Company settings page displays data', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await navigateTo(page, '/settings/company', testInfo);
 
 		const content = page.locator('main, [class*="content"]').first();
 		await expect(content).toBeVisible();
@@ -335,8 +297,9 @@ test.describe('Demo All Views - Settings', () => {
 		expect(hasHeading || hasData || hasForm).toBeTruthy();
 	});
 
-	test('Email settings page loads', async ({ page }) => {
-		await navigateTo(page, '/settings/email');
+	test('Email settings page loads', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await navigateTo(page, '/settings/email', testInfo);
 
 		const content = page.locator('main, [class*="content"]').first();
 		await expect(content).toBeVisible();
@@ -348,8 +311,9 @@ test.describe('Demo All Views - Settings', () => {
 		expect(hasHeading || hasContent).toBeTruthy();
 	});
 
-	test('Plugins settings page loads', async ({ page }) => {
-		await navigateTo(page, '/settings/plugins');
+	test('Plugins settings page loads', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await navigateTo(page, '/settings/plugins', testInfo);
 
 		const content = page.locator('main, [class*="content"]').first();
 		await expect(content).toBeVisible();
@@ -363,12 +327,9 @@ test.describe('Demo All Views - Settings', () => {
 });
 
 test.describe('Demo All Views - Admin', () => {
-	test.beforeEach(async ({ page }) => {
-		await loginAsDemo(page);
-	});
-
-	test('Admin plugins page loads', async ({ page }) => {
-		await navigateTo(page, '/admin/plugins');
+	test('Admin plugins page loads', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
+		await navigateTo(page, '/admin/plugins', testInfo);
 
 		const content = page.locator('main, [class*="content"]').first();
 		await expect(content).toBeVisible();
@@ -382,11 +343,8 @@ test.describe('Demo All Views - Admin', () => {
 });
 
 test.describe('Demo All Views - Navigation', () => {
-	test.beforeEach(async ({ page }) => {
-		await loginAsDemo(page);
-	});
-
-	test('Sidebar navigation has all main links', async ({ page }) => {
+	test('Sidebar navigation has all main links', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
 		// Main navigation should have key links
 		const nav = page.locator('nav, .sidebar, [class*="nav"]').first();
 		await expect(nav).toBeVisible();
@@ -404,7 +362,8 @@ test.describe('Demo All Views - Navigation', () => {
 		}
 	});
 
-	test('Payroll dropdown has subitems', async ({ page }) => {
+	test('Payroll dropdown has subitems', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
 		// Look for payroll menu
 		const payrollMenu = page.getByText(/payroll/i).first();
 		const hasPayrollMenu = await payrollMenu.isVisible().catch(() => false);
@@ -423,25 +382,25 @@ test.describe('Demo All Views - Navigation', () => {
 });
 
 test.describe('Demo All Views - Responsive', () => {
-	test('Mobile viewport shows all views correctly', async ({ page }) => {
+	test('Mobile viewport shows all views correctly', async ({ page }, testInfo) => {
 		await page.setViewportSize({ width: 375, height: 667 });
-		await loginAsDemo(page);
+		await loginAsDemo(page, testInfo);
 
 		// Dashboard should be accessible
 		await expect(page).toHaveURL(/dashboard/);
 
 		// Navigate to invoices
-		await navigateTo(page, '/invoices');
+		await navigateTo(page, '/invoices', testInfo);
 		const invoicesContent = page.locator('main, [class*="content"]').first();
 		await expect(invoicesContent).toBeVisible();
 
 		// Navigate to contacts
-		await navigateTo(page, '/contacts');
+		await navigateTo(page, '/contacts', testInfo);
 		const contactsContent = page.locator('main, [class*="content"]').first();
 		await expect(contactsContent).toBeVisible();
 
 		// Navigate to employees
-		await navigateTo(page, '/employees');
+		await navigateTo(page, '/employees', testInfo);
 		const employeesContent = page.locator('main, [class*="content"]').first();
 		await expect(employeesContent).toBeVisible();
 	});

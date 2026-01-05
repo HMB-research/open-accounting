@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1043,7 +1044,7 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Demo identifiers for 3 parallel test users
-	demoUsers := []struct {
+	allDemoUsers := []struct {
 		email  string
 		slug   string
 		schema string
@@ -1053,7 +1054,33 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 		{"demo3@example.com", "demo3", "tenant_demo3"},
 	}
 
-	// Drop all demo tenant schemas
+	// Parse optional user parameter for single-user reset
+	var demoUsers []struct {
+		email  string
+		slug   string
+		schema string
+	}
+
+	userParam := r.URL.Query().Get("user")
+	if userParam != "" {
+		userNum, err := strconv.Atoi(userParam)
+		if err != nil || userNum < 1 || userNum > 3 {
+			log.Warn().Str("user", userParam).Msg("Demo reset rejected: invalid user parameter")
+			respondError(w, http.StatusBadRequest, "Invalid user parameter. Must be 1, 2, or 3")
+			return
+		}
+		demoUsers = []struct {
+			email  string
+			slug   string
+			schema string
+		}{allDemoUsers[userNum-1]}
+		log.Info().Int("user", userNum).Msg("Demo reset: resetting single user")
+	} else {
+		demoUsers = allDemoUsers
+		log.Info().Msg("Demo reset: resetting all users")
+	}
+
+	// Drop demo tenant schemas
 	for _, demo := range demoUsers {
 		log.Info().Str("schema", demo.schema).Msg("Demo reset: dropping tenant schema")
 		_, err := h.pool.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", demo.schema))
@@ -1107,6 +1134,155 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 		"status":  "success",
 		"message": "Demo database reset successfully",
 	})
+}
+
+// DemoStatusResponse represents the demo data status
+type DemoStatusResponse struct {
+	User              int          `json:"user"`
+	Accounts          EntityStatus `json:"accounts"`
+	Contacts          EntityStatus `json:"contacts"`
+	Invoices          EntityStatus `json:"invoices"`
+	Employees         EntityStatus `json:"employees"`
+	Payments          EntityStatus `json:"payments"`
+	JournalEntries    EntityStatus `json:"journalEntries"`
+	BankAccounts      EntityStatus `json:"bankAccounts"`
+	RecurringInvoices EntityStatus `json:"recurringInvoices"`
+	PayrollRuns       EntityStatus `json:"payrollRuns"`
+	TsdDeclarations   EntityStatus `json:"tsdDeclarations"`
+}
+
+// EntityStatus represents count and key identifiers for an entity type
+type EntityStatus struct {
+	Count int      `json:"count"`
+	Keys  []string `json:"keys"`
+}
+
+// DemoStatus returns counts and key identifiers for demo data verification
+// @Summary Get demo data status
+// @Description Get counts and key identifiers for demo data verification
+// @Tags Demo
+// @Produce json
+// @Param user query int true "Demo user number (1-3)"
+// @Param X-Demo-Secret header string true "Demo secret key"
+// @Success 200 {object} DemoStatusResponse
+// @Failure 400 {object} object{error=string}
+// @Failure 401 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Router /api/demo/status [get]
+func (h *Handlers) DemoStatus(w http.ResponseWriter, r *http.Request) {
+	// Check if demo mode is enabled
+	if os.Getenv("DEMO_MODE") != "true" {
+		respondError(w, http.StatusForbidden, "Demo mode is not enabled")
+		return
+	}
+
+	// Validate secret key
+	secret := os.Getenv("DEMO_RESET_SECRET")
+	if secret == "" {
+		respondError(w, http.StatusForbidden, "Demo status not configured")
+		return
+	}
+
+	providedSecret := r.Header.Get("X-Demo-Secret")
+	if providedSecret != secret {
+		respondError(w, http.StatusUnauthorized, "Invalid or missing secret key")
+		return
+	}
+
+	// Parse required user parameter
+	userParam := r.URL.Query().Get("user")
+	if userParam == "" {
+		respondError(w, http.StatusBadRequest, "User parameter is required")
+		return
+	}
+
+	userNum, err := strconv.Atoi(userParam)
+	if err != nil || userNum < 1 || userNum > 3 {
+		respondError(w, http.StatusBadRequest, "Invalid user parameter. Must be 1, 2, or 3")
+		return
+	}
+
+	schema := fmt.Sprintf("tenant_demo%d", userNum)
+	ctx := r.Context()
+
+	response := DemoStatusResponse{User: userNum}
+
+	// Query each entity count and keys
+	response.Accounts = h.getEntityStatus(ctx, schema, "accounts", "name")
+	response.Contacts = h.getEntityStatus(ctx, schema, "contacts", "name")
+	response.Invoices = h.getEntityStatus(ctx, schema, "invoices", "invoice_number")
+	response.Employees = h.getEntityStatusConcat(ctx, schema, "employees", "first_name", "last_name")
+	response.Payments = h.getEntityStatus(ctx, schema, "payments", "payment_number")
+	response.JournalEntries = h.getEntityStatus(ctx, schema, "journal_entries", "entry_number")
+	response.BankAccounts = h.getEntityStatus(ctx, schema, "bank_accounts", "name")
+	response.RecurringInvoices = h.getEntityStatus(ctx, schema, "recurring_invoices", "name")
+	response.PayrollRuns = h.getEntityStatusPeriod(ctx, schema, "payroll_runs")
+	response.TsdDeclarations = h.getEntityStatusPeriod(ctx, schema, "tsd_declarations")
+
+	respondJSON(w, http.StatusOK, response)
+}
+
+func (h *Handlers) getEntityStatus(ctx context.Context, schema, table, keyColumn string) EntityStatus {
+	var count int
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", schema, table)
+	_ = h.pool.QueryRow(ctx, query).Scan(&count)
+
+	var keys []string
+	keysQuery := fmt.Sprintf("SELECT %s FROM %s.%s ORDER BY %s LIMIT 10", keyColumn, schema, table, keyColumn)
+	rows, _ := h.pool.Query(ctx, keysQuery)
+	if rows != nil {
+		defer rows.Close()
+		for rows.Next() {
+			var key string
+			if rows.Scan(&key) == nil {
+				keys = append(keys, key)
+			}
+		}
+	}
+
+	return EntityStatus{Count: count, Keys: keys}
+}
+
+func (h *Handlers) getEntityStatusConcat(ctx context.Context, schema, table, col1, col2 string) EntityStatus {
+	var count int
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", schema, table)
+	_ = h.pool.QueryRow(ctx, query).Scan(&count)
+
+	var keys []string
+	keysQuery := fmt.Sprintf("SELECT %s || ' ' || %s FROM %s.%s ORDER BY %s LIMIT 10", col1, col2, schema, table, col1)
+	rows, _ := h.pool.Query(ctx, keysQuery)
+	if rows != nil {
+		defer rows.Close()
+		for rows.Next() {
+			var key string
+			if rows.Scan(&key) == nil {
+				keys = append(keys, key)
+			}
+		}
+	}
+
+	return EntityStatus{Count: count, Keys: keys}
+}
+
+func (h *Handlers) getEntityStatusPeriod(ctx context.Context, schema, table string) EntityStatus {
+	var count int
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", schema, table)
+	_ = h.pool.QueryRow(ctx, query).Scan(&count)
+
+	var keys []string
+	keysQuery := fmt.Sprintf("SELECT period_year || '-' || LPAD(period_month::text, 2, '0') FROM %s.%s ORDER BY period_year, period_month LIMIT 10", schema, table)
+	rows, _ := h.pool.Query(ctx, keysQuery)
+	if rows != nil {
+		defer rows.Close()
+		for rows.Next() {
+			var key string
+			if rows.Scan(&key) == nil {
+				keys = append(keys, key)
+			}
+		}
+	}
+
+	return EntityStatus{Count: count, Keys: keys}
 }
 
 // getDemoSeedSQL returns the SQL to seed the demo database for all 3 demo users
@@ -1228,6 +1404,7 @@ SELECT create_tenant_schema('tenant_acme');
 
 -- Add tables from later migrations
 SELECT add_recurring_tables_to_schema('tenant_acme');
+SELECT fix_recurring_invoices_schema('tenant_acme');
 SELECT add_email_tables_to_schema('tenant_acme');
 SELECT add_reconciliation_tables_to_schema('tenant_acme');
 SELECT add_payroll_tables('tenant_acme');
@@ -1395,10 +1572,10 @@ INSERT INTO tenant_acme.tsd_declarations (id, tenant_id, period_year, period_mon
 ON CONFLICT DO NOTHING;
 
 -- Recurring Invoices (3 total)
-INSERT INTO tenant_acme.recurring_invoices (id, tenant_id, name, contact_id, frequency, start_date, end_date, next_generation_date, payment_terms_days, currency, notes, is_active, last_generated_at, invoices_generated, created_by) VALUES
-('75000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Monthly Support - TechStart', 'd0000000-0000-0000-0001-000000000001'::uuid, 'MONTHLY', '2024-01-01', '2024-12-31', '2025-01-01', 14, 'EUR', 'Monthly IT support package', true, '2024-12-01', 12, 'a0000000-0000-0000-0000-000000000001'::uuid),
-('75000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Quarterly Retainer - Nordic', 'd0000000-0000-0000-0001-000000000002'::uuid, 'QUARTERLY', '2024-01-01', NULL, '2025-01-01', 30, 'EUR', 'Quarterly consulting retainer', true, '2024-10-01', 4, 'a0000000-0000-0000-0000-000000000001'::uuid),
-('75000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Annual License - GreenTech', 'd0000000-0000-0000-0001-000000000004'::uuid, 'YEARLY', '2024-06-01', NULL, '2025-06-01', 30, 'EUR', 'Annual software license', true, '2024-06-01', 1, 'a0000000-0000-0000-0000-000000000001'::uuid)
+INSERT INTO tenant_acme.recurring_invoices (id, tenant_id, name, contact_id, invoice_type, frequency, start_date, end_date, next_generation_date, payment_terms_days, currency, notes, is_active, last_generated_at, generated_count, created_by) VALUES
+('75000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Monthly Support - TechStart', 'd0000000-0000-0000-0001-000000000001'::uuid, 'SALES', 'MONTHLY', '2024-01-01', '2024-12-31', '2025-01-01', 14, 'EUR', 'Monthly IT support package', true, '2024-12-01', 12, 'a0000000-0000-0000-0000-000000000001'::uuid),
+('75000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Quarterly Retainer - Nordic', 'd0000000-0000-0000-0001-000000000002'::uuid, 'SALES', 'QUARTERLY', '2024-01-01', NULL, '2025-01-01', 30, 'EUR', 'Quarterly consulting retainer', true, '2024-10-01', 4, 'a0000000-0000-0000-0000-000000000001'::uuid),
+('75000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Annual License - GreenTech', 'd0000000-0000-0000-0001-000000000004'::uuid, 'SALES', 'YEARLY', '2024-06-01', NULL, '2025-06-01', 30, 'EUR', 'Annual software license', true, '2024-06-01', 1, 'a0000000-0000-0000-0000-000000000001'::uuid)
 ON CONFLICT DO NOTHING;
 
 INSERT INTO tenant_acme.recurring_invoice_lines (id, tenant_id, recurring_invoice_id, line_number, description, quantity, unit_price, vat_rate, account_id) VALUES

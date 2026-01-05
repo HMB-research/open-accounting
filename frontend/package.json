@@ -23,7 +23,8 @@
     "test:e2e:debug": "playwright test --debug",
     "test:e2e:chromium": "playwright test --project=chromium",
     "test:e2e:demo": "playwright test --config=playwright.demo.config.ts",
-    "test:e2e:demo:headed": "playwright test --config=playwright.demo.config.ts --headed"
+    "test:e2e:demo:headed": "playwright test --config=playwright.demo.config.ts --headed",
+    "test:e2e:demo:loop": "../scripts/test-loop.sh"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",

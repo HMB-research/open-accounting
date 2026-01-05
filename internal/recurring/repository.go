@@ -140,7 +140,7 @@ func (r *PostgresRepository) GetByID(ctx context.Context, schemaName, tenantID, 
 	err := r.db.QueryRow(ctx, fmt.Sprintf(`
 		SELECT r.id, r.tenant_id, r.name, r.contact_id, COALESCE(c.name, ''),
 		       r.invoice_type, r.currency, r.frequency, r.start_date, r.end_date,
-		       r.next_generation_date, r.payment_terms_days, r.reference, r.notes,
+		       r.next_generation_date, r.payment_terms_days, COALESCE(r.reference, ''), COALESCE(r.notes, ''),
 		       r.is_active, r.last_generated_at, r.generated_count, r.created_at, r.created_by, r.updated_at,
 		       COALESCE(r.send_email_on_generation, false), COALESCE(r.email_template_type, 'INVOICE_SEND'),
 		       COALESCE(r.recipient_email_override, ''), COALESCE(r.attach_pdf_to_email, true),
@@ -168,7 +168,7 @@ func (r *PostgresRepository) GetByID(ctx context.Context, schemaName, tenantID, 
 // GetLines retrieves lines for a recurring invoice
 func (r *PostgresRepository) GetLines(ctx context.Context, schemaName, recurringInvoiceID string) ([]RecurringInvoiceLine, error) {
 	rows, err := r.db.Query(ctx, fmt.Sprintf(`
-		SELECT id, recurring_invoice_id, line_number, description, quantity, unit,
+		SELECT id, recurring_invoice_id, line_number, COALESCE(description, ''), quantity, COALESCE(unit, ''),
 		       unit_price, discount_percent, vat_rate, account_id, product_id
 		FROM %s.recurring_invoice_lines
 		WHERE recurring_invoice_id = $1
@@ -199,7 +199,7 @@ func (r *PostgresRepository) List(ctx context.Context, schemaName, tenantID stri
 	query := fmt.Sprintf(`
 		SELECT r.id, r.tenant_id, r.name, r.contact_id, COALESCE(c.name, ''),
 		       r.invoice_type, r.currency, r.frequency, r.start_date, r.end_date,
-		       r.next_generation_date, r.payment_terms_days, r.reference, r.notes,
+		       r.next_generation_date, r.payment_terms_days, COALESCE(r.reference, ''), COALESCE(r.notes, ''),
 		       r.is_active, r.last_generated_at, r.generated_count, r.created_at, r.created_by, r.updated_at,
 		       COALESCE(r.send_email_on_generation, false), COALESCE(r.email_template_type, 'INVOICE_SEND'),
 		       COALESCE(r.recipient_email_override, ''), COALESCE(r.attach_pdf_to_email, true),

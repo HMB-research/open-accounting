@@ -53,10 +53,13 @@ func (r *PostgresRepository) Create(ctx context.Context, schemaName string, cont
 // GetByID retrieves a contact by ID
 func (r *PostgresRepository) GetByID(ctx context.Context, schemaName, tenantID, contactID string) (*Contact, error) {
 	query := fmt.Sprintf(`
-		SELECT id, tenant_id, code, name, contact_type, reg_code, vat_number,
-		       email, phone, address_line1, address_line2, city, postal_code,
-		       country_code, payment_terms_days, credit_limit, default_account_id,
-		       is_active, notes, created_at, updated_at
+		SELECT id, tenant_id, COALESCE(code, ''), name, contact_type,
+		       COALESCE(reg_code, ''), COALESCE(vat_number, ''),
+		       COALESCE(email, ''), COALESCE(phone, ''),
+		       COALESCE(address_line1, ''), COALESCE(address_line2, ''),
+		       COALESCE(city, ''), COALESCE(postal_code, ''),
+		       country_code, payment_terms_days, COALESCE(credit_limit, 0), default_account_id,
+		       is_active, COALESCE(notes, ''), created_at, updated_at
 		FROM %s.contacts
 		WHERE id = $1 AND tenant_id = $2
 	`, schemaName)
@@ -83,10 +86,13 @@ func (r *PostgresRepository) GetByID(ctx context.Context, schemaName, tenantID, 
 // List retrieves contacts with optional filtering
 func (r *PostgresRepository) List(ctx context.Context, schemaName, tenantID string, filter *ContactFilter) ([]Contact, error) {
 	query := fmt.Sprintf(`
-		SELECT id, tenant_id, code, name, contact_type, reg_code, vat_number,
-		       email, phone, address_line1, address_line2, city, postal_code,
-		       country_code, payment_terms_days, credit_limit, default_account_id,
-		       is_active, notes, created_at, updated_at
+		SELECT id, tenant_id, COALESCE(code, ''), name, contact_type,
+		       COALESCE(reg_code, ''), COALESCE(vat_number, ''),
+		       COALESCE(email, ''), COALESCE(phone, ''),
+		       COALESCE(address_line1, ''), COALESCE(address_line2, ''),
+		       COALESCE(city, ''), COALESCE(postal_code, ''),
+		       country_code, payment_terms_days, COALESCE(credit_limit, 0), default_account_id,
+		       is_active, COALESCE(notes, ''), created_at, updated_at
 		FROM %s.contacts
 		WHERE tenant_id = $1
 	`, schemaName)
