@@ -3,20 +3,25 @@ import { test, expect } from '@playwright/test';
 /**
  * Live Demo Environment E2E Tests
  *
- * These tests run against the actual production demo at:
- * https://open-accounting.up.railway.app
+ * These tests run against:
+ * - Local environment (CI): Uses BASE_URL and PUBLIC_API_URL environment variables
+ * - Production demo: Falls back to Railway URLs
  *
  * Run with: npm run test:e2e:demo
  *
  * Prerequisites:
  * - Demo environment must be deployed and accessible
- * - Demo user (demo@example.com / demo123) must exist
+ * - Demo users (demo1@example.com / demo12345) must exist
  */
 
-const DEMO_URL = 'https://open-accounting.up.railway.app';
-const DEMO_API = 'https://open-accounting-api.up.railway.app';
-const DEMO_EMAIL = 'demo@example.com';
-const DEMO_PASSWORD = 'demo123';
+// Use environment variables for local testing, fall back to Railway for remote demo testing
+const DEMO_URL = process.env.BASE_URL || 'https://open-accounting.up.railway.app';
+const DEMO_API = process.env.PUBLIC_API_URL || 'https://open-accounting-api.up.railway.app';
+
+// Demo credentials for multi-user testing - use demo1 as the default
+const DEMO_EMAIL = 'demo1@example.com';
+const DEMO_PASSWORD = 'demo12345';
+const DEMO_TENANT_ID = 'b0000000-0000-0000-0001-000000000001';
 
 // Helper to login as demo user
 async function loginAsDemo(page: import('@playwright/test').Page) {
@@ -33,6 +38,14 @@ async function loginAsDemo(page: import('@playwright/test').Page) {
 
 	// Wait for navigation to dashboard
 	await page.waitForURL(/dashboard/, { timeout: 30000 });
+}
+
+// Helper to navigate with tenant parameter
+async function navigateToPage(page: import('@playwright/test').Page, path: string) {
+	const separator = path.includes('?') ? '&' : '?';
+	const url = `${DEMO_URL}${path}${separator}tenant=${DEMO_TENANT_ID}`;
+	await page.goto(url);
+	await page.waitForLoadState('networkidle');
 }
 
 test.describe('Demo Environment - Health Checks', () => {
@@ -169,15 +182,13 @@ test.describe('Demo Environment - Invoices', () => {
 			await expect(page).toHaveURL(/invoice/);
 		} else {
 			// Invoice link might not be visible in current view - navigate directly
-			await page.goto(`${DEMO_URL}/invoices`);
-			await page.waitForLoadState('networkidle');
+			await navigateToPage(page, '/invoices');
 			await expect(page).toHaveURL(/invoice/);
 		}
 	});
 
 	test('Invoices list displays', async ({ page }) => {
-		await page.goto(`${DEMO_URL}/invoices`);
-		await page.waitForLoadState('networkidle');
+		await navigateToPage(page, '/invoices');
 
 		// Should show invoice list or empty state or any content
 		const content = page.locator('main, [class*="content"], .container').first();
@@ -192,8 +203,7 @@ test.describe('Demo Environment - Invoices', () => {
 	});
 
 	test('Can access create invoice form', async ({ page }) => {
-		await page.goto(`${DEMO_URL}/invoices`);
-		await page.waitForLoadState('networkidle');
+		await navigateToPage(page, '/invoices');
 
 		const createButton = page.getByRole('link', { name: /new|create|add/i }).or(
 			page.getByRole('button', { name: /new|create|add/i })
@@ -231,8 +241,7 @@ test.describe('Demo Environment - Contacts', () => {
 	});
 
 	test('Contacts list displays', async ({ page }) => {
-		await page.goto(`${DEMO_URL}/contacts`);
-		await page.waitForLoadState('networkidle');
+		await navigateToPage(page, '/contacts');
 
 		const content = page.locator('main, [class*="content"]').first();
 		await expect(content).toBeVisible();
@@ -256,8 +265,7 @@ test.describe('Demo Environment - Reports', () => {
 	});
 
 	test('Reports page loads', async ({ page }) => {
-		await page.goto(`${DEMO_URL}/reports`);
-		await page.waitForLoadState('networkidle');
+		await navigateToPage(page, '/reports');
 
 		const content = page.locator('main, [class*="content"]').first();
 		await expect(content).toBeVisible();
