@@ -30,6 +30,10 @@ import (
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/pdf"
 	"github.com/HMB-research/open-accounting/internal/plugin"
+	"github.com/HMB-research/open-accounting/internal/assets"
+	"github.com/HMB-research/open-accounting/internal/inventory"
+	"github.com/HMB-research/open-accounting/internal/orders"
+	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/scheduler"
 	"github.com/HMB-research/open-accounting/internal/tax"
@@ -95,6 +99,10 @@ func main() {
 	taxService := tax.NewService(pool)
 	payrollService := payroll.NewService(pool)
 	pluginService := plugin.NewService(pool, "./plugins")
+	quotesService := quotes.NewService(pool)
+	ordersService := orders.NewService(pool)
+	assetsService := assets.NewService(pool)
+	inventoryService := inventory.NewService(pool)
 
 	// Load enabled plugins on startup
 	if err := pluginService.LoadEnabledPlugins(ctx); err != nil {
@@ -131,6 +139,10 @@ func main() {
 		taxService:        taxService,
 		payrollService:    payrollService,
 		pluginService:     pluginService,
+		quotesService:     quotesService,
+		ordersService:     ordersService,
+		assetsService:     assetsService,
+		inventoryService:  inventoryService,
 	}
 
 	// Setup router
@@ -335,6 +347,69 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/invoices/{invoiceID}/pdf", h.GetInvoicePDF)
 				r.Post("/invoices/{invoiceID}/send", h.SendInvoice)
 				r.Post("/invoices/{invoiceID}/void", h.VoidInvoice)
+
+				// Quotes
+				r.Get("/quotes", h.ListQuotes)
+				r.Post("/quotes", h.CreateQuote)
+				r.Get("/quotes/{quoteID}", h.GetQuote)
+				r.Put("/quotes/{quoteID}", h.UpdateQuote)
+				r.Delete("/quotes/{quoteID}", h.DeleteQuote)
+				r.Post("/quotes/{quoteID}/send", h.SendQuote)
+				r.Post("/quotes/{quoteID}/accept", h.AcceptQuote)
+				r.Post("/quotes/{quoteID}/reject", h.RejectQuote)
+
+				// Orders
+				r.Get("/orders", h.ListOrders)
+				r.Post("/orders", h.CreateOrder)
+				r.Get("/orders/{orderID}", h.GetOrder)
+				r.Put("/orders/{orderID}", h.UpdateOrder)
+				r.Delete("/orders/{orderID}", h.DeleteOrder)
+				r.Post("/orders/{orderID}/confirm", h.ConfirmOrder)
+				r.Post("/orders/{orderID}/process", h.ProcessOrder)
+				r.Post("/orders/{orderID}/ship", h.ShipOrder)
+				r.Post("/orders/{orderID}/deliver", h.DeliverOrder)
+				r.Post("/orders/{orderID}/cancel", h.CancelOrder)
+
+				// Fixed Assets
+				r.Get("/asset-categories", h.ListAssetCategories)
+				r.Post("/asset-categories", h.CreateAssetCategory)
+				r.Get("/asset-categories/{categoryID}", h.GetAssetCategory)
+				r.Delete("/asset-categories/{categoryID}", h.DeleteAssetCategory)
+				r.Get("/assets", h.ListAssets)
+				r.Post("/assets", h.CreateAsset)
+				r.Get("/assets/{assetID}", h.GetAsset)
+				r.Put("/assets/{assetID}", h.UpdateAsset)
+				r.Delete("/assets/{assetID}", h.DeleteAsset)
+				r.Post("/assets/{assetID}/activate", h.ActivateAsset)
+				r.Post("/assets/{assetID}/dispose", h.DisposeAsset)
+				r.Post("/assets/{assetID}/depreciation", h.RecordDepreciation)
+				r.Get("/assets/{assetID}/depreciation", h.GetDepreciationHistory)
+
+				// Inventory - Product Categories
+				r.Get("/product-categories", h.ListProductCategories)
+				r.Post("/product-categories", h.CreateProductCategory)
+				r.Get("/product-categories/{categoryID}", h.GetProductCategory)
+				r.Delete("/product-categories/{categoryID}", h.DeleteProductCategory)
+
+				// Inventory - Products
+				r.Get("/products", h.ListProducts)
+				r.Post("/products", h.CreateProduct)
+				r.Get("/products/{productID}", h.GetProduct)
+				r.Put("/products/{productID}", h.UpdateProduct)
+				r.Delete("/products/{productID}", h.DeleteProduct)
+				r.Get("/products/{productID}/stock-levels", h.GetStockLevels)
+				r.Get("/products/{productID}/movements", h.GetInventoryMovements)
+
+				// Inventory - Warehouses
+				r.Get("/warehouses", h.ListWarehouses)
+				r.Post("/warehouses", h.CreateWarehouse)
+				r.Get("/warehouses/{warehouseID}", h.GetWarehouse)
+				r.Put("/warehouses/{warehouseID}", h.UpdateWarehouse)
+				r.Delete("/warehouses/{warehouseID}", h.DeleteWarehouse)
+
+				// Inventory - Stock Operations
+				r.Post("/inventory/adjust", h.AdjustStock)
+				r.Post("/inventory/transfer", h.TransferStock)
 
 				// Payments
 				r.Get("/payments", h.ListPayments)

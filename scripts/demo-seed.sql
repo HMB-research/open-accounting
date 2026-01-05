@@ -69,6 +69,9 @@ SELECT add_email_tables_to_schema('tenant_acme');
 SELECT add_reconciliation_tables_to_schema('tenant_acme');
 SELECT add_payroll_tables('tenant_acme');
 SELECT add_recurring_email_fields_to_schema('tenant_acme');
+SELECT add_quotes_and_orders_tables('tenant_acme');
+SELECT add_fixed_assets_tables('tenant_acme');
+SELECT create_inventory_tables('tenant_acme');
 
 -- =============================================================================
 -- CHART OF ACCOUNTS (Estonian standard chart)
@@ -358,6 +361,176 @@ INSERT INTO tenant_acme.bank_transactions (id, tenant_id, bank_account_id, trans
 ON CONFLICT DO NOTHING;
 
 -- =============================================================================
+-- QUOTES (Pakkumised)
+-- =============================================================================
+
+INSERT INTO tenant_acme.quotes (id, tenant_id, quote_number, contact_id, quote_date, valid_until, status, subtotal, vat_amount, total, notes, created_by) VALUES
+-- Active quote for TechStart
+('90000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'QT-2024-001', 'd0000000-0000-0000-0001-000000000001'::uuid, CURRENT_DATE - 5, CURRENT_DATE + 25, 'SENT', 8500.00, 1870.00, 10370.00, 'Enterprise software package with 1 year support', 'a0000000-0000-0000-0000-000000000001'::uuid),
+-- Quote pending response
+('90000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'QT-2024-002', 'd0000000-0000-0000-0001-000000000002'::uuid, CURRENT_DATE - 10, CURRENT_DATE + 20, 'SENT', 3200.00, 704.00, 3904.00, 'Web development services Q1 2025', 'a0000000-0000-0000-0000-000000000001'::uuid),
+-- Accepted quote (converted to order)
+('90000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'QT-2024-003', 'd0000000-0000-0000-0001-000000000003'::uuid, CURRENT_DATE - 30, CURRENT_DATE - 15, 'CONVERTED', 5600.00, 1232.00, 6832.00, 'IT consulting services', 'a0000000-0000-0000-0000-000000000001'::uuid),
+-- Draft quote
+('90000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'QT-2025-001', 'd0000000-0000-0000-0001-000000000001'::uuid, CURRENT_DATE, CURRENT_DATE + 30, 'DRAFT', 12000.00, 2640.00, 14640.00, 'Annual support contract renewal', 'a0000000-0000-0000-0000-000000000001'::uuid)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO tenant_acme.quote_lines (id, tenant_id, quote_id, line_number, description, quantity, unit, unit_price, vat_rate, line_subtotal, line_vat, line_total) VALUES
+-- Lines for QT-2024-001
+('91000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '90000000-0000-0000-0001-000000000001'::uuid, 1, 'Enterprise Software License', 1, 'pcs', 6000.00, 22.00, 6000.00, 1320.00, 7320.00),
+('91000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '90000000-0000-0000-0001-000000000001'::uuid, 2, 'Implementation Services', 10, 'h', 150.00, 22.00, 1500.00, 330.00, 1830.00),
+('91000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '90000000-0000-0000-0001-000000000001'::uuid, 3, 'Annual Support Package', 1, 'pcs', 1000.00, 22.00, 1000.00, 220.00, 1220.00),
+-- Lines for QT-2024-002
+('91000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '90000000-0000-0000-0001-000000000002'::uuid, 1, 'Website Redesign', 1, 'pcs', 2400.00, 22.00, 2400.00, 528.00, 2928.00),
+('91000000-0000-0000-0001-000000000005'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '90000000-0000-0000-0001-000000000002'::uuid, 2, 'Content Migration', 8, 'h', 100.00, 22.00, 800.00, 176.00, 976.00),
+-- Lines for QT-2024-003
+('91000000-0000-0000-0001-000000000006'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '90000000-0000-0000-0001-000000000003'::uuid, 1, 'IT Consulting - Strategy', 20, 'h', 180.00, 22.00, 3600.00, 792.00, 4392.00),
+('91000000-0000-0000-0001-000000000007'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '90000000-0000-0000-0001-000000000003'::uuid, 2, 'IT Consulting - Implementation', 20, 'h', 100.00, 22.00, 2000.00, 440.00, 2440.00),
+-- Lines for QT-2025-001
+('91000000-0000-0000-0001-000000000008'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '90000000-0000-0000-0001-000000000004'::uuid, 1, 'Premium Support Package 2025', 12, 'month', 1000.00, 22.00, 12000.00, 2640.00, 14640.00)
+ON CONFLICT DO NOTHING;
+
+-- =============================================================================
+-- ORDERS (Tellimused)
+-- =============================================================================
+
+INSERT INTO tenant_acme.orders (id, tenant_id, order_number, contact_id, order_date, expected_delivery, status, subtotal, vat_amount, total, notes, quote_id, created_by) VALUES
+-- Order from converted quote
+('92000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'ORD-2024-001', 'd0000000-0000-0000-0001-000000000003'::uuid, CURRENT_DATE - 15, CURRENT_DATE - 1, 'DELIVERED', 5600.00, 1232.00, 6832.00, 'Converted from QT-2024-003', '90000000-0000-0000-0001-000000000003'::uuid, 'a0000000-0000-0000-0000-000000000001'::uuid),
+-- Order in processing
+('92000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'ORD-2024-002', 'd0000000-0000-0000-0001-000000000001'::uuid, CURRENT_DATE - 3, CURRENT_DATE + 10, 'PROCESSING', 4500.00, 990.00, 5490.00, 'Software development services', NULL, 'a0000000-0000-0000-0000-000000000001'::uuid),
+-- Pending order
+('92000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'ORD-2025-001', 'd0000000-0000-0000-0001-000000000002'::uuid, CURRENT_DATE, CURRENT_DATE + 14, 'PENDING', 2800.00, 616.00, 3416.00, 'Training services', NULL, 'a0000000-0000-0000-0000-000000000001'::uuid)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO tenant_acme.order_lines (id, tenant_id, order_id, line_number, description, quantity, unit, unit_price, vat_rate, line_subtotal, line_vat, line_total) VALUES
+-- Lines for ORD-2024-001
+('93000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '92000000-0000-0000-0001-000000000001'::uuid, 1, 'IT Consulting - Strategy', 20, 'h', 180.00, 22.00, 3600.00, 792.00, 4392.00),
+('93000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '92000000-0000-0000-0001-000000000001'::uuid, 2, 'IT Consulting - Implementation', 20, 'h', 100.00, 22.00, 2000.00, 440.00, 2440.00),
+-- Lines for ORD-2024-002
+('93000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '92000000-0000-0000-0001-000000000002'::uuid, 1, 'Custom Software Module', 1, 'pcs', 3500.00, 22.00, 3500.00, 770.00, 4270.00),
+('93000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '92000000-0000-0000-0001-000000000002'::uuid, 2, 'Integration Services', 10, 'h', 100.00, 22.00, 1000.00, 220.00, 1220.00),
+-- Lines for ORD-2025-001
+('93000000-0000-0000-0001-000000000005'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '92000000-0000-0000-0001-000000000003'::uuid, 1, 'Training Workshop - Basics', 2, 'day', 800.00, 22.00, 1600.00, 352.00, 1952.00),
+('93000000-0000-0000-0001-000000000006'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '92000000-0000-0000-0001-000000000003'::uuid, 2, 'Training Workshop - Advanced', 1.5, 'day', 800.00, 22.00, 1200.00, 264.00, 1464.00)
+ON CONFLICT DO NOTHING;
+
+-- Update converted quote with order reference
+UPDATE tenant_acme.quotes SET converted_to_order_id = '92000000-0000-0000-0001-000000000001'::uuid WHERE id = '90000000-0000-0000-0001-000000000003'::uuid;
+
+-- =============================================================================
+-- CASH PAYMENTS (Kassamaksed)
+-- =============================================================================
+
+INSERT INTO tenant_acme.cash_payments (id, tenant_id, payment_number, payment_date, payment_type, amount, description, contact_id, account_id, created_by) VALUES
+-- Cash income
+('94000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'CASH-2024-001', '2024-11-15', 'INCOME', 150.00, 'Cash sale - office supplies', NULL, 'c0000000-0000-0000-0004-000000000001'::uuid, 'a0000000-0000-0000-0000-000000000001'::uuid),
+('94000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'CASH-2024-002', '2024-11-20', 'INCOME', 250.00, 'Cash sale - consultation', 'd0000000-0000-0000-0001-000000000001'::uuid, 'c0000000-0000-0000-0004-000000000002'::uuid, 'a0000000-0000-0000-0000-000000000001'::uuid),
+('94000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'CASH-2024-003', '2024-12-05', 'INCOME', 85.00, 'Cash payment received', 'd0000000-0000-0000-0001-000000000003'::uuid, 'c0000000-0000-0000-0004-000000000001'::uuid, 'a0000000-0000-0000-0000-000000000001'::uuid),
+-- Cash expenses
+('94000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'CASH-2024-004', '2024-11-10', 'EXPENSE', 45.50, 'Parking fees', NULL, 'c0000000-0000-0000-0005-000000000008'::uuid, 'a0000000-0000-0000-0000-000000000001'::uuid),
+('94000000-0000-0000-0001-000000000005'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'CASH-2024-005', '2024-11-25', 'EXPENSE', 120.00, 'Office supplies purchase', 'd0000000-0000-0000-0002-000000000001'::uuid, 'c0000000-0000-0000-0005-000000000006'::uuid, 'a0000000-0000-0000-0000-000000000001'::uuid),
+('94000000-0000-0000-0001-000000000006'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'CASH-2024-006', '2024-12-12', 'EXPENSE', 35.00, 'Postage stamps', NULL, 'c0000000-0000-0000-0005-000000000011'::uuid, 'a0000000-0000-0000-0000-000000000001'::uuid)
+ON CONFLICT DO NOTHING;
+
+-- =============================================================================
+-- FIXED ASSETS (Põhivarad)
+-- =============================================================================
+
+-- Asset Categories
+INSERT INTO tenant_acme.asset_categories (id, tenant_id, name, description, default_useful_life_months, default_residual_percent, depreciation_method) VALUES
+('95000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Computer Equipment', 'Computers, laptops, servers', 36, 10, 'STRAIGHT_LINE'),
+('95000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Office Furniture', 'Desks, chairs, cabinets', 60, 5, 'STRAIGHT_LINE'),
+('95000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Vehicles', 'Company vehicles', 60, 15, 'DECLINING_BALANCE'),
+('95000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Software Licenses', 'Licensed software', 36, 0, 'STRAIGHT_LINE')
+ON CONFLICT DO NOTHING;
+
+-- Fixed Assets
+INSERT INTO tenant_acme.fixed_assets (id, tenant_id, asset_number, name, description, category_id, purchase_date, purchase_cost, residual_value, useful_life_months, depreciation_method, depreciation_start_date, book_value, accumulated_depreciation, status, serial_number, location) VALUES
+('96000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'FA-2023-001', 'Dell Server PowerEdge R740', 'Main production server', '95000000-0000-0000-0001-000000000001'::uuid, '2023-03-15', 8500.00, 850.00, 36, 'STRAIGHT_LINE', '2023-04-01', 4131.94, 4368.06, 'ACTIVE', 'SRV-2023-0001', 'Server Room'),
+('96000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'FA-2023-002', 'MacBook Pro 16"', 'Developer workstation', '95000000-0000-0000-0001-000000000001'::uuid, '2023-06-01', 2800.00, 280.00, 36, 'STRAIGHT_LINE', '2023-07-01', 1540.00, 1260.00, 'ACTIVE', 'MBP-2023-0001', 'Office - Desk 1'),
+('96000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'FA-2024-001', 'Office Desk Set', 'Executive desk with drawers', '95000000-0000-0000-0001-000000000002'::uuid, '2024-01-15', 1200.00, 60.00, 60, 'STRAIGHT_LINE', '2024-02-01', 1009.00, 191.00, 'ACTIVE', NULL, 'Office - Manager'),
+('96000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'FA-2024-002', 'Adobe Creative Cloud License', '3-year enterprise license', '95000000-0000-0000-0001-000000000004'::uuid, '2024-06-01', 3600.00, 0.00, 36, 'STRAIGHT_LINE', '2024-06-01', 2900.00, 700.00, 'ACTIVE', 'ACC-ENT-2024', 'N/A'),
+('96000000-0000-0000-0001-000000000005'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'FA-2022-001', 'Old Laptop HP EliteBook', 'Disposed equipment', '95000000-0000-0000-0001-000000000001'::uuid, '2022-01-15', 1500.00, 150.00, 36, 'STRAIGHT_LINE', '2022-02-01', 0.00, 1350.00, 'DISPOSED', 'HP-2022-0001', 'Disposed'),
+-- Draft asset
+('96000000-0000-0000-0001-000000000006'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'FA-2025-001', 'New Conference Room Setup', 'Table, chairs, display', '95000000-0000-0000-0001-000000000002'::uuid, CURRENT_DATE, 4500.00, 225.00, 60, 'STRAIGHT_LINE', NULL, 4500.00, 0.00, 'DRAFT', NULL, 'Conference Room')
+ON CONFLICT DO NOTHING;
+
+-- Depreciation Entries (sample entries for active assets)
+INSERT INTO tenant_acme.depreciation_entries (id, tenant_id, asset_id, period_start, period_end, depreciation_amount, book_value_after) VALUES
+-- Server depreciation entries
+('97000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '96000000-0000-0000-0001-000000000001'::uuid, '2024-10-01', '2024-10-31', 212.50, 4556.94),
+('97000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '96000000-0000-0000-0001-000000000001'::uuid, '2024-11-01', '2024-11-30', 212.50, 4344.44),
+('97000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '96000000-0000-0000-0001-000000000001'::uuid, '2024-12-01', '2024-12-31', 212.50, 4131.94),
+-- MacBook depreciation entries
+('97000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '96000000-0000-0000-0001-000000000002'::uuid, '2024-10-01', '2024-10-31', 70.00, 1680.00),
+('97000000-0000-0000-0001-000000000005'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '96000000-0000-0000-0001-000000000002'::uuid, '2024-11-01', '2024-11-30', 70.00, 1610.00),
+('97000000-0000-0000-0001-000000000006'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '96000000-0000-0000-0001-000000000002'::uuid, '2024-12-01', '2024-12-31', 70.00, 1540.00)
+ON CONFLICT DO NOTHING;
+
+-- =============================================================================
+-- INVENTORY / WAREHOUSE (Ladu)
+-- =============================================================================
+
+-- Product Categories
+INSERT INTO tenant_acme.product_categories (id, tenant_id, name, description) VALUES
+('98000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Software Licenses', 'Digital software products'),
+('98000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Hardware', 'Physical computer equipment'),
+('98000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Consulting Services', 'Professional service packages'),
+('98000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Office Supplies', 'General office items')
+ON CONFLICT DO NOTHING;
+
+-- Warehouses
+INSERT INTO tenant_acme.warehouses (id, tenant_id, code, name, address, is_default, is_active) VALUES
+('99000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'MAIN', 'Main Warehouse', 'Viru väljak 2, 10111 Tallinn', true, true),
+('99000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'BACKUP', 'Backup Storage', 'Pärnu mnt 15, 10141 Tallinn', false, true)
+ON CONFLICT DO NOTHING;
+
+-- Products (uses existing products table with 'code', 'sale_price' and 'is_active' columns)
+INSERT INTO tenant_acme.products (id, tenant_id, code, name, description, product_type, category_id, unit, purchase_price, sale_price, vat_rate, min_stock_level, current_stock, reorder_point, is_active) VALUES
+-- Software
+('9A000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'SW-ENT-001', 'Enterprise Suite License', 'Annual enterprise software license', 'SERVICE', '98000000-0000-0000-0001-000000000001'::uuid, 'pcs', 800.00, 1200.00, 22.00, 5, 25, 10, true),
+('9A000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'SW-PRO-001', 'Professional License', 'Professional tier license', 'SERVICE', '98000000-0000-0000-0001-000000000001'::uuid, 'pcs', 400.00, 600.00, 22.00, 10, 50, 20, true),
+-- Hardware
+('9A000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'HW-USB-001', 'Security USB Key', 'Hardware authentication key', 'GOODS', '98000000-0000-0000-0001-000000000002'::uuid, 'pcs', 25.00, 45.00, 22.00, 20, 15, 25, true),
+('9A000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'HW-CAB-001', 'Network Cable Cat6 (5m)', 'Category 6 ethernet cable', 'GOODS', '98000000-0000-0000-0001-000000000002'::uuid, 'pcs', 3.50, 8.00, 22.00, 50, 120, 60, true),
+-- Services
+('9A000000-0000-0000-0001-000000000005'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'SVC-CON-001', 'Consulting Hour', 'IT consulting services', 'SERVICE', '98000000-0000-0000-0001-000000000003'::uuid, 'h', 0.00, 150.00, 22.00, 0, 0, 0, true),
+('9A000000-0000-0000-0001-000000000006'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'SVC-TRN-001', 'Training Session', 'Half-day training session', 'SERVICE', '98000000-0000-0000-0001-000000000003'::uuid, 'session', 0.00, 800.00, 22.00, 0, 0, 0, true),
+-- Office Supplies (low stock example)
+('9A000000-0000-0000-0001-000000000007'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'OFF-PAP-001', 'A4 Paper Ream', 'White copy paper 80gsm', 'GOODS', '98000000-0000-0000-0001-000000000004'::uuid, 'ream', 3.00, 5.50, 22.00, 20, 8, 15, true),
+-- Inactive product
+('9A000000-0000-0000-0001-000000000008'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'HW-OLD-001', 'Legacy Software Key', 'Discontinued product', 'GOODS', '98000000-0000-0000-0001-000000000002'::uuid, 'pcs', 15.00, 30.00, 22.00, 0, 3, 0, false)
+ON CONFLICT DO NOTHING;
+
+-- Stock Levels per Warehouse
+INSERT INTO tenant_acme.stock_levels (id, tenant_id, product_id, warehouse_id, quantity, reserved_qty, available_qty) VALUES
+-- Main warehouse
+('9B000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '9A000000-0000-0000-0001-000000000003'::uuid, '99000000-0000-0000-0001-000000000001'::uuid, 10, 2, 8),
+('9B000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '9A000000-0000-0000-0001-000000000004'::uuid, '99000000-0000-0000-0001-000000000001'::uuid, 80, 0, 80),
+('9B000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '9A000000-0000-0000-0001-000000000007'::uuid, '99000000-0000-0000-0001-000000000001'::uuid, 5, 0, 5),
+-- Backup warehouse
+('9B000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '9A000000-0000-0000-0001-000000000003'::uuid, '99000000-0000-0000-0001-000000000002'::uuid, 5, 0, 5),
+('9B000000-0000-0000-0001-000000000005'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '9A000000-0000-0000-0001-000000000004'::uuid, '99000000-0000-0000-0001-000000000002'::uuid, 40, 0, 40),
+('9B000000-0000-0000-0001-000000000006'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '9A000000-0000-0000-0001-000000000007'::uuid, '99000000-0000-0000-0001-000000000002'::uuid, 3, 0, 3)
+ON CONFLICT DO NOTHING;
+
+-- Inventory Movements
+INSERT INTO tenant_acme.inventory_movements (id, tenant_id, product_id, warehouse_id, movement_type, quantity, unit_cost, total_cost, reference, notes, movement_date, created_by) VALUES
+-- Initial stock receipt
+('9C000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '9A000000-0000-0000-0001-000000000003'::uuid, '99000000-0000-0000-0001-000000000001'::uuid, 'IN', 20, 25.00, 500.00, 'PO-2024-001', 'Initial stock purchase', '2024-10-01', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('9C000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '9A000000-0000-0000-0001-000000000004'::uuid, '99000000-0000-0000-0001-000000000001'::uuid, 'IN', 100, 3.50, 350.00, 'PO-2024-001', 'Initial stock purchase', '2024-10-01', 'a0000000-0000-0000-0000-000000000001'::uuid),
+-- Sales
+('9C000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '9A000000-0000-0000-0001-000000000003'::uuid, '99000000-0000-0000-0001-000000000001'::uuid, 'OUT', 5, 25.00, 125.00, 'INV-2024-005', 'Sold with invoice', '2024-11-15', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('9C000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '9A000000-0000-0000-0001-000000000004'::uuid, '99000000-0000-0000-0001-000000000001'::uuid, 'OUT', 20, 3.50, 70.00, 'INV-2024-006', 'Sold with invoice', '2024-11-20', 'a0000000-0000-0000-0000-000000000001'::uuid),
+-- Transfer between warehouses
+('9C000000-0000-0000-0001-000000000005'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '9A000000-0000-0000-0001-000000000003'::uuid, '99000000-0000-0000-0001-000000000001'::uuid, 'TRANSFER', 5, 25.00, 125.00, 'TRF-2024-001', 'Transfer to backup warehouse', '2024-12-01', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('9C000000-0000-0000-0001-000000000006'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '9A000000-0000-0000-0001-000000000003'::uuid, '99000000-0000-0000-0001-000000000002'::uuid, 'IN', 5, 25.00, 125.00, 'TRF-2024-001', 'Received from main warehouse', '2024-12-01', 'a0000000-0000-0000-0000-000000000001'::uuid),
+-- Stock adjustment
+('9C000000-0000-0000-0001-000000000007'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '9A000000-0000-0000-0001-000000000007'::uuid, '99000000-0000-0000-0001-000000000001'::uuid, 'ADJUSTMENT', 5, 3.00, 15.00, 'ADJ-2024-001', 'Inventory count correction', '2024-12-15', 'a0000000-0000-0000-0000-000000000001'::uuid)
+ON CONFLICT DO NOTHING;
+
+-- =============================================================================
 -- SUCCESS MESSAGE
 -- =============================================================================
 
@@ -377,6 +550,12 @@ BEGIN
     RAISE NOTICE '  - 7 Contacts (4 customers, 3 suppliers)';
     RAISE NOTICE '  - 9 Invoices with various statuses';
     RAISE NOTICE '  - 4 Payments';
+    RAISE NOTICE '  - 6 Cash Payments';
+    RAISE NOTICE '  - 4 Quotes';
+    RAISE NOTICE '  - 3 Orders';
+    RAISE NOTICE '  - 6 Fixed Assets';
+    RAISE NOTICE '  - 8 Products';
+    RAISE NOTICE '  - 2 Warehouses';
     RAISE NOTICE '  - 5 Employees';
     RAISE NOTICE '  - 3 Payroll Runs with Payslips';
     RAISE NOTICE '  - 3 TSD Declarations';

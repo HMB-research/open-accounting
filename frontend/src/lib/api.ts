@@ -395,6 +395,7 @@ class ApiClient {
 	async listPayments(tenantId: string, filter?: PaymentFilter) {
 		const params = new URLSearchParams();
 		if (filter?.type) params.set('type', filter.type);
+		if (filter?.method) params.set('method', filter.method);
 		if (filter?.contact_id) params.set('contact_id', filter.contact_id);
 		if (filter?.from_date) params.set('from_date', filter.from_date);
 		if (filter?.to_date) params.set('to_date', filter.to_date);
@@ -423,6 +424,239 @@ class ApiClient {
 			'GET',
 			`/api/v1/tenants/${tenantId}/payments/unallocated?type=${type}`
 		);
+	}
+
+	// Quote endpoints
+	async listQuotes(tenantId: string, filter?: QuoteFilter) {
+		const params = new URLSearchParams();
+		if (filter?.status) params.set('status', filter.status);
+		if (filter?.contact_id) params.set('contact_id', filter.contact_id);
+		if (filter?.from_date) params.set('from_date', filter.from_date);
+		if (filter?.to_date) params.set('to_date', filter.to_date);
+		if (filter?.search) params.set('search', filter.search);
+		const query = params.toString() ? `?${params.toString()}` : '';
+		return this.request<Quote[]>('GET', `/api/v1/tenants/${tenantId}/quotes${query}`);
+	}
+
+	async createQuote(tenantId: string, data: CreateQuoteRequest) {
+		return this.request<Quote>('POST', `/api/v1/tenants/${tenantId}/quotes`, data);
+	}
+
+	async getQuote(tenantId: string, quoteId: string) {
+		return this.request<Quote>('GET', `/api/v1/tenants/${tenantId}/quotes/${quoteId}`);
+	}
+
+	async updateQuote(tenantId: string, quoteId: string, data: UpdateQuoteRequest) {
+		return this.request<Quote>('PUT', `/api/v1/tenants/${tenantId}/quotes/${quoteId}`, data);
+	}
+
+	async deleteQuote(tenantId: string, quoteId: string) {
+		return this.request<void>('DELETE', `/api/v1/tenants/${tenantId}/quotes/${quoteId}`);
+	}
+
+	async sendQuote(tenantId: string, quoteId: string) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/quotes/${quoteId}/send`);
+	}
+
+	async acceptQuote(tenantId: string, quoteId: string) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/quotes/${quoteId}/accept`);
+	}
+
+	async rejectQuote(tenantId: string, quoteId: string) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/quotes/${quoteId}/reject`);
+	}
+
+	// Orders endpoints
+	async listOrders(tenantId: string, filter?: OrderFilter) {
+		const params = new URLSearchParams();
+		if (filter?.status) params.set('status', filter.status);
+		if (filter?.contact_id) params.set('contact_id', filter.contact_id);
+		if (filter?.from_date) params.set('from_date', filter.from_date);
+		if (filter?.to_date) params.set('to_date', filter.to_date);
+		if (filter?.search) params.set('search', filter.search);
+		const query = params.toString() ? `?${params.toString()}` : '';
+		return this.request<Order[]>('GET', `/api/v1/tenants/${tenantId}/orders${query}`);
+	}
+
+	async createOrder(tenantId: string, data: CreateOrderRequest) {
+		return this.request<Order>('POST', `/api/v1/tenants/${tenantId}/orders`, data);
+	}
+
+	async getOrder(tenantId: string, orderId: string) {
+		return this.request<Order>('GET', `/api/v1/tenants/${tenantId}/orders/${orderId}`);
+	}
+
+	async updateOrder(tenantId: string, orderId: string, data: UpdateOrderRequest) {
+		return this.request<Order>('PUT', `/api/v1/tenants/${tenantId}/orders/${orderId}`, data);
+	}
+
+	async deleteOrder(tenantId: string, orderId: string) {
+		return this.request<void>('DELETE', `/api/v1/tenants/${tenantId}/orders/${orderId}`);
+	}
+
+	async confirmOrder(tenantId: string, orderId: string) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/orders/${orderId}/confirm`);
+	}
+
+	async processOrder(tenantId: string, orderId: string) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/orders/${orderId}/process`);
+	}
+
+	async shipOrder(tenantId: string, orderId: string) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/orders/${orderId}/ship`);
+	}
+
+	async deliverOrder(tenantId: string, orderId: string) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/orders/${orderId}/deliver`);
+	}
+
+	async cancelOrder(tenantId: string, orderId: string) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/orders/${orderId}/cancel`);
+	}
+
+	// Fixed Assets - Categories endpoints
+	async listAssetCategories(tenantId: string) {
+		return this.request<AssetCategory[]>('GET', `/api/v1/tenants/${tenantId}/asset-categories`);
+	}
+
+	async createAssetCategory(tenantId: string, data: CreateAssetCategoryRequest) {
+		return this.request<AssetCategory>('POST', `/api/v1/tenants/${tenantId}/asset-categories`, data);
+	}
+
+	async getAssetCategory(tenantId: string, categoryId: string) {
+		return this.request<AssetCategory>('GET', `/api/v1/tenants/${tenantId}/asset-categories/${categoryId}`);
+	}
+
+	async deleteAssetCategory(tenantId: string, categoryId: string) {
+		return this.request<void>('DELETE', `/api/v1/tenants/${tenantId}/asset-categories/${categoryId}`);
+	}
+
+	// Fixed Assets endpoints
+	async listAssets(tenantId: string, filter?: AssetFilter) {
+		const params = new URLSearchParams();
+		if (filter?.status) params.set('status', filter.status);
+		if (filter?.category_id) params.set('category_id', filter.category_id);
+		if (filter?.from_date) params.set('from_date', filter.from_date);
+		if (filter?.to_date) params.set('to_date', filter.to_date);
+		if (filter?.search) params.set('search', filter.search);
+		const query = params.toString() ? `?${params.toString()}` : '';
+		return this.request<FixedAsset[]>('GET', `/api/v1/tenants/${tenantId}/assets${query}`);
+	}
+
+	async createAsset(tenantId: string, data: CreateAssetRequest) {
+		return this.request<FixedAsset>('POST', `/api/v1/tenants/${tenantId}/assets`, data);
+	}
+
+	async getAsset(tenantId: string, assetId: string) {
+		return this.request<FixedAsset>('GET', `/api/v1/tenants/${tenantId}/assets/${assetId}`);
+	}
+
+	async updateAsset(tenantId: string, assetId: string, data: UpdateAssetRequest) {
+		return this.request<FixedAsset>('PUT', `/api/v1/tenants/${tenantId}/assets/${assetId}`, data);
+	}
+
+	async deleteAsset(tenantId: string, assetId: string) {
+		return this.request<void>('DELETE', `/api/v1/tenants/${tenantId}/assets/${assetId}`);
+	}
+
+	async activateAsset(tenantId: string, assetId: string) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/assets/${assetId}/activate`);
+	}
+
+	async disposeAsset(tenantId: string, assetId: string, data: DisposeAssetRequest) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/assets/${assetId}/dispose`, data);
+	}
+
+	async recordDepreciation(tenantId: string, assetId: string, data: RecordDepreciationRequest) {
+		return this.request<DepreciationEntry>('POST', `/api/v1/tenants/${tenantId}/assets/${assetId}/depreciate`, data);
+	}
+
+	async getDepreciationHistory(tenantId: string, assetId: string) {
+		return this.request<DepreciationEntry[]>('GET', `/api/v1/tenants/${tenantId}/assets/${assetId}/depreciation`);
+	}
+
+	// Inventory - Product Categories endpoints
+	async listProductCategories(tenantId: string) {
+		return this.request<ProductCategory[]>('GET', `/api/v1/tenants/${tenantId}/product-categories`);
+	}
+
+	async createProductCategory(tenantId: string, data: CreateProductCategoryRequest) {
+		return this.request<ProductCategory>('POST', `/api/v1/tenants/${tenantId}/product-categories`, data);
+	}
+
+	async getProductCategory(tenantId: string, categoryId: string) {
+		return this.request<ProductCategory>('GET', `/api/v1/tenants/${tenantId}/product-categories/${categoryId}`);
+	}
+
+	async deleteProductCategory(tenantId: string, categoryId: string) {
+		return this.request<void>('DELETE', `/api/v1/tenants/${tenantId}/product-categories/${categoryId}`);
+	}
+
+	// Inventory - Products endpoints
+	async listProducts(tenantId: string, filter?: ProductFilter) {
+		const params = new URLSearchParams();
+		if (filter?.product_type) params.set('product_type', filter.product_type);
+		if (filter?.status) params.set('status', filter.status);
+		if (filter?.category_id) params.set('category_id', filter.category_id);
+		if (filter?.search) params.set('search', filter.search);
+		if (filter?.low_stock) params.set('low_stock', 'true');
+		const query = params.toString() ? `?${params.toString()}` : '';
+		return this.request<Product[]>('GET', `/api/v1/tenants/${tenantId}/products${query}`);
+	}
+
+	async createProduct(tenantId: string, data: CreateProductRequest) {
+		return this.request<Product>('POST', `/api/v1/tenants/${tenantId}/products`, data);
+	}
+
+	async getProduct(tenantId: string, productId: string) {
+		return this.request<Product>('GET', `/api/v1/tenants/${tenantId}/products/${productId}`);
+	}
+
+	async updateProduct(tenantId: string, productId: string, data: UpdateProductRequest) {
+		return this.request<Product>('PUT', `/api/v1/tenants/${tenantId}/products/${productId}`, data);
+	}
+
+	async deleteProduct(tenantId: string, productId: string) {
+		return this.request<void>('DELETE', `/api/v1/tenants/${tenantId}/products/${productId}`);
+	}
+
+	async getProductStockLevels(tenantId: string, productId: string) {
+		return this.request<StockLevel[]>('GET', `/api/v1/tenants/${tenantId}/products/${productId}/stock`);
+	}
+
+	async getProductMovements(tenantId: string, productId: string) {
+		return this.request<InventoryMovement[]>('GET', `/api/v1/tenants/${tenantId}/products/${productId}/movements`);
+	}
+
+	// Inventory - Warehouses endpoints
+	async listWarehouses(tenantId: string, activeOnly = false) {
+		const query = activeOnly ? '?active_only=true' : '';
+		return this.request<Warehouse[]>('GET', `/api/v1/tenants/${tenantId}/warehouses${query}`);
+	}
+
+	async createWarehouse(tenantId: string, data: CreateWarehouseRequest) {
+		return this.request<Warehouse>('POST', `/api/v1/tenants/${tenantId}/warehouses`, data);
+	}
+
+	async getWarehouse(tenantId: string, warehouseId: string) {
+		return this.request<Warehouse>('GET', `/api/v1/tenants/${tenantId}/warehouses/${warehouseId}`);
+	}
+
+	async updateWarehouse(tenantId: string, warehouseId: string, data: UpdateWarehouseRequest) {
+		return this.request<Warehouse>('PUT', `/api/v1/tenants/${tenantId}/warehouses/${warehouseId}`, data);
+	}
+
+	async deleteWarehouse(tenantId: string, warehouseId: string) {
+		return this.request<void>('DELETE', `/api/v1/tenants/${tenantId}/warehouses/${warehouseId}`);
+	}
+
+	// Inventory - Stock Operations
+	async adjustStock(tenantId: string, data: AdjustStockRequest) {
+		return this.request<InventoryMovement>('POST', `/api/v1/tenants/${tenantId}/inventory/adjust`, data);
+	}
+
+	async transferStock(tenantId: string, data: TransferStockRequest) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/inventory/transfer`, data);
 	}
 
 	// Analytics endpoints
@@ -1393,9 +1627,473 @@ export interface AllocationRequest {
 
 export interface PaymentFilter {
 	type?: PaymentType;
+	method?: string;
 	contact_id?: string;
 	from_date?: string;
 	to_date?: string;
+}
+
+// Quote types
+export type QuoteStatus = 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | 'CONVERTED';
+
+export interface Quote {
+	id: string;
+	tenant_id: string;
+	quote_number: string;
+	contact_id: string;
+	contact?: Contact;
+	quote_date: string;
+	valid_until?: string;
+	status: QuoteStatus;
+	currency: string;
+	exchange_rate: Decimal;
+	subtotal: Decimal;
+	vat_amount: Decimal;
+	total: Decimal;
+	notes?: string;
+	converted_to_order_id?: string;
+	converted_to_invoice_id?: string;
+	lines: QuoteLine[];
+	created_at: string;
+	created_by: string;
+	updated_at: string;
+}
+
+export interface QuoteLine {
+	id: string;
+	tenant_id: string;
+	quote_id: string;
+	line_number: number;
+	description: string;
+	quantity: Decimal;
+	unit?: string;
+	unit_price: Decimal;
+	discount_percent: Decimal;
+	vat_rate: Decimal;
+	line_subtotal: Decimal;
+	line_vat: Decimal;
+	line_total: Decimal;
+	product_id?: string;
+}
+
+export interface CreateQuoteRequest {
+	contact_id: string;
+	quote_date: string;
+	valid_until?: string;
+	currency?: string;
+	exchange_rate?: string;
+	notes?: string;
+	lines: CreateQuoteLineRequest[];
+}
+
+export interface CreateQuoteLineRequest {
+	description: string;
+	quantity: string;
+	unit?: string;
+	unit_price: string;
+	discount_percent?: string;
+	vat_rate: string;
+	product_id?: string;
+}
+
+export interface UpdateQuoteRequest {
+	contact_id: string;
+	quote_date: string;
+	valid_until?: string;
+	currency?: string;
+	exchange_rate?: string;
+	notes?: string;
+	lines: CreateQuoteLineRequest[];
+}
+
+export interface QuoteFilter {
+	status?: QuoteStatus;
+	contact_id?: string;
+	from_date?: string;
+	to_date?: string;
+	search?: string;
+}
+
+// Order types
+export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
+
+export interface Order {
+	id: string;
+	tenant_id: string;
+	order_number: string;
+	contact_id: string;
+	contact?: Contact;
+	order_date: string;
+	expected_delivery?: string;
+	status: OrderStatus;
+	currency: string;
+	exchange_rate: Decimal;
+	subtotal: Decimal;
+	vat_amount: Decimal;
+	total: Decimal;
+	notes?: string;
+	quote_id?: string;
+	converted_to_invoice_id?: string;
+	lines: OrderLine[];
+	created_at: string;
+	created_by: string;
+	updated_at: string;
+}
+
+export interface OrderLine {
+	id: string;
+	tenant_id: string;
+	order_id: string;
+	line_number: number;
+	description: string;
+	quantity: Decimal;
+	unit?: string;
+	unit_price: Decimal;
+	discount_percent: Decimal;
+	vat_rate: Decimal;
+	line_subtotal: Decimal;
+	line_vat: Decimal;
+	line_total: Decimal;
+	product_id?: string;
+}
+
+export interface CreateOrderRequest {
+	contact_id: string;
+	order_date: string;
+	expected_delivery?: string;
+	currency?: string;
+	exchange_rate?: string;
+	notes?: string;
+	quote_id?: string;
+	lines: CreateOrderLineRequest[];
+}
+
+export interface CreateOrderLineRequest {
+	description: string;
+	quantity: string;
+	unit?: string;
+	unit_price: string;
+	discount_percent?: string;
+	vat_rate: string;
+	product_id?: string;
+}
+
+export interface UpdateOrderRequest {
+	contact_id: string;
+	order_date: string;
+	expected_delivery?: string;
+	currency?: string;
+	exchange_rate?: string;
+	notes?: string;
+	lines: CreateOrderLineRequest[];
+}
+
+export interface OrderFilter {
+	status?: OrderStatus;
+	contact_id?: string;
+	from_date?: string;
+	to_date?: string;
+	search?: string;
+}
+
+// Fixed Asset types
+export type AssetStatus = 'DRAFT' | 'ACTIVE' | 'DISPOSED' | 'SOLD';
+export type DepreciationMethod = 'STRAIGHT_LINE' | 'DECLINING_BALANCE' | 'UNITS_OF_PRODUCTION';
+export type DisposalMethod = 'SOLD' | 'SCRAPPED' | 'DONATED' | 'LOST';
+
+export interface AssetCategory {
+	id: string;
+	tenant_id: string;
+	name: string;
+	description?: string;
+	depreciation_method: DepreciationMethod;
+	default_useful_life_months: number;
+	default_residual_value_percent: Decimal;
+	asset_account_id?: string;
+	depreciation_expense_account_id?: string;
+	accumulated_depreciation_account_id?: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface FixedAsset {
+	id: string;
+	tenant_id: string;
+	asset_number: string;
+	name: string;
+	description?: string;
+	category_id?: string;
+	category?: AssetCategory;
+	status: AssetStatus;
+	purchase_date: string;
+	purchase_cost: Decimal;
+	supplier_id?: string;
+	serial_number?: string;
+	location?: string;
+	depreciation_method: DepreciationMethod;
+	useful_life_months: number;
+	residual_value: Decimal;
+	depreciation_start_date?: string;
+	accumulated_depreciation: Decimal;
+	book_value: Decimal;
+	last_depreciation_date?: string;
+	disposal_date?: string;
+	disposal_method?: DisposalMethod;
+	disposal_proceeds?: Decimal;
+	disposal_notes?: string;
+	asset_account_id?: string;
+	depreciation_expense_account_id?: string;
+	accumulated_depreciation_account_id?: string;
+	created_at: string;
+	created_by: string;
+	updated_at: string;
+}
+
+export interface DepreciationEntry {
+	id: string;
+	tenant_id: string;
+	asset_id: string;
+	depreciation_date: string;
+	period_start: string;
+	period_end: string;
+	depreciation_amount: Decimal;
+	accumulated_total: Decimal;
+	book_value_after: Decimal;
+	journal_entry_id?: string;
+	created_at: string;
+	created_by: string;
+}
+
+export interface CreateAssetCategoryRequest {
+	name: string;
+	description?: string;
+	depreciation_method?: DepreciationMethod;
+	default_useful_life_months?: number;
+	default_residual_value_percent?: string;
+	asset_account_id?: string;
+	depreciation_expense_account_id?: string;
+	accumulated_depreciation_account_id?: string;
+}
+
+export interface CreateAssetRequest {
+	name: string;
+	description?: string;
+	category_id?: string;
+	purchase_date: string;
+	purchase_cost: string;
+	supplier_id?: string;
+	serial_number?: string;
+	location?: string;
+	depreciation_method?: DepreciationMethod;
+	useful_life_months?: number;
+	residual_value?: string;
+	depreciation_start_date?: string;
+	asset_account_id?: string;
+	depreciation_expense_account_id?: string;
+	accumulated_depreciation_account_id?: string;
+}
+
+export interface UpdateAssetRequest {
+	name: string;
+	description?: string;
+	category_id?: string;
+	serial_number?: string;
+	location?: string;
+	depreciation_method?: DepreciationMethod;
+	useful_life_months?: number;
+	residual_value?: string;
+	asset_account_id?: string;
+	depreciation_expense_account_id?: string;
+	accumulated_depreciation_account_id?: string;
+}
+
+export interface DisposeAssetRequest {
+	disposal_date: string;
+	disposal_method: DisposalMethod;
+	disposal_proceeds?: string;
+	disposal_notes?: string;
+}
+
+export interface AssetFilter {
+	status?: AssetStatus;
+	category_id?: string;
+	from_date?: string;
+	to_date?: string;
+	search?: string;
+}
+
+export interface RecordDepreciationRequest {
+	period_start: string;
+	period_end: string;
+}
+
+// Inventory types
+export type ProductType = 'GOODS' | 'SERVICE';
+export type ProductStatus = 'ACTIVE' | 'INACTIVE';
+export type MovementType = 'IN' | 'OUT' | 'ADJUSTMENT' | 'TRANSFER';
+
+export interface Product {
+	id: string;
+	tenant_id: string;
+	code: string;
+	name: string;
+	description?: string;
+	product_type: ProductType;
+	category_id?: string;
+	unit?: string;
+	purchase_price: Decimal;
+	sales_price: Decimal;
+	vat_rate: Decimal;
+	min_stock_level: Decimal;
+	current_stock: Decimal;
+	reorder_point: Decimal;
+	sale_account_id?: string;
+	purchase_account_id?: string;
+	inventory_account_id?: string;
+	track_inventory: boolean;
+	is_active: boolean;
+	barcode?: string;
+	supplier_id?: string;
+	lead_time_days: number;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface ProductCategory {
+	id: string;
+	tenant_id: string;
+	name: string;
+	description?: string;
+	parent_id?: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface Warehouse {
+	id: string;
+	tenant_id: string;
+	code: string;
+	name: string;
+	address?: string;
+	is_default: boolean;
+	is_active: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface StockLevel {
+	id: string;
+	tenant_id: string;
+	product_id: string;
+	warehouse_id: string;
+	quantity: Decimal;
+	reserved_qty: Decimal;
+	available_qty: Decimal;
+	last_updated: string;
+}
+
+export interface InventoryMovement {
+	id: string;
+	tenant_id: string;
+	product_id: string;
+	warehouse_id: string;
+	movement_type: MovementType;
+	quantity: Decimal;
+	unit_cost: Decimal;
+	total_cost: Decimal;
+	reference?: string;
+	source_type?: string;
+	source_id?: string;
+	to_warehouse_id?: string;
+	notes?: string;
+	movement_date: string;
+	created_at: string;
+	created_by: string;
+}
+
+export interface CreateProductRequest {
+	code?: string;
+	name: string;
+	description?: string;
+	product_type: string;
+	category_id?: string;
+	unit?: string;
+	purchase_price?: string;
+	sales_price: string;
+	vat_rate?: string;
+	min_stock_level?: string;
+	reorder_point?: string;
+	sale_account_id?: string;
+	purchase_account_id?: string;
+	inventory_account_id?: string;
+	track_inventory?: boolean;
+	barcode?: string;
+	supplier_id?: string;
+	lead_time_days?: number;
+}
+
+export interface UpdateProductRequest {
+	name: string;
+	description?: string;
+	category_id?: string;
+	unit?: string;
+	purchase_price?: string;
+	sales_price: string;
+	vat_rate?: string;
+	min_stock_level?: string;
+	reorder_point?: string;
+	sale_account_id?: string;
+	purchase_account_id?: string;
+	inventory_account_id?: string;
+	track_inventory?: boolean;
+	is_active?: boolean;
+	barcode?: string;
+	supplier_id?: string;
+	lead_time_days?: number;
+}
+
+export interface CreateProductCategoryRequest {
+	name: string;
+	description?: string;
+	parent_id?: string;
+}
+
+export interface CreateWarehouseRequest {
+	code: string;
+	name: string;
+	address?: string;
+	is_default?: boolean;
+}
+
+export interface UpdateWarehouseRequest {
+	name: string;
+	address?: string;
+	is_default?: boolean;
+	is_active?: boolean;
+}
+
+export interface AdjustStockRequest {
+	product_id: string;
+	warehouse_id: string;
+	quantity: string;
+	unit_cost?: string;
+	reason?: string;
+}
+
+export interface TransferStockRequest {
+	product_id: string;
+	from_warehouse_id: string;
+	to_warehouse_id: string;
+	quantity: string;
+	notes?: string;
+}
+
+export interface ProductFilter {
+	product_type?: ProductType;
+	status?: ProductStatus;
+	category_id?: string;
+	search?: string;
+	low_stock?: boolean;
 }
 
 // Analytics types

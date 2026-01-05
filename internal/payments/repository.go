@@ -89,6 +89,11 @@ func (r *PostgresRepository) List(ctx context.Context, schemaName, tenantID stri
 			args = append(args, filter.PaymentType)
 			argNum++
 		}
+		if filter.PaymentMethod != "" {
+			query += fmt.Sprintf(" AND payment_method = $%d", argNum)
+			args = append(args, filter.PaymentMethod)
+			argNum++
+		}
 		if filter.ContactID != "" {
 			query += fmt.Sprintf(" AND contact_id = $%d", argNum)
 			args = append(args, filter.ContactID)
