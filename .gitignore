@@ -48,9 +48,10 @@ docs/docs.go
 docs/swagger.json
 docs/swagger.yaml
 
-# Claude Code
-.claude/
-**/.claude/
+# Claude Code (keep skills, ignore settings and plugins)
+.claude/plugins/
+.claude/settings.json
+.claude/settings.local.json
 
 # Git worktrees
 .worktrees/
