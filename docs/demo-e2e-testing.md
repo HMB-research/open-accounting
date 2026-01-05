@@ -1,8 +1,18 @@
-# Demo E2E Testing - REPL Loop Workflow
+# Demo E2E Testing - Ralph Loop Workflow
 
-This document describes how to run and verify demo data presence across all views using Playwright E2E tests in a REPL (Read-Eval-Print Loop) style workflow.
+> "Me fail tests? That's unpossible!" - Ralph Wiggum
+>
+> The Ralph Loop keeps running tests until they pass. Simple. Persistent. Unstoppable.
+
+This document describes how to run and verify demo data presence across all views using Playwright E2E tests in a persistent loop that doesn't give up until everything works.
 
 ## Overview
+
+The **Ralph Loop** is a simple testing pattern:
+1. Run tests
+2. If tests fail → re-seed demo data → wait → retry
+3. Repeat until ALL tests pass
+4. Never give up (up to 50 attempts by default)
 
 The demo E2E tests verify that:
 1. All demo accounts (demo2, demo3, demo4) are properly seeded
@@ -37,17 +47,39 @@ cd frontend
 npm run test:e2e:demo:verify
 ```
 
-### Run in REPL Loop (Retry Until Pass)
+### Run the Ralph Loop (Retry Until Pass)
 
 ```bash
 cd frontend
 npm run test:e2e:demo:loop:verify
 ```
 
-This will:
+The Ralph Loop will:
 1. Run the data verification tests
-2. If tests fail, re-seed demo data via API
-3. Retry up to 50 times until all tests pass
+2. If tests fail → call `/api/demo/reset` to re-seed data
+3. Wait 5 seconds
+4. Retry (up to 50 times by default)
+5. Exit with success ONLY when ALL tests pass
+
+```
+┌─────────────────────────────────────────┐
+│           THE RALPH LOOP                │
+│                                         │
+│    ┌──────────┐                        │
+│    │Run Tests │◄────────────┐          │
+│    └────┬─────┘             │          │
+│         │                   │          │
+│         ▼                   │          │
+│    ┌──────────┐      ┌──────┴─────┐    │
+│    │ Pass?    │──No──►Re-seed Data│    │
+│    └────┬─────┘      └────────────┘    │
+│         │Yes                            │
+│         ▼                               │
+│    ┌──────────┐                        │
+│    │ SUCCESS! │                        │
+│    └──────────┘                        │
+└─────────────────────────────────────────┘
+```
 
 ## Test Structure
 
@@ -101,9 +133,9 @@ Tests will FAIL if:
 - Error messages appear
 - Expected data identifiers are missing
 
-## REPL Loop Script
+## Ralph Loop Script
 
-The `scripts/test-loop.sh` script provides a retry loop for the tests:
+The `scripts/test-loop.sh` script implements the Ralph Loop:
 
 ### Usage
 
@@ -126,14 +158,16 @@ The `scripts/test-loop.sh` script provides a retry loop for the tests:
 | `PUBLIC_API_URL` | http://localhost:8080 | Backend API URL |
 | `DEMO_RESET_SECRET` | test-demo-secret | Secret for demo reset API |
 
-### Workflow
+### How the Ralph Loop Works
 
-1. Run tests
-2. If pass: Exit success
-3. If fail:
-   - Call `/api/demo/reset` to re-seed data
+1. Run Playwright tests
+2. If ALL pass → Exit with success (exit code 0)
+3. If ANY fail:
+   - Call `/api/demo/reset` to re-seed demo data
    - Wait 5 seconds
-   - Retry
+   - Increment attempt counter
+   - Go back to step 1
+4. If max attempts reached → Exit with failure (exit code 1)
 
 ## Troubleshooting
 
