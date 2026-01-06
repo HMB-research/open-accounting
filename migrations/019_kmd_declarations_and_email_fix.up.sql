@@ -80,3 +80,23 @@ BEGIN
     END LOOP;
 END;
 $$;
+
+-- Update create_tenant_schema to include KMD tables for new tenants
+CREATE OR REPLACE FUNCTION create_tenant_schema(schema_name TEXT) RETURNS VOID AS $$
+BEGIN
+    -- Create the schema
+    EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
+
+    -- Create core accounting tables (existing)
+    PERFORM create_accounting_tables(schema_name);
+
+    -- Create payroll tables
+    PERFORM add_payroll_tables(schema_name);
+
+    -- Create KMD (VAT return) tables
+    PERFORM add_kmd_tables_to_schema(schema_name);
+
+    -- Fix email_log schema
+    PERFORM fix_email_log_schema(schema_name);
+END;
+$$ LANGUAGE plpgsql;
