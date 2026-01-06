@@ -1015,3 +1015,33 @@ func TestNewService(t *testing.T) {
 	require.NotNil(t, svc)
 	assert.NotNil(t, svc.repo)
 }
+
+// TestCashFlowStatement_NonCashEntries tests that journal entries without cash accounts are skipped
+func TestCashFlowStatement_NonCashEntries(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	// Journal entry with no cash account (e.g., accrual entry)
+	mockRepo.JournalEntries = []JournalEntryWithLines{
+		{
+			ID:          "je-1",
+			EntryDate:   time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
+			Description: "Accrual entry - no cash involved",
+			Lines: []JournalLine{
+				{AccountCode: "5100", AccountType: "EXPENSE", AccountName: "Accrued Expense", Debit: decimal.NewFromFloat(1000), Credit: decimal.Zero},
+				{AccountCode: "2100", AccountType: "LIABILITY", AccountName: "Accrued Liabilities", Debit: decimal.Zero, Credit: decimal.NewFromFloat(1000)},
+			},
+		},
+	}
+
+	req := &CashFlowRequest{StartDate: "2024-01-01", EndDate: "2024-01-31"}
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", req)
+
+	require.NoError(t, err)
+	assert.NotNil(t, result)
+	// No cash movement should be recorded since there's no cash account in the entry
+	assert.True(t, result.TotalOperating.IsZero(), "Operating activities should be zero for non-cash entries")
+	assert.True(t, result.TotalInvesting.IsZero(), "Investing activities should be zero for non-cash entries")
+	assert.True(t, result.TotalFinancing.IsZero(), "Financing activities should be zero for non-cash entries")
+}
