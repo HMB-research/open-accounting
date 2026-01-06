@@ -66,6 +66,9 @@ func (r *MockRepository) GetProductByID(ctx context.Context, schemaName, tenantI
 }
 
 func (r *MockRepository) ListProducts(ctx context.Context, schemaName, tenantID string, filter *ProductFilter) ([]Product, error) {
+	if r.ErrOnList {
+		return nil, fmt.Errorf("mock error on list")
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var result []Product
@@ -154,6 +157,9 @@ func (r *MockRepository) GetCategoryByID(ctx context.Context, schemaName, tenant
 }
 
 func (r *MockRepository) ListCategories(ctx context.Context, schemaName, tenantID string) ([]ProductCategory, error) {
+	if r.ErrOnList {
+		return nil, fmt.Errorf("mock error on list categories")
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var result []ProductCategory
@@ -205,6 +211,9 @@ func (r *MockRepository) GetWarehouseByID(ctx context.Context, schemaName, tenan
 }
 
 func (r *MockRepository) ListWarehouses(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]Warehouse, error) {
+	if r.ErrOnList {
+		return nil, fmt.Errorf("mock error on list warehouses")
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var result []Warehouse
@@ -1425,4 +1434,34 @@ func TestService_GetMovements_RepoError(t *testing.T) {
 	_, err := ts.svc.GetMovements(ctx, "tenant-1", "test_schema", "p1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "list movements")
+}
+
+func TestService_ListProducts_RepoError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.ErrOnList = true
+	ctx := context.Background()
+
+	_, err := ts.svc.ListProducts(ctx, "tenant-1", "test_schema", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "list products")
+}
+
+func TestService_ListCategories_RepoError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.ErrOnList = true
+	ctx := context.Background()
+
+	_, err := ts.svc.ListCategories(ctx, "tenant-1", "test_schema")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "list categories")
+}
+
+func TestService_ListWarehouses_RepoError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.ErrOnList = true
+	ctx := context.Background()
+
+	_, err := ts.svc.ListWarehouses(ctx, "tenant-1", "test_schema", false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "list warehouses")
 }
