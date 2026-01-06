@@ -33,6 +33,21 @@ func TestSanitize_HidesInternalDetails(t *testing.T) {
 			input:    "invalid date format",
 			expected: "invalid date format",
 		},
+		{
+			name:     "file path without sensitive pattern",
+			input:    "open storage/uploads/file.txt: permission denied",
+			expected: "An internal error occurred",
+		},
+		{
+			name:     "file read error",
+			input:    "read data/config.yaml: no such file",
+			expected: "An internal error occurred",
+		},
+		{
+			name:     "file write error",
+			input:    "write cache/temp.json: disk full",
+			expected: "An internal error occurred",
+		},
 	}
 
 	for _, tt := range tests {
