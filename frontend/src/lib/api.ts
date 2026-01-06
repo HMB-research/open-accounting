@@ -1169,6 +1169,106 @@ class ApiClient {
 		);
 	}
 
+	// Leave/Absence Management
+	async listAbsenceTypes(tenantId: string, activeOnly = false) {
+		const query = activeOnly ? '?active_only=true' : '';
+		return this.request<AbsenceType[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/absence-types${query}`
+		);
+	}
+
+	async getAbsenceType(tenantId: string, typeId: string) {
+		return this.request<AbsenceType>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/absence-types/${typeId}`
+		);
+	}
+
+	async listLeaveBalances(tenantId: string, employeeId: string, year?: number) {
+		const query = year ? `?year=${year}` : '';
+		return this.request<LeaveBalance[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/employees/${employeeId}/leave-balances${query}`
+		);
+	}
+
+	async getLeaveBalancesByYear(tenantId: string, employeeId: string, year: number) {
+		return this.request<LeaveBalance[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/employees/${employeeId}/leave-balances/${year}`
+		);
+	}
+
+	async updateLeaveBalance(
+		tenantId: string,
+		employeeId: string,
+		year: number,
+		typeId: string,
+		data: UpdateLeaveBalanceRequest
+	) {
+		return this.request<LeaveBalance>(
+			'PUT',
+			`/api/v1/tenants/${tenantId}/employees/${employeeId}/leave-balances/${year}/${typeId}`,
+			data
+		);
+	}
+
+	async initializeLeaveBalances(tenantId: string, employeeId: string, year: number) {
+		return this.request<LeaveBalance[]>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/employees/${employeeId}/leave-balances/${year}/initialize`
+		);
+	}
+
+	async listLeaveRecords(tenantId: string, employeeId?: string, year?: number) {
+		const params = new URLSearchParams();
+		if (employeeId) params.append('employee_id', employeeId);
+		if (year) params.append('year', year.toString());
+		const query = params.toString() ? `?${params.toString()}` : '';
+		return this.request<LeaveRecord[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/leave-records${query}`
+		);
+	}
+
+	async createLeaveRecord(tenantId: string, data: CreateLeaveRecordRequest) {
+		return this.request<LeaveRecord>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/leave-records`,
+			data
+		);
+	}
+
+	async getLeaveRecord(tenantId: string, recordId: string) {
+		return this.request<LeaveRecord>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/leave-records/${recordId}`
+		);
+	}
+
+	async approveLeaveRecord(tenantId: string, recordId: string) {
+		return this.request<LeaveRecord>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/leave-records/${recordId}/approve`
+		);
+	}
+
+	async rejectLeaveRecord(tenantId: string, recordId: string, reason: string) {
+		return this.request<LeaveRecord>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/leave-records/${recordId}/reject`,
+			{ reason }
+		);
+	}
+
+	async cancelLeaveRecord(tenantId: string, recordId: string) {
+		return this.request<LeaveRecord>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/leave-records/${recordId}/cancel`
+		);
+	}
+
 	// Plugin Registries (Admin)
 	async listPluginRegistries() {
 		return this.request<PluginRegistry[]>('GET', '/api/v1/admin/plugin-registries');
@@ -2720,6 +2820,98 @@ export interface TaxCalculation {
 	social_tax: Decimal;
 	unemployment_employer: Decimal;
 	total_employer_cost: Decimal;
+}
+
+// Leave/Absence Management Types
+export type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+
+export interface AbsenceType {
+	id: string;
+	tenant_id: string;
+	code: string;
+	name: string;
+	name_et: string;
+	description?: string;
+	is_paid: boolean;
+	affects_salary: boolean;
+	requires_document: boolean;
+	document_type?: string;
+	default_days_per_year: Decimal;
+	max_carryover_days: Decimal;
+	tsd_code?: string;
+	emta_code?: string;
+	is_system: boolean;
+	is_active: boolean;
+	sort_order: number;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface LeaveBalance {
+	id: string;
+	tenant_id: string;
+	employee_id: string;
+	absence_type_id: string;
+	year: number;
+	entitled_days: Decimal;
+	carryover_days: Decimal;
+	used_days: Decimal;
+	pending_days: Decimal;
+	remaining_days: Decimal;
+	notes?: string;
+	created_at: string;
+	updated_at: string;
+	absence_type?: AbsenceType;
+}
+
+export interface LeaveRecord {
+	id: string;
+	tenant_id: string;
+	employee_id: string;
+	absence_type_id: string;
+	start_date: string;
+	end_date: string;
+	total_days: Decimal;
+	working_days: Decimal;
+	status: LeaveStatus;
+	document_number?: string;
+	document_date?: string;
+	document_url?: string;
+	requested_at: string;
+	requested_by?: string;
+	approved_at?: string;
+	approved_by?: string;
+	rejected_at?: string;
+	rejected_by?: string;
+	rejection_reason?: string;
+	payroll_run_id?: string;
+	notes?: string;
+	created_at: string;
+	updated_at: string;
+	absence_type?: AbsenceType;
+	employee?: Employee;
+}
+
+export interface CreateLeaveRecordRequest {
+	employee_id: string;
+	absence_type_id: string;
+	start_date: string;
+	end_date: string;
+	total_days: Decimal;
+	working_days: Decimal;
+	document_number?: string;
+	document_date?: string;
+	notes?: string;
+}
+
+export interface UpdateLeaveBalanceRequest {
+	entitled_days?: Decimal;
+	carryover_days?: Decimal;
+	notes?: string;
+}
+
+export interface RejectLeaveRequest {
+	reason: string;
 }
 
 // Plugin Types
