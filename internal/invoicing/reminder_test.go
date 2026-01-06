@@ -2,12 +2,15 @@ package invoicing
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wneessen/go-mail"
 )
 
 func TestNewMockReminderRepository(t *testing.T) {
@@ -565,4 +568,161 @@ func TestNewReminderService(t *testing.T) {
 	assert.Nil(t, svc.db)
 	assert.Nil(t, svc.emailService)
 	assert.NotNil(t, svc.repo)
+}
+
+// Mock email repository for testing
+type mockEmailRepository struct {
+	GetTenantSettingsResult    []byte
+	GetTenantSettingsErr       error
+	GetTemplateResult          *email.EmailTemplate
+	GetTemplateErr             error
+	EnsureSchemaErr            error
+	CreateEmailLogErr          error
+	UpdateEmailLogStatusErr    error
+}
+
+func (m *mockEmailRepository) EnsureSchema(ctx context.Context, schemaName string) error {
+	return m.EnsureSchemaErr
+}
+func (m *mockEmailRepository) GetTenantSettings(ctx context.Context, tenantID string) ([]byte, error) {
+	if m.GetTenantSettingsErr != nil {
+		return nil, m.GetTenantSettingsErr
+	}
+	if m.GetTenantSettingsResult != nil {
+		return m.GetTenantSettingsResult, nil
+	}
+	// Return default valid SMTP settings
+	return []byte(`{"smtp_host":"smtp.test.com","smtp_port":587,"smtp_username":"user","smtp_password":"pass","smtp_from_email":"test@test.com","smtp_use_tls":true}`), nil
+}
+func (m *mockEmailRepository) UpdateTenantSettings(ctx context.Context, tenantID string, settingsJSON []byte) error {
+	return nil
+}
+func (m *mockEmailRepository) GetTemplate(ctx context.Context, schemaName, tenantID string, templateType email.TemplateType) (*email.EmailTemplate, error) {
+	if m.GetTemplateErr != nil {
+		return nil, m.GetTemplateErr
+	}
+	if m.GetTemplateResult != nil {
+		return m.GetTemplateResult, nil
+	}
+	return nil, email.ErrTemplateNotFound
+}
+func (m *mockEmailRepository) ListTemplates(ctx context.Context, schemaName, tenantID string) ([]email.EmailTemplate, error) {
+	return []email.EmailTemplate{}, nil
+}
+func (m *mockEmailRepository) UpsertTemplate(ctx context.Context, schemaName string, template *email.EmailTemplate) error {
+	return nil
+}
+func (m *mockEmailRepository) CreateEmailLog(ctx context.Context, schemaName string, log *email.EmailLog) error {
+	return m.CreateEmailLogErr
+}
+func (m *mockEmailRepository) UpdateEmailLogStatus(ctx context.Context, schemaName, logID string, status email.EmailStatus, sentAt *time.Time, errorMessage string) error {
+	return m.UpdateEmailLogStatusErr
+}
+func (m *mockEmailRepository) GetEmailLog(ctx context.Context, schemaName, tenantID string, limit int) ([]email.EmailLog, error) {
+	return []email.EmailLog{}, nil
+}
+
+// Mock mail sender for testing
+type mockMailSender struct {
+	SendMailErr    error
+	SendMailCalled bool
+}
+
+func (m *mockMailSender) SendMail(config *email.SMTPConfig, msg *mail.Msg) error {
+	m.SendMailCalled = true
+	return m.SendMailErr
+}
+
+// TestReminderService_SendReminder_GetTemplateError tests the GetTemplate error path
+func TestReminderService_SendReminder_GetTemplateError(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockReminderRepository()
+	repo.AddMockOverdueInvoice("inv-1", "INV-001", "c1", "Customer 1", "c1@test.com", "EUR",
+		decimal.NewFromInt(1000), decimal.Zero, 30)
+
+	// Create email service with mock that errors on GetTemplate
+	emailRepo := &mockEmailRepository{
+		GetTemplateErr: errors.New("template error"),
+	}
+	emailSvc := email.NewServiceWithRepository(emailRepo, &mockMailSender{})
+	svc := NewReminderServiceWithRepository(repo, emailSvc)
+
+	req := &SendReminderRequest{InvoiceID: "inv-1"}
+	result, err := svc.SendReminder(ctx, "tenant-1", "test_schema", req, "Test Company")
+
+	require.NoError(t, err) // SendReminder returns ReminderResult, not error, for template failures
+	assert.False(t, result.Success)
+	assert.Contains(t, result.Message, "Failed to get email template")
+}
+
+// TestReminderService_SendReminder_SendEmailError tests the SendEmail error path
+func TestReminderService_SendReminder_SendEmailError(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockReminderRepository()
+	repo.AddMockOverdueInvoice("inv-1", "INV-001", "c1", "Customer 1", "c1@test.com", "EUR",
+		decimal.NewFromInt(1000), decimal.Zero, 30)
+
+	// Create email service with mock that succeeds on template but fails on send
+	emailRepo := &mockEmailRepository{}
+	mailer := &mockMailSender{SendMailErr: errors.New("SMTP connection failed")}
+	emailSvc := email.NewServiceWithRepository(emailRepo, mailer)
+	svc := NewReminderServiceWithRepository(repo, emailSvc)
+
+	req := &SendReminderRequest{InvoiceID: "inv-1"}
+	result, err := svc.SendReminder(ctx, "tenant-1", "test_schema", req, "Test Company")
+
+	require.NoError(t, err)
+	assert.False(t, result.Success)
+	assert.Contains(t, result.Message, "Failed to send email")
+}
+
+// TestReminderService_SendReminder_Success tests successful email sending
+func TestReminderService_SendReminder_Success(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockReminderRepository()
+	repo.AddMockOverdueInvoice("inv-1", "INV-001", "c1", "Customer 1", "c1@test.com", "EUR",
+		decimal.NewFromInt(1000), decimal.Zero, 30)
+
+	// Create email service with all mocks succeeding
+	emailRepo := &mockEmailRepository{}
+	mailer := &mockMailSender{}
+	emailSvc := email.NewServiceWithRepository(emailRepo, mailer)
+	svc := NewReminderServiceWithRepository(repo, emailSvc)
+
+	req := &SendReminderRequest{InvoiceID: "inv-1", Message: "Please pay promptly"}
+	result, err := svc.SendReminder(ctx, "tenant-1", "test_schema", req, "Test Company")
+
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+	assert.Contains(t, result.Message, "sent successfully")
+	assert.NotEmpty(t, result.ReminderID)
+	assert.True(t, mailer.SendMailCalled)
+}
+
+// TestReminderService_SendBulkReminders_WithEmailService tests bulk reminders with email service
+func TestReminderService_SendBulkReminders_WithEmailService(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockReminderRepository()
+	repo.AddMockOverdueInvoice("inv-1", "INV-001", "c1", "Customer 1", "c1@test.com", "EUR",
+		decimal.NewFromInt(1000), decimal.Zero, 30)
+	repo.AddMockOverdueInvoice("inv-2", "INV-002", "c2", "Customer 2", "c2@test.com", "EUR",
+		decimal.NewFromInt(500), decimal.Zero, 15)
+
+	// Create email service
+	emailRepo := &mockEmailRepository{}
+	mailer := &mockMailSender{}
+	emailSvc := email.NewServiceWithRepository(emailRepo, mailer)
+	svc := NewReminderServiceWithRepository(repo, emailSvc)
+
+	req := &SendBulkRemindersRequest{
+		InvoiceIDs: []string{"inv-1", "inv-2", "inv-3"},
+		Message:    "Please pay",
+	}
+
+	result, err := svc.SendBulkReminders(ctx, "tenant-1", "test_schema", req, "Test Company")
+	require.NoError(t, err)
+
+	assert.Equal(t, 3, result.TotalRequested)
+	assert.Equal(t, 2, result.Successful) // inv-1 and inv-2 succeed
+	assert.Equal(t, 1, result.Failed)     // inv-3 not found
 }
