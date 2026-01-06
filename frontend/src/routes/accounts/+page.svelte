@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
-	import { api, type Account } from '$lib/api';
+	import { api, type Account, type TrialBalance } from '$lib/api';
+	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
 
 	let accounts = $state<Account[]>([]);
+	let accountBalances = $state<Map<string, { debit: Decimal; credit: Decimal; balance: Decimal }>>(new Map());
 	let isLoading = $state(true);
 	let error = $state('');
 	let showCreateAccount = $state(false);
@@ -27,12 +29,50 @@
 		error = '';
 
 		try {
-			accounts = await api.listAccounts(tenantId);
+			// Load accounts and trial balance in parallel
+			const [accountsData, trialBalance] = await Promise.all([
+				api.listAccounts(tenantId),
+				api.getTrialBalance(tenantId).catch(() => null) // Don't fail if trial balance fails
+			]);
+
+			accounts = accountsData;
+
+			// Build balance map from trial balance
+			if (trialBalance) {
+				const balanceMap = new Map<string, { debit: Decimal; credit: Decimal; balance: Decimal }>();
+				for (const item of trialBalance.accounts) {
+					const debit = item.debit_balance instanceof Decimal ? item.debit_balance : new Decimal(item.debit_balance || 0);
+					const credit = item.credit_balance instanceof Decimal ? item.credit_balance : new Decimal(item.credit_balance || 0);
+					const balance = item.net_balance instanceof Decimal ? item.net_balance : new Decimal(item.net_balance || 0);
+					balanceMap.set(item.account_id, { debit, credit, balance });
+				}
+				accountBalances = balanceMap;
+			}
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load accounts';
 		} finally {
 			isLoading = false;
 		}
+	}
+
+	function formatBalance(accountId: string, accountType: Account['account_type']): string {
+		const balanceData = accountBalances.get(accountId);
+		if (!balanceData) return '-';
+
+		// For assets and expenses, positive is debit (normal)
+		// For liabilities, equity, and revenue, positive is credit (normal)
+		let balance = balanceData.balance;
+		if (accountType === 'LIABILITY' || accountType === 'EQUITY' || accountType === 'REVENUE') {
+			balance = balance.neg(); // Show as positive for credit-normal accounts
+		}
+
+		if (balance.isZero()) return '-';
+
+		return new Intl.NumberFormat('et-EE', {
+			style: 'currency',
+			currency: 'EUR',
+			minimumFractionDigits: 2
+		}).format(balance.toNumber());
 	}
 
 	async function createAccount(e: Event) {
@@ -121,6 +161,7 @@
 									<th>{m.accounts_code()}</th>
 									<th>{m.common_name()}</th>
 									<th class="hide-mobile">{m.common_description()}</th>
+									<th class="balance-col">{m.common_balance()}</th>
 									<th>{m.common_status()}</th>
 								</tr>
 							</thead>
@@ -130,6 +171,7 @@
 										<td class="code" data-label="Code">{account.code}</td>
 										<td data-label="Name">{account.name}</td>
 										<td class="description hide-mobile" data-label="Description">{account.description || '-'}</td>
+										<td class="balance" data-label="Balance">{formatBalance(account.id, account.account_type)}</td>
 										<td data-label="Status">
 											{#if account.is_system}
 												<span class="badge badge-system">{m.accounts_system()}</span>
@@ -241,6 +283,16 @@
 
 	.description {
 		color: var(--color-text-muted);
+	}
+
+	.balance-col {
+		text-align: right;
+	}
+
+	.balance {
+		font-family: var(--font-mono);
+		text-align: right;
+		white-space: nowrap;
 	}
 
 	.inactive {

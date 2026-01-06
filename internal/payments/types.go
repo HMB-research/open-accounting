@@ -88,8 +88,9 @@ type AllocationRequest struct {
 
 // PaymentFilter provides filtering options
 type PaymentFilter struct {
-	PaymentType PaymentType
-	ContactID   string
-	FromDate    *time.Time
-	ToDate      *time.Time
+	PaymentType   PaymentType
+	PaymentMethod string
+	ContactID     string
+	FromDate      *time.Time
+	ToDate        *time.Time
 }

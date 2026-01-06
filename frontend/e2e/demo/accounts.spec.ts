@@ -12,9 +12,9 @@ test.describe('Demo Chart of Accounts - Seed Data Verification', () => {
 	test('displays seeded accounts', async ({ page }) => {
 		await expect(page.locator('table tbody tr, .account-item').first()).toBeVisible({ timeout: 10000 });
 
-		// Verify key account names
-		await expect(page.getByText('Cash')).toBeVisible();
-		await expect(page.getByText(/Bank Account.*EUR/i)).toBeVisible();
+		// Verify key account names - use specific cell selector to avoid matching nav links
+		await expect(page.getByRole('cell', { name: 'Cash' })).toBeVisible();
+		await expect(page.getByRole('cell', { name: /Bank Account.*EUR/i })).toBeVisible();
 	});
 
 	test('shows account codes', async ({ page }) => {

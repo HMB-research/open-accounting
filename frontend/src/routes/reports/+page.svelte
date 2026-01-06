@@ -53,13 +53,20 @@
 		}
 	}
 
-	function formatAmount(amount: Decimal | undefined): string {
-		if (!amount || amount.isZero()) return '-';
-		return amount.toFixed(2);
+	function toDecimal(value: Decimal | number | string | undefined): Decimal {
+		if (value === undefined || value === null) return new Decimal(0);
+		if (value instanceof Decimal) return value;
+		return new Decimal(value);
+	}
+
+	function formatAmount(amount: Decimal | number | undefined): string {
+		const dec = toDecimal(amount);
+		if (dec.isZero()) return '-';
+		return dec.toFixed(2);
 	}
 
 	function formatBalance(balance: AccountBalance): { debit: string; credit: string } {
-		const net = balance.net_balance;
+		const net = toDecimal(balance.net_balance);
 		if (net.isZero()) {
 			return { debit: '-', credit: '-' };
 		}
@@ -172,7 +179,7 @@
 		for (const account of balanceSheet.liabilities) {
 			rows.push({
 				account: `  ${account.account_code} - ${account.account_name}`,
-				balance: formatAmount(account.net_balance.abs())
+				balance: formatAmount(toDecimal(account.net_balance).abs())
 			});
 		}
 		rows.push({ account: m.reports_totalLiabilities(), balance: formatAmount(balanceSheet.total_liabilities) });
@@ -183,10 +190,10 @@
 		for (const account of balanceSheet.equity) {
 			rows.push({
 				account: `  ${account.account_code} - ${account.account_name}`,
-				balance: formatAmount(account.net_balance.abs())
+				balance: formatAmount(toDecimal(account.net_balance).abs())
 			});
 		}
-		if (!balanceSheet.retained_earnings.isZero()) {
+		if (!toDecimal(balanceSheet.retained_earnings).isZero()) {
 			rows.push({
 				account: `  ${m.reports_retainedEarnings()}`,
 				balance: formatAmount(balanceSheet.retained_earnings)
@@ -210,7 +217,7 @@
 		for (const account of incomeStatement.revenue) {
 			rows.push({
 				account: `  ${account.account_code} - ${account.account_name}`,
-				amount: formatAmount(account.net_balance.abs())
+				amount: formatAmount(toDecimal(account.net_balance).abs())
 			});
 		}
 		rows.push({ account: m.reports_totalRevenue(), amount: formatAmount(incomeStatement.total_revenue) });
@@ -371,7 +378,7 @@
 										{m.reports_trialBalanceBalanced()}
 									{:else}
 										{m.reports_trialBalanceNotBalanced()}
-										{m.reports_difference()} {trialBalance.total_debits.minus(trialBalance.total_credits).toFixed(2)}
+										{m.reports_difference()} {toDecimal(trialBalance.total_debits).minus(toDecimal(trialBalance.total_credits)).toFixed(2)}
 									{/if}
 								</td>
 							</tr>
@@ -440,7 +447,7 @@
 									{#each balanceSheet.liabilities as account}
 										<tr>
 											<td>{account.account_code} - {account.account_name}</td>
-											<td class="amount">{formatAmount(account.net_balance.abs())}</td>
+											<td class="amount">{formatAmount(toDecimal(account.net_balance).abs())}</td>
 										</tr>
 									{/each}
 								</tbody>
@@ -454,7 +461,7 @@
 						{/if}
 
 						<h3 class="mt-2">{m.accounts_equities()}</h3>
-						{#if balanceSheet.equity.length === 0 && balanceSheet.retained_earnings.isZero()}
+						{#if balanceSheet.equity.length === 0 && toDecimal(balanceSheet.retained_earnings).isZero()}
 							<p class="empty-message">{m.reports_noEquityBalances()}</p>
 						{:else}
 							<table class="report-table">
@@ -468,10 +475,10 @@
 									{#each balanceSheet.equity as account}
 										<tr>
 											<td>{account.account_code} - {account.account_name}</td>
-											<td class="amount">{formatAmount(account.net_balance.abs())}</td>
+											<td class="amount">{formatAmount(toDecimal(account.net_balance).abs())}</td>
 										</tr>
 									{/each}
-									{#if !balanceSheet.retained_earnings.isZero()}
+									{#if !toDecimal(balanceSheet.retained_earnings).isZero()}
 										<tr>
 											<td><em>{m.reports_retainedEarnings()}</em></td>
 											<td class="amount">{formatAmount(balanceSheet.retained_earnings)}</td>
@@ -498,7 +505,7 @@
 							</tr>
 							<tr>
 								<td><strong>{m.reports_totalLiabilitiesEquity()}</strong></td>
-								<td class="amount"><strong>{formatAmount(balanceSheet.total_liabilities.plus(balanceSheet.total_equity))}</strong></td>
+								<td class="amount"><strong>{formatAmount(toDecimal(balanceSheet.total_liabilities).plus(toDecimal(balanceSheet.total_equity)))}</strong></td>
 							</tr>
 							<tr class="balance-status">
 								<td colspan="2" class:balanced={balanceSheet.is_balanced} class:unbalanced={!balanceSheet.is_balanced}>
@@ -543,7 +550,7 @@
 								{#each incomeStatement.revenue as account}
 									<tr>
 										<td>{account.account_code} - {account.account_name}</td>
-										<td class="amount">{formatAmount(account.net_balance.abs())}</td>
+										<td class="amount">{formatAmount(toDecimal(account.net_balance).abs())}</td>
 									</tr>
 								{/each}
 							</tbody>
@@ -590,7 +597,7 @@
 				<div class="is-summary">
 					<table class="report-table summary-table">
 						<tbody>
-							<tr class="net-income" class:profit={incomeStatement.net_income.greaterThanOrEqualTo(0)} class:loss={incomeStatement.net_income.lessThan(0)}>
+							<tr class="net-income" class:profit={toDecimal(incomeStatement.net_income).greaterThanOrEqualTo(0)} class:loss={toDecimal(incomeStatement.net_income).lessThan(0)}>
 								<td><strong>{m.reports_netIncome()}</strong></td>
 								<td class="amount"><strong>{formatAmount(incomeStatement.net_income)}</strong></td>
 							</tr>

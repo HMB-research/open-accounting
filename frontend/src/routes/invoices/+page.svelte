@@ -191,6 +191,17 @@
 	function formatDate(dateStr: string): string {
 		return new Date(dateStr).toLocaleDateString('et-EE');
 	}
+
+	function getContactName(invoice: Invoice): string {
+		// First try the populated contact object
+		if (invoice.contact?.name) return invoice.contact.name;
+		// Fall back to looking up from loaded contacts
+		if (invoice.contact_id) {
+			const contact = contacts.find(c => c.id === invoice.contact_id);
+			if (contact) return contact.name;
+		}
+		return '-';
+	}
 </script>
 
 <svelte:head>
@@ -257,7 +268,7 @@
 							<tr>
 								<td class="number" data-label="Number">{invoice.invoice_number}</td>
 								<td class="hide-mobile" data-label="Type">{getTypeLabel(invoice.invoice_type)}</td>
-								<td data-label="Contact">{invoice.contact?.name || '-'}</td>
+								<td data-label="Contact">{getContactName(invoice)}</td>
 								<td class="hide-mobile" data-label="Issue Date">{formatDate(invoice.issue_date)}</td>
 								<td data-label="Due Date">{formatDate(invoice.due_date)}</td>
 								<td class="amount" data-label="Total">{formatCurrency(invoice.total)}</td>

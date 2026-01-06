@@ -59,6 +59,9 @@ func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, 
 		if filter.PaymentType != "" {
 			query = query.Where("payment_type = ?", filter.PaymentType)
 		}
+		if filter.PaymentMethod != "" {
+			query = query.Where("payment_method = ?", filter.PaymentMethod)
+		}
 		if filter.ContactID != "" {
 			query = query.Where("contact_id = ?", filter.ContactID)
 		}

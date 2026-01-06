@@ -395,6 +395,7 @@ class ApiClient {
 	async listPayments(tenantId: string, filter?: PaymentFilter) {
 		const params = new URLSearchParams();
 		if (filter?.type) params.set('type', filter.type);
+		if (filter?.method) params.set('method', filter.method);
 		if (filter?.contact_id) params.set('contact_id', filter.contact_id);
 		if (filter?.from_date) params.set('from_date', filter.from_date);
 		if (filter?.to_date) params.set('to_date', filter.to_date);
@@ -423,6 +424,239 @@ class ApiClient {
 			'GET',
 			`/api/v1/tenants/${tenantId}/payments/unallocated?type=${type}`
 		);
+	}
+
+	// Quote endpoints
+	async listQuotes(tenantId: string, filter?: QuoteFilter) {
+		const params = new URLSearchParams();
+		if (filter?.status) params.set('status', filter.status);
+		if (filter?.contact_id) params.set('contact_id', filter.contact_id);
+		if (filter?.from_date) params.set('from_date', filter.from_date);
+		if (filter?.to_date) params.set('to_date', filter.to_date);
+		if (filter?.search) params.set('search', filter.search);
+		const query = params.toString() ? `?${params.toString()}` : '';
+		return this.request<Quote[]>('GET', `/api/v1/tenants/${tenantId}/quotes${query}`);
+	}
+
+	async createQuote(tenantId: string, data: CreateQuoteRequest) {
+		return this.request<Quote>('POST', `/api/v1/tenants/${tenantId}/quotes`, data);
+	}
+
+	async getQuote(tenantId: string, quoteId: string) {
+		return this.request<Quote>('GET', `/api/v1/tenants/${tenantId}/quotes/${quoteId}`);
+	}
+
+	async updateQuote(tenantId: string, quoteId: string, data: UpdateQuoteRequest) {
+		return this.request<Quote>('PUT', `/api/v1/tenants/${tenantId}/quotes/${quoteId}`, data);
+	}
+
+	async deleteQuote(tenantId: string, quoteId: string) {
+		return this.request<void>('DELETE', `/api/v1/tenants/${tenantId}/quotes/${quoteId}`);
+	}
+
+	async sendQuote(tenantId: string, quoteId: string) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/quotes/${quoteId}/send`);
+	}
+
+	async acceptQuote(tenantId: string, quoteId: string) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/quotes/${quoteId}/accept`);
+	}
+
+	async rejectQuote(tenantId: string, quoteId: string) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/quotes/${quoteId}/reject`);
+	}
+
+	// Orders endpoints
+	async listOrders(tenantId: string, filter?: OrderFilter) {
+		const params = new URLSearchParams();
+		if (filter?.status) params.set('status', filter.status);
+		if (filter?.contact_id) params.set('contact_id', filter.contact_id);
+		if (filter?.from_date) params.set('from_date', filter.from_date);
+		if (filter?.to_date) params.set('to_date', filter.to_date);
+		if (filter?.search) params.set('search', filter.search);
+		const query = params.toString() ? `?${params.toString()}` : '';
+		return this.request<Order[]>('GET', `/api/v1/tenants/${tenantId}/orders${query}`);
+	}
+
+	async createOrder(tenantId: string, data: CreateOrderRequest) {
+		return this.request<Order>('POST', `/api/v1/tenants/${tenantId}/orders`, data);
+	}
+
+	async getOrder(tenantId: string, orderId: string) {
+		return this.request<Order>('GET', `/api/v1/tenants/${tenantId}/orders/${orderId}`);
+	}
+
+	async updateOrder(tenantId: string, orderId: string, data: UpdateOrderRequest) {
+		return this.request<Order>('PUT', `/api/v1/tenants/${tenantId}/orders/${orderId}`, data);
+	}
+
+	async deleteOrder(tenantId: string, orderId: string) {
+		return this.request<void>('DELETE', `/api/v1/tenants/${tenantId}/orders/${orderId}`);
+	}
+
+	async confirmOrder(tenantId: string, orderId: string) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/orders/${orderId}/confirm`);
+	}
+
+	async processOrder(tenantId: string, orderId: string) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/orders/${orderId}/process`);
+	}
+
+	async shipOrder(tenantId: string, orderId: string) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/orders/${orderId}/ship`);
+	}
+
+	async deliverOrder(tenantId: string, orderId: string) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/orders/${orderId}/deliver`);
+	}
+
+	async cancelOrder(tenantId: string, orderId: string) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/orders/${orderId}/cancel`);
+	}
+
+	// Fixed Assets - Categories endpoints
+	async listAssetCategories(tenantId: string) {
+		return this.request<AssetCategory[]>('GET', `/api/v1/tenants/${tenantId}/asset-categories`);
+	}
+
+	async createAssetCategory(tenantId: string, data: CreateAssetCategoryRequest) {
+		return this.request<AssetCategory>('POST', `/api/v1/tenants/${tenantId}/asset-categories`, data);
+	}
+
+	async getAssetCategory(tenantId: string, categoryId: string) {
+		return this.request<AssetCategory>('GET', `/api/v1/tenants/${tenantId}/asset-categories/${categoryId}`);
+	}
+
+	async deleteAssetCategory(tenantId: string, categoryId: string) {
+		return this.request<void>('DELETE', `/api/v1/tenants/${tenantId}/asset-categories/${categoryId}`);
+	}
+
+	// Fixed Assets endpoints
+	async listAssets(tenantId: string, filter?: AssetFilter) {
+		const params = new URLSearchParams();
+		if (filter?.status) params.set('status', filter.status);
+		if (filter?.category_id) params.set('category_id', filter.category_id);
+		if (filter?.from_date) params.set('from_date', filter.from_date);
+		if (filter?.to_date) params.set('to_date', filter.to_date);
+		if (filter?.search) params.set('search', filter.search);
+		const query = params.toString() ? `?${params.toString()}` : '';
+		return this.request<FixedAsset[]>('GET', `/api/v1/tenants/${tenantId}/assets${query}`);
+	}
+
+	async createAsset(tenantId: string, data: CreateAssetRequest) {
+		return this.request<FixedAsset>('POST', `/api/v1/tenants/${tenantId}/assets`, data);
+	}
+
+	async getAsset(tenantId: string, assetId: string) {
+		return this.request<FixedAsset>('GET', `/api/v1/tenants/${tenantId}/assets/${assetId}`);
+	}
+
+	async updateAsset(tenantId: string, assetId: string, data: UpdateAssetRequest) {
+		return this.request<FixedAsset>('PUT', `/api/v1/tenants/${tenantId}/assets/${assetId}`, data);
+	}
+
+	async deleteAsset(tenantId: string, assetId: string) {
+		return this.request<void>('DELETE', `/api/v1/tenants/${tenantId}/assets/${assetId}`);
+	}
+
+	async activateAsset(tenantId: string, assetId: string) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/assets/${assetId}/activate`);
+	}
+
+	async disposeAsset(tenantId: string, assetId: string, data: DisposeAssetRequest) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/assets/${assetId}/dispose`, data);
+	}
+
+	async recordDepreciation(tenantId: string, assetId: string, data: RecordDepreciationRequest) {
+		return this.request<DepreciationEntry>('POST', `/api/v1/tenants/${tenantId}/assets/${assetId}/depreciate`, data);
+	}
+
+	async getDepreciationHistory(tenantId: string, assetId: string) {
+		return this.request<DepreciationEntry[]>('GET', `/api/v1/tenants/${tenantId}/assets/${assetId}/depreciation`);
+	}
+
+	// Inventory - Product Categories endpoints
+	async listProductCategories(tenantId: string) {
+		return this.request<ProductCategory[]>('GET', `/api/v1/tenants/${tenantId}/product-categories`);
+	}
+
+	async createProductCategory(tenantId: string, data: CreateProductCategoryRequest) {
+		return this.request<ProductCategory>('POST', `/api/v1/tenants/${tenantId}/product-categories`, data);
+	}
+
+	async getProductCategory(tenantId: string, categoryId: string) {
+		return this.request<ProductCategory>('GET', `/api/v1/tenants/${tenantId}/product-categories/${categoryId}`);
+	}
+
+	async deleteProductCategory(tenantId: string, categoryId: string) {
+		return this.request<void>('DELETE', `/api/v1/tenants/${tenantId}/product-categories/${categoryId}`);
+	}
+
+	// Inventory - Products endpoints
+	async listProducts(tenantId: string, filter?: ProductFilter) {
+		const params = new URLSearchParams();
+		if (filter?.product_type) params.set('product_type', filter.product_type);
+		if (filter?.status) params.set('status', filter.status);
+		if (filter?.category_id) params.set('category_id', filter.category_id);
+		if (filter?.search) params.set('search', filter.search);
+		if (filter?.low_stock) params.set('low_stock', 'true');
+		const query = params.toString() ? `?${params.toString()}` : '';
+		return this.request<Product[]>('GET', `/api/v1/tenants/${tenantId}/products${query}`);
+	}
+
+	async createProduct(tenantId: string, data: CreateProductRequest) {
+		return this.request<Product>('POST', `/api/v1/tenants/${tenantId}/products`, data);
+	}
+
+	async getProduct(tenantId: string, productId: string) {
+		return this.request<Product>('GET', `/api/v1/tenants/${tenantId}/products/${productId}`);
+	}
+
+	async updateProduct(tenantId: string, productId: string, data: UpdateProductRequest) {
+		return this.request<Product>('PUT', `/api/v1/tenants/${tenantId}/products/${productId}`, data);
+	}
+
+	async deleteProduct(tenantId: string, productId: string) {
+		return this.request<void>('DELETE', `/api/v1/tenants/${tenantId}/products/${productId}`);
+	}
+
+	async getProductStockLevels(tenantId: string, productId: string) {
+		return this.request<StockLevel[]>('GET', `/api/v1/tenants/${tenantId}/products/${productId}/stock`);
+	}
+
+	async getProductMovements(tenantId: string, productId: string) {
+		return this.request<InventoryMovement[]>('GET', `/api/v1/tenants/${tenantId}/products/${productId}/movements`);
+	}
+
+	// Inventory - Warehouses endpoints
+	async listWarehouses(tenantId: string, activeOnly = false) {
+		const query = activeOnly ? '?active_only=true' : '';
+		return this.request<Warehouse[]>('GET', `/api/v1/tenants/${tenantId}/warehouses${query}`);
+	}
+
+	async createWarehouse(tenantId: string, data: CreateWarehouseRequest) {
+		return this.request<Warehouse>('POST', `/api/v1/tenants/${tenantId}/warehouses`, data);
+	}
+
+	async getWarehouse(tenantId: string, warehouseId: string) {
+		return this.request<Warehouse>('GET', `/api/v1/tenants/${tenantId}/warehouses/${warehouseId}`);
+	}
+
+	async updateWarehouse(tenantId: string, warehouseId: string, data: UpdateWarehouseRequest) {
+		return this.request<Warehouse>('PUT', `/api/v1/tenants/${tenantId}/warehouses/${warehouseId}`, data);
+	}
+
+	async deleteWarehouse(tenantId: string, warehouseId: string) {
+		return this.request<void>('DELETE', `/api/v1/tenants/${tenantId}/warehouses/${warehouseId}`);
+	}
+
+	// Inventory - Stock Operations
+	async adjustStock(tenantId: string, data: AdjustStockRequest) {
+		return this.request<InventoryMovement>('POST', `/api/v1/tenants/${tenantId}/inventory/adjust`, data);
+	}
+
+	async transferStock(tenantId: string, data: TransferStockRequest) {
+		return this.request<{ status: string }>('POST', `/api/v1/tenants/${tenantId}/inventory/transfer`, data);
 	}
 
 	// Analytics endpoints
@@ -460,9 +694,13 @@ class ApiClient {
 	}
 
 	async getCashFlowAnalytics(tenantId: string, startDate: string, endDate: string) {
+		// Backend expects months parameter, calculate months from date range
+		const start = new Date(startDate);
+		const end = new Date(endDate);
+		const months = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 30)));
 		return this.request<CashFlowChart>(
 			'GET',
-			`/api/v1/tenants/${tenantId}/analytics/cash-flow?start_date=${startDate}&end_date=${endDate}`
+			`/api/v1/tenants/${tenantId}/analytics/cash-flow?months=${months}`
 		);
 	}
 
@@ -769,6 +1007,114 @@ class ApiClient {
 		window.URL.revokeObjectURL(url);
 	}
 
+	// Cash Flow Statement endpoint
+	async getCashFlowStatement(tenantId: string, startDate: string, endDate: string) {
+		return this.request<CashFlowStatement>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/reports/cash-flow?start_date=${startDate}&end_date=${endDate}`
+		);
+	}
+
+	// Balance Confirmation endpoints
+	async getBalanceConfirmationSummary(
+		tenantId: string,
+		type: BalanceConfirmationType,
+		asOfDate: string
+	) {
+		return this.request<BalanceConfirmationSummary>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/reports/balance-confirmations?type=${type}&as_of_date=${asOfDate}`
+		);
+	}
+
+	async getBalanceConfirmation(
+		tenantId: string,
+		contactId: string,
+		type: BalanceConfirmationType,
+		asOfDate: string
+	) {
+		return this.request<BalanceConfirmation>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/reports/balance-confirmations/${contactId}?type=${type}&as_of_date=${asOfDate}`
+		);
+	}
+
+	// Payment Reminder endpoints
+	async getOverdueInvoices(tenantId: string) {
+		return this.request<OverdueInvoicesSummary>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/invoices/overdue`
+		);
+	}
+
+	async sendPaymentReminder(tenantId: string, invoiceId: string, message?: string) {
+		return this.request<ReminderResult>('POST', `/api/v1/tenants/${tenantId}/invoices/reminders`, {
+			invoice_id: invoiceId,
+			message
+		});
+	}
+
+	async sendBulkPaymentReminders(tenantId: string, invoiceIds: string[], message?: string) {
+		return this.request<BulkReminderResult>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/invoices/reminders/bulk`,
+			{
+				invoice_ids: invoiceIds,
+				message
+			}
+		);
+	}
+
+	async getInvoiceReminderHistory(tenantId: string, invoiceId: string) {
+		return this.request<PaymentReminder[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/invoices/${invoiceId}/reminders`
+		);
+	}
+
+	// Cost Centers
+	async listCostCenters(tenantId: string, activeOnly = false) {
+		const query = activeOnly ? '?active_only=true' : '';
+		return this.request<CostCenter[]>('GET', `/api/v1/tenants/${tenantId}/cost-centers${query}`);
+	}
+
+	async getCostCenter(tenantId: string, costCenterId: string) {
+		return this.request<CostCenter>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/cost-centers/${costCenterId}`
+		);
+	}
+
+	async createCostCenter(tenantId: string, data: CreateCostCenterRequest) {
+		return this.request<CostCenter>('POST', `/api/v1/tenants/${tenantId}/cost-centers`, data);
+	}
+
+	async updateCostCenter(tenantId: string, costCenterId: string, data: UpdateCostCenterRequest) {
+		return this.request<CostCenter>(
+			'PUT',
+			`/api/v1/tenants/${tenantId}/cost-centers/${costCenterId}`,
+			data
+		);
+	}
+
+	async deleteCostCenter(tenantId: string, costCenterId: string) {
+		return this.request<void>(
+			'DELETE',
+			`/api/v1/tenants/${tenantId}/cost-centers/${costCenterId}`
+		);
+	}
+
+	async getCostCenterReport(tenantId: string, startDate?: string, endDate?: string) {
+		const params = new URLSearchParams();
+		if (startDate) params.append('start_date', startDate);
+		if (endDate) params.append('end_date', endDate);
+		const query = params.toString() ? `?${params.toString()}` : '';
+		return this.request<CostCenterReport>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/cost-centers/report${query}`
+		);
+	}
+
 	// Payroll - Employee endpoints
 	async listEmployees(tenantId: string, activeOnly = false) {
 		const query = activeOnly ? '?active_only=true' : '';
@@ -920,6 +1266,106 @@ class ApiClient {
 			'POST',
 			`/api/v1/tenants/${tenantId}/tsd/${year}/${month}/submit`,
 			{ emta_reference: emtaReference }
+		);
+	}
+
+	// Leave/Absence Management
+	async listAbsenceTypes(tenantId: string, activeOnly = false) {
+		const query = activeOnly ? '?active_only=true' : '';
+		return this.request<AbsenceType[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/absence-types${query}`
+		);
+	}
+
+	async getAbsenceType(tenantId: string, typeId: string) {
+		return this.request<AbsenceType>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/absence-types/${typeId}`
+		);
+	}
+
+	async listLeaveBalances(tenantId: string, employeeId: string, year?: number) {
+		const query = year ? `?year=${year}` : '';
+		return this.request<LeaveBalance[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/employees/${employeeId}/leave-balances${query}`
+		);
+	}
+
+	async getLeaveBalancesByYear(tenantId: string, employeeId: string, year: number) {
+		return this.request<LeaveBalance[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/employees/${employeeId}/leave-balances/${year}`
+		);
+	}
+
+	async updateLeaveBalance(
+		tenantId: string,
+		employeeId: string,
+		year: number,
+		typeId: string,
+		data: UpdateLeaveBalanceRequest
+	) {
+		return this.request<LeaveBalance>(
+			'PUT',
+			`/api/v1/tenants/${tenantId}/employees/${employeeId}/leave-balances/${year}/${typeId}`,
+			data
+		);
+	}
+
+	async initializeLeaveBalances(tenantId: string, employeeId: string, year: number) {
+		return this.request<LeaveBalance[]>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/employees/${employeeId}/leave-balances/${year}/initialize`
+		);
+	}
+
+	async listLeaveRecords(tenantId: string, employeeId?: string, year?: number) {
+		const params = new URLSearchParams();
+		if (employeeId) params.append('employee_id', employeeId);
+		if (year) params.append('year', year.toString());
+		const query = params.toString() ? `?${params.toString()}` : '';
+		return this.request<LeaveRecord[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/leave-records${query}`
+		);
+	}
+
+	async createLeaveRecord(tenantId: string, data: CreateLeaveRecordRequest) {
+		return this.request<LeaveRecord>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/leave-records`,
+			data
+		);
+	}
+
+	async getLeaveRecord(tenantId: string, recordId: string) {
+		return this.request<LeaveRecord>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/leave-records/${recordId}`
+		);
+	}
+
+	async approveLeaveRecord(tenantId: string, recordId: string) {
+		return this.request<LeaveRecord>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/leave-records/${recordId}/approve`
+		);
+	}
+
+	async rejectLeaveRecord(tenantId: string, recordId: string, reason: string) {
+		return this.request<LeaveRecord>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/leave-records/${recordId}/reject`,
+			{ reason }
+		);
+	}
+
+	async cancelLeaveRecord(tenantId: string, recordId: string) {
+		return this.request<LeaveRecord>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/leave-records/${recordId}/cancel`
 		);
 	}
 
@@ -1389,9 +1835,473 @@ export interface AllocationRequest {
 
 export interface PaymentFilter {
 	type?: PaymentType;
+	method?: string;
 	contact_id?: string;
 	from_date?: string;
 	to_date?: string;
+}
+
+// Quote types
+export type QuoteStatus = 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | 'CONVERTED';
+
+export interface Quote {
+	id: string;
+	tenant_id: string;
+	quote_number: string;
+	contact_id: string;
+	contact?: Contact;
+	quote_date: string;
+	valid_until?: string;
+	status: QuoteStatus;
+	currency: string;
+	exchange_rate: Decimal;
+	subtotal: Decimal;
+	vat_amount: Decimal;
+	total: Decimal;
+	notes?: string;
+	converted_to_order_id?: string;
+	converted_to_invoice_id?: string;
+	lines: QuoteLine[];
+	created_at: string;
+	created_by: string;
+	updated_at: string;
+}
+
+export interface QuoteLine {
+	id: string;
+	tenant_id: string;
+	quote_id: string;
+	line_number: number;
+	description: string;
+	quantity: Decimal;
+	unit?: string;
+	unit_price: Decimal;
+	discount_percent: Decimal;
+	vat_rate: Decimal;
+	line_subtotal: Decimal;
+	line_vat: Decimal;
+	line_total: Decimal;
+	product_id?: string;
+}
+
+export interface CreateQuoteRequest {
+	contact_id: string;
+	quote_date: string;
+	valid_until?: string;
+	currency?: string;
+	exchange_rate?: string;
+	notes?: string;
+	lines: CreateQuoteLineRequest[];
+}
+
+export interface CreateQuoteLineRequest {
+	description: string;
+	quantity: string;
+	unit?: string;
+	unit_price: string;
+	discount_percent?: string;
+	vat_rate: string;
+	product_id?: string;
+}
+
+export interface UpdateQuoteRequest {
+	contact_id: string;
+	quote_date: string;
+	valid_until?: string;
+	currency?: string;
+	exchange_rate?: string;
+	notes?: string;
+	lines: CreateQuoteLineRequest[];
+}
+
+export interface QuoteFilter {
+	status?: QuoteStatus;
+	contact_id?: string;
+	from_date?: string;
+	to_date?: string;
+	search?: string;
+}
+
+// Order types
+export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
+
+export interface Order {
+	id: string;
+	tenant_id: string;
+	order_number: string;
+	contact_id: string;
+	contact?: Contact;
+	order_date: string;
+	expected_delivery?: string;
+	status: OrderStatus;
+	currency: string;
+	exchange_rate: Decimal;
+	subtotal: Decimal;
+	vat_amount: Decimal;
+	total: Decimal;
+	notes?: string;
+	quote_id?: string;
+	converted_to_invoice_id?: string;
+	lines: OrderLine[];
+	created_at: string;
+	created_by: string;
+	updated_at: string;
+}
+
+export interface OrderLine {
+	id: string;
+	tenant_id: string;
+	order_id: string;
+	line_number: number;
+	description: string;
+	quantity: Decimal;
+	unit?: string;
+	unit_price: Decimal;
+	discount_percent: Decimal;
+	vat_rate: Decimal;
+	line_subtotal: Decimal;
+	line_vat: Decimal;
+	line_total: Decimal;
+	product_id?: string;
+}
+
+export interface CreateOrderRequest {
+	contact_id: string;
+	order_date: string;
+	expected_delivery?: string;
+	currency?: string;
+	exchange_rate?: string;
+	notes?: string;
+	quote_id?: string;
+	lines: CreateOrderLineRequest[];
+}
+
+export interface CreateOrderLineRequest {
+	description: string;
+	quantity: string;
+	unit?: string;
+	unit_price: string;
+	discount_percent?: string;
+	vat_rate: string;
+	product_id?: string;
+}
+
+export interface UpdateOrderRequest {
+	contact_id: string;
+	order_date: string;
+	expected_delivery?: string;
+	currency?: string;
+	exchange_rate?: string;
+	notes?: string;
+	lines: CreateOrderLineRequest[];
+}
+
+export interface OrderFilter {
+	status?: OrderStatus;
+	contact_id?: string;
+	from_date?: string;
+	to_date?: string;
+	search?: string;
+}
+
+// Fixed Asset types
+export type AssetStatus = 'DRAFT' | 'ACTIVE' | 'DISPOSED' | 'SOLD';
+export type DepreciationMethod = 'STRAIGHT_LINE' | 'DECLINING_BALANCE' | 'UNITS_OF_PRODUCTION';
+export type DisposalMethod = 'SOLD' | 'SCRAPPED' | 'DONATED' | 'LOST';
+
+export interface AssetCategory {
+	id: string;
+	tenant_id: string;
+	name: string;
+	description?: string;
+	depreciation_method: DepreciationMethod;
+	default_useful_life_months: number;
+	default_residual_value_percent: Decimal;
+	asset_account_id?: string;
+	depreciation_expense_account_id?: string;
+	accumulated_depreciation_account_id?: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface FixedAsset {
+	id: string;
+	tenant_id: string;
+	asset_number: string;
+	name: string;
+	description?: string;
+	category_id?: string;
+	category?: AssetCategory;
+	status: AssetStatus;
+	purchase_date: string;
+	purchase_cost: Decimal;
+	supplier_id?: string;
+	serial_number?: string;
+	location?: string;
+	depreciation_method: DepreciationMethod;
+	useful_life_months: number;
+	residual_value: Decimal;
+	depreciation_start_date?: string;
+	accumulated_depreciation: Decimal;
+	book_value: Decimal;
+	last_depreciation_date?: string;
+	disposal_date?: string;
+	disposal_method?: DisposalMethod;
+	disposal_proceeds?: Decimal;
+	disposal_notes?: string;
+	asset_account_id?: string;
+	depreciation_expense_account_id?: string;
+	accumulated_depreciation_account_id?: string;
+	created_at: string;
+	created_by: string;
+	updated_at: string;
+}
+
+export interface DepreciationEntry {
+	id: string;
+	tenant_id: string;
+	asset_id: string;
+	depreciation_date: string;
+	period_start: string;
+	period_end: string;
+	depreciation_amount: Decimal;
+	accumulated_total: Decimal;
+	book_value_after: Decimal;
+	journal_entry_id?: string;
+	created_at: string;
+	created_by: string;
+}
+
+export interface CreateAssetCategoryRequest {
+	name: string;
+	description?: string;
+	depreciation_method?: DepreciationMethod;
+	default_useful_life_months?: number;
+	default_residual_value_percent?: string;
+	asset_account_id?: string;
+	depreciation_expense_account_id?: string;
+	accumulated_depreciation_account_id?: string;
+}
+
+export interface CreateAssetRequest {
+	name: string;
+	description?: string;
+	category_id?: string;
+	purchase_date: string;
+	purchase_cost: string;
+	supplier_id?: string;
+	serial_number?: string;
+	location?: string;
+	depreciation_method?: DepreciationMethod;
+	useful_life_months?: number;
+	residual_value?: string;
+	depreciation_start_date?: string;
+	asset_account_id?: string;
+	depreciation_expense_account_id?: string;
+	accumulated_depreciation_account_id?: string;
+}
+
+export interface UpdateAssetRequest {
+	name: string;
+	description?: string;
+	category_id?: string;
+	serial_number?: string;
+	location?: string;
+	depreciation_method?: DepreciationMethod;
+	useful_life_months?: number;
+	residual_value?: string;
+	asset_account_id?: string;
+	depreciation_expense_account_id?: string;
+	accumulated_depreciation_account_id?: string;
+}
+
+export interface DisposeAssetRequest {
+	disposal_date: string;
+	disposal_method: DisposalMethod;
+	disposal_proceeds?: string;
+	disposal_notes?: string;
+}
+
+export interface AssetFilter {
+	status?: AssetStatus;
+	category_id?: string;
+	from_date?: string;
+	to_date?: string;
+	search?: string;
+}
+
+export interface RecordDepreciationRequest {
+	period_start: string;
+	period_end: string;
+}
+
+// Inventory types
+export type ProductType = 'GOODS' | 'SERVICE';
+export type ProductStatus = 'ACTIVE' | 'INACTIVE';
+export type MovementType = 'IN' | 'OUT' | 'ADJUSTMENT' | 'TRANSFER';
+
+export interface Product {
+	id: string;
+	tenant_id: string;
+	code: string;
+	name: string;
+	description?: string;
+	product_type: ProductType;
+	category_id?: string;
+	unit?: string;
+	purchase_price: Decimal;
+	sales_price: Decimal;
+	vat_rate: Decimal;
+	min_stock_level: Decimal;
+	current_stock: Decimal;
+	reorder_point: Decimal;
+	sale_account_id?: string;
+	purchase_account_id?: string;
+	inventory_account_id?: string;
+	track_inventory: boolean;
+	is_active: boolean;
+	barcode?: string;
+	supplier_id?: string;
+	lead_time_days: number;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface ProductCategory {
+	id: string;
+	tenant_id: string;
+	name: string;
+	description?: string;
+	parent_id?: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface Warehouse {
+	id: string;
+	tenant_id: string;
+	code: string;
+	name: string;
+	address?: string;
+	is_default: boolean;
+	is_active: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface StockLevel {
+	id: string;
+	tenant_id: string;
+	product_id: string;
+	warehouse_id: string;
+	quantity: Decimal;
+	reserved_qty: Decimal;
+	available_qty: Decimal;
+	last_updated: string;
+}
+
+export interface InventoryMovement {
+	id: string;
+	tenant_id: string;
+	product_id: string;
+	warehouse_id: string;
+	movement_type: MovementType;
+	quantity: Decimal;
+	unit_cost: Decimal;
+	total_cost: Decimal;
+	reference?: string;
+	source_type?: string;
+	source_id?: string;
+	to_warehouse_id?: string;
+	notes?: string;
+	movement_date: string;
+	created_at: string;
+	created_by: string;
+}
+
+export interface CreateProductRequest {
+	code?: string;
+	name: string;
+	description?: string;
+	product_type: string;
+	category_id?: string;
+	unit?: string;
+	purchase_price?: string;
+	sales_price: string;
+	vat_rate?: string;
+	min_stock_level?: string;
+	reorder_point?: string;
+	sale_account_id?: string;
+	purchase_account_id?: string;
+	inventory_account_id?: string;
+	track_inventory?: boolean;
+	barcode?: string;
+	supplier_id?: string;
+	lead_time_days?: number;
+}
+
+export interface UpdateProductRequest {
+	name: string;
+	description?: string;
+	category_id?: string;
+	unit?: string;
+	purchase_price?: string;
+	sales_price: string;
+	vat_rate?: string;
+	min_stock_level?: string;
+	reorder_point?: string;
+	sale_account_id?: string;
+	purchase_account_id?: string;
+	inventory_account_id?: string;
+	track_inventory?: boolean;
+	is_active?: boolean;
+	barcode?: string;
+	supplier_id?: string;
+	lead_time_days?: number;
+}
+
+export interface CreateProductCategoryRequest {
+	name: string;
+	description?: string;
+	parent_id?: string;
+}
+
+export interface CreateWarehouseRequest {
+	code: string;
+	name: string;
+	address?: string;
+	is_default?: boolean;
+}
+
+export interface UpdateWarehouseRequest {
+	name: string;
+	address?: string;
+	is_default?: boolean;
+	is_active?: boolean;
+}
+
+export interface AdjustStockRequest {
+	product_id: string;
+	warehouse_id: string;
+	quantity: string;
+	unit_cost?: string;
+	reason?: string;
+}
+
+export interface TransferStockRequest {
+	product_id: string;
+	from_warehouse_id: string;
+	to_warehouse_id: string;
+	quantity: string;
+	notes?: string;
+}
+
+export interface ProductFilter {
+	product_type?: ProductType;
+	status?: ProductStatus;
+	category_id?: string;
+	search?: string;
+	low_stock?: boolean;
 }
 
 // Analytics types
@@ -1416,6 +2326,7 @@ export interface RevenueExpenseChart {
 	labels: string[];
 	revenue: Decimal[];
 	expenses: Decimal[];
+	profit: Decimal[];
 }
 
 export interface CashFlowChart {
@@ -1803,6 +2714,150 @@ export interface CreateKMDRequest {
 	month: number;
 }
 
+// Cash Flow types
+export interface CashFlowItem {
+	code: string;
+	description: string;
+	description_et: string;
+	amount: string;
+	is_subtotal: boolean;
+}
+
+export interface CashFlowStatement {
+	tenant_id: string;
+	start_date: string;
+	end_date: string;
+	operating_activities: CashFlowItem[];
+	investing_activities: CashFlowItem[];
+	financing_activities: CashFlowItem[];
+	total_operating: string;
+	total_investing: string;
+	total_financing: string;
+	net_cash_change: string;
+	opening_cash: string;
+	closing_cash: string;
+	generated_at: string;
+}
+
+// Balance Confirmation types
+export type BalanceConfirmationType = 'RECEIVABLE' | 'PAYABLE';
+
+export interface BalanceInvoice {
+	invoice_id: string;
+	invoice_number: string;
+	invoice_date: string;
+	due_date: string;
+	total_amount: string;
+	amount_paid: string;
+	outstanding_amount: string;
+	currency: string;
+	days_overdue: number;
+}
+
+export interface ContactBalance {
+	contact_id: string;
+	contact_name: string;
+	contact_code?: string;
+	contact_email?: string;
+	balance: string;
+	invoice_count: number;
+	oldest_invoice?: string;
+}
+
+export interface BalanceConfirmationSummary {
+	type: BalanceConfirmationType;
+	as_of_date: string;
+	total_balance: string;
+	contact_count: number;
+	invoice_count: number;
+	contacts: ContactBalance[];
+	generated_at: string;
+}
+
+export interface BalanceConfirmation {
+	id: string;
+	tenant_id: string;
+	contact_id: string;
+	contact_name: string;
+	contact_code?: string;
+	contact_email?: string;
+	type: BalanceConfirmationType;
+	as_of_date: string;
+	total_balance: string;
+	invoices: BalanceInvoice[];
+	generated_at: string;
+}
+
+// Payment Reminder types
+export type ReminderStatus = 'PENDING' | 'SENT' | 'FAILED' | 'CANCELLED';
+
+export interface PaymentReminder {
+	id: string;
+	tenant_id: string;
+	invoice_id: string;
+	invoice_number: string;
+	contact_id: string;
+	contact_name: string;
+	contact_email: string;
+	reminder_number: number;
+	status: ReminderStatus;
+	sent_at?: string;
+	error_message?: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface OverdueInvoice {
+	id: string;
+	invoice_number: string;
+	contact_id: string;
+	contact_name: string;
+	contact_email?: string;
+	issue_date: string;
+	due_date: string;
+	total: string;
+	amount_paid: string;
+	outstanding_amount: string;
+	currency: string;
+	days_overdue: number;
+	reminder_count: number;
+	last_reminder_at?: string;
+}
+
+export interface OverdueInvoicesSummary {
+	total_overdue: string;
+	invoice_count: number;
+	contact_count: number;
+	average_days_overdue: number;
+	invoices: OverdueInvoice[];
+	generated_at: string;
+}
+
+export interface SendReminderRequest {
+	invoice_id: string;
+	message?: string;
+}
+
+export interface SendBulkRemindersRequest {
+	invoice_ids: string[];
+	message?: string;
+}
+
+export interface ReminderResult {
+	invoice_id: string;
+	invoice_number: string;
+	success: boolean;
+	message: string;
+	reminder_id?: string;
+}
+
+export interface BulkReminderResult {
+	total_requested: number;
+	successful: number;
+	failed: number;
+	results: ReminderResult[];
+}
+
 // Payroll types
 export type EmploymentType = 'FULL_TIME' | 'PART_TIME' | 'CONTRACT';
 export type PayrollStatus = 'DRAFT' | 'CALCULATED' | 'APPROVED' | 'PAID' | 'DECLARED';
@@ -1986,6 +3041,98 @@ export interface TaxCalculation {
 	total_employer_cost: Decimal;
 }
 
+// Leave/Absence Management Types
+export type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+
+export interface AbsenceType {
+	id: string;
+	tenant_id: string;
+	code: string;
+	name: string;
+	name_et: string;
+	description?: string;
+	is_paid: boolean;
+	affects_salary: boolean;
+	requires_document: boolean;
+	document_type?: string;
+	default_days_per_year: Decimal;
+	max_carryover_days: Decimal;
+	tsd_code?: string;
+	emta_code?: string;
+	is_system: boolean;
+	is_active: boolean;
+	sort_order: number;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface LeaveBalance {
+	id: string;
+	tenant_id: string;
+	employee_id: string;
+	absence_type_id: string;
+	year: number;
+	entitled_days: Decimal;
+	carryover_days: Decimal;
+	used_days: Decimal;
+	pending_days: Decimal;
+	remaining_days: Decimal;
+	notes?: string;
+	created_at: string;
+	updated_at: string;
+	absence_type?: AbsenceType;
+}
+
+export interface LeaveRecord {
+	id: string;
+	tenant_id: string;
+	employee_id: string;
+	absence_type_id: string;
+	start_date: string;
+	end_date: string;
+	total_days: Decimal;
+	working_days: Decimal;
+	status: LeaveStatus;
+	document_number?: string;
+	document_date?: string;
+	document_url?: string;
+	requested_at: string;
+	requested_by?: string;
+	approved_at?: string;
+	approved_by?: string;
+	rejected_at?: string;
+	rejected_by?: string;
+	rejection_reason?: string;
+	payroll_run_id?: string;
+	notes?: string;
+	created_at: string;
+	updated_at: string;
+	absence_type?: AbsenceType;
+	employee?: Employee;
+}
+
+export interface CreateLeaveRecordRequest {
+	employee_id: string;
+	absence_type_id: string;
+	start_date: string;
+	end_date: string;
+	total_days: Decimal;
+	working_days: Decimal;
+	document_number?: string;
+	document_date?: string;
+	notes?: string;
+}
+
+export interface UpdateLeaveBalanceRequest {
+	entitled_days?: Decimal;
+	carryover_days?: Decimal;
+	notes?: string;
+}
+
+export interface RejectLeaveRequest {
+	reason: string;
+}
+
 // Plugin Types
 export type PluginState = 'installed' | 'enabled' | 'disabled' | 'failed';
 export type PermissionRisk = 'low' | 'medium' | 'high' | 'critical';
@@ -2117,6 +3264,66 @@ export interface PluginInfo {
 	author?: string;
 	license?: string;
 	tags?: string[];
+}
+
+// Cost Center Types
+export type BudgetPeriod = 'MONTHLY' | 'QUARTERLY' | 'ANNUAL';
+
+export interface CostCenter {
+	id: string;
+	tenant_id: string;
+	code: string;
+	name: string;
+	description?: string;
+	parent_id?: string;
+	is_active: boolean;
+	budget_amount?: string;
+	budget_period: BudgetPeriod;
+	created_at: string;
+	updated_at: string;
+	children?: CostCenter[];
+	total_spent?: string;
+	budget_used_percentage?: string;
+}
+
+export interface CreateCostCenterRequest {
+	code: string;
+	name: string;
+	description?: string;
+	parent_id?: string;
+	is_active: boolean;
+	budget_amount?: string;
+	budget_period?: BudgetPeriod;
+}
+
+export interface UpdateCostCenterRequest {
+	code: string;
+	name: string;
+	description?: string;
+	parent_id?: string;
+	is_active: boolean;
+	budget_amount?: string;
+	budget_period?: BudgetPeriod;
+}
+
+export interface CostCenterSummary {
+	cost_center: CostCenter;
+	total_expenses: string;
+	budget_amount: string;
+	budget_used_percentage: string;
+	is_over_budget: boolean;
+	period_start: string;
+	period_end: string;
+}
+
+export interface CostCenterReport {
+	tenant_id: string;
+	period_start: string;
+	period_end: string;
+	generated_at: string;
+	cost_centers: CostCenterSummary[];
+	total_expenses: string;
+	total_budget: string;
 }
 
 export const api = new ApiClient();

@@ -20,17 +20,22 @@ import (
 	_ "github.com/HMB-research/open-accounting/docs"
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/analytics"
+	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/email"
+	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	secmiddleware "github.com/HMB-research/open-accounting/internal/middleware"
+	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/pdf"
 	"github.com/HMB-research/open-accounting/internal/plugin"
+	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/recurring"
+	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/scheduler"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
@@ -94,7 +99,15 @@ func main() {
 	bankingService := banking.NewService(pool)
 	taxService := tax.NewService(pool)
 	payrollService := payroll.NewService(pool)
+	absenceService := payroll.NewAbsenceServiceWithPool(pool)
 	pluginService := plugin.NewService(pool, "./plugins")
+	quotesService := quotes.NewService(pool)
+	ordersService := orders.NewService(pool)
+	assetsService := assets.NewService(pool)
+	reportsService := reports.NewService(pool)
+	inventoryService := inventory.NewService(pool)
+	reminderService := invoicing.NewReminderService(pool, emailService)
+	costCenterService := accounting.NewCostCenterService(pool)
 
 	// Load enabled plugins on startup
 	if err := pluginService.LoadEnabledPlugins(ctx); err != nil {
@@ -130,7 +143,15 @@ func main() {
 		bankingService:    bankingService,
 		taxService:        taxService,
 		payrollService:    payrollService,
+		absenceService:    absenceService,
 		pluginService:     pluginService,
+		quotesService:     quotesService,
+		ordersService:     ordersService,
+		assetsService:     assetsService,
+		inventoryService:  inventoryService,
+		reportsService:    reportsService,
+		reminderService:   reminderService,
+		costCenterService: costCenterService,
 	}
 
 	// Setup router
@@ -335,6 +356,75 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/invoices/{invoiceID}/pdf", h.GetInvoicePDF)
 				r.Post("/invoices/{invoiceID}/send", h.SendInvoice)
 				r.Post("/invoices/{invoiceID}/void", h.VoidInvoice)
+				r.Get("/invoices/{invoiceID}/reminders", h.GetInvoiceReminderHistory)
+
+				// Payment Reminders
+				r.Get("/invoices/overdue", h.GetOverdueInvoices)
+				r.Post("/invoices/reminders", h.SendPaymentReminder)
+				r.Post("/invoices/reminders/bulk", h.SendBulkPaymentReminders)
+
+				// Quotes
+				r.Get("/quotes", h.ListQuotes)
+				r.Post("/quotes", h.CreateQuote)
+				r.Get("/quotes/{quoteID}", h.GetQuote)
+				r.Put("/quotes/{quoteID}", h.UpdateQuote)
+				r.Delete("/quotes/{quoteID}", h.DeleteQuote)
+				r.Post("/quotes/{quoteID}/send", h.SendQuote)
+				r.Post("/quotes/{quoteID}/accept", h.AcceptQuote)
+				r.Post("/quotes/{quoteID}/reject", h.RejectQuote)
+
+				// Orders
+				r.Get("/orders", h.ListOrders)
+				r.Post("/orders", h.CreateOrder)
+				r.Get("/orders/{orderID}", h.GetOrder)
+				r.Put("/orders/{orderID}", h.UpdateOrder)
+				r.Delete("/orders/{orderID}", h.DeleteOrder)
+				r.Post("/orders/{orderID}/confirm", h.ConfirmOrder)
+				r.Post("/orders/{orderID}/process", h.ProcessOrder)
+				r.Post("/orders/{orderID}/ship", h.ShipOrder)
+				r.Post("/orders/{orderID}/deliver", h.DeliverOrder)
+				r.Post("/orders/{orderID}/cancel", h.CancelOrder)
+
+				// Fixed Assets
+				r.Get("/asset-categories", h.ListAssetCategories)
+				r.Post("/asset-categories", h.CreateAssetCategory)
+				r.Get("/asset-categories/{categoryID}", h.GetAssetCategory)
+				r.Delete("/asset-categories/{categoryID}", h.DeleteAssetCategory)
+				r.Get("/assets", h.ListAssets)
+				r.Post("/assets", h.CreateAsset)
+				r.Get("/assets/{assetID}", h.GetAsset)
+				r.Put("/assets/{assetID}", h.UpdateAsset)
+				r.Delete("/assets/{assetID}", h.DeleteAsset)
+				r.Post("/assets/{assetID}/activate", h.ActivateAsset)
+				r.Post("/assets/{assetID}/dispose", h.DisposeAsset)
+				r.Post("/assets/{assetID}/depreciation", h.RecordDepreciation)
+				r.Get("/assets/{assetID}/depreciation", h.GetDepreciationHistory)
+
+				// Inventory - Product Categories
+				r.Get("/product-categories", h.ListProductCategories)
+				r.Post("/product-categories", h.CreateProductCategory)
+				r.Get("/product-categories/{categoryID}", h.GetProductCategory)
+				r.Delete("/product-categories/{categoryID}", h.DeleteProductCategory)
+
+				// Inventory - Products
+				r.Get("/products", h.ListProducts)
+				r.Post("/products", h.CreateProduct)
+				r.Get("/products/{productID}", h.GetProduct)
+				r.Put("/products/{productID}", h.UpdateProduct)
+				r.Delete("/products/{productID}", h.DeleteProduct)
+				r.Get("/products/{productID}/stock-levels", h.GetStockLevels)
+				r.Get("/products/{productID}/movements", h.GetInventoryMovements)
+
+				// Inventory - Warehouses
+				r.Get("/warehouses", h.ListWarehouses)
+				r.Post("/warehouses", h.CreateWarehouse)
+				r.Get("/warehouses/{warehouseID}", h.GetWarehouse)
+				r.Put("/warehouses/{warehouseID}", h.UpdateWarehouse)
+				r.Delete("/warehouses/{warehouseID}", h.DeleteWarehouse)
+
+				// Inventory - Stock Operations
+				r.Post("/inventory/adjust", h.AdjustStock)
+				r.Post("/inventory/transfer", h.TransferStock)
 
 				// Payments
 				r.Get("/payments", h.ListPayments)
@@ -348,6 +438,17 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/reports/account-balance/{accountID}", h.GetAccountBalance)
 				r.Get("/reports/balance-sheet", h.GetBalanceSheet)
 				r.Get("/reports/income-statement", h.GetIncomeStatement)
+				r.Get("/reports/cash-flow", h.GetCashFlowStatement)
+				r.Get("/reports/balance-confirmations", h.GetBalanceConfirmationSummary)
+				r.Get("/reports/balance-confirmations/{contactID}", h.GetBalanceConfirmation)
+
+				// Cost Centers
+				r.Get("/cost-centers", h.ListCostCenters)
+				r.Post("/cost-centers", h.CreateCostCenter)
+				r.Get("/cost-centers/report", h.GetCostCenterReport)
+				r.Get("/cost-centers/{costCenterID}", h.GetCostCenter)
+				r.Put("/cost-centers/{costCenterID}", h.UpdateCostCenter)
+				r.Delete("/cost-centers/{costCenterID}", h.DeleteCostCenter)
 
 				// Analytics
 				r.Get("/analytics/dashboard", h.GetDashboardSummary)
@@ -427,6 +528,20 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 
 				// Payroll - Tax Preview
 				r.Post("/payroll/tax-preview", h.CalculateTaxPreview)
+
+				// Leave/Absence Management
+				r.Get("/absence-types", h.ListAbsenceTypes)
+				r.Get("/absence-types/{typeID}", h.GetAbsenceType)
+				r.Get("/employees/{employeeID}/leave-balances", h.ListLeaveBalances)
+				r.Get("/employees/{employeeID}/leave-balances/{year}", h.GetLeaveBalancesByYear)
+				r.Put("/employees/{employeeID}/leave-balances/{year}/{typeID}", h.UpdateLeaveBalance)
+				r.Post("/employees/{employeeID}/leave-balances/{year}/initialize", h.InitializeLeaveBalances)
+				r.Get("/leave-records", h.ListLeaveRecords)
+				r.Post("/leave-records", h.CreateLeaveRecord)
+				r.Get("/leave-records/{recordID}", h.GetLeaveRecord)
+				r.Post("/leave-records/{recordID}/approve", h.ApproveLeaveRecord)
+				r.Post("/leave-records/{recordID}/reject", h.RejectLeaveRecord)
+				r.Post("/leave-records/{recordID}/cancel", h.CancelLeaveRecord)
 
 				// TSD Declarations
 				r.Get("/tsd", h.ListTSD)

@@ -47,7 +47,8 @@ export async function loginAsDemo(page: Page, testInfo: TestInfo): Promise<void>
 	await passwordInput.fill(creds.password);
 
 	// Click sign in and wait for navigation
-	const signInButton = page.getByRole('button', { name: /sign in|login/i });
+	// Support both English "Sign In" and Estonian "Logi sisse"
+	const signInButton = page.getByRole('button', { name: /sign in|login|logi sisse/i });
 	await signInButton.click();
 
 	// Wait for navigation with better error handling

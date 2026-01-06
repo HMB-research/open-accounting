@@ -51,7 +51,7 @@
 		error = '';
 
 		try {
-			payrollRuns = await api.listPayrollRuns(tenantId, filterYear);
+			payrollRuns = await api.listPayrollRuns(tenantId, filterYear) ?? [];
 		} catch (err) {
 			error = err instanceof Error ? err.message : m.payroll_failedToLoad();
 		} finally {

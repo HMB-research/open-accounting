@@ -83,7 +83,18 @@
 					<a href={getNavUrl('/journal')}>{m.nav_journal()}</a>
 					<a href={getNavUrl('/contacts')}>{m.nav_contacts()}</a>
 					<a href={getNavUrl('/invoices')}>{m.nav_invoices()}</a>
-					<a href={getNavUrl('/payments')}>{m.nav_payments()}</a>
+					<a href={getNavUrl('/quotes')}>{m.nav_quotes()}</a>
+					<a href={getNavUrl('/orders')}>{m.nav_orders()}</a>
+					<a href={getNavUrl('/assets')}>{m.nav_assets()}</a>
+					<a href={getNavUrl('/inventory')}>{m.nav_inventory()}</a>
+					<div class="nav-dropdown">
+						<span class="nav-dropdown-trigger">{m.nav_payments()}</span>
+						<div class="nav-dropdown-menu">
+							<a href={getNavUrl('/banking')}>{m.nav_bankPayments()}</a>
+							<a href={getNavUrl('/payments/cash')}>{m.nav_cashPayments()}</a>
+							<a href={getNavUrl('/payments')}>{m.nav_payments()}</a>
+						</div>
+					</div>
 					<a href={getNavUrl('/reports')}>{m.nav_reports()}</a>
 					<div class="nav-dropdown">
 						<span class="nav-dropdown-trigger">{m.nav_payroll()}</span>
@@ -136,7 +147,26 @@
 					<a href={getNavUrl('/journal')} class="mobile-nav-link">{m.nav_journal()}</a>
 					<a href={getNavUrl('/contacts')} class="mobile-nav-link">{m.nav_contacts()}</a>
 					<a href={getNavUrl('/invoices')} class="mobile-nav-link">{m.nav_invoices()}</a>
-					<a href={getNavUrl('/payments')} class="mobile-nav-link">{m.nav_payments()}</a>
+					<a href={getNavUrl('/quotes')} class="mobile-nav-link">{m.nav_quotes()}</a>
+					<a href={getNavUrl('/orders')} class="mobile-nav-link">{m.nav_orders()}</a>
+					<a href={getNavUrl('/assets')} class="mobile-nav-link">{m.nav_assets()}</a>
+					<a href={getNavUrl('/inventory')} class="mobile-nav-link">{m.nav_inventory()}</a>
+
+					<!-- Payments Accordion -->
+					<div class="mobile-nav-accordion">
+						<button class="mobile-nav-accordion-trigger" onclick={() => toggleDropdown('payments')}>
+							<span>{m.nav_payments()}</span>
+							<span class="accordion-arrow" class:expanded={expandedDropdown === 'payments'}>▸</span>
+						</button>
+						{#if expandedDropdown === 'payments'}
+							<div class="mobile-nav-accordion-content">
+								<a href={getNavUrl('/banking')} class="mobile-nav-link sub">{m.nav_bankPayments()}</a>
+								<a href={getNavUrl('/payments/cash')} class="mobile-nav-link sub">{m.nav_cashPayments()}</a>
+								<a href={getNavUrl('/payments')} class="mobile-nav-link sub">{m.nav_payments()}</a>
+							</div>
+						{/if}
+					</div>
+
 					<a href={getNavUrl('/reports')} class="mobile-nav-link">{m.nav_reports()}</a>
 
 					<!-- Payroll Accordion -->

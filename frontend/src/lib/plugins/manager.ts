@@ -67,7 +67,7 @@ function createPluginManager() {
 		}
 
 		try {
-			const plugins = await api.listTenantPlugins(tenantId);
+			const plugins = await api.listTenantPlugins(tenantId) ?? [];
 			const enabledPlugins = plugins.filter((p) => p.is_enabled && p.plugin);
 
 			// Extract navigation items from enabled plugins

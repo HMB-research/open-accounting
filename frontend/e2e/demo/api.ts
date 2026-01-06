@@ -49,7 +49,7 @@ export const EXPECTED_DEMO_DATA = {
 		keys: []
 	},
 	journalEntries: {
-		count: 4,
+		count: 16,
 		// Keys are per-user: JE1-2024-001 for user 1, etc.
 		keys: []
 	},
@@ -87,9 +87,12 @@ export function getExpectedPaymentKey(userNum: number): string {
 
 /**
  * Get expected journal entry key pattern for a user
+ * Note: The status API returns entries ordered by entry_number alphabetically.
+ * JE-DYN-* entries come before JE{N}-2024-* entries, so we check for dynamic entries.
  */
-export function getExpectedJournalEntryKey(userNum: number): string {
-	return `JE${userNum}-2024-001`;
+export function getExpectedJournalEntryKey(_userNum: number): string {
+	// Dynamic journal entries are the same for all demo users
+	return 'JE-DYN-001';
 }
 
 /**

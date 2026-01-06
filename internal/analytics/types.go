@@ -42,6 +42,7 @@ type RevenueExpenseChart struct {
 	Labels   []string          `json:"labels"`
 	Revenue  []decimal.Decimal `json:"revenue"`
 	Expenses []decimal.Decimal `json:"expenses"`
+	Profit   []decimal.Decimal `json:"profit"` // Revenue - Expenses
 }
 
 // CashFlowChart contains data for cash flow chart
