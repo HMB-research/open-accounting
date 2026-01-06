@@ -25,9 +25,13 @@ type MockRepository struct {
 	ErrOnUpdate         bool
 	ErrOnDelete         bool
 	ErrOnList           bool
-	ErrOnListMovements  bool
-	ErrOnCreateMovement bool
-	ErrOnGenerateCode   bool
+	ErrOnListMovements     bool
+	ErrOnCreateMovement    bool
+	ErrOnGenerateCode      bool
+	ErrOnUpdateProductStock bool
+	ErrOnUpsertStockLevel  bool
+	CreateMovementCallCount int
+	CreateMovementErrAfter int // fail after this many successful calls (0 = fail immediately if ErrOnCreateMovement)
 }
 
 // NewMockRepository creates a new mock repository
@@ -289,6 +293,9 @@ func (r *MockRepository) GetStockLevelsByProduct(ctx context.Context, schemaName
 }
 
 func (r *MockRepository) UpsertStockLevel(ctx context.Context, schemaName string, level *StockLevel) error {
+	if r.ErrOnUpsertStockLevel {
+		return fmt.Errorf("mock error on upsert stock level")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	key := level.ProductID + "-" + level.WarehouseID
@@ -298,11 +305,17 @@ func (r *MockRepository) UpsertStockLevel(ctx context.Context, schemaName string
 
 // Movements
 func (r *MockRepository) CreateMovement(ctx context.Context, schemaName string, movement *InventoryMovement) error {
-	if r.ErrOnCreateMovement {
-		return fmt.Errorf("mock error on create movement")
-	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.CreateMovementCallCount++
+	if r.ErrOnCreateMovement {
+		// If ErrAfter is set, only fail after that many successful calls
+		if r.CreateMovementErrAfter > 0 && r.CreateMovementCallCount <= r.CreateMovementErrAfter {
+			r.Movements[movement.ProductID] = append(r.Movements[movement.ProductID], *movement)
+			return nil
+		}
+		return fmt.Errorf("mock error on create movement")
+	}
 	r.Movements[movement.ProductID] = append(r.Movements[movement.ProductID], *movement)
 	return nil
 }
@@ -325,6 +338,9 @@ func (r *MockRepository) ListMovements(ctx context.Context, schemaName, tenantID
 
 // Stock updates
 func (r *MockRepository) UpdateProductStock(ctx context.Context, schemaName, tenantID, productID string, newStock decimal.Decimal) error {
+	if r.ErrOnUpdateProductStock {
+		return fmt.Errorf("mock error on update product stock")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	p, exists := r.Products[productID]
@@ -1637,4 +1653,81 @@ func TestService_AdjustStock_CreateMovementError(t *testing.T) {
 	_, err := ts.svc.AdjustStock(ctx, "tenant-1", "test_schema", req)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "create movement")
+}
+
+func TestService_AdjustStock_UpdateProductStockError(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	// Create a product first
+	ts.repo.Products["p1"] = &Product{
+		ID:           "p1",
+		TenantID:     "tenant-1",
+		Name:         "Test Product",
+		CurrentStock: decimal.NewFromInt(100),
+	}
+
+	// Enable error on UpdateProductStock
+	ts.repo.ErrOnUpdateProductStock = true
+
+	req := &AdjustStockRequest{
+		ProductID:   "p1",
+		WarehouseID: "w1",
+		Quantity:    "10",
+		Reason:      "Adjustment",
+		UserID:      "user-1",
+	}
+
+	_, err := ts.svc.AdjustStock(ctx, "tenant-1", "test_schema", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "update product stock")
+}
+
+func TestService_AdjustStock_UpsertStockLevelError(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	// Create a product first
+	ts.repo.Products["p1"] = &Product{
+		ID:           "p1",
+		TenantID:     "tenant-1",
+		Name:         "Test Product",
+		CurrentStock: decimal.NewFromInt(100),
+	}
+
+	// Enable error on UpsertStockLevel
+	ts.repo.ErrOnUpsertStockLevel = true
+
+	req := &AdjustStockRequest{
+		ProductID:   "p1",
+		WarehouseID: "w1",
+		Quantity:    "10",
+		Reason:      "Adjustment",
+		UserID:      "user-1",
+	}
+
+	_, err := ts.svc.AdjustStock(ctx, "tenant-1", "test_schema", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "update stock level")
+}
+
+func TestService_TransferStock_CreateInMovementError(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	// Enable error only after first call succeeds (for OUT movement)
+	ts.repo.ErrOnCreateMovement = true
+	ts.repo.CreateMovementErrAfter = 1
+
+	req := &TransferStockRequest{
+		ProductID:       "p1",
+		FromWarehouseID: "w1",
+		ToWarehouseID:   "w2",
+		Quantity:        "10",
+		UserID:          "user-1",
+	}
+
+	err := ts.svc.TransferStock(ctx, "tenant-1", "test_schema", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create in movement")
 }
