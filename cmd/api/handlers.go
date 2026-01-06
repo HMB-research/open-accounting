@@ -60,7 +60,8 @@ type Handlers struct {
 	assetsService     *assets.Service
 	inventoryService  *inventory.Service
 	reportsService    *reports.Service
-	reminderService   *invoicing.ReminderService
+	reminderService     *invoicing.ReminderService
+	costCenterService   *accounting.CostCenterService
 }
 
 // getSchemaName returns the schema name for a tenant
@@ -2011,4 +2012,158 @@ INSERT INTO tenant_acme.bank_transactions (id, tenant_id, bank_account_id, trans
 ('79000000-0000-0000-0001-000000000008'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '80000000-0000-0000-0001-000000000001'::uuid, '2024-12-22', '2024-12-22', -75.50, 'EUR', 'Bank service fee', 'FEE-DEC-24', 'Swedbank', NULL, 'UNMATCHED')
 ON CONFLICT DO NOTHING;
 `
+}
+
+// Cost Center Handlers
+
+// ListCostCenters handles GET /tenants/{tenantID}/cost-centers
+func (h *Handlers) ListCostCenters(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	activeOnlyStr := r.URL.Query().Get("active_only")
+	activeOnly := activeOnlyStr == "true"
+
+	costCenters, err := h.costCenterService.ListCostCenters(r.Context(), schemaName, tenantID, activeOnly)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, costCenters)
+}
+
+// GetCostCenter handles GET /tenants/{tenantID}/cost-centers/{costCenterID}
+func (h *Handlers) GetCostCenter(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	costCenterID := chi.URLParam(r, "costCenterID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	cc, err := h.costCenterService.GetCostCenter(r.Context(), schemaName, tenantID, costCenterID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			respondError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, cc)
+}
+
+// CreateCostCenter handles POST /tenants/{tenantID}/cost-centers
+func (h *Handlers) CreateCostCenter(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req accounting.CreateCostCenterRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	cc, err := h.costCenterService.CreateCostCenter(r.Context(), schemaName, tenantID, &req)
+	if err != nil {
+		if strings.Contains(err.Error(), "required") {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, cc)
+}
+
+// UpdateCostCenter handles PUT /tenants/{tenantID}/cost-centers/{costCenterID}
+func (h *Handlers) UpdateCostCenter(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	costCenterID := chi.URLParam(r, "costCenterID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req accounting.UpdateCostCenterRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	cc, err := h.costCenterService.UpdateCostCenter(r.Context(), schemaName, tenantID, costCenterID, &req)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			respondError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, cc)
+}
+
+// DeleteCostCenter handles DELETE /tenants/{tenantID}/cost-centers/{costCenterID}
+func (h *Handlers) DeleteCostCenter(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	costCenterID := chi.URLParam(r, "costCenterID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	err := h.costCenterService.DeleteCostCenter(r.Context(), schemaName, tenantID, costCenterID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			respondError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		if strings.Contains(err.Error(), "cannot delete") {
+			respondError(w, http.StatusConflict, err.Error())
+			return
+		}
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetCostCenterReport handles GET /tenants/{tenantID}/cost-centers/report
+func (h *Handlers) GetCostCenterReport(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	// Parse date range from query params
+	startStr := r.URL.Query().Get("start_date")
+	endStr := r.URL.Query().Get("end_date")
+
+	var start, end time.Time
+	var err error
+
+	if startStr != "" {
+		start, err = time.Parse("2006-01-02", startStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "Invalid start_date format (use YYYY-MM-DD)")
+			return
+		}
+	} else {
+		// Default to start of current year
+		now := time.Now()
+		start = time.Date(now.Year(), 1, 1, 0, 0, 0, 0, time.UTC)
+	}
+
+	if endStr != "" {
+		end, err = time.Parse("2006-01-02", endStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "Invalid end_date format (use YYYY-MM-DD)")
+			return
+		}
+	} else {
+		// Default to today
+		end = time.Now()
+	}
+
+	report, err := h.costCenterService.GetCostCenterReport(r.Context(), schemaName, tenantID, start, end)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, report)
 }

@@ -107,6 +107,7 @@ func main() {
 	reportsService := reports.NewService(pool)
 	inventoryService := inventory.NewService(pool)
 	reminderService := invoicing.NewReminderService(pool, emailService)
+	costCenterService := accounting.NewCostCenterService(pool)
 
 	// Load enabled plugins on startup
 	if err := pluginService.LoadEnabledPlugins(ctx); err != nil {
@@ -148,8 +149,9 @@ func main() {
 		ordersService:     ordersService,
 		assetsService:     assetsService,
 		inventoryService:  inventoryService,
-		reportsService:    reportsService,
-		reminderService:   reminderService,
+		reportsService:      reportsService,
+		reminderService:     reminderService,
+		costCenterService:   costCenterService,
 	}
 
 	// Setup router
@@ -439,6 +441,14 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/reports/cash-flow", h.GetCashFlowStatement)
 				r.Get("/reports/balance-confirmations", h.GetBalanceConfirmationSummary)
 				r.Get("/reports/balance-confirmations/{contactID}", h.GetBalanceConfirmation)
+
+				// Cost Centers
+				r.Get("/cost-centers", h.ListCostCenters)
+				r.Post("/cost-centers", h.CreateCostCenter)
+				r.Get("/cost-centers/report", h.GetCostCenterReport)
+				r.Get("/cost-centers/{costCenterID}", h.GetCostCenter)
+				r.Put("/cost-centers/{costCenterID}", h.UpdateCostCenter)
+				r.Delete("/cost-centers/{costCenterID}", h.DeleteCostCenter)
 
 				// Analytics
 				r.Get("/analytics/dashboard", h.GetDashboardSummary)

@@ -1072,6 +1072,49 @@ class ApiClient {
 		);
 	}
 
+	// Cost Centers
+	async listCostCenters(tenantId: string, activeOnly = false) {
+		const query = activeOnly ? '?active_only=true' : '';
+		return this.request<CostCenter[]>('GET', `/api/v1/tenants/${tenantId}/cost-centers${query}`);
+	}
+
+	async getCostCenter(tenantId: string, costCenterId: string) {
+		return this.request<CostCenter>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/cost-centers/${costCenterId}`
+		);
+	}
+
+	async createCostCenter(tenantId: string, data: CreateCostCenterRequest) {
+		return this.request<CostCenter>('POST', `/api/v1/tenants/${tenantId}/cost-centers`, data);
+	}
+
+	async updateCostCenter(tenantId: string, costCenterId: string, data: UpdateCostCenterRequest) {
+		return this.request<CostCenter>(
+			'PUT',
+			`/api/v1/tenants/${tenantId}/cost-centers/${costCenterId}`,
+			data
+		);
+	}
+
+	async deleteCostCenter(tenantId: string, costCenterId: string) {
+		return this.request<void>(
+			'DELETE',
+			`/api/v1/tenants/${tenantId}/cost-centers/${costCenterId}`
+		);
+	}
+
+	async getCostCenterReport(tenantId: string, startDate?: string, endDate?: string) {
+		const params = new URLSearchParams();
+		if (startDate) params.append('start_date', startDate);
+		if (endDate) params.append('end_date', endDate);
+		const query = params.toString() ? `?${params.toString()}` : '';
+		return this.request<CostCenterReport>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/cost-centers/report${query}`
+		);
+	}
+
 	// Payroll - Employee endpoints
 	async listEmployees(tenantId: string, activeOnly = false) {
 		const query = activeOnly ? '?active_only=true' : '';
@@ -3221,6 +3264,66 @@ export interface PluginInfo {
 	author?: string;
 	license?: string;
 	tags?: string[];
+}
+
+// Cost Center Types
+export type BudgetPeriod = 'MONTHLY' | 'QUARTERLY' | 'ANNUAL';
+
+export interface CostCenter {
+	id: string;
+	tenant_id: string;
+	code: string;
+	name: string;
+	description?: string;
+	parent_id?: string;
+	is_active: boolean;
+	budget_amount?: string;
+	budget_period: BudgetPeriod;
+	created_at: string;
+	updated_at: string;
+	children?: CostCenter[];
+	total_spent?: string;
+	budget_used_percentage?: string;
+}
+
+export interface CreateCostCenterRequest {
+	code: string;
+	name: string;
+	description?: string;
+	parent_id?: string;
+	is_active: boolean;
+	budget_amount?: string;
+	budget_period?: BudgetPeriod;
+}
+
+export interface UpdateCostCenterRequest {
+	code: string;
+	name: string;
+	description?: string;
+	parent_id?: string;
+	is_active: boolean;
+	budget_amount?: string;
+	budget_period?: BudgetPeriod;
+}
+
+export interface CostCenterSummary {
+	cost_center: CostCenter;
+	total_expenses: string;
+	budget_amount: string;
+	budget_used_percentage: string;
+	is_over_budget: boolean;
+	period_start: string;
+	period_end: string;
+}
+
+export interface CostCenterReport {
+	tenant_id: string;
+	period_start: string;
+	period_end: string;
+	generated_at: string;
+	cost_centers: CostCenterSummary[];
+	total_expenses: string;
+	total_budget: string;
 }
 
 export const api = new ApiClient();
