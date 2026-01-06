@@ -44,22 +44,24 @@ DO NOT stop until coverage >= 67% or you've exhausted reasonable test additions.
 
 ---
 
-## Current State
+## Current State (Updated 2026-01-06)
 
-| Package | Coverage | Priority |
-|---------|----------|----------|
-| `internal/orders` | 0.0% | HIGH |
-| `internal/quotes` | 0.0% | HIGH |
-| `internal/invoicing` | 30.8% | HIGH |
-| `internal/database` | 34.2% | MEDIUM |
-| `internal/banking` | 35.0% | MEDIUM |
-| `internal/inventory` | 37.4% | MEDIUM |
-| `internal/reports` | 42.3% | MEDIUM |
-| `internal/accounting` | 44.5% | MEDIUM |
-| `internal/assets` | 45.6% | MEDIUM |
-| `internal/payments` | 47.6% | LOW |
-| `internal/payroll` | 49.5% | LOW |
-| `internal/tenant` | 49.9% | LOW |
+| Package | Coverage | Status |
+|---------|----------|--------|
+| `internal/database` | 34.2% | Needs integration tests |
+| `internal/banking` | 35.0% | Needs integration tests |
+| `internal/inventory` | 37.4% | Needs integration tests |
+| `internal/accounting` | 44.5% | Service layer tested |
+| `internal/invoicing` | 44.0% | ✅ Improved from 30.8% |
+| `internal/assets` | 45.6% | Service layer tested |
+| `internal/payments` | 47.6% | Needs integration tests |
+| `internal/payroll` | 49.5% | Service layer tested |
+| `internal/tenant` | 49.9% | Service layer tested |
+| `internal/quotes` | 51.4% | ✅ Improved from 0% |
+| `internal/orders` | 53.0% | ✅ Improved from 0% |
+| `internal/reports` | 63.0% | ✅ Improved from 42.3% |
+
+**Overall: 55.63% (up from 52.81%)**
 
 ---
 
@@ -201,5 +203,25 @@ After each iteration, update this section:
 
 | # | Package | Before | After | Tests Added |
 |---|---------|--------|-------|-------------|
-| 1 | | | | |
+| 1 | internal/orders | 0.0% | 13% | types_test.go (types, validation, calculations) |
+| 2 | internal/quotes | 0.0% | 15% | types_test.go (types, validation, calculations) |
+| 3 | internal/invoicing | 30.8% | 44% | reminder_test.go (mock repo, service tests) |
+| 4 | internal/reports | 42.3% | 63% | service_test.go (mock repo, balance confirmations) |
+| 5 | internal/orders | 13% | 53% | service_test.go (mock repo, CRUD, status transitions) |
+| 6 | internal/quotes | 15% | 51% | service_test.go (mock repo, CRUD, status transitions) |
+
+### Current Overall Coverage: 55.63%
+
+### Blocker Identified
+
+Reaching 67% coverage requires **database integration tests** for the PostgresRepository implementations. The remaining untested code (~12%) is primarily:
+
+1. PostgreSQL repository methods (all packages)
+2. sqlc-generated database queries (internal/database)
+3. Complex service methods requiring database transactions
+
+**Recommendation:** To reach 67%, add integration tests that use a test database. Consider:
+- Using testcontainers-go to spin up PostgreSQL in tests
+- Creating a test fixtures framework
+- Adding integration test files (*_integration_test.go) with build tags
 
