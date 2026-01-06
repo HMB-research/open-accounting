@@ -27,6 +27,7 @@ type MockRepository struct {
 	ErrOnList           bool
 	ErrOnListMovements  bool
 	ErrOnCreateMovement bool
+	ErrOnGenerateCode   bool
 }
 
 // NewMockRepository creates a new mock repository
@@ -127,6 +128,9 @@ func (r *MockRepository) DeleteProduct(ctx context.Context, schemaName, tenantID
 }
 
 func (r *MockRepository) GenerateCode(ctx context.Context, schemaName, tenantID string) (string, error) {
+	if r.ErrOnGenerateCode {
+		return "", fmt.Errorf("mock error on generate code")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.ProductCodeSeq++
@@ -1165,18 +1169,48 @@ func TestService_CreateProduct_InvalidVATRate(t *testing.T) {
 
 func TestService_CreateProduct_GenerateCodeError(t *testing.T) {
 	ts := newTestService()
-	ts.repo.ErrOnGet = true // GenerateCode implementation may trigger this
+	ts.repo.ErrOnGenerateCode = true
 	ctx := context.Background()
 
 	req := &CreateProductRequest{
 		Name:       "Test",
 		SalesPrice: "100",
+		// No Code provided, so GenerateCode will be called
 	}
 
-	// Note: The mock may not return error for GenerateCode, test the create error path
-	ts.repo.ErrOnCreate = true
 	_, err := ts.svc.CreateProduct(ctx, "tenant-1", "test_schema", req)
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "generate code")
+}
+
+func TestService_CreateProduct_WithMinStockLevel(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	req := &CreateProductRequest{
+		Name:          "Test Product",
+		SalesPrice:    "100",
+		MinStockLevel: "50",
+	}
+
+	product, err := ts.svc.CreateProduct(ctx, "tenant-1", "test_schema", req)
+	require.NoError(t, err)
+	assert.True(t, product.MinStockLevel.Equal(decimal.NewFromInt(50)))
+}
+
+func TestService_CreateProduct_WithReorderPoint(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	req := &CreateProductRequest{
+		Name:         "Test Product",
+		SalesPrice:   "100",
+		ReorderPoint: "25",
+	}
+
+	product, err := ts.svc.CreateProduct(ctx, "tenant-1", "test_schema", req)
+	require.NoError(t, err)
+	assert.True(t, product.ReorderPoint.Equal(decimal.NewFromInt(25)))
 }
 
 func TestService_CreateProduct_RepoError(t *testing.T) {
@@ -1256,6 +1290,95 @@ func TestService_UpdateProduct_RepoError(t *testing.T) {
 	_, err := ts.svc.UpdateProduct(ctx, "tenant-1", "test_schema", "p1", req)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "update product")
+}
+
+func TestService_UpdateProduct_WithPurchasePrice(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products["p1"] = &Product{
+		ID:          "p1",
+		TenantID:    "tenant-1",
+		Name:        "Original",
+		ProductType: ProductTypeGoods,
+		SalesPrice:  decimal.NewFromInt(100),
+	}
+
+	req := &UpdateProductRequest{
+		Name:          "Updated",
+		PurchasePrice: "75",
+	}
+
+	product, err := ts.svc.UpdateProduct(ctx, "tenant-1", "test_schema", "p1", req)
+	require.NoError(t, err)
+	assert.True(t, product.PurchasePrice.Equal(decimal.NewFromInt(75)))
+}
+
+func TestService_UpdateProduct_WithVATRate(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products["p1"] = &Product{
+		ID:          "p1",
+		TenantID:    "tenant-1",
+		Name:        "Original",
+		ProductType: ProductTypeGoods,
+		SalesPrice:  decimal.NewFromInt(100),
+		VATRate:     decimal.NewFromInt(22),
+	}
+
+	req := &UpdateProductRequest{
+		Name:    "Updated",
+		VATRate: "9",
+	}
+
+	product, err := ts.svc.UpdateProduct(ctx, "tenant-1", "test_schema", "p1", req)
+	require.NoError(t, err)
+	assert.True(t, product.VATRate.Equal(decimal.NewFromInt(9)))
+}
+
+func TestService_UpdateProduct_WithMinStockLevel(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products["p1"] = &Product{
+		ID:          "p1",
+		TenantID:    "tenant-1",
+		Name:        "Original",
+		ProductType: ProductTypeGoods,
+		SalesPrice:  decimal.NewFromInt(100),
+	}
+
+	req := &UpdateProductRequest{
+		Name:          "Updated",
+		MinStockLevel: "100",
+	}
+
+	product, err := ts.svc.UpdateProduct(ctx, "tenant-1", "test_schema", "p1", req)
+	require.NoError(t, err)
+	assert.True(t, product.MinStockLevel.Equal(decimal.NewFromInt(100)))
+}
+
+func TestService_UpdateProduct_WithReorderPoint(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products["p1"] = &Product{
+		ID:          "p1",
+		TenantID:    "tenant-1",
+		Name:        "Original",
+		ProductType: ProductTypeGoods,
+		SalesPrice:  decimal.NewFromInt(100),
+	}
+
+	req := &UpdateProductRequest{
+		Name:         "Updated",
+		ReorderPoint: "30",
+	}
+
+	product, err := ts.svc.UpdateProduct(ctx, "tenant-1", "test_schema", "p1", req)
+	require.NoError(t, err)
+	assert.True(t, product.ReorderPoint.Equal(decimal.NewFromInt(30)))
 }
 
 func TestService_DeleteProduct_RepoError(t *testing.T) {
