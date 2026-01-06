@@ -16,6 +16,8 @@ END;
 $$;
 
 -- Restore create_tenant_schema to previous version (without KMD tables)
+-- Note: This restores to the version from migration 007 which didn't include email tables call
+-- The add_email_tables_to_schema function was added in migration 004 but not called in create_tenant_schema
 CREATE OR REPLACE FUNCTION create_tenant_schema(schema_name TEXT) RETURNS VOID AS $$
 BEGIN
     -- Create the schema
@@ -26,6 +28,9 @@ BEGIN
 
     -- Create payroll tables
     PERFORM add_payroll_tables(schema_name);
+
+    -- Create email tables (added in migration 004)
+    PERFORM add_email_tables_to_schema(schema_name);
 END;
 $$ LANGUAGE plpgsql;
 

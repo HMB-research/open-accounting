@@ -93,10 +93,13 @@ BEGIN
     -- Create payroll tables
     PERFORM add_payroll_tables(schema_name);
 
+    -- Create email tables (must be before fix_email_log_schema)
+    PERFORM add_email_tables_to_schema(schema_name);
+
     -- Create KMD (VAT return) tables
     PERFORM add_kmd_tables_to_schema(schema_name);
 
-    -- Fix email_log schema
+    -- Fix email_log schema (add related_id column)
     PERFORM fix_email_log_schema(schema_name);
 END;
 $$ LANGUAGE plpgsql;
