@@ -235,9 +235,11 @@ func (r *ReminderPostgresRepository) ensureReminderTable(ctx context.Context, sc
 
 // MockReminderRepository for testing
 type MockReminderRepository struct {
-	OverdueInvoices []OverdueInvoice
-	Reminders       map[string][]PaymentReminder
-	GetOverdueErr   error
+	OverdueInvoices      []OverdueInvoice
+	Reminders            map[string][]PaymentReminder
+	GetOverdueErr        error
+	GetReminderCountErr  error
+	CreateReminderErr    error
 }
 
 // NewMockReminderRepository creates a new mock reminder repository
@@ -258,6 +260,9 @@ func (m *MockReminderRepository) GetOverdueInvoices(ctx context.Context, schemaN
 
 // GetReminderCount returns mock reminder count
 func (m *MockReminderRepository) GetReminderCount(ctx context.Context, schemaName, tenantID, invoiceID string) (int, *time.Time, error) {
+	if m.GetReminderCountErr != nil {
+		return 0, nil, m.GetReminderCountErr
+	}
 	reminders := m.Reminders[invoiceID]
 	count := 0
 	var lastSent *time.Time
@@ -274,6 +279,9 @@ func (m *MockReminderRepository) GetReminderCount(ctx context.Context, schemaNam
 
 // CreateReminder creates a mock reminder
 func (m *MockReminderRepository) CreateReminder(ctx context.Context, schemaName string, reminder *PaymentReminder) error {
+	if m.CreateReminderErr != nil {
+		return m.CreateReminderErr
+	}
 	m.Reminders[reminder.InvoiceID] = append(m.Reminders[reminder.InvoiceID], *reminder)
 	return nil
 }

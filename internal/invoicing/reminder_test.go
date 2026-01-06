@@ -385,9 +385,8 @@ func TestReminderService_GetOverdueInvoicesSummary_GetReminderCountError(t *test
 	ctx := context.Background()
 
 	// Create a mock that errors on GetReminderCount
-	repo := &MockReminderRepositoryWithReminderCountError{
-		MockReminderRepository: NewMockReminderRepository(),
-	}
+	repo := NewMockReminderRepository()
+	repo.GetReminderCountErr = assert.AnError
 	repo.AddMockOverdueInvoice("inv-1", "INV-001", "c1", "Customer 1", "c1@test.com", "EUR",
 		decimal.NewFromInt(1000), decimal.Zero, 30)
 
@@ -398,13 +397,36 @@ func TestReminderService_GetOverdueInvoicesSummary_GetReminderCountError(t *test
 	assert.Contains(t, err.Error(), "get reminder count")
 }
 
-// MockReminderRepositoryWithReminderCountError is a wrapper for testing error paths
-type MockReminderRepositoryWithReminderCountError struct {
-	*MockReminderRepository
+// TestReminderService_SendReminder_GetReminderCountError tests the GetReminderCount error path in SendReminder
+func TestReminderService_SendReminder_GetReminderCountError(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockReminderRepository()
+	repo.AddMockOverdueInvoice("inv-1", "INV-001", "c1", "Customer 1", "c1@test.com", "EUR",
+		decimal.NewFromInt(1000), decimal.Zero, 30)
+	repo.GetReminderCountErr = assert.AnError
+	svc := NewReminderServiceWithRepository(repo, nil)
+
+	req := &SendReminderRequest{InvoiceID: "inv-1"}
+	_, err := svc.SendReminder(ctx, "tenant-1", "test_schema", req, "Test Company")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get reminder count")
 }
 
-func (m *MockReminderRepositoryWithReminderCountError) GetReminderCount(ctx context.Context, schemaName, tenantID, invoiceID string) (int, *time.Time, error) {
-	return 0, nil, assert.AnError
+// TestReminderService_SendReminder_CreateReminderError tests the CreateReminder error path in SendReminder
+func TestReminderService_SendReminder_CreateReminderError(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockReminderRepository()
+	repo.AddMockOverdueInvoice("inv-1", "INV-001", "c1", "Customer 1", "c1@test.com", "EUR",
+		decimal.NewFromInt(1000), decimal.Zero, 30)
+	repo.CreateReminderErr = assert.AnError
+	svc := NewReminderServiceWithRepository(repo, nil)
+
+	req := &SendReminderRequest{InvoiceID: "inv-1"}
+	_, err := svc.SendReminder(ctx, "tenant-1", "test_schema", req, "Test Company")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create reminder")
 }
 
 // Test SendReminderRequest validation
