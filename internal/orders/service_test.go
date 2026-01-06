@@ -739,6 +739,93 @@ func TestService_StatusTransitions_Errors(t *testing.T) {
 	}
 }
 
+func TestService_Update_GetByIDError(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.GetByIDErr = errors.New("not found")
+	svc := NewServiceWithRepository(repo)
+
+	req := &UpdateOrderRequest{
+		ContactID: "contact-1",
+		OrderDate: time.Now(),
+		Lines: []CreateOrderLineRequest{
+			{
+				Description: "Product",
+				Quantity:    decimal.NewFromInt(1),
+				UnitPrice:   decimal.NewFromFloat(100.00),
+				VATRate:     decimal.NewFromInt(22),
+			},
+		},
+	}
+
+	_, err := svc.Update(ctx, "tenant-1", "test_schema", "order-1", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get order")
+}
+
+func TestService_Update_ValidationError(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	svc := NewServiceWithRepository(repo)
+
+	existingOrder := &Order{
+		ID:        "order-1",
+		TenantID:  "tenant-1",
+		ContactID: "contact-1",
+		Status:    OrderStatusPending,
+	}
+	repo.AddOrder(existingOrder)
+
+	req := &UpdateOrderRequest{
+		ContactID: "", // Missing contact - validation error
+		OrderDate: time.Now(),
+		Lines: []CreateOrderLineRequest{
+			{
+				Description: "Product",
+				Quantity:    decimal.NewFromInt(1),
+				UnitPrice:   decimal.NewFromFloat(100.00),
+				VATRate:     decimal.NewFromInt(22),
+			},
+		},
+	}
+
+	_, err := svc.Update(ctx, "tenant-1", "test_schema", "order-1", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "validation failed")
+}
+
+func TestService_Update_RepositoryError(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.UpdateErr = errors.New("database error")
+	svc := NewServiceWithRepository(repo)
+
+	existingOrder := &Order{
+		ID:        "order-1",
+		TenantID:  "tenant-1",
+		ContactID: "contact-1",
+		Status:    OrderStatusPending,
+	}
+	repo.AddOrder(existingOrder)
+
+	req := &UpdateOrderRequest{
+		ContactID: "contact-2",
+		OrderDate: time.Now(),
+		Lines: []CreateOrderLineRequest{
+			{
+				Description: "Product",
+				Quantity:    decimal.NewFromInt(1),
+				UnitPrice:   decimal.NewFromFloat(100.00),
+				VATRate:     decimal.NewFromInt(22),
+			},
+		},
+	}
+
+	_, err := svc.Update(ctx, "tenant-1", "test_schema", "order-1", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "update order")
+}
+
 func TestService_StatusTransitions_UpdateErrors(t *testing.T) {
 	ctx := context.Background()
 
