@@ -253,9 +253,9 @@ func (r *AbsencePostgresRepository) GetLeaveRecord(ctx context.Context, schemaNa
 	query := fmt.Sprintf(`
 		SELECT id, tenant_id, employee_id, absence_type_id, start_date, end_date,
 			total_days, working_days, status, COALESCE(document_number, ''), document_date, COALESCE(document_url, ''),
-			requested_at, COALESCE(requested_by, ''), approved_at, COALESCE(approved_by, ''),
-			rejected_at, COALESCE(rejected_by, ''), COALESCE(rejection_reason, ''),
-			COALESCE(payroll_run_id, ''), COALESCE(notes, ''), created_at, updated_at
+			requested_at, COALESCE(requested_by::text, ''), approved_at, COALESCE(approved_by::text, ''),
+			rejected_at, COALESCE(rejected_by::text, ''), COALESCE(rejection_reason, ''),
+			COALESCE(payroll_run_id::text, ''), COALESCE(notes, ''), created_at, updated_at
 		FROM %s.leave_records
 		WHERE tenant_id = $1 AND id = $2
 	`, schemaName)
@@ -280,9 +280,9 @@ func (r *AbsencePostgresRepository) ListLeaveRecords(ctx context.Context, schema
 	query := fmt.Sprintf(`
 		SELECT lr.id, lr.tenant_id, lr.employee_id, lr.absence_type_id, lr.start_date, lr.end_date,
 			lr.total_days, lr.working_days, lr.status, COALESCE(lr.document_number, ''), lr.document_date, COALESCE(lr.document_url, ''),
-			lr.requested_at, COALESCE(lr.requested_by, ''), lr.approved_at, COALESCE(lr.approved_by, ''),
-			lr.rejected_at, COALESCE(lr.rejected_by, ''), COALESCE(lr.rejection_reason, ''),
-			COALESCE(lr.payroll_run_id, ''), COALESCE(lr.notes, ''), lr.created_at, lr.updated_at,
+			lr.requested_at, COALESCE(lr.requested_by::text, ''), lr.approved_at, COALESCE(lr.approved_by::text, ''),
+			lr.rejected_at, COALESCE(lr.rejected_by::text, ''), COALESCE(lr.rejection_reason, ''),
+			COALESCE(lr.payroll_run_id::text, ''), COALESCE(lr.notes, ''), lr.created_at, lr.updated_at,
 			at.code, at.name, at.name_et
 		FROM %s.leave_records lr
 		JOIN %s.absence_types at ON lr.absence_type_id = at.id

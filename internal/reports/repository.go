@@ -154,13 +154,13 @@ func (r *PostgresRepository) GetOutstandingInvoicesByContact(ctx context.Context
 			COALESCE(c.email, '') as contact_email,
 			COALESCE(SUM(i.total - i.amount_paid), 0) as balance,
 			COUNT(i.id) as invoice_count,
-			MIN(i.invoice_date) as oldest_invoice
+			MIN(i.issue_date) as oldest_invoice
 		FROM %s.invoices i
 		JOIN %s.contacts c ON i.contact_id = c.id
 		WHERE i.tenant_id = $1
-			AND i.type = $2
+			AND i.invoice_type = $2
 			AND i.status NOT IN ('PAID', 'VOIDED')
-			AND i.invoice_date <= $3
+			AND i.issue_date <= $3
 			AND (i.total - i.amount_paid) > 0
 		GROUP BY c.id, c.name, c.code, c.email
 		ORDER BY balance DESC
@@ -198,7 +198,7 @@ func (r *PostgresRepository) GetContactInvoices(ctx context.Context, schemaName,
 		SELECT
 			i.id,
 			i.invoice_number,
-			i.invoice_date,
+			i.issue_date,
 			i.due_date,
 			i.total,
 			i.amount_paid,
@@ -207,11 +207,11 @@ func (r *PostgresRepository) GetContactInvoices(ctx context.Context, schemaName,
 		FROM %s.invoices i
 		WHERE i.tenant_id = $1
 			AND i.contact_id = $2
-			AND i.type = $3
+			AND i.invoice_type = $3
 			AND i.status NOT IN ('PAID', 'VOIDED')
-			AND i.invoice_date <= $4
+			AND i.issue_date <= $4
 			AND (i.total - i.amount_paid) > 0
-		ORDER BY i.invoice_date ASC
+		ORDER BY i.issue_date ASC
 	`, schemaName)
 
 	rows, err := r.db.Query(ctx, query, tenantID, contactID, invoiceType, asOfDate)
