@@ -37,3 +37,4 @@ $$ LANGUAGE plpgsql;
 -- Drop helper functions
 DROP FUNCTION IF EXISTS add_kmd_tables_to_schema(TEXT);
 DROP FUNCTION IF EXISTS fix_email_log_schema(TEXT);
+DROP FUNCTION IF EXISTS create_email_tables_only(TEXT);

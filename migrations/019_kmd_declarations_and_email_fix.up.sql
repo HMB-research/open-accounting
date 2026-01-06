@@ -1,7 +1,52 @@
 -- Migration: Add KMD declarations tables and fix email_log schema
 -- This migration creates the KMD (VAT return) tables and fixes the email_log related_id column
 
+-- Create function to add email tables without default templates
+-- This matches internal/email/repository.go EnsureSchema
+CREATE OR REPLACE FUNCTION create_email_tables_only(schema_name TEXT)
+RETURNS void AS $$
+BEGIN
+    -- Email templates table (without default templates)
+    EXECUTE format('
+        CREATE TABLE IF NOT EXISTS %I.email_templates (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL,
+            template_type VARCHAR(50) NOT NULL,
+            subject TEXT NOT NULL,
+            body_html TEXT NOT NULL,
+            body_text TEXT,
+            is_active BOOLEAN DEFAULT true,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE (tenant_id, template_type)
+        )', schema_name);
+
+    -- Email log table
+    EXECUTE format('
+        CREATE TABLE IF NOT EXISTS %I.email_log (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL,
+            email_type VARCHAR(50) NOT NULL,
+            recipient_email VARCHAR(255) NOT NULL,
+            recipient_name VARCHAR(255),
+            subject TEXT NOT NULL,
+            status VARCHAR(20) DEFAULT ''PENDING'',
+            sent_at TIMESTAMPTZ,
+            error_message TEXT,
+            related_id UUID,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )', schema_name);
+
+    -- Create indexes
+    EXECUTE format('CREATE INDEX IF NOT EXISTS idx_email_log_tenant ON %I.email_log(tenant_id)',
+        schema_name);
+    EXECUTE format('CREATE INDEX IF NOT EXISTS idx_email_log_status ON %I.email_log(status)',
+        schema_name);
+END;
+$$ LANGUAGE plpgsql;
+
 -- Create function to add KMD tables to a tenant schema
+-- Note: Schema must match internal/tax/repository.go EnsureSchema
 CREATE OR REPLACE FUNCTION add_kmd_tables_to_schema(schema_name TEXT)
 RETURNS void AS $$
 BEGIN
@@ -12,12 +57,12 @@ BEGIN
             tenant_id UUID NOT NULL,
             year INTEGER NOT NULL,
             month INTEGER NOT NULL,
-            status VARCHAR(20) DEFAULT ''DRAFT'' CHECK (status IN (''DRAFT'', ''SUBMITTED'', ''ACCEPTED'', ''REJECTED'')),
-            total_output_vat DECIMAL(15,2) DEFAULT 0,
-            total_input_vat DECIMAL(15,2) DEFAULT 0,
+            status VARCHAR(20) NOT NULL DEFAULT ''DRAFT'',
+            total_output_vat NUMERIC(28,8) NOT NULL DEFAULT 0,
+            total_input_vat NUMERIC(28,8) NOT NULL DEFAULT 0,
             submitted_at TIMESTAMPTZ,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             UNIQUE (tenant_id, year, month)
         )', schema_name);
 
@@ -26,16 +71,17 @@ BEGIN
         CREATE TABLE IF NOT EXISTS %I.kmd_rows (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             declaration_id UUID NOT NULL REFERENCES %I.kmd_declarations(id) ON DELETE CASCADE,
-            row_code VARCHAR(10) NOT NULL,
-            amount DECIMAL(15,2) DEFAULT 0,
-            created_at TIMESTAMPTZ DEFAULT NOW()
+            code VARCHAR(10) NOT NULL,
+            description TEXT NOT NULL,
+            tax_base NUMERIC(28,8) NOT NULL DEFAULT 0,
+            tax_amount NUMERIC(28,8) NOT NULL DEFAULT 0
         )', schema_name, schema_name);
 
     -- Create indexes
-    EXECUTE format('CREATE INDEX IF NOT EXISTS idx_%s_kmd_declarations_tenant ON %I.kmd_declarations(tenant_id)',
-        replace(schema_name, 'tenant_', ''), schema_name);
-    EXECUTE format('CREATE INDEX IF NOT EXISTS idx_%s_kmd_rows_declaration ON %I.kmd_rows(declaration_id)',
-        replace(schema_name, 'tenant_', ''), schema_name);
+    EXECUTE format('CREATE INDEX IF NOT EXISTS idx_kmd_declarations_tenant ON %I.kmd_declarations(tenant_id)',
+        schema_name);
+    EXECUTE format('CREATE INDEX IF NOT EXISTS idx_kmd_rows_declaration ON %I.kmd_rows(declaration_id)',
+        schema_name);
 END;
 $$ LANGUAGE plpgsql;
 
@@ -93,13 +139,14 @@ BEGIN
     -- Create payroll tables
     PERFORM add_payroll_tables(schema_name);
 
-    -- Create email tables (must be before fix_email_log_schema)
-    PERFORM add_email_tables_to_schema(schema_name);
+    -- Create email tables without default templates
+    -- (matches internal/email/repository.go EnsureSchema behavior)
+    PERFORM create_email_tables_only(schema_name);
 
     -- Create KMD (VAT return) tables
     PERFORM add_kmd_tables_to_schema(schema_name);
 
-    -- Fix email_log schema (add related_id column)
+    -- Fix email_log schema (add related_id column if needed)
     PERFORM fix_email_log_schema(schema_name);
 END;
 $$ LANGUAGE plpgsql;
