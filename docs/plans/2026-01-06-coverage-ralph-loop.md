@@ -13,33 +13,18 @@
 ## Command to Run This Loop
 
 ```bash
-claude "Execute the Ralph Loop defined in docs/plans/2026-01-06-coverage-ralph-loop.md.
+/ralph-wiggum:ralph-loop "Systematically add unit tests to increase Go test coverage to >=67%.
 
-Your task: Systematically add unit tests to increase Go test coverage from ~54% to >=67%.
+EACH ITERATION:
+1. Check coverage: go test ./... -cover 2>&1 | grep coverage
+2. Find lowest coverage package
+3. Analyze gaps: go test -coverprofile=cov.out ./internal/PACKAGE/... && go tool cover -func=cov.out | grep -v 100.0
+4. Write table-driven tests with mocks
+5. Verify: go test ./internal/PACKAGE/... -v
+6. Commit: git add . && git commit -m 'test(PACKAGE): add unit tests'
+7. If coverage >= 67%, say COVERAGE_TARGET_REACHED
 
-LOOP INSTRUCTIONS:
-1. Check current coverage: go test ./... -cover 2>&1 | grep coverage
-2. Find lowest coverage package that isn't 100%
-3. Analyze what functions need tests: go test -coverprofile=cov.out ./internal/PACKAGE/... && go tool cover -func=cov.out | grep -v 100.0
-4. Write comprehensive table-driven tests following existing patterns
-5. Verify tests pass: go test ./internal/PACKAGE/... -v
-6. Commit progress: git add . && git commit -m 'test(PACKAGE): add unit tests - coverage X%'
-7. Check overall coverage - if >= 67%, push and exit. Otherwise, continue to next package.
-
-COMPLETION CRITERIA:
-- Overall coverage >= 67%
-- All tests pass
-- Changes committed and pushed
-
-Focus on these packages in order:
-1. internal/orders (0%)
-2. internal/quotes (0%)
-3. internal/invoicing (30.8%)
-4. internal/reports (42.3%)
-5. internal/banking (35%)
-6. internal/inventory (37.4%)
-
-DO NOT stop until coverage >= 67% or you've exhausted reasonable test additions."
+Focus packages: orders, quotes, invoicing, reports, banking, inventory" --completion-promise "COVERAGE_TARGET_REACHED" --max-iterations 30
 ```
 
 ---
