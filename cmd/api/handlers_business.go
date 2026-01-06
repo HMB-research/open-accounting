@@ -4091,3 +4091,367 @@ func (h *Handlers) TransferStock(w http.ResponseWriter, r *http.Request) {
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "transferred"})
 }
+
+// =============================================================================
+// ABSENCE / LEAVE MANAGEMENT HANDLERS
+// =============================================================================
+
+// ListAbsenceTypes returns all absence types for a tenant
+// @Summary List absence types
+// @Description Get all available absence/leave types
+// @Tags Leave Management
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Success 200 {array} payroll.AbsenceType
+// @Router /tenants/{tenantID}/absence-types [get]
+func (h *Handlers) ListAbsenceTypes(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	activeOnly := r.URL.Query().Get("active_only") == "true"
+
+	types, err := h.absenceService.ListAbsenceTypes(r.Context(), schemaName, tenantID, activeOnly)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list absence types")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, types)
+}
+
+// GetAbsenceType returns a specific absence type
+// @Summary Get absence type
+// @Description Get a specific absence type by ID
+// @Tags Leave Management
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param typeID path string true "Absence Type ID"
+// @Success 200 {object} payroll.AbsenceType
+// @Router /tenants/{tenantID}/absence-types/{typeID} [get]
+func (h *Handlers) GetAbsenceType(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	typeID := chi.URLParam(r, "typeID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	absenceType, err := h.absenceService.GetAbsenceType(r.Context(), schemaName, tenantID, typeID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Absence type not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, absenceType)
+}
+
+// ListLeaveBalances returns leave balances for an employee
+// @Summary List leave balances
+// @Description Get all leave balances for an employee
+// @Tags Leave Management
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param employeeID path string true "Employee ID"
+// @Success 200 {array} payroll.LeaveBalance
+// @Router /tenants/{tenantID}/employees/{employeeID}/leave-balances [get]
+func (h *Handlers) ListLeaveBalances(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	employeeID := chi.URLParam(r, "employeeID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	// Default to current year
+	year := time.Now().Year()
+	if yearParam := r.URL.Query().Get("year"); yearParam != "" {
+		if y, err := strconv.Atoi(yearParam); err == nil {
+			year = y
+		}
+	}
+
+	balances, err := h.absenceService.GetLeaveBalances(r.Context(), schemaName, tenantID, employeeID, year)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list leave balances")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, balances)
+}
+
+// GetLeaveBalancesByYear returns leave balances for an employee for a specific year
+// @Summary Get leave balances by year
+// @Description Get leave balances for an employee for a specific year
+// @Tags Leave Management
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param employeeID path string true "Employee ID"
+// @Param year path int true "Year"
+// @Success 200 {array} payroll.LeaveBalance
+// @Router /tenants/{tenantID}/employees/{employeeID}/leave-balances/{year} [get]
+func (h *Handlers) GetLeaveBalancesByYear(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	employeeID := chi.URLParam(r, "employeeID")
+	yearStr := chi.URLParam(r, "year")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid year")
+		return
+	}
+
+	balances, err := h.absenceService.GetLeaveBalances(r.Context(), schemaName, tenantID, employeeID, year)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list leave balances")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, balances)
+}
+
+// UpdateLeaveBalance updates a leave balance
+// @Summary Update leave balance
+// @Description Update an employee's leave balance
+// @Tags Leave Management
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param employeeID path string true "Employee ID"
+// @Param year path int true "Year"
+// @Param typeID path string true "Absence Type ID"
+// @Param request body payroll.UpdateLeaveBalanceRequest true "Balance update"
+// @Success 200 {object} payroll.LeaveBalance
+// @Router /tenants/{tenantID}/employees/{employeeID}/leave-balances/{year}/{typeID} [put]
+func (h *Handlers) UpdateLeaveBalance(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	employeeID := chi.URLParam(r, "employeeID")
+	yearStr := chi.URLParam(r, "year")
+	typeID := chi.URLParam(r, "typeID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid year")
+		return
+	}
+
+	var req payroll.UpdateLeaveBalanceRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	balance, err := h.absenceService.UpdateLeaveBalance(r.Context(), schemaName, tenantID, employeeID, typeID, year, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, balance)
+}
+
+// InitializeLeaveBalances initializes leave balances for an employee
+// @Summary Initialize leave balances
+// @Description Initialize leave balances for an employee for a specific year
+// @Tags Leave Management
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param employeeID path string true "Employee ID"
+// @Param year path int true "Year"
+// @Success 200 {array} payroll.LeaveBalance
+// @Router /tenants/{tenantID}/employees/{employeeID}/leave-balances/{year}/initialize [post]
+func (h *Handlers) InitializeLeaveBalances(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	employeeID := chi.URLParam(r, "employeeID")
+	yearStr := chi.URLParam(r, "year")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid year")
+		return
+	}
+
+	balances, err := h.absenceService.InitializeEmployeeLeaveBalances(r.Context(), schemaName, tenantID, employeeID, year)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to initialize leave balances")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, balances)
+}
+
+// ListLeaveRecords returns leave records
+// @Summary List leave records
+// @Description Get leave records for a tenant or employee
+// @Tags Leave Management
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param employee_id query string false "Filter by employee ID"
+// @Param year query int false "Filter by year"
+// @Success 200 {array} payroll.LeaveRecord
+// @Router /tenants/{tenantID}/leave-records [get]
+func (h *Handlers) ListLeaveRecords(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	employeeID := r.URL.Query().Get("employee_id")
+	year := 0
+	if yearParam := r.URL.Query().Get("year"); yearParam != "" {
+		if y, err := strconv.Atoi(yearParam); err == nil {
+			year = y
+		}
+	}
+
+	records, err := h.absenceService.ListLeaveRecords(r.Context(), schemaName, tenantID, employeeID, year)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list leave records")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, records)
+}
+
+// CreateLeaveRecord creates a new leave record
+// @Summary Create leave record
+// @Description Create a new leave/absence request
+// @Tags Leave Management
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body payroll.CreateLeaveRecordRequest true "Leave request details"
+// @Success 201 {object} payroll.LeaveRecord
+// @Router /tenants/{tenantID}/leave-records [post]
+func (h *Handlers) CreateLeaveRecord(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	claims, _ := auth.GetClaims(r.Context())
+
+	var req payroll.CreateLeaveRecordRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	record, err := h.absenceService.CreateLeaveRecord(r.Context(), schemaName, tenantID, claims.UserID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, record)
+}
+
+// GetLeaveRecord returns a specific leave record
+// @Summary Get leave record
+// @Description Get a specific leave record by ID
+// @Tags Leave Management
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param recordID path string true "Leave Record ID"
+// @Success 200 {object} payroll.LeaveRecord
+// @Router /tenants/{tenantID}/leave-records/{recordID} [get]
+func (h *Handlers) GetLeaveRecord(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	recordID := chi.URLParam(r, "recordID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	record, err := h.absenceService.GetLeaveRecord(r.Context(), schemaName, tenantID, recordID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Leave record not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, record)
+}
+
+// ApproveLeaveRecord approves a leave request
+// @Summary Approve leave record
+// @Description Approve a pending leave request
+// @Tags Leave Management
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param recordID path string true "Leave Record ID"
+// @Success 200 {object} payroll.LeaveRecord
+// @Router /tenants/{tenantID}/leave-records/{recordID}/approve [post]
+func (h *Handlers) ApproveLeaveRecord(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	recordID := chi.URLParam(r, "recordID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	claims, _ := auth.GetClaims(r.Context())
+
+	record, err := h.absenceService.ApproveLeaveRecord(r.Context(), schemaName, tenantID, recordID, claims.UserID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, record)
+}
+
+// RejectLeaveRecord rejects a leave request
+// @Summary Reject leave record
+// @Description Reject a pending leave request
+// @Tags Leave Management
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param recordID path string true "Leave Record ID"
+// @Param request body payroll.RejectLeaveRequest true "Rejection details"
+// @Success 200 {object} payroll.LeaveRecord
+// @Router /tenants/{tenantID}/leave-records/{recordID}/reject [post]
+func (h *Handlers) RejectLeaveRecord(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	recordID := chi.URLParam(r, "recordID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	claims, _ := auth.GetClaims(r.Context())
+
+	var req payroll.RejectLeaveRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	record, err := h.absenceService.RejectLeaveRecord(r.Context(), schemaName, tenantID, recordID, claims.UserID, req.Reason)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, record)
+}
+
+// CancelLeaveRecord cancels a leave request
+// @Summary Cancel leave record
+// @Description Cancel a pending or approved leave request
+// @Tags Leave Management
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param recordID path string true "Leave Record ID"
+// @Success 200 {object} payroll.LeaveRecord
+// @Router /tenants/{tenantID}/leave-records/{recordID}/cancel [post]
+func (h *Handlers) CancelLeaveRecord(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	recordID := chi.URLParam(r, "recordID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	claims, _ := auth.GetClaims(r.Context())
+
+	record, err := h.absenceService.CancelLeaveRecord(r.Context(), schemaName, tenantID, recordID, claims.UserID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, record)
+}

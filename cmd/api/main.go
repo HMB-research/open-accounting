@@ -99,6 +99,7 @@ func main() {
 	bankingService := banking.NewService(pool)
 	taxService := tax.NewService(pool)
 	payrollService := payroll.NewService(pool)
+	absenceService := payroll.NewAbsenceServiceWithPool(pool)
 	pluginService := plugin.NewService(pool, "./plugins")
 	quotesService := quotes.NewService(pool)
 	ordersService := orders.NewService(pool)
@@ -140,6 +141,7 @@ func main() {
 		bankingService:    bankingService,
 		taxService:        taxService,
 		payrollService:    payrollService,
+		absenceService:    absenceService,
 		pluginService:     pluginService,
 		quotesService:     quotesService,
 		ordersService:     ordersService,
@@ -506,6 +508,20 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 
 				// Payroll - Tax Preview
 				r.Post("/payroll/tax-preview", h.CalculateTaxPreview)
+
+				// Leave/Absence Management
+				r.Get("/absence-types", h.ListAbsenceTypes)
+				r.Get("/absence-types/{typeID}", h.GetAbsenceType)
+				r.Get("/employees/{employeeID}/leave-balances", h.ListLeaveBalances)
+				r.Get("/employees/{employeeID}/leave-balances/{year}", h.GetLeaveBalancesByYear)
+				r.Put("/employees/{employeeID}/leave-balances/{year}/{typeID}", h.UpdateLeaveBalance)
+				r.Post("/employees/{employeeID}/leave-balances/{year}/initialize", h.InitializeLeaveBalances)
+				r.Get("/leave-records", h.ListLeaveRecords)
+				r.Post("/leave-records", h.CreateLeaveRecord)
+				r.Get("/leave-records/{recordID}", h.GetLeaveRecord)
+				r.Post("/leave-records/{recordID}/approve", h.ApproveLeaveRecord)
+				r.Post("/leave-records/{recordID}/reject", h.RejectLeaveRecord)
+				r.Post("/leave-records/{recordID}/cancel", h.CancelLeaveRecord)
 
 				// TSD Declarations
 				r.Get("/tsd", h.ListTSD)

@@ -53,6 +53,7 @@ type Handlers struct {
 	bankingService    *banking.Service
 	taxService        *tax.Service
 	payrollService    *payroll.Service
+	absenceService    *payroll.AbsenceService
 	pluginService     *plugin.Service
 	quotesService     *quotes.Service
 	ordersService     *orders.Service
