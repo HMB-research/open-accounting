@@ -570,3 +570,27 @@ func TestNewCostCenterService(t *testing.T) {
 	assert.Nil(t, svc.db)
 	assert.NotNil(t, svc.repo)
 }
+
+func TestMockCostCenterRepository_Delete_Error(t *testing.T) {
+	repo := &MockCostCenterRepository{
+		CostCenters: make(map[string]*CostCenter),
+		DeleteErr:   errors.New("database delete error"),
+	}
+	ctx := context.Background()
+
+	// Add a cost center
+	repo.CostCenters["cc-1"] = &CostCenter{
+		ID:       "cc-1",
+		TenantID: "tenant-1",
+		Code:     "CC001",
+		Name:     "Sales",
+	}
+
+	err := repo.Delete(ctx, "test_schema", "tenant-1", "cc-1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "database delete error")
+
+	// Cost center should NOT be deleted (error returned before delete)
+	_, exists := repo.CostCenters["cc-1"]
+	assert.True(t, exists, "cost center should still exist after delete error")
+}
