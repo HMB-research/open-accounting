@@ -38,8 +38,10 @@ type MockRepository struct {
 	updateTenantSettingsErr    error
 	deleteTenantPluginErr      error
 	isEnabledForTenantErr      error
-	listEnabledPluginsErr      error
-	disableAllTenantsErr       error
+	listEnabledPluginsErr           error
+	disableAllTenantsErr            error
+	countEnabledTenantsErr          error
+	countEnabledTenantsForPluginVal int
 }
 
 func NewMockRepository() *MockRepository {
@@ -350,6 +352,13 @@ func (m *MockRepository) InsertPluginReturning(ctx context.Context, manifest *Ma
 }
 
 func (m *MockRepository) CountEnabledTenantsForPlugin(ctx context.Context, pluginID uuid.UUID) (int, error) {
+	if m.countEnabledTenantsErr != nil {
+		return 0, m.countEnabledTenantsErr
+	}
+	// Allow configurable return value for testing
+	if m.countEnabledTenantsForPluginVal > 0 {
+		return m.countEnabledTenantsForPluginVal, nil
+	}
 	count := 0
 	for _, tp := range m.tenantPlugins {
 		if tp.PluginID == pluginID && tp.IsEnabled {
@@ -2253,5 +2262,77 @@ func TestNewService(t *testing.T) {
 	}
 	if svc.pluginDir != "/tmp/plugins" {
 		t.Errorf("expected pluginDir to be /tmp/plugins, got %s", svc.pluginDir)
+	}
+}
+
+// TestService_UninstallPlugin_CountTenantsError tests UninstallPlugin when CountEnabledTenantsForPlugin fails
+func TestService_UninstallPlugin_CountTenantsError(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:    pluginID,
+		Name:  "test-plugin",
+		State: StateInstalled,
+	}
+	repo.countEnabledTenantsErr = fmt.Errorf("database error")
+
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+	err := service.UninstallPlugin(ctx, pluginID)
+
+	if err == nil {
+		t.Fatal("expected error from CountEnabledTenantsForPlugin failure")
+	}
+	if !strings.Contains(err.Error(), "failed to check tenant usage") {
+		t.Errorf("expected 'failed to check tenant usage' in error, got: %v", err)
+	}
+}
+
+// TestService_UninstallPlugin_TenantsEnabled tests UninstallPlugin when tenants have plugin enabled
+func TestService_UninstallPlugin_TenantsEnabled(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:    pluginID,
+		Name:  "test-plugin",
+		State: StateInstalled,
+	}
+	repo.countEnabledTenantsForPluginVal = 3 // 3 tenants have it enabled
+
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+	err := service.UninstallPlugin(ctx, pluginID)
+
+	if err == nil {
+		t.Fatal("expected error when tenants have plugin enabled")
+	}
+	if !strings.Contains(err.Error(), "cannot uninstall: plugin is enabled for 3 tenant(s)") {
+		t.Errorf("expected 'cannot uninstall: plugin is enabled for 3 tenant(s)' in error, got: %v", err)
+	}
+}
+
+// TestService_UninstallPlugin_DeleteError tests UninstallPlugin when DeletePlugin fails
+func TestService_UninstallPlugin_DeleteError(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:    pluginID,
+		Name:  "test-plugin",
+		State: StateInstalled,
+	}
+	repo.deletePluginErr = fmt.Errorf("delete failed")
+
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+	err := service.UninstallPlugin(ctx, pluginID)
+
+	if err == nil {
+		t.Fatal("expected error from DeletePlugin failure")
+	}
+	if !strings.Contains(err.Error(), "failed to delete plugin") {
+		t.Errorf("expected 'failed to delete plugin' in error, got: %v", err)
 	}
 }
