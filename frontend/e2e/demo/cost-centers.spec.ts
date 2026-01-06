@@ -17,7 +17,8 @@ test.describe('Demo Cost Centers - Page Structure', () => {
 	});
 
 	test('has add new cost center button', async ({ page }) => {
-		const addBtn = page.locator('button.btn-primary');
+		// Use first() to handle multiple add buttons (header and empty state)
+		const addBtn = page.locator('button.btn-primary').first();
 		await expect(addBtn).toBeVisible({ timeout: 10000 });
 		const btnText = await addBtn.textContent();
 		expect(btnText?.toLowerCase()).toMatch(/add|lisa/i);

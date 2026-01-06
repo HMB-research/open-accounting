@@ -1746,6 +1746,7 @@ SELECT fix_recurring_invoices_schema('tenant_acme');
 SELECT add_reconciliation_tables_to_schema('tenant_acme');
 SELECT add_payroll_tables('tenant_acme');
 SELECT add_recurring_email_fields_to_schema('tenant_acme');
+SELECT add_leave_management_tables('tenant_acme');
 
 -- Chart of Accounts (Estonian standard - 28 accounts)
 INSERT INTO tenant_acme.accounts (id, tenant_id, code, name, account_type, is_system) VALUES
@@ -2010,6 +2011,83 @@ INSERT INTO tenant_acme.bank_transactions (id, tenant_id, bank_account_id, trans
 ('79000000-0000-0000-0001-000000000006'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '80000000-0000-0000-0001-000000000001'::uuid, '2024-12-05', '2024-12-05', -11034.40, 'EUR', 'Salary payments Nov 2024', 'SAL-NOV-24', 'Multiple employees', NULL, 'RECONCILED'),
 ('79000000-0000-0000-0001-000000000007'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '80000000-0000-0000-0001-000000000001'::uuid, '2024-12-20', '2024-12-20', 1500.00, 'EUR', 'Unknown deposit', 'REF-123456', 'Unknown sender', 'EE999888777666555444', 'UNMATCHED'),
 ('79000000-0000-0000-0001-000000000008'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '80000000-0000-0000-0001-000000000001'::uuid, '2024-12-22', '2024-12-22', -75.50, 'EUR', 'Bank service fee', 'FEE-DEC-24', 'Swedbank', NULL, 'UNMATCHED')
+ON CONFLICT DO NOTHING;
+
+-- Absence Types (Estonian leave types)
+-- Note: The migration inserts default types with tenant_id '00000000-0000-0000-0000-000000000000'
+-- We need to update them to use the correct tenant_id for the demo tenant
+UPDATE tenant_acme.absence_types
+SET tenant_id = 'b0000000-0000-0000-0000-000000000001'::uuid
+WHERE tenant_id = '00000000-0000-0000-0000-000000000000'::uuid;
+
+-- Leave Balances for 2024 and 2025 (for active employees)
+INSERT INTO tenant_acme.leave_balances (id, tenant_id, employee_id, absence_type_id, year, entitled_days, carryover_days, used_days, pending_days, notes)
+SELECT
+    gen_random_uuid(),
+    'b0000000-0000-0000-0000-000000000001'::uuid,
+    e.id,
+    at.id,
+    y.year,
+    CASE
+        WHEN at.code = 'ANNUAL_LEAVE' THEN 28
+        WHEN at.code = 'STUDY_LEAVE' THEN 30
+        ELSE 0
+    END,
+    CASE WHEN y.year = 2025 AND at.code = 'ANNUAL_LEAVE' THEN 5 ELSE 0 END, -- Some carryover for 2025
+    CASE
+        WHEN y.year = 2024 AND at.code = 'ANNUAL_LEAVE' THEN
+            CASE e.employee_number
+                WHEN 'EMP001' THEN 20
+                WHEN 'EMP002' THEN 18
+                WHEN 'EMP003' THEN 15
+                WHEN 'EMP004' THEN 23
+                ELSE 0
+            END
+        ELSE 0
+    END,
+    0,
+    'Auto-generated balance'
+FROM tenant_acme.employees e
+CROSS JOIN tenant_acme.absence_types at
+CROSS JOIN (SELECT 2024 as year UNION SELECT 2025 as year) y
+WHERE e.is_active = true
+  AND at.code IN ('ANNUAL_LEAVE', 'STUDY_LEAVE')
+ON CONFLICT DO NOTHING;
+
+-- Leave Records (sample leave entries with various statuses)
+INSERT INTO tenant_acme.leave_records (id, tenant_id, employee_id, absence_type_id, start_date, end_date, total_days, working_days, status, requested_at, requested_by, approved_at, approved_by, notes) VALUES
+-- Maria Tamm - Past approved annual leave
+('7a000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '70000000-0000-0000-0001-000000000001'::uuid,
+    (SELECT id FROM tenant_acme.absence_types WHERE code = 'ANNUAL_LEAVE' LIMIT 1),
+    '2024-07-01', '2024-07-14', 14, 10, 'APPROVED', '2024-06-15', 'a0000000-0000-0000-0000-000000000001'::uuid, '2024-06-16', 'a0000000-0000-0000-0000-000000000001'::uuid, 'Summer vacation'),
+-- Maria Tamm - Second approved leave
+('7a000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '70000000-0000-0000-0001-000000000001'::uuid,
+    (SELECT id FROM tenant_acme.absence_types WHERE code = 'ANNUAL_LEAVE' LIMIT 1),
+    '2024-12-23', '2024-12-31', 9, 6, 'APPROVED', '2024-12-01', 'a0000000-0000-0000-0000-000000000001'::uuid, '2024-12-02', 'a0000000-0000-0000-0000-000000000001'::uuid, 'Christmas holiday'),
+-- Jaan Kask - Approved leave
+('7a000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '70000000-0000-0000-0001-000000000002'::uuid,
+    (SELECT id FROM tenant_acme.absence_types WHERE code = 'ANNUAL_LEAVE' LIMIT 1),
+    '2024-08-05', '2024-08-18', 14, 10, 'APPROVED', '2024-07-20', 'a0000000-0000-0000-0000-000000000001'::uuid, '2024-07-21', 'a0000000-0000-0000-0000-000000000001'::uuid, 'Summer break'),
+-- Jaan Kask - Sick leave
+('7a000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '70000000-0000-0000-0001-000000000002'::uuid,
+    (SELECT id FROM tenant_acme.absence_types WHERE code = 'SICK_LEAVE' LIMIT 1),
+    '2024-11-11', '2024-11-15', 5, 5, 'APPROVED', '2024-11-11', 'a0000000-0000-0000-0000-000000000001'::uuid, '2024-11-11', 'a0000000-0000-0000-0000-000000000001'::uuid, 'Flu'),
+-- Anna Mets - Approved leave
+('7a000000-0000-0000-0001-000000000005'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '70000000-0000-0000-0001-000000000003'::uuid,
+    (SELECT id FROM tenant_acme.absence_types WHERE code = 'ANNUAL_LEAVE' LIMIT 1),
+    '2024-09-02', '2024-09-13', 12, 10, 'APPROVED', '2024-08-15', 'a0000000-0000-0000-0000-000000000001'::uuid, '2024-08-16', 'a0000000-0000-0000-0000-000000000001'::uuid, 'Vacation'),
+-- Peeter Saar - Approved leave
+('7a000000-0000-0000-0001-000000000006'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '70000000-0000-0000-0001-000000000004'::uuid,
+    (SELECT id FROM tenant_acme.absence_types WHERE code = 'ANNUAL_LEAVE' LIMIT 1),
+    '2024-06-17', '2024-07-07', 21, 15, 'APPROVED', '2024-05-20', 'a0000000-0000-0000-0000-000000000001'::uuid, '2024-05-21', 'a0000000-0000-0000-0000-000000000001'::uuid, 'Extended summer vacation'),
+-- Maria Tamm - Pending request for next year
+('7a000000-0000-0000-0001-000000000007'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '70000000-0000-0000-0001-000000000001'::uuid,
+    (SELECT id FROM tenant_acme.absence_types WHERE code = 'ANNUAL_LEAVE' LIMIT 1),
+    '2025-02-17', '2025-02-21', 5, 5, 'PENDING', NOW(), 'a0000000-0000-0000-0000-000000000001'::uuid, NULL, NULL, 'Winter break request'),
+-- Study leave example
+('7a000000-0000-0000-0001-000000000008'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '70000000-0000-0000-0001-000000000003'::uuid,
+    (SELECT id FROM tenant_acme.absence_types WHERE code = 'STUDY_LEAVE' LIMIT 1),
+    '2024-10-14', '2024-10-18', 5, 5, 'APPROVED', '2024-10-01', 'a0000000-0000-0000-0000-000000000001'::uuid, '2024-10-02', 'a0000000-0000-0000-0000-000000000001'::uuid, 'Exam preparation')
 ON CONFLICT DO NOTHING;
 `
 }

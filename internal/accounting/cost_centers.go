@@ -219,7 +219,8 @@ func (r *CostCenterPostgresRepository) List(ctx context.Context, schemaName, ten
 	}
 	defer rows.Close()
 
-	var costCenters []CostCenter
+	// Initialize as empty slice to ensure JSON marshals to [] not null
+	costCenters := []CostCenter{}
 	for rows.Next() {
 		var cc CostCenter
 		var budgetAmount *decimal.Decimal
