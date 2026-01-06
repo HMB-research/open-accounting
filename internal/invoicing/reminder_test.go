@@ -726,3 +726,34 @@ func TestReminderService_SendBulkReminders_WithEmailService(t *testing.T) {
 	assert.Equal(t, 2, result.Successful) // inv-1 and inv-2 succeed
 	assert.Equal(t, 1, result.Failed)     // inv-3 not found
 }
+
+// TestReminderService_SendBulkReminders_SendReminderReturnsError tests the error path
+// when SendReminder returns an actual error (not just a failed result)
+func TestReminderService_SendBulkReminders_SendReminderReturnsError(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockReminderRepository()
+
+	// Add an invoice but set GetOverdueErr to make SendReminder return error
+	repo.AddMockOverdueInvoice("inv-1", "INV-001", "c1", "Customer 1", "c1@test.com", "EUR",
+		decimal.NewFromInt(1000), decimal.Zero, 30)
+	repo.GetOverdueErr = errors.New("database connection error")
+
+	svc := NewReminderServiceWithRepository(repo, nil)
+
+	req := &SendBulkRemindersRequest{
+		InvoiceIDs: []string{"inv-1", "inv-2"},
+		Message:    "Please pay",
+	}
+
+	result, err := svc.SendBulkReminders(ctx, "tenant-1", "test_schema", req, "Test Company")
+	require.NoError(t, err) // SendBulkReminders itself doesn't error, it captures errors in results
+
+	assert.Equal(t, 2, result.TotalRequested)
+	assert.Equal(t, 0, result.Successful)
+	assert.Equal(t, 2, result.Failed)
+
+	// Verify the error message is captured in the result
+	assert.Len(t, result.Results, 2)
+	assert.False(t, result.Results[0].Success)
+	assert.Contains(t, result.Results[0].Message, "get overdue invoices")
+}

@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 2
+iteration: 12
 max_iterations: 30
 completion_promise: "COVERAGE_TARGET_REACHED"
 started_at: "2026-01-06T16:23:33Z"
