@@ -13,19 +13,20 @@ import (
 
 // MockRepository is a mock implementation of Repository for testing
 type MockRepository struct {
-	mu              sync.RWMutex
-	Products        map[string]*Product
-	Categories      map[string]*ProductCategory
-	Warehouses      map[string]*Warehouse
-	StockLevels     map[string]*StockLevel // key: productID-warehouseID
-	Movements       map[string][]InventoryMovement
-	ProductCodeSeq  int
-	ErrOnCreate     bool
-	ErrOnGet        bool
-	ErrOnUpdate     bool
-	ErrOnDelete     bool
-	ErrOnList       bool
-	ErrOnListMovements bool
+	mu                  sync.RWMutex
+	Products            map[string]*Product
+	Categories          map[string]*ProductCategory
+	Warehouses          map[string]*Warehouse
+	StockLevels         map[string]*StockLevel // key: productID-warehouseID
+	Movements           map[string][]InventoryMovement
+	ProductCodeSeq      int
+	ErrOnCreate         bool
+	ErrOnGet            bool
+	ErrOnUpdate         bool
+	ErrOnDelete         bool
+	ErrOnList           bool
+	ErrOnListMovements  bool
+	ErrOnCreateMovement bool
 }
 
 // NewMockRepository creates a new mock repository
@@ -293,6 +294,9 @@ func (r *MockRepository) UpsertStockLevel(ctx context.Context, schemaName string
 
 // Movements
 func (r *MockRepository) CreateMovement(ctx context.Context, schemaName string, movement *InventoryMovement) error {
+	if r.ErrOnCreateMovement {
+		return fmt.Errorf("mock error on create movement")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.Movements[movement.ProductID] = append(r.Movements[movement.ProductID], *movement)
@@ -1464,4 +1468,50 @@ func TestService_ListWarehouses_RepoError(t *testing.T) {
 	_, err := ts.svc.ListWarehouses(ctx, "tenant-1", "test_schema", false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "list warehouses")
+}
+
+func TestService_TransferStock_CreateMovementError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.ErrOnCreateMovement = true
+	ctx := context.Background()
+
+	req := &TransferStockRequest{
+		ProductID:       "p1",
+		FromWarehouseID: "w1",
+		ToWarehouseID:   "w2",
+		Quantity:        "10",
+		UserID:          "user-1",
+	}
+
+	err := ts.svc.TransferStock(ctx, "tenant-1", "test_schema", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create out movement")
+}
+
+func TestService_AdjustStock_CreateMovementError(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	// Create a product first
+	ts.repo.Products["p1"] = &Product{
+		ID:           "p1",
+		TenantID:     "tenant-1",
+		Name:         "Test Product",
+		CurrentStock: decimal.NewFromInt(100),
+	}
+
+	// Now enable the error
+	ts.repo.ErrOnCreateMovement = true
+
+	req := &AdjustStockRequest{
+		ProductID:   "p1",
+		WarehouseID: "w1",
+		Quantity:    "10",
+		Reason:      "Adjustment",
+		UserID:      "user-1",
+	}
+
+	_, err := ts.svc.AdjustStock(ctx, "tenant-1", "test_schema", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create movement")
 }
