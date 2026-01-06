@@ -1966,6 +1966,27 @@ func TestService_EnablePlugin_UpdateStateError(t *testing.T) {
 	}
 }
 
+func TestService_EnablePlugin_InvalidManifestJSON(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:       pluginID,
+		Name:     "test-plugin",
+		State:    StateInstalled,
+		Manifest: json.RawMessage(`{invalid json`), // Invalid JSON
+	}
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+
+	err := service.EnablePlugin(ctx, pluginID, []string{})
+	if err == nil {
+		t.Error("expected error from invalid manifest JSON")
+	}
+	if !strings.Contains(err.Error(), "failed to parse manifest") {
+		t.Errorf("expected 'failed to parse manifest' in error, got: %v", err)
+	}
+}
+
 func TestService_DisablePlugin_UpdateStateError(t *testing.T) {
 	ctx := context.Background()
 	pluginID := uuid.New()
