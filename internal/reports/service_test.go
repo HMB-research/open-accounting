@@ -184,3 +184,305 @@ func TestCashFlowOpeningClosingBalance(t *testing.T) {
 	// Closing = Opening + Net Change
 	assert.Equal(t, result.OpeningCash.Add(result.NetCashChange).String(), result.ClosingCash.String())
 }
+
+func TestGetBalanceConfirmationSummary(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("returns receivable balance summary", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+
+		mockRepo.ContactBalances = []ContactBalance{
+			{
+				ContactID:    "contact-1",
+				ContactName:  "Customer A",
+				ContactCode:  "CUST-001",
+				Balance:      decimal.NewFromFloat(1500.00),
+				InvoiceCount: 2,
+			},
+			{
+				ContactID:    "contact-2",
+				ContactName:  "Customer B",
+				ContactCode:  "CUST-002",
+				Balance:      decimal.NewFromFloat(2500.00),
+				InvoiceCount: 3,
+			},
+		}
+
+		req := &BalanceConfirmationRequest{
+			Type:     "RECEIVABLE",
+			AsOfDate: "2024-01-31",
+		}
+
+		result, err := svc.GetBalanceConfirmationSummary(ctx, "tenant-1", "schema_tenant1", req)
+
+		require.NoError(t, err)
+		assert.Equal(t, BalanceTypeReceivable, result.Type)
+		assert.Equal(t, "2024-01-31", result.AsOfDate)
+		assert.True(t, result.TotalBalance.Equal(decimal.NewFromFloat(4000.00)))
+		assert.Equal(t, 2, result.ContactCount)
+		assert.Equal(t, 5, result.InvoiceCount)
+		assert.Len(t, result.Contacts, 2)
+	})
+
+	t.Run("returns payable balance summary", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+
+		mockRepo.ContactBalances = []ContactBalance{
+			{
+				ContactID:    "supplier-1",
+				ContactName:  "Supplier X",
+				ContactCode:  "SUP-001",
+				Balance:      decimal.NewFromFloat(3000.00),
+				InvoiceCount: 1,
+			},
+		}
+
+		req := &BalanceConfirmationRequest{
+			Type:     "PAYABLE",
+			AsOfDate: "2024-01-31",
+		}
+
+		result, err := svc.GetBalanceConfirmationSummary(ctx, "tenant-1", "schema_tenant1", req)
+
+		require.NoError(t, err)
+		assert.Equal(t, BalanceTypePayable, result.Type)
+		assert.True(t, result.TotalBalance.Equal(decimal.NewFromFloat(3000.00)))
+		assert.Equal(t, 1, result.ContactCount)
+		assert.Equal(t, 1, result.InvoiceCount)
+	})
+
+	t.Run("returns error for invalid date format", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+
+		req := &BalanceConfirmationRequest{
+			Type:     "RECEIVABLE",
+			AsOfDate: "invalid-date",
+		}
+
+		result, err := svc.GetBalanceConfirmationSummary(ctx, "tenant-1", "schema_tenant1", req)
+
+		assert.Nil(t, result)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid as_of_date")
+	})
+
+	t.Run("returns error when repository fails", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+		mockRepo.GetContactBalancesErr = assert.AnError
+
+		req := &BalanceConfirmationRequest{
+			Type:     "RECEIVABLE",
+			AsOfDate: "2024-01-31",
+		}
+
+		result, err := svc.GetBalanceConfirmationSummary(ctx, "tenant-1", "schema_tenant1", req)
+
+		assert.Nil(t, result)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "get contact balances")
+	})
+
+	t.Run("handles empty contact list", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+
+		req := &BalanceConfirmationRequest{
+			Type:     "RECEIVABLE",
+			AsOfDate: "2024-01-31",
+		}
+
+		result, err := svc.GetBalanceConfirmationSummary(ctx, "tenant-1", "schema_tenant1", req)
+
+		require.NoError(t, err)
+		assert.True(t, result.TotalBalance.IsZero())
+		assert.Equal(t, 0, result.ContactCount)
+		assert.Equal(t, 0, result.InvoiceCount)
+		assert.Empty(t, result.Contacts)
+	})
+}
+
+func TestGetBalanceConfirmation(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("returns individual balance confirmation", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+
+		mockRepo.Contact = ContactInfo{
+			ID:    "contact-1",
+			Name:  "Customer A",
+			Code:  "CUST-001",
+			Email: "customer@example.com",
+		}
+
+		mockRepo.ContactInvoices = []BalanceInvoice{
+			{
+				InvoiceID:         "inv-1",
+				InvoiceNumber:     "INV-001",
+				InvoiceDate:       "2024-01-15",
+				DueDate:           "2024-02-15",
+				TotalAmount:       decimal.NewFromFloat(1000.00),
+				AmountPaid:        decimal.NewFromFloat(500.00),
+				OutstandingAmount: decimal.NewFromFloat(500.00),
+				Currency:          "EUR",
+				DaysOverdue:       0,
+			},
+			{
+				InvoiceID:         "inv-2",
+				InvoiceNumber:     "INV-002",
+				InvoiceDate:       "2024-01-20",
+				DueDate:           "2024-02-20",
+				TotalAmount:       decimal.NewFromFloat(750.00),
+				AmountPaid:        decimal.Zero,
+				OutstandingAmount: decimal.NewFromFloat(750.00),
+				Currency:          "EUR",
+				DaysOverdue:       0,
+			},
+		}
+
+		req := &BalanceConfirmationRequest{
+			ContactID: "contact-1",
+			Type:      "RECEIVABLE",
+			AsOfDate:  "2024-01-31",
+		}
+
+		result, err := svc.GetBalanceConfirmation(ctx, "tenant-1", "schema_tenant1", req)
+
+		require.NoError(t, err)
+		assert.Equal(t, "contact-1", result.ContactID)
+		assert.Equal(t, "Customer A", result.ContactName)
+		assert.Equal(t, "CUST-001", result.ContactCode)
+		assert.Equal(t, "customer@example.com", result.ContactEmail)
+		assert.Equal(t, BalanceTypeReceivable, result.Type)
+		assert.Equal(t, "2024-01-31", result.AsOfDate)
+		assert.True(t, result.TotalBalance.Equal(decimal.NewFromFloat(1250.00)))
+		assert.Len(t, result.Invoices, 2)
+	})
+
+	t.Run("returns payable balance confirmation", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+
+		mockRepo.Contact = ContactInfo{
+			ID:   "supplier-1",
+			Name: "Supplier X",
+			Code: "SUP-001",
+		}
+
+		mockRepo.ContactInvoices = []BalanceInvoice{
+			{
+				InvoiceID:         "pinv-1",
+				InvoiceNumber:     "PINV-001",
+				OutstandingAmount: decimal.NewFromFloat(2000.00),
+			},
+		}
+
+		req := &BalanceConfirmationRequest{
+			ContactID: "supplier-1",
+			Type:      "PAYABLE",
+			AsOfDate:  "2024-01-31",
+		}
+
+		result, err := svc.GetBalanceConfirmation(ctx, "tenant-1", "schema_tenant1", req)
+
+		require.NoError(t, err)
+		assert.Equal(t, BalanceTypePayable, result.Type)
+		assert.True(t, result.TotalBalance.Equal(decimal.NewFromFloat(2000.00)))
+	})
+
+	t.Run("returns error when contact_id missing", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+
+		req := &BalanceConfirmationRequest{
+			Type:     "RECEIVABLE",
+			AsOfDate: "2024-01-31",
+		}
+
+		result, err := svc.GetBalanceConfirmation(ctx, "tenant-1", "schema_tenant1", req)
+
+		assert.Nil(t, result)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "contact_id is required")
+	})
+
+	t.Run("returns error for invalid date format", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+
+		req := &BalanceConfirmationRequest{
+			ContactID: "contact-1",
+			Type:      "RECEIVABLE",
+			AsOfDate:  "bad-date",
+		}
+
+		result, err := svc.GetBalanceConfirmation(ctx, "tenant-1", "schema_tenant1", req)
+
+		assert.Nil(t, result)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid as_of_date")
+	})
+
+	t.Run("returns error when contact not found", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+		mockRepo.GetContactErr = assert.AnError
+
+		req := &BalanceConfirmationRequest{
+			ContactID: "nonexistent",
+			Type:      "RECEIVABLE",
+			AsOfDate:  "2024-01-31",
+		}
+
+		result, err := svc.GetBalanceConfirmation(ctx, "tenant-1", "schema_tenant1", req)
+
+		assert.Nil(t, result)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "get contact")
+	})
+
+	t.Run("returns error when invoices query fails", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+		mockRepo.Contact = ContactInfo{ID: "contact-1", Name: "Test"}
+		mockRepo.GetContactInvoicesErr = assert.AnError
+
+		req := &BalanceConfirmationRequest{
+			ContactID: "contact-1",
+			Type:      "RECEIVABLE",
+			AsOfDate:  "2024-01-31",
+		}
+
+		result, err := svc.GetBalanceConfirmation(ctx, "tenant-1", "schema_tenant1", req)
+
+		assert.Nil(t, result)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "get contact invoices")
+	})
+
+	t.Run("handles contact with no invoices", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+
+		mockRepo.Contact = ContactInfo{
+			ID:   "contact-1",
+			Name: "Customer A",
+		}
+
+		req := &BalanceConfirmationRequest{
+			ContactID: "contact-1",
+			Type:      "RECEIVABLE",
+			AsOfDate:  "2024-01-31",
+		}
+
+		result, err := svc.GetBalanceConfirmation(ctx, "tenant-1", "schema_tenant1", req)
+
+		require.NoError(t, err)
+		assert.True(t, result.TotalBalance.IsZero())
+		assert.Empty(t, result.Invoices)
+	})
+}
