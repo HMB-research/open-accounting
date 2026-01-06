@@ -10,45 +10,45 @@ import (
 type ReminderStatus string
 
 const (
-	ReminderStatusPending   ReminderStatus = "PENDING"
-	ReminderStatusSent      ReminderStatus = "SENT"
-	ReminderStatusFailed    ReminderStatus = "FAILED"
-	ReminderStatusCancelled ReminderStatus = "CANCELLED"
+	ReminderStatusPending  ReminderStatus = "PENDING"
+	ReminderStatusSent     ReminderStatus = "SENT"
+	ReminderStatusFailed   ReminderStatus = "FAILED"
+	ReminderStatusCanceled ReminderStatus = "CANCELED"
 )
 
 // PaymentReminder represents a payment reminder for an overdue invoice
 type PaymentReminder struct {
-	ID             string          `json:"id"`
-	TenantID       string          `json:"tenant_id"`
-	InvoiceID      string          `json:"invoice_id"`
-	InvoiceNumber  string          `json:"invoice_number"`
-	ContactID      string          `json:"contact_id"`
-	ContactName    string          `json:"contact_name"`
-	ContactEmail   string          `json:"contact_email"`
-	ReminderNumber int             `json:"reminder_number"` // 1st, 2nd, 3rd reminder etc.
-	Status         ReminderStatus  `json:"status"`
-	SentAt         *time.Time      `json:"sent_at,omitempty"`
-	ErrorMessage   string          `json:"error_message,omitempty"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	ID             string         `json:"id"`
+	TenantID       string         `json:"tenant_id"`
+	InvoiceID      string         `json:"invoice_id"`
+	InvoiceNumber  string         `json:"invoice_number"`
+	ContactID      string         `json:"contact_id"`
+	ContactName    string         `json:"contact_name"`
+	ContactEmail   string         `json:"contact_email"`
+	ReminderNumber int            `json:"reminder_number"` // 1st, 2nd, 3rd reminder etc.
+	Status         ReminderStatus `json:"status"`
+	SentAt         *time.Time     `json:"sent_at,omitempty"`
+	ErrorMessage   string         `json:"error_message,omitempty"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
 }
 
 // OverdueInvoice represents an overdue invoice with reminder info
 type OverdueInvoice struct {
-	ID              string          `json:"id"`
-	InvoiceNumber   string          `json:"invoice_number"`
-	ContactID       string          `json:"contact_id"`
-	ContactName     string          `json:"contact_name"`
-	ContactEmail    string          `json:"contact_email,omitempty"`
-	IssueDate       string          `json:"issue_date"`
-	DueDate         string          `json:"due_date"`
-	Total           decimal.Decimal `json:"total"`
-	AmountPaid      decimal.Decimal `json:"amount_paid"`
+	ID                string          `json:"id"`
+	InvoiceNumber     string          `json:"invoice_number"`
+	ContactID         string          `json:"contact_id"`
+	ContactName       string          `json:"contact_name"`
+	ContactEmail      string          `json:"contact_email,omitempty"`
+	IssueDate         string          `json:"issue_date"`
+	DueDate           string          `json:"due_date"`
+	Total             decimal.Decimal `json:"total"`
+	AmountPaid        decimal.Decimal `json:"amount_paid"`
 	OutstandingAmount decimal.Decimal `json:"outstanding_amount"`
-	Currency        string          `json:"currency"`
-	DaysOverdue     int             `json:"days_overdue"`
-	ReminderCount   int             `json:"reminder_count"`
-	LastReminderAt  *time.Time      `json:"last_reminder_at,omitempty"`
+	Currency          string          `json:"currency"`
+	DaysOverdue       int             `json:"days_overdue"`
+	ReminderCount     int             `json:"reminder_count"`
+	LastReminderAt    *time.Time      `json:"last_reminder_at,omitempty"`
 }
 
 // OverdueInvoicesSummary represents a summary of overdue invoices

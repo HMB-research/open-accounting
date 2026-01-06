@@ -532,7 +532,7 @@ func TestCancelLeaveRecord_Pending(t *testing.T) {
 	record, err := service.CancelLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "emp-1")
 
 	require.NoError(t, err)
-	assert.Equal(t, LeaveCancelled, record.Status)
+	assert.Equal(t, LeaveCanceled, record.Status)
 
 	// Pending days should be returned
 	balance := repo.LeaveBalances[key]
@@ -571,7 +571,7 @@ func TestCancelLeaveRecord_Approved(t *testing.T) {
 	record, err := service.CancelLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "emp-1")
 
 	require.NoError(t, err)
-	assert.Equal(t, LeaveCancelled, record.Status)
+	assert.Equal(t, LeaveCanceled, record.Status)
 
 	// Used days should be returned
 	balance := repo.LeaveBalances[key]
@@ -659,7 +659,7 @@ func TestInitializeEmployeeLeaveBalances_ExistingBalance(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Len(t, balances, 1)
-	assert.Equal(t, "existing-bal", balances[0].ID) // Should return existing, not create new
+	assert.Equal(t, "existing-bal", balances[0].ID)                        // Should return existing, not create new
 	assert.True(t, balances[0].EntitledDays.Equal(decimal.NewFromInt(30))) // Keep custom value
 }
 

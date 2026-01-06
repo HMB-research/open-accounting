@@ -162,7 +162,7 @@ func (s *ReminderService) SendReminder(ctx context.Context, tenantID, schemaName
 	// Get email template
 	template, err := s.emailService.GetTemplate(ctx, schemaName, tenantID, email.TemplateOverdueReminder)
 	if err != nil {
-		s.repo.UpdateReminderStatus(ctx, schemaName, reminder.ID, ReminderStatusFailed, nil, err.Error())
+		_ = s.repo.UpdateReminderStatus(ctx, schemaName, reminder.ID, ReminderStatusFailed, nil, err.Error())
 		return &ReminderResult{
 			InvoiceID:     req.InvoiceID,
 			InvoiceNumber: targetInvoice.InvoiceNumber,
@@ -186,7 +186,7 @@ func (s *ReminderService) SendReminder(ctx context.Context, tenantID, schemaName
 	// Render template
 	subject, bodyHTML, bodyText, err := s.emailService.RenderTemplate(template, data)
 	if err != nil {
-		s.repo.UpdateReminderStatus(ctx, schemaName, reminder.ID, ReminderStatusFailed, nil, err.Error())
+		_ = s.repo.UpdateReminderStatus(ctx, schemaName, reminder.ID, ReminderStatusFailed, nil, err.Error())
 		return &ReminderResult{
 			InvoiceID:     req.InvoiceID,
 			InvoiceNumber: targetInvoice.InvoiceNumber,
@@ -211,7 +211,7 @@ func (s *ReminderService) SendReminder(ctx context.Context, tenantID, schemaName
 	)
 
 	if err != nil {
-		s.repo.UpdateReminderStatus(ctx, schemaName, reminder.ID, ReminderStatusFailed, nil, err.Error())
+		_ = s.repo.UpdateReminderStatus(ctx, schemaName, reminder.ID, ReminderStatusFailed, nil, err.Error())
 		return &ReminderResult{
 			InvoiceID:     req.InvoiceID,
 			InvoiceNumber: targetInvoice.InvoiceNumber,
@@ -222,7 +222,7 @@ func (s *ReminderService) SendReminder(ctx context.Context, tenantID, schemaName
 
 	// Update reminder as sent
 	now := time.Now()
-	s.repo.UpdateReminderStatus(ctx, schemaName, reminder.ID, ReminderStatusSent, &now, "")
+	_ = s.repo.UpdateReminderStatus(ctx, schemaName, reminder.ID, ReminderStatusSent, &now, "")
 
 	return &ReminderResult{
 		InvoiceID:     req.InvoiceID,

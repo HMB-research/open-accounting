@@ -252,11 +252,11 @@ func (s *Service) Cancel(ctx context.Context, tenantID, schemaName, orderID stri
 	if err != nil {
 		return fmt.Errorf("get order: %w", err)
 	}
-	if order.Status == OrderStatusDelivered || order.Status == OrderStatusCancelled {
+	if order.Status == OrderStatusDelivered || order.Status == OrderStatusCanceled {
 		return fmt.Errorf("order cannot be cancelled in current status")
 	}
 
-	if err := s.repo.UpdateStatus(ctx, schemaName, tenantID, orderID, OrderStatusCancelled); err != nil {
+	if err := s.repo.UpdateStatus(ctx, schemaName, tenantID, orderID, OrderStatusCanceled); err != nil {
 		return fmt.Errorf("cancel order: %w", err)
 	}
 	return nil

@@ -10,10 +10,10 @@ import (
 type LeaveStatus string
 
 const (
-	LeavePending   LeaveStatus = "PENDING"
-	LeaveApproved  LeaveStatus = "APPROVED"
-	LeaveRejected  LeaveStatus = "REJECTED"
-	LeaveCancelled LeaveStatus = "CANCELLED"
+	LeavePending  LeaveStatus = "PENDING"
+	LeaveApproved LeaveStatus = "APPROVED"
+	LeaveRejected LeaveStatus = "REJECTED"
+	LeaveCanceled LeaveStatus = "CANCELED"
 )
 
 // AbsenceType represents a type of leave/absence

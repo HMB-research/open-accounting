@@ -34,22 +34,22 @@ type CostCenter struct {
 	CreatedAt    time.Time        `json:"created_at"`
 	UpdatedAt    time.Time        `json:"updated_at"`
 	// Computed fields for reports
-	Children     []CostCenter     `json:"children,omitempty"`
-	TotalSpent   *decimal.Decimal `json:"total_spent,omitempty"`
-	BudgetUsed   *decimal.Decimal `json:"budget_used_percentage,omitempty"`
+	Children   []CostCenter     `json:"children,omitempty"`
+	TotalSpent *decimal.Decimal `json:"total_spent,omitempty"`
+	BudgetUsed *decimal.Decimal `json:"budget_used_percentage,omitempty"`
 }
 
 // CostAllocation tracks expense allocations to cost centers
 type CostAllocation struct {
-	ID                   string          `json:"id"`
-	TenantID             string          `json:"tenant_id"`
-	CostCenterID         string          `json:"cost_center_id"`
-	JournalEntryLineID   string          `json:"journal_entry_line_id"`
-	Amount               decimal.Decimal `json:"amount"`
+	ID                   string           `json:"id"`
+	TenantID             string           `json:"tenant_id"`
+	CostCenterID         string           `json:"cost_center_id"`
+	JournalEntryLineID   string           `json:"journal_entry_line_id"`
+	Amount               decimal.Decimal  `json:"amount"`
 	AllocationPercentage *decimal.Decimal `json:"allocation_percentage,omitempty"`
-	AllocationDate       time.Time       `json:"allocation_date"`
-	Notes                string          `json:"notes,omitempty"`
-	CreatedAt            time.Time       `json:"created_at"`
+	AllocationDate       time.Time        `json:"allocation_date"`
+	Notes                string           `json:"notes,omitempty"`
+	CreatedAt            time.Time        `json:"created_at"`
 	// Joined fields
 	CostCenterCode string `json:"cost_center_code,omitempty"`
 	CostCenterName string `json:"cost_center_name,omitempty"`

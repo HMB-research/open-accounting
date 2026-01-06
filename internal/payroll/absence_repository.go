@@ -27,11 +27,11 @@ type AbsenceRepository interface {
 
 // Error definitions for absence management
 var (
-	ErrAbsenceTypeNotFound = fmt.Errorf("absence type not found")
-	ErrLeaveBalanceNotFound = fmt.Errorf("leave balance not found")
-	ErrLeaveRecordNotFound = fmt.Errorf("leave record not found")
+	ErrAbsenceTypeNotFound      = fmt.Errorf("absence type not found")
+	ErrLeaveBalanceNotFound     = fmt.Errorf("leave balance not found")
+	ErrLeaveRecordNotFound      = fmt.Errorf("leave record not found")
 	ErrInsufficientLeaveBalance = fmt.Errorf("insufficient leave balance")
-	ErrLeaveRecordNotPending = fmt.Errorf("leave record is not in pending status")
+	ErrLeaveRecordNotPending    = fmt.Errorf("leave record is not in pending status")
 )
 
 // AbsencePostgresRepository implements AbsenceRepository using PostgreSQL
@@ -355,21 +355,21 @@ func (r *AbsencePostgresRepository) UpdateLeaveRecord(ctx context.Context, schem
 
 // MockAbsenceRepository implements AbsenceRepository for testing
 type MockAbsenceRepository struct {
-	AbsenceTypes      map[string]*AbsenceType
-	LeaveBalances     map[string]*LeaveBalance
-	LeaveRecords      map[string]*LeaveRecord
+	AbsenceTypes  map[string]*AbsenceType
+	LeaveBalances map[string]*LeaveBalance
+	LeaveRecords  map[string]*LeaveRecord
 
-	ListAbsenceTypesErr      error
-	GetAbsenceTypeErr        error
-	GetAbsenceTypeByCodeErr  error
-	GetLeaveBalanceErr       error
-	ListLeaveBalancesErr     error
-	CreateLeaveBalanceErr    error
-	UpdateLeaveBalanceErr    error
-	CreateLeaveRecordErr     error
-	GetLeaveRecordErr        error
-	ListLeaveRecordsErr      error
-	UpdateLeaveRecordErr     error
+	ListAbsenceTypesErr     error
+	GetAbsenceTypeErr       error
+	GetAbsenceTypeByCodeErr error
+	GetLeaveBalanceErr      error
+	ListLeaveBalancesErr    error
+	CreateLeaveBalanceErr   error
+	UpdateLeaveBalanceErr   error
+	CreateLeaveRecordErr    error
+	GetLeaveRecordErr       error
+	ListLeaveRecordsErr     error
+	UpdateLeaveRecordErr    error
 }
 
 // NewMockAbsenceRepository creates a new mock absence repository

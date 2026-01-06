@@ -284,7 +284,7 @@ func (s *AbsenceService) CancelLeaveRecord(ctx context.Context, schemaName, tena
 	wasPending := record.Status == LeavePending
 
 	now := time.Now()
-	record.Status = LeaveCancelled
+	record.Status = LeaveCanceled
 	record.UpdatedAt = now
 
 	if err := s.repo.UpdateLeaveRecord(ctx, schemaName, record); err != nil {

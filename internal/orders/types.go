@@ -18,7 +18,7 @@ const (
 	OrderStatusProcessing OrderStatus = "PROCESSING"
 	OrderStatusShipped    OrderStatus = "SHIPPED"
 	OrderStatusDelivered  OrderStatus = "DELIVERED"
-	OrderStatusCancelled  OrderStatus = "CANCELLED"
+	OrderStatusCanceled   OrderStatus = "CANCELED"
 )
 
 // Order represents a sales order
@@ -132,15 +132,15 @@ func (o *Order) Validate() error {
 
 // CreateOrderRequest is the request to create an order
 type CreateOrderRequest struct {
-	ContactID        string                  `json:"contact_id"`
-	OrderDate        time.Time               `json:"order_date"`
-	ExpectedDelivery *time.Time              `json:"expected_delivery,omitempty"`
-	Currency         string                  `json:"currency,omitempty"`
-	ExchangeRate     decimal.Decimal         `json:"exchange_rate,omitempty"`
-	Notes            string                  `json:"notes,omitempty"`
-	QuoteID          *string                 `json:"quote_id,omitempty"`
+	ContactID        string                   `json:"contact_id"`
+	OrderDate        time.Time                `json:"order_date"`
+	ExpectedDelivery *time.Time               `json:"expected_delivery,omitempty"`
+	Currency         string                   `json:"currency,omitempty"`
+	ExchangeRate     decimal.Decimal          `json:"exchange_rate,omitempty"`
+	Notes            string                   `json:"notes,omitempty"`
+	QuoteID          *string                  `json:"quote_id,omitempty"`
 	Lines            []CreateOrderLineRequest `json:"lines"`
-	UserID           string                  `json:"-"`
+	UserID           string                   `json:"-"`
 }
 
 // CreateOrderLineRequest is a line in the create order request
@@ -156,12 +156,12 @@ type CreateOrderLineRequest struct {
 
 // UpdateOrderRequest is the request to update an order
 type UpdateOrderRequest struct {
-	ContactID        string                  `json:"contact_id"`
-	OrderDate        time.Time               `json:"order_date"`
-	ExpectedDelivery *time.Time              `json:"expected_delivery,omitempty"`
-	Currency         string                  `json:"currency,omitempty"`
-	ExchangeRate     decimal.Decimal         `json:"exchange_rate,omitempty"`
-	Notes            string                  `json:"notes,omitempty"`
+	ContactID        string                   `json:"contact_id"`
+	OrderDate        time.Time                `json:"order_date"`
+	ExpectedDelivery *time.Time               `json:"expected_delivery,omitempty"`
+	Currency         string                   `json:"currency,omitempty"`
+	ExchangeRate     decimal.Decimal          `json:"exchange_rate,omitempty"`
+	Notes            string                   `json:"notes,omitempty"`
 	Lines            []CreateOrderLineRequest `json:"lines"`
 }
 
