@@ -655,6 +655,36 @@ func TestReminderService_SendReminder_GetTemplateError(t *testing.T) {
 	assert.Contains(t, result.Message, "Failed to get email template")
 }
 
+// TestReminderService_SendReminder_RenderTemplateError tests the RenderTemplate error path
+func TestReminderService_SendReminder_RenderTemplateError(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockReminderRepository()
+	repo.AddMockOverdueInvoice("inv-1", "INV-001", "c1", "Customer 1", "c1@test.com", "EUR",
+		decimal.NewFromInt(1000), decimal.Zero, 30)
+
+	// Create email service with mock that returns an invalid template
+	emailRepo := &mockEmailRepository{
+		GetTemplateResult: &email.EmailTemplate{
+			ID:           "tmpl-1",
+			TenantID:     "tenant-1",
+			TemplateType: email.TemplateOverdueReminder,
+			Subject:      "{{.InvalidSyntax", // Invalid template syntax
+			BodyHTML:     "<p>Test</p>",
+			BodyText:     "Test",
+		},
+	}
+	mailer := &mockMailSender{}
+	emailSvc := email.NewServiceWithRepository(emailRepo, mailer)
+	svc := NewReminderServiceWithRepository(repo, emailSvc)
+
+	req := &SendReminderRequest{InvoiceID: "inv-1"}
+	result, err := svc.SendReminder(ctx, "tenant-1", "test_schema", req, "Test Company")
+
+	require.NoError(t, err)
+	assert.False(t, result.Success)
+	assert.Contains(t, result.Message, "Failed to render email template")
+}
+
 // TestReminderService_SendReminder_SendEmailError tests the SendEmail error path
 func TestReminderService_SendReminder_SendEmailError(t *testing.T) {
 	ctx := context.Background()
