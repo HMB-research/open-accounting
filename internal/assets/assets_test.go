@@ -611,6 +611,17 @@ func TestFixedAsset_CalculateMonthlyDepreciation(t *testing.T) {
 			// Rate = 2 / 5 years = 0.4, monthly = 0.4/12, 12000 * 0.4/12 = 400
 			expected: decimal.NewFromInt(400),
 		},
+		{
+			name: "unknown method - defaults to straight line",
+			asset: FixedAsset{
+				PurchaseCost:       decimal.NewFromInt(1200),
+				ResidualValue:      decimal.NewFromInt(0),
+				UsefulLifeMonths:   12,
+				BookValue:          decimal.NewFromInt(1200),
+				DepreciationMethod: "UNKNOWN_METHOD",
+			},
+			expected: decimal.NewFromInt(100), // falls back to straight line
+		},
 	}
 
 	for _, tt := range tests {
