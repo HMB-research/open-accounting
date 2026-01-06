@@ -762,3 +762,248 @@ func TestCashFlowCodeConstants(t *testing.T) {
 	assert.Equal(t, "CF_FIN_DIVIDENDS_PD", CFFinDividendsPd)
 	assert.Equal(t, "CF_FIN_TOTAL", CFFinTotal)
 }
+
+// Additional cash flow error tests
+
+func TestGenerateCashFlowStatement_InvalidStartDate(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	req := &CashFlowRequest{
+		StartDate: "invalid",
+		EndDate:   "2024-01-31",
+	}
+
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", req)
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "invalid start date")
+}
+
+func TestGenerateCashFlowStatement_InvalidEndDate(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	req := &CashFlowRequest{
+		StartDate: "2024-01-01",
+		EndDate:   "invalid",
+	}
+
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", req)
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "invalid end date")
+}
+
+func TestGenerateCashFlowStatement_JournalEntriesError(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	mockRepo.GetEntriesErr = assert.AnError
+	svc := NewServiceWithRepository(mockRepo)
+
+	req := &CashFlowRequest{
+		StartDate: "2024-01-01",
+		EndDate:   "2024-01-31",
+	}
+
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", req)
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "get journal entries")
+}
+
+func TestGenerateCashFlowStatement_CashBalanceError(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	mockRepo.GetCashBalanceErr = assert.AnError
+	svc := NewServiceWithRepository(mockRepo)
+
+	req := &CashFlowRequest{
+		StartDate: "2024-01-01",
+		EndDate:   "2024-01-31",
+	}
+
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", req)
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "get opening cash")
+}
+
+func TestCashFlowFinancingActivities_LoanRepayment(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	// Loan repayment (cash decreases, loan liability decreases)
+	mockRepo.JournalEntries = []JournalEntryWithLines{
+		{
+			ID:          "je-1",
+			EntryDate:   time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
+			Description: "Loan repayment",
+			Lines: []JournalLine{
+				{AccountCode: "2000", AccountType: "LIABILITY", AccountName: "Bank Loan", Debit: decimal.NewFromFloat(5000), Credit: decimal.Zero},
+				{AccountCode: "1000", AccountType: "ASSET", AccountName: "Cash", Debit: decimal.Zero, Credit: decimal.NewFromFloat(5000)},
+			},
+		},
+	}
+
+	req := &CashFlowRequest{StartDate: "2024-01-01", EndDate: "2024-01-31"}
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", req)
+
+	require.NoError(t, err)
+
+	// Should have loan repayment (negative cash flow)
+	var loanCash decimal.Decimal
+	for _, item := range result.FinancingActivities {
+		if item.Code == "CF_FIN_LOANS_REPAID" || item.Code == CFFinLoansRcvd {
+			loanCash = item.Amount
+			break
+		}
+	}
+	assert.True(t, loanCash.LessThan(decimal.Zero), "Loan repayment should show negative cash flow")
+}
+
+func TestCashFlowFinancingActivities_DividendsPaid(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	// Dividend payment (cash decreases, equity decreases)
+	mockRepo.JournalEntries = []JournalEntryWithLines{
+		{
+			ID:          "je-1",
+			EntryDate:   time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
+			Description: "Dividend payment",
+			Lines: []JournalLine{
+				{AccountCode: "3000", AccountType: "EQUITY", AccountName: "Dividends", Debit: decimal.NewFromFloat(2000), Credit: decimal.Zero},
+				{AccountCode: "1000", AccountType: "ASSET", AccountName: "Cash", Debit: decimal.Zero, Credit: decimal.NewFromFloat(2000)},
+			},
+		},
+	}
+
+	req := &CashFlowRequest{StartDate: "2024-01-01", EndDate: "2024-01-31"}
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", req)
+
+	require.NoError(t, err)
+
+	// Should have dividend payment
+	var dividendCash decimal.Decimal
+	for _, item := range result.FinancingActivities {
+		if item.Code == "CF_FIN_DIVIDENDS_PD" {
+			dividendCash = item.Amount
+			break
+		}
+	}
+	assert.True(t, dividendCash.LessThan(decimal.Zero), "Dividend payment should show negative cash flow")
+}
+
+func TestCashFlowOperatingActivities_ExpensePayment(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	// Cash payment for expense
+	mockRepo.JournalEntries = []JournalEntryWithLines{
+		{
+			ID:          "je-1",
+			EntryDate:   time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
+			Description: "Office supplies",
+			Lines: []JournalLine{
+				{AccountCode: "5000", AccountType: "EXPENSE", AccountName: "Office Expenses", Debit: decimal.NewFromFloat(500), Credit: decimal.Zero},
+				{AccountCode: "1000", AccountType: "ASSET", AccountName: "Cash", Debit: decimal.Zero, Credit: decimal.NewFromFloat(500)},
+			},
+		},
+	}
+
+	req := &CashFlowRequest{StartDate: "2024-01-01", EndDate: "2024-01-31"}
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", req)
+
+	require.NoError(t, err)
+
+	// Should have payments to suppliers
+	var payments decimal.Decimal
+	for _, item := range result.OperatingActivities {
+		if item.Code == CFOperPayments {
+			payments = item.Amount
+			break
+		}
+	}
+	assert.True(t, payments.LessThan(decimal.Zero), "Expense payment should show negative cash flow")
+}
+
+func TestCashFlowOperatingActivities_LiabilityPayment(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	// Cash payment to supplier (accounts payable)
+	mockRepo.JournalEntries = []JournalEntryWithLines{
+		{
+			ID:          "je-1",
+			EntryDate:   time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
+			Description: "Supplier payment",
+			Lines: []JournalLine{
+				{AccountCode: "2100", AccountType: "LIABILITY", AccountName: "Accounts Payable", Debit: decimal.NewFromFloat(1000), Credit: decimal.Zero},
+				{AccountCode: "1000", AccountType: "ASSET", AccountName: "Cash", Debit: decimal.Zero, Credit: decimal.NewFromFloat(1000)},
+			},
+		},
+	}
+
+	req := &CashFlowRequest{StartDate: "2024-01-01", EndDate: "2024-01-31"}
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", req)
+
+	require.NoError(t, err)
+
+	// Should have payments to suppliers (non-loan liabilities skip the financing filter)
+	// Since 2100 is NOT in loan accounts (20xx or 25xx), it should be classified as operating
+	var payments decimal.Decimal
+	for _, item := range result.OperatingActivities {
+		if item.Code == CFOperPayments {
+			payments = item.Amount
+			break
+		}
+	}
+	assert.True(t, payments.LessThan(decimal.Zero), "Liability payment should show negative cash flow")
+}
+
+func TestCashFlowStatement_EmptyJournalEntries(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	// No journal entries
+	mockRepo.JournalEntries = []JournalEntryWithLines{}
+	mockRepo.CashBalance = decimal.NewFromFloat(5000)
+
+	req := &CashFlowRequest{StartDate: "2024-01-01", EndDate: "2024-01-31"}
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", req)
+
+	require.NoError(t, err)
+	assert.Equal(t, decimal.NewFromFloat(5000).String(), result.OpeningCash.String())
+	assert.Equal(t, decimal.NewFromFloat(5000).String(), result.ClosingCash.String())
+	assert.True(t, result.NetCashChange.IsZero())
+}
+
+func TestIsCashAccount(t *testing.T) {
+	tests := []struct {
+		code     string
+		expected bool
+	}{
+		{"1000", true},  // Cash
+		{"1050", true},  // Cash
+		{"1099", true},  // Cash
+		{"1100", false}, // Not cash
+		{"1200", false}, // Receivables
+		{"10", false},   // Too short
+		{"", false},     // Empty
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.code, func(t *testing.T) {
+			result := isCashAccount(tt.code)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
