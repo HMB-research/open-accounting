@@ -172,7 +172,7 @@ func (r *PostgresRepository) GetOutstandingInvoicesByContact(ctx context.Context
 	}
 	defer rows.Close()
 
-	var contacts []ContactBalance
+	contacts := []ContactBalance{}
 	for rows.Next() {
 		var cb ContactBalance
 		var oldestInvoice *time.Time
@@ -220,7 +220,7 @@ func (r *PostgresRepository) GetContactInvoices(ctx context.Context, schemaName,
 	}
 	defer rows.Close()
 
-	var invoices []BalanceInvoice
+	invoices := []BalanceInvoice{}
 	for rows.Next() {
 		var inv BalanceInvoice
 		var invoiceDate, dueDate time.Time
@@ -288,7 +288,7 @@ func (m *MockRepository) GetJournalEntriesForPeriod(ctx context.Context, schemaN
 	}
 
 	// Filter by date range
-	var result []JournalEntryWithLines
+	result := []JournalEntryWithLines{}
 	for _, entry := range m.JournalEntries {
 		if (entry.EntryDate.Equal(startDate) || entry.EntryDate.After(startDate)) &&
 			(entry.EntryDate.Equal(endDate) || entry.EntryDate.Before(endDate)) {

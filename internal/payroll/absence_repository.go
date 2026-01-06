@@ -66,7 +66,7 @@ func (r *AbsencePostgresRepository) ListAbsenceTypes(ctx context.Context, schema
 	}
 	defer rows.Close()
 
-	var types []AbsenceType
+	types := []AbsenceType{}
 	for rows.Next() {
 		var t AbsenceType
 		if err := rows.Scan(
@@ -175,7 +175,7 @@ func (r *AbsencePostgresRepository) ListLeaveBalances(ctx context.Context, schem
 	}
 	defer rows.Close()
 
-	var balances []LeaveBalance
+	balances := []LeaveBalance{}
 	for rows.Next() {
 		var b LeaveBalance
 		var atCode, atName, atNameET string
@@ -311,7 +311,7 @@ func (r *AbsencePostgresRepository) ListLeaveRecords(ctx context.Context, schema
 	}
 	defer rows.Close()
 
-	var records []LeaveRecord
+	records := []LeaveRecord{}
 	for rows.Next() {
 		var lr LeaveRecord
 		var atCode, atName, atNameET string
@@ -385,7 +385,7 @@ func (m *MockAbsenceRepository) ListAbsenceTypes(ctx context.Context, schemaName
 	if m.ListAbsenceTypesErr != nil {
 		return nil, m.ListAbsenceTypesErr
 	}
-	var types []AbsenceType
+	types := []AbsenceType{}
 	for _, t := range m.AbsenceTypes {
 		if t.TenantID == tenantID {
 			if !activeOnly || t.IsActive {
@@ -435,7 +435,7 @@ func (m *MockAbsenceRepository) ListLeaveBalances(ctx context.Context, schemaNam
 	if m.ListLeaveBalancesErr != nil {
 		return nil, m.ListLeaveBalancesErr
 	}
-	var balances []LeaveBalance
+	balances := []LeaveBalance{}
 	for _, b := range m.LeaveBalances {
 		if b.TenantID == tenantID && b.EmployeeID == employeeID && b.Year == year {
 			balances = append(balances, *b)
@@ -485,7 +485,7 @@ func (m *MockAbsenceRepository) ListLeaveRecords(ctx context.Context, schemaName
 	if m.ListLeaveRecordsErr != nil {
 		return nil, m.ListLeaveRecordsErr
 	}
-	var records []LeaveRecord
+	records := []LeaveRecord{}
 	for _, r := range m.LeaveRecords {
 		if r.TenantID == tenantID {
 			if employeeID == "" || r.EmployeeID == employeeID {

@@ -154,7 +154,7 @@ func (r *PostgresRepository) ListEmployees(ctx context.Context, schemaName, tena
 	}
 	defer rows.Close()
 
-	var employees []Employee
+	employees := []Employee{}
 	for rows.Next() {
 		var emp Employee
 		if err := rows.Scan(
@@ -299,7 +299,7 @@ func (r *PostgresRepository) ListPayrollRuns(ctx context.Context, schemaName, te
 	}
 	defer rows.Close()
 
-	var runs []PayrollRun
+	runs := []PayrollRun{}
 	for rows.Next() {
 		var run PayrollRun
 		var createdBy, approvedBy *string

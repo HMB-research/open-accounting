@@ -51,7 +51,7 @@ func (r *ReminderPostgresRepository) GetOverdueInvoices(ctx context.Context, sch
 	}
 	defer rows.Close()
 
-	var invoices []OverdueInvoice
+	invoices := []OverdueInvoice{}
 	for rows.Next() {
 		var inv OverdueInvoice
 		var issueDate, dueDate time.Time
@@ -178,7 +178,7 @@ func (r *ReminderPostgresRepository) GetRemindersByInvoice(ctx context.Context, 
 	}
 	defer rows.Close()
 
-	var reminders []PaymentReminder
+	reminders := []PaymentReminder{}
 	for rows.Next() {
 		var rem PaymentReminder
 		if err := rows.Scan(

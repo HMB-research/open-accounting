@@ -106,7 +106,7 @@ func (r *PostgresRepository) QueryVATData(ctx context.Context, schemaName, tenan
 	}
 	defer rows.Close()
 
-	var result []VATAggregateRow
+	result := []VATAggregateRow{}
 	for rows.Next() {
 		var row VATAggregateRow
 		if err := rows.Scan(&row.VATRate, &row.IsOutput, &row.TaxBase, &row.TaxAmount); err != nil {
