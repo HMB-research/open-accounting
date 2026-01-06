@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -299,6 +300,29 @@ func TestGetDemoSeedTemplate(t *testing.T) {
 	assert.Contains(t, template, "INSERT INTO users", "template should contain user insert")
 	assert.Contains(t, template, "INSERT INTO tenants", "template should contain tenant insert")
 	assert.Contains(t, template, "create_tenant_schema", "template should contain schema creation function")
+}
+
+func TestGetDemoSeedSQL(t *testing.T) {
+	sql := getDemoSeedSQL()
+
+	// Verify all 4 demo users are generated
+	for userNum := 1; userNum <= 4; userNum++ {
+		userStr := fmt.Sprintf("%d", userNum)
+		assert.Contains(t, sql, fmt.Sprintf("demo%s@example.com", userStr),
+			"SQL should contain demo%s email", userStr)
+		assert.Contains(t, sql, fmt.Sprintf("'demo%s'", userStr),
+			"SQL should contain demo%s slug", userStr)
+		assert.Contains(t, sql, fmt.Sprintf("tenant_demo%s", userStr),
+			"SQL should contain tenant_demo%s schema", userStr)
+	}
+
+	// Verify the SQL is non-trivial (contains substantial content)
+	assert.Greater(t, len(sql), 10000, "SQL should be substantial")
+
+	// Verify no template placeholders remain
+	assert.NotContains(t, sql, "demo@example.com", "template email should be replaced")
+	assert.NotContains(t, sql, "'acme'", "template slug should be replaced")
+	assert.NotContains(t, sql, "tenant_acme", "template schema should be replaced")
 }
 
 func TestRequestValidation(t *testing.T) {
