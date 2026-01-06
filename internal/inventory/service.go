@@ -353,7 +353,7 @@ func (s *Service) AdjustStock(ctx context.Context, tenantID, schemaName string, 
 
 	// Update product's current stock
 	newStock := product.CurrentStock.Add(quantity)
-	if err := s.repo.(*PostgresRepository).UpdateProductStock(ctx, schemaName, tenantID, req.ProductID, newStock); err != nil {
+	if err := s.repo.UpdateProductStock(ctx, schemaName, tenantID, req.ProductID, newStock); err != nil {
 		return nil, fmt.Errorf("update product stock: %w", err)
 	}
 

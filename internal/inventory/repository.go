@@ -189,7 +189,7 @@ func (r *PostgresRepository) ListProducts(ctx context.Context, schemaName, tenan
 		if filter.Search != "" {
 			query += fmt.Sprintf(" AND (name ILIKE $%d OR code ILIKE $%d)", argNum, argNum)
 			args = append(args, "%"+filter.Search+"%")
-			argNum++
+			// argNum not incremented as it's the last filter
 		}
 		if filter.LowStock {
 			query += " AND current_stock <= reorder_point"

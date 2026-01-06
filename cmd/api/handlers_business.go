@@ -4052,7 +4052,11 @@ func (h *Handlers) AdjustStock(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
 
-	claims := r.Context().Value("claims").(*auth.Claims)
+	claims, ok := r.Context().Value("claims").(*auth.Claims)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Invalid or missing authentication")
+		return
+	}
 
 	var req inventory.AdjustStockRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -4075,7 +4079,11 @@ func (h *Handlers) TransferStock(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
 
-	claims := r.Context().Value("claims").(*auth.Claims)
+	claims, ok := r.Context().Value("claims").(*auth.Claims)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Invalid or missing authentication")
+		return
+	}
 
 	var req inventory.TransferStockRequest
 	if err := decodeJSON(r, &req); err != nil {
