@@ -10,13 +10,17 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/shopspring/decimal"
 
+	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/email"
+	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
+	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 
@@ -580,6 +584,9 @@ func (h *Handlers) ListPayments(w http.ResponseWriter, r *http.Request) {
 
 	if payType := r.URL.Query().Get("type"); payType != "" {
 		filter.PaymentType = payments.PaymentType(payType)
+	}
+	if method := r.URL.Query().Get("method"); method != "" {
+		filter.PaymentMethod = method
 	}
 	if contactID := r.URL.Query().Get("contact_id"); contactID != "" {
 		filter.ContactID = contactID
@@ -2826,4 +2833,1633 @@ func (h *Handlers) MarkTSDSubmitted(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "submitted"})
+}
+
+// =============================================================================
+// QUOTES HANDLERS
+// =============================================================================
+
+// ListQuotes returns all quotes for a tenant
+// @Summary List quotes
+// @Description Get all quotes for a tenant with optional filtering
+// @Tags Quotes
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param status query string false "Filter by status (DRAFT, SENT, ACCEPTED, REJECTED, EXPIRED, CONVERTED)"
+// @Param contact_id query string false "Filter by contact ID"
+// @Param from_date query string false "Filter from date (YYYY-MM-DD)"
+// @Param to_date query string false "Filter to date (YYYY-MM-DD)"
+// @Param search query string false "Search in quote number"
+// @Success 200 {array} quotes.Quote
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/quotes [get]
+func (h *Handlers) ListQuotes(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	filter := &quotes.QuoteFilter{
+		Search: r.URL.Query().Get("search"),
+	}
+
+	if status := r.URL.Query().Get("status"); status != "" {
+		filter.Status = quotes.QuoteStatus(status)
+	}
+	if contactID := r.URL.Query().Get("contact_id"); contactID != "" {
+		filter.ContactID = contactID
+	}
+	if fromDate := r.URL.Query().Get("from_date"); fromDate != "" {
+		if parsed, err := time.Parse("2006-01-02", fromDate); err == nil {
+			filter.FromDate = &parsed
+		}
+	}
+	if toDate := r.URL.Query().Get("to_date"); toDate != "" {
+		if parsed, err := time.Parse("2006-01-02", toDate); err == nil {
+			filter.ToDate = &parsed
+		}
+	}
+
+	quoteList, err := h.quotesService.List(r.Context(), tenantID, schemaName, filter)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list quotes")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, quoteList)
+}
+
+// CreateQuote creates a new quote
+// @Summary Create quote
+// @Description Create a new sales quote
+// @Tags Quotes
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body quotes.CreateQuoteRequest true "Quote details"
+// @Success 201 {object} quotes.Quote
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/quotes [post]
+func (h *Handlers) CreateQuote(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req quotes.CreateQuoteRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	req.UserID = claims.UserID
+
+	if req.ContactID == "" {
+		respondError(w, http.StatusBadRequest, "Contact is required")
+		return
+	}
+
+	if len(req.Lines) == 0 {
+		respondError(w, http.StatusBadRequest, "At least one line is required")
+		return
+	}
+
+	quote, err := h.quotesService.Create(r.Context(), tenantID, schemaName, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, quote)
+}
+
+// GetQuote returns a quote by ID
+// @Summary Get quote
+// @Description Get quote details by ID
+// @Tags Quotes
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param quoteID path string true "Quote ID"
+// @Success 200 {object} quotes.Quote
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/quotes/{quoteID} [get]
+func (h *Handlers) GetQuote(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	quoteID := chi.URLParam(r, "quoteID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	quote, err := h.quotesService.GetByID(r.Context(), tenantID, schemaName, quoteID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Quote not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, quote)
+}
+
+// UpdateQuote updates a quote
+// @Summary Update quote
+// @Description Update a draft quote
+// @Tags Quotes
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param quoteID path string true "Quote ID"
+// @Param request body quotes.UpdateQuoteRequest true "Quote details"
+// @Success 200 {object} quotes.Quote
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/quotes/{quoteID} [put]
+func (h *Handlers) UpdateQuote(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	quoteID := chi.URLParam(r, "quoteID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req quotes.UpdateQuoteRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	quote, err := h.quotesService.Update(r.Context(), tenantID, schemaName, quoteID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, quote)
+}
+
+// DeleteQuote deletes a draft quote
+// @Summary Delete quote
+// @Description Delete a draft quote
+// @Tags Quotes
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param quoteID path string true "Quote ID"
+// @Success 204 "No Content"
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/quotes/{quoteID} [delete]
+func (h *Handlers) DeleteQuote(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	quoteID := chi.URLParam(r, "quoteID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.quotesService.Delete(r.Context(), tenantID, schemaName, quoteID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// SendQuote marks a quote as sent
+// @Summary Send quote
+// @Description Mark a quote as sent to the customer
+// @Tags Quotes
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param quoteID path string true "Quote ID"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/quotes/{quoteID}/send [post]
+func (h *Handlers) SendQuote(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	quoteID := chi.URLParam(r, "quoteID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.quotesService.Send(r.Context(), tenantID, schemaName, quoteID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "sent"})
+}
+
+// AcceptQuote marks a quote as accepted
+// @Summary Accept quote
+// @Description Mark a quote as accepted by the customer
+// @Tags Quotes
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param quoteID path string true "Quote ID"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/quotes/{quoteID}/accept [post]
+func (h *Handlers) AcceptQuote(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	quoteID := chi.URLParam(r, "quoteID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.quotesService.Accept(r.Context(), tenantID, schemaName, quoteID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
+}
+
+// RejectQuote marks a quote as rejected
+// @Summary Reject quote
+// @Description Mark a quote as rejected by the customer
+// @Tags Quotes
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param quoteID path string true "Quote ID"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/quotes/{quoteID}/reject [post]
+func (h *Handlers) RejectQuote(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	quoteID := chi.URLParam(r, "quoteID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.quotesService.Reject(r.Context(), tenantID, schemaName, quoteID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "rejected"})
+}
+
+// =============================================================================
+// ORDERS HANDLERS
+// =============================================================================
+
+// ListOrders returns all orders for a tenant
+// @Summary List orders
+// @Description Get all orders for a tenant with optional filtering
+// @Tags Orders
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param status query string false "Filter by status (PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELED)"
+// @Param contact_id query string false "Filter by contact ID"
+// @Param from_date query string false "Filter from date (YYYY-MM-DD)"
+// @Param to_date query string false "Filter to date (YYYY-MM-DD)"
+// @Param search query string false "Search in order number"
+// @Success 200 {array} orders.Order
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/orders [get]
+func (h *Handlers) ListOrders(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	filter := &orders.OrderFilter{
+		Search: r.URL.Query().Get("search"),
+	}
+
+	if status := r.URL.Query().Get("status"); status != "" {
+		filter.Status = orders.OrderStatus(status)
+	}
+	if contactID := r.URL.Query().Get("contact_id"); contactID != "" {
+		filter.ContactID = contactID
+	}
+	if fromDate := r.URL.Query().Get("from_date"); fromDate != "" {
+		if parsed, err := time.Parse("2006-01-02", fromDate); err == nil {
+			filter.FromDate = &parsed
+		}
+	}
+	if toDate := r.URL.Query().Get("to_date"); toDate != "" {
+		if parsed, err := time.Parse("2006-01-02", toDate); err == nil {
+			filter.ToDate = &parsed
+		}
+	}
+
+	orderList, err := h.ordersService.List(r.Context(), tenantID, schemaName, filter)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list orders")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, orderList)
+}
+
+// CreateOrder creates a new order
+// @Summary Create order
+// @Description Create a new sales order
+// @Tags Orders
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body orders.CreateOrderRequest true "Order details"
+// @Success 201 {object} orders.Order
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/orders [post]
+func (h *Handlers) CreateOrder(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req orders.CreateOrderRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	req.UserID = claims.UserID
+
+	if req.ContactID == "" {
+		respondError(w, http.StatusBadRequest, "Contact is required")
+		return
+	}
+
+	if len(req.Lines) == 0 {
+		respondError(w, http.StatusBadRequest, "At least one line is required")
+		return
+	}
+
+	order, err := h.ordersService.Create(r.Context(), tenantID, schemaName, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, order)
+}
+
+// GetOrder returns an order by ID
+// @Summary Get order
+// @Description Get order details by ID
+// @Tags Orders
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param orderID path string true "Order ID"
+// @Success 200 {object} orders.Order
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/orders/{orderID} [get]
+func (h *Handlers) GetOrder(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	orderID := chi.URLParam(r, "orderID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	order, err := h.ordersService.GetByID(r.Context(), tenantID, schemaName, orderID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Order not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, order)
+}
+
+// UpdateOrder updates an order
+// @Summary Update order
+// @Description Update a pending or confirmed order
+// @Tags Orders
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param orderID path string true "Order ID"
+// @Param request body orders.UpdateOrderRequest true "Order details"
+// @Success 200 {object} orders.Order
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/orders/{orderID} [put]
+func (h *Handlers) UpdateOrder(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	orderID := chi.URLParam(r, "orderID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req orders.UpdateOrderRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	order, err := h.ordersService.Update(r.Context(), tenantID, schemaName, orderID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, order)
+}
+
+// DeleteOrder deletes a pending order
+// @Summary Delete order
+// @Description Delete a pending order
+// @Tags Orders
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param orderID path string true "Order ID"
+// @Success 204 "No Content"
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/orders/{orderID} [delete]
+func (h *Handlers) DeleteOrder(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	orderID := chi.URLParam(r, "orderID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.ordersService.Delete(r.Context(), tenantID, schemaName, orderID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ConfirmOrder marks an order as confirmed
+// @Summary Confirm order
+// @Description Mark a pending order as confirmed
+// @Tags Orders
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param orderID path string true "Order ID"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/orders/{orderID}/confirm [post]
+func (h *Handlers) ConfirmOrder(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	orderID := chi.URLParam(r, "orderID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.ordersService.Confirm(r.Context(), tenantID, schemaName, orderID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "confirmed"})
+}
+
+// ProcessOrder marks an order as processing
+// @Summary Process order
+// @Description Mark a confirmed order as processing
+// @Tags Orders
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param orderID path string true "Order ID"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/orders/{orderID}/process [post]
+func (h *Handlers) ProcessOrder(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	orderID := chi.URLParam(r, "orderID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.ordersService.Process(r.Context(), tenantID, schemaName, orderID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "processing"})
+}
+
+// ShipOrder marks an order as shipped
+// @Summary Ship order
+// @Description Mark an order as shipped
+// @Tags Orders
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param orderID path string true "Order ID"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/orders/{orderID}/ship [post]
+func (h *Handlers) ShipOrder(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	orderID := chi.URLParam(r, "orderID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.ordersService.Ship(r.Context(), tenantID, schemaName, orderID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "shipped"})
+}
+
+// DeliverOrder marks an order as delivered
+// @Summary Deliver order
+// @Description Mark a shipped order as delivered
+// @Tags Orders
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param orderID path string true "Order ID"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/orders/{orderID}/deliver [post]
+func (h *Handlers) DeliverOrder(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	orderID := chi.URLParam(r, "orderID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.ordersService.Deliver(r.Context(), tenantID, schemaName, orderID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "delivered"})
+}
+
+// CancelOrder cancels an order
+// @Summary Cancel order
+// @Description Cancel an order (not allowed if already delivered)
+// @Tags Orders
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param orderID path string true "Order ID"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/orders/{orderID}/cancel [post]
+func (h *Handlers) CancelOrder(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	orderID := chi.URLParam(r, "orderID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.ordersService.Cancel(r.Context(), tenantID, schemaName, orderID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "canceled"})
+}
+
+// =============================================================================
+// FIXED ASSETS HANDLERS
+// =============================================================================
+
+// ListAssetCategories returns all asset categories for a tenant
+// @Summary List asset categories
+// @Description Get all asset categories for a tenant
+// @Tags Fixed Assets
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Success 200 {array} assets.AssetCategory
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/asset-categories [get]
+func (h *Handlers) ListAssetCategories(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	categories, err := h.assetsService.ListCategories(r.Context(), tenantID, schemaName)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list asset categories")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, categories)
+}
+
+// CreateAssetCategory creates a new asset category
+// @Summary Create asset category
+// @Description Create a new asset category
+// @Tags Fixed Assets
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body assets.CreateCategoryRequest true "Category details"
+// @Success 201 {object} assets.AssetCategory
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/asset-categories [post]
+func (h *Handlers) CreateAssetCategory(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req assets.CreateCategoryRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.Name == "" {
+		respondError(w, http.StatusBadRequest, "Category name is required")
+		return
+	}
+
+	category, err := h.assetsService.CreateCategory(r.Context(), tenantID, schemaName, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, category)
+}
+
+// GetAssetCategory returns an asset category by ID
+// @Summary Get asset category
+// @Description Get asset category details by ID
+// @Tags Fixed Assets
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param categoryID path string true "Category ID"
+// @Success 200 {object} assets.AssetCategory
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/asset-categories/{categoryID} [get]
+func (h *Handlers) GetAssetCategory(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	categoryID := chi.URLParam(r, "categoryID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	category, err := h.assetsService.GetCategoryByID(r.Context(), tenantID, schemaName, categoryID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Category not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, category)
+}
+
+// DeleteAssetCategory deletes an asset category
+// @Summary Delete asset category
+// @Description Delete an asset category
+// @Tags Fixed Assets
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param categoryID path string true "Category ID"
+// @Success 204 "No Content"
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/asset-categories/{categoryID} [delete]
+func (h *Handlers) DeleteAssetCategory(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	categoryID := chi.URLParam(r, "categoryID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.assetsService.DeleteCategory(r.Context(), tenantID, schemaName, categoryID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListAssets returns all fixed assets for a tenant
+// @Summary List fixed assets
+// @Description Get all fixed assets for a tenant with optional filtering
+// @Tags Fixed Assets
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param status query string false "Filter by status (DRAFT, ACTIVE, DISPOSED, SOLD)"
+// @Param category_id query string false "Filter by category ID"
+// @Param search query string false "Search in name or asset number"
+// @Success 200 {array} assets.FixedAsset
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/assets [get]
+func (h *Handlers) ListAssets(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	filter := &assets.AssetFilter{
+		Search: r.URL.Query().Get("search"),
+	}
+
+	if status := r.URL.Query().Get("status"); status != "" {
+		filter.Status = assets.AssetStatus(status)
+	}
+	if categoryID := r.URL.Query().Get("category_id"); categoryID != "" {
+		filter.CategoryID = categoryID
+	}
+
+	assetList, err := h.assetsService.List(r.Context(), tenantID, schemaName, filter)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list assets")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, assetList)
+}
+
+// CreateAsset creates a new fixed asset
+// @Summary Create fixed asset
+// @Description Create a new fixed asset
+// @Tags Fixed Assets
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body assets.CreateAssetRequest true "Asset details"
+// @Success 201 {object} assets.FixedAsset
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/assets [post]
+func (h *Handlers) CreateAsset(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req assets.CreateAssetRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	req.UserID = claims.UserID
+
+	asset, err := h.assetsService.Create(r.Context(), tenantID, schemaName, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, asset)
+}
+
+// GetAsset returns a fixed asset by ID
+// @Summary Get fixed asset
+// @Description Get fixed asset details by ID
+// @Tags Fixed Assets
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param assetID path string true "Asset ID"
+// @Success 200 {object} assets.FixedAsset
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/assets/{assetID} [get]
+func (h *Handlers) GetAsset(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	assetID := chi.URLParam(r, "assetID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	asset, err := h.assetsService.GetByID(r.Context(), tenantID, schemaName, assetID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Asset not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, asset)
+}
+
+// UpdateAsset updates a fixed asset
+// @Summary Update fixed asset
+// @Description Update a draft or active fixed asset
+// @Tags Fixed Assets
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param assetID path string true "Asset ID"
+// @Param request body assets.UpdateAssetRequest true "Asset details"
+// @Success 200 {object} assets.FixedAsset
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/assets/{assetID} [put]
+func (h *Handlers) UpdateAsset(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	assetID := chi.URLParam(r, "assetID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req assets.UpdateAssetRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	asset, err := h.assetsService.Update(r.Context(), tenantID, schemaName, assetID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, asset)
+}
+
+// DeleteAsset deletes a draft fixed asset
+// @Summary Delete fixed asset
+// @Description Delete a draft fixed asset
+// @Tags Fixed Assets
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param assetID path string true "Asset ID"
+// @Success 204 "No Content"
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/assets/{assetID} [delete]
+func (h *Handlers) DeleteAsset(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	assetID := chi.URLParam(r, "assetID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.assetsService.Delete(r.Context(), tenantID, schemaName, assetID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ActivateAsset marks an asset as active
+// @Summary Activate fixed asset
+// @Description Mark a draft fixed asset as active
+// @Tags Fixed Assets
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param assetID path string true "Asset ID"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/assets/{assetID}/activate [post]
+func (h *Handlers) ActivateAsset(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	assetID := chi.URLParam(r, "assetID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.assetsService.Activate(r.Context(), tenantID, schemaName, assetID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "active"})
+}
+
+// DisposeAsset marks an asset as disposed
+// @Summary Dispose fixed asset
+// @Description Mark an active fixed asset as disposed or sold
+// @Tags Fixed Assets
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param assetID path string true "Asset ID"
+// @Param request body assets.DisposeAssetRequest true "Disposal details"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/assets/{assetID}/dispose [post]
+func (h *Handlers) DisposeAsset(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	assetID := chi.URLParam(r, "assetID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req assets.DisposeAssetRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	req.UserID = claims.UserID
+
+	if err := h.assetsService.Dispose(r.Context(), tenantID, schemaName, assetID, &req); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "disposed"})
+}
+
+// RecordDepreciation records depreciation for an asset
+// @Summary Record depreciation
+// @Description Record monthly depreciation for an active fixed asset
+// @Tags Fixed Assets
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param assetID path string true "Asset ID"
+// @Success 201 {object} assets.DepreciationEntry
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/assets/{assetID}/depreciation [post]
+func (h *Handlers) RecordDepreciation(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	assetID := chi.URLParam(r, "assetID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	// Default to current month
+	now := time.Now()
+	periodStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	periodEnd := periodStart.AddDate(0, 1, -1)
+
+	entry, err := h.assetsService.RecordDepreciation(r.Context(), tenantID, schemaName, assetID, claims.UserID, periodStart, periodEnd)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, entry)
+}
+
+// GetDepreciationHistory returns depreciation history for an asset
+// @Summary Get depreciation history
+// @Description Get all depreciation entries for a fixed asset
+// @Tags Fixed Assets
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param assetID path string true "Asset ID"
+// @Success 200 {array} assets.DepreciationEntry
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/assets/{assetID}/depreciation [get]
+func (h *Handlers) GetDepreciationHistory(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	assetID := chi.URLParam(r, "assetID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	entries, err := h.assetsService.GetDepreciationHistory(r.Context(), tenantID, schemaName, assetID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get depreciation history")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, entries)
+}
+
+// ============================================================================
+// Inventory Handlers
+// ============================================================================
+
+// ListProductCategories lists all product categories
+func (h *Handlers) ListProductCategories(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	categories, err := h.inventoryService.ListCategories(r.Context(), tenantID, schemaName)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list categories")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, categories)
+}
+
+// CreateProductCategory creates a new product category
+func (h *Handlers) CreateProductCategory(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req inventory.CreateCategoryRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	category, err := h.inventoryService.CreateCategory(r.Context(), tenantID, schemaName, &req)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to create category")
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, category)
+}
+
+// GetProductCategory gets a product category by ID
+func (h *Handlers) GetProductCategory(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	categoryID := chi.URLParam(r, "categoryID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	category, err := h.inventoryService.GetCategoryByID(r.Context(), tenantID, schemaName, categoryID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Category not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, category)
+}
+
+// DeleteProductCategory deletes a product category
+func (h *Handlers) DeleteProductCategory(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	categoryID := chi.URLParam(r, "categoryID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.inventoryService.DeleteCategory(r.Context(), tenantID, schemaName, categoryID); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to delete category")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// ListProducts lists all products
+func (h *Handlers) ListProducts(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	filter := &inventory.ProductFilter{
+		ProductType: inventory.ProductType(r.URL.Query().Get("product_type")),
+		Status:      inventory.ProductStatus(r.URL.Query().Get("status")),
+		CategoryID:  r.URL.Query().Get("category_id"),
+		Search:      r.URL.Query().Get("search"),
+		LowStock:    r.URL.Query().Get("low_stock") == "true",
+	}
+
+	products, err := h.inventoryService.ListProducts(r.Context(), tenantID, schemaName, filter)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list products")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, products)
+}
+
+// CreateProduct creates a new product
+func (h *Handlers) CreateProduct(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req inventory.CreateProductRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	product, err := h.inventoryService.CreateProduct(r.Context(), tenantID, schemaName, &req)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to create product: %v", err))
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, product)
+}
+
+// GetProduct gets a product by ID
+func (h *Handlers) GetProduct(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	productID := chi.URLParam(r, "productID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	product, err := h.inventoryService.GetProductByID(r.Context(), tenantID, schemaName, productID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Product not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, product)
+}
+
+// UpdateProduct updates a product
+func (h *Handlers) UpdateProduct(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	productID := chi.URLParam(r, "productID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req inventory.UpdateProductRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	product, err := h.inventoryService.UpdateProduct(r.Context(), tenantID, schemaName, productID, &req)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to update product: %v", err))
+		return
+	}
+
+	respondJSON(w, http.StatusOK, product)
+}
+
+// DeleteProduct deletes a product
+func (h *Handlers) DeleteProduct(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	productID := chi.URLParam(r, "productID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.inventoryService.DeleteProduct(r.Context(), tenantID, schemaName, productID); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to delete product")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// GetStockLevels gets stock levels for a product
+func (h *Handlers) GetStockLevels(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	productID := chi.URLParam(r, "productID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	levels, err := h.inventoryService.GetStockLevels(r.Context(), tenantID, schemaName, productID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get stock levels")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, levels)
+}
+
+// GetInventoryMovements gets inventory movements for a product
+func (h *Handlers) GetInventoryMovements(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	productID := chi.URLParam(r, "productID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	movements, err := h.inventoryService.GetMovements(r.Context(), tenantID, schemaName, productID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get movements")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, movements)
+}
+
+// ListWarehouses lists all warehouses
+func (h *Handlers) ListWarehouses(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	activeOnly := r.URL.Query().Get("active_only") == "true"
+
+	warehouses, err := h.inventoryService.ListWarehouses(r.Context(), tenantID, schemaName, activeOnly)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list warehouses")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, warehouses)
+}
+
+// CreateWarehouse creates a new warehouse
+func (h *Handlers) CreateWarehouse(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req inventory.CreateWarehouseRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	warehouse, err := h.inventoryService.CreateWarehouse(r.Context(), tenantID, schemaName, &req)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to create warehouse: %v", err))
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, warehouse)
+}
+
+// GetWarehouse gets a warehouse by ID
+func (h *Handlers) GetWarehouse(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	warehouseID := chi.URLParam(r, "warehouseID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	warehouse, err := h.inventoryService.GetWarehouseByID(r.Context(), tenantID, schemaName, warehouseID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Warehouse not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, warehouse)
+}
+
+// UpdateWarehouse updates a warehouse
+func (h *Handlers) UpdateWarehouse(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	warehouseID := chi.URLParam(r, "warehouseID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req inventory.UpdateWarehouseRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	warehouse, err := h.inventoryService.UpdateWarehouse(r.Context(), tenantID, schemaName, warehouseID, &req)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to update warehouse: %v", err))
+		return
+	}
+
+	respondJSON(w, http.StatusOK, warehouse)
+}
+
+// DeleteWarehouse deletes a warehouse
+func (h *Handlers) DeleteWarehouse(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	warehouseID := chi.URLParam(r, "warehouseID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.inventoryService.DeleteWarehouse(r.Context(), tenantID, schemaName, warehouseID); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to delete warehouse")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// AdjustStock adjusts stock for a product
+func (h *Handlers) AdjustStock(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	claims, ok := r.Context().Value("claims").(*auth.Claims)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Invalid or missing authentication")
+		return
+	}
+
+	var req inventory.AdjustStockRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	req.UserID = claims.UserID
+
+	movement, err := h.inventoryService.AdjustStock(r.Context(), tenantID, schemaName, &req)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to adjust stock: %v", err))
+		return
+	}
+
+	respondJSON(w, http.StatusOK, movement)
+}
+
+// TransferStock transfers stock between warehouses
+func (h *Handlers) TransferStock(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	claims, ok := r.Context().Value("claims").(*auth.Claims)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Invalid or missing authentication")
+		return
+	}
+
+	var req inventory.TransferStockRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	req.UserID = claims.UserID
+
+	if err := h.inventoryService.TransferStock(r.Context(), tenantID, schemaName, &req); err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to transfer stock: %v", err))
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "transferred"})
+}
+
+// =============================================================================
+// ABSENCE / LEAVE MANAGEMENT HANDLERS
+// =============================================================================
+
+// ListAbsenceTypes returns all absence types for a tenant
+// @Summary List absence types
+// @Description Get all available absence/leave types
+// @Tags Leave Management
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Success 200 {array} payroll.AbsenceType
+// @Router /tenants/{tenantID}/absence-types [get]
+func (h *Handlers) ListAbsenceTypes(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	activeOnly := r.URL.Query().Get("active_only") == "true"
+
+	types, err := h.absenceService.ListAbsenceTypes(r.Context(), schemaName, tenantID, activeOnly)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list absence types")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, types)
+}
+
+// GetAbsenceType returns a specific absence type
+// @Summary Get absence type
+// @Description Get a specific absence type by ID
+// @Tags Leave Management
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param typeID path string true "Absence Type ID"
+// @Success 200 {object} payroll.AbsenceType
+// @Router /tenants/{tenantID}/absence-types/{typeID} [get]
+func (h *Handlers) GetAbsenceType(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	typeID := chi.URLParam(r, "typeID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	absenceType, err := h.absenceService.GetAbsenceType(r.Context(), schemaName, tenantID, typeID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Absence type not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, absenceType)
+}
+
+// ListLeaveBalances returns leave balances for an employee
+// @Summary List leave balances
+// @Description Get all leave balances for an employee
+// @Tags Leave Management
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param employeeID path string true "Employee ID"
+// @Success 200 {array} payroll.LeaveBalance
+// @Router /tenants/{tenantID}/employees/{employeeID}/leave-balances [get]
+func (h *Handlers) ListLeaveBalances(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	employeeID := chi.URLParam(r, "employeeID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	// Default to current year
+	year := time.Now().Year()
+	if yearParam := r.URL.Query().Get("year"); yearParam != "" {
+		if y, err := strconv.Atoi(yearParam); err == nil {
+			year = y
+		}
+	}
+
+	balances, err := h.absenceService.GetLeaveBalances(r.Context(), schemaName, tenantID, employeeID, year)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list leave balances")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, balances)
+}
+
+// GetLeaveBalancesByYear returns leave balances for an employee for a specific year
+// @Summary Get leave balances by year
+// @Description Get leave balances for an employee for a specific year
+// @Tags Leave Management
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param employeeID path string true "Employee ID"
+// @Param year path int true "Year"
+// @Success 200 {array} payroll.LeaveBalance
+// @Router /tenants/{tenantID}/employees/{employeeID}/leave-balances/{year} [get]
+func (h *Handlers) GetLeaveBalancesByYear(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	employeeID := chi.URLParam(r, "employeeID")
+	yearStr := chi.URLParam(r, "year")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid year")
+		return
+	}
+
+	balances, err := h.absenceService.GetLeaveBalances(r.Context(), schemaName, tenantID, employeeID, year)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list leave balances")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, balances)
+}
+
+// UpdateLeaveBalance updates a leave balance
+// @Summary Update leave balance
+// @Description Update an employee's leave balance
+// @Tags Leave Management
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param employeeID path string true "Employee ID"
+// @Param year path int true "Year"
+// @Param typeID path string true "Absence Type ID"
+// @Param request body payroll.UpdateLeaveBalanceRequest true "Balance update"
+// @Success 200 {object} payroll.LeaveBalance
+// @Router /tenants/{tenantID}/employees/{employeeID}/leave-balances/{year}/{typeID} [put]
+func (h *Handlers) UpdateLeaveBalance(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	employeeID := chi.URLParam(r, "employeeID")
+	yearStr := chi.URLParam(r, "year")
+	typeID := chi.URLParam(r, "typeID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid year")
+		return
+	}
+
+	var req payroll.UpdateLeaveBalanceRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	balance, err := h.absenceService.UpdateLeaveBalance(r.Context(), schemaName, tenantID, employeeID, typeID, year, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, balance)
+}
+
+// InitializeLeaveBalances initializes leave balances for an employee
+// @Summary Initialize leave balances
+// @Description Initialize leave balances for an employee for a specific year
+// @Tags Leave Management
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param employeeID path string true "Employee ID"
+// @Param year path int true "Year"
+// @Success 200 {array} payroll.LeaveBalance
+// @Router /tenants/{tenantID}/employees/{employeeID}/leave-balances/{year}/initialize [post]
+func (h *Handlers) InitializeLeaveBalances(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	employeeID := chi.URLParam(r, "employeeID")
+	yearStr := chi.URLParam(r, "year")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid year")
+		return
+	}
+
+	balances, err := h.absenceService.InitializeEmployeeLeaveBalances(r.Context(), schemaName, tenantID, employeeID, year)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to initialize leave balances")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, balances)
+}
+
+// ListLeaveRecords returns leave records
+// @Summary List leave records
+// @Description Get leave records for a tenant or employee
+// @Tags Leave Management
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param employee_id query string false "Filter by employee ID"
+// @Param year query int false "Filter by year"
+// @Success 200 {array} payroll.LeaveRecord
+// @Router /tenants/{tenantID}/leave-records [get]
+func (h *Handlers) ListLeaveRecords(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	employeeID := r.URL.Query().Get("employee_id")
+	year := 0
+	if yearParam := r.URL.Query().Get("year"); yearParam != "" {
+		if y, err := strconv.Atoi(yearParam); err == nil {
+			year = y
+		}
+	}
+
+	records, err := h.absenceService.ListLeaveRecords(r.Context(), schemaName, tenantID, employeeID, year)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list leave records")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, records)
+}
+
+// CreateLeaveRecord creates a new leave record
+// @Summary Create leave record
+// @Description Create a new leave/absence request
+// @Tags Leave Management
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body payroll.CreateLeaveRecordRequest true "Leave request details"
+// @Success 201 {object} payroll.LeaveRecord
+// @Router /tenants/{tenantID}/leave-records [post]
+func (h *Handlers) CreateLeaveRecord(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	claims, _ := auth.GetClaims(r.Context())
+
+	var req payroll.CreateLeaveRecordRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	record, err := h.absenceService.CreateLeaveRecord(r.Context(), schemaName, tenantID, claims.UserID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, record)
+}
+
+// GetLeaveRecord returns a specific leave record
+// @Summary Get leave record
+// @Description Get a specific leave record by ID
+// @Tags Leave Management
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param recordID path string true "Leave Record ID"
+// @Success 200 {object} payroll.LeaveRecord
+// @Router /tenants/{tenantID}/leave-records/{recordID} [get]
+func (h *Handlers) GetLeaveRecord(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	recordID := chi.URLParam(r, "recordID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	record, err := h.absenceService.GetLeaveRecord(r.Context(), schemaName, tenantID, recordID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Leave record not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, record)
+}
+
+// ApproveLeaveRecord approves a leave request
+// @Summary Approve leave record
+// @Description Approve a pending leave request
+// @Tags Leave Management
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param recordID path string true "Leave Record ID"
+// @Success 200 {object} payroll.LeaveRecord
+// @Router /tenants/{tenantID}/leave-records/{recordID}/approve [post]
+func (h *Handlers) ApproveLeaveRecord(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	recordID := chi.URLParam(r, "recordID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	claims, _ := auth.GetClaims(r.Context())
+
+	record, err := h.absenceService.ApproveLeaveRecord(r.Context(), schemaName, tenantID, recordID, claims.UserID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, record)
+}
+
+// RejectLeaveRecord rejects a leave request
+// @Summary Reject leave record
+// @Description Reject a pending leave request
+// @Tags Leave Management
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param recordID path string true "Leave Record ID"
+// @Param request body payroll.RejectLeaveRequest true "Rejection details"
+// @Success 200 {object} payroll.LeaveRecord
+// @Router /tenants/{tenantID}/leave-records/{recordID}/reject [post]
+func (h *Handlers) RejectLeaveRecord(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	recordID := chi.URLParam(r, "recordID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	claims, _ := auth.GetClaims(r.Context())
+
+	var req payroll.RejectLeaveRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	record, err := h.absenceService.RejectLeaveRecord(r.Context(), schemaName, tenantID, recordID, claims.UserID, req.Reason)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, record)
+}
+
+// CancelLeaveRecord cancels a leave request
+// @Summary Cancel leave record
+// @Description Cancel a pending or approved leave request
+// @Tags Leave Management
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param recordID path string true "Leave Record ID"
+// @Success 200 {object} payroll.LeaveRecord
+// @Router /tenants/{tenantID}/leave-records/{recordID}/cancel [post]
+func (h *Handlers) CancelLeaveRecord(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	recordID := chi.URLParam(r, "recordID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	claims, _ := auth.GetClaims(r.Context())
+
+	record, err := h.absenceService.CancelLeaveRecord(r.Context(), schemaName, tenantID, recordID, claims.UserID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, record)
 }

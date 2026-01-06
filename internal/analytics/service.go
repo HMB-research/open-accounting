@@ -95,12 +95,14 @@ func (s *Service) GetRevenueExpenseChart(ctx context.Context, tenantID, schemaNa
 		Labels:   make([]string, 0, len(data)),
 		Revenue:  make([]decimal.Decimal, 0, len(data)),
 		Expenses: make([]decimal.Decimal, 0, len(data)),
+		Profit:   make([]decimal.Decimal, 0, len(data)),
 	}
 
 	for _, d := range data {
 		chart.Labels = append(chart.Labels, d.Label)
 		chart.Revenue = append(chart.Revenue, d.Revenue)
 		chart.Expenses = append(chart.Expenses, d.Expenses)
+		chart.Profit = append(chart.Profit, d.Revenue.Sub(d.Expenses))
 	}
 
 	return chart, nil

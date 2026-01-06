@@ -161,8 +161,19 @@
 	}
 
 	function formatAmount(amount: any): string {
+		if (amount === null || amount === undefined) return '0.00';
 		const num = typeof amount === 'object' && amount.toNumber ? amount.toNumber() : Number(amount);
+		if (isNaN(num)) return '0.00';
 		return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+	}
+
+	function getStatusLabel(status: string): string {
+		switch (status) {
+			case 'UNMATCHED': return m.banking_unmatched();
+			case 'MATCHED': return m.banking_matched();
+			case 'RECONCILED': return m.banking_reconciled();
+			default: return status;
+		}
 	}
 
 	function formatDate(dateStr: string): string {
@@ -288,7 +299,7 @@
 								</td>
 								<td class="px-6 py-4 whitespace-nowrap text-center">
 									<span class="px-2 py-1 text-xs rounded-full {getStatusBadgeClass(transaction.status)}">
-										{transaction.status}
+										{getStatusLabel(transaction.status)}
 									</span>
 								</td>
 								<td class="px-6 py-4 whitespace-nowrap text-right text-sm">

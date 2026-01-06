@@ -18,16 +18,21 @@ import (
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/analytics"
 	"github.com/HMB-research/open-accounting/internal/apierror"
+	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/email"
+	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/pdf"
 	"github.com/HMB-research/open-accounting/internal/plugin"
+	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/recurring"
+	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -48,7 +53,15 @@ type Handlers struct {
 	bankingService    *banking.Service
 	taxService        *tax.Service
 	payrollService    *payroll.Service
+	absenceService    *payroll.AbsenceService
 	pluginService     *plugin.Service
+	quotesService     *quotes.Service
+	ordersService     *orders.Service
+	assetsService     *assets.Service
+	inventoryService  *inventory.Service
+	reportsService    *reports.Service
+	reminderService   *invoicing.ReminderService
+	costCenterService *accounting.CostCenterService
 }
 
 // getSchemaName returns the schema name for a tenant
@@ -895,6 +908,322 @@ func (h *Handlers) GetIncomeStatement(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, is)
 }
 
+// GetCashFlowStatement returns the cash flow statement for a tenant
+// @Summary Get cash flow statement
+// @Description Get cash flow statement report for a specific period (Estonian standard)
+// @Tags Reports
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param start_date query string true "Start date (YYYY-MM-DD)"
+// @Param end_date query string true "End date (YYYY-MM-DD)"
+// @Success 200 {object} reports.CashFlowStatement
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/reports/cash-flow [get]
+func (h *Handlers) GetCashFlowStatement(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+
+	startDateStr := r.URL.Query().Get("start_date")
+	endDateStr := r.URL.Query().Get("end_date")
+
+	if startDateStr == "" || endDateStr == "" {
+		respondError(w, http.StatusBadRequest, "start_date and end_date parameters are required")
+		return
+	}
+
+	// Validate date formats
+	_, err := time.Parse("2006-01-02", startDateStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid start_date format. Use YYYY-MM-DD")
+		return
+	}
+
+	_, err = time.Parse("2006-01-02", endDateStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid end_date format. Use YYYY-MM-DD")
+		return
+	}
+
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+	req := &reports.CashFlowRequest{
+		StartDate: startDateStr,
+		EndDate:   endDateStr,
+	}
+
+	result, err := h.reportsService.GenerateCashFlowStatement(r.Context(), tenantID, schemaName, req)
+	if err != nil {
+		log.Error().Err(err).Str("tenant", tenantID).Msg("Failed to generate cash flow statement")
+		respondError(w, http.StatusInternalServerError, "Failed to generate cash flow statement")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// GetBalanceConfirmationSummary returns a summary of all outstanding balances by contact
+// @Summary Get balance confirmation summary
+// @Description Get a summary of all receivables or payables grouped by contact
+// @Tags Reports
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param type query string true "Balance type (RECEIVABLE or PAYABLE)"
+// @Param as_of_date query string true "As of date (YYYY-MM-DD)"
+// @Success 200 {object} reports.BalanceConfirmationSummary
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/reports/balance-confirmations [get]
+func (h *Handlers) GetBalanceConfirmationSummary(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+
+	balanceType := r.URL.Query().Get("type")
+	asOfDate := r.URL.Query().Get("as_of_date")
+
+	if balanceType == "" {
+		respondError(w, http.StatusBadRequest, "type parameter is required (RECEIVABLE or PAYABLE)")
+		return
+	}
+
+	if balanceType != "RECEIVABLE" && balanceType != "PAYABLE" {
+		respondError(w, http.StatusBadRequest, "type must be RECEIVABLE or PAYABLE")
+		return
+	}
+
+	if asOfDate == "" {
+		respondError(w, http.StatusBadRequest, "as_of_date parameter is required")
+		return
+	}
+
+	// Validate date format
+	_, err := time.Parse("2006-01-02", asOfDate)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid as_of_date format. Use YYYY-MM-DD")
+		return
+	}
+
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+	req := &reports.BalanceConfirmationRequest{
+		Type:     balanceType,
+		AsOfDate: asOfDate,
+	}
+
+	result, err := h.reportsService.GetBalanceConfirmationSummary(r.Context(), tenantID, schemaName, req)
+	if err != nil {
+		log.Error().Err(err).Str("tenant", tenantID).Msg("Failed to get balance confirmation summary")
+		respondError(w, http.StatusInternalServerError, "Failed to get balance confirmation summary")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// GetBalanceConfirmation returns balance confirmation for a specific contact
+// @Summary Get balance confirmation for contact
+// @Description Get detailed balance confirmation with invoices for a specific contact
+// @Tags Reports
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param contactID path string true "Contact ID"
+// @Param type query string true "Balance type (RECEIVABLE or PAYABLE)"
+// @Param as_of_date query string true "As of date (YYYY-MM-DD)"
+// @Success 200 {object} reports.BalanceConfirmation
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/reports/balance-confirmations/{contactID} [get]
+func (h *Handlers) GetBalanceConfirmation(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	contactID := chi.URLParam(r, "contactID")
+
+	balanceType := r.URL.Query().Get("type")
+	asOfDate := r.URL.Query().Get("as_of_date")
+
+	if balanceType == "" {
+		respondError(w, http.StatusBadRequest, "type parameter is required (RECEIVABLE or PAYABLE)")
+		return
+	}
+
+	if balanceType != "RECEIVABLE" && balanceType != "PAYABLE" {
+		respondError(w, http.StatusBadRequest, "type must be RECEIVABLE or PAYABLE")
+		return
+	}
+
+	if asOfDate == "" {
+		respondError(w, http.StatusBadRequest, "as_of_date parameter is required")
+		return
+	}
+
+	// Validate date format
+	_, err := time.Parse("2006-01-02", asOfDate)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid as_of_date format. Use YYYY-MM-DD")
+		return
+	}
+
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+	req := &reports.BalanceConfirmationRequest{
+		ContactID: contactID,
+		Type:      balanceType,
+		AsOfDate:  asOfDate,
+	}
+
+	result, err := h.reportsService.GetBalanceConfirmation(r.Context(), tenantID, schemaName, req)
+	if err != nil {
+		log.Error().Err(err).Str("tenant", tenantID).Str("contact", contactID).Msg("Failed to get balance confirmation")
+		respondError(w, http.StatusInternalServerError, "Failed to get balance confirmation")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// GetOverdueInvoices returns a summary of all overdue invoices for payment reminders
+// @Summary Get overdue invoices
+// @Description Get a summary of all overdue sales invoices for sending payment reminders
+// @Tags Reminders
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Success 200 {object} invoicing.OverdueInvoicesSummary
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/invoices/overdue [get]
+func (h *Handlers) GetOverdueInvoices(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	result, err := h.reminderService.GetOverdueInvoicesSummary(r.Context(), tenantID, schemaName)
+	if err != nil {
+		log.Error().Err(err).Str("tenant", tenantID).Msg("Failed to get overdue invoices")
+		respondError(w, http.StatusInternalServerError, "Failed to get overdue invoices")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// SendPaymentReminder sends a payment reminder for a specific invoice
+// @Summary Send payment reminder
+// @Description Send a payment reminder email for an overdue invoice
+// @Tags Reminders
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body invoicing.SendReminderRequest true "Reminder request"
+// @Success 200 {object} invoicing.ReminderResult
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/invoices/reminders [post]
+func (h *Handlers) SendPaymentReminder(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+
+	var req invoicing.SendReminderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.InvoiceID == "" {
+		respondError(w, http.StatusBadRequest, "invoice_id is required")
+		return
+	}
+
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	// Get company name for email template
+	t, err := h.tenantService.GetTenant(r.Context(), tenantID)
+	companyName := "Open Accounting"
+	if err == nil && t.Name != "" {
+		companyName = t.Name
+	}
+
+	result, err := h.reminderService.SendReminder(r.Context(), tenantID, schemaName, &req, companyName)
+	if err != nil {
+		log.Error().Err(err).Str("tenant", tenantID).Str("invoice", req.InvoiceID).Msg("Failed to send payment reminder")
+		respondError(w, http.StatusInternalServerError, "Failed to send payment reminder")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// SendBulkPaymentReminders sends payment reminders for multiple invoices
+// @Summary Send bulk payment reminders
+// @Description Send payment reminder emails for multiple overdue invoices
+// @Tags Reminders
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body invoicing.SendBulkRemindersRequest true "Bulk reminder request"
+// @Success 200 {object} invoicing.BulkReminderResult
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/invoices/reminders/bulk [post]
+func (h *Handlers) SendBulkPaymentReminders(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+
+	var req invoicing.SendBulkRemindersRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if len(req.InvoiceIDs) == 0 {
+		respondError(w, http.StatusBadRequest, "invoice_ids is required and must not be empty")
+		return
+	}
+
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	// Get company name for email template
+	t, err := h.tenantService.GetTenant(r.Context(), tenantID)
+	companyName := "Open Accounting"
+	if err == nil && t.Name != "" {
+		companyName = t.Name
+	}
+
+	result, err := h.reminderService.SendBulkReminders(r.Context(), tenantID, schemaName, &req, companyName)
+	if err != nil {
+		log.Error().Err(err).Str("tenant", tenantID).Msg("Failed to send bulk payment reminders")
+		respondError(w, http.StatusInternalServerError, "Failed to send bulk payment reminders")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// GetInvoiceReminderHistory gets the reminder history for an invoice
+// @Summary Get invoice reminder history
+// @Description Get the history of payment reminders sent for an invoice
+// @Tags Reminders
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param invoiceID path string true "Invoice ID"
+// @Success 200 {array} invoicing.PaymentReminder
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/invoices/{invoiceID}/reminders [get]
+func (h *Handlers) GetInvoiceReminderHistory(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	invoiceID := chi.URLParam(r, "invoiceID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	reminders, err := h.reminderService.GetReminderHistory(r.Context(), tenantID, schemaName, invoiceID)
+	if err != nil {
+		log.Error().Err(err).Str("tenant", tenantID).Str("invoice", invoiceID).Msg("Failed to get reminder history")
+		respondError(w, http.StatusInternalServerError, "Failed to get reminder history")
+		return
+	}
+
+	if reminders == nil {
+		reminders = []invoicing.PaymentReminder{}
+	}
+
+	respondJSON(w, http.StatusOK, reminders)
+}
+
 // Custom JSON marshaling for decimal values
 func init() {
 	// Register decimal type for proper JSON encoding
@@ -1413,10 +1742,11 @@ SELECT create_tenant_schema('tenant_acme');
 -- Add tables from later migrations
 SELECT add_recurring_tables_to_schema('tenant_acme');
 SELECT fix_recurring_invoices_schema('tenant_acme');
-SELECT add_email_tables_to_schema('tenant_acme');
+-- Note: email tables now created by create_tenant_schema
 SELECT add_reconciliation_tables_to_schema('tenant_acme');
 SELECT add_payroll_tables('tenant_acme');
 SELECT add_recurring_email_fields_to_schema('tenant_acme');
+SELECT add_leave_management_tables('tenant_acme');
 
 -- Chart of Accounts (Estonian standard - 28 accounts)
 INSERT INTO tenant_acme.accounts (id, tenant_id, code, name, account_type, is_system) VALUES
@@ -1529,11 +1859,12 @@ INSERT INTO tenant_acme.bank_accounts (id, tenant_id, name, account_number, bank
 ON CONFLICT DO NOTHING;
 
 -- Employees (5 total)
+-- Note: funded_pension_rate is stored as decimal (0.02 = 2%, 0.04 = 4%)
 INSERT INTO tenant_acme.employees (id, tenant_id, employee_number, first_name, last_name, personal_code, email, phone, address, bank_account, start_date, end_date, position, department, employment_type, tax_residency, apply_basic_exemption, basic_exemption_amount, funded_pension_rate, is_active) VALUES
-('70000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'EMP001', 'Maria', 'Tamm', '49001010001', 'maria.tamm@acme.ee', '+372 5111 2222', 'Liivalaia 33-15, Tallinn', 'EE382200221020145678', '2023-01-15', NULL, 'Software Developer', 'Engineering', 'FULL_TIME', 'EE', true, 700.00, 2.00, true),
-('70000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'EMP002', 'Jaan', 'Kask', '38505050002', 'jaan.kask@acme.ee', '+372 5222 3333', 'Pärnu mnt 45-8, Tallinn', 'EE382200221020156789', '2022-06-01', NULL, 'Project Manager', 'Management', 'FULL_TIME', 'EE', true, 700.00, 4.00, true),
+('70000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'EMP001', 'Maria', 'Tamm', '49001010001', 'maria.tamm@acme.ee', '+372 5111 2222', 'Liivalaia 33-15, Tallinn', 'EE382200221020145678', '2023-01-15', NULL, 'Software Developer', 'Engineering', 'FULL_TIME', 'EE', true, 700.00, 0.02, true),
+('70000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'EMP002', 'Jaan', 'Kask', '38505050002', 'jaan.kask@acme.ee', '+372 5222 3333', 'Pärnu mnt 45-8, Tallinn', 'EE382200221020156789', '2022-06-01', NULL, 'Project Manager', 'Management', 'FULL_TIME', 'EE', true, 700.00, 0.04, true),
 ('70000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'EMP003', 'Anna', 'Mets', '49503030003', 'anna.mets@acme.ee', '+372 5333 4444', 'Tartu mnt 12-3, Tallinn', 'EE382200221020167890', '2024-03-01', NULL, 'UX Designer', 'Design', 'FULL_TIME', 'EE', true, 700.00, 0.00, true),
-('70000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'EMP004', 'Peeter', 'Saar', '37801010004', 'peeter.saar@acme.ee', '+372 5444 5555', 'Mustamäe tee 5-22, Tallinn', 'EE382200221020178901', '2021-09-15', NULL, 'Senior Developer', 'Engineering', 'FULL_TIME', 'EE', true, 700.00, 2.00, true),
+('70000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'EMP004', 'Peeter', 'Saar', '37801010004', 'peeter.saar@acme.ee', '+372 5444 5555', 'Mustamäe tee 5-22, Tallinn', 'EE382200221020178901', '2021-09-15', NULL, 'Senior Developer', 'Engineering', 'FULL_TIME', 'EE', true, 700.00, 0.02, true),
 ('70000000-0000-0000-0001-000000000005'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'EMP005', 'Liisa', 'Kivi', '49207070005', 'liisa.kivi@acme.ee', '+372 5555 6666', 'Kadaka tee 88-5, Tallinn', 'EE382200221020189012', '2024-01-02', '2024-08-31', 'Intern', 'Engineering', 'PART_TIME', 'EE', false, 0.00, 0.00, false)
 ON CONFLICT DO NOTHING;
 
@@ -1580,10 +1911,11 @@ INSERT INTO tenant_acme.tsd_declarations (id, tenant_id, period_year, period_mon
 ON CONFLICT DO NOTHING;
 
 -- Recurring Invoices (3 total)
+-- Recurring invoices with dynamic dates (next_generation_date in the future)
 INSERT INTO tenant_acme.recurring_invoices (id, tenant_id, name, contact_id, invoice_type, frequency, start_date, end_date, next_generation_date, payment_terms_days, currency, notes, is_active, last_generated_at, generated_count, created_by) VALUES
-('75000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Monthly Support - TechStart', 'd0000000-0000-0000-0001-000000000001'::uuid, 'SALES', 'MONTHLY', '2024-01-01', '2024-12-31', '2025-01-01', 14, 'EUR', 'Monthly IT support package', true, '2024-12-01', 12, 'a0000000-0000-0000-0000-000000000001'::uuid),
-('75000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Quarterly Retainer - Nordic', 'd0000000-0000-0000-0001-000000000002'::uuid, 'SALES', 'QUARTERLY', '2024-01-01', NULL, '2025-01-01', 30, 'EUR', 'Quarterly consulting retainer', true, '2024-10-01', 4, 'a0000000-0000-0000-0000-000000000001'::uuid),
-('75000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Annual License - GreenTech', 'd0000000-0000-0000-0001-000000000004'::uuid, 'SALES', 'YEARLY', '2024-06-01', NULL, '2025-06-01', 30, 'EUR', 'Annual software license', true, '2024-06-01', 1, 'a0000000-0000-0000-0000-000000000001'::uuid)
+('75000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Monthly Support - TechStart', 'd0000000-0000-0000-0001-000000000001'::uuid, 'SALES', 'MONTHLY', DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 year', NULL, DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month', 14, 'EUR', 'Monthly IT support package', true, DATE_TRUNC('month', CURRENT_DATE), 12, 'a0000000-0000-0000-0000-000000000001'::uuid),
+('75000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Quarterly Retainer - Nordic', 'd0000000-0000-0000-0001-000000000002'::uuid, 'SALES', 'QUARTERLY', DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 year', NULL, DATE_TRUNC('quarter', CURRENT_DATE) + INTERVAL '3 months', 30, 'EUR', 'Quarterly consulting retainer', true, DATE_TRUNC('quarter', CURRENT_DATE), 4, 'a0000000-0000-0000-0000-000000000001'::uuid),
+('75000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Annual License - GreenTech', 'd0000000-0000-0000-0001-000000000004'::uuid, 'SALES', 'YEARLY', DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '6 months', NULL, DATE_TRUNC('year', CURRENT_DATE) + INTERVAL '6 months', 30, 'EUR', 'Annual software license', true, DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '6 months', 1, 'a0000000-0000-0000-0000-000000000001'::uuid)
 ON CONFLICT DO NOTHING;
 
 INSERT INTO tenant_acme.recurring_invoice_lines (id, tenant_id, recurring_invoice_id, line_number, description, quantity, unit_price, vat_rate, account_id) VALUES
@@ -1592,15 +1924,29 @@ INSERT INTO tenant_acme.recurring_invoice_lines (id, tenant_id, recurring_invoic
 ('76000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '75000000-0000-0000-0001-000000000003'::uuid, 1, 'Enterprise Software License', 1, 12000.00, 22.00, 'c0000000-0000-0000-0004-000000000001'::uuid)
 ON CONFLICT DO NOTHING;
 
--- Journal Entries (4 total)
+-- Journal Entries (4 static + 12 dynamic = 16 total)
 INSERT INTO tenant_acme.journal_entries (id, tenant_id, entry_number, entry_date, description, reference, source_type, status, created_by) VALUES
 ('77000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'JE-2024-001', '2024-01-01', 'Opening balances', 'OB-2024', 'MANUAL', 'POSTED', 'a0000000-0000-0000-0000-000000000001'::uuid),
 ('77000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'JE-2024-002', '2024-11-30', 'Office rent November', 'RENT-NOV-24', 'MANUAL', 'POSTED', 'a0000000-0000-0000-0000-000000000001'::uuid),
 ('77000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'JE-2024-003', '2024-12-01', 'Depreciation December', 'DEP-DEC-24', 'MANUAL', 'POSTED', 'a0000000-0000-0000-0000-000000000001'::uuid),
-('77000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'JE-2024-004', '2024-12-15', 'Utilities expense', 'UTIL-DEC-24', 'MANUAL', 'DRAFT', 'a0000000-0000-0000-0000-000000000001'::uuid)
+('77000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'JE-2024-004', '2024-12-15', 'Utilities expense', 'UTIL-DEC-24', 'MANUAL', 'DRAFT', 'a0000000-0000-0000-0000-000000000001'::uuid),
+-- Dynamic journal entries for last 6 months (revenue and expenses)
+('77000000-0000-0000-0001-000000000005'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'JE-DYN-001', DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months' + INTERVAL '15 days', 'Monthly service revenue', 'REV-M5', 'MANUAL', 'POSTED', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('77000000-0000-0000-0001-000000000006'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'JE-DYN-002', DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months' + INTERVAL '20 days', 'Monthly operating expenses', 'EXP-M5', 'MANUAL', 'POSTED', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('77000000-0000-0000-0001-000000000007'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'JE-DYN-003', DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '4 months' + INTERVAL '15 days', 'Monthly service revenue', 'REV-M4', 'MANUAL', 'POSTED', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('77000000-0000-0000-0001-000000000008'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'JE-DYN-004', DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '4 months' + INTERVAL '20 days', 'Monthly operating expenses', 'EXP-M4', 'MANUAL', 'POSTED', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('77000000-0000-0000-0001-000000000009'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'JE-DYN-005', DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '3 months' + INTERVAL '15 days', 'Monthly service revenue', 'REV-M3', 'MANUAL', 'POSTED', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('77000000-0000-0000-0001-000000000010'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'JE-DYN-006', DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '3 months' + INTERVAL '20 days', 'Monthly operating expenses', 'EXP-M3', 'MANUAL', 'POSTED', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('77000000-0000-0000-0001-000000000011'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'JE-DYN-007', DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 months' + INTERVAL '15 days', 'Monthly service revenue', 'REV-M2', 'MANUAL', 'POSTED', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('77000000-0000-0000-0001-000000000012'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'JE-DYN-008', DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 months' + INTERVAL '20 days', 'Monthly operating expenses', 'EXP-M2', 'MANUAL', 'POSTED', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('77000000-0000-0000-0001-000000000013'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'JE-DYN-009', DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month' + INTERVAL '15 days', 'Monthly service revenue', 'REV-M1', 'MANUAL', 'POSTED', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('77000000-0000-0000-0001-000000000014'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'JE-DYN-010', DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month' + INTERVAL '20 days', 'Monthly operating expenses', 'EXP-M1', 'MANUAL', 'POSTED', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('77000000-0000-0000-0001-000000000015'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'JE-DYN-011', CURRENT_DATE - INTERVAL '5 days', 'Current month service revenue', 'REV-M0', 'MANUAL', 'POSTED', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('77000000-0000-0000-0001-000000000016'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'JE-DYN-012', CURRENT_DATE - INTERVAL '3 days', 'Current month operating expenses', 'EXP-M0', 'MANUAL', 'POSTED', 'a0000000-0000-0000-0000-000000000001'::uuid)
 ON CONFLICT DO NOTHING;
 
 INSERT INTO tenant_acme.journal_entry_lines (id, tenant_id, journal_entry_id, account_id, description, debit_amount, credit_amount, currency, base_debit, base_credit) VALUES
+-- Static entries
 ('78000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000001'::uuid, 'c0000000-0000-0000-0001-000000000002'::uuid, 'Bank opening balance', 50000.00, 0.00, 'EUR', 50000.00, 0.00),
 ('78000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000001'::uuid, 'c0000000-0000-0000-0003-000000000001'::uuid, 'Share capital', 0.00, 50000.00, 'EUR', 0.00, 50000.00),
 ('78000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000002'::uuid, 'c0000000-0000-0000-0005-000000000004'::uuid, 'Office rent', 2500.00, 0.00, 'EUR', 2500.00, 0.00),
@@ -1608,7 +1954,51 @@ INSERT INTO tenant_acme.journal_entry_lines (id, tenant_id, journal_entry_id, ac
 ('78000000-0000-0000-0001-000000000005'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000003'::uuid, 'c0000000-0000-0000-0005-000000000010'::uuid, 'Monthly depreciation', 500.00, 0.00, 'EUR', 500.00, 0.00),
 ('78000000-0000-0000-0001-000000000006'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000003'::uuid, 'c0000000-0000-0000-0001-000000000007'::uuid, 'Accumulated depreciation', 0.00, 500.00, 'EUR', 0.00, 500.00),
 ('78000000-0000-0000-0001-000000000007'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000004'::uuid, 'c0000000-0000-0000-0005-000000000005'::uuid, 'Electricity and water', 350.00, 0.00, 'EUR', 350.00, 0.00),
-('78000000-0000-0000-0001-000000000008'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000004'::uuid, 'c0000000-0000-0000-0002-000000000001'::uuid, 'Utilities payable', 0.00, 350.00, 'EUR', 0.00, 350.00)
+('78000000-0000-0000-0001-000000000008'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000004'::uuid, 'c0000000-0000-0000-0002-000000000001'::uuid, 'Utilities payable', 0.00, 350.00, 'EUR', 0.00, 350.00),
+-- Dynamic revenue entries (debit Bank, credit Service Revenue 4100)
+-- Month -5: 8500 EUR revenue
+('78000000-0000-0000-0001-000000000009'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000005'::uuid, 'c0000000-0000-0000-0001-000000000002'::uuid, 'Service revenue received', 8500.00, 0.00, 'EUR', 8500.00, 0.00),
+('78000000-0000-0000-0001-000000000010'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000005'::uuid, 'c0000000-0000-0000-0004-000000000002'::uuid, 'Service revenue', 0.00, 8500.00, 'EUR', 0.00, 8500.00),
+-- Month -5: 5200 EUR expenses (rent + salaries)
+('78000000-0000-0000-0001-000000000011'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000006'::uuid, 'c0000000-0000-0000-0005-000000000004'::uuid, 'Office rent', 2500.00, 0.00, 'EUR', 2500.00, 0.00),
+('78000000-0000-0000-0001-000000000012'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000006'::uuid, 'c0000000-0000-0000-0005-000000000002'::uuid, 'Salaries', 2700.00, 0.00, 'EUR', 2700.00, 0.00),
+('78000000-0000-0000-0001-000000000013'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000006'::uuid, 'c0000000-0000-0000-0001-000000000002'::uuid, 'Expenses paid', 0.00, 5200.00, 'EUR', 0.00, 5200.00),
+-- Month -4: 9200 EUR revenue
+('78000000-0000-0000-0001-000000000014'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000007'::uuid, 'c0000000-0000-0000-0001-000000000002'::uuid, 'Service revenue received', 9200.00, 0.00, 'EUR', 9200.00, 0.00),
+('78000000-0000-0000-0001-000000000015'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000007'::uuid, 'c0000000-0000-0000-0004-000000000002'::uuid, 'Service revenue', 0.00, 9200.00, 'EUR', 0.00, 9200.00),
+-- Month -4: 5800 EUR expenses
+('78000000-0000-0000-0001-000000000016'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000008'::uuid, 'c0000000-0000-0000-0005-000000000004'::uuid, 'Office rent', 2500.00, 0.00, 'EUR', 2500.00, 0.00),
+('78000000-0000-0000-0001-000000000017'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000008'::uuid, 'c0000000-0000-0000-0005-000000000002'::uuid, 'Salaries', 3300.00, 0.00, 'EUR', 3300.00, 0.00),
+('78000000-0000-0000-0001-000000000018'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000008'::uuid, 'c0000000-0000-0000-0001-000000000002'::uuid, 'Expenses paid', 0.00, 5800.00, 'EUR', 0.00, 5800.00),
+-- Month -3: 10500 EUR revenue
+('78000000-0000-0000-0001-000000000019'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000009'::uuid, 'c0000000-0000-0000-0001-000000000002'::uuid, 'Service revenue received', 10500.00, 0.00, 'EUR', 10500.00, 0.00),
+('78000000-0000-0000-0001-000000000020'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000009'::uuid, 'c0000000-0000-0000-0004-000000000002'::uuid, 'Service revenue', 0.00, 10500.00, 'EUR', 0.00, 10500.00),
+-- Month -3: 6100 EUR expenses
+('78000000-0000-0000-0001-000000000021'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000010'::uuid, 'c0000000-0000-0000-0005-000000000004'::uuid, 'Office rent', 2500.00, 0.00, 'EUR', 2500.00, 0.00),
+('78000000-0000-0000-0001-000000000022'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000010'::uuid, 'c0000000-0000-0000-0005-000000000002'::uuid, 'Salaries', 3600.00, 0.00, 'EUR', 3600.00, 0.00),
+('78000000-0000-0000-0001-000000000023'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000010'::uuid, 'c0000000-0000-0000-0001-000000000002'::uuid, 'Expenses paid', 0.00, 6100.00, 'EUR', 0.00, 6100.00),
+-- Month -2: 11800 EUR revenue
+('78000000-0000-0000-0001-000000000024'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000011'::uuid, 'c0000000-0000-0000-0001-000000000002'::uuid, 'Service revenue received', 11800.00, 0.00, 'EUR', 11800.00, 0.00),
+('78000000-0000-0000-0001-000000000025'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000011'::uuid, 'c0000000-0000-0000-0004-000000000002'::uuid, 'Service revenue', 0.00, 11800.00, 'EUR', 0.00, 11800.00),
+-- Month -2: 6500 EUR expenses
+('78000000-0000-0000-0001-000000000026'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000012'::uuid, 'c0000000-0000-0000-0005-000000000004'::uuid, 'Office rent', 2500.00, 0.00, 'EUR', 2500.00, 0.00),
+('78000000-0000-0000-0001-000000000027'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000012'::uuid, 'c0000000-0000-0000-0005-000000000002'::uuid, 'Salaries', 4000.00, 0.00, 'EUR', 4000.00, 0.00),
+('78000000-0000-0000-0001-000000000028'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000012'::uuid, 'c0000000-0000-0000-0001-000000000002'::uuid, 'Expenses paid', 0.00, 6500.00, 'EUR', 0.00, 6500.00),
+-- Month -1: 12500 EUR revenue
+('78000000-0000-0000-0001-000000000029'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000013'::uuid, 'c0000000-0000-0000-0001-000000000002'::uuid, 'Service revenue received', 12500.00, 0.00, 'EUR', 12500.00, 0.00),
+('78000000-0000-0000-0001-000000000030'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000013'::uuid, 'c0000000-0000-0000-0004-000000000002'::uuid, 'Service revenue', 0.00, 12500.00, 'EUR', 0.00, 12500.00),
+-- Month -1: 7200 EUR expenses
+('78000000-0000-0000-0001-000000000031'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000014'::uuid, 'c0000000-0000-0000-0005-000000000004'::uuid, 'Office rent', 2500.00, 0.00, 'EUR', 2500.00, 0.00),
+('78000000-0000-0000-0001-000000000032'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000014'::uuid, 'c0000000-0000-0000-0005-000000000002'::uuid, 'Salaries', 4500.00, 0.00, 'EUR', 4500.00, 0.00),
+('78000000-0000-0000-0001-000000000033'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000014'::uuid, 'c0000000-0000-0000-0005-000000000005'::uuid, 'Utilities', 200.00, 0.00, 'EUR', 200.00, 0.00),
+('78000000-0000-0000-0001-000000000034'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000014'::uuid, 'c0000000-0000-0000-0001-000000000002'::uuid, 'Expenses paid', 0.00, 7200.00, 'EUR', 0.00, 7200.00),
+-- Current month: 7800 EUR revenue
+('78000000-0000-0000-0001-000000000035'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000015'::uuid, 'c0000000-0000-0000-0001-000000000002'::uuid, 'Service revenue received', 7800.00, 0.00, 'EUR', 7800.00, 0.00),
+('78000000-0000-0000-0001-000000000036'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000015'::uuid, 'c0000000-0000-0000-0004-000000000002'::uuid, 'Service revenue', 0.00, 7800.00, 'EUR', 0.00, 7800.00),
+-- Current month: 4100 EUR expenses (partial month)
+('78000000-0000-0000-0001-000000000037'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000016'::uuid, 'c0000000-0000-0000-0005-000000000004'::uuid, 'Office rent', 2500.00, 0.00, 'EUR', 2500.00, 0.00),
+('78000000-0000-0000-0001-000000000038'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000016'::uuid, 'c0000000-0000-0000-0005-000000000002'::uuid, 'Salaries', 1600.00, 0.00, 'EUR', 1600.00, 0.00),
+('78000000-0000-0000-0001-000000000039'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '77000000-0000-0000-0001-000000000016'::uuid, 'c0000000-0000-0000-0001-000000000002'::uuid, 'Expenses paid', 0.00, 4100.00, 'EUR', 0.00, 4100.00)
 ON CONFLICT DO NOTHING;
 
 -- Bank Transactions (8 total)
@@ -1622,5 +2012,240 @@ INSERT INTO tenant_acme.bank_transactions (id, tenant_id, bank_account_id, trans
 ('79000000-0000-0000-0001-000000000007'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '80000000-0000-0000-0001-000000000001'::uuid, '2024-12-20', '2024-12-20', 1500.00, 'EUR', 'Unknown deposit', 'REF-123456', 'Unknown sender', 'EE999888777666555444', 'UNMATCHED'),
 ('79000000-0000-0000-0001-000000000008'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '80000000-0000-0000-0001-000000000001'::uuid, '2024-12-22', '2024-12-22', -75.50, 'EUR', 'Bank service fee', 'FEE-DEC-24', 'Swedbank', NULL, 'UNMATCHED')
 ON CONFLICT DO NOTHING;
+
+-- Absence Types (Estonian leave types)
+-- Note: The migration inserts default types with tenant_id '00000000-0000-0000-0000-000000000000'
+-- We need to update them to use the correct tenant_id for the demo tenant
+-- First, delete any existing absence_types that might conflict (from previous resets)
+DELETE FROM tenant_acme.absence_types
+WHERE tenant_id != '00000000-0000-0000-0000-000000000000'::uuid;
+-- Now update the freshly inserted types to use the demo tenant_id
+UPDATE tenant_acme.absence_types
+SET tenant_id = 'b0000000-0000-0000-0000-000000000001'::uuid
+WHERE tenant_id = '00000000-0000-0000-0000-000000000000'::uuid;
+
+-- Leave Balances for 2024 and 2025 (for active employees)
+INSERT INTO tenant_acme.leave_balances (id, tenant_id, employee_id, absence_type_id, year, entitled_days, carryover_days, used_days, pending_days, notes)
+SELECT
+    gen_random_uuid(),
+    'b0000000-0000-0000-0000-000000000001'::uuid,
+    e.id,
+    at.id,
+    y.year,
+    CASE
+        WHEN at.code = 'ANNUAL_LEAVE' THEN 28
+        WHEN at.code = 'STUDY_LEAVE' THEN 30
+        ELSE 0
+    END,
+    CASE WHEN y.year = 2025 AND at.code = 'ANNUAL_LEAVE' THEN 5 ELSE 0 END, -- Some carryover for 2025
+    CASE
+        WHEN y.year = 2024 AND at.code = 'ANNUAL_LEAVE' THEN
+            CASE e.employee_number
+                WHEN 'EMP001' THEN 20
+                WHEN 'EMP002' THEN 18
+                WHEN 'EMP003' THEN 15
+                WHEN 'EMP004' THEN 23
+                ELSE 0
+            END
+        ELSE 0
+    END,
+    0,
+    'Auto-generated balance'
+FROM tenant_acme.employees e
+CROSS JOIN tenant_acme.absence_types at
+CROSS JOIN (SELECT 2024 as year UNION SELECT 2025 as year) y
+WHERE e.is_active = true
+  AND at.code IN ('ANNUAL_LEAVE', 'STUDY_LEAVE')
+ON CONFLICT DO NOTHING;
+
+-- Leave Records (sample leave entries with various statuses)
+INSERT INTO tenant_acme.leave_records (id, tenant_id, employee_id, absence_type_id, start_date, end_date, total_days, working_days, status, requested_at, requested_by, approved_at, approved_by, notes) VALUES
+-- Maria Tamm - Past approved annual leave
+('7a000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '70000000-0000-0000-0001-000000000001'::uuid,
+    (SELECT id FROM tenant_acme.absence_types WHERE code = 'ANNUAL_LEAVE' LIMIT 1),
+    '2024-07-01', '2024-07-14', 14, 10, 'APPROVED', '2024-06-15', 'a0000000-0000-0000-0000-000000000001'::uuid, '2024-06-16', 'a0000000-0000-0000-0000-000000000001'::uuid, 'Summer vacation'),
+-- Maria Tamm - Second approved leave
+('7a000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '70000000-0000-0000-0001-000000000001'::uuid,
+    (SELECT id FROM tenant_acme.absence_types WHERE code = 'ANNUAL_LEAVE' LIMIT 1),
+    '2024-12-23', '2024-12-31', 9, 6, 'APPROVED', '2024-12-01', 'a0000000-0000-0000-0000-000000000001'::uuid, '2024-12-02', 'a0000000-0000-0000-0000-000000000001'::uuid, 'Christmas holiday'),
+-- Jaan Kask - Approved leave
+('7a000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '70000000-0000-0000-0001-000000000002'::uuid,
+    (SELECT id FROM tenant_acme.absence_types WHERE code = 'ANNUAL_LEAVE' LIMIT 1),
+    '2024-08-05', '2024-08-18', 14, 10, 'APPROVED', '2024-07-20', 'a0000000-0000-0000-0000-000000000001'::uuid, '2024-07-21', 'a0000000-0000-0000-0000-000000000001'::uuid, 'Summer break'),
+-- Jaan Kask - Sick leave
+('7a000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '70000000-0000-0000-0001-000000000002'::uuid,
+    (SELECT id FROM tenant_acme.absence_types WHERE code = 'SICK_LEAVE' LIMIT 1),
+    '2024-11-11', '2024-11-15', 5, 5, 'APPROVED', '2024-11-11', 'a0000000-0000-0000-0000-000000000001'::uuid, '2024-11-11', 'a0000000-0000-0000-0000-000000000001'::uuid, 'Flu'),
+-- Anna Mets - Approved leave
+('7a000000-0000-0000-0001-000000000005'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '70000000-0000-0000-0001-000000000003'::uuid,
+    (SELECT id FROM tenant_acme.absence_types WHERE code = 'ANNUAL_LEAVE' LIMIT 1),
+    '2024-09-02', '2024-09-13', 12, 10, 'APPROVED', '2024-08-15', 'a0000000-0000-0000-0000-000000000001'::uuid, '2024-08-16', 'a0000000-0000-0000-0000-000000000001'::uuid, 'Vacation'),
+-- Peeter Saar - Approved leave
+('7a000000-0000-0000-0001-000000000006'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '70000000-0000-0000-0001-000000000004'::uuid,
+    (SELECT id FROM tenant_acme.absence_types WHERE code = 'ANNUAL_LEAVE' LIMIT 1),
+    '2024-06-17', '2024-07-07', 21, 15, 'APPROVED', '2024-05-20', 'a0000000-0000-0000-0000-000000000001'::uuid, '2024-05-21', 'a0000000-0000-0000-0000-000000000001'::uuid, 'Extended summer vacation'),
+-- Maria Tamm - Pending request for next year
+('7a000000-0000-0000-0001-000000000007'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '70000000-0000-0000-0001-000000000001'::uuid,
+    (SELECT id FROM tenant_acme.absence_types WHERE code = 'ANNUAL_LEAVE' LIMIT 1),
+    '2025-02-17', '2025-02-21', 5, 5, 'PENDING', NOW(), 'a0000000-0000-0000-0000-000000000001'::uuid, NULL, NULL, 'Winter break request'),
+-- Study leave example
+('7a000000-0000-0000-0001-000000000008'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '70000000-0000-0000-0001-000000000003'::uuid,
+    (SELECT id FROM tenant_acme.absence_types WHERE code = 'STUDY_LEAVE' LIMIT 1),
+    '2024-10-14', '2024-10-18', 5, 5, 'APPROVED', '2024-10-01', 'a0000000-0000-0000-0000-000000000001'::uuid, '2024-10-02', 'a0000000-0000-0000-0000-000000000001'::uuid, 'Exam preparation')
+ON CONFLICT DO NOTHING;
 `
+}
+
+// Cost Center Handlers
+
+// ListCostCenters handles GET /tenants/{tenantID}/cost-centers
+func (h *Handlers) ListCostCenters(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	activeOnlyStr := r.URL.Query().Get("active_only")
+	activeOnly := activeOnlyStr == "true"
+
+	costCenters, err := h.costCenterService.ListCostCenters(r.Context(), schemaName, tenantID, activeOnly)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, costCenters)
+}
+
+// GetCostCenter handles GET /tenants/{tenantID}/cost-centers/{costCenterID}
+func (h *Handlers) GetCostCenter(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	costCenterID := chi.URLParam(r, "costCenterID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	cc, err := h.costCenterService.GetCostCenter(r.Context(), schemaName, tenantID, costCenterID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			respondError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, cc)
+}
+
+// CreateCostCenter handles POST /tenants/{tenantID}/cost-centers
+func (h *Handlers) CreateCostCenter(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req accounting.CreateCostCenterRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	cc, err := h.costCenterService.CreateCostCenter(r.Context(), schemaName, tenantID, &req)
+	if err != nil {
+		if strings.Contains(err.Error(), "required") {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, cc)
+}
+
+// UpdateCostCenter handles PUT /tenants/{tenantID}/cost-centers/{costCenterID}
+func (h *Handlers) UpdateCostCenter(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	costCenterID := chi.URLParam(r, "costCenterID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req accounting.UpdateCostCenterRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	cc, err := h.costCenterService.UpdateCostCenter(r.Context(), schemaName, tenantID, costCenterID, &req)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			respondError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, cc)
+}
+
+// DeleteCostCenter handles DELETE /tenants/{tenantID}/cost-centers/{costCenterID}
+func (h *Handlers) DeleteCostCenter(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	costCenterID := chi.URLParam(r, "costCenterID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	err := h.costCenterService.DeleteCostCenter(r.Context(), schemaName, tenantID, costCenterID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			respondError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		if strings.Contains(err.Error(), "cannot delete") {
+			respondError(w, http.StatusConflict, err.Error())
+			return
+		}
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetCostCenterReport handles GET /tenants/{tenantID}/cost-centers/report
+func (h *Handlers) GetCostCenterReport(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	// Parse date range from query params
+	startStr := r.URL.Query().Get("start_date")
+	endStr := r.URL.Query().Get("end_date")
+
+	var start, end time.Time
+	var err error
+
+	if startStr != "" {
+		start, err = time.Parse("2006-01-02", startStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "Invalid start_date format (use YYYY-MM-DD)")
+			return
+		}
+	} else {
+		// Default to start of current year
+		now := time.Now()
+		start = time.Date(now.Year(), 1, 1, 0, 0, 0, 0, time.UTC)
+	}
+
+	if endStr != "" {
+		end, err = time.Parse("2006-01-02", endStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "Invalid end_date format (use YYYY-MM-DD)")
+			return
+		}
+	} else {
+		// Default to today
+		end = time.Now()
+	}
+
+	report, err := h.costCenterService.GetCostCenterReport(r.Context(), schemaName, tenantID, start, end)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, report)
 }

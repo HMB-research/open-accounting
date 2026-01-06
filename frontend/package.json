@@ -24,7 +24,9 @@
     "test:e2e:chromium": "playwright test --project=chromium",
     "test:e2e:demo": "playwright test --config=playwright.demo.config.ts",
     "test:e2e:demo:headed": "playwright test --config=playwright.demo.config.ts --headed",
-    "test:e2e:demo:loop": "../scripts/test-loop.sh"
+    "test:e2e:demo:verify": "playwright test --config=playwright.demo.config.ts e2e/demo/data-verification.spec.ts",
+    "test:e2e:demo:loop": "../scripts/test-loop.sh",
+    "test:e2e:demo:loop:verify": "../scripts/test-loop.sh 50 data-verification"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
