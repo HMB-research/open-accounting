@@ -561,3 +561,12 @@ func TestCostCenterService_GetCostCenterReport_GetExpensesByPeriodError(t *testi
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "database error")
 }
+
+// TestNewCostCenterService tests the NewCostCenterService constructor with nil pool
+func TestNewCostCenterService(t *testing.T) {
+	// NewCostCenterService should create a service with nil pool (won't panic until used)
+	svc := NewCostCenterService(nil)
+	require.NotNil(t, svc)
+	assert.Nil(t, svc.db)
+	assert.NotNil(t, svc.repo)
+}
