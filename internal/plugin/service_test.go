@@ -2337,6 +2337,28 @@ func TestService_UninstallPlugin_DeleteError(t *testing.T) {
 	}
 }
 
+// TestService_UninstallPlugin_Success tests successful uninstall
+func TestService_UninstallPlugin_Success(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:    pluginID,
+		Name:  "test-plugin",
+		State: StateInstalled,
+	}
+	// countEnabledTenantsResult defaults to 0
+	// deletePluginErr defaults to nil (success)
+
+	service := NewServiceWithRepository(repo, nil, "/tmp/nonexistent-plugins")
+	err := service.UninstallPlugin(ctx, pluginID)
+
+	if err != nil {
+		t.Errorf("expected no error, got: %v", err)
+	}
+}
+
 // TestService_LoadEnabledPlugins_ListError tests LoadEnabledPlugins when ListEnabledPlugins fails
 func TestService_LoadEnabledPlugins_ListError(t *testing.T) {
 	ctx := context.Background()
