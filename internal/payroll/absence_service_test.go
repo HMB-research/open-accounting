@@ -699,3 +699,445 @@ func TestUpdateLeaveBalance_Success(t *testing.T) {
 	assert.True(t, balance.RemainingDays.Equal(decimal.NewFromInt(35))) // 30 + 5 - 0 - 0
 	assert.Equal(t, "Adjusted for seniority", balance.Notes)
 }
+
+// ============================================================================
+// ERROR PATH TESTS
+// ============================================================================
+
+func TestGetLeaveBalances_RepositoryError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.ListLeaveBalancesErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	_, err := service.GetLeaveBalances(ctx, "test_schema", "tenant-1", "emp-1", 2025)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "list leave balances")
+}
+
+func TestGetLeaveBalance_RepositoryError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.GetLeaveBalanceErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	_, err := service.GetLeaveBalance(ctx, "test_schema", "tenant-1", "emp-1", "type-1", 2025)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get leave balance")
+}
+
+func TestUpdateLeaveBalance_GetBalanceError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.GetLeaveBalanceErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	newEntitled := decimal.NewFromInt(30)
+	req := &UpdateLeaveBalanceRequest{
+		EntitledDays: &newEntitled,
+	}
+
+	_, err := service.UpdateLeaveBalance(ctx, "test_schema", "tenant-1", "emp-1", "type-1", 2025, req)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get leave balance")
+}
+
+func TestUpdateLeaveBalance_UpdateError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.UpdateLeaveBalanceErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	key := "tenant-1-emp-1-type-1-2025"
+	repo.LeaveBalances[key] = &LeaveBalance{
+		ID:            "bal-1",
+		TenantID:      "tenant-1",
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		Year:          2025,
+		EntitledDays:  decimal.NewFromInt(28),
+		RemainingDays: decimal.NewFromInt(28),
+	}
+
+	newEntitled := decimal.NewFromInt(30)
+	req := &UpdateLeaveBalanceRequest{
+		EntitledDays: &newEntitled,
+	}
+
+	_, err := service.UpdateLeaveBalance(ctx, "test_schema", "tenant-1", "emp-1", "type-1", 2025, req)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "update leave balance")
+}
+
+func TestListLeaveRecords_RepositoryError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.ListLeaveRecordsErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	_, err := service.ListLeaveRecords(ctx, "test_schema", "tenant-1", "emp-1", 2025)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "list leave records")
+}
+
+func TestGetLeaveRecord_RepositoryError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.GetLeaveRecordErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	_, err := service.GetLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get leave record")
+}
+
+func TestApproveLeaveRecord_GetRecordError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.GetLeaveRecordErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	_, err := service.ApproveLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "approver-1")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get leave record")
+}
+
+func TestApproveLeaveRecord_UpdateRecordError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.UpdateLeaveRecordErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	repo.LeaveRecords["rec-1"] = &LeaveRecord{
+		ID:       "rec-1",
+		TenantID: "tenant-1",
+		Status:   LeavePending,
+	}
+
+	_, err := service.ApproveLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "approver-1")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "update leave record")
+}
+
+func TestApproveLeaveRecord_UpdateBalanceError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.UpdateLeaveBalanceErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	repo.LeaveRecords["rec-1"] = &LeaveRecord{
+		ID:            "rec-1",
+		TenantID:      "tenant-1",
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		StartDate:     time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC),
+		WorkingDays:   decimal.NewFromInt(5),
+		Status:        LeavePending,
+	}
+
+	key := "tenant-1-emp-1-type-1-2025"
+	repo.LeaveBalances[key] = &LeaveBalance{
+		ID:            "bal-1",
+		TenantID:      "tenant-1",
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		Year:          2025,
+		PendingDays:   decimal.NewFromInt(5),
+	}
+
+	_, err := service.ApproveLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "approver-1")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "update leave balance")
+}
+
+func TestRejectLeaveRecord_GetRecordError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.GetLeaveRecordErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	_, err := service.RejectLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "manager-1", "reason")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get leave record")
+}
+
+func TestRejectLeaveRecord_UpdateRecordError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.UpdateLeaveRecordErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	repo.LeaveRecords["rec-1"] = &LeaveRecord{
+		ID:       "rec-1",
+		TenantID: "tenant-1",
+		Status:   LeavePending,
+	}
+
+	_, err := service.RejectLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "manager-1", "reason")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "update leave record")
+}
+
+func TestRejectLeaveRecord_UpdateBalanceError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.UpdateLeaveBalanceErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	repo.LeaveRecords["rec-1"] = &LeaveRecord{
+		ID:            "rec-1",
+		TenantID:      "tenant-1",
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		StartDate:     time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC),
+		WorkingDays:   decimal.NewFromInt(5),
+		Status:        LeavePending,
+	}
+
+	key := "tenant-1-emp-1-type-1-2025"
+	repo.LeaveBalances[key] = &LeaveBalance{
+		ID:            "bal-1",
+		TenantID:      "tenant-1",
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		Year:          2025,
+		PendingDays:   decimal.NewFromInt(5),
+	}
+
+	_, err := service.RejectLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "manager-1", "reason")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "update leave balance")
+}
+
+func TestCancelLeaveRecord_GetRecordError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.GetLeaveRecordErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	_, err := service.CancelLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "emp-1")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get leave record")
+}
+
+func TestCancelLeaveRecord_UpdateRecordError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.UpdateLeaveRecordErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	repo.LeaveRecords["rec-1"] = &LeaveRecord{
+		ID:       "rec-1",
+		TenantID: "tenant-1",
+		Status:   LeavePending,
+	}
+
+	_, err := service.CancelLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "emp-1")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "update leave record")
+}
+
+func TestCancelLeaveRecord_UpdateBalanceError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.UpdateLeaveBalanceErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	repo.LeaveRecords["rec-1"] = &LeaveRecord{
+		ID:            "rec-1",
+		TenantID:      "tenant-1",
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		StartDate:     time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC),
+		WorkingDays:   decimal.NewFromInt(5),
+		Status:        LeavePending,
+	}
+
+	key := "tenant-1-emp-1-type-1-2025"
+	repo.LeaveBalances[key] = &LeaveBalance{
+		ID:            "bal-1",
+		TenantID:      "tenant-1",
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		Year:          2025,
+		PendingDays:   decimal.NewFromInt(5),
+	}
+
+	_, err := service.CancelLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "emp-1")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "update leave balance")
+}
+
+func TestInitializeEmployeeLeaveBalances_ListAbsenceTypesError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.ListAbsenceTypesErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "bal"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	_, err := service.InitializeEmployeeLeaveBalances(ctx, "test_schema", "tenant-1", "emp-1", 2025)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "list absence types")
+}
+
+func TestInitializeEmployeeLeaveBalances_CreateBalanceError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.CreateLeaveBalanceErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "bal"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	repo.AbsenceTypes["type-1"] = &AbsenceType{
+		ID:                 "type-1",
+		TenantID:           "tenant-1",
+		Code:               "ANNUAL_LEAVE",
+		DefaultDaysPerYear: decimal.NewFromInt(28),
+		IsActive:           true,
+	}
+
+	_, err := service.InitializeEmployeeLeaveBalances(ctx, "test_schema", "tenant-1", "emp-1", 2025)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create leave balance")
+}
+
+func TestCreateLeaveRecord_GetAbsenceTypeError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.GetAbsenceTypeErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "leave"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	startDate := time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2025, 7, 5, 0, 0, 0, 0, time.UTC)
+
+	req := &CreateLeaveRecordRequest{
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		StartDate:     startDate,
+		EndDate:       endDate,
+		WorkingDays:   decimal.NewFromInt(5),
+	}
+
+	_, err := service.CreateLeaveRecord(ctx, "test_schema", "tenant-1", "user-1", req)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get absence type")
+}
+
+func TestCreateLeaveRecord_CreateRecordError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.CreateLeaveRecordErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "leave"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	repo.AbsenceTypes["type-1"] = &AbsenceType{
+		ID:       "type-1",
+		TenantID: "tenant-1",
+		Code:     "ANNUAL_LEAVE",
+		IsActive: true,
+	}
+
+	startDate := time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2025, 7, 5, 0, 0, 0, 0, time.UTC)
+
+	req := &CreateLeaveRecordRequest{
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		StartDate:     startDate,
+		EndDate:       endDate,
+		WorkingDays:   decimal.NewFromInt(5),
+	}
+
+	_, err := service.CreateLeaveRecord(ctx, "test_schema", "tenant-1", "user-1", req)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create leave record")
+}
+
+func TestCreateLeaveRecord_UpdateBalanceError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.UpdateLeaveBalanceErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "leave"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	repo.AbsenceTypes["type-1"] = &AbsenceType{
+		ID:       "type-1",
+		TenantID: "tenant-1",
+		Code:     "ANNUAL_LEAVE",
+		IsActive: true,
+	}
+
+	key := "tenant-1-emp-1-type-1-2025"
+	repo.LeaveBalances[key] = &LeaveBalance{
+		ID:            "bal-1",
+		TenantID:      "tenant-1",
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		Year:          2025,
+		EntitledDays:  decimal.NewFromInt(28),
+		RemainingDays: decimal.NewFromInt(28),
+	}
+
+	startDate := time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2025, 7, 5, 0, 0, 0, 0, time.UTC)
+
+	req := &CreateLeaveRecordRequest{
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		StartDate:     startDate,
+		EndDate:       endDate,
+		WorkingDays:   decimal.NewFromInt(5),
+	}
+
+	_, err := service.CreateLeaveRecord(ctx, "test_schema", "tenant-1", "user-1", req)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "update leave balance")
+}
+
+func TestGetAbsenceType_RepositoryError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.GetAbsenceTypeErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	_, err := service.GetAbsenceType(ctx, "test_schema", "tenant-1", "type-1")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get absence type")
+}
