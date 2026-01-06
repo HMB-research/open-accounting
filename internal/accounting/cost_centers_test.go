@@ -2,6 +2,7 @@ package accounting
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -469,4 +470,94 @@ func TestCostCenterService_GetCostCenterReport_EmptyList(t *testing.T) {
 	assert.Empty(t, report.CostCenters)
 	assert.True(t, report.TotalExpenses.IsZero())
 	assert.True(t, report.TotalBudget.IsZero())
+}
+
+// ============================================================================
+// ERROR PATH TESTS
+// ============================================================================
+
+func TestCostCenterService_CreateCostCenter_RepositoryError(t *testing.T) {
+	ts := newTestCostCenterService()
+	ts.repo.CreateErr = errors.New("database error")
+	ctx := context.Background()
+
+	req := &CreateCostCenterRequest{
+		Code:     "CC001",
+		Name:     "Marketing",
+		IsActive: true,
+	}
+
+	_, err := ts.svc.CreateCostCenter(ctx, "test_schema", "tenant-1", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "database error")
+}
+
+func TestCostCenterService_UpdateCostCenter_GetByIDError(t *testing.T) {
+	ts := newTestCostCenterService()
+	ts.repo.GetByIDErr = errors.New("database error")
+	ctx := context.Background()
+
+	req := &UpdateCostCenterRequest{
+		Code: "CC001",
+		Name: "Updated Name",
+	}
+
+	_, err := ts.svc.UpdateCostCenter(ctx, "test_schema", "tenant-1", "cc-123", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "database error")
+}
+
+func TestCostCenterService_UpdateCostCenter_RepositoryError(t *testing.T) {
+	ts := newTestCostCenterService()
+	ts.repo.UpdateErr = errors.New("database error")
+	ctx := context.Background()
+
+	// Add the cost center first
+	ts.repo.CostCenters["cc-123"] = &CostCenter{
+		ID:       "cc-123",
+		TenantID: "tenant-1",
+		Code:     "CC001",
+		Name:     "Original",
+		IsActive: true,
+	}
+
+	req := &UpdateCostCenterRequest{
+		Code: "CC001",
+		Name: "Updated Name",
+	}
+
+	_, err := ts.svc.UpdateCostCenter(ctx, "test_schema", "tenant-1", "cc-123", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "database error")
+}
+
+func TestCostCenterService_GetCostCenterReport_ListError(t *testing.T) {
+	ts := newTestCostCenterService()
+	ts.repo.ListErr = errors.New("database error")
+	ctx := context.Background()
+
+	now := time.Now()
+	_, err := ts.svc.GetCostCenterReport(ctx, "test_schema", "tenant-1", now.AddDate(0, 0, -7), now.AddDate(0, 0, 1))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "database error")
+}
+
+func TestCostCenterService_GetCostCenterReport_GetExpensesByPeriodError(t *testing.T) {
+	ts := newTestCostCenterService()
+	ts.repo.GetExpensesByPeriodErr = errors.New("database error")
+	ctx := context.Background()
+
+	// Add a cost center
+	ts.repo.CostCenters["cc-1"] = &CostCenter{
+		ID:       "cc-1",
+		TenantID: "tenant-1",
+		Code:     "CC001",
+		Name:     "Sales",
+		IsActive: true,
+	}
+
+	now := time.Now()
+	_, err := ts.svc.GetCostCenterReport(ctx, "test_schema", "tenant-1", now.AddDate(0, 0, -7), now.AddDate(0, 0, 1))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "database error")
 }

@@ -477,6 +477,14 @@ func (s *CostCenterService) GetCostCenterReport(ctx context.Context, schemaName,
 type MockCostCenterRepository struct {
 	CostCenters map[string]*CostCenter
 	Allocations map[string][]CostAllocation
+
+	// Error injection flags
+	GetByIDErr            error
+	ListErr               error
+	CreateErr             error
+	UpdateErr             error
+	DeleteErr             error
+	GetExpensesByPeriodErr error
 }
 
 // NewMockCostCenterRepository creates a new mock repository
@@ -489,6 +497,9 @@ func NewMockCostCenterRepository() *MockCostCenterRepository {
 
 // GetByID mock implementation
 func (m *MockCostCenterRepository) GetByID(_ context.Context, _, tenantID, costCenterID string) (*CostCenter, error) {
+	if m.GetByIDErr != nil {
+		return nil, m.GetByIDErr
+	}
 	if cc, ok := m.CostCenters[costCenterID]; ok && cc.TenantID == tenantID {
 		return cc, nil
 	}
@@ -497,6 +508,9 @@ func (m *MockCostCenterRepository) GetByID(_ context.Context, _, tenantID, costC
 
 // List mock implementation
 func (m *MockCostCenterRepository) List(_ context.Context, _, tenantID string, activeOnly bool) ([]CostCenter, error) {
+	if m.ListErr != nil {
+		return nil, m.ListErr
+	}
 	var result []CostCenter
 	for _, cc := range m.CostCenters {
 		if cc.TenantID == tenantID {
@@ -511,6 +525,9 @@ func (m *MockCostCenterRepository) List(_ context.Context, _, tenantID string, a
 
 // Create mock implementation
 func (m *MockCostCenterRepository) Create(_ context.Context, _ string, cc *CostCenter) error {
+	if m.CreateErr != nil {
+		return m.CreateErr
+	}
 	if cc.ID == "" {
 		cc.ID = uuid.New().String()
 	}
@@ -520,6 +537,9 @@ func (m *MockCostCenterRepository) Create(_ context.Context, _ string, cc *CostC
 
 // Update mock implementation
 func (m *MockCostCenterRepository) Update(_ context.Context, _ string, cc *CostCenter) error {
+	if m.UpdateErr != nil {
+		return m.UpdateErr
+	}
 	if _, ok := m.CostCenters[cc.ID]; !ok {
 		return fmt.Errorf("cost center not found: %s", cc.ID)
 	}
@@ -529,6 +549,9 @@ func (m *MockCostCenterRepository) Update(_ context.Context, _ string, cc *CostC
 
 // Delete mock implementation
 func (m *MockCostCenterRepository) Delete(_ context.Context, _, tenantID, costCenterID string) error {
+	if m.DeleteErr != nil {
+		return m.DeleteErr
+	}
 	if cc, ok := m.CostCenters[costCenterID]; ok && cc.TenantID == tenantID {
 		delete(m.CostCenters, costCenterID)
 		return nil
@@ -538,6 +561,9 @@ func (m *MockCostCenterRepository) Delete(_ context.Context, _, tenantID, costCe
 
 // GetExpensesByPeriod mock implementation
 func (m *MockCostCenterRepository) GetExpensesByPeriod(_ context.Context, _, tenantID, costCenterID string, start, end time.Time) (decimal.Decimal, error) {
+	if m.GetExpensesByPeriodErr != nil {
+		return decimal.Zero, m.GetExpensesByPeriodErr
+	}
 	total := decimal.Zero
 	if allocs, ok := m.Allocations[costCenterID]; ok {
 		for _, a := range allocs {
