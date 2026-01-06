@@ -13,7 +13,7 @@
 ## Command to Run This Loop
 
 ```bash
-claude --print "Execute the Ralph Loop defined in docs/plans/2026-01-06-coverage-ralph-loop.md.
+claude "Execute the Ralph Loop defined in docs/plans/2026-01-06-coverage-ralph-loop.md.
 
 Your task: Systematically add unit tests to increase Go test coverage from ~54% to >=67%.
 

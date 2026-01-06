@@ -184,3 +184,581 @@ func TestCashFlowOpeningClosingBalance(t *testing.T) {
 	// Closing = Opening + Net Change
 	assert.Equal(t, result.OpeningCash.Add(result.NetCashChange).String(), result.ClosingCash.String())
 }
+
+// MockRepository tests
+
+func TestNewMockRepository(t *testing.T) {
+	repo := NewMockRepository()
+	require.NotNil(t, repo)
+	assert.Empty(t, repo.JournalEntries)
+	assert.True(t, repo.CashBalance.IsZero())
+	assert.Empty(t, repo.ContactBalances)
+	assert.Empty(t, repo.ContactInvoices)
+}
+
+func TestMockRepository_GetOutstandingInvoicesByContact(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+
+	// Test empty result
+	contacts, err := repo.GetOutstandingInvoicesByContact(ctx, "test_schema", "tenant-1", "SALES", time.Now())
+	require.NoError(t, err)
+	assert.Empty(t, contacts)
+
+	// Add mock contact balances
+	repo.ContactBalances = []ContactBalance{
+		{
+			ContactID:     "contact-1",
+			ContactName:   "Customer A",
+			ContactCode:   "CUST-001",
+			ContactEmail:  "customer.a@test.com",
+			Balance:       decimal.NewFromInt(5000),
+			InvoiceCount:  3,
+			OldestInvoice: "2024-01-15",
+		},
+		{
+			ContactID:    "contact-2",
+			ContactName:  "Customer B",
+			Balance:      decimal.NewFromInt(2500),
+			InvoiceCount: 1,
+		},
+	}
+
+	contacts, err = repo.GetOutstandingInvoicesByContact(ctx, "test_schema", "tenant-1", "SALES", time.Now())
+	require.NoError(t, err)
+	assert.Len(t, contacts, 2)
+	assert.Equal(t, "contact-1", contacts[0].ContactID)
+	assert.Equal(t, "Customer A", contacts[0].ContactName)
+	assert.True(t, contacts[0].Balance.Equal(decimal.NewFromInt(5000)))
+}
+
+func TestMockRepository_GetOutstandingInvoicesByContact_Error(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.GetContactBalancesErr = assert.AnError
+
+	contacts, err := repo.GetOutstandingInvoicesByContact(ctx, "test_schema", "tenant-1", "SALES", time.Now())
+	require.Error(t, err)
+	assert.Nil(t, contacts)
+}
+
+func TestMockRepository_GetContactInvoices(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+
+	// Test empty result
+	invoices, err := repo.GetContactInvoices(ctx, "test_schema", "tenant-1", "contact-1", "SALES", time.Now())
+	require.NoError(t, err)
+	assert.Empty(t, invoices)
+
+	// Add mock invoices
+	repo.ContactInvoices = []BalanceInvoice{
+		{
+			InvoiceID:         "inv-1",
+			InvoiceNumber:     "INV-2024-001",
+			InvoiceDate:       "2024-01-15",
+			DueDate:           "2024-02-15",
+			TotalAmount:       decimal.NewFromInt(1000),
+			AmountPaid:        decimal.NewFromInt(200),
+			OutstandingAmount: decimal.NewFromInt(800),
+			Currency:          "EUR",
+			DaysOverdue:       30,
+		},
+		{
+			InvoiceID:         "inv-2",
+			InvoiceNumber:     "INV-2024-002",
+			InvoiceDate:       "2024-02-01",
+			DueDate:           "2024-03-01",
+			TotalAmount:       decimal.NewFromInt(500),
+			AmountPaid:        decimal.Zero,
+			OutstandingAmount: decimal.NewFromInt(500),
+			Currency:          "EUR",
+			DaysOverdue:       15,
+		},
+	}
+
+	invoices, err = repo.GetContactInvoices(ctx, "test_schema", "tenant-1", "contact-1", "SALES", time.Now())
+	require.NoError(t, err)
+	assert.Len(t, invoices, 2)
+	assert.Equal(t, "INV-2024-001", invoices[0].InvoiceNumber)
+	assert.True(t, invoices[0].OutstandingAmount.Equal(decimal.NewFromInt(800)))
+}
+
+func TestMockRepository_GetContactInvoices_Error(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.GetContactInvoicesErr = assert.AnError
+
+	invoices, err := repo.GetContactInvoices(ctx, "test_schema", "tenant-1", "contact-1", "SALES", time.Now())
+	require.Error(t, err)
+	assert.Nil(t, invoices)
+}
+
+func TestMockRepository_GetContact(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+
+	// Test empty/default result
+	contact, err := repo.GetContact(ctx, "test_schema", "tenant-1", "contact-1")
+	require.NoError(t, err)
+	assert.Empty(t, contact.ID)
+
+	// Set mock contact
+	repo.Contact = ContactInfo{
+		ID:    "contact-1",
+		Name:  "Test Customer",
+		Code:  "CUST-001",
+		Email: "test@example.com",
+	}
+
+	contact, err = repo.GetContact(ctx, "test_schema", "tenant-1", "contact-1")
+	require.NoError(t, err)
+	assert.Equal(t, "contact-1", contact.ID)
+	assert.Equal(t, "Test Customer", contact.Name)
+	assert.Equal(t, "CUST-001", contact.Code)
+	assert.Equal(t, "test@example.com", contact.Email)
+}
+
+func TestMockRepository_GetContact_Error(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.GetContactErr = assert.AnError
+
+	contact, err := repo.GetContact(ctx, "test_schema", "tenant-1", "contact-1")
+	require.Error(t, err)
+	assert.Empty(t, contact.ID)
+}
+
+func TestMockRepository_GetCashAccountBalance(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+
+	// Test zero balance
+	balance, err := repo.GetCashAccountBalance(ctx, "test_schema", "tenant-1", time.Now())
+	require.NoError(t, err)
+	assert.True(t, balance.IsZero())
+
+	// Set mock balance
+	repo.CashBalance = decimal.NewFromFloat(12500.50)
+
+	balance, err = repo.GetCashAccountBalance(ctx, "test_schema", "tenant-1", time.Now())
+	require.NoError(t, err)
+	assert.True(t, balance.Equal(decimal.NewFromFloat(12500.50)))
+}
+
+func TestMockRepository_GetCashAccountBalance_Error(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.GetCashBalanceErr = assert.AnError
+
+	balance, err := repo.GetCashAccountBalance(ctx, "test_schema", "tenant-1", time.Now())
+	require.Error(t, err)
+	assert.True(t, balance.IsZero())
+}
+
+// Balance Confirmation Service tests
+
+func TestGetBalanceConfirmationSummary_Receivables(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	// Setup mock contact balances
+	mockRepo.ContactBalances = []ContactBalance{
+		{
+			ContactID:     "contact-1",
+			ContactName:   "Customer A",
+			Balance:       decimal.NewFromInt(5000),
+			InvoiceCount:  3,
+			OldestInvoice: "2024-01-15",
+		},
+		{
+			ContactID:    "contact-2",
+			ContactName:  "Customer B",
+			Balance:      decimal.NewFromInt(2500),
+			InvoiceCount: 2,
+		},
+	}
+
+	req := &BalanceConfirmationRequest{
+		Type:     "RECEIVABLE",
+		AsOfDate: "2024-03-31",
+	}
+
+	result, err := svc.GetBalanceConfirmationSummary(ctx, "tenant-1", "test_schema", req)
+
+	require.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, BalanceTypeReceivable, result.Type)
+	assert.Equal(t, "2024-03-31", result.AsOfDate)
+	assert.True(t, result.TotalBalance.Equal(decimal.NewFromInt(7500)))
+	assert.Equal(t, 2, result.ContactCount)
+	assert.Equal(t, 5, result.InvoiceCount)
+	assert.Len(t, result.Contacts, 2)
+}
+
+func TestGetBalanceConfirmationSummary_Payables(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	// Setup mock contact balances for payables
+	mockRepo.ContactBalances = []ContactBalance{
+		{
+			ContactID:    "supplier-1",
+			ContactName:  "Supplier X",
+			Balance:      decimal.NewFromInt(8000),
+			InvoiceCount: 4,
+		},
+	}
+
+	req := &BalanceConfirmationRequest{
+		Type:     "PAYABLE",
+		AsOfDate: "2024-03-31",
+	}
+
+	result, err := svc.GetBalanceConfirmationSummary(ctx, "tenant-1", "test_schema", req)
+
+	require.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, BalanceTypePayable, result.Type)
+	assert.True(t, result.TotalBalance.Equal(decimal.NewFromInt(8000)))
+	assert.Equal(t, 1, result.ContactCount)
+}
+
+func TestGetBalanceConfirmationSummary_Empty(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	req := &BalanceConfirmationRequest{
+		Type:     "RECEIVABLE",
+		AsOfDate: "2024-03-31",
+	}
+
+	result, err := svc.GetBalanceConfirmationSummary(ctx, "tenant-1", "test_schema", req)
+
+	require.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.True(t, result.TotalBalance.IsZero())
+	assert.Equal(t, 0, result.ContactCount)
+	assert.Equal(t, 0, result.InvoiceCount)
+}
+
+func TestGetBalanceConfirmationSummary_InvalidDate(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	req := &BalanceConfirmationRequest{
+		Type:     "RECEIVABLE",
+		AsOfDate: "invalid-date",
+	}
+
+	result, err := svc.GetBalanceConfirmationSummary(ctx, "tenant-1", "test_schema", req)
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "invalid as_of_date")
+}
+
+func TestGetBalanceConfirmationSummary_RepoError(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	mockRepo.GetContactBalancesErr = assert.AnError
+	svc := NewServiceWithRepository(mockRepo)
+
+	req := &BalanceConfirmationRequest{
+		Type:     "RECEIVABLE",
+		AsOfDate: "2024-03-31",
+	}
+
+	result, err := svc.GetBalanceConfirmationSummary(ctx, "tenant-1", "test_schema", req)
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+}
+
+func TestGetBalanceConfirmation_Success(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	// Setup mock contact
+	mockRepo.Contact = ContactInfo{
+		ID:    "contact-1",
+		Name:  "Test Customer",
+		Code:  "CUST-001",
+		Email: "test@example.com",
+	}
+
+	// Setup mock invoices
+	mockRepo.ContactInvoices = []BalanceInvoice{
+		{
+			InvoiceID:         "inv-1",
+			InvoiceNumber:     "INV-2024-001",
+			InvoiceDate:       "2024-01-15",
+			DueDate:           "2024-02-15",
+			TotalAmount:       decimal.NewFromInt(1000),
+			AmountPaid:        decimal.NewFromInt(200),
+			OutstandingAmount: decimal.NewFromInt(800),
+			Currency:          "EUR",
+			DaysOverdue:       30,
+		},
+		{
+			InvoiceID:         "inv-2",
+			InvoiceNumber:     "INV-2024-002",
+			InvoiceDate:       "2024-02-01",
+			DueDate:           "2024-03-01",
+			TotalAmount:       decimal.NewFromInt(500),
+			AmountPaid:        decimal.Zero,
+			OutstandingAmount: decimal.NewFromInt(500),
+			Currency:          "EUR",
+			DaysOverdue:       15,
+		},
+	}
+
+	req := &BalanceConfirmationRequest{
+		ContactID: "contact-1",
+		Type:      "RECEIVABLE",
+		AsOfDate:  "2024-03-31",
+	}
+
+	result, err := svc.GetBalanceConfirmation(ctx, "tenant-1", "test_schema", req)
+
+	require.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, "contact-1", result.ContactID)
+	assert.Equal(t, "Test Customer", result.ContactName)
+	assert.Equal(t, "CUST-001", result.ContactCode)
+	assert.Equal(t, "test@example.com", result.ContactEmail)
+	assert.Equal(t, BalanceTypeReceivable, result.Type)
+	assert.Equal(t, "2024-03-31", result.AsOfDate)
+	assert.True(t, result.TotalBalance.Equal(decimal.NewFromInt(1300)))
+	assert.Len(t, result.Invoices, 2)
+}
+
+func TestGetBalanceConfirmation_Payable(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	mockRepo.Contact = ContactInfo{
+		ID:   "supplier-1",
+		Name: "Test Supplier",
+	}
+
+	mockRepo.ContactInvoices = []BalanceInvoice{
+		{
+			InvoiceID:         "pinv-1",
+			OutstandingAmount: decimal.NewFromInt(3000),
+		},
+	}
+
+	req := &BalanceConfirmationRequest{
+		ContactID: "supplier-1",
+		Type:      "PAYABLE",
+		AsOfDate:  "2024-03-31",
+	}
+
+	result, err := svc.GetBalanceConfirmation(ctx, "tenant-1", "test_schema", req)
+
+	require.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, BalanceTypePayable, result.Type)
+	assert.True(t, result.TotalBalance.Equal(decimal.NewFromInt(3000)))
+}
+
+func TestGetBalanceConfirmation_MissingContactID(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	req := &BalanceConfirmationRequest{
+		ContactID: "", // Empty
+		Type:      "RECEIVABLE",
+		AsOfDate:  "2024-03-31",
+	}
+
+	result, err := svc.GetBalanceConfirmation(ctx, "tenant-1", "test_schema", req)
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "contact_id is required")
+}
+
+func TestGetBalanceConfirmation_InvalidDate(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	req := &BalanceConfirmationRequest{
+		ContactID: "contact-1",
+		Type:      "RECEIVABLE",
+		AsOfDate:  "not-a-date",
+	}
+
+	result, err := svc.GetBalanceConfirmation(ctx, "tenant-1", "test_schema", req)
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "invalid as_of_date")
+}
+
+func TestGetBalanceConfirmation_ContactNotFound(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	mockRepo.GetContactErr = assert.AnError
+	svc := NewServiceWithRepository(mockRepo)
+
+	req := &BalanceConfirmationRequest{
+		ContactID: "nonexistent",
+		Type:      "RECEIVABLE",
+		AsOfDate:  "2024-03-31",
+	}
+
+	result, err := svc.GetBalanceConfirmation(ctx, "tenant-1", "test_schema", req)
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+}
+
+func TestGetBalanceConfirmation_InvoicesError(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	mockRepo.Contact = ContactInfo{ID: "contact-1", Name: "Test"}
+	mockRepo.GetContactInvoicesErr = assert.AnError
+	svc := NewServiceWithRepository(mockRepo)
+
+	req := &BalanceConfirmationRequest{
+		ContactID: "contact-1",
+		Type:      "RECEIVABLE",
+		AsOfDate:  "2024-03-31",
+	}
+
+	result, err := svc.GetBalanceConfirmation(ctx, "tenant-1", "test_schema", req)
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+}
+
+func TestGetBalanceConfirmation_NoInvoices(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	mockRepo.Contact = ContactInfo{
+		ID:   "contact-1",
+		Name: "Customer with no outstanding",
+	}
+	// No invoices
+
+	req := &BalanceConfirmationRequest{
+		ContactID: "contact-1",
+		Type:      "RECEIVABLE",
+		AsOfDate:  "2024-03-31",
+	}
+
+	result, err := svc.GetBalanceConfirmation(ctx, "tenant-1", "test_schema", req)
+
+	require.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.True(t, result.TotalBalance.IsZero())
+	assert.Empty(t, result.Invoices)
+}
+
+// Test account classification helper functions
+
+func TestIsFixedAssetAccount(t *testing.T) {
+	tests := []struct {
+		code     string
+		expected bool
+	}{
+		{"1500", true},  // Fixed assets
+		{"1550", true},  // Fixed assets
+		{"1599", true},  // Fixed assets
+		{"1000", false}, // Cash
+		{"1200", false}, // Receivables
+		{"2000", false}, // Liabilities
+		{"15", false},   // Too short
+		{"", false},     // Empty
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.code, func(t *testing.T) {
+			result := isFixedAssetAccount(tt.code)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestIsLoanAccount(t *testing.T) {
+	tests := []struct {
+		code     string
+		expected bool
+	}{
+		{"2000", true},  // Short-term loans
+		{"2050", true},  // Short-term loans
+		{"2500", true},  // Long-term loans
+		{"2599", true},  // Long-term loans
+		{"1000", false}, // Cash
+		{"3000", false}, // Equity
+		{"20", false},   // Too short
+		{"", false},     // Empty
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.code, func(t *testing.T) {
+			result := isLoanAccount(tt.code)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestIsDividendAccount(t *testing.T) {
+	tests := []struct {
+		code     string
+		expected bool
+	}{
+		{"3000", true},  // Equity
+		{"3100", true},  // Equity
+		{"3999", true},  // Equity
+		{"1000", false}, // Assets
+		{"2000", false}, // Liabilities
+		{"4000", false}, // Revenue
+		{"3", false},    // Too short
+		{"", false},     // Empty
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.code, func(t *testing.T) {
+			result := isDividendAccount(tt.code)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// Test types and constants
+
+func TestBalanceConfirmationTypes(t *testing.T) {
+	assert.Equal(t, BalanceConfirmationType("RECEIVABLE"), BalanceTypeReceivable)
+	assert.Equal(t, BalanceConfirmationType("PAYABLE"), BalanceTypePayable)
+}
+
+func TestCashFlowCodeConstants(t *testing.T) {
+	// Operating activities
+	assert.Equal(t, "CF_OPER_RECEIPTS", CFOperReceipts)
+	assert.Equal(t, "CF_OPER_PAYMENTS", CFOperPayments)
+	assert.Equal(t, "CF_OPER_WAGES", CFOperWages)
+	assert.Equal(t, "CF_OPER_TAXES", CFOperTaxes)
+	assert.Equal(t, "CF_OPER_TOTAL", CFOperTotal)
+
+	// Investing activities
+	assert.Equal(t, "CF_INV_FIXED_ASSETS", CFInvFixedAssets)
+	assert.Equal(t, "CF_INV_TOTAL", CFInvTotal)
+
+	// Financing activities
+	assert.Equal(t, "CF_FIN_LOANS_RCVD", CFFinLoansRcvd)
+	assert.Equal(t, "CF_FIN_DIVIDENDS_PD", CFFinDividendsPd)
+	assert.Equal(t, "CF_FIN_TOTAL", CFFinTotal)
+}
