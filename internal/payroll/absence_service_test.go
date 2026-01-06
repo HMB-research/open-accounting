@@ -1150,3 +1150,172 @@ func TestNewAbsenceServiceWithPool(t *testing.T) {
 	assert.NotNil(t, svc.repo)
 	assert.NotNil(t, svc.uuid)
 }
+
+// TestApproveLeaveRecord_NegativePendingDays tests the edge case where pending days would go negative
+func TestApproveLeaveRecord_NegativePendingDays(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	// Leave record with 10 working days
+	repo.LeaveRecords["rec-1"] = &LeaveRecord{
+		ID:            "rec-1",
+		TenantID:      "tenant-1",
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		StartDate:     time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC),
+		WorkingDays:   decimal.NewFromInt(10),
+		Status:        LeavePending,
+	}
+
+	// Setup balance with fewer pending days than the record (simulates data inconsistency)
+	key := "tenant-1-emp-1-type-1-2025"
+	repo.LeaveBalances[key] = &LeaveBalance{
+		ID:            "bal-1",
+		TenantID:      "tenant-1",
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		Year:          2025,
+		EntitledDays:  decimal.NewFromInt(28),
+		PendingDays:   decimal.NewFromInt(5), // Less than WorkingDays=10
+		UsedDays:      decimal.Zero,
+		RemainingDays: decimal.NewFromInt(23),
+	}
+
+	record, err := service.ApproveLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "approver-1")
+
+	require.NoError(t, err)
+	assert.Equal(t, LeaveApproved, record.Status)
+
+	// Verify PendingDays was clamped to zero (not negative)
+	balance := repo.LeaveBalances[key]
+	assert.True(t, balance.PendingDays.IsZero(), "PendingDays should be zero, not negative")
+	assert.True(t, balance.UsedDays.Equal(decimal.NewFromInt(10)))
+}
+
+// TestRejectLeaveRecord_NegativePendingDays tests the edge case where pending days would go negative
+func TestRejectLeaveRecord_NegativePendingDays(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	// Leave record with 10 working days
+	repo.LeaveRecords["rec-1"] = &LeaveRecord{
+		ID:            "rec-1",
+		TenantID:      "tenant-1",
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		StartDate:     time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC),
+		WorkingDays:   decimal.NewFromInt(10),
+		Status:        LeavePending,
+	}
+
+	// Setup balance with fewer pending days than the record
+	key := "tenant-1-emp-1-type-1-2025"
+	repo.LeaveBalances[key] = &LeaveBalance{
+		ID:            "bal-1",
+		TenantID:      "tenant-1",
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		Year:          2025,
+		EntitledDays:  decimal.NewFromInt(28),
+		PendingDays:   decimal.NewFromInt(5), // Less than WorkingDays=10
+		UsedDays:      decimal.Zero,
+		RemainingDays: decimal.NewFromInt(23),
+	}
+
+	record, err := service.RejectLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "manager-1", "reason")
+
+	require.NoError(t, err)
+	assert.Equal(t, LeaveRejected, record.Status)
+
+	// Verify PendingDays was clamped to zero
+	balance := repo.LeaveBalances[key]
+	assert.True(t, balance.PendingDays.IsZero(), "PendingDays should be zero, not negative")
+}
+
+// TestCancelLeaveRecord_NegativePendingDays tests the edge case where pending days would go negative
+func TestCancelLeaveRecord_NegativePendingDays(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	// Pending leave record with 10 working days
+	repo.LeaveRecords["rec-1"] = &LeaveRecord{
+		ID:            "rec-1",
+		TenantID:      "tenant-1",
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		StartDate:     time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC),
+		WorkingDays:   decimal.NewFromInt(10),
+		Status:        LeavePending,
+	}
+
+	// Setup balance with fewer pending days than the record
+	key := "tenant-1-emp-1-type-1-2025"
+	repo.LeaveBalances[key] = &LeaveBalance{
+		ID:            "bal-1",
+		TenantID:      "tenant-1",
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		Year:          2025,
+		EntitledDays:  decimal.NewFromInt(28),
+		PendingDays:   decimal.NewFromInt(5), // Less than WorkingDays=10
+		UsedDays:      decimal.Zero,
+		RemainingDays: decimal.NewFromInt(23),
+	}
+
+	record, err := service.CancelLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "emp-1")
+
+	require.NoError(t, err)
+	assert.Equal(t, LeaveCanceled, record.Status)
+
+	// Verify PendingDays was clamped to zero
+	balance := repo.LeaveBalances[key]
+	assert.True(t, balance.PendingDays.IsZero(), "PendingDays should be zero, not negative")
+}
+
+// TestCancelLeaveRecord_NegativeUsedDays tests cancelling an approved leave where used days would go negative
+func TestCancelLeaveRecord_NegativeUsedDays(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	// Approved leave record with 10 working days
+	repo.LeaveRecords["rec-1"] = &LeaveRecord{
+		ID:            "rec-1",
+		TenantID:      "tenant-1",
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		StartDate:     time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC),
+		WorkingDays:   decimal.NewFromInt(10),
+		Status:        LeaveApproved,
+	}
+
+	// Setup balance with fewer used days than the record (simulates data inconsistency)
+	key := "tenant-1-emp-1-type-1-2025"
+	repo.LeaveBalances[key] = &LeaveBalance{
+		ID:            "bal-1",
+		TenantID:      "tenant-1",
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		Year:          2025,
+		EntitledDays:  decimal.NewFromInt(28),
+		PendingDays:   decimal.Zero,
+		UsedDays:      decimal.NewFromInt(5), // Less than WorkingDays=10
+		RemainingDays: decimal.NewFromInt(23),
+	}
+
+	record, err := service.CancelLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "emp-1")
+
+	require.NoError(t, err)
+	assert.Equal(t, LeaveCanceled, record.Status)
+
+	// Verify UsedDays was clamped to zero
+	balance := repo.LeaveBalances[key]
+	assert.True(t, balance.UsedDays.IsZero(), "UsedDays should be zero, not negative")
+}
