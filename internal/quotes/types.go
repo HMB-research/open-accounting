@@ -144,14 +144,14 @@ func (q *Quote) IsExpired() bool {
 
 // CreateQuoteRequest is the request to create a quote
 type CreateQuoteRequest struct {
-	ContactID    string                  `json:"contact_id"`
-	QuoteDate    time.Time               `json:"quote_date"`
-	ValidUntil   *time.Time              `json:"valid_until,omitempty"`
-	Currency     string                  `json:"currency,omitempty"`
-	ExchangeRate decimal.Decimal         `json:"exchange_rate,omitempty"`
-	Notes        string                  `json:"notes,omitempty"`
+	ContactID    string                   `json:"contact_id"`
+	QuoteDate    time.Time                `json:"quote_date"`
+	ValidUntil   *time.Time               `json:"valid_until,omitempty"`
+	Currency     string                   `json:"currency,omitempty"`
+	ExchangeRate decimal.Decimal          `json:"exchange_rate,omitempty"`
+	Notes        string                   `json:"notes,omitempty"`
 	Lines        []CreateQuoteLineRequest `json:"lines"`
-	UserID       string                  `json:"-"`
+	UserID       string                   `json:"-"`
 }
 
 // CreateQuoteLineRequest is a line in the create quote request
@@ -167,12 +167,12 @@ type CreateQuoteLineRequest struct {
 
 // UpdateQuoteRequest is the request to update a quote
 type UpdateQuoteRequest struct {
-	ContactID    string                  `json:"contact_id"`
-	QuoteDate    time.Time               `json:"quote_date"`
-	ValidUntil   *time.Time              `json:"valid_until,omitempty"`
-	Currency     string                  `json:"currency,omitempty"`
-	ExchangeRate decimal.Decimal         `json:"exchange_rate,omitempty"`
-	Notes        string                  `json:"notes,omitempty"`
+	ContactID    string                   `json:"contact_id"`
+	QuoteDate    time.Time                `json:"quote_date"`
+	ValidUntil   *time.Time               `json:"valid_until,omitempty"`
+	Currency     string                   `json:"currency,omitempty"`
+	ExchangeRate decimal.Decimal          `json:"exchange_rate,omitempty"`
+	Notes        string                   `json:"notes,omitempty"`
 	Lines        []CreateQuoteLineRequest `json:"lines"`
 }
 

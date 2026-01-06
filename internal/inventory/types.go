@@ -35,30 +35,30 @@ const (
 
 // Product represents a product or service
 type Product struct {
-	ID                string          `json:"id"`
-	TenantID          string          `json:"tenant_id"`
-	Code              string          `json:"code"`
-	Name              string          `json:"name"`
-	Description       string          `json:"description,omitempty"`
-	ProductType       ProductType     `json:"product_type"`
-	CategoryID        string          `json:"category_id,omitempty"`
-	Unit              string          `json:"unit,omitempty"`
-	PurchasePrice     decimal.Decimal `json:"purchase_price"`
-	SalesPrice        decimal.Decimal `json:"sales_price"`
-	VATRate           decimal.Decimal `json:"vat_rate"`
-	MinStockLevel     decimal.Decimal `json:"min_stock_level"`
-	CurrentStock      decimal.Decimal `json:"current_stock"`
-	ReorderPoint      decimal.Decimal `json:"reorder_point"`
-	SaleAccountID     string          `json:"sale_account_id,omitempty"`
-	PurchaseAccountID string          `json:"purchase_account_id,omitempty"`
-	InventoryAccountID string         `json:"inventory_account_id,omitempty"`
-	TrackInventory    bool            `json:"track_inventory"`
-	IsActive          bool            `json:"is_active"`
-	Barcode           string          `json:"barcode,omitempty"`
-	SupplierID        string          `json:"supplier_id,omitempty"`
-	LeadTimeDays      int             `json:"lead_time_days"`
-	CreatedAt         time.Time       `json:"created_at"`
-	UpdatedAt         time.Time       `json:"updated_at"`
+	ID                 string          `json:"id"`
+	TenantID           string          `json:"tenant_id"`
+	Code               string          `json:"code"`
+	Name               string          `json:"name"`
+	Description        string          `json:"description,omitempty"`
+	ProductType        ProductType     `json:"product_type"`
+	CategoryID         string          `json:"category_id,omitempty"`
+	Unit               string          `json:"unit,omitempty"`
+	PurchasePrice      decimal.Decimal `json:"purchase_price"`
+	SalesPrice         decimal.Decimal `json:"sales_price"`
+	VATRate            decimal.Decimal `json:"vat_rate"`
+	MinStockLevel      decimal.Decimal `json:"min_stock_level"`
+	CurrentStock       decimal.Decimal `json:"current_stock"`
+	ReorderPoint       decimal.Decimal `json:"reorder_point"`
+	SaleAccountID      string          `json:"sale_account_id,omitempty"`
+	PurchaseAccountID  string          `json:"purchase_account_id,omitempty"`
+	InventoryAccountID string          `json:"inventory_account_id,omitempty"`
+	TrackInventory     bool            `json:"track_inventory"`
+	IsActive           bool            `json:"is_active"`
+	Barcode            string          `json:"barcode,omitempty"`
+	SupplierID         string          `json:"supplier_id,omitempty"`
+	LeadTimeDays       int             `json:"lead_time_days"`
+	CreatedAt          time.Time       `json:"created_at"`
+	UpdatedAt          time.Time       `json:"updated_at"`
 }
 
 // Validate validates the product
@@ -91,47 +91,47 @@ type ProductCategory struct {
 
 // Warehouse represents a warehouse or storage location
 type Warehouse struct {
-	ID          string    `json:"id"`
-	TenantID    string    `json:"tenant_id"`
-	Code        string    `json:"code"`
-	Name        string    `json:"name"`
-	Address     string    `json:"address,omitempty"`
-	IsDefault   bool      `json:"is_default"`
-	IsActive    bool      `json:"is_active"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID        string    `json:"id"`
+	TenantID  string    `json:"tenant_id"`
+	Code      string    `json:"code"`
+	Name      string    `json:"name"`
+	Address   string    `json:"address,omitempty"`
+	IsDefault bool      `json:"is_default"`
+	IsActive  bool      `json:"is_active"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // StockLevel represents the stock level of a product in a warehouse
 type StockLevel struct {
-	ID          string          `json:"id"`
-	TenantID    string          `json:"tenant_id"`
-	ProductID   string          `json:"product_id"`
-	WarehouseID string          `json:"warehouse_id"`
-	Quantity    decimal.Decimal `json:"quantity"`
-	ReservedQty decimal.Decimal `json:"reserved_qty"`
+	ID           string          `json:"id"`
+	TenantID     string          `json:"tenant_id"`
+	ProductID    string          `json:"product_id"`
+	WarehouseID  string          `json:"warehouse_id"`
+	Quantity     decimal.Decimal `json:"quantity"`
+	ReservedQty  decimal.Decimal `json:"reserved_qty"`
 	AvailableQty decimal.Decimal `json:"available_qty"`
-	LastUpdated time.Time       `json:"last_updated"`
+	LastUpdated  time.Time       `json:"last_updated"`
 }
 
 // InventoryMovement represents a movement of inventory
 type InventoryMovement struct {
-	ID              string          `json:"id"`
-	TenantID        string          `json:"tenant_id"`
-	ProductID       string          `json:"product_id"`
-	WarehouseID     string          `json:"warehouse_id"`
-	MovementType    MovementType    `json:"movement_type"`
-	Quantity        decimal.Decimal `json:"quantity"`
-	UnitCost        decimal.Decimal `json:"unit_cost"`
-	TotalCost       decimal.Decimal `json:"total_cost"`
-	Reference       string          `json:"reference,omitempty"`
-	SourceType      string          `json:"source_type,omitempty"`
-	SourceID        string          `json:"source_id,omitempty"`
-	ToWarehouseID   string          `json:"to_warehouse_id,omitempty"`
-	Notes           string          `json:"notes,omitempty"`
-	MovementDate    time.Time       `json:"movement_date"`
-	CreatedAt       time.Time       `json:"created_at"`
-	CreatedBy       string          `json:"created_by"`
+	ID            string          `json:"id"`
+	TenantID      string          `json:"tenant_id"`
+	ProductID     string          `json:"product_id"`
+	WarehouseID   string          `json:"warehouse_id"`
+	MovementType  MovementType    `json:"movement_type"`
+	Quantity      decimal.Decimal `json:"quantity"`
+	UnitCost      decimal.Decimal `json:"unit_cost"`
+	TotalCost     decimal.Decimal `json:"total_cost"`
+	Reference     string          `json:"reference,omitempty"`
+	SourceType    string          `json:"source_type,omitempty"`
+	SourceID      string          `json:"source_id,omitempty"`
+	ToWarehouseID string          `json:"to_warehouse_id,omitempty"`
+	Notes         string          `json:"notes,omitempty"`
+	MovementDate  time.Time       `json:"movement_date"`
+	CreatedAt     time.Time       `json:"created_at"`
+	CreatedBy     string          `json:"created_by"`
 }
 
 // CreateProductRequest represents a request to create a product

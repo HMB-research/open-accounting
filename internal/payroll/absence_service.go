@@ -270,7 +270,7 @@ func (s *AbsenceService) RejectLeaveRecord(ctx context.Context, schemaName, tena
 }
 
 // CancelLeaveRecord cancels a leave request (by the employee)
-func (s *AbsenceService) CancelLeaveRecord(ctx context.Context, schemaName, tenantID, recordID, cancelledBy string) (*LeaveRecord, error) {
+func (s *AbsenceService) CancelLeaveRecord(ctx context.Context, schemaName, tenantID, recordID, canceledBy string) (*LeaveRecord, error) {
 	record, err := s.repo.GetLeaveRecord(ctx, schemaName, tenantID, recordID)
 	if err != nil {
 		return nil, fmt.Errorf("get leave record: %w", err)

@@ -264,10 +264,10 @@
 					<table class="table">
 						<thead>
 							<tr>
-								<th>{m.invoices_invoice_number()}</th>
-								<th>{m.invoices_invoice_date()}</th>
-								<th>{m.invoices_due_date()}</th>
-								<th class="text-right">{m.invoices_total()}</th>
+								<th>{m.invoices_invoiceNumber()}</th>
+								<th>{m.invoices_issueDate()}</th>
+								<th>{m.invoices_dueDate()}</th>
+								<th class="text-right">{m.invoices_grandTotal()}</th>
 								<th class="text-right">{m.balance_confirmation_paid()}</th>
 								<th class="text-right">{m.balance_confirmation_outstanding()}</th>
 								<th class="text-right">{m.balance_confirmation_days_overdue()}</th>

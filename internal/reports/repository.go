@@ -259,16 +259,16 @@ func (r *PostgresRepository) GetContact(ctx context.Context, schemaName, tenantI
 
 // MockRepository for testing
 type MockRepository struct {
-	JournalEntries       []JournalEntryWithLines
-	CashBalance          decimal.Decimal
-	ContactBalances      []ContactBalance
-	ContactInvoices      []BalanceInvoice
-	Contact              ContactInfo
-	GetEntriesErr        error
-	GetCashBalanceErr    error
+	JournalEntries        []JournalEntryWithLines
+	CashBalance           decimal.Decimal
+	ContactBalances       []ContactBalance
+	ContactInvoices       []BalanceInvoice
+	Contact               ContactInfo
+	GetEntriesErr         error
+	GetCashBalanceErr     error
 	GetContactBalancesErr error
 	GetContactInvoicesErr error
-	GetContactErr        error
+	GetContactErr         error
 }
 
 // NewMockRepository creates a new mock repository

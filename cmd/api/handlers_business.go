@@ -10,13 +10,13 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/shopspring/decimal"
 
+	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/email"
-	"github.com/HMB-research/open-accounting/internal/invoicing"
-	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/inventory"
+	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
@@ -3386,7 +3386,7 @@ func (h *Handlers) CancelOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
+	respondJSON(w, http.StatusOK, map[string]string{"status": "canceled"})
 }
 
 // =============================================================================

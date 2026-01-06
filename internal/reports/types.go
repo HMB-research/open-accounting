@@ -59,22 +59,22 @@ type JournalLine struct {
 // Estonian cash flow codes
 const (
 	// Operating Activities - Rahavood äritegevusest
-	CFOperReceipts   = "CF_OPER_RECEIPTS"   // Kaupade või teenuste müügist laekunud raha
-	CFOperPayments   = "CF_OPER_PAYMENTS"   // Kaupade, materjalide ja teenuste eest makstud raha
-	CFOperWages      = "CF_OPER_WAGES"      // Makstud palgad
-	CFOperTaxes      = "CF_OPER_TAXES"      // Makstud tulumaks
+	CFOperReceipts   = "CF_OPER_RECEIPTS"    // Kaupade või teenuste müügist laekunud raha
+	CFOperPayments   = "CF_OPER_PAYMENTS"    // Kaupade, materjalide ja teenuste eest makstud raha
+	CFOperWages      = "CF_OPER_WAGES"       // Makstud palgad
+	CFOperTaxes      = "CF_OPER_TAXES"       // Makstud tulumaks
 	CFOperInterestPd = "CF_OPER_INTEREST_PD" // Makstud intressid
-	CFOperOther      = "CF_OPER_OTHER"      // Muud rahavood äritegevusest
-	CFOperTotal      = "CF_OPER_TOTAL"      // Rahavood äritegevusest kokku
+	CFOperOther      = "CF_OPER_OTHER"       // Muud rahavood äritegevusest
+	CFOperTotal      = "CF_OPER_TOTAL"       // Rahavood äritegevusest kokku
 
 	// Investing Activities - Rahavood investeerimistegevusest
-	CFInvFixedAssets  = "CF_INV_FIXED_ASSETS"  // Materiaalse põhivara ost/müük
-	CFInvProperty     = "CF_INV_PROPERTY"      // Kinnisvarainvesteeringud
-	CFInvSubsidiaries = "CF_INV_SUBSIDIARIES"  // Tütar- ja sidusettevõtted
-	CFInvLoansGiven   = "CF_INV_LOANS_GIVEN"   // Teistele osapooltele antud laenud
-	CFInvLoansRcvd    = "CF_INV_LOANS_RCVD"    // Antud laenude laekumised
-	CFInvDividends    = "CF_INV_DIVIDENDS"     // Saadud intressid ja dividendid
-	CFInvTotal        = "CF_INV_TOTAL"         // Rahavood investeerimistegevusest kokku
+	CFInvFixedAssets  = "CF_INV_FIXED_ASSETS" // Materiaalse põhivara ost/müük
+	CFInvProperty     = "CF_INV_PROPERTY"     // Kinnisvarainvesteeringud
+	CFInvSubsidiaries = "CF_INV_SUBSIDIARIES" // Tütar- ja sidusettevõtted
+	CFInvLoansGiven   = "CF_INV_LOANS_GIVEN"  // Teistele osapooltele antud laenud
+	CFInvLoansRcvd    = "CF_INV_LOANS_RCVD"   // Antud laenude laekumised
+	CFInvDividends    = "CF_INV_DIVIDENDS"    // Saadud intressid ja dividendid
+	CFInvTotal        = "CF_INV_TOTAL"        // Rahavood investeerimistegevusest kokku
 
 	// Financing Activities - Rahavood finantseerimistegevusest
 	CFFinLoansRcvd   = "CF_FIN_LOANS_RCVD"   // Laenude saamine
@@ -110,15 +110,15 @@ type BalanceConfirmation struct {
 
 // BalanceInvoice represents an invoice in a balance confirmation
 type BalanceInvoice struct {
-	InvoiceID       string          `json:"invoice_id"`
-	InvoiceNumber   string          `json:"invoice_number"`
-	InvoiceDate     string          `json:"invoice_date"`
-	DueDate         string          `json:"due_date"`
-	TotalAmount     decimal.Decimal `json:"total_amount"`
-	AmountPaid      decimal.Decimal `json:"amount_paid"`
+	InvoiceID         string          `json:"invoice_id"`
+	InvoiceNumber     string          `json:"invoice_number"`
+	InvoiceDate       string          `json:"invoice_date"`
+	DueDate           string          `json:"due_date"`
+	TotalAmount       decimal.Decimal `json:"total_amount"`
+	AmountPaid        decimal.Decimal `json:"amount_paid"`
 	OutstandingAmount decimal.Decimal `json:"outstanding_amount"`
-	Currency        string          `json:"currency"`
-	DaysOverdue     int             `json:"days_overdue"`
+	Currency          string          `json:"currency"`
+	DaysOverdue       int             `json:"days_overdue"`
 }
 
 // BalanceConfirmationRequest represents a request to generate balance confirmations
@@ -130,13 +130,13 @@ type BalanceConfirmationRequest struct {
 
 // BalanceConfirmationSummary represents a summary of all balances for a type
 type BalanceConfirmationSummary struct {
-	Type           BalanceConfirmationType `json:"type"`
-	AsOfDate       string                  `json:"as_of_date"`
-	TotalBalance   decimal.Decimal         `json:"total_balance"`
-	ContactCount   int                     `json:"contact_count"`
-	InvoiceCount   int                     `json:"invoice_count"`
-	Contacts       []ContactBalance        `json:"contacts"`
-	GeneratedAt    time.Time               `json:"generated_at"`
+	Type         BalanceConfirmationType `json:"type"`
+	AsOfDate     string                  `json:"as_of_date"`
+	TotalBalance decimal.Decimal         `json:"total_balance"`
+	ContactCount int                     `json:"contact_count"`
+	InvoiceCount int                     `json:"invoice_count"`
+	Contacts     []ContactBalance        `json:"contacts"`
+	GeneratedAt  time.Time               `json:"generated_at"`
 }
 
 // ContactBalance represents a contact's balance in the summary

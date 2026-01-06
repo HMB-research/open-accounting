@@ -34,18 +34,18 @@ func NewServiceWithRepository(repo Repository) *Service {
 // CreateCategory creates a new asset category
 func (s *Service) CreateCategory(ctx context.Context, tenantID, schemaName string, req *CreateCategoryRequest) (*AssetCategory, error) {
 	cat := &AssetCategory{
-		ID:                          uuid.New().String(),
-		TenantID:                    tenantID,
-		Name:                        req.Name,
-		Description:                 req.Description,
-		DepreciationMethod:          req.DepreciationMethod,
-		DefaultUsefulLifeMonths:     req.DefaultUsefulLifeMonths,
-		DefaultResidualValuePercent: req.DefaultResidualValuePercent,
-		AssetAccountID:              req.AssetAccountID,
-		DepreciationExpenseAccountID: req.DepreciationExpenseAccountID,
+		ID:                            uuid.New().String(),
+		TenantID:                      tenantID,
+		Name:                          req.Name,
+		Description:                   req.Description,
+		DepreciationMethod:            req.DepreciationMethod,
+		DefaultUsefulLifeMonths:       req.DefaultUsefulLifeMonths,
+		DefaultResidualValuePercent:   req.DefaultResidualValuePercent,
+		AssetAccountID:                req.AssetAccountID,
+		DepreciationExpenseAccountID:  req.DepreciationExpenseAccountID,
 		AccumulatedDepreciationAcctID: req.AccumulatedDepreciationAcctID,
-		CreatedAt:                   time.Now(),
-		UpdatedAt:                   time.Now(),
+		CreatedAt:                     time.Now(),
+		UpdatedAt:                     time.Now(),
 	}
 
 	if cat.DepreciationMethod == "" {

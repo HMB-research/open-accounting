@@ -38,38 +38,38 @@ const (
 
 // AssetCategory represents a category of fixed assets
 type AssetCategory struct {
-	ID                             string             `json:"id"`
-	TenantID                       string             `json:"tenant_id"`
-	Name                           string             `json:"name"`
-	Description                    string             `json:"description,omitempty"`
-	DepreciationMethod             DepreciationMethod `json:"depreciation_method"`
-	DefaultUsefulLifeMonths        int                `json:"default_useful_life_months"`
-	DefaultResidualValuePercent    decimal.Decimal    `json:"default_residual_value_percent"`
-	AssetAccountID                 *string            `json:"asset_account_id,omitempty"`
-	DepreciationExpenseAccountID   *string            `json:"depreciation_expense_account_id,omitempty"`
-	AccumulatedDepreciationAcctID  *string            `json:"accumulated_depreciation_account_id,omitempty"`
-	CreatedAt                      time.Time          `json:"created_at"`
-	UpdatedAt                      time.Time          `json:"updated_at"`
+	ID                            string             `json:"id"`
+	TenantID                      string             `json:"tenant_id"`
+	Name                          string             `json:"name"`
+	Description                   string             `json:"description,omitempty"`
+	DepreciationMethod            DepreciationMethod `json:"depreciation_method"`
+	DefaultUsefulLifeMonths       int                `json:"default_useful_life_months"`
+	DefaultResidualValuePercent   decimal.Decimal    `json:"default_residual_value_percent"`
+	AssetAccountID                *string            `json:"asset_account_id,omitempty"`
+	DepreciationExpenseAccountID  *string            `json:"depreciation_expense_account_id,omitempty"`
+	AccumulatedDepreciationAcctID *string            `json:"accumulated_depreciation_account_id,omitempty"`
+	CreatedAt                     time.Time          `json:"created_at"`
+	UpdatedAt                     time.Time          `json:"updated_at"`
 }
 
 // FixedAsset represents a fixed asset
 type FixedAsset struct {
-	ID                            string             `json:"id"`
-	TenantID                      string             `json:"tenant_id"`
-	AssetNumber                   string             `json:"asset_number"`
-	Name                          string             `json:"name"`
-	Description                   string             `json:"description,omitempty"`
-	CategoryID                    *string            `json:"category_id,omitempty"`
-	Category                      *AssetCategory     `json:"category,omitempty"`
-	Status                        AssetStatus        `json:"status"`
+	ID          string         `json:"id"`
+	TenantID    string         `json:"tenant_id"`
+	AssetNumber string         `json:"asset_number"`
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	CategoryID  *string        `json:"category_id,omitempty"`
+	Category    *AssetCategory `json:"category,omitempty"`
+	Status      AssetStatus    `json:"status"`
 
 	// Purchase Information
-	PurchaseDate     time.Time       `json:"purchase_date"`
-	PurchaseCost     decimal.Decimal `json:"purchase_cost"`
-	SupplierID       *string         `json:"supplier_id,omitempty"`
-	InvoiceID        *string         `json:"invoice_id,omitempty"`
-	SerialNumber     string          `json:"serial_number,omitempty"`
-	Location         string          `json:"location,omitempty"`
+	PurchaseDate time.Time       `json:"purchase_date"`
+	PurchaseCost decimal.Decimal `json:"purchase_cost"`
+	SupplierID   *string         `json:"supplier_id,omitempty"`
+	InvoiceID    *string         `json:"invoice_id,omitempty"`
+	SerialNumber string          `json:"serial_number,omitempty"`
+	Location     string          `json:"location,omitempty"`
 
 	// Depreciation Settings
 	DepreciationMethod    DepreciationMethod `json:"depreciation_method"`
@@ -215,23 +215,23 @@ type UpdateAssetRequest struct {
 
 // DisposeAssetRequest is the request to dispose of an asset
 type DisposeAssetRequest struct {
-	DisposalDate     time.Time      `json:"disposal_date"`
-	DisposalMethod   DisposalMethod `json:"disposal_method"`
+	DisposalDate     time.Time       `json:"disposal_date"`
+	DisposalMethod   DisposalMethod  `json:"disposal_method"`
 	DisposalProceeds decimal.Decimal `json:"disposal_proceeds,omitempty"`
-	DisposalNotes    string         `json:"disposal_notes,omitempty"`
-	UserID           string         `json:"-"`
+	DisposalNotes    string          `json:"disposal_notes,omitempty"`
+	UserID           string          `json:"-"`
 }
 
 // CreateCategoryRequest is the request to create an asset category
 type CreateCategoryRequest struct {
-	Name                           string             `json:"name"`
-	Description                    string             `json:"description,omitempty"`
-	DepreciationMethod             DepreciationMethod `json:"depreciation_method,omitempty"`
-	DefaultUsefulLifeMonths        int                `json:"default_useful_life_months,omitempty"`
-	DefaultResidualValuePercent    decimal.Decimal    `json:"default_residual_value_percent,omitempty"`
-	AssetAccountID                 *string            `json:"asset_account_id,omitempty"`
-	DepreciationExpenseAccountID   *string            `json:"depreciation_expense_account_id,omitempty"`
-	AccumulatedDepreciationAcctID  *string            `json:"accumulated_depreciation_account_id,omitempty"`
+	Name                          string             `json:"name"`
+	Description                   string             `json:"description,omitempty"`
+	DepreciationMethod            DepreciationMethod `json:"depreciation_method,omitempty"`
+	DefaultUsefulLifeMonths       int                `json:"default_useful_life_months,omitempty"`
+	DefaultResidualValuePercent   decimal.Decimal    `json:"default_residual_value_percent,omitempty"`
+	AssetAccountID                *string            `json:"asset_account_id,omitempty"`
+	DepreciationExpenseAccountID  *string            `json:"depreciation_expense_account_id,omitempty"`
+	AccumulatedDepreciationAcctID *string            `json:"accumulated_depreciation_account_id,omitempty"`
 }
 
 // AssetFilter provides filtering options for assets

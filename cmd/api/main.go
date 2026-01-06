@@ -20,19 +20,19 @@ import (
 	_ "github.com/HMB-research/open-accounting/docs"
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/analytics"
+	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/email"
+	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	secmiddleware "github.com/HMB-research/open-accounting/internal/middleware"
+	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/pdf"
 	"github.com/HMB-research/open-accounting/internal/plugin"
-	"github.com/HMB-research/open-accounting/internal/assets"
-	"github.com/HMB-research/open-accounting/internal/inventory"
-	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/reports"
@@ -149,9 +149,9 @@ func main() {
 		ordersService:     ordersService,
 		assetsService:     assetsService,
 		inventoryService:  inventoryService,
-		reportsService:      reportsService,
-		reminderService:     reminderService,
-		costCenterService:   costCenterService,
+		reportsService:    reportsService,
+		reminderService:   reminderService,
+		costCenterService: costCenterService,
 	}
 
 	// Setup router
