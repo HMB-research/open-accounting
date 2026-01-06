@@ -272,3 +272,265 @@ func TestReminderService_GetReminderHistory(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, reminders, 2)
 }
+
+// TestReminderService_SendReminder tests SendReminder functionality
+func TestReminderService_SendReminder_InvoiceNotFound(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockReminderRepository()
+	svc := NewReminderServiceWithRepository(repo, nil)
+
+	// No invoices in the mock repo - invoice should not be found
+	req := &SendReminderRequest{InvoiceID: "non-existent"}
+	result, err := svc.SendReminder(ctx, "tenant-1", "test_schema", req, "Test Company")
+
+	require.NoError(t, err)
+	assert.False(t, result.Success)
+	assert.Equal(t, "Invoice not found or not overdue", result.Message)
+}
+
+func TestReminderService_SendReminder_NoContactEmail(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockReminderRepository()
+	svc := NewReminderServiceWithRepository(repo, nil)
+
+	// Add an invoice with no email
+	repo.AddMockOverdueInvoice("inv-1", "INV-001", "c1", "Customer 1", "", "EUR",
+		decimal.NewFromInt(1000), decimal.Zero, 30)
+
+	req := &SendReminderRequest{InvoiceID: "inv-1"}
+	result, err := svc.SendReminder(ctx, "tenant-1", "test_schema", req, "Test Company")
+
+	require.NoError(t, err)
+	assert.False(t, result.Success)
+	assert.Contains(t, result.Message, "does not have an email address")
+}
+
+func TestReminderService_SendReminder_GetOverdueInvoicesError(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockReminderRepository()
+	repo.GetOverdueErr = assert.AnError
+	svc := NewReminderServiceWithRepository(repo, nil)
+
+	req := &SendReminderRequest{InvoiceID: "inv-1"}
+	_, err := svc.SendReminder(ctx, "tenant-1", "test_schema", req, "Test Company")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get overdue invoices")
+}
+
+// TestReminderService_SendBulkReminders tests bulk reminder sending
+func TestReminderService_SendBulkReminders_AllNotFound(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockReminderRepository()
+	svc := NewReminderServiceWithRepository(repo, nil)
+
+	req := &SendBulkRemindersRequest{
+		InvoiceIDs: []string{"inv-1", "inv-2", "inv-3"},
+		Message:    "Please pay",
+	}
+
+	result, err := svc.SendBulkReminders(ctx, "tenant-1", "test_schema", req, "Test Company")
+	require.NoError(t, err)
+
+	assert.Equal(t, 3, result.TotalRequested)
+	assert.Equal(t, 0, result.Successful)
+	assert.Equal(t, 3, result.Failed)
+	assert.Len(t, result.Results, 3)
+}
+
+func TestReminderService_SendBulkReminders_MixedResults(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockReminderRepository()
+	svc := NewReminderServiceWithRepository(repo, nil)
+
+	// Add some overdue invoices - one with email, one without
+	repo.AddMockOverdueInvoice("inv-1", "INV-001", "c1", "Customer 1", "", "EUR",
+		decimal.NewFromInt(1000), decimal.Zero, 30) // No email - will fail
+	repo.AddMockOverdueInvoice("inv-2", "INV-002", "c2", "Customer 2", "", "EUR",
+		decimal.NewFromInt(500), decimal.Zero, 15) // No email - will fail
+
+	req := &SendBulkRemindersRequest{
+		InvoiceIDs: []string{"inv-1", "inv-2", "inv-3"},
+		Message:    "Please pay",
+	}
+
+	result, err := svc.SendBulkReminders(ctx, "tenant-1", "test_schema", req, "Test Company")
+	require.NoError(t, err)
+
+	assert.Equal(t, 3, result.TotalRequested)
+	// inv-1 and inv-2 fail because no email, inv-3 fails because not found
+	assert.Equal(t, 0, result.Successful)
+	assert.Equal(t, 3, result.Failed)
+}
+
+func TestReminderService_SendBulkReminders_Empty(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockReminderRepository()
+	svc := NewReminderServiceWithRepository(repo, nil)
+
+	req := &SendBulkRemindersRequest{
+		InvoiceIDs: []string{},
+	}
+
+	result, err := svc.SendBulkReminders(ctx, "tenant-1", "test_schema", req, "Test Company")
+	require.NoError(t, err)
+
+	assert.Equal(t, 0, result.TotalRequested)
+	assert.Equal(t, 0, result.Successful)
+	assert.Equal(t, 0, result.Failed)
+}
+
+// TestReminderService_GetOverdueInvoicesSummary_GetReminderCountError tests error path
+func TestReminderService_GetOverdueInvoicesSummary_GetReminderCountError(t *testing.T) {
+	ctx := context.Background()
+
+	// Create a mock that errors on GetReminderCount
+	repo := &MockReminderRepositoryWithReminderCountError{
+		MockReminderRepository: NewMockReminderRepository(),
+	}
+	repo.AddMockOverdueInvoice("inv-1", "INV-001", "c1", "Customer 1", "c1@test.com", "EUR",
+		decimal.NewFromInt(1000), decimal.Zero, 30)
+
+	svc := NewReminderServiceWithRepository(repo, nil)
+
+	_, err := svc.GetOverdueInvoicesSummary(ctx, "test_schema", "tenant-1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get reminder count")
+}
+
+// MockReminderRepositoryWithReminderCountError is a wrapper for testing error paths
+type MockReminderRepositoryWithReminderCountError struct {
+	*MockReminderRepository
+}
+
+func (m *MockReminderRepositoryWithReminderCountError) GetReminderCount(ctx context.Context, schemaName, tenantID, invoiceID string) (int, *time.Time, error) {
+	return 0, nil, assert.AnError
+}
+
+// Test SendReminderRequest validation
+func TestSendReminderRequest_Defaults(t *testing.T) {
+	req := &SendReminderRequest{
+		InvoiceID: "inv-1",
+		Message:   "Custom message",
+	}
+
+	assert.Equal(t, "inv-1", req.InvoiceID)
+	assert.Equal(t, "Custom message", req.Message)
+}
+
+// Test SendBulkRemindersRequest validation
+func TestSendBulkRemindersRequest_Defaults(t *testing.T) {
+	req := &SendBulkRemindersRequest{
+		InvoiceIDs: []string{"inv-1", "inv-2"},
+		Message:    "Bulk message",
+	}
+
+	assert.Len(t, req.InvoiceIDs, 2)
+	assert.Equal(t, "Bulk message", req.Message)
+}
+
+// Test PaymentReminder struct initialization
+func TestPaymentReminder_Initialization(t *testing.T) {
+	now := time.Now()
+	reminder := &PaymentReminder{
+		ID:             "rem-1",
+		TenantID:       "tenant-1",
+		InvoiceID:      "inv-1",
+		InvoiceNumber:  "INV-001",
+		ContactID:      "contact-1",
+		ContactName:    "Test Customer",
+		ContactEmail:   "test@example.com",
+		ReminderNumber: 1,
+		Status:         ReminderStatusPending,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+
+	assert.Equal(t, "rem-1", reminder.ID)
+	assert.Equal(t, ReminderStatusPending, reminder.Status)
+	assert.Equal(t, 1, reminder.ReminderNumber)
+}
+
+// Test ReminderResult struct
+func TestReminderResult_Success(t *testing.T) {
+	result := ReminderResult{
+		InvoiceID:     "inv-1",
+		InvoiceNumber: "INV-001",
+		Success:       true,
+		Message:       "Sent successfully",
+		ReminderID:    "rem-1",
+	}
+
+	assert.True(t, result.Success)
+	assert.Equal(t, "rem-1", result.ReminderID)
+}
+
+func TestReminderResult_Failure(t *testing.T) {
+	result := ReminderResult{
+		InvoiceID: "inv-1",
+		Success:   false,
+		Message:   "Failed to send",
+	}
+
+	assert.False(t, result.Success)
+	assert.Empty(t, result.ReminderID)
+}
+
+// Test BulkReminderResult struct
+func TestBulkReminderResult_Aggregation(t *testing.T) {
+	result := BulkReminderResult{
+		TotalRequested: 5,
+		Successful:     3,
+		Failed:         2,
+		Results: []ReminderResult{
+			{InvoiceID: "inv-1", Success: true},
+			{InvoiceID: "inv-2", Success: true},
+			{InvoiceID: "inv-3", Success: true},
+			{InvoiceID: "inv-4", Success: false},
+			{InvoiceID: "inv-5", Success: false},
+		},
+	}
+
+	assert.Equal(t, 5, result.TotalRequested)
+	assert.Equal(t, 3, result.Successful)
+	assert.Equal(t, 2, result.Failed)
+	assert.Len(t, result.Results, 5)
+}
+
+// Test OverdueInvoice struct
+func TestOverdueInvoice_OutstandingCalculation(t *testing.T) {
+	inv := OverdueInvoice{
+		ID:                "inv-1",
+		InvoiceNumber:     "INV-001",
+		ContactID:         "c1",
+		ContactName:       "Customer 1",
+		ContactEmail:      "c1@test.com",
+		IssueDate:         "2024-01-01",
+		DueDate:           "2024-01-15",
+		Total:             decimal.NewFromInt(1000),
+		AmountPaid:        decimal.NewFromInt(300),
+		OutstandingAmount: decimal.NewFromInt(700),
+		Currency:          "EUR",
+		DaysOverdue:       15,
+	}
+
+	assert.True(t, inv.OutstandingAmount.Equal(inv.Total.Sub(inv.AmountPaid)))
+	assert.Equal(t, 15, inv.DaysOverdue)
+}
+
+// Test OverdueInvoicesSummary struct
+func TestOverdueInvoicesSummary_Statistics(t *testing.T) {
+	summary := OverdueInvoicesSummary{
+		TotalOverdue:       decimal.NewFromInt(5000),
+		InvoiceCount:       10,
+		ContactCount:       5,
+		AverageDaysOverdue: 20,
+		Invoices:           make([]OverdueInvoice, 10),
+		GeneratedAt:        time.Now(),
+	}
+
+	assert.Equal(t, 10, summary.InvoiceCount)
+	assert.Equal(t, 5, summary.ContactCount)
+	assert.Equal(t, 20, summary.AverageDaysOverdue)
+	assert.True(t, summary.TotalOverdue.Equal(decimal.NewFromInt(5000)))
+}
