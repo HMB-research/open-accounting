@@ -19,6 +19,23 @@ type MockRepository struct {
 	Assets              map[string]*FixedAsset
 	DepreciationEntries map[string][]DepreciationEntry
 	AssetNumberSeq      int
+
+	// Error injection flags
+	CreateCategoryErr            error
+	GetCategoryErr               error
+	ListCategoriesErr            error
+	UpdateCategoryErr            error
+	DeleteCategoryErr            error
+	CreateErr                    error
+	GetByIDErr                   error
+	ListErr                      error
+	UpdateErr                    error
+	UpdateStatusErr              error
+	DeleteErr                    error
+	GenerateNumberErr            error
+	CreateDepreciationEntryErr   error
+	ListDepreciationEntriesErr   error
+	UpdateAssetDepreciationErr   error
 }
 
 // NewMockRepository creates a new mock repository
@@ -33,6 +50,9 @@ func NewMockRepository() *MockRepository {
 
 // CreateCategory implements Repository
 func (r *MockRepository) CreateCategory(ctx context.Context, schemaName string, cat *AssetCategory) error {
+	if r.CreateCategoryErr != nil {
+		return r.CreateCategoryErr
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.Categories[cat.ID] = cat
@@ -41,6 +61,9 @@ func (r *MockRepository) CreateCategory(ctx context.Context, schemaName string, 
 
 // GetCategoryByID implements Repository
 func (r *MockRepository) GetCategoryByID(ctx context.Context, schemaName, tenantID, categoryID string) (*AssetCategory, error) {
+	if r.GetCategoryErr != nil {
+		return nil, r.GetCategoryErr
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	cat, exists := r.Categories[categoryID]
@@ -55,6 +78,9 @@ func (r *MockRepository) GetCategoryByID(ctx context.Context, schemaName, tenant
 
 // ListCategories implements Repository
 func (r *MockRepository) ListCategories(ctx context.Context, schemaName, tenantID string) ([]AssetCategory, error) {
+	if r.ListCategoriesErr != nil {
+		return nil, r.ListCategoriesErr
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var result []AssetCategory
@@ -68,6 +94,9 @@ func (r *MockRepository) ListCategories(ctx context.Context, schemaName, tenantI
 
 // UpdateCategory implements Repository
 func (r *MockRepository) UpdateCategory(ctx context.Context, schemaName string, cat *AssetCategory) error {
+	if r.UpdateCategoryErr != nil {
+		return r.UpdateCategoryErr
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, exists := r.Categories[cat.ID]; !exists {
@@ -79,6 +108,9 @@ func (r *MockRepository) UpdateCategory(ctx context.Context, schemaName string, 
 
 // DeleteCategory implements Repository
 func (r *MockRepository) DeleteCategory(ctx context.Context, schemaName, tenantID, categoryID string) error {
+	if r.DeleteCategoryErr != nil {
+		return r.DeleteCategoryErr
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	cat, exists := r.Categories[categoryID]
@@ -91,6 +123,9 @@ func (r *MockRepository) DeleteCategory(ctx context.Context, schemaName, tenantI
 
 // Create implements Repository
 func (r *MockRepository) Create(ctx context.Context, schemaName string, asset *FixedAsset) error {
+	if r.CreateErr != nil {
+		return r.CreateErr
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.Assets[asset.ID] = asset
@@ -99,6 +134,9 @@ func (r *MockRepository) Create(ctx context.Context, schemaName string, asset *F
 
 // GetByID implements Repository
 func (r *MockRepository) GetByID(ctx context.Context, schemaName, tenantID, assetID string) (*FixedAsset, error) {
+	if r.GetByIDErr != nil {
+		return nil, r.GetByIDErr
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	asset, exists := r.Assets[assetID]
@@ -115,6 +153,9 @@ func (r *MockRepository) GetByID(ctx context.Context, schemaName, tenantID, asse
 
 // List implements Repository
 func (r *MockRepository) List(ctx context.Context, schemaName, tenantID string, filter *AssetFilter) ([]FixedAsset, error) {
+	if r.ListErr != nil {
+		return nil, r.ListErr
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var result []FixedAsset
@@ -137,6 +178,9 @@ func (r *MockRepository) List(ctx context.Context, schemaName, tenantID string, 
 
 // Update implements Repository
 func (r *MockRepository) Update(ctx context.Context, schemaName string, asset *FixedAsset) error {
+	if r.UpdateErr != nil {
+		return r.UpdateErr
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	existing, exists := r.Assets[asset.ID]
@@ -152,6 +196,9 @@ func (r *MockRepository) Update(ctx context.Context, schemaName string, asset *F
 
 // UpdateStatus implements Repository
 func (r *MockRepository) UpdateStatus(ctx context.Context, schemaName, tenantID, assetID string, status AssetStatus) error {
+	if r.UpdateStatusErr != nil {
+		return r.UpdateStatusErr
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	asset, exists := r.Assets[assetID]
@@ -164,6 +211,9 @@ func (r *MockRepository) UpdateStatus(ctx context.Context, schemaName, tenantID,
 
 // Delete implements Repository
 func (r *MockRepository) Delete(ctx context.Context, schemaName, tenantID, assetID string) error {
+	if r.DeleteErr != nil {
+		return r.DeleteErr
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	asset, exists := r.Assets[assetID]
@@ -176,6 +226,9 @@ func (r *MockRepository) Delete(ctx context.Context, schemaName, tenantID, asset
 
 // GenerateNumber implements Repository
 func (r *MockRepository) GenerateNumber(ctx context.Context, schemaName, tenantID string) (string, error) {
+	if r.GenerateNumberErr != nil {
+		return "", r.GenerateNumberErr
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.AssetNumberSeq++
@@ -184,6 +237,9 @@ func (r *MockRepository) GenerateNumber(ctx context.Context, schemaName, tenantI
 
 // CreateDepreciationEntry implements Repository
 func (r *MockRepository) CreateDepreciationEntry(ctx context.Context, schemaName string, entry *DepreciationEntry) error {
+	if r.CreateDepreciationEntryErr != nil {
+		return r.CreateDepreciationEntryErr
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.DepreciationEntries[entry.AssetID] = append(r.DepreciationEntries[entry.AssetID], *entry)
@@ -192,6 +248,9 @@ func (r *MockRepository) CreateDepreciationEntry(ctx context.Context, schemaName
 
 // ListDepreciationEntries implements Repository
 func (r *MockRepository) ListDepreciationEntries(ctx context.Context, schemaName, tenantID, assetID string) ([]DepreciationEntry, error) {
+	if r.ListDepreciationEntriesErr != nil {
+		return nil, r.ListDepreciationEntriesErr
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	entries := r.DepreciationEntries[assetID]
@@ -206,6 +265,9 @@ func (r *MockRepository) ListDepreciationEntries(ctx context.Context, schemaName
 
 // UpdateAssetDepreciation implements Repository
 func (r *MockRepository) UpdateAssetDepreciation(ctx context.Context, schemaName string, asset *FixedAsset) error {
+	if r.UpdateAssetDepreciationErr != nil {
+		return r.UpdateAssetDepreciationErr
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	existing, exists := r.Assets[asset.ID]
@@ -993,4 +1055,252 @@ func TestNewServiceWithRepository(t *testing.T) {
 	svc := NewServiceWithRepository(repo)
 	assert.NotNil(t, svc)
 	assert.Equal(t, repo, svc.repo)
+}
+
+// ============================================================================
+// ERROR PATH TESTS
+// ============================================================================
+
+func TestService_CreateCategory_RepositoryError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.CreateCategoryErr = fmt.Errorf("database error")
+	ctx := context.Background()
+
+	req := &CreateCategoryRequest{
+		Name: "Furniture",
+	}
+
+	_, err := ts.svc.CreateCategory(ctx, "tenant-1", "test_schema", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create category")
+}
+
+func TestService_ListCategories_RepositoryError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.ListCategoriesErr = fmt.Errorf("database error")
+	ctx := context.Background()
+
+	_, err := ts.svc.ListCategories(ctx, "tenant-1", "test_schema")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "list categories")
+}
+
+func TestService_DeleteCategory_RepositoryError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.DeleteCategoryErr = fmt.Errorf("database error")
+	ctx := context.Background()
+
+	ts.repo.Categories["cat-1"] = &AssetCategory{ID: "cat-1", TenantID: "tenant-1", Name: "Furniture"}
+
+	err := ts.svc.DeleteCategory(ctx, "tenant-1", "test_schema", "cat-1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "delete category")
+}
+
+func TestService_CreateAsset_GenerateNumberError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.GenerateNumberErr = fmt.Errorf("database error")
+	ctx := context.Background()
+
+	req := &CreateAssetRequest{
+		Name:         "Office Desk",
+		PurchaseDate: time.Now(),
+		PurchaseCost: decimal.NewFromInt(500),
+	}
+
+	_, err := ts.svc.Create(ctx, "tenant-1", "test_schema", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "generate asset number")
+}
+
+func TestService_CreateAsset_RepositoryError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.CreateErr = fmt.Errorf("database error")
+	ctx := context.Background()
+
+	req := &CreateAssetRequest{
+		Name:         "Office Desk",
+		PurchaseDate: time.Now(),
+		PurchaseCost: decimal.NewFromInt(500),
+	}
+
+	_, err := ts.svc.Create(ctx, "tenant-1", "test_schema", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create asset")
+}
+
+func TestService_List_RepositoryError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.ListErr = fmt.Errorf("database error")
+	ctx := context.Background()
+
+	_, err := ts.svc.List(ctx, "tenant-1", "test_schema", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "list assets")
+}
+
+func TestService_Update_GetByIDError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.GetByIDErr = fmt.Errorf("database error")
+	ctx := context.Background()
+
+	req := &UpdateAssetRequest{Name: "New Name"}
+	_, err := ts.svc.Update(ctx, "tenant-1", "test_schema", "a1", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get asset")
+}
+
+func TestService_Update_RepositoryError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.UpdateErr = fmt.Errorf("database error")
+	ctx := context.Background()
+
+	ts.repo.Assets["a1"] = &FixedAsset{
+		ID:                 "a1",
+		TenantID:           "tenant-1",
+		Name:               "Old Name",
+		Status:             AssetStatusDraft,
+		PurchaseDate:       time.Now(),
+		PurchaseCost:       decimal.NewFromInt(500),
+		UsefulLifeMonths:   60,
+		DepreciationMethod: DepreciationStraightLine,
+	}
+
+	// Request must provide all required fields to pass validation
+	req := &UpdateAssetRequest{
+		Name:               "New Name",
+		UsefulLifeMonths:   60,
+		DepreciationMethod: DepreciationStraightLine,
+	}
+	_, err := ts.svc.Update(ctx, "tenant-1", "test_schema", "a1", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "update asset")
+}
+
+func TestService_Activate_GetByIDError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.GetByIDErr = fmt.Errorf("database error")
+	ctx := context.Background()
+
+	err := ts.svc.Activate(ctx, "tenant-1", "test_schema", "a1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get asset")
+}
+
+func TestService_Activate_UpdateStatusError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.UpdateStatusErr = fmt.Errorf("database error")
+	ctx := context.Background()
+
+	ts.repo.Assets["a1"] = &FixedAsset{
+		ID:       "a1",
+		TenantID: "tenant-1",
+		Name:     "Desk",
+		Status:   AssetStatusDraft,
+	}
+
+	err := ts.svc.Activate(ctx, "tenant-1", "test_schema", "a1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "activate asset")
+}
+
+func TestService_Dispose_GetByIDError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.GetByIDErr = fmt.Errorf("database error")
+	ctx := context.Background()
+
+	req := &DisposeAssetRequest{
+		DisposalDate:   time.Now(),
+		DisposalMethod: DisposalSold,
+	}
+
+	err := ts.svc.Dispose(ctx, "tenant-1", "test_schema", "a1", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get asset")
+}
+
+func TestService_Delete_RepositoryError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.DeleteErr = fmt.Errorf("database error")
+	ctx := context.Background()
+
+	ts.repo.Assets["a1"] = &FixedAsset{
+		ID:       "a1",
+		TenantID: "tenant-1",
+		Name:     "Desk",
+		Status:   AssetStatusDraft,
+	}
+
+	err := ts.svc.Delete(ctx, "tenant-1", "test_schema", "a1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "delete asset")
+}
+
+func TestService_RecordDepreciation_GetByIDError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.GetByIDErr = fmt.Errorf("database error")
+	ctx := context.Background()
+
+	now := time.Now()
+	_, err := ts.svc.RecordDepreciation(ctx, "tenant-1", "test_schema", "a1", "user-1", now, now)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get asset")
+}
+
+func TestService_RecordDepreciation_CreateEntryError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.CreateDepreciationEntryErr = fmt.Errorf("database error")
+	ctx := context.Background()
+
+	ts.repo.Assets["a1"] = &FixedAsset{
+		ID:                      "a1",
+		TenantID:                "tenant-1",
+		Name:                    "Equipment",
+		Status:                  AssetStatusActive,
+		PurchaseCost:            decimal.NewFromInt(12000),
+		ResidualValue:           decimal.NewFromInt(0),
+		UsefulLifeMonths:        12,
+		DepreciationMethod:      DepreciationStraightLine,
+		AccumulatedDepreciation: decimal.Zero,
+		BookValue:               decimal.NewFromInt(12000),
+	}
+
+	now := time.Now()
+	_, err := ts.svc.RecordDepreciation(ctx, "tenant-1", "test_schema", "a1", "user-1", now.AddDate(0, -1, 0), now)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create depreciation entry")
+}
+
+func TestService_RecordDepreciation_UpdateAssetDepreciationError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.UpdateAssetDepreciationErr = fmt.Errorf("database error")
+	ctx := context.Background()
+
+	ts.repo.Assets["a1"] = &FixedAsset{
+		ID:                      "a1",
+		TenantID:                "tenant-1",
+		Name:                    "Equipment",
+		Status:                  AssetStatusActive,
+		PurchaseCost:            decimal.NewFromInt(12000),
+		ResidualValue:           decimal.NewFromInt(0),
+		UsefulLifeMonths:        12,
+		DepreciationMethod:      DepreciationStraightLine,
+		AccumulatedDepreciation: decimal.Zero,
+		BookValue:               decimal.NewFromInt(12000),
+	}
+
+	now := time.Now()
+	_, err := ts.svc.RecordDepreciation(ctx, "tenant-1", "test_schema", "a1", "user-1", now.AddDate(0, -1, 0), now)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "update asset depreciation")
+}
+
+func TestService_GetDepreciationHistory_RepositoryError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.ListDepreciationEntriesErr = fmt.Errorf("database error")
+	ctx := context.Background()
+
+	_, err := ts.svc.GetDepreciationHistory(ctx, "tenant-1", "test_schema", "a1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "list depreciation entries")
 }
