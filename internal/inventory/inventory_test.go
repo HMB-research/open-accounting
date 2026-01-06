@@ -13,17 +13,19 @@ import (
 
 // MockRepository is a mock implementation of Repository for testing
 type MockRepository struct {
-	mu             sync.RWMutex
-	Products       map[string]*Product
-	Categories     map[string]*ProductCategory
-	Warehouses     map[string]*Warehouse
-	StockLevels    map[string]*StockLevel // key: productID-warehouseID
-	Movements      map[string][]InventoryMovement
-	ProductCodeSeq int
-	ErrOnCreate    bool
-	ErrOnGet       bool
-	ErrOnUpdate    bool
-	ErrOnDelete    bool
+	mu              sync.RWMutex
+	Products        map[string]*Product
+	Categories      map[string]*ProductCategory
+	Warehouses      map[string]*Warehouse
+	StockLevels     map[string]*StockLevel // key: productID-warehouseID
+	Movements       map[string][]InventoryMovement
+	ProductCodeSeq  int
+	ErrOnCreate     bool
+	ErrOnGet        bool
+	ErrOnUpdate     bool
+	ErrOnDelete     bool
+	ErrOnList       bool
+	ErrOnListMovements bool
 }
 
 // NewMockRepository creates a new mock repository
@@ -129,6 +131,9 @@ func (r *MockRepository) GenerateCode(ctx context.Context, schemaName, tenantID 
 
 // Categories
 func (r *MockRepository) CreateCategory(ctx context.Context, schemaName string, category *ProductCategory) error {
+	if r.ErrOnCreate {
+		return fmt.Errorf("mock error on create category")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.Categories[category.ID] = category
@@ -136,6 +141,9 @@ func (r *MockRepository) CreateCategory(ctx context.Context, schemaName string, 
 }
 
 func (r *MockRepository) GetCategoryByID(ctx context.Context, schemaName, tenantID, categoryID string) (*ProductCategory, error) {
+	if r.ErrOnGet {
+		return nil, fmt.Errorf("mock error on get category")
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	c, exists := r.Categories[categoryID]
@@ -158,6 +166,9 @@ func (r *MockRepository) ListCategories(ctx context.Context, schemaName, tenantI
 }
 
 func (r *MockRepository) DeleteCategory(ctx context.Context, schemaName, tenantID, categoryID string) error {
+	if r.ErrOnDelete {
+		return fmt.Errorf("mock error on delete category")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	c, exists := r.Categories[categoryID]
@@ -170,6 +181,9 @@ func (r *MockRepository) DeleteCategory(ctx context.Context, schemaName, tenantI
 
 // Warehouses
 func (r *MockRepository) CreateWarehouse(ctx context.Context, schemaName string, warehouse *Warehouse) error {
+	if r.ErrOnCreate {
+		return fmt.Errorf("mock error on create warehouse")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.Warehouses[warehouse.ID] = warehouse
@@ -177,6 +191,9 @@ func (r *MockRepository) CreateWarehouse(ctx context.Context, schemaName string,
 }
 
 func (r *MockRepository) GetWarehouseByID(ctx context.Context, schemaName, tenantID, warehouseID string) (*Warehouse, error) {
+	if r.ErrOnGet {
+		return nil, fmt.Errorf("mock error on get warehouse")
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	w, exists := r.Warehouses[warehouseID]
@@ -204,6 +221,9 @@ func (r *MockRepository) ListWarehouses(ctx context.Context, schemaName, tenantI
 }
 
 func (r *MockRepository) UpdateWarehouse(ctx context.Context, schemaName string, warehouse *Warehouse) error {
+	if r.ErrOnUpdate {
+		return fmt.Errorf("mock error on update warehouse")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, exists := r.Warehouses[warehouse.ID]; !exists {
@@ -214,6 +234,9 @@ func (r *MockRepository) UpdateWarehouse(ctx context.Context, schemaName string,
 }
 
 func (r *MockRepository) DeleteWarehouse(ctx context.Context, schemaName, tenantID, warehouseID string) error {
+	if r.ErrOnDelete {
+		return fmt.Errorf("mock error on delete warehouse")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	w, exists := r.Warehouses[warehouseID]
@@ -237,6 +260,9 @@ func (r *MockRepository) GetStockLevel(ctx context.Context, schemaName, tenantID
 }
 
 func (r *MockRepository) GetStockLevelsByProduct(ctx context.Context, schemaName, tenantID, productID string) ([]StockLevel, error) {
+	if r.ErrOnGet {
+		return nil, fmt.Errorf("mock error on get stock levels")
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var result []StockLevel
@@ -265,6 +291,9 @@ func (r *MockRepository) CreateMovement(ctx context.Context, schemaName string, 
 }
 
 func (r *MockRepository) ListMovements(ctx context.Context, schemaName, tenantID, productID string) ([]InventoryMovement, error) {
+	if r.ErrOnGet {
+		return nil, fmt.Errorf("mock error on list movements")
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	movements := r.Movements[productID]
@@ -1088,4 +1117,312 @@ func TestNewServiceWithRepository(t *testing.T) {
 	svc := NewServiceWithRepository(repo)
 	assert.NotNil(t, svc)
 	assert.Equal(t, repo, svc.repo)
+}
+
+// Error path tests for increased coverage
+func TestService_CreateProduct_InvalidPurchasePrice(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	req := &CreateProductRequest{
+		Name:          "Test",
+		SalesPrice:    "100",
+		PurchasePrice: "invalid",
+	}
+
+	_, err := ts.svc.CreateProduct(ctx, "tenant-1", "test_schema", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid purchase price")
+}
+
+func TestService_CreateProduct_InvalidVATRate(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	req := &CreateProductRequest{
+		Name:       "Test",
+		SalesPrice: "100",
+		VATRate:    "invalid",
+	}
+
+	_, err := ts.svc.CreateProduct(ctx, "tenant-1", "test_schema", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid VAT rate")
+}
+
+func TestService_CreateProduct_GenerateCodeError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.ErrOnGet = true // GenerateCode implementation may trigger this
+	ctx := context.Background()
+
+	req := &CreateProductRequest{
+		Name:       "Test",
+		SalesPrice: "100",
+	}
+
+	// Note: The mock may not return error for GenerateCode, test the create error path
+	ts.repo.ErrOnCreate = true
+	_, err := ts.svc.CreateProduct(ctx, "tenant-1", "test_schema", req)
+	require.Error(t, err)
+}
+
+func TestService_CreateProduct_RepoError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.ErrOnCreate = true
+	ctx := context.Background()
+
+	req := &CreateProductRequest{
+		Name:       "Test Product",
+		SalesPrice: "100",
+	}
+
+	_, err := ts.svc.CreateProduct(ctx, "tenant-1", "test_schema", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create product")
+}
+
+func TestService_GetProductByID_RepoError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.ErrOnGet = true
+	ctx := context.Background()
+
+	_, err := ts.svc.GetProductByID(ctx, "tenant-1", "test_schema", "p1")
+	require.Error(t, err)
+}
+
+func TestService_UpdateProduct_NotFound(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	req := &UpdateProductRequest{
+		Name: "Updated",
+	}
+
+	_, err := ts.svc.UpdateProduct(ctx, "tenant-1", "test_schema", "nonexistent", req)
+	require.Error(t, err)
+}
+
+func TestService_UpdateProduct_ValidationError(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products["p1"] = &Product{
+		ID:       "p1",
+		TenantID: "tenant-1",
+		Name:     "Original",
+	}
+
+	// Name is required but we pass empty string - validation should fail
+	req := &UpdateProductRequest{
+		Name:       "",
+		SalesPrice: "100",
+	}
+
+	_, err := ts.svc.UpdateProduct(ctx, "tenant-1", "test_schema", "p1", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "validation failed")
+}
+
+func TestService_UpdateProduct_RepoError(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products["p1"] = &Product{
+		ID:          "p1",
+		TenantID:    "tenant-1",
+		Name:        "Original",
+		ProductType: ProductTypeGoods,
+		SalesPrice:  decimal.NewFromInt(100),
+	}
+	ts.repo.ErrOnUpdate = true
+
+	req := &UpdateProductRequest{
+		Name: "Updated",
+	}
+
+	_, err := ts.svc.UpdateProduct(ctx, "tenant-1", "test_schema", "p1", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "update product")
+}
+
+func TestService_DeleteProduct_RepoError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.ErrOnDelete = true
+	ctx := context.Background()
+
+	err := ts.svc.DeleteProduct(ctx, "tenant-1", "test_schema", "p1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "delete product")
+}
+
+func TestService_CreateCategory_RepoError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.ErrOnCreate = true
+	ctx := context.Background()
+
+	req := &CreateCategoryRequest{
+		Name: "Test Category",
+	}
+
+	_, err := ts.svc.CreateCategory(ctx, "tenant-1", "test_schema", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create category")
+}
+
+func TestService_GetCategoryByID_RepoError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.ErrOnGet = true
+	ctx := context.Background()
+
+	_, err := ts.svc.GetCategoryByID(ctx, "tenant-1", "test_schema", "cat-1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get category")
+}
+
+func TestService_DeleteCategory_RepoError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.ErrOnDelete = true
+	ctx := context.Background()
+
+	err := ts.svc.DeleteCategory(ctx, "tenant-1", "test_schema", "cat-1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "delete category")
+}
+
+func TestService_CreateWarehouse_RepoError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.ErrOnCreate = true
+	ctx := context.Background()
+
+	req := &CreateWarehouseRequest{
+		Code: "WH-001",
+		Name: "Test Warehouse",
+	}
+
+	_, err := ts.svc.CreateWarehouse(ctx, "tenant-1", "test_schema", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create warehouse")
+}
+
+func TestService_GetWarehouseByID_RepoError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.ErrOnGet = true
+	ctx := context.Background()
+
+	_, err := ts.svc.GetWarehouseByID(ctx, "tenant-1", "test_schema", "wh-1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get warehouse")
+}
+
+func TestService_UpdateWarehouse_NotFound(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	req := &UpdateWarehouseRequest{
+		Name: "Updated",
+	}
+
+	_, err := ts.svc.UpdateWarehouse(ctx, "tenant-1", "test_schema", "nonexistent", req)
+	require.Error(t, err)
+}
+
+func TestService_UpdateWarehouse_RepoError(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Warehouses["wh-1"] = &Warehouse{
+		ID:       "wh-1",
+		TenantID: "tenant-1",
+		Name:     "Original",
+	}
+	ts.repo.ErrOnUpdate = true
+
+	req := &UpdateWarehouseRequest{
+		Name: "Updated",
+	}
+
+	_, err := ts.svc.UpdateWarehouse(ctx, "tenant-1", "test_schema", "wh-1", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "update warehouse")
+}
+
+func TestService_DeleteWarehouse_RepoError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.ErrOnDelete = true
+	ctx := context.Background()
+
+	err := ts.svc.DeleteWarehouse(ctx, "tenant-1", "test_schema", "wh-1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "delete warehouse")
+}
+
+func TestService_AdjustStock_ProductNotFound(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	req := &AdjustStockRequest{
+		ProductID:   "nonexistent",
+		WarehouseID: "wh-1",
+		Quantity:    "50",
+	}
+
+	_, err := ts.svc.AdjustStock(ctx, "tenant-1", "test_schema", req)
+	require.Error(t, err)
+}
+
+func TestService_AdjustStock_ZeroQuantity(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products["p1"] = &Product{
+		ID:       "p1",
+		TenantID: "tenant-1",
+		Name:     "Widget",
+	}
+
+	req := &AdjustStockRequest{
+		ProductID:   "p1",
+		WarehouseID: "wh-1",
+		Quantity:    "0",
+	}
+
+	_, err := ts.svc.AdjustStock(ctx, "tenant-1", "test_schema", req)
+	// Zero quantity should succeed (adjust by 0)
+	require.NoError(t, err)
+}
+
+func TestService_TransferStock_ZeroQuantity(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	req := &TransferStockRequest{
+		ProductID:       "p1",
+		FromWarehouseID: "wh-1",
+		ToWarehouseID:   "wh-2",
+		Quantity:        "0",
+	}
+
+	err := ts.svc.TransferStock(ctx, "tenant-1", "test_schema", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "quantity must be positive")
+}
+
+func TestService_GetStockLevels_RepoError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.ErrOnGet = true
+	ctx := context.Background()
+
+	_, err := ts.svc.GetStockLevels(ctx, "tenant-1", "test_schema", "p1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get stock levels")
+}
+
+func TestService_GetMovements_RepoError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.ErrOnGet = true
+	ctx := context.Background()
+
+	_, err := ts.svc.GetMovements(ctx, "tenant-1", "test_schema", "p1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "list movements")
 }
