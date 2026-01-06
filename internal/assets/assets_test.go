@@ -14,20 +14,20 @@ import (
 
 // MockRepository is a mock implementation of Repository for testing
 type MockRepository struct {
-	mu                 sync.RWMutex
-	Categories         map[string]*AssetCategory
-	Assets             map[string]*FixedAsset
+	mu                  sync.RWMutex
+	Categories          map[string]*AssetCategory
+	Assets              map[string]*FixedAsset
 	DepreciationEntries map[string][]DepreciationEntry
-	AssetNumberSeq     int
+	AssetNumberSeq      int
 }
 
 // NewMockRepository creates a new mock repository
 func NewMockRepository() *MockRepository {
 	return &MockRepository{
-		Categories:         make(map[string]*AssetCategory),
-		Assets:             make(map[string]*FixedAsset),
+		Categories:          make(map[string]*AssetCategory),
+		Assets:              make(map[string]*FixedAsset),
 		DepreciationEntries: make(map[string][]DepreciationEntry),
-		AssetNumberSeq:     0,
+		AssetNumberSeq:      0,
 	}
 }
 
@@ -245,10 +245,10 @@ func TestMockRepository_CreateCategory(t *testing.T) {
 	ctx := context.Background()
 
 	cat := &AssetCategory{
-		ID:                     "cat-1",
-		TenantID:               "tenant-1",
-		Name:                   "Furniture",
-		DepreciationMethod:     DepreciationStraightLine,
+		ID:                      "cat-1",
+		TenantID:                "tenant-1",
+		Name:                    "Furniture",
+		DepreciationMethod:      DepreciationStraightLine,
 		DefaultUsefulLifeMonths: 60,
 	}
 

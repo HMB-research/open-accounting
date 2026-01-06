@@ -164,7 +164,7 @@ func TestMockCostCenterRepository_GetExpensesByPeriod(t *testing.T) {
 		{TenantID: "tenant-1", CostCenterID: "cc-123", Amount: decimal.NewFromInt(100), AllocationDate: now.AddDate(0, 0, -5)},
 		{TenantID: "tenant-1", CostCenterID: "cc-123", Amount: decimal.NewFromInt(200), AllocationDate: now.AddDate(0, 0, -3)},
 		{TenantID: "tenant-1", CostCenterID: "cc-123", Amount: decimal.NewFromInt(50), AllocationDate: now.AddDate(0, 0, -30)}, // Outside period
-		{TenantID: "tenant-2", CostCenterID: "cc-123", Amount: decimal.NewFromInt(1000), AllocationDate: now}, // Wrong tenant
+		{TenantID: "tenant-2", CostCenterID: "cc-123", Amount: decimal.NewFromInt(1000), AllocationDate: now},                  // Wrong tenant
 	}
 
 	// Get expenses for last week

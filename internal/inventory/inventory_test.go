@@ -13,17 +13,17 @@ import (
 
 // MockRepository is a mock implementation of Repository for testing
 type MockRepository struct {
-	mu              sync.RWMutex
-	Products        map[string]*Product
-	Categories      map[string]*ProductCategory
-	Warehouses      map[string]*Warehouse
-	StockLevels     map[string]*StockLevel // key: productID-warehouseID
-	Movements       map[string][]InventoryMovement
-	ProductCodeSeq  int
-	ErrOnCreate     bool
-	ErrOnGet        bool
-	ErrOnUpdate     bool
-	ErrOnDelete     bool
+	mu             sync.RWMutex
+	Products       map[string]*Product
+	Categories     map[string]*ProductCategory
+	Warehouses     map[string]*Warehouse
+	StockLevels    map[string]*StockLevel // key: productID-warehouseID
+	Movements      map[string][]InventoryMovement
+	ProductCodeSeq int
+	ErrOnCreate    bool
+	ErrOnGet       bool
+	ErrOnUpdate    bool
+	ErrOnDelete    bool
 }
 
 // NewMockRepository creates a new mock repository
@@ -666,8 +666,8 @@ func TestService_CreateProduct_Defaults(t *testing.T) {
 
 	product, err := ts.svc.CreateProduct(ctx, "tenant-1", "test_schema", req)
 	require.NoError(t, err)
-	assert.Equal(t, ProductTypeGoods, product.ProductType) // Default
-	assert.Equal(t, "pcs", product.Unit)                   // Default
+	assert.Equal(t, ProductTypeGoods, product.ProductType)        // Default
+	assert.Equal(t, "pcs", product.Unit)                          // Default
 	assert.True(t, product.VATRate.Equal(decimal.NewFromInt(22))) // Default Estonian VAT
 }
 
