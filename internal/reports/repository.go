@@ -203,7 +203,7 @@ func (r *PostgresRepository) GetContactInvoices(ctx context.Context, schemaName,
 			i.total,
 			i.amount_paid,
 			i.currency,
-			GREATEST(0, EXTRACT(DAY FROM ($4::date - i.due_date))::int) as days_overdue
+			GREATEST(0, ($4::date - i.due_date)) as days_overdue
 		FROM %s.invoices i
 		WHERE i.tenant_id = $1
 			AND i.contact_id = $2

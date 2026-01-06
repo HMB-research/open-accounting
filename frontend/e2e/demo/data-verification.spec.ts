@@ -56,10 +56,10 @@ test.describe('Demo Data Verification - All Views Must Have Data', () => {
 		const rowCount = await tableRows.count();
 		expect(rowCount, 'Accounts page must have account rows (expected 33+)').toBeGreaterThanOrEqual(10);
 
-		// Verify key accounts exist
-		await expect(page.getByText(/Cash/i).first(), 'Must show Cash account').toBeVisible({ timeout: 5000 });
-		await expect(page.getByText(/Bank/i).first(), 'Must show Bank account').toBeVisible({ timeout: 5000 });
-		await expect(page.getByText(/Receivable/i).first(), 'Must show Receivable account').toBeVisible({ timeout: 5000 });
+		// Verify key accounts exist in the table (use table cell selector to avoid nav elements)
+		await expect(page.locator('table td').getByText(/Cash$/i).first(), 'Must show Cash account').toBeVisible({ timeout: 5000 });
+		await expect(page.locator('table td').getByText(/Bank/i).first(), 'Must show Bank account').toBeVisible({ timeout: 5000 });
+		await expect(page.locator('table td').getByText(/Receivable/i).first(), 'Must show Receivable account').toBeVisible({ timeout: 5000 });
 	});
 
 	test('Journal entries page shows entries (not empty)', async ({ page }, testInfo) => {

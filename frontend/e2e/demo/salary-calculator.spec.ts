@@ -156,8 +156,15 @@ test.describe('Demo Salary Calculator - Edge Cases', () => {
 
 		// Should show error, no results, or zero values
 		const hasError = await page.locator('.alert-error').isVisible().catch(() => false);
-		const hasNoResult = !(await page.locator('.result-breakdown').isVisible().catch(() => false));
-		const hasZeroNet = (await page.locator('.net-salary .result-value').textContent())?.includes('0.00') || false;
+		const resultBreakdown = page.locator('.result-breakdown');
+		const hasNoResult = !(await resultBreakdown.isVisible().catch(() => false));
+
+		// Only check for zero net if result breakdown is visible
+		let hasZeroNet = false;
+		if (!hasNoResult) {
+			const netText = await page.locator('.net-salary .result-value').textContent().catch(() => '');
+			hasZeroNet = netText?.includes('0.00') || false;
+		}
 
 		expect(hasError || hasNoResult || hasZeroNet).toBeTruthy();
 	});

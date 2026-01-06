@@ -78,6 +78,10 @@
 		const timeout = setTimeout(() => {
 			if (grossSalary && parseFloat(grossSalary) > 0) {
 				calculate();
+			} else {
+				// Clear results for zero or invalid salary
+				result = null;
+				error = '';
 			}
 		}, 300);
 
