@@ -84,3 +84,68 @@ const (
 	CFFinDividendsPd = "CF_FIN_DIVIDENDS_PD" // Dividendide maksmine
 	CFFinTotal       = "CF_FIN_TOTAL"        // Rahavood finantseerimistegevusest kokku
 )
+
+// BalanceConfirmationType represents the type of balance confirmation
+type BalanceConfirmationType string
+
+const (
+	BalanceTypeReceivable BalanceConfirmationType = "RECEIVABLE" // Customer balance
+	BalanceTypePayable    BalanceConfirmationType = "PAYABLE"    // Supplier balance
+)
+
+// BalanceConfirmation represents a balance confirmation statement for a contact
+type BalanceConfirmation struct {
+	ID           string                  `json:"id"`
+	TenantID     string                  `json:"tenant_id"`
+	ContactID    string                  `json:"contact_id"`
+	ContactName  string                  `json:"contact_name"`
+	ContactCode  string                  `json:"contact_code,omitempty"`
+	ContactEmail string                  `json:"contact_email,omitempty"`
+	Type         BalanceConfirmationType `json:"type"`
+	AsOfDate     string                  `json:"as_of_date"`
+	TotalBalance decimal.Decimal         `json:"total_balance"`
+	Invoices     []BalanceInvoice        `json:"invoices"`
+	GeneratedAt  time.Time               `json:"generated_at"`
+}
+
+// BalanceInvoice represents an invoice in a balance confirmation
+type BalanceInvoice struct {
+	InvoiceID       string          `json:"invoice_id"`
+	InvoiceNumber   string          `json:"invoice_number"`
+	InvoiceDate     string          `json:"invoice_date"`
+	DueDate         string          `json:"due_date"`
+	TotalAmount     decimal.Decimal `json:"total_amount"`
+	AmountPaid      decimal.Decimal `json:"amount_paid"`
+	OutstandingAmount decimal.Decimal `json:"outstanding_amount"`
+	Currency        string          `json:"currency"`
+	DaysOverdue     int             `json:"days_overdue"`
+}
+
+// BalanceConfirmationRequest represents a request to generate balance confirmations
+type BalanceConfirmationRequest struct {
+	ContactID string `json:"contact_id,omitempty"` // Optional: specific contact
+	Type      string `json:"type"`                 // "RECEIVABLE" or "PAYABLE"
+	AsOfDate  string `json:"as_of_date"`           // Date for balance calculation
+}
+
+// BalanceConfirmationSummary represents a summary of all balances for a type
+type BalanceConfirmationSummary struct {
+	Type           BalanceConfirmationType `json:"type"`
+	AsOfDate       string                  `json:"as_of_date"`
+	TotalBalance   decimal.Decimal         `json:"total_balance"`
+	ContactCount   int                     `json:"contact_count"`
+	InvoiceCount   int                     `json:"invoice_count"`
+	Contacts       []ContactBalance        `json:"contacts"`
+	GeneratedAt    time.Time               `json:"generated_at"`
+}
+
+// ContactBalance represents a contact's balance in the summary
+type ContactBalance struct {
+	ContactID     string          `json:"contact_id"`
+	ContactName   string          `json:"contact_name"`
+	ContactCode   string          `json:"contact_code,omitempty"`
+	ContactEmail  string          `json:"contact_email,omitempty"`
+	Balance       decimal.Decimal `json:"balance"`
+	InvoiceCount  int             `json:"invoice_count"`
+	OldestInvoice string          `json:"oldest_invoice,omitempty"`
+}

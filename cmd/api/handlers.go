@@ -959,6 +959,123 @@ func (h *Handlers) GetCashFlowStatement(w http.ResponseWriter, r *http.Request) 
 	respondJSON(w, http.StatusOK, result)
 }
 
+// GetBalanceConfirmationSummary returns a summary of all outstanding balances by contact
+// @Summary Get balance confirmation summary
+// @Description Get a summary of all receivables or payables grouped by contact
+// @Tags Reports
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param type query string true "Balance type (RECEIVABLE or PAYABLE)"
+// @Param as_of_date query string true "As of date (YYYY-MM-DD)"
+// @Success 200 {object} reports.BalanceConfirmationSummary
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/reports/balance-confirmations [get]
+func (h *Handlers) GetBalanceConfirmationSummary(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+
+	balanceType := r.URL.Query().Get("type")
+	asOfDate := r.URL.Query().Get("as_of_date")
+
+	if balanceType == "" {
+		respondError(w, http.StatusBadRequest, "type parameter is required (RECEIVABLE or PAYABLE)")
+		return
+	}
+
+	if balanceType != "RECEIVABLE" && balanceType != "PAYABLE" {
+		respondError(w, http.StatusBadRequest, "type must be RECEIVABLE or PAYABLE")
+		return
+	}
+
+	if asOfDate == "" {
+		respondError(w, http.StatusBadRequest, "as_of_date parameter is required")
+		return
+	}
+
+	// Validate date format
+	_, err := time.Parse("2006-01-02", asOfDate)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid as_of_date format. Use YYYY-MM-DD")
+		return
+	}
+
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+	req := &reports.BalanceConfirmationRequest{
+		Type:     balanceType,
+		AsOfDate: asOfDate,
+	}
+
+	result, err := h.reportsService.GetBalanceConfirmationSummary(r.Context(), tenantID, schemaName, req)
+	if err != nil {
+		log.Error().Err(err).Str("tenant", tenantID).Msg("Failed to get balance confirmation summary")
+		respondError(w, http.StatusInternalServerError, "Failed to get balance confirmation summary")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// GetBalanceConfirmation returns balance confirmation for a specific contact
+// @Summary Get balance confirmation for contact
+// @Description Get detailed balance confirmation with invoices for a specific contact
+// @Tags Reports
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param contactID path string true "Contact ID"
+// @Param type query string true "Balance type (RECEIVABLE or PAYABLE)"
+// @Param as_of_date query string true "As of date (YYYY-MM-DD)"
+// @Success 200 {object} reports.BalanceConfirmation
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/reports/balance-confirmations/{contactID} [get]
+func (h *Handlers) GetBalanceConfirmation(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	contactID := chi.URLParam(r, "contactID")
+
+	balanceType := r.URL.Query().Get("type")
+	asOfDate := r.URL.Query().Get("as_of_date")
+
+	if balanceType == "" {
+		respondError(w, http.StatusBadRequest, "type parameter is required (RECEIVABLE or PAYABLE)")
+		return
+	}
+
+	if balanceType != "RECEIVABLE" && balanceType != "PAYABLE" {
+		respondError(w, http.StatusBadRequest, "type must be RECEIVABLE or PAYABLE")
+		return
+	}
+
+	if asOfDate == "" {
+		respondError(w, http.StatusBadRequest, "as_of_date parameter is required")
+		return
+	}
+
+	// Validate date format
+	_, err := time.Parse("2006-01-02", asOfDate)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid as_of_date format. Use YYYY-MM-DD")
+		return
+	}
+
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+	req := &reports.BalanceConfirmationRequest{
+		ContactID: contactID,
+		Type:      balanceType,
+		AsOfDate:  asOfDate,
+	}
+
+	result, err := h.reportsService.GetBalanceConfirmation(r.Context(), tenantID, schemaName, req)
+	if err != nil {
+		log.Error().Err(err).Str("tenant", tenantID).Str("contact", contactID).Msg("Failed to get balance confirmation")
+		respondError(w, http.StatusInternalServerError, "Failed to get balance confirmation")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // Custom JSON marshaling for decimal values
 func init() {
 	// Register decimal type for proper JSON encoding

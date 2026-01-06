@@ -1015,6 +1015,30 @@ class ApiClient {
 		);
 	}
 
+	// Balance Confirmation endpoints
+	async getBalanceConfirmationSummary(
+		tenantId: string,
+		type: BalanceConfirmationType,
+		asOfDate: string
+	) {
+		return this.request<BalanceConfirmationSummary>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/reports/balance-confirmations?type=${type}&as_of_date=${asOfDate}`
+		);
+	}
+
+	async getBalanceConfirmation(
+		tenantId: string,
+		contactId: string,
+		type: BalanceConfirmationType,
+		asOfDate: string
+	) {
+		return this.request<BalanceConfirmation>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/reports/balance-confirmations/${contactId}?type=${type}&as_of_date=${asOfDate}`
+		);
+	}
+
 	// Payroll - Employee endpoints
 	async listEmployees(tenantId: string, activeOnly = false) {
 		const query = activeOnly ? '?active_only=true' : '';
@@ -2636,6 +2660,55 @@ export interface CashFlowStatement {
 	net_cash_change: string;
 	opening_cash: string;
 	closing_cash: string;
+	generated_at: string;
+}
+
+// Balance Confirmation types
+export type BalanceConfirmationType = 'RECEIVABLE' | 'PAYABLE';
+
+export interface BalanceInvoice {
+	invoice_id: string;
+	invoice_number: string;
+	invoice_date: string;
+	due_date: string;
+	total_amount: string;
+	amount_paid: string;
+	outstanding_amount: string;
+	currency: string;
+	days_overdue: number;
+}
+
+export interface ContactBalance {
+	contact_id: string;
+	contact_name: string;
+	contact_code?: string;
+	contact_email?: string;
+	balance: string;
+	invoice_count: number;
+	oldest_invoice?: string;
+}
+
+export interface BalanceConfirmationSummary {
+	type: BalanceConfirmationType;
+	as_of_date: string;
+	total_balance: string;
+	contact_count: number;
+	invoice_count: number;
+	contacts: ContactBalance[];
+	generated_at: string;
+}
+
+export interface BalanceConfirmation {
+	id: string;
+	tenant_id: string;
+	contact_id: string;
+	contact_name: string;
+	contact_code?: string;
+	contact_email?: string;
+	type: BalanceConfirmationType;
+	as_of_date: string;
+	total_balance: string;
+	invoices: BalanceInvoice[];
 	generated_at: string;
 }
 

@@ -292,3 +292,88 @@ func isDividendAccount(code string) bool {
 	// Estonian chart of accounts: 3xxx are equity, dividends declared would be here
 	return len(code) >= 4 && code[:1] == "3"
 }
+
+// GetBalanceConfirmationSummary generates a summary of all balances for receivables or payables
+func (s *Service) GetBalanceConfirmationSummary(ctx context.Context, tenantID, schemaName string, req *BalanceConfirmationRequest) (*BalanceConfirmationSummary, error) {
+	asOfDate, err := time.Parse("2006-01-02", req.AsOfDate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid as_of_date: %w", err)
+	}
+
+	invoiceType := "SALES"
+	balanceType := BalanceTypeReceivable
+	if req.Type == "PAYABLE" {
+		invoiceType = "PURCHASE"
+		balanceType = BalanceTypePayable
+	}
+
+	contacts, err := s.repo.GetOutstandingInvoicesByContact(ctx, schemaName, tenantID, invoiceType, asOfDate)
+	if err != nil {
+		return nil, fmt.Errorf("get contact balances: %w", err)
+	}
+
+	var totalBalance decimal.Decimal
+	var totalInvoices int
+	for _, c := range contacts {
+		totalBalance = totalBalance.Add(c.Balance)
+		totalInvoices += c.InvoiceCount
+	}
+
+	return &BalanceConfirmationSummary{
+		Type:         balanceType,
+		AsOfDate:     req.AsOfDate,
+		TotalBalance: totalBalance,
+		ContactCount: len(contacts),
+		InvoiceCount: totalInvoices,
+		Contacts:     contacts,
+		GeneratedAt:  time.Now(),
+	}, nil
+}
+
+// GetBalanceConfirmation generates a balance confirmation for a specific contact
+func (s *Service) GetBalanceConfirmation(ctx context.Context, tenantID, schemaName string, req *BalanceConfirmationRequest) (*BalanceConfirmation, error) {
+	if req.ContactID == "" {
+		return nil, fmt.Errorf("contact_id is required for individual balance confirmation")
+	}
+
+	asOfDate, err := time.Parse("2006-01-02", req.AsOfDate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid as_of_date: %w", err)
+	}
+
+	contact, err := s.repo.GetContact(ctx, schemaName, tenantID, req.ContactID)
+	if err != nil {
+		return nil, fmt.Errorf("get contact: %w", err)
+	}
+
+	invoiceType := "SALES"
+	balanceType := BalanceTypeReceivable
+	if req.Type == "PAYABLE" {
+		invoiceType = "PURCHASE"
+		balanceType = BalanceTypePayable
+	}
+
+	invoices, err := s.repo.GetContactInvoices(ctx, schemaName, tenantID, req.ContactID, invoiceType, asOfDate)
+	if err != nil {
+		return nil, fmt.Errorf("get contact invoices: %w", err)
+	}
+
+	var totalBalance decimal.Decimal
+	for _, inv := range invoices {
+		totalBalance = totalBalance.Add(inv.OutstandingAmount)
+	}
+
+	return &BalanceConfirmation{
+		ID:           fmt.Sprintf("%s-%s-%s", req.ContactID, req.Type, req.AsOfDate),
+		TenantID:     tenantID,
+		ContactID:    contact.ID,
+		ContactName:  contact.Name,
+		ContactCode:  contact.Code,
+		ContactEmail: contact.Email,
+		Type:         balanceType,
+		AsOfDate:     req.AsOfDate,
+		TotalBalance: totalBalance,
+		Invoices:     invoices,
+		GeneratedAt:  time.Now(),
+	}, nil
+}
