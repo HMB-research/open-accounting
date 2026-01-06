@@ -325,6 +325,76 @@ func TestGetDemoSeedSQL(t *testing.T) {
 	assert.NotContains(t, sql, "tenant_acme", "template schema should be replaced")
 }
 
+func TestParseIntParam(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    int
+		wantErr bool
+	}{
+		{
+			name:    "valid positive integer",
+			input:   "42",
+			want:    42,
+			wantErr: false,
+		},
+		{
+			name:    "valid zero",
+			input:   "0",
+			want:    0,
+			wantErr: false,
+		},
+		{
+			name:    "valid negative integer",
+			input:   "-10",
+			want:    -10,
+			wantErr: false,
+		},
+		{
+			name:    "large number",
+			input:   "999999",
+			want:    999999,
+			wantErr: false,
+		},
+		{
+			name:    "invalid - empty string",
+			input:   "",
+			want:    0,
+			wantErr: true,
+		},
+		{
+			name:    "invalid - letters",
+			input:   "abc",
+			want:    0,
+			wantErr: true,
+		},
+		{
+			name:    "invalid - float",
+			input:   "3.14",
+			want:    3, // Sscanf parses up to the decimal
+			wantErr: false,
+		},
+		{
+			name:    "number with trailing text",
+			input:   "123abc",
+			want:    123,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseIntParam(tt.input)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
 func TestRequestValidation(t *testing.T) {
 	t.Run("register validation", func(t *testing.T) {
 		tests := []struct {
