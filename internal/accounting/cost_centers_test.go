@@ -410,3 +410,63 @@ func TestCostCenterService_GetCostCenterReport_NoBudget(t *testing.T) {
 	assert.False(t, summary.IsOverBudget) // No budget = never over budget
 	assert.True(t, summary.BudgetUsed.IsZero())
 }
+
+func TestCostCenterService_CreateCostCenter_ValidationErrors(t *testing.T) {
+	ts := newTestCostCenterService()
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		req     *CreateCostCenterRequest
+		wantErr string
+	}{
+		{
+			name:    "empty code",
+			req:     &CreateCostCenterRequest{Code: "", Name: "Test"},
+			wantErr: "cost center code is required",
+		},
+		{
+			name:    "empty name",
+			req:     &CreateCostCenterRequest{Code: "CC001", Name: ""},
+			wantErr: "cost center name is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ts.svc.CreateCostCenter(ctx, "test_schema", "tenant-1", tt.req)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
+func TestCostCenterService_CreateCostCenter_DefaultBudgetPeriod(t *testing.T) {
+	ts := newTestCostCenterService()
+	ctx := context.Background()
+
+	req := &CreateCostCenterRequest{
+		Code:         "CC001",
+		Name:         "Test Center",
+		IsActive:     true,
+		BudgetPeriod: "", // Empty - should default to ANNUAL
+	}
+
+	cc, err := ts.svc.CreateCostCenter(ctx, "test_schema", "tenant-1", req)
+	require.NoError(t, err)
+	assert.Equal(t, BudgetPeriodAnnual, cc.BudgetPeriod)
+}
+
+func TestCostCenterService_GetCostCenterReport_EmptyList(t *testing.T) {
+	ts := newTestCostCenterService()
+	ctx := context.Background()
+
+	// No cost centers added
+	now := time.Now()
+	report, err := ts.svc.GetCostCenterReport(ctx, "test_schema", "tenant-1", now.AddDate(0, 0, -7), now.AddDate(0, 0, 1))
+	require.NoError(t, err)
+
+	assert.Empty(t, report.CostCenters)
+	assert.True(t, report.TotalExpenses.IsZero())
+	assert.True(t, report.TotalBudget.IsZero())
+}
