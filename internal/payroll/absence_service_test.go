@@ -1141,3 +1141,12 @@ func TestGetAbsenceType_RepositoryError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "get absence type")
 }
+
+// TestNewAbsenceServiceWithPool tests the NewAbsenceServiceWithPool constructor with nil pool
+func TestNewAbsenceServiceWithPool(t *testing.T) {
+	// NewAbsenceServiceWithPool should create a service with nil pool (won't panic until used)
+	svc := NewAbsenceServiceWithPool(nil)
+	require.NotNil(t, svc)
+	assert.NotNil(t, svc.repo)
+	assert.NotNil(t, svc.uuid)
+}

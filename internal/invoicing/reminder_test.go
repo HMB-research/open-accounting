@@ -534,3 +534,13 @@ func TestOverdueInvoicesSummary_Statistics(t *testing.T) {
 	assert.Equal(t, 20, summary.AverageDaysOverdue)
 	assert.True(t, summary.TotalOverdue.Equal(decimal.NewFromInt(5000)))
 }
+
+// TestNewReminderService tests the NewReminderService constructor with nil pool
+func TestNewReminderService(t *testing.T) {
+	// NewReminderService should create a service with nil pool (won't panic until used)
+	svc := NewReminderService(nil, nil)
+	require.NotNil(t, svc)
+	assert.Nil(t, svc.db)
+	assert.Nil(t, svc.emailService)
+	assert.NotNil(t, svc.repo)
+}

@@ -2186,3 +2186,24 @@ func TestMockRepository_Errors(t *testing.T) {
 		})
 	}
 }
+
+// TestNewService tests the NewService constructor with a nil pool
+func TestNewService(t *testing.T) {
+	// NewService should create a service with nil pool (won't panic until used)
+	svc := NewService(nil, "/tmp/plugins")
+	if svc == nil {
+		t.Fatal("expected non-nil service")
+	}
+	if svc.pool != nil {
+		t.Error("expected nil pool")
+	}
+	if svc.repo == nil {
+		t.Error("expected non-nil repo")
+	}
+	if svc.hooks == nil {
+		t.Error("expected non-nil hooks")
+	}
+	if svc.pluginDir != "/tmp/plugins" {
+		t.Errorf("expected pluginDir to be /tmp/plugins, got %s", svc.pluginDir)
+	}
+}

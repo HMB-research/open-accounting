@@ -867,3 +867,12 @@ func TestService_StatusTransitions_UpdateErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestNewService tests the NewService constructor with a nil pool
+func TestNewService(t *testing.T) {
+	// NewService should create a service with nil pool (won't panic until used)
+	svc := NewService(nil)
+	require.NotNil(t, svc)
+	assert.Nil(t, svc.db)
+	assert.NotNil(t, svc.repo)
+}

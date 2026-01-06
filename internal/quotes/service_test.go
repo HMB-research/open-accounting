@@ -823,3 +823,12 @@ func TestService_Update_RepositoryError(t *testing.T) {
 	assert.Nil(t, quote)
 	assert.Contains(t, err.Error(), "update quote")
 }
+
+// TestNewService tests the NewService constructor with a nil pool
+func TestNewService(t *testing.T) {
+	// NewService should create a service with nil pool (won't panic until used)
+	svc := NewService(nil)
+	require.NotNil(t, svc)
+	assert.Nil(t, svc.db)
+	assert.NotNil(t, svc.repo)
+}
