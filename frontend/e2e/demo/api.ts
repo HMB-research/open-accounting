@@ -49,7 +49,7 @@ export const EXPECTED_DEMO_DATA = {
 		keys: []
 	},
 	journalEntries: {
-		count: 4,
+		count: 16,
 		// Keys are per-user: JE1-2024-001 for user 1, etc.
 		keys: []
 	},

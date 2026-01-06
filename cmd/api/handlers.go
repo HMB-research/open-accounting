@@ -2016,6 +2016,10 @@ ON CONFLICT DO NOTHING;
 -- Absence Types (Estonian leave types)
 -- Note: The migration inserts default types with tenant_id '00000000-0000-0000-0000-000000000000'
 -- We need to update them to use the correct tenant_id for the demo tenant
+-- First, delete any existing absence_types that might conflict (from previous resets)
+DELETE FROM tenant_acme.absence_types
+WHERE tenant_id != '00000000-0000-0000-0000-000000000000'::uuid;
+-- Now update the freshly inserted types to use the demo tenant_id
 UPDATE tenant_acme.absence_types
 SET tenant_id = 'b0000000-0000-0000-0000-000000000001'::uuid
 WHERE tenant_id = '00000000-0000-0000-0000-000000000000'::uuid;
