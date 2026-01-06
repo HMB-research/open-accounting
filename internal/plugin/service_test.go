@@ -2336,3 +2336,41 @@ func TestService_UninstallPlugin_DeleteError(t *testing.T) {
 		t.Errorf("expected 'failed to delete plugin' in error, got: %v", err)
 	}
 }
+
+// TestService_LoadEnabledPlugins_ListError tests LoadEnabledPlugins when ListEnabledPlugins fails
+func TestService_LoadEnabledPlugins_ListError(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.listEnabledPluginsErr = fmt.Errorf("database error")
+
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+	err := service.LoadEnabledPlugins(ctx)
+
+	if err == nil {
+		t.Fatal("expected error from ListEnabledPlugins failure")
+	}
+	if !strings.Contains(err.Error(), "failed to list enabled plugins") {
+		t.Errorf("expected 'failed to list enabled plugins' in error, got: %v", err)
+	}
+}
+
+// TestService_LoadEnabledPlugins_InvalidManifestContinues tests LoadEnabledPlugins continues with invalid manifest
+func TestService_LoadEnabledPlugins_InvalidManifestContinues(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:       pluginID,
+		Name:     "test-plugin",
+		State:    StateEnabled,
+		Manifest: json.RawMessage(`{invalid json`),
+	}
+
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+	err := service.LoadEnabledPlugins(ctx)
+
+	// Should not return error, just log and continue
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
