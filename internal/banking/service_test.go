@@ -1092,3 +1092,19 @@ func TestErrorTypes(t *testing.T) {
 		t.Error("ErrReconciliationAlreadyDone should not be nil")
 	}
 }
+
+// TestService_EnsureSchema_NilDB tests that EnsureSchema returns error when db is nil
+func TestService_EnsureSchema_NilDB(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo)
+	ctx := context.Background()
+
+	// Service created with NewServiceWithRepository has nil db
+	err := service.EnsureSchema(ctx, testSchemaName)
+	if err == nil {
+		t.Error("expected error when db is nil")
+	}
+	if err.Error() != "database connection not available" {
+		t.Errorf("expected 'database connection not available' error, got: %v", err)
+	}
+}
