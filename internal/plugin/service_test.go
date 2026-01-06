@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -38,6 +39,7 @@ type MockRepository struct {
 	deleteTenantPluginErr      error
 	isEnabledForTenantErr      error
 	listEnabledPluginsErr      error
+	disableAllTenantsErr       error
 }
 
 func NewMockRepository() *MockRepository {
@@ -370,6 +372,9 @@ func (m *MockRepository) UpdatePluginState(ctx context.Context, pluginID uuid.UU
 }
 
 func (m *MockRepository) DisableAllTenantsForPlugin(ctx context.Context, pluginID uuid.UUID) error {
+	if m.disableAllTenantsErr != nil {
+		return m.disableAllTenantsErr
+	}
 	for _, tp := range m.tenantPlugins {
 		if tp.PluginID == pluginID {
 			tp.IsEnabled = false
@@ -1977,6 +1982,28 @@ func TestService_DisablePlugin_UpdateStateError(t *testing.T) {
 	err := service.DisablePlugin(ctx, pluginID)
 	if err == nil {
 		t.Error("expected error from update state failure")
+	}
+}
+
+func TestService_DisablePlugin_DisableAllTenantsError(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:    pluginID,
+		Name:  "test-plugin",
+		State: StateEnabled,
+	}
+	repo.disableAllTenantsErr = fmt.Errorf("disable all tenants error")
+	hooks := NewHookRegistry()
+	service := NewServiceWithRepository(repo, hooks, "/tmp/plugins")
+
+	err := service.DisablePlugin(ctx, pluginID)
+	if err == nil {
+		t.Error("expected error from disable all tenants failure")
+	}
+	if !strings.Contains(err.Error(), "failed to disable for tenants") {
+		t.Errorf("expected 'failed to disable for tenants' in error, got: %v", err)
 	}
 }
 
