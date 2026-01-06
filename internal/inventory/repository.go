@@ -79,7 +79,7 @@ func (r *PostgresRepository) queryInSchema(ctx context.Context, schemaName, quer
 // queryRowInSchema executes a query in the specified schema and returns a single row
 func (r *PostgresRepository) queryRowInSchema(ctx context.Context, schemaName, query string, args ...interface{}) pgx.Row {
 	setSchemaQuery := fmt.Sprintf("SET search_path TO %s", schemaName)
-	r.db.Exec(ctx, setSchemaQuery)
+	_, _ = r.db.Exec(ctx, setSchemaQuery)
 	return r.db.QueryRow(ctx, query, args...)
 }
 

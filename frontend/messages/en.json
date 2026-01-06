@@ -24,6 +24,7 @@
 	"common_edit": "Edit",
 	"common_create": "Create",
 	"common_loading": "Loading...",
+	"common_refresh": "Refresh",
 	"common_redirecting": "Redirecting...",
 	"common_optional": "Optional",
 	"common_search": "Search",

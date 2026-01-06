@@ -159,7 +159,7 @@ func (r *PostgresRepository) GetOutstandingInvoicesByContact(ctx context.Context
 		JOIN %s.contacts c ON i.contact_id = c.id
 		WHERE i.tenant_id = $1
 			AND i.type = $2
-			AND i.status NOT IN ('PAID', 'VOIDED', 'CANCELLED')
+			AND i.status NOT IN ('PAID', 'VOIDED')
 			AND i.invoice_date <= $3
 			AND (i.total - i.amount_paid) > 0
 		GROUP BY c.id, c.name, c.code, c.email
@@ -208,7 +208,7 @@ func (r *PostgresRepository) GetContactInvoices(ctx context.Context, schemaName,
 		WHERE i.tenant_id = $1
 			AND i.contact_id = $2
 			AND i.type = $3
-			AND i.status NOT IN ('PAID', 'VOIDED', 'CANCELLED')
+			AND i.status NOT IN ('PAID', 'VOIDED')
 			AND i.invoice_date <= $4
 			AND (i.total - i.amount_paid) > 0
 		ORDER BY i.invoice_date ASC

@@ -39,7 +39,7 @@ func (r *ReminderPostgresRepository) GetOverdueInvoices(ctx context.Context, sch
 		JOIN %s.contacts c ON i.contact_id = c.id
 		WHERE i.tenant_id = $1
 			AND i.invoice_type = 'SALES'
-			AND i.status NOT IN ('PAID', 'VOIDED', 'CANCELLED')
+			AND i.status NOT IN ('PAID', 'VOIDED')
 			AND i.due_date < $2
 			AND (i.total - i.amount_paid) > 0
 		ORDER BY days_overdue DESC, i.total DESC

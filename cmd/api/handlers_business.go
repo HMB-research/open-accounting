@@ -3099,7 +3099,7 @@ func (h *Handlers) RejectQuote(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
-// @Param status query string false "Filter by status (PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED)"
+// @Param status query string false "Filter by status (PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELED)"
 // @Param contact_id query string false "Filter by contact ID"
 // @Param from_date query string false "Filter from date (YYYY-MM-DD)"
 // @Param to_date query string false "Filter to date (YYYY-MM-DD)"
