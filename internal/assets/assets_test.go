@@ -1315,3 +1315,100 @@ func TestService_GetDepreciationHistory_RepositoryError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "list depreciation entries")
 }
+
+func TestService_Update_EmptyDepreciationMethod(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Assets["a1"] = &FixedAsset{
+		ID:               "a1",
+		TenantID:         "tenant-1",
+		Name:             "Test Asset",
+		Status:           AssetStatusDraft,
+		PurchaseDate:     time.Now(),
+		PurchaseCost:     decimal.NewFromInt(1000),
+		UsefulLifeMonths: 60,
+		// No depreciation method - should be set to default
+	}
+
+	req := &UpdateAssetRequest{
+		Name:               "Updated Asset",
+		UsefulLifeMonths:   60,
+		DepreciationMethod: "", // Empty - should default to straight line
+	}
+
+	result, err := ts.svc.Update(ctx, "tenant-1", "test_schema", "a1", req)
+	require.NoError(t, err)
+	assert.Equal(t, DepreciationStraightLine, result.DepreciationMethod)
+}
+
+func TestService_Update_ValidationError(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Assets["a1"] = &FixedAsset{
+		ID:               "a1",
+		TenantID:         "tenant-1",
+		Name:             "Test Asset",
+		Status:           AssetStatusDraft,
+		PurchaseDate:     time.Now(),
+		PurchaseCost:     decimal.NewFromInt(1000),
+		UsefulLifeMonths: 60,
+	}
+
+	req := &UpdateAssetRequest{
+		Name:               "", // Empty name should fail validation
+		UsefulLifeMonths:   60,
+		DepreciationMethod: DepreciationStraightLine,
+	}
+
+	_, err := ts.svc.Update(ctx, "tenant-1", "test_schema", "a1", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "validation failed")
+}
+
+func TestService_Dispose_UpdateStatusError(t *testing.T) {
+	ts := newTestService()
+	ts.repo.UpdateStatusErr = fmt.Errorf("database error")
+	ctx := context.Background()
+
+	ts.repo.Assets["a1"] = &FixedAsset{
+		ID:       "a1",
+		TenantID: "tenant-1",
+		Name:     "Test Asset",
+		Status:   AssetStatusActive,
+	}
+
+	req := &DisposeAssetRequest{
+		DisposalDate:   time.Now(),
+		DisposalMethod: DisposalSold,
+	}
+
+	err := ts.svc.Dispose(ctx, "tenant-1", "test_schema", "a1", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "dispose asset")
+}
+
+func TestService_RecordDepreciation_ZeroDepreciation(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	// Asset with zero useful life results in zero depreciation
+	ts.repo.Assets["a1"] = &FixedAsset{
+		ID:               "a1",
+		TenantID:         "tenant-1",
+		Name:             "Test Asset",
+		Status:           AssetStatusActive,
+		PurchaseDate:     time.Now(),
+		PurchaseCost:     decimal.NewFromInt(1000),
+		ResidualValue:    decimal.NewFromInt(0),
+		UsefulLifeMonths: 0, // Zero useful life = zero depreciation
+	}
+
+	periodStart := time.Now().AddDate(0, -1, 0)
+	periodEnd := time.Now()
+
+	_, err := ts.svc.RecordDepreciation(ctx, "tenant-1", "test_schema", "a1", "user-1", periodStart, periodEnd)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no depreciation to record")
+}
