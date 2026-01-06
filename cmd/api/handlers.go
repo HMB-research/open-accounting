@@ -60,6 +60,7 @@ type Handlers struct {
 	assetsService     *assets.Service
 	inventoryService  *inventory.Service
 	reportsService    *reports.Service
+	reminderService   *invoicing.ReminderService
 }
 
 // getSchemaName returns the schema name for a tenant
@@ -1074,6 +1075,152 @@ func (h *Handlers) GetBalanceConfirmation(w http.ResponseWriter, r *http.Request
 	}
 
 	respondJSON(w, http.StatusOK, result)
+}
+
+// GetOverdueInvoices returns a summary of all overdue invoices for payment reminders
+// @Summary Get overdue invoices
+// @Description Get a summary of all overdue sales invoices for sending payment reminders
+// @Tags Reminders
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Success 200 {object} invoicing.OverdueInvoicesSummary
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/invoices/overdue [get]
+func (h *Handlers) GetOverdueInvoices(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	result, err := h.reminderService.GetOverdueInvoicesSummary(r.Context(), tenantID, schemaName)
+	if err != nil {
+		log.Error().Err(err).Str("tenant", tenantID).Msg("Failed to get overdue invoices")
+		respondError(w, http.StatusInternalServerError, "Failed to get overdue invoices")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// SendPaymentReminder sends a payment reminder for a specific invoice
+// @Summary Send payment reminder
+// @Description Send a payment reminder email for an overdue invoice
+// @Tags Reminders
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body invoicing.SendReminderRequest true "Reminder request"
+// @Success 200 {object} invoicing.ReminderResult
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/invoices/reminders [post]
+func (h *Handlers) SendPaymentReminder(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+
+	var req invoicing.SendReminderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.InvoiceID == "" {
+		respondError(w, http.StatusBadRequest, "invoice_id is required")
+		return
+	}
+
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	// Get company name for email template
+	t, err := h.tenantService.GetTenant(r.Context(), tenantID)
+	companyName := "Open Accounting"
+	if err == nil && t.Name != "" {
+		companyName = t.Name
+	}
+
+	result, err := h.reminderService.SendReminder(r.Context(), tenantID, schemaName, &req, companyName)
+	if err != nil {
+		log.Error().Err(err).Str("tenant", tenantID).Str("invoice", req.InvoiceID).Msg("Failed to send payment reminder")
+		respondError(w, http.StatusInternalServerError, "Failed to send payment reminder")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// SendBulkPaymentReminders sends payment reminders for multiple invoices
+// @Summary Send bulk payment reminders
+// @Description Send payment reminder emails for multiple overdue invoices
+// @Tags Reminders
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body invoicing.SendBulkRemindersRequest true "Bulk reminder request"
+// @Success 200 {object} invoicing.BulkReminderResult
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/invoices/reminders/bulk [post]
+func (h *Handlers) SendBulkPaymentReminders(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+
+	var req invoicing.SendBulkRemindersRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if len(req.InvoiceIDs) == 0 {
+		respondError(w, http.StatusBadRequest, "invoice_ids is required and must not be empty")
+		return
+	}
+
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	// Get company name for email template
+	t, err := h.tenantService.GetTenant(r.Context(), tenantID)
+	companyName := "Open Accounting"
+	if err == nil && t.Name != "" {
+		companyName = t.Name
+	}
+
+	result, err := h.reminderService.SendBulkReminders(r.Context(), tenantID, schemaName, &req, companyName)
+	if err != nil {
+		log.Error().Err(err).Str("tenant", tenantID).Msg("Failed to send bulk payment reminders")
+		respondError(w, http.StatusInternalServerError, "Failed to send bulk payment reminders")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// GetInvoiceReminderHistory gets the reminder history for an invoice
+// @Summary Get invoice reminder history
+// @Description Get the history of payment reminders sent for an invoice
+// @Tags Reminders
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param invoiceID path string true "Invoice ID"
+// @Success 200 {array} invoicing.PaymentReminder
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/invoices/{invoiceID}/reminders [get]
+func (h *Handlers) GetInvoiceReminderHistory(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	invoiceID := chi.URLParam(r, "invoiceID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	reminders, err := h.reminderService.GetReminderHistory(r.Context(), tenantID, schemaName, invoiceID)
+	if err != nil {
+		log.Error().Err(err).Str("tenant", tenantID).Str("invoice", invoiceID).Msg("Failed to get reminder history")
+		respondError(w, http.StatusInternalServerError, "Failed to get reminder history")
+		return
+	}
+
+	if reminders == nil {
+		reminders = []invoicing.PaymentReminder{}
+	}
+
+	respondJSON(w, http.StatusOK, reminders)
 }
 
 // Custom JSON marshaling for decimal values

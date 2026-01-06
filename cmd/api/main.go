@@ -106,6 +106,7 @@ func main() {
 	assetsService := assets.NewService(pool)
 	reportsService := reports.NewService(pool)
 	inventoryService := inventory.NewService(pool)
+	reminderService := invoicing.NewReminderService(pool, emailService)
 
 	// Load enabled plugins on startup
 	if err := pluginService.LoadEnabledPlugins(ctx); err != nil {
@@ -148,6 +149,7 @@ func main() {
 		assetsService:     assetsService,
 		inventoryService:  inventoryService,
 		reportsService:    reportsService,
+		reminderService:   reminderService,
 	}
 
 	// Setup router
@@ -352,6 +354,12 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/invoices/{invoiceID}/pdf", h.GetInvoicePDF)
 				r.Post("/invoices/{invoiceID}/send", h.SendInvoice)
 				r.Post("/invoices/{invoiceID}/void", h.VoidInvoice)
+				r.Get("/invoices/{invoiceID}/reminders", h.GetInvoiceReminderHistory)
+
+				// Payment Reminders
+				r.Get("/invoices/overdue", h.GetOverdueInvoices)
+				r.Post("/invoices/reminders", h.SendPaymentReminder)
+				r.Post("/invoices/reminders/bulk", h.SendBulkPaymentReminders)
 
 				// Quotes
 				r.Get("/quotes", h.ListQuotes)

@@ -1039,6 +1039,39 @@ class ApiClient {
 		);
 	}
 
+	// Payment Reminder endpoints
+	async getOverdueInvoices(tenantId: string) {
+		return this.request<OverdueInvoicesSummary>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/invoices/overdue`
+		);
+	}
+
+	async sendPaymentReminder(tenantId: string, invoiceId: string, message?: string) {
+		return this.request<ReminderResult>('POST', `/api/v1/tenants/${tenantId}/invoices/reminders`, {
+			invoice_id: invoiceId,
+			message
+		});
+	}
+
+	async sendBulkPaymentReminders(tenantId: string, invoiceIds: string[], message?: string) {
+		return this.request<BulkReminderResult>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/invoices/reminders/bulk`,
+			{
+				invoice_ids: invoiceIds,
+				message
+			}
+		);
+	}
+
+	async getInvoiceReminderHistory(tenantId: string, invoiceId: string) {
+		return this.request<PaymentReminder[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/invoices/${invoiceId}/reminders`
+		);
+	}
+
 	// Payroll - Employee endpoints
 	async listEmployees(tenantId: string, activeOnly = false) {
 		const query = activeOnly ? '?active_only=true' : '';
@@ -2710,6 +2743,76 @@ export interface BalanceConfirmation {
 	total_balance: string;
 	invoices: BalanceInvoice[];
 	generated_at: string;
+}
+
+// Payment Reminder types
+export type ReminderStatus = 'PENDING' | 'SENT' | 'FAILED' | 'CANCELLED';
+
+export interface PaymentReminder {
+	id: string;
+	tenant_id: string;
+	invoice_id: string;
+	invoice_number: string;
+	contact_id: string;
+	contact_name: string;
+	contact_email: string;
+	reminder_number: number;
+	status: ReminderStatus;
+	sent_at?: string;
+	error_message?: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface OverdueInvoice {
+	id: string;
+	invoice_number: string;
+	contact_id: string;
+	contact_name: string;
+	contact_email?: string;
+	issue_date: string;
+	due_date: string;
+	total: string;
+	amount_paid: string;
+	outstanding_amount: string;
+	currency: string;
+	days_overdue: number;
+	reminder_count: number;
+	last_reminder_at?: string;
+}
+
+export interface OverdueInvoicesSummary {
+	total_overdue: string;
+	invoice_count: number;
+	contact_count: number;
+	average_days_overdue: number;
+	invoices: OverdueInvoice[];
+	generated_at: string;
+}
+
+export interface SendReminderRequest {
+	invoice_id: string;
+	message?: string;
+}
+
+export interface SendBulkRemindersRequest {
+	invoice_ids: string[];
+	message?: string;
+}
+
+export interface ReminderResult {
+	invoice_id: string;
+	invoice_number: string;
+	success: boolean;
+	message: string;
+	reminder_id?: string;
+}
+
+export interface BulkReminderResult {
+	total_requested: number;
+	successful: number;
+	failed: number;
+	results: ReminderResult[];
 }
 
 // Payroll types
