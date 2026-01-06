@@ -248,7 +248,7 @@ func TestRepository_CreateAndGetAsset(t *testing.T) {
 		DepreciationExpenseAccountID: cat.DepreciationExpenseAccountID,
 		AccumulatedDepreciationAcctID: cat.AccumulatedDepreciationAcctID,
 		CreatedAt:                    time.Now(),
-		CreatedBy:                    "test-user",
+		CreatedBy:                    uuid.New().String(),
 		UpdatedAt:                    time.Now(),
 	}
 
@@ -315,7 +315,7 @@ func TestRepository_ListAssets(t *testing.T) {
 			DepreciationExpenseAccountID: cat.DepreciationExpenseAccountID,
 			AccumulatedDepreciationAcctID: cat.AccumulatedDepreciationAcctID,
 			CreatedAt:                    time.Now(),
-			CreatedBy:                    "test-user",
+			CreatedBy:                    uuid.New().String(),
 			UpdatedAt:                    time.Now(),
 		}
 		if err := repo.Create(ctx, tenant.SchemaName, asset); err != nil {
@@ -361,7 +361,7 @@ func TestRepository_ListAssets_WithFilter(t *testing.T) {
 		DepreciationExpenseAccountID: cat.DepreciationExpenseAccountID,
 		AccumulatedDepreciationAcctID: cat.AccumulatedDepreciationAcctID,
 		CreatedAt:                    time.Now(),
-		CreatedBy:                    "test-user",
+		CreatedBy:                    uuid.New().String(),
 		UpdatedAt:                    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, activeAsset); err != nil {
@@ -387,7 +387,7 @@ func TestRepository_ListAssets_WithFilter(t *testing.T) {
 		DepreciationExpenseAccountID: cat.DepreciationExpenseAccountID,
 		AccumulatedDepreciationAcctID: cat.AccumulatedDepreciationAcctID,
 		CreatedAt:                    time.Now(),
-		CreatedBy:                    "test-user",
+		CreatedBy:                    uuid.New().String(),
 		UpdatedAt:                    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, disposedAsset); err != nil {
@@ -436,7 +436,7 @@ func TestRepository_UpdateAsset(t *testing.T) {
 		DepreciationExpenseAccountID: cat.DepreciationExpenseAccountID,
 		AccumulatedDepreciationAcctID: cat.AccumulatedDepreciationAcctID,
 		CreatedAt:                    time.Now(),
-		CreatedBy:                    "test-user",
+		CreatedBy:                    uuid.New().String(),
 		UpdatedAt:                    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, asset); err != nil {
@@ -492,7 +492,7 @@ func TestRepository_UpdateStatus(t *testing.T) {
 		DepreciationExpenseAccountID: cat.DepreciationExpenseAccountID,
 		AccumulatedDepreciationAcctID: cat.AccumulatedDepreciationAcctID,
 		CreatedAt:                    time.Now(),
-		CreatedBy:                    "test-user",
+		CreatedBy:                    uuid.New().String(),
 		UpdatedAt:                    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, asset); err != nil {
@@ -541,7 +541,7 @@ func TestRepository_DeleteAsset(t *testing.T) {
 		DepreciationExpenseAccountID: cat.DepreciationExpenseAccountID,
 		AccumulatedDepreciationAcctID: cat.AccumulatedDepreciationAcctID,
 		CreatedAt:                    time.Now(),
-		CreatedBy:                    "test-user",
+		CreatedBy:                    uuid.New().String(),
 		UpdatedAt:                    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, asset); err != nil {
@@ -595,7 +595,7 @@ func TestRepository_GenerateNumber(t *testing.T) {
 		DepreciationExpenseAccountID: cat.DepreciationExpenseAccountID,
 		AccumulatedDepreciationAcctID: cat.AccumulatedDepreciationAcctID,
 		CreatedAt:                    time.Now(),
-		CreatedBy:                    "test-user",
+		CreatedBy:                    uuid.New().String(),
 		UpdatedAt:                    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, asset); err != nil {
@@ -639,7 +639,7 @@ func TestRepository_DepreciationEntry(t *testing.T) {
 		DepreciationExpenseAccountID: cat.DepreciationExpenseAccountID,
 		AccumulatedDepreciationAcctID: cat.AccumulatedDepreciationAcctID,
 		CreatedAt:                    time.Now(),
-		CreatedBy:                    "test-user",
+		CreatedBy:                    uuid.New().String(),
 		UpdatedAt:                    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, asset); err != nil {
@@ -703,7 +703,7 @@ func TestRepository_UpdateAssetDepreciation(t *testing.T) {
 		DepreciationExpenseAccountID: cat.DepreciationExpenseAccountID,
 		AccumulatedDepreciationAcctID: cat.AccumulatedDepreciationAcctID,
 		CreatedAt:                    time.Now(),
-		CreatedBy:                    "test-user",
+		CreatedBy:                    uuid.New().String(),
 		UpdatedAt:                    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, asset); err != nil {
@@ -763,7 +763,7 @@ func TestRepository_ListAssets_WithCategoryFilter(t *testing.T) {
 		DepreciationExpenseAccountID: cat1.DepreciationExpenseAccountID,
 		AccumulatedDepreciationAcctID: cat1.AccumulatedDepreciationAcctID,
 		CreatedAt:                    time.Now(),
-		CreatedBy:                    "test-user",
+		CreatedBy:                    uuid.New().String(),
 		UpdatedAt:                    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, asset1); err != nil {
@@ -789,7 +789,7 @@ func TestRepository_ListAssets_WithCategoryFilter(t *testing.T) {
 		DepreciationExpenseAccountID: cat2.DepreciationExpenseAccountID,
 		AccumulatedDepreciationAcctID: cat2.AccumulatedDepreciationAcctID,
 		CreatedAt:                    time.Now(),
-		CreatedBy:                    "test-user",
+		CreatedBy:                    uuid.New().String(),
 		UpdatedAt:                    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, asset2); err != nil {

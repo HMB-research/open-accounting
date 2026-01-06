@@ -50,7 +50,7 @@ func TestRepository_CreateAndGetQuote(t *testing.T) {
 		Total:        decimal.NewFromFloat(600.00),
 		Notes:        "Test quote",
 		CreatedAt:    time.Now(),
-		CreatedBy:    "test-user",
+		CreatedBy:    uuid.New().String(),
 		UpdatedAt:    time.Now(),
 		Lines: []QuoteLine{
 			{
@@ -139,7 +139,7 @@ func TestRepository_ListQuotes(t *testing.T) {
 			VATAmount:    decimal.NewFromFloat(float64(20 * (i + 1))),
 			Total:        decimal.NewFromFloat(float64(120 * (i + 1))),
 			CreatedAt:    time.Now(),
-			CreatedBy:    "test-user",
+			CreatedBy:    uuid.New().String(),
 			UpdatedAt:    time.Now(),
 		}
 		if err := repo.Create(ctx, tenant.SchemaName, quote); err != nil {
@@ -188,7 +188,7 @@ func TestRepository_ListQuotes_WithFilter(t *testing.T) {
 		VATAmount:    decimal.NewFromFloat(20.00),
 		Total:        decimal.NewFromFloat(120.00),
 		CreatedAt:    time.Now(),
-		CreatedBy:    "test-user",
+		CreatedBy:    uuid.New().String(),
 		UpdatedAt:    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, draftQuote); err != nil {
@@ -209,7 +209,7 @@ func TestRepository_ListQuotes_WithFilter(t *testing.T) {
 		VATAmount:    decimal.NewFromFloat(40.00),
 		Total:        decimal.NewFromFloat(240.00),
 		CreatedAt:    time.Now(),
-		CreatedBy:    "test-user",
+		CreatedBy:    uuid.New().String(),
 		UpdatedAt:    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, sentQuote); err != nil {
@@ -261,7 +261,7 @@ func TestRepository_UpdateQuote(t *testing.T) {
 		VATAmount:    decimal.NewFromFloat(20.00),
 		Total:        decimal.NewFromFloat(120.00),
 		CreatedAt:    time.Now(),
-		CreatedBy:    "test-user",
+		CreatedBy:    uuid.New().String(),
 		UpdatedAt:    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, quote); err != nil {
@@ -321,7 +321,7 @@ func TestRepository_UpdateStatus(t *testing.T) {
 		VATAmount:    decimal.NewFromFloat(20.00),
 		Total:        decimal.NewFromFloat(120.00),
 		CreatedAt:    time.Now(),
-		CreatedBy:    "test-user",
+		CreatedBy:    uuid.New().String(),
 		UpdatedAt:    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, quote); err != nil {
@@ -373,7 +373,7 @@ func TestRepository_DeleteQuote(t *testing.T) {
 		VATAmount:    decimal.NewFromFloat(20.00),
 		Total:        decimal.NewFromFloat(120.00),
 		CreatedAt:    time.Now(),
-		CreatedBy:    "test-user",
+		CreatedBy:    uuid.New().String(),
 		UpdatedAt:    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, quote); err != nil {
@@ -430,7 +430,7 @@ func TestRepository_GenerateNumber(t *testing.T) {
 		VATAmount:    decimal.NewFromFloat(20.00),
 		Total:        decimal.NewFromFloat(120.00),
 		CreatedAt:    time.Now(),
-		CreatedBy:    "test-user",
+		CreatedBy:    uuid.New().String(),
 		UpdatedAt:    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, quote); err != nil {
@@ -477,7 +477,7 @@ func TestRepository_SetConvertedToOrder(t *testing.T) {
 		VATAmount:    decimal.NewFromFloat(20.00),
 		Total:        decimal.NewFromFloat(120.00),
 		CreatedAt:    time.Now(),
-		CreatedBy:    "test-user",
+		CreatedBy:    uuid.New().String(),
 		UpdatedAt:    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, quote); err != nil {
@@ -529,7 +529,7 @@ func TestRepository_SetConvertedToInvoice(t *testing.T) {
 		VATAmount:    decimal.NewFromFloat(20.00),
 		Total:        decimal.NewFromFloat(120.00),
 		CreatedAt:    time.Now(),
-		CreatedBy:    "test-user",
+		CreatedBy:    uuid.New().String(),
 		UpdatedAt:    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, quote); err != nil {
@@ -591,7 +591,7 @@ func TestRepository_ListQuotes_WithContactFilter(t *testing.T) {
 		VATAmount:    decimal.NewFromFloat(20.00),
 		Total:        decimal.NewFromFloat(120.00),
 		CreatedAt:    time.Now(),
-		CreatedBy:    "test-user",
+		CreatedBy:    uuid.New().String(),
 		UpdatedAt:    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, quote1); err != nil {
@@ -611,7 +611,7 @@ func TestRepository_ListQuotes_WithContactFilter(t *testing.T) {
 		VATAmount:    decimal.NewFromFloat(40.00),
 		Total:        decimal.NewFromFloat(240.00),
 		CreatedAt:    time.Now(),
-		CreatedBy:    "test-user",
+		CreatedBy:    uuid.New().String(),
 		UpdatedAt:    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, quote2); err != nil {

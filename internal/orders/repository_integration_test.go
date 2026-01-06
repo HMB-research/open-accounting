@@ -22,7 +22,7 @@ func timePtr(t time.Time) *time.Time {
 
 func createTestContact(t *testing.T, pool interface{ Exec(ctx context.Context, sql string, arguments ...interface{}) (interface{}, error) }, schemaName, tenantID string) string {
 	t.Helper()
-	ctx := context.Background()
+	_ = context.Background() // placeholder for future use
 	contactID := uuid.New().String()
 
 	// The pool interface doesn't match exactly, so we'll work around this
@@ -63,7 +63,7 @@ func TestRepository_CreateAndGetOrder(t *testing.T) {
 		Total:            decimal.NewFromFloat(240.00),
 		Notes:            "Test order",
 		CreatedAt:        time.Now(),
-		CreatedBy:        "test-user",
+		CreatedBy:        uuid.New().String(),
 		UpdatedAt:        time.Now(),
 		Lines: []OrderLine{
 			{
@@ -152,7 +152,7 @@ func TestRepository_ListOrders(t *testing.T) {
 			VATAmount:    decimal.NewFromFloat(float64(20 * (i + 1))),
 			Total:        decimal.NewFromFloat(float64(120 * (i + 1))),
 			CreatedAt:    time.Now(),
-			CreatedBy:    "test-user",
+			CreatedBy:    uuid.New().String(),
 			UpdatedAt:    time.Now(),
 		}
 		if err := repo.Create(ctx, tenant.SchemaName, order); err != nil {
@@ -201,7 +201,7 @@ func TestRepository_ListOrders_WithFilter(t *testing.T) {
 		VATAmount:    decimal.NewFromFloat(20.00),
 		Total:        decimal.NewFromFloat(120.00),
 		CreatedAt:    time.Now(),
-		CreatedBy:    "test-user",
+		CreatedBy:    uuid.New().String(),
 		UpdatedAt:    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, draftOrder); err != nil {
@@ -222,7 +222,7 @@ func TestRepository_ListOrders_WithFilter(t *testing.T) {
 		VATAmount:    decimal.NewFromFloat(40.00),
 		Total:        decimal.NewFromFloat(240.00),
 		CreatedAt:    time.Now(),
-		CreatedBy:    "test-user",
+		CreatedBy:    uuid.New().String(),
 		UpdatedAt:    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, confirmedOrder); err != nil {
@@ -274,7 +274,7 @@ func TestRepository_UpdateOrder(t *testing.T) {
 		VATAmount:    decimal.NewFromFloat(20.00),
 		Total:        decimal.NewFromFloat(120.00),
 		CreatedAt:    time.Now(),
-		CreatedBy:    "test-user",
+		CreatedBy:    uuid.New().String(),
 		UpdatedAt:    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, order); err != nil {
@@ -334,7 +334,7 @@ func TestRepository_UpdateStatus(t *testing.T) {
 		VATAmount:    decimal.NewFromFloat(20.00),
 		Total:        decimal.NewFromFloat(120.00),
 		CreatedAt:    time.Now(),
-		CreatedBy:    "test-user",
+		CreatedBy:    uuid.New().String(),
 		UpdatedAt:    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, order); err != nil {
@@ -386,7 +386,7 @@ func TestRepository_DeleteOrder(t *testing.T) {
 		VATAmount:    decimal.NewFromFloat(20.00),
 		Total:        decimal.NewFromFloat(120.00),
 		CreatedAt:    time.Now(),
-		CreatedBy:    "test-user",
+		CreatedBy:    uuid.New().String(),
 		UpdatedAt:    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, order); err != nil {
@@ -443,7 +443,7 @@ func TestRepository_GenerateNumber(t *testing.T) {
 		VATAmount:    decimal.NewFromFloat(20.00),
 		Total:        decimal.NewFromFloat(120.00),
 		CreatedAt:    time.Now(),
-		CreatedBy:    "test-user",
+		CreatedBy:    uuid.New().String(),
 		UpdatedAt:    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, order); err != nil {
@@ -490,7 +490,7 @@ func TestRepository_SetConvertedToInvoice(t *testing.T) {
 		VATAmount:    decimal.NewFromFloat(20.00),
 		Total:        decimal.NewFromFloat(120.00),
 		CreatedAt:    time.Now(),
-		CreatedBy:    "test-user",
+		CreatedBy:    uuid.New().String(),
 		UpdatedAt:    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, order); err != nil {
@@ -552,7 +552,7 @@ func TestRepository_ListOrders_WithContactFilter(t *testing.T) {
 		VATAmount:    decimal.NewFromFloat(20.00),
 		Total:        decimal.NewFromFloat(120.00),
 		CreatedAt:    time.Now(),
-		CreatedBy:    "test-user",
+		CreatedBy:    uuid.New().String(),
 		UpdatedAt:    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, order1); err != nil {
@@ -572,7 +572,7 @@ func TestRepository_ListOrders_WithContactFilter(t *testing.T) {
 		VATAmount:    decimal.NewFromFloat(40.00),
 		Total:        decimal.NewFromFloat(240.00),
 		CreatedAt:    time.Now(),
-		CreatedBy:    "test-user",
+		CreatedBy:    uuid.New().String(),
 		UpdatedAt:    time.Now(),
 	}
 	if err := repo.Create(ctx, tenant.SchemaName, order2); err != nil {

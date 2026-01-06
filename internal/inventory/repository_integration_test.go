@@ -786,7 +786,7 @@ func TestRepository_CreateAndListMovements(t *testing.T) {
 		Notes:        "Initial stock receipt",
 		MovementDate: time.Now(),
 		CreatedAt:    time.Now(),
-		CreatedBy:    "test-user",
+		CreatedBy:    uuid.New().String(),
 	}
 	if err := repo.CreateMovement(ctx, tenant.SchemaName, movement); err != nil {
 		t.Fatalf("CreateMovement failed: %v", err)

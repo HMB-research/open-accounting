@@ -25,34 +25,15 @@ type TestTenant struct {
 	Slug       string
 }
 
-// SetupTestDB connects to the test database. It skips the test if DATABASE_URL is not set.
-// Returns the pool and a cleanup function.
+// SetupTestDB connects to the test database.
+// If DATABASE_URL is set, it uses that database.
+// Otherwise, it uses testcontainers to start a PostgreSQL container.
+// Returns the pool.
 func SetupTestDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("DATABASE_URL not set, skipping integration test")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	pool, err := pgxpool.New(ctx, dbURL)
-	if err != nil {
-		t.Fatalf("failed to connect to database: %v", err)
-	}
-
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		t.Fatalf("failed to ping database: %v", err)
-	}
-
-	t.Cleanup(func() {
-		pool.Close()
-	})
-
-	return pool
+	// Use GetTestContainer which handles both DATABASE_URL and testcontainers
+	return GetTestContainer(t)
 }
 
 // SetupTestSchema creates an isolated schema for the test.
@@ -120,6 +101,30 @@ func CreateTestTenant(t *testing.T, pool *pgxpool.Pool) *TestTenant {
 	_, err = pool.Exec(ctx, "SELECT create_tenant_schema($1)", schemaName)
 	if err != nil {
 		t.Fatalf("failed to create tenant schema: %v", err)
+	}
+
+	// Add quotes and orders tables (from migration 014)
+	_, err = pool.Exec(ctx, "SELECT add_quotes_and_orders_tables($1)", schemaName)
+	if err != nil {
+		t.Fatalf("failed to add quotes and orders tables: %v", err)
+	}
+
+	// Add fixed assets tables (from migration 015)
+	_, err = pool.Exec(ctx, "SELECT add_fixed_assets_tables($1)", schemaName)
+	if err != nil {
+		t.Fatalf("failed to add fixed assets tables: %v", err)
+	}
+
+	// Add inventory tables (from migration 016)
+	_, err = pool.Exec(ctx, "SELECT create_inventory_tables($1)", schemaName)
+	if err != nil {
+		t.Fatalf("failed to add inventory tables: %v", err)
+	}
+
+	// Add leave management tables (from migration 017)
+	_, err = pool.Exec(ctx, "SELECT add_leave_management_tables($1)", schemaName)
+	if err != nil {
+		t.Fatalf("failed to add leave management tables: %v", err)
 	}
 
 	// Create default chart of accounts
@@ -234,14 +239,28 @@ func AddUserToTenant(t *testing.T, pool *pgxpool.Pool, tenantID, userID, role st
 }
 
 // SetupGormDB creates a GORM database connection for testing.
-// It skips the test if DATABASE_URL is not set.
+// If DATABASE_URL is set, it uses that database.
+// Otherwise, it uses testcontainers to start a PostgreSQL container.
 // Returns the GORM DB instance.
 func SetupGormDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("DATABASE_URL not set, skipping integration test")
+	// Get database URL - either from environment or from testcontainer
+	var dbURL string
+	if envURL := os.Getenv("DATABASE_URL"); envURL != "" {
+		dbURL = envURL
+	} else {
+		// Use testcontainer - get the pool first to ensure container is started
+		pool := GetTestContainer(t)
+		// Get the connection string from the container
+		if containerInstance != nil {
+			dbURL = containerInstance.ConnStr
+		} else {
+			// Fallback: construct from pool config
+			config := pool.Config().ConnConfig
+			dbURL = fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
+				config.User, config.Password, config.Host, config.Port, config.Database)
+		}
 	}
 
 	db, err := gorm.Open(postgres.Open(dbURL), &gorm.Config{
