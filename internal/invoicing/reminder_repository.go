@@ -34,7 +34,7 @@ func (r *ReminderPostgresRepository) GetOverdueInvoices(ctx context.Context, sch
 			i.amount_paid,
 			(i.total - i.amount_paid) as outstanding_amount,
 			i.currency,
-			GREATEST(0, EXTRACT(DAY FROM ($2::date - i.due_date))::int) as days_overdue
+			GREATEST(0, ($2::date - i.due_date)::int) as days_overdue
 		FROM %s.invoices i
 		JOIN %s.contacts c ON i.contact_id = c.id
 		WHERE i.tenant_id = $1
