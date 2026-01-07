@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,10 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
+
+// cleanupMutex serializes test tenant cleanup to prevent deadlocks
+// between DROP SCHEMA CASCADE and DELETE FROM tenants operations
+var cleanupMutex sync.Mutex
 
 // TestTenant contains the test tenant information
 type TestTenant struct {
@@ -151,7 +156,11 @@ func CreateTestTenant(t *testing.T, pool *pgxpool.Pool) *TestTenant {
 func TeardownTestSchema(t *testing.T, pool *pgxpool.Pool, schemaName string) {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Serialize cleanup to prevent deadlocks between parallel test cleanups
+	cleanupMutex.Lock()
+	defer cleanupMutex.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	// Use CASCADE to drop all objects in the schema
@@ -165,16 +174,20 @@ func TeardownTestSchema(t *testing.T, pool *pgxpool.Pool, schemaName string) {
 func cleanupTestTenant(t *testing.T, pool *pgxpool.Pool, tenant *TestTenant) {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Serialize cleanup to prevent deadlocks between DROP SCHEMA and DELETE FROM tenants
+	cleanupMutex.Lock()
+	defer cleanupMutex.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Drop tenant schema first
+	// Drop tenant schema first (this is the heavyweight operation)
 	_, err := pool.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", tenant.SchemaName))
 	if err != nil {
 		t.Logf("warning: failed to drop tenant schema %s: %v", tenant.SchemaName, err)
 	}
 
-	// Delete tenant record
+	// Delete tenant record (only after schema is dropped)
 	_, err = pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1", tenant.ID)
 	if err != nil {
 		t.Logf("warning: failed to delete test tenant %s: %v", tenant.ID, err)
