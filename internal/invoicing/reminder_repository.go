@@ -87,6 +87,11 @@ func (r *ReminderPostgresRepository) GetOverdueInvoices(ctx context.Context, sch
 
 // GetReminderCount gets the number of reminders sent for an invoice
 func (r *ReminderPostgresRepository) GetReminderCount(ctx context.Context, schemaName, tenantID, invoiceID string) (int, *time.Time, error) {
+	// Ensure table exists before querying
+	if err := r.ensureReminderTable(ctx, schemaName); err != nil {
+		return 0, nil, err
+	}
+
 	query := fmt.Sprintf(`
 		SELECT COUNT(*), MAX(sent_at)
 		FROM %s.payment_reminders
@@ -98,8 +103,7 @@ func (r *ReminderPostgresRepository) GetReminderCount(ctx context.Context, schem
 
 	err := r.db.QueryRow(ctx, query, tenantID, invoiceID).Scan(&count, &lastSentAt)
 	if err != nil {
-		// Table might not exist yet
-		return 0, nil, nil
+		return 0, nil, fmt.Errorf("query reminder count: %w", err)
 	}
 
 	return count, lastSentAt, nil

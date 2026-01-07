@@ -1397,6 +1397,7 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 		slug   string
 		schema string
 	}
+	var userNums []int // Track which user numbers to seed
 
 	userParam := r.URL.Query().Get("user")
 	if userParam != "" {
@@ -1411,9 +1412,11 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 			slug   string
 			schema string
 		}{allDemoUsers[userNum-1]}
+		userNums = []int{userNum}
 		log.Info().Int("user", userNum).Msg("Demo reset: resetting single user")
 	} else {
 		demoUsers = allDemoUsers
+		userNums = []int{1, 2, 3, 4}
 		log.Info().Msg("Demo reset: resetting all users")
 	}
 
@@ -1455,10 +1458,10 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	log.Info().Msg("Demo reset: seeding demo data")
-	// Re-seed demo data by executing the seed SQL
-	// Note: In production, you might want to read from a file or embedded resource
-	seedSQL := getDemoSeedSQL()
+	log.Info().Ints("users", userNums).Msg("Demo reset: seeding demo data")
+	// Re-seed demo data by executing the seed SQL only for the users being reset
+	// This prevents race conditions when single-user reset runs while other users are in use
+	seedSQL := getDemoSeedSQLForUsers(userNums)
 	_, err := h.pool.Exec(ctx, seedSQL)
 	if err != nil {
 		log.Error().Err(err).Str("sql_preview", seedSQL[:500]).Msg("Demo reset failed: seed data")
@@ -1625,11 +1628,16 @@ func (h *Handlers) getEntityStatusPeriod(ctx context.Context, schema, table stri
 // getDemoSeedSQL returns the SQL to seed the demo database for all 4 demo users
 // This creates demo users, tenants, schemas, and comprehensive sample data
 func getDemoSeedSQL() string {
+	return getDemoSeedSQLForUsers([]int{1, 2, 3, 4})
+}
+
+// getDemoSeedSQLForUsers returns the SQL to seed specific demo users
+// This allows single-user reset without re-seeding all users
+func getDemoSeedSQLForUsers(userNums []int) string {
 	var sql strings.Builder
 	template := getDemoSeedTemplate()
 
-	// Generate seed data for all 4 demo users (demo1-4)
-	for userNum := 1; userNum <= 4; userNum++ {
+	for _, userNum := range userNums {
 		sql.WriteString(generateDemoSeedForUser(template, userNum))
 	}
 
