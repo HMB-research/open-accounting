@@ -778,12 +778,12 @@ func TestRepository_CreateAndListMovements(t *testing.T) {
 		TenantID:     tenant.ID,
 		ProductID:    product.ID,
 		WarehouseID:  warehouse.ID,
-		MovementType: "RECEIPT",
+		MovementType: "IN",
 		Quantity:     decimal.NewFromInt(50),
 		UnitCost:     decimal.NewFromFloat(10.00),
 		TotalCost:    decimal.NewFromFloat(500.00),
 		Reference:    "PO-001",
-		Notes:        "Initial stock receipt",
+		Notes:        "Initial stock inbound",
 		MovementDate: time.Now(),
 		CreatedAt:    time.Now(),
 		CreatedBy:    uuid.New().String(),
@@ -800,8 +800,8 @@ func TestRepository_CreateAndListMovements(t *testing.T) {
 	if len(movements) != 1 {
 		t.Errorf("expected 1 movement, got %d", len(movements))
 	}
-	if movements[0].MovementType != "RECEIPT" {
-		t.Errorf("expected movement type 'RECEIPT', got '%s'", movements[0].MovementType)
+	if movements[0].MovementType != "IN" {
+		t.Errorf("expected movement type 'IN', got '%s'", movements[0].MovementType)
 	}
 }
 
