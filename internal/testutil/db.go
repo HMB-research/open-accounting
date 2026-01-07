@@ -132,6 +132,13 @@ func CreateTestTenant(t *testing.T, pool *pgxpool.Pool) *TestTenant {
 		t.Fatalf("failed to add leave management tables: %v", err)
 	}
 
+	// Add VAT columns to journal_entry_lines (from migration 020)
+	_, err = pool.Exec(ctx, "SELECT add_vat_columns_to_journal_lines($1)", schemaName)
+	if err != nil {
+		// This migration may not exist in all environments, log but don't fail
+		t.Logf("warning: VAT columns not added (migration may not exist): %v", err)
+	}
+
 	// Create default chart of accounts
 	_, err = pool.Exec(ctx, "SELECT create_default_chart_of_accounts($1, $2)", schemaName, tenantID)
 	if err != nil {
