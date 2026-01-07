@@ -1625,12 +1625,6 @@ func (h *Handlers) getEntityStatusPeriod(ctx context.Context, schema, table stri
 	return EntityStatus{Count: count, Keys: keys}
 }
 
-// getDemoSeedSQL returns the SQL to seed the demo database for all 4 demo users
-// This creates demo users, tenants, schemas, and comprehensive sample data
-func getDemoSeedSQL() string {
-	return getDemoSeedSQLForUsers([]int{1, 2, 3, 4})
-}
-
 // getDemoSeedSQLForUsers returns the SQL to seed specific demo users
 // This allows single-user reset without re-seeding all users
 func getDemoSeedSQLForUsers(userNums []int) string {
