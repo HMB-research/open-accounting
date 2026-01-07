@@ -22,6 +22,10 @@ import (
 // between DROP SCHEMA CASCADE and DELETE FROM tenants operations
 var cleanupMutex sync.Mutex
 
+// Advisory lock key for database-level cleanup serialization
+// Using a fixed hash to ensure all cleanup operations use the same lock
+const cleanupAdvisoryLockKey = 12345678
+
 // TestTenant contains the test tenant information
 type TestTenant struct {
 	ID         string
@@ -93,9 +97,15 @@ func CreateTestTenant(t *testing.T, pool *pgxpool.Pool) *TestTenant {
 	now := time.Now()
 	settings := []byte(`{}`)
 
-	// Insert tenant record
-	_, err := pool.Exec(ctx, `
-		INSERT INTO tenants (id, name, slug, schema_name, settings, is_active, created_at, updated_at)
+	// Reset search_path to ensure we're using public schema
+	_, err := pool.Exec(ctx, "SET search_path TO public")
+	if err != nil {
+		t.Fatalf("failed to reset search_path: %v", err)
+	}
+
+	// Insert tenant record (explicitly use public schema)
+	_, err = pool.Exec(ctx, `
+		INSERT INTO public.tenants (id, name, slug, schema_name, settings, is_active, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, true, $6, $7)
 	`, tenantID, name, slug, schemaName, settings, now, now)
 	if err != nil {
@@ -170,8 +180,18 @@ func TeardownTestSchema(t *testing.T, pool *pgxpool.Pool, schemaName string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// Acquire PostgreSQL advisory lock to prevent database-level deadlocks
+	// This ensures only one cleanup operation runs at a time across all connections
+	_, err := pool.Exec(ctx, "SELECT pg_advisory_lock($1)", cleanupAdvisoryLockKey)
+	if err != nil {
+		t.Logf("warning: failed to acquire advisory lock for schema cleanup: %v", err)
+	}
+	defer func() {
+		_, _ = pool.Exec(ctx, "SELECT pg_advisory_unlock($1)", cleanupAdvisoryLockKey)
+	}()
+
 	// Use CASCADE to drop all objects in the schema
-	_, err := pool.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schemaName))
+	_, err = pool.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schemaName))
 	if err != nil {
 		t.Logf("warning: failed to drop test schema %s: %v", schemaName, err)
 	}
@@ -188,14 +208,27 @@ func cleanupTestTenant(t *testing.T, pool *pgxpool.Pool, tenant *TestTenant) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// Acquire PostgreSQL advisory lock to prevent database-level deadlocks
+	// This ensures only one cleanup operation runs at a time across all connections
+	_, err := pool.Exec(ctx, "SELECT pg_advisory_lock($1)", cleanupAdvisoryLockKey)
+	if err != nil {
+		t.Logf("warning: failed to acquire advisory lock for tenant cleanup: %v", err)
+	}
+	defer func() {
+		_, _ = pool.Exec(ctx, "SELECT pg_advisory_unlock($1)", cleanupAdvisoryLockKey)
+	}()
+
+	// Reset search_path to ensure we're using public schema
+	_, _ = pool.Exec(ctx, "SET search_path TO public")
+
 	// Drop tenant schema first (this is the heavyweight operation)
-	_, err := pool.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", tenant.SchemaName))
+	_, err = pool.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", tenant.SchemaName))
 	if err != nil {
 		t.Logf("warning: failed to drop tenant schema %s: %v", tenant.SchemaName, err)
 	}
 
-	// Delete tenant record (only after schema is dropped)
-	_, err = pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1", tenant.ID)
+	// Delete tenant record (only after schema is dropped) - explicitly use public schema
+	_, err = pool.Exec(ctx, "DELETE FROM public.tenants WHERE id = $1", tenant.ID)
 	if err != nil {
 		t.Logf("warning: failed to delete test tenant %s: %v", tenant.ID, err)
 	}
@@ -212,7 +245,7 @@ func CreateTestUser(t *testing.T, pool *pgxpool.Pool, email string) string {
 	now := time.Now()
 
 	_, err := pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, name, is_active, created_at, updated_at)
+		INSERT INTO public.users (id, email, password_hash, name, is_active, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, true, $5, $6)
 	`, userID, email, "hashed_password", "Test User", now, now)
 	if err != nil {
@@ -234,10 +267,10 @@ func cleanupTestUser(t *testing.T, pool *pgxpool.Pool, userID string) {
 	defer cancel()
 
 	// Remove from tenant_users first (foreign key)
-	_, _ = pool.Exec(ctx, "DELETE FROM tenant_users WHERE user_id = $1", userID)
+	_, _ = pool.Exec(ctx, "DELETE FROM public.tenant_users WHERE user_id = $1", userID)
 
 	// Delete user
-	_, err := pool.Exec(ctx, "DELETE FROM users WHERE id = $1", userID)
+	_, err := pool.Exec(ctx, "DELETE FROM public.users WHERE id = $1", userID)
 	if err != nil {
 		t.Logf("warning: failed to delete test user %s: %v", userID, err)
 	}
@@ -250,7 +283,7 @@ func AddUserToTenant(t *testing.T, pool *pgxpool.Pool, tenantID, userID, role st
 	ctx := context.Background()
 
 	_, err := pool.Exec(ctx, `
-		INSERT INTO tenant_users (tenant_id, user_id, role, is_default, created_at)
+		INSERT INTO public.tenant_users (tenant_id, user_id, role, is_default, created_at)
 		VALUES ($1, $2, $3, false, NOW())
 	`, tenantID, userID, role)
 	if err != nil {

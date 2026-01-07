@@ -210,10 +210,12 @@ func (r *ReminderPostgresRepository) GetRemindersByInvoice(ctx context.Context, 
 
 // ensureReminderTable creates the payment_reminders table if it doesn't exist
 func (r *ReminderPostgresRepository) ensureReminderTable(ctx context.Context, schemaName string) error {
+	// Note: tenant_id references public.tenants because the tenants table is in
+	// the public schema, not in tenant-specific schemas
 	query := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s.payment_reminders (
 			id UUID PRIMARY KEY,
-			tenant_id UUID NOT NULL REFERENCES %s.tenants(id),
+			tenant_id UUID NOT NULL REFERENCES public.tenants(id),
 			invoice_id UUID NOT NULL,
 			invoice_number VARCHAR(50) NOT NULL,
 			contact_id UUID NOT NULL,
@@ -231,7 +233,7 @@ func (r *ReminderPostgresRepository) ensureReminderTable(ctx context.Context, sc
 			ON %s.payment_reminders(tenant_id);
 		CREATE INDEX IF NOT EXISTS idx_payment_reminders_invoice_id
 			ON %s.payment_reminders(invoice_id);
-	`, schemaName, schemaName, schemaName, schemaName)
+	`, schemaName, schemaName, schemaName)
 
 	_, err := r.db.Exec(ctx, query)
 	return err

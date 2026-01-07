@@ -67,7 +67,9 @@ func TestRepository_GetProductByID_NotFound(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	_, err := repo.GetProductByID(ctx, tenant.SchemaName, tenant.ID, "nonexistent-id")
+	// Use valid UUID format that doesn't exist
+	nonExistentID := uuid.New().String()
+	_, err := repo.GetProductByID(ctx, tenant.SchemaName, tenant.ID, nonExistentID)
 	if err == nil {
 		t.Error("expected error for non-existent product")
 	}
@@ -332,7 +334,9 @@ func TestRepository_GetCategoryByID_NotFound(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	_, err := repo.GetCategoryByID(ctx, tenant.SchemaName, tenant.ID, "nonexistent-id")
+	// Use valid UUID format that doesn't exist
+	nonExistentID := uuid.New().String()
+	_, err := repo.GetCategoryByID(ctx, tenant.SchemaName, tenant.ID, nonExistentID)
 	if err == nil {
 		t.Error("expected error for non-existent category")
 	}
@@ -442,7 +446,9 @@ func TestRepository_GetWarehouseByID_NotFound(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	_, err := repo.GetWarehouseByID(ctx, tenant.SchemaName, tenant.ID, "nonexistent-id")
+	// Use valid UUID format that doesn't exist
+	nonExistentID := uuid.New().String()
+	_, err := repo.GetWarehouseByID(ctx, tenant.SchemaName, tenant.ID, nonExistentID)
 	if err == nil {
 		t.Error("expected error for non-existent warehouse")
 	}
@@ -662,7 +668,10 @@ func TestRepository_GetStockLevel_NotFound(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	_, err := repo.GetStockLevel(ctx, tenant.SchemaName, tenant.ID, "nonexistent-product", "nonexistent-warehouse")
+	// Use valid UUID formats that don't exist
+	nonExistentProductID := uuid.New().String()
+	nonExistentWarehouseID := uuid.New().String()
+	_, err := repo.GetStockLevel(ctx, tenant.SchemaName, tenant.ID, nonExistentProductID, nonExistentWarehouseID)
 	if err == nil {
 		t.Error("expected error for non-existent stock level")
 	}
