@@ -26,9 +26,9 @@ func createTestCategory(t *testing.T, repo *PostgresRepository, schemaName, tena
 		DepreciationMethod:           DepreciationStraightLine,
 		DefaultUsefulLifeMonths:      60,
 		DefaultResidualValuePercent:  decimal.NewFromFloat(10.0),
-		AssetAccountID:               strPtr("asset-account-1"),
-		DepreciationExpenseAccountID: strPtr("dep-exp-account-1"),
-		AccumulatedDepreciationAcctID: strPtr("acc-dep-account-1"),
+		AssetAccountID:               nil, // Optional - no account linked
+		DepreciationExpenseAccountID: nil, // Optional - no account linked
+		AccumulatedDepreciationAcctID: nil, // Optional - no account linked
 		CreatedAt:                    time.Now(),
 		UpdatedAt:                    time.Now(),
 	}
@@ -53,9 +53,9 @@ func TestRepository_CreateAndGetCategory(t *testing.T) {
 		DepreciationMethod:           DepreciationStraightLine,
 		DefaultUsefulLifeMonths:      60,
 		DefaultResidualValuePercent:  decimal.NewFromFloat(10.0),
-		AssetAccountID:               strPtr("asset-acct-1"),
-		DepreciationExpenseAccountID: strPtr("dep-exp-acct-1"),
-		AccumulatedDepreciationAcctID: strPtr("acc-dep-acct-1"),
+		AssetAccountID:               nil, // Optional - no account linked
+		DepreciationExpenseAccountID: nil, // Optional - no account linked
+		AccumulatedDepreciationAcctID: nil, // Optional - no account linked
 		CreatedAt:                    time.Now(),
 		UpdatedAt:                    time.Now(),
 	}
@@ -85,7 +85,8 @@ func TestRepository_GetCategoryByID_NotFound(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	_, err := repo.GetCategoryByID(ctx, tenant.SchemaName, tenant.ID, "nonexistent")
+	nonExistentID := uuid.New().String()
+	_, err := repo.GetCategoryByID(ctx, tenant.SchemaName, tenant.ID, nonExistentID)
 	if err != ErrCategoryNotFound {
 		t.Errorf("expected ErrCategoryNotFound, got %v", err)
 	}
@@ -107,9 +108,9 @@ func TestRepository_ListCategories(t *testing.T) {
 			DepreciationMethod:           DepreciationStraightLine,
 			DefaultUsefulLifeMonths:      60,
 			DefaultResidualValuePercent:  decimal.NewFromFloat(10.0),
-			AssetAccountID:               strPtr("asset-acct"),
-			DepreciationExpenseAccountID: strPtr("dep-exp-acct"),
-			AccumulatedDepreciationAcctID: strPtr("acc-dep-acct"),
+			AssetAccountID:               nil, // Optional - no account linked
+			DepreciationExpenseAccountID: nil, // Optional - no account linked
+			AccumulatedDepreciationAcctID: nil, // Optional - no account linked
 			CreatedAt:                    time.Now(),
 			UpdatedAt:                    time.Now(),
 		}
@@ -167,15 +168,15 @@ func TestRepository_UpdateCategory_NotFound(t *testing.T) {
 	ctx := context.Background()
 
 	cat := &AssetCategory{
-		ID:                           "nonexistent",
+		ID:                           uuid.New().String(),
 		TenantID:                     tenant.ID,
 		Name:                         "Test",
 		DepreciationMethod:           DepreciationStraightLine,
 		DefaultUsefulLifeMonths:      60,
 		DefaultResidualValuePercent:  decimal.Zero,
-		AssetAccountID:               strPtr("acct"),
-		DepreciationExpenseAccountID: strPtr("acct"),
-		AccumulatedDepreciationAcctID: strPtr("acct"),
+		AssetAccountID:               nil, // Optional - no account linked
+		DepreciationExpenseAccountID: nil, // Optional - no account linked
+		AccumulatedDepreciationAcctID: nil, // Optional - no account linked
 	}
 
 	err := repo.UpdateCategory(ctx, tenant.SchemaName, cat)
@@ -210,7 +211,8 @@ func TestRepository_DeleteCategory_NotFound(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	err := repo.DeleteCategory(ctx, tenant.SchemaName, tenant.ID, "nonexistent")
+	nonExistentID := uuid.New().String()
+	err := repo.DeleteCategory(ctx, tenant.SchemaName, tenant.ID, nonExistentID)
 	if err != ErrCategoryNotFound {
 		t.Errorf("expected ErrCategoryNotFound, got %v", err)
 	}
@@ -280,7 +282,9 @@ func TestRepository_GetByID_NotFound(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	_, err := repo.GetByID(ctx, tenant.SchemaName, tenant.ID, "nonexistent")
+	// Use valid UUID format that doesn't exist
+	nonExistentID := uuid.New().String()
+	_, err := repo.GetByID(ctx, tenant.SchemaName, tenant.ID, nonExistentID)
 	if err != ErrAssetNotFound {
 		t.Errorf("expected ErrAssetNotFound, got %v", err)
 	}
@@ -572,8 +576,8 @@ func TestRepository_GenerateNumber(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateNumber failed: %v", err)
 	}
-	if num != "AST-00001" {
-		t.Errorf("expected 'AST-00001', got '%s'", num)
+	if num != "FA-00001" {
+		t.Errorf("expected 'FA-00001', got '%s'", num)
 	}
 
 	// Create an asset with this number
@@ -607,8 +611,8 @@ func TestRepository_GenerateNumber(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateNumber (second) failed: %v", err)
 	}
-	if num2 != "AST-00002" {
-		t.Errorf("expected 'AST-00002', got '%s'", num2)
+	if num2 != "FA-00002" {
+		t.Errorf("expected 'FA-00002', got '%s'", num2)
 	}
 }
 
@@ -658,7 +662,7 @@ func TestRepository_DepreciationEntry(t *testing.T) {
 		AccumulatedTotal:   decimal.NewFromFloat(180.00),
 		BookValueAfter:     decimal.NewFromFloat(11820.00),
 		CreatedAt:          time.Now(),
-		CreatedBy:          "test-user",
+		CreatedBy:          uuid.New().String(),
 	}
 	if err := repo.CreateDepreciationEntry(ctx, tenant.SchemaName, entry); err != nil {
 		t.Fatalf("CreateDepreciationEntry failed: %v", err)
@@ -808,7 +812,7 @@ func TestRepository_ListAssets_WithCategoryFilter(t *testing.T) {
 	if len(assets) != 1 {
 		t.Errorf("expected 1 asset in category 1, got %d", len(assets))
 	}
-	if assets[0].CategoryID != cat1.ID {
-		t.Errorf("expected category ID %s, got %s", cat1.ID, assets[0].CategoryID)
+	if assets[0].CategoryID == nil || *assets[0].CategoryID != cat1.ID {
+		t.Errorf("expected category ID %s, got %v", cat1.ID, assets[0].CategoryID)
 	}
 }

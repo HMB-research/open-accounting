@@ -228,11 +228,12 @@ func TestPostgresRepository_QueryVATData(t *testing.T) {
 	// Create a POSTED journal entry
 	journalEntryID := uuid.New().String()
 	entryDate := time.Now().AddDate(0, 0, -5)
+	createdBy := uuid.New().String()
 	_, err = pool.Exec(ctx, `
 		INSERT INTO `+tenant.SchemaName+`.journal_entries
-		(id, tenant_id, entry_date, reference, description, status, created_at)
-		VALUES ($1, $2, $3, 'VAT-TEST-001', 'VAT Test Entry', 'POSTED', NOW())
-	`, journalEntryID, tenant.ID, entryDate)
+		(id, tenant_id, entry_number, entry_date, reference, description, status, created_at, created_by)
+		VALUES ($1, $2, 'JE-00001', $3, 'VAT-TEST-001', 'VAT Test Entry', 'POSTED', NOW(), $4)
+	`, journalEntryID, tenant.ID, entryDate, createdBy)
 	if err != nil {
 		t.Fatalf("Failed to create journal entry: %v", err)
 	}
