@@ -181,18 +181,28 @@ func TeardownTestSchema(t *testing.T, pool *pgxpool.Pool, schemaName string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// Acquire a dedicated connection from the pool to keep all operations on the same session.
+	// This is critical because pg_advisory_lock is session-level - it only protects operations
+	// on the same connection, not the entire pool.
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Logf("warning: failed to acquire connection for schema cleanup: %v", err)
+		return
+	}
+	defer conn.Release()
+
 	// Acquire PostgreSQL advisory lock to prevent database-level deadlocks
 	// This ensures only one cleanup operation runs at a time across all connections
-	_, err := pool.Exec(ctx, "SELECT pg_advisory_lock($1)", cleanupAdvisoryLockKey)
+	_, err = conn.Exec(ctx, "SELECT pg_advisory_lock($1)", cleanupAdvisoryLockKey)
 	if err != nil {
 		t.Logf("warning: failed to acquire advisory lock for schema cleanup: %v", err)
 	}
 	defer func() {
-		_, _ = pool.Exec(ctx, "SELECT pg_advisory_unlock($1)", cleanupAdvisoryLockKey)
+		_, _ = conn.Exec(ctx, "SELECT pg_advisory_unlock($1)", cleanupAdvisoryLockKey)
 	}()
 
 	// Use CASCADE to drop all objects in the schema
-	_, err = pool.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schemaName))
+	_, err = conn.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schemaName))
 	if err != nil {
 		t.Logf("warning: failed to drop test schema %s: %v", schemaName, err)
 	}
@@ -209,27 +219,37 @@ func cleanupTestTenant(t *testing.T, pool *pgxpool.Pool, tenant *TestTenant) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// Acquire a dedicated connection from the pool to keep all operations on the same session.
+	// This is critical because pg_advisory_lock is session-level - it only protects operations
+	// on the same connection, not the entire pool.
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Logf("warning: failed to acquire connection for tenant cleanup: %v", err)
+		return
+	}
+	defer conn.Release()
+
 	// Acquire PostgreSQL advisory lock to prevent database-level deadlocks
 	// This ensures only one cleanup operation runs at a time across all connections
-	_, err := pool.Exec(ctx, "SELECT pg_advisory_lock($1)", cleanupAdvisoryLockKey)
+	_, err = conn.Exec(ctx, "SELECT pg_advisory_lock($1)", cleanupAdvisoryLockKey)
 	if err != nil {
 		t.Logf("warning: failed to acquire advisory lock for tenant cleanup: %v", err)
 	}
 	defer func() {
-		_, _ = pool.Exec(ctx, "SELECT pg_advisory_unlock($1)", cleanupAdvisoryLockKey)
+		_, _ = conn.Exec(ctx, "SELECT pg_advisory_unlock($1)", cleanupAdvisoryLockKey)
 	}()
 
 	// Reset search_path to ensure we're using public schema
-	_, _ = pool.Exec(ctx, "SET search_path TO public")
+	_, _ = conn.Exec(ctx, "SET search_path TO public")
 
 	// Drop tenant schema first (this is the heavyweight operation)
-	_, err = pool.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", tenant.SchemaName))
+	_, err = conn.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", tenant.SchemaName))
 	if err != nil {
 		t.Logf("warning: failed to drop tenant schema %s: %v", tenant.SchemaName, err)
 	}
 
 	// Delete tenant record (only after schema is dropped) - explicitly use public schema
-	_, err = pool.Exec(ctx, "DELETE FROM public.tenants WHERE id = $1", tenant.ID)
+	_, err = conn.Exec(ctx, "DELETE FROM public.tenants WHERE id = $1", tenant.ID)
 	if err != nil {
 		t.Logf("warning: failed to delete test tenant %s: %v", tenant.ID, err)
 	}
