@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginAsDemo, navigateTo, getDemoCredentials, DEMO_API_URL } from './utils';
+import { loginAsDemo, navigateTo, getDemoCredentials, ensureDemoTenant, DEMO_API_URL } from './utils';
 
 /**
  * Demo Data Verification Tests
@@ -19,6 +19,7 @@ import { loginAsDemo, navigateTo, getDemoCredentials, DEMO_API_URL } from './uti
 test.describe('Demo Data Verification - All Views Must Have Data', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await loginAsDemo(page, testInfo);
+		await ensureDemoTenant(page, testInfo);
 	});
 
 	test('Dashboard shows actual chart data (not empty)', async ({ page }, testInfo) => {
