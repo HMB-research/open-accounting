@@ -101,9 +101,7 @@ func TestRepository_GetByID_NotFound(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	// Use valid UUID format that doesn't exist
-	nonExistentID := uuid.New().String()
-	_, err := repo.GetByID(ctx, tenant.SchemaName, tenant.ID, nonExistentID)
+	_, err := repo.GetByID(ctx, tenant.SchemaName, tenant.ID, "nonexistent")
 	if err != ErrQuoteNotFound {
 		t.Errorf("expected ErrQuoteNotFound, got %v", err)
 	}
@@ -404,8 +402,8 @@ func TestRepository_GenerateNumber(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateNumber failed: %v", err)
 	}
-	if num != "Q-00001" {
-		t.Errorf("expected 'Q-00001', got '%s'", num)
+	if num != "QUO-00001" {
+		t.Errorf("expected 'QUO-00001', got '%s'", num)
 	}
 
 	// Create contact
@@ -444,8 +442,8 @@ func TestRepository_GenerateNumber(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateNumber (second) failed: %v", err)
 	}
-	if num2 != "Q-00002" {
-		t.Errorf("expected 'Q-00002', got '%s'", num2)
+	if num2 != "QUO-00002" {
+		t.Errorf("expected 'QUO-00002', got '%s'", num2)
 	}
 }
 
@@ -486,16 +484,7 @@ func TestRepository_SetConvertedToOrder(t *testing.T) {
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	// Create order first (required by foreign key constraint)
 	orderID := uuid.New().String()
-	_, err = pool.Exec(ctx, `
-		INSERT INTO `+tenant.SchemaName+`.orders (id, tenant_id, order_number, contact_id, order_date, status, currency, exchange_rate, subtotal, vat_amount, total, created_at, created_by, updated_at)
-		VALUES ($1, $2, 'ORD-001', $3, NOW(), 'PENDING', 'EUR', 1, 100.00, 20.00, 120.00, NOW(), $4, NOW())
-	`, orderID, tenant.ID, contactID, uuid.New().String())
-	if err != nil {
-		t.Fatalf("Failed to create order: %v", err)
-	}
-
 	if err := repo.SetConvertedToOrder(ctx, tenant.SchemaName, tenant.ID, quote.ID, orderID); err != nil {
 		t.Fatalf("SetConvertedToOrder failed: %v", err)
 	}
