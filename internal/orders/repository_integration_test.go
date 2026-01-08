@@ -114,7 +114,9 @@ func TestRepository_GetByID_NotFound(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	_, err := repo.GetByID(ctx, tenant.SchemaName, tenant.ID, "nonexistent")
+	// Use a valid UUID that doesn't exist in the database
+	nonExistentID := uuid.New().String()
+	_, err := repo.GetByID(ctx, tenant.SchemaName, tenant.ID, nonExistentID)
 	if err != ErrOrderNotFound {
 		t.Errorf("expected ErrOrderNotFound, got %v", err)
 	}

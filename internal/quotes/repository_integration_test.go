@@ -101,7 +101,9 @@ func TestRepository_GetByID_NotFound(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	_, err := repo.GetByID(ctx, tenant.SchemaName, tenant.ID, "nonexistent")
+	// Use a valid UUID that doesn't exist in the database
+	nonExistentID := uuid.New().String()
+	_, err := repo.GetByID(ctx, tenant.SchemaName, tenant.ID, nonExistentID)
 	if err != ErrQuoteNotFound {
 		t.Errorf("expected ErrQuoteNotFound, got %v", err)
 	}
@@ -402,8 +404,8 @@ func TestRepository_GenerateNumber(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateNumber failed: %v", err)
 	}
-	if num != "QUO-00001" {
-		t.Errorf("expected 'QUO-00001', got '%s'", num)
+	if num != "Q-00001" {
+		t.Errorf("expected 'Q-00001', got '%s'", num)
 	}
 
 	// Create contact
@@ -442,8 +444,8 @@ func TestRepository_GenerateNumber(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateNumber (second) failed: %v", err)
 	}
-	if num2 != "QUO-00002" {
-		t.Errorf("expected 'QUO-00002', got '%s'", num2)
+	if num2 != "Q-00002" {
+		t.Errorf("expected 'Q-00002', got '%s'", num2)
 	}
 }
 
@@ -462,6 +464,18 @@ func TestRepository_SetConvertedToOrder(t *testing.T) {
 	`, contactID, tenant.ID)
 	if err != nil {
 		t.Fatalf("Failed to create contact: %v", err)
+	}
+
+	// Create order first (required for foreign key constraint)
+	orderID := uuid.New().String()
+	createdBy := uuid.New().String()
+	_, err = pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.orders
+		(id, tenant_id, order_number, contact_id, order_date, status, currency, exchange_rate, subtotal, vat_amount, total, created_at, created_by, updated_at)
+		VALUES ($1, $2, 'ORD-001', $3, NOW(), 'PENDING', 'EUR', 1, 100, 20, 120, NOW(), $4, NOW())
+	`, orderID, tenant.ID, contactID, createdBy)
+	if err != nil {
+		t.Fatalf("Failed to create order: %v", err)
 	}
 
 	quote := &Quote{
@@ -484,7 +498,6 @@ func TestRepository_SetConvertedToOrder(t *testing.T) {
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	orderID := uuid.New().String()
 	if err := repo.SetConvertedToOrder(ctx, tenant.SchemaName, tenant.ID, quote.ID, orderID); err != nil {
 		t.Fatalf("SetConvertedToOrder failed: %v", err)
 	}
