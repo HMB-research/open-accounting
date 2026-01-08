@@ -865,6 +865,11 @@ func TestPostgresRepository_CreateUser_DuplicateEmail(t *testing.T) {
 		t.Fatalf("CreateUser (first) failed: %v", err)
 	}
 
+	// Clean up the user after test
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM public.users WHERE id = $1", user1.ID)
+	})
+
 	// Try to create second user with same email
 	user2 := &User{
 		ID:           uuid.New().String(),

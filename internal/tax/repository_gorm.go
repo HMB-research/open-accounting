@@ -72,13 +72,13 @@ func (r *GORMRepository) QueryVATData(ctx context.Context, schemaName, tenantID 
 		SELECT
 			COALESCE(jl.vat_rate, 0) as vat_rate,
 			CASE
-				WHEN a.account_type = 'REVENUE' THEN true
+				WHEN a.account_type IN ('REVENUE', 'INCOME') THEN true
 				ELSE false
 			END as is_output,
-			SUM(CASE WHEN jl.is_debit THEN -jl.amount ELSE jl.amount END) as tax_base,
-			SUM(CASE WHEN jl.is_debit THEN -jl.amount ELSE jl.amount END) * COALESCE(jl.vat_rate, 0) / 100 as tax_amount
+			SUM(jl.credit_amount - jl.debit_amount) as tax_base,
+			SUM((jl.credit_amount - jl.debit_amount) * COALESCE(jl.vat_rate, 0) / 100) as tax_amount
 		FROM journal_entries je
-		JOIN journal_lines jl ON je.id = jl.journal_entry_id
+		JOIN journal_entry_lines jl ON je.id = jl.journal_entry_id
 		JOIN accounts a ON jl.account_id = a.id
 		WHERE je.tenant_id = ?
 			AND je.status = 'POSTED'

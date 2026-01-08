@@ -190,11 +190,6 @@ func TestPostgresRepository_SaveDeclarationWithRows(t *testing.T) {
 }
 
 func TestPostgresRepository_QueryVATData(t *testing.T) {
-	// Skip: QueryVATData queries 'journal_lines' table with (is_debit, amount, vat_rate) schema
-	// but actual table is 'journal_entry_lines' with (debit_amount, credit_amount) schema.
-	// This is a pre-existing bug in the tax module that needs schema alignment.
-	t.Skip("schema mismatch: QueryVATData uses journal_lines but actual table is journal_entry_lines with different columns")
-
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	repo := NewPostgresRepository(pool)
@@ -242,24 +237,24 @@ func TestPostgresRepository_QueryVATData(t *testing.T) {
 		t.Fatalf("Failed to create journal entry: %v", err)
 	}
 
-	// Create journal lines with VAT rates
-	// Revenue line with 22% VAT (output VAT)
+	// Create journal entry lines with VAT rates
+	// Revenue line with 22% VAT (output VAT) - credit for revenue
 	revenueLine := uuid.New().String()
 	_, err = pool.Exec(ctx, `
-		INSERT INTO `+tenant.SchemaName+`.journal_lines
-		(id, tenant_id, journal_entry_id, account_id, description, amount, is_debit, vat_rate)
-		VALUES ($1, $2, $3, $4, 'Revenue with 22% VAT', 1000, false, 22)
+		INSERT INTO `+tenant.SchemaName+`.journal_entry_lines
+		(id, tenant_id, journal_entry_id, account_id, description, debit_amount, credit_amount, vat_rate)
+		VALUES ($1, $2, $3, $4, 'Revenue with 22% VAT', 0, 1000, 22)
 	`, revenueLine, tenant.ID, journalEntryID, revenueAccountID)
 	if err != nil {
 		t.Fatalf("Failed to create revenue journal line: %v", err)
 	}
 
-	// Expense line with 9% VAT (input VAT)
+	// Expense line with 9% VAT (input VAT) - debit for expense
 	expenseLine := uuid.New().String()
 	_, err = pool.Exec(ctx, `
-		INSERT INTO `+tenant.SchemaName+`.journal_lines
-		(id, tenant_id, journal_entry_id, account_id, description, amount, is_debit, vat_rate)
-		VALUES ($1, $2, $3, $4, 'Expense with 9% VAT', 500, true, 9)
+		INSERT INTO `+tenant.SchemaName+`.journal_entry_lines
+		(id, tenant_id, journal_entry_id, account_id, description, debit_amount, credit_amount, vat_rate)
+		VALUES ($1, $2, $3, $4, 'Expense with 9% VAT', 500, 0, 9)
 	`, expenseLine, tenant.ID, journalEntryID, expenseAccountID)
 	if err != nil {
 		t.Fatalf("Failed to create expense journal line: %v", err)
@@ -302,9 +297,6 @@ func TestPostgresRepository_QueryVATData(t *testing.T) {
 }
 
 func TestPostgresRepository_QueryVATData_Empty(t *testing.T) {
-	// Skip: Same schema mismatch issue as TestPostgresRepository_QueryVATData
-	t.Skip("schema mismatch: QueryVATData uses journal_lines but actual table is journal_entry_lines")
-
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	repo := NewPostgresRepository(pool)

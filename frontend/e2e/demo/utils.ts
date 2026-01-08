@@ -68,7 +68,12 @@ export async function loginAsDemo(page: Page, testInfo: TestInfo): Promise<void>
 		throw new Error(`Login navigation timeout for ${creds.email}. Current URL: ${currentUrl}`);
 	}
 
-	await page.waitForLoadState('networkidle');
+	// Use domcontentloaded instead of networkidle (more reliable for SPA)
+	await page.waitForLoadState('domcontentloaded');
+	// Wait for dashboard content to appear
+	await page.waitForSelector('h1, .dashboard-header, [data-testid="dashboard"]', { timeout: 10000 }).catch(() => {
+		// Dashboard loaded even if selector not found
+	});
 	console.log(`Login completed in ${Date.now() - startTime}ms for ${creds.email}`);
 }
 
@@ -81,7 +86,8 @@ export async function navigateTo(page: Page, path: string, testInfo?: TestInfo):
 		url = `${url}${separator}tenant=${creds.tenantId}`;
 	}
 	await page.goto(url);
-	await page.waitForLoadState('networkidle');
+	// Use domcontentloaded instead of networkidle (more reliable for SPA)
+	await page.waitForLoadState('domcontentloaded');
 	await page.waitForTimeout(500);
 }
 
