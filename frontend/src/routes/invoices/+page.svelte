@@ -3,6 +3,8 @@
 	import { api, type Invoice, type InvoiceType, type InvoiceStatus, type Contact } from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
+	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
+	import ContactFormModal from '$lib/components/ContactFormModal.svelte';
 
 	let invoices = $state<Invoice[]>([]);
 	let contacts = $state<Contact[]>([]);
@@ -11,6 +13,9 @@
 	let showCreateInvoice = $state(false);
 	let filterType = $state<InvoiceType | ''>('');
 	let filterStatus = $state<InvoiceStatus | ''>('');
+	let filterFromDate = $state('');
+	let filterToDate = $state('');
+	let showContactModal = $state(false);
 
 	// New invoice form
 	let newType = $state<InvoiceType>('SALES');
@@ -38,7 +43,9 @@
 			const [invoiceData, contactData] = await Promise.all([
 				api.listInvoices(tenantId, {
 					type: filterType || undefined,
-					status: filterStatus || undefined
+					status: filterStatus || undefined,
+					from_date: filterFromDate || undefined,
+					to_date: filterToDate || undefined
 				}),
 				api.listContacts(tenantId, { active_only: true })
 			]);
@@ -120,6 +127,15 @@
 		newLines = [
 			{ description: '', quantity: '1', unit_price: '0', vat_rate: '22', discount_percent: '0' }
 		];
+	}
+
+	function handleNewContactSaved(contact: Contact) {
+		// Add the new contact to the list and sort alphabetically
+		contacts = [...contacts, contact].sort((a, b) => a.name.localeCompare(b.name));
+		// Select the newly created contact
+		newContactId = contact.id;
+		// Close the contact modal
+		showContactModal = false;
 	}
 
 	async function handleFilter() {
@@ -234,6 +250,11 @@
 				<option value="PAID">{m.invoices_paid()}</option>
 				<option value="OVERDUE">{m.invoices_overdue()}</option>
 			</select>
+			<DateRangeFilter
+				bind:fromDate={filterFromDate}
+				bind:toDate={filterToDate}
+				onchange={handleFilter}
+			/>
 		</div>
 	</div>
 
@@ -300,6 +321,13 @@
 	{/if}
 </div>
 
+<ContactFormModal
+	open={showContactModal}
+	tenantId={$page.url.searchParams.get('tenant') || ''}
+	onSave={handleNewContactSaved}
+	onClose={() => (showContactModal = false)}
+/>
+
 {#if showCreateInvoice}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -318,12 +346,22 @@
 					</div>
 					<div class="form-group">
 						<label class="label" for="contact">{m.invoices_customer()} *</label>
-						<select class="input" id="contact" bind:value={newContactId} required>
-							<option value="">{m.invoices_selectContact()}</option>
-							{#each contacts as contact (contact.id)}
-								<option value={contact.id}>{contact.name}</option>
-							{/each}
-						</select>
+						<div class="contact-select-row">
+							<select class="input" id="contact" bind:value={newContactId} required>
+								<option value="">{m.invoices_selectContact()}</option>
+								{#each contacts as contact (contact.id)}
+									<option value={contact.id}>{contact.name}</option>
+								{/each}
+							</select>
+							<button
+								type="button"
+								class="btn btn-secondary btn-new-contact"
+								onclick={() => (showContactModal = true)}
+								title={m.contacts_newContact()}
+							>
+								+
+							</button>
+						</div>
 					</div>
 				</div>
 
@@ -587,6 +625,22 @@
 		min-width: 150px;
 	}
 
+	.contact-select-row {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.contact-select-row select {
+		flex: 1;
+	}
+
+	.btn-new-contact {
+		padding: 0.5rem 0.75rem;
+		font-size: 1rem;
+		font-weight: bold;
+		flex-shrink: 0;
+	}
+
 	.lines-section {
 		margin: 1.5rem 0;
 	}
@@ -682,6 +736,11 @@
 		.btn-small {
 			min-height: 36px;
 			padding: 0.5rem 0.75rem;
+		}
+
+		.btn-new-contact {
+			min-height: 44px;
+			padding: 0.5rem 1rem;
 		}
 	}
 </style>
