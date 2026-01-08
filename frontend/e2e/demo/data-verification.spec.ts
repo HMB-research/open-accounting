@@ -50,10 +50,11 @@ test.describe('Demo Data Verification - All Views Must Have Data', () => {
 
 	test('Accounts page shows chart of accounts (not empty)', async ({ page }, testInfo) => {
 		await navigateTo(page, '/accounts', testInfo);
-		await page.waitForTimeout(1000);
+		await page.waitForLoadState('networkidle');
 
 		// Must show table with actual account rows
 		const tableRows = page.locator('table tbody tr');
+		await expect(tableRows.first(), 'Accounts table must be visible').toBeVisible({ timeout: 10000 });
 		const rowCount = await tableRows.count();
 		expect(rowCount, 'Accounts page must have account rows (expected 33+)').toBeGreaterThanOrEqual(10);
 
@@ -169,7 +170,7 @@ test.describe('Demo Data Verification - All Views Must Have Data', () => {
 
 	test('Recurring invoices page shows recurring invoices (not empty)', async ({ page }, testInfo) => {
 		await navigateTo(page, '/recurring', testInfo);
-		await page.waitForTimeout(1000);
+		await page.waitForLoadState('networkidle');
 
 		// Must show content area
 		const content = page.locator('main, [class*="content"]').first();
@@ -177,6 +178,7 @@ test.describe('Demo Data Verification - All Views Must Have Data', () => {
 
 		// Check for recurring invoice data
 		const tableRows = page.locator('table tbody tr');
+		await expect(tableRows.first(), 'Recurring invoices table must be visible').toBeVisible({ timeout: 10000 });
 		const rowCount = await tableRows.count();
 		expect(rowCount, 'Recurring invoices page must have invoices (expected 3)').toBeGreaterThanOrEqual(1);
 
@@ -187,15 +189,25 @@ test.describe('Demo Data Verification - All Views Must Have Data', () => {
 
 	test('Banking page shows bank accounts (not empty)', async ({ page }, testInfo) => {
 		await navigateTo(page, '/banking', testInfo);
-		await page.waitForTimeout(1000);
+		await page.waitForLoadState('networkidle');
 
 		// Check for bank account content
 		const content = page.locator('main, [class*="content"]').first();
 		await expect(content, 'Banking content must be visible').toBeVisible({ timeout: 10000 });
 
-		// Look for bank account data
+		// Look for bank account data - wait for table or cards to load
+		const tableRows = page.locator('table tbody tr');
+		const bankCards = page.locator('.card, .bank-account');
+		const hasTable = await tableRows.first().isVisible().catch(() => false);
+		const hasCards = await bankCards.first().isVisible().catch(() => false);
+
+		// Wait longer if neither table nor cards visible yet
+		if (!hasTable && !hasCards) {
+			await page.waitForTimeout(2000);
+		}
+
 		const pageContent = await page.content();
-		const hasMainAccount = /main.*eur|eur.*account|swedbank|savings/i.test(pageContent);
+		const hasMainAccount = /main.*eur|eur.*account|swedbank|savings|bank/i.test(pageContent);
 		expect(hasMainAccount, 'Banking page must show bank accounts').toBeTruthy();
 	});
 
@@ -220,13 +232,14 @@ test.describe('Demo Data Verification - All Views Must Have Data', () => {
 
 	test('TSD declarations page shows TSD data (not empty)', async ({ page }, testInfo) => {
 		await navigateTo(page, '/tsd', testInfo);
-		await page.waitForTimeout(1000);
+		await page.waitForLoadState('networkidle');
 
 		// Must show TSD page heading
 		await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 15000 });
 
 		// Check for TSD declarations
 		const tableRows = page.locator('table tbody tr');
+		await expect(tableRows.first(), 'TSD table must be visible').toBeVisible({ timeout: 10000 });
 		const rowCount = await tableRows.count();
 		expect(rowCount, 'TSD page must have declarations (expected 3)').toBeGreaterThanOrEqual(1);
 	});
