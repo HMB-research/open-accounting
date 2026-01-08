@@ -152,3 +152,110 @@ export async function assertTableRowCount(page: Page, minRows: number): Promise<
 export async function assertTextVisible(page: Page, text: string | RegExp): Promise<void> {
 	await expect(page.getByText(text).first()).toBeVisible({ timeout: 10000 });
 }
+
+/**
+ * Wait for backend to be ready before running tests.
+ * Polls the health endpoint until it responds successfully.
+ */
+export async function waitForBackendReady(baseUrl: string, maxWaitMs = 30000): Promise<boolean> {
+	const healthUrl = `${baseUrl}/health`;
+	const startTime = Date.now();
+	const pollInterval = 1000;
+
+	while (Date.now() - startTime < maxWaitMs) {
+		try {
+			const response = await fetch(healthUrl);
+			if (response.ok) {
+				console.log(`Backend ready after ${Date.now() - startTime}ms`);
+				return true;
+			}
+		} catch {
+			// Backend not ready yet, continue polling
+		}
+		await new Promise((resolve) => setTimeout(resolve, pollInterval));
+	}
+
+	console.warn(`Backend not ready after ${maxWaitMs}ms`);
+	return false;
+}
+
+/**
+ * Wait for a table to have data rows.
+ * @param page - Playwright page object
+ * @param minRows - Minimum number of rows expected (default: 1)
+ * @param timeout - Maximum wait time in ms (default: 10000)
+ */
+export async function waitForTableData(
+	page: Page,
+	minRows = 1,
+	timeout = 10000
+): Promise<void> {
+	const tableBody = page.locator('table tbody');
+	await tableBody.waitFor({ state: 'visible', timeout });
+
+	// Wait for at least minRows to appear
+	await expect(async () => {
+		const rows = await tableBody.locator('tr').count();
+		expect(rows).toBeGreaterThanOrEqual(minRows);
+	}).toPass({ timeout });
+}
+
+/**
+ * Wait for a modal to be fully visible and ready for interaction.
+ * @param page - Playwright page object
+ * @param timeout - Maximum wait time in ms (default: 10000)
+ */
+export async function waitForModalReady(page: Page, timeout = 10000): Promise<void> {
+	// Wait for modal container
+	const modal = page.locator('[role="dialog"], .modal, [data-testid="modal"]');
+	await modal.waitFor({ state: 'visible', timeout });
+
+	// Wait for any loading indicators inside the modal to disappear
+	const loadingIndicator = modal.locator('.loading, .spinner, [data-loading="true"]');
+	if (await loadingIndicator.isVisible().catch(() => false)) {
+		await loadingIndicator.waitFor({ state: 'hidden', timeout });
+	}
+
+	// Small delay for animations to complete
+	await page.waitForTimeout(100);
+}
+
+/**
+ * Wait for a form submission to complete.
+ * Waits for network activity to settle and checks for success/error indicators.
+ * @param page - Playwright page object
+ * @param timeout - Maximum wait time in ms (default: 10000)
+ */
+export async function waitForFormSubmission(page: Page, timeout = 10000): Promise<void> {
+	// Wait for network to settle after form submission
+	await page.waitForLoadState('networkidle', { timeout });
+
+	// Check if there's a success toast/message
+	const successIndicator = page.locator('.toast-success, .alert-success, [data-testid="success-message"]');
+	const errorIndicator = page.locator('.toast-error, .alert-error, [data-testid="error-message"]');
+
+	// Wait a bit for any toast to appear
+	await page.waitForTimeout(200);
+
+	// If error indicator is visible, throw an error
+	if (await errorIndicator.isVisible().catch(() => false)) {
+		const errorText = await errorIndicator.textContent().catch(() => 'Unknown error');
+		throw new Error(`Form submission failed: ${errorText}`);
+	}
+}
+
+/**
+ * Wait for page to be fully loaded and interactive.
+ * More reliable than waitForLoadState('networkidle') alone.
+ * @param page - Playwright page object
+ * @param timeout - Maximum wait time in ms (default: 10000)
+ */
+export async function waitForPageReady(page: Page, timeout = 10000): Promise<void> {
+	await page.waitForLoadState('domcontentloaded', { timeout });
+
+	// Wait for any loading overlays to disappear
+	const loadingOverlay = page.locator('.loading-overlay, [data-loading="true"], .skeleton');
+	if (await loadingOverlay.first().isVisible().catch(() => false)) {
+		await loadingOverlay.first().waitFor({ state: 'hidden', timeout });
+	}
+}

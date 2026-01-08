@@ -3,6 +3,7 @@
 	import { api, type FixedAsset, type AssetStatus, type AssetCategory, type DepreciationEntry, type DepreciationMethod, type DisposalMethod } from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
+	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
 
 	let assets = $state<FixedAsset[]>([]);
 	let categories = $state<AssetCategory[]>([]);
@@ -12,6 +13,8 @@
 	let showDisposeModal = $state(false);
 	let showDepreciationHistory = $state(false);
 	let filterStatus = $state<AssetStatus | ''>('');
+	let filterFromDate = $state('');
+	let filterToDate = $state('');
 	let selectedAsset = $state<FixedAsset | null>(null);
 	let depreciationHistory = $state<DepreciationEntry[]>([]);
 
@@ -48,7 +51,9 @@
 		try {
 			const [assetData, categoryData] = await Promise.all([
 				api.listAssets(tenantId, {
-					status: filterStatus || undefined
+					status: filterStatus || undefined,
+					from_date: filterFromDate || undefined,
+					to_date: filterToDate || undefined
 				}),
 				api.listAssetCategories(tenantId)
 			]);
@@ -271,6 +276,11 @@
 				<option value="DISPOSED">{m.assets_statusDisposed()}</option>
 				<option value="SOLD">{m.assets_statusSold()}</option>
 			</select>
+			<DateRangeFilter
+				bind:fromDate={filterFromDate}
+				bind:toDate={filterToDate}
+				onchange={handleFilter}
+			/>
 		</div>
 	</div>
 

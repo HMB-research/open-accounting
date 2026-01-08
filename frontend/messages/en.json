@@ -1235,5 +1235,11 @@
 	"costCenter_updated": "Cost center updated successfully",
 	"costCenter_deleted": "Cost center deleted successfully",
 	"costCenter_confirmDelete": "Confirm Delete",
-	"costCenter_deleteWarning": "Are you sure you want to delete cost center \"{name}\"? This action cannot be undone."
+	"costCenter_deleteWarning": "Are you sure you want to delete cost center \"{name}\"? This action cannot be undone.",
+	"filter_dateRange": "Date Range",
+	"filter_allTime": "All Time",
+	"filter_today": "Today",
+	"filter_last7Days": "Last 7 Days",
+	"filter_last30Days": "Last 30 Days",
+	"filter_clearDates": "Clear Dates"
 }

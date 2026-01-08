@@ -3,6 +3,7 @@
 	import { api, type Order, type OrderStatus, type Contact } from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
+	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
 
 	let orders = $state<Order[]>([]);
 	let contacts = $state<Contact[]>([]);
@@ -10,6 +11,8 @@
 	let error = $state('');
 	let showCreateOrder = $state(false);
 	let filterStatus = $state<OrderStatus | ''>('');
+	let filterFromDate = $state('');
+	let filterToDate = $state('');
 
 	// New order form
 	let newContactId = $state('');
@@ -34,7 +37,9 @@
 		try {
 			const [orderData, contactData] = await Promise.all([
 				api.listOrders(tenantId, {
-					status: filterStatus || undefined
+					status: filterStatus || undefined,
+					from_date: filterFromDate || undefined,
+					to_date: filterToDate || undefined
 				}),
 				api.listContacts(tenantId, { active_only: true })
 			]);
@@ -260,6 +265,11 @@
 				<option value="DELIVERED">{m.orders_statusDelivered()}</option>
 				<option value="CANCELLED">{m.orders_statusCancelled()}</option>
 			</select>
+			<DateRangeFilter
+				bind:fromDate={filterFromDate}
+				bind:toDate={filterToDate}
+				onchange={handleFilter}
+			/>
 		</div>
 	</div>
 

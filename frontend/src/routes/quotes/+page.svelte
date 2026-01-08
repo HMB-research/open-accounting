@@ -3,6 +3,7 @@
 	import { api, type Quote, type QuoteStatus, type Contact } from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
+	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
 
 	let quotes = $state<Quote[]>([]);
 	let contacts = $state<Contact[]>([]);
@@ -10,6 +11,8 @@
 	let error = $state('');
 	let showCreateQuote = $state(false);
 	let filterStatus = $state<QuoteStatus | ''>('');
+	let filterFromDate = $state('');
+	let filterToDate = $state('');
 
 	// New quote form
 	let newContactId = $state('');
@@ -34,7 +37,9 @@
 		try {
 			const [quoteData, contactData] = await Promise.all([
 				api.listQuotes(tenantId, {
-					status: filterStatus || undefined
+					status: filterStatus || undefined,
+					from_date: filterFromDate || undefined,
+					to_date: filterToDate || undefined
 				}),
 				api.listContacts(tenantId, { active_only: true })
 			]);
@@ -234,6 +239,11 @@
 				<option value="EXPIRED">{m.quotes_statusExpired()}</option>
 				<option value="CONVERTED">{m.quotes_statusConverted()}</option>
 			</select>
+			<DateRangeFilter
+				bind:fromDate={filterFromDate}
+				bind:toDate={filterToDate}
+				onchange={handleFilter}
+			/>
 		</div>
 	</div>
 
