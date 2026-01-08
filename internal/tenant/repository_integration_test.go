@@ -538,6 +538,20 @@ func TestPostgresRepository_DeleteTenant(t *testing.T) {
 		t.Fatalf("CreateTenant failed: %v", err)
 	}
 
+	// Acquire advisory lock to prevent deadlocks with parallel test cleanup
+	// Use same lock key as testutil cleanup (12345678)
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("failed to acquire connection: %v", err)
+	}
+	defer conn.Release()
+
+	_, err = conn.Exec(ctx, "SELECT pg_advisory_lock($1)", 12345678)
+	if err != nil {
+		t.Fatalf("failed to acquire advisory lock: %v", err)
+	}
+	defer func() { _, _ = conn.Exec(ctx, "SELECT pg_advisory_unlock($1)", 12345678) }()
+
 	// Delete the tenant (pass both tenantID and schemaName)
 	err = repo.DeleteTenant(ctx, tenant.ID, tenant.SchemaName)
 	if err != nil {
