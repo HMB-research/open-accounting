@@ -808,7 +808,7 @@ func TestRepository_ListAssets_WithCategoryFilter(t *testing.T) {
 	if len(assets) != 1 {
 		t.Errorf("expected 1 asset in category 1, got %d", len(assets))
 	}
-	if assets[0].CategoryID != cat1.ID {
-		t.Errorf("expected category ID %s, got %s", cat1.ID, assets[0].CategoryID)
+	if assets[0].CategoryID == nil || *assets[0].CategoryID != cat1.ID {
+		t.Errorf("expected category ID %s, got %v", cat1.ID, assets[0].CategoryID)
 	}
 }
