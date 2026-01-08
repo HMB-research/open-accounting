@@ -1235,5 +1235,11 @@
 	"costCenter_updated": "Kulukoht uuendatud edukalt",
 	"costCenter_deleted": "Kulukoht kustutatud edukalt",
 	"costCenter_confirmDelete": "Kinnita kustutamine",
-	"costCenter_deleteWarning": "Kas olete kindel, et soovite kustutada kulukoha \"{name}\"? Seda toimingut ei saa tagasi võtta."
+	"costCenter_deleteWarning": "Kas olete kindel, et soovite kustutada kulukoha \"{name}\"? Seda toimingut ei saa tagasi võtta.",
+	"filter_dateRange": "Kuupäevavahemik",
+	"filter_allTime": "Kogu aeg",
+	"filter_today": "Täna",
+	"filter_last7Days": "Viimased 7 päeva",
+	"filter_last30Days": "Viimased 30 päeva",
+	"filter_clearDates": "Tühjenda kuupäevad"
 }

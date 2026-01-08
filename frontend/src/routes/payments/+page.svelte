@@ -3,6 +3,7 @@
 	import { api, type Payment, type PaymentType, type Contact, type Invoice } from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
+	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
 
 	let payments = $state<Payment[]>([]);
 	let contacts = $state<Contact[]>([]);
@@ -11,6 +12,8 @@
 	let error = $state('');
 	let showCreatePayment = $state(false);
 	let filterType = $state<PaymentType | ''>('');
+	let filterFromDate = $state('');
+	let filterToDate = $state('');
 
 	// New payment form
 	let newType = $state<PaymentType>('RECEIVED');
@@ -36,7 +39,9 @@
 		try {
 			const [paymentData, contactData, invoiceData] = await Promise.all([
 				api.listPayments(tenantId, {
-					type: filterType || undefined
+					type: filterType || undefined,
+					from_date: filterFromDate || undefined,
+					to_date: filterToDate || undefined
 				}),
 				api.listContacts(tenantId, { active_only: true }),
 				api.listInvoices(tenantId, { status: 'SENT' })
@@ -172,6 +177,11 @@
 				<option value="RECEIVED">{m.payments_received()}</option>
 				<option value="MADE">{m.payments_made()}</option>
 			</select>
+			<DateRangeFilter
+				bind:fromDate={filterFromDate}
+				bind:toDate={filterToDate}
+				onchange={handleFilter}
+			/>
 		</div>
 	</div>
 
