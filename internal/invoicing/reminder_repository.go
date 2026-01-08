@@ -34,7 +34,7 @@ func (r *ReminderPostgresRepository) GetOverdueInvoices(ctx context.Context, sch
 			i.amount_paid,
 			(i.total - i.amount_paid) as outstanding_amount,
 			i.currency,
-			GREATEST(0, EXTRACT(DAY FROM ($2::date - i.due_date))::int) as days_overdue
+			GREATEST(0, ($2::date - i.due_date)::int) as days_overdue
 		FROM %s.invoices i
 		JOIN %s.contacts c ON i.contact_id = c.id
 		WHERE i.tenant_id = $1
@@ -87,6 +87,11 @@ func (r *ReminderPostgresRepository) GetOverdueInvoices(ctx context.Context, sch
 
 // GetReminderCount gets the number of reminders sent for an invoice
 func (r *ReminderPostgresRepository) GetReminderCount(ctx context.Context, schemaName, tenantID, invoiceID string) (int, *time.Time, error) {
+	// Ensure table exists before querying
+	if err := r.ensureReminderTable(ctx, schemaName); err != nil {
+		return 0, nil, err
+	}
+
 	query := fmt.Sprintf(`
 		SELECT COUNT(*), MAX(sent_at)
 		FROM %s.payment_reminders
@@ -98,8 +103,7 @@ func (r *ReminderPostgresRepository) GetReminderCount(ctx context.Context, schem
 
 	err := r.db.QueryRow(ctx, query, tenantID, invoiceID).Scan(&count, &lastSentAt)
 	if err != nil {
-		// Table might not exist yet
-		return 0, nil, nil
+		return 0, nil, fmt.Errorf("query reminder count: %w", err)
 	}
 
 	return count, lastSentAt, nil
@@ -206,10 +210,12 @@ func (r *ReminderPostgresRepository) GetRemindersByInvoice(ctx context.Context, 
 
 // ensureReminderTable creates the payment_reminders table if it doesn't exist
 func (r *ReminderPostgresRepository) ensureReminderTable(ctx context.Context, schemaName string) error {
+	// Note: tenant_id references public.tenants because the tenants table is in
+	// the public schema, not in tenant-specific schemas
 	query := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s.payment_reminders (
 			id UUID PRIMARY KEY,
-			tenant_id UUID NOT NULL REFERENCES %s.tenants(id),
+			tenant_id UUID NOT NULL REFERENCES public.tenants(id),
 			invoice_id UUID NOT NULL,
 			invoice_number VARCHAR(50) NOT NULL,
 			contact_id UUID NOT NULL,
@@ -227,7 +233,7 @@ func (r *ReminderPostgresRepository) ensureReminderTable(ctx context.Context, sc
 			ON %s.payment_reminders(tenant_id);
 		CREATE INDEX IF NOT EXISTS idx_payment_reminders_invoice_id
 			ON %s.payment_reminders(invoice_id);
-	`, schemaName, schemaName, schemaName, schemaName)
+	`, schemaName, schemaName, schemaName)
 
 	_, err := r.db.Exec(ctx, query)
 	return err
