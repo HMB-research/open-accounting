@@ -3,6 +3,7 @@
 	import { api, type BankAccount, type BankTransaction, type MatchSuggestion } from '$lib/api';
 	import { goto } from '$app/navigation';
 	import * as m from '$lib/paraglide/messages.js';
+	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
 
 	let tenantId = $state('');
 	let bankAccounts = $state<BankAccount[]>([]);
@@ -29,6 +30,8 @@
 
 	// Filter state
 	let statusFilter = $state<'all' | 'UNMATCHED' | 'MATCHED' | 'RECONCILED'>('all');
+	let filterFromDate = $state('');
+	let filterToDate = $state('');
 
 	$effect(() => {
 		const urlTenantId = $page.url.searchParams.get('tenant');
@@ -85,11 +88,18 @@
 	async function loadTransactions() {
 		if (!selectedAccount) return;
 		try {
-			const filter = statusFilter === 'all' ? undefined : { status: statusFilter as any };
-			transactions = await api.listBankTransactions(tenantId, selectedAccount.id, filter);
+			const filter: Record<string, string | undefined> = {};
+			if (statusFilter !== 'all') filter.status = statusFilter;
+			if (filterFromDate) filter.from_date = filterFromDate;
+			if (filterToDate) filter.to_date = filterToDate;
+			transactions = await api.listBankTransactions(tenantId, selectedAccount.id, Object.keys(filter).length > 0 ? filter : undefined);
 		} catch (e) {
 			console.error('Failed to load transactions:', e);
 		}
+	}
+
+	function handleDateFilter() {
+		loadTransactions();
 	}
 
 	async function createAccount() {
@@ -246,23 +256,31 @@
 		{#if selectedAccount}
 			<!-- Filters -->
 			<div class="bg-white rounded-lg shadow mb-6 p-4">
-				<div class="flex gap-2">
-					<button
-						onclick={() => statusFilter = 'all'}
-						class="px-3 py-1 rounded {statusFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
-					>{m.banking_all()}</button>
-					<button
-						onclick={() => statusFilter = 'UNMATCHED'}
-						class="px-3 py-1 rounded {statusFilter === 'UNMATCHED' ? 'bg-yellow-600 text-white' : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'}"
-					>{m.banking_unmatched()}</button>
-					<button
-						onclick={() => statusFilter = 'MATCHED'}
-						class="px-3 py-1 rounded {statusFilter === 'MATCHED' ? 'bg-green-600 text-white' : 'bg-green-100 text-green-700 hover:bg-green-200'}"
-					>{m.banking_matched()}</button>
-					<button
-						onclick={() => statusFilter = 'RECONCILED'}
-						class="px-3 py-1 rounded {statusFilter === 'RECONCILED' ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}"
-					>{m.banking_reconciled()}</button>
+				<div class="flex flex-wrap gap-4 items-center">
+					<div class="flex gap-2">
+						<button
+							onclick={() => statusFilter = 'all'}
+							class="px-3 py-1 rounded {statusFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
+						>{m.banking_all()}</button>
+						<button
+							onclick={() => statusFilter = 'UNMATCHED'}
+							class="px-3 py-1 rounded {statusFilter === 'UNMATCHED' ? 'bg-yellow-600 text-white' : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'}"
+						>{m.banking_unmatched()}</button>
+						<button
+							onclick={() => statusFilter = 'MATCHED'}
+							class="px-3 py-1 rounded {statusFilter === 'MATCHED' ? 'bg-green-600 text-white' : 'bg-green-100 text-green-700 hover:bg-green-200'}"
+						>{m.banking_matched()}</button>
+						<button
+							onclick={() => statusFilter = 'RECONCILED'}
+							class="px-3 py-1 rounded {statusFilter === 'RECONCILED' ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}"
+						>{m.banking_reconciled()}</button>
+					</div>
+					<DateRangeFilter
+						bind:fromDate={filterFromDate}
+						bind:toDate={filterToDate}
+						onchange={handleDateFilter}
+						compact
+					/>
 				</div>
 			</div>
 
