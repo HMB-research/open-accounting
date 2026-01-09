@@ -228,6 +228,7 @@ open-accounting/
 | [Deployment](docs/DEPLOYMENT.md) | Production deployment guide |
 | [EMTA Integration](docs/EMTA_INTEGRATION.md) | Estonian Tax Board integration guide |
 | [Plugins](docs/PLUGINS.md) | Plugin development and marketplace guide |
+| [E2E Testing](docs/plans/2026-01-09-e2e-test-consolidation-design.md) | End-to-end testing architecture |
 | [Swagger UI](/swagger/) | Interactive API explorer (when server is running) |
 
 ---

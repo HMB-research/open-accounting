@@ -91,7 +91,7 @@ describe('API Client - Core Functionality', () => {
 				})
 			});
 
-			await api.login('test@example.com', 'password', 'tenant-id-123');
+			await api.login('test@example.com', 'password', false, 'tenant-id-123');
 
 			expect(mockFetch).toHaveBeenCalledWith(
 				expect.any(String),

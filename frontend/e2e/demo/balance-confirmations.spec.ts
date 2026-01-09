@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
-import { loginAsDemo, navigateTo, ensureDemoTenant } from './utils';
+import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
 
 test.describe('Demo Balance Confirmations - Page Structure', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/reports/balance-confirmations', testInfo);
 		await page.waitForLoadState('networkidle');
@@ -39,7 +39,7 @@ test.describe('Demo Balance Confirmations - Page Structure', () => {
 
 test.describe('Demo Balance Confirmations - Receivables', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/reports/balance-confirmations', testInfo);
 		await page.waitForLoadState('networkidle');
@@ -84,7 +84,7 @@ test.describe('Demo Balance Confirmations - Receivables', () => {
 
 test.describe('Demo Balance Confirmations - Payables', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/reports/balance-confirmations', testInfo);
 		await page.waitForLoadState('networkidle');
@@ -115,7 +115,7 @@ test.describe('Demo Balance Confirmations - Payables', () => {
 
 test.describe('Demo Balance Confirmations - Date Filtering', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/reports/balance-confirmations', testInfo);
 		await page.waitForLoadState('networkidle');
@@ -143,7 +143,7 @@ test.describe('Demo Balance Confirmations - Date Filtering', () => {
 
 test.describe('Demo Balance Confirmations - Contact Details', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/reports/balance-confirmations', testInfo);
 		await page.waitForLoadState('networkidle');
@@ -203,7 +203,7 @@ test.describe('Demo Balance Confirmations - Contact Details', () => {
 
 test.describe('Demo Balance Confirmations - Table Display', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/reports/balance-confirmations', testInfo);
 		await page.waitForLoadState('networkidle');

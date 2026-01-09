@@ -1,14 +1,14 @@
 import { test, expect } from '@playwright/test';
-import { loginAsDemo, navigateTo, ensureDemoTenant } from './utils';
+import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
 
 test.describe('Orders View', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 	});
 
-	test('displays orders page with correct structure', async ({ page }) => {
-		await navigateTo(page, '/orders');
+	test('displays orders page with correct structure', async ({ page }, testInfo) => {
+		await navigateTo(page, '/orders', testInfo);
 
 		// Wait for page to load - heading should be visible
 		await expect(page.getByRole('heading', { name: /orders/i })).toBeVisible();
@@ -37,8 +37,8 @@ test.describe('Orders View', () => {
 		expect(true).toBe(true);
 	});
 
-	test('displays order statuses in table when data exists', async ({ page }) => {
-		await navigateTo(page, '/orders');
+	test('displays order statuses in table when data exists', async ({ page }, testInfo) => {
+		await navigateTo(page, '/orders', testInfo);
 		await expect(page.getByRole('heading', { name: /orders/i })).toBeVisible();
 
 		// Wait for data to load
@@ -68,8 +68,8 @@ test.describe('Orders View', () => {
 		}
 	});
 
-	test('shows order linked to quote when applicable', async ({ page }) => {
-		await navigateTo(page, '/orders');
+	test('shows order linked to quote when applicable', async ({ page }, testInfo) => {
+		await navigateTo(page, '/orders', testInfo);
 
 		// Wait for data to load
 		await page.waitForTimeout(2000);
@@ -87,8 +87,8 @@ test.describe('Orders View', () => {
 		}
 	});
 
-	test('can filter orders by status', async ({ page }) => {
-		await navigateTo(page, '/orders');
+	test('can filter orders by status', async ({ page }, testInfo) => {
+		await navigateTo(page, '/orders', testInfo);
 
 		// Find and use the status filter
 		const statusFilter = page.locator('select').first();
@@ -110,8 +110,8 @@ test.describe('Orders View', () => {
 		}
 	});
 
-	test('has New Order button', async ({ page }) => {
-		await navigateTo(page, '/orders');
+	test('has New Order button', async ({ page }, testInfo) => {
+		await navigateTo(page, '/orders', testInfo);
 
 		// Verify New button exists
 		const newButton = page.getByRole('button', { name: /new|create|add/i }).or(

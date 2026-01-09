@@ -10,6 +10,7 @@
 	let isLoading = $state(false);
 	let isRegister = $state(false);
 	let name = $state('');
+	let rememberMe = $state(false);
 
 	function parseError(err: unknown): { message: string; type: 'auth' | 'network' | 'server' | 'unknown' } {
 		if (err instanceof Error) {
@@ -75,7 +76,7 @@
 			if (isRegister) {
 				await api.register(email, password, name);
 			}
-			await api.login(email, password);
+			await api.login(email, password, rememberMe);
 			window.location.href = '/dashboard';
 		} catch (err) {
 			const parsed = parseError(err);
@@ -155,6 +156,15 @@
 					placeholder={isRegister ? m.auth_passwordMinLength() : m.auth_password()}
 				/>
 			</div>
+
+			{#if !isRegister}
+				<div class="form-group remember-me">
+					<label class="checkbox-label">
+						<input type="checkbox" bind:checked={rememberMe} />
+						<span>{m.auth_rememberMe()}</span>
+					</label>
+				</div>
+			{/if}
 
 			<button class="btn btn-primary btn-full" type="submit" disabled={isLoading}>
 				{#if isLoading}
@@ -265,5 +275,25 @@
 	.error-message {
 		font-size: 0.875rem;
 		line-height: 1.5;
+	}
+
+	.remember-me {
+		margin-top: 0.5rem;
+		margin-bottom: 1rem;
+	}
+
+	.checkbox-label {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		cursor: pointer;
+		font-size: 0.875rem;
+		color: var(--color-text-muted);
+	}
+
+	.checkbox-label input[type='checkbox'] {
+		width: 1rem;
+		height: 1rem;
+		cursor: pointer;
 	}
 </style>

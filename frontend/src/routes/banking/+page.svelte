@@ -229,6 +229,10 @@
 		</div>
 	{:else if error}
 		<div class="bg-red-50 text-red-600 p-4 rounded-lg">{error}</div>
+	{:else if bankAccounts.length === 0}
+		<div class="empty-state card">
+			<p>{m.banking_noAccounts()}</p>
+		</div>
 	{:else}
 		<!-- Bank Account Selector -->
 		<div class="bg-white rounded-lg shadow mb-6 p-4">

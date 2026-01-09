@@ -1,6 +1,7 @@
 import { browser } from '$app/environment';
 import { env } from '$env/dynamic/public';
 import Decimal from 'decimal.js';
+import { authStore } from './stores/auth';
 
 /**
  * Get the API base URL.
@@ -51,34 +52,40 @@ interface ApiError {
 }
 
 class ApiClient {
-	private accessToken: string | null = null;
-	private refreshToken: string | null = null;
-
-	constructor() {
-		if (browser) {
-			this.accessToken = localStorage.getItem('access_token');
-			this.refreshToken = localStorage.getItem('refresh_token');
-		}
+	/**
+	 * Get the current access token from the auth store
+	 */
+	private get accessToken(): string | null {
+		return authStore.getAccessToken();
 	}
 
-	setTokens(access: string, refresh: string) {
-		this.accessToken = access;
-		this.refreshToken = refresh;
-		if (browser) {
-			localStorage.setItem('access_token', access);
-			localStorage.setItem('refresh_token', refresh);
-		}
+	/**
+	 * Get the current refresh token from the auth store
+	 */
+	private get refreshToken(): string | null {
+		return authStore.getRefreshToken();
 	}
 
+	/**
+	 * Set tokens after login - use the auth store
+	 * @param access Access token
+	 * @param refresh Refresh token
+	 * @param rememberMe Whether to persist tokens across browser sessions
+	 */
+	setTokens(access: string, refresh: string, rememberMe: boolean = false) {
+		authStore.setTokens(access, refresh, rememberMe);
+	}
+
+	/**
+	 * Clear tokens on logout - use the auth store
+	 */
 	clearTokens() {
-		this.accessToken = null;
-		this.refreshToken = null;
-		if (browser) {
-			localStorage.removeItem('access_token');
-			localStorage.removeItem('refresh_token');
-		}
+		authStore.clearTokens();
 	}
 
+	/**
+	 * Check if user is authenticated
+	 */
 	get isAuthenticated(): boolean {
 		return !!this.accessToken;
 	}
@@ -163,10 +170,7 @@ class ApiClient {
 				{ refresh_token: this.refreshToken },
 				true
 			);
-			this.accessToken = data.access_token;
-			if (browser) {
-				localStorage.setItem('access_token', data.access_token);
-			}
+			authStore.updateAccessToken(data.access_token);
 			return true;
 		} catch {
 			this.clearTokens();
@@ -184,14 +188,14 @@ class ApiClient {
 		);
 	}
 
-	async login(email: string, password: string, tenantId?: string): Promise<TokenResponse> {
+	async login(email: string, password: string, rememberMe: boolean = false, tenantId?: string): Promise<TokenResponse> {
 		const data = await this.request<TokenResponse>(
 			'POST',
 			'/api/v1/auth/login',
 			{ email, password, tenant_id: tenantId },
 			true
 		);
-		this.setTokens(data.access_token, data.refresh_token);
+		this.setTokens(data.access_token, data.refresh_token, rememberMe);
 		return data;
 	}
 

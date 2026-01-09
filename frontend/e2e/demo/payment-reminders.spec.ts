@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
-import { loginAsDemo, navigateTo, ensureDemoTenant } from './utils';
+import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
 
 test.describe('Demo Payment Reminders - Page Structure', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/invoices/reminders', testInfo);
 		await page.waitForLoadState('networkidle');
@@ -29,7 +29,7 @@ test.describe('Demo Payment Reminders - Page Structure', () => {
 
 test.describe('Demo Payment Reminders - Summary Display', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/invoices/reminders', testInfo);
 		await page.waitForLoadState('networkidle');
@@ -73,7 +73,7 @@ test.describe('Demo Payment Reminders - Summary Display', () => {
 
 test.describe('Demo Payment Reminders - Invoice Selection', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/invoices/reminders', testInfo);
 		await page.waitForLoadState('networkidle');
@@ -121,7 +121,7 @@ test.describe('Demo Payment Reminders - Invoice Selection', () => {
 
 test.describe('Demo Payment Reminders - Send Functionality', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/invoices/reminders', testInfo);
 		await page.waitForLoadState('networkidle');
@@ -176,7 +176,7 @@ test.describe('Demo Payment Reminders - Send Functionality', () => {
 
 test.describe('Demo Payment Reminders - Modal', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/invoices/reminders', testInfo);
 		await page.waitForLoadState('networkidle');
@@ -263,7 +263,7 @@ test.describe('Demo Payment Reminders - Modal', () => {
 
 test.describe('Demo Payment Reminders - Table Display', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/invoices/reminders', testInfo);
 		await page.waitForLoadState('networkidle');

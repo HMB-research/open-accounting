@@ -118,7 +118,7 @@ func (r *PostgresRepository) List(ctx context.Context, schemaName, tenantID stri
 	}
 	defer rows.Close()
 
-	var payments []Payment
+	payments := []Payment{}
 	for rows.Next() {
 		var p Payment
 		if err := rows.Scan(
