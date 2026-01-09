@@ -1,17 +1,23 @@
 import { Page, expect, TestInfo } from '@playwright/test';
+import * as fs from 'fs';
+import * as path from 'path';
 
 // Use environment variables for local testing, fall back to Railway for remote demo testing
 export const DEMO_URL = process.env.BASE_URL || 'https://open-accounting.up.railway.app';
 export const DEMO_API_URL = process.env.PUBLIC_API_URL || 'https://open-accounting-api.up.railway.app';
 
+// Auth state directory - matches playwright.demo.config.ts
+const AUTH_DIR = path.join(__dirname, '..', '..', '.auth');
+
 // Demo user reserved for end users (README documentation)
 // This user should NOT be used by automated tests to avoid conflicts
 export const END_USER_DEMO = { email: 'demo1@example.com', password: 'demo12345', tenantSlug: 'demo1', tenantName: 'Demo Company 1', tenantId: 'b0000000-0000-0000-0001-000000000001' };
 
-// Demo credentials for E2E tests only (demo2, demo3, demo4)
-// Tenant IDs follow the pattern: b0000000-0000-0000-000X-000000000001 where X is user number
-// NOTE: demo1 is reserved for end users - tests use demo2, demo3, demo4 only
+// Demo credentials for E2E tests (demo1-demo4)
+// All 4 users are available in CI since it's isolated from public demo
+// NOTE: demo1 may be in use by end users on live Railway demo - tests handle this gracefully
 export const DEMO_CREDENTIALS = [
+	{ email: 'demo1@example.com', password: 'demo12345', tenantSlug: 'demo1', tenantName: 'Demo Company 1', tenantId: 'b0000000-0000-0000-0001-000000000001' },
 	{ email: 'demo2@example.com', password: 'demo12345', tenantSlug: 'demo2', tenantName: 'Demo Company 2', tenantId: 'b0000000-0000-0000-0002-000000000001' },
 	{ email: 'demo3@example.com', password: 'demo12345', tenantSlug: 'demo3', tenantName: 'Demo Company 3', tenantId: 'b0000000-0000-0000-0003-000000000001' },
 	{ email: 'demo4@example.com', password: 'demo12345', tenantSlug: 'demo4', tenantName: 'Demo Company 4', tenantId: 'b0000000-0000-0000-0004-000000000001' }
@@ -75,6 +81,80 @@ export async function loginAsDemo(page: Page, testInfo: TestInfo): Promise<void>
 		// Dashboard loaded even if selector not found
 	});
 	console.log(`Login completed in ${Date.now() - startTime}ms for ${creds.email}`);
+}
+
+/**
+ * Load auth state from file and apply to browser context.
+ * Returns true if auth was loaded successfully, false otherwise.
+ */
+async function loadAuthState(page: Page, workerIndex: number): Promise<boolean> {
+	const authFile = path.join(AUTH_DIR, `worker-${workerIndex}.json`);
+
+	try {
+		if (!fs.existsSync(authFile)) {
+			console.log(`[Worker ${workerIndex}] Auth file not found: ${authFile}`);
+			return false;
+		}
+
+		const authData = JSON.parse(fs.readFileSync(authFile, 'utf-8'));
+
+		// Add cookies to the browser context
+		if (authData.cookies && authData.cookies.length > 0) {
+			await page.context().addCookies(authData.cookies);
+			console.log(`[Worker ${workerIndex}] Loaded ${authData.cookies.length} cookies from auth file`);
+		}
+
+		// Add localStorage items
+		if (authData.origins && authData.origins.length > 0) {
+			for (const origin of authData.origins) {
+				if (origin.localStorage && origin.localStorage.length > 0) {
+					await page.goto(origin.origin, { waitUntil: 'domcontentloaded' });
+					for (const item of origin.localStorage) {
+						await page.evaluate(
+							({ key, value }) => localStorage.setItem(key, value),
+							{ key: item.name, value: item.value }
+						);
+					}
+					console.log(`[Worker ${workerIndex}] Loaded ${origin.localStorage.length} localStorage items`);
+				}
+			}
+		}
+
+		return true;
+	} catch (error) {
+		console.log(`[Worker ${workerIndex}] Failed to load auth state: ${error}`);
+		return false;
+	}
+}
+
+/**
+ * Ensure authentication - try to load saved auth state, fall back to login.
+ * This is the preferred way to authenticate in tests for better performance.
+ */
+export async function ensureAuthenticated(page: Page, testInfo: TestInfo): Promise<void> {
+	const workerIndex = testInfo.parallelIndex % DEMO_CREDENTIALS.length;
+	const creds = getDemoCredentials(testInfo);
+	const startTime = Date.now();
+
+	// Try to load saved auth state
+	const authLoaded = await loadAuthState(page, workerIndex);
+
+	if (authLoaded) {
+		// Navigate to dashboard to verify auth works
+		await page.goto(`${DEMO_URL}/dashboard`);
+		await page.waitForLoadState('domcontentloaded');
+
+		// Check if we're on dashboard (auth valid) or redirected to login (auth invalid)
+		const currentUrl = page.url();
+		if (!currentUrl.includes('/login')) {
+			console.log(`[Worker ${workerIndex}] Session reuse successful in ${Date.now() - startTime}ms`);
+			return;
+		}
+		console.log(`[Worker ${workerIndex}] Saved auth invalid, performing fresh login`);
+	}
+
+	// Fall back to full login
+	await loginAsDemo(page, testInfo);
 }
 
 export async function navigateTo(page: Page, path: string, testInfo?: TestInfo): Promise<void> {
