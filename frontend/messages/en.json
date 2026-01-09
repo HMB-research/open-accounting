@@ -70,6 +70,7 @@
 	"auth_errorEmailExists": "An account with this email already exists.",
 	"auth_errorRateLimit": "Too many attempts. Please wait a moment and try again.",
 	"auth_errorUnknown": "An unexpected error occurred. Please try again.",
+	"auth_rememberMe": "Remember me",
 	"dashboard_title": "Dashboard",
 	"dashboard_revenue": "Revenue",
 	"dashboard_expenses": "Expenses",
