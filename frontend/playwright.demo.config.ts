@@ -1,59 +1,65 @@
 import { defineConfig, devices } from '@playwright/test';
+import * as path from 'path';
 
 // Use environment variables for local testing, fall back to Railway for remote demo testing
 const baseURL = process.env.BASE_URL || 'https://open-accounting.up.railway.app';
 const isLocalTesting = baseURL.includes('localhost');
 
+// Auth state directory - each worker creates its own file
+export const AUTH_DIR = path.join(__dirname, '.auth');
+
 /**
  * Playwright configuration for Demo Environment E2E tests
  *
- * Run with: npx playwright test --config=playwright.demo.config.ts
- * Or: npm run test:e2e:demo
- *
- * These tests run against the live demo environment:
- * - Frontend: https://open-accounting.up.railway.app
- * - API: https://open-accounting-api.up.railway.app
- *
- * Or against local environment when BASE_URL is set to localhost:
- * - Frontend: http://localhost:5173
- * - API: http://localhost:8080
- *
- * Parallel testing is enabled with 3 workers, each using a dedicated demo user:
- * - Worker 0: demo1@example.com / tenant_demo1
- * - Worker 1: demo2@example.com / tenant_demo2
- * - Worker 2: demo3@example.com / tenant_demo3
+ * PERFORMANCE OPTIMIZATIONS:
+ * 1. Auth setup runs once per worker, saves session state to file
+ * 2. ensureAuthenticated loads saved state instead of re-logging in
+ * 3. 4 workers for 4 demo users (demo1-4)
+ * 4. CI sharding supported via --shard flag
  */
 export default defineConfig({
 	testDir: './e2e',
-	// Include demo tests, auth tests (login page), and demo-env tests
-	testMatch: ['**/demo/*.spec.ts', 'demo-env.spec.ts', 'demo-all-views.spec.ts', 'auth.spec.ts'],
-	fullyParallel: true, // Enable parallel execution
+	fullyParallel: true,
 	forbidOnly: !!process.env.CI,
-	retries: 2, // Retry on network flakiness
-	workers: 3, // 3 workers for 3 demo users
+	retries: process.env.CI ? 1 : 0, // Reduce retries in CI
+	workers: 4, // 4 workers for 4 demo users
 	reporter: [
 		['html', { outputFolder: 'playwright-report-demo' }],
 		['list'],
 		['json', { outputFile: 'demo-test-results.json' }]
 	],
-	timeout: 60000, // Longer timeout for remote environment
+	timeout: 60000,
 
 	use: {
 		baseURL,
 		trace: 'on-first-retry',
 		screenshot: 'only-on-failure',
 		video: 'retain-on-failure',
-		// Extra time for network requests
 		actionTimeout: 15000,
 		navigationTimeout: 30000
 	},
 
 	projects: [
+		// Auth setup project - runs first, once per worker
+		// Creates auth state files that tests can load
 		{
-			name: 'demo-chromium',
+			name: 'auth-setup',
+			testMatch: '**/demo/auth.setup.ts',
 			use: {
 				...devices['Desktop Chrome'],
-				// Clear state for each test
+				storageState: { cookies: [], origins: [] }
+			}
+		},
+		// Main test project - depends on auth-setup
+		// Tests use ensureAuthenticated to load saved auth state
+		{
+			name: 'demo-chromium',
+			testMatch: ['**/demo/*.spec.ts', 'demo-env.spec.ts', 'demo-all-views.spec.ts', 'auth.spec.ts'],
+			testIgnore: '**/demo/auth.setup.ts',
+			dependencies: ['auth-setup'],
+			use: {
+				...devices['Desktop Chrome'],
+				// Start with clean state - ensureAuthenticated will load auth file
 				storageState: { cookies: [], origins: [] }
 			}
 		}
