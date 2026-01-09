@@ -7,8 +7,8 @@ test.describe('Inventory View', () => {
 		await ensureDemoTenant(page, testInfo);
 	});
 
-	test('displays inventory page with correct structure', async ({ page }) => {
-		await navigateTo(page, '/inventory');
+	test('displays inventory page with correct structure', async ({ page }, testInfo) => {
+		await navigateTo(page, '/inventory', testInfo);
 
 		// Wait for page to load - heading should be visible
 		await expect(page.getByRole('heading', { name: /inventory|products|stock/i })).toBeVisible();
@@ -28,8 +28,8 @@ test.describe('Inventory View', () => {
 		expect(hasTabs || true).toBe(true);
 	});
 
-	test('has new product button', async ({ page }) => {
-		await navigateTo(page, '/inventory');
+	test('has new product button', async ({ page }, testInfo) => {
+		await navigateTo(page, '/inventory', testInfo);
 
 		await page.waitForTimeout(2000);
 
@@ -42,8 +42,8 @@ test.describe('Inventory View', () => {
 		expect(hasButton || true).toBe(true); // Soft check - may be empty state
 	});
 
-	test('has filter options', async ({ page }) => {
-		await navigateTo(page, '/inventory');
+	test('has filter options', async ({ page }, testInfo) => {
+		await navigateTo(page, '/inventory', testInfo);
 
 		await page.waitForTimeout(2000);
 
@@ -61,8 +61,8 @@ test.describe('Inventory View', () => {
 		}
 	});
 
-	test('displays table or empty state', async ({ page }) => {
-		await navigateTo(page, '/inventory');
+	test('displays table or empty state', async ({ page }, testInfo) => {
+		await navigateTo(page, '/inventory', testInfo);
 
 		await page.waitForTimeout(2000);
 
@@ -76,8 +76,8 @@ test.describe('Inventory View', () => {
 		expect(hasTable || hasEmpty || true).toBe(true);
 	});
 
-	test('can switch between tabs', async ({ page }) => {
-		await navigateTo(page, '/inventory');
+	test('can switch between tabs', async ({ page }, testInfo) => {
+		await navigateTo(page, '/inventory', testInfo);
 
 		await page.waitForTimeout(2000);
 

@@ -7,8 +7,8 @@ test.describe('Cash Payments View', () => {
 		await ensureDemoTenant(page, testInfo);
 	});
 
-	test('displays cash payments page with correct structure', async ({ page }) => {
-		await navigateTo(page, '/payments/cash');
+	test('displays cash payments page with correct structure', async ({ page }, testInfo) => {
+		await navigateTo(page, '/payments/cash', testInfo);
 
 		// Wait for page to load - heading should be visible
 		await expect(page.getByRole('heading', { name: /cash/i })).toBeVisible();
@@ -34,8 +34,8 @@ test.describe('Cash Payments View', () => {
 		expect(true).toBe(true);
 	});
 
-	test('has new payment button', async ({ page }) => {
-		await navigateTo(page, '/payments/cash');
+	test('has new payment button', async ({ page }, testInfo) => {
+		await navigateTo(page, '/payments/cash', testInfo);
 
 		// Verify New button exists
 		const newButton = page
@@ -44,8 +44,8 @@ test.describe('Cash Payments View', () => {
 		await expect(newButton).toBeVisible();
 	});
 
-	test('has payment type filter', async ({ page }) => {
-		await navigateTo(page, '/payments/cash');
+	test('has payment type filter', async ({ page }, testInfo) => {
+		await navigateTo(page, '/payments/cash', testInfo);
 
 		await page.waitForTimeout(1000);
 
@@ -60,8 +60,8 @@ test.describe('Cash Payments View', () => {
 		}
 	});
 
-	test('displays table when payments exist', async ({ page }) => {
-		await navigateTo(page, '/payments/cash');
+	test('displays table when payments exist', async ({ page }, testInfo) => {
+		await navigateTo(page, '/payments/cash', testInfo);
 
 		await page.waitForTimeout(2000);
 

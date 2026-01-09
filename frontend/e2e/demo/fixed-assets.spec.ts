@@ -7,8 +7,8 @@ test.describe('Fixed Assets View', () => {
 		await ensureDemoTenant(page, testInfo);
 	});
 
-	test('displays fixed assets page with correct structure', async ({ page }) => {
-		await navigateTo(page, '/assets');
+	test('displays fixed assets page with correct structure', async ({ page }, testInfo) => {
+		await navigateTo(page, '/assets', testInfo);
 
 		// Wait for page to load - heading should be visible
 		await expect(page.getByRole('heading', { name: /fixed assets|assets/i })).toBeVisible();
@@ -37,8 +37,8 @@ test.describe('Fixed Assets View', () => {
 		expect(true).toBe(true);
 	});
 
-	test('displays asset statuses in table when data exists', async ({ page }) => {
-		await navigateTo(page, '/assets');
+	test('displays asset statuses in table when data exists', async ({ page }, testInfo) => {
+		await navigateTo(page, '/assets', testInfo);
 		await expect(page.getByRole('heading', { name: /fixed assets|assets/i })).toBeVisible();
 
 		// Wait for data to load
@@ -68,8 +68,8 @@ test.describe('Fixed Assets View', () => {
 		}
 	});
 
-	test('shows asset categories when data exists', async ({ page }) => {
-		await navigateTo(page, '/assets');
+	test('shows asset categories when data exists', async ({ page }, testInfo) => {
+		await navigateTo(page, '/assets', testInfo);
 
 		// Wait for data to load
 		await page.waitForTimeout(2000);
@@ -99,8 +99,8 @@ test.describe('Fixed Assets View', () => {
 		}
 	});
 
-	test('displays asset details when data exists', async ({ page }) => {
-		await navigateTo(page, '/assets');
+	test('displays asset details when data exists', async ({ page }, testInfo) => {
+		await navigateTo(page, '/assets', testInfo);
 
 		// Wait for data to load
 		await page.waitForTimeout(2000);
@@ -119,8 +119,8 @@ test.describe('Fixed Assets View', () => {
 		}
 	});
 
-	test('can filter assets by status', async ({ page }) => {
-		await navigateTo(page, '/assets');
+	test('can filter assets by status', async ({ page }, testInfo) => {
+		await navigateTo(page, '/assets', testInfo);
 
 		// Find and use the status filter
 		const statusFilter = page.locator('select').first();
@@ -142,8 +142,8 @@ test.describe('Fixed Assets View', () => {
 		}
 	});
 
-	test('has New Asset button', async ({ page }) => {
-		await navigateTo(page, '/assets');
+	test('has New Asset button', async ({ page }, testInfo) => {
+		await navigateTo(page, '/assets', testInfo);
 
 		// Verify New button exists
 		const newButton = page.getByRole('button', { name: /new|create|add/i }).or(

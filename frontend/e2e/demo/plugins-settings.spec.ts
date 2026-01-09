@@ -7,8 +7,8 @@ test.describe('Plugins Settings View', () => {
 		await ensureDemoTenant(page, testInfo);
 	});
 
-	test('displays plugins page with correct structure', async ({ page }) => {
-		await navigateTo(page, '/settings/plugins');
+	test('displays plugins page with correct structure', async ({ page }, testInfo) => {
+		await navigateTo(page, '/settings/plugins', testInfo);
 
 		// Wait for page to load
 		await page.waitForTimeout(2000);
@@ -28,8 +28,8 @@ test.describe('Plugins Settings View', () => {
 		expect(hasHeading || hasPluginContent).toBe(true);
 	});
 
-	test('displays plugin list or empty state', async ({ page }) => {
-		await navigateTo(page, '/settings/plugins');
+	test('displays plugin list or empty state', async ({ page }, testInfo) => {
+		await navigateTo(page, '/settings/plugins', testInfo);
 
 		await page.waitForTimeout(2000);
 
@@ -48,8 +48,8 @@ test.describe('Plugins Settings View', () => {
 		expect(hasPluginCards || hasEmptyState || hasTable || true).toBe(true);
 	});
 
-	test('shows plugin enable/disable controls', async ({ page }) => {
-		await navigateTo(page, '/settings/plugins');
+	test('shows plugin enable/disable controls', async ({ page }, testInfo) => {
+		await navigateTo(page, '/settings/plugins', testInfo);
 
 		await page.waitForTimeout(2000);
 
@@ -72,8 +72,8 @@ test.describe('Plugins Settings View', () => {
 		}
 	});
 
-	test('shows plugin permissions information', async ({ page }) => {
-		await navigateTo(page, '/settings/plugins');
+	test('shows plugin permissions information', async ({ page }, testInfo) => {
+		await navigateTo(page, '/settings/plugins', testInfo);
 
 		await page.waitForTimeout(2000);
 
@@ -96,8 +96,8 @@ test.describe('Plugins Settings View', () => {
 		}
 	});
 
-	test('has settings button for enabled plugins', async ({ page }) => {
-		await navigateTo(page, '/settings/plugins');
+	test('has settings button for enabled plugins', async ({ page }, testInfo) => {
+		await navigateTo(page, '/settings/plugins', testInfo);
 
 		await page.waitForTimeout(2000);
 

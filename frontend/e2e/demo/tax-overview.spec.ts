@@ -7,8 +7,8 @@ test.describe('Tax Overview View', () => {
 		await ensureDemoTenant(page, testInfo);
 	});
 
-	test('displays tax page with correct structure', async ({ page }) => {
-		await navigateTo(page, '/tax');
+	test('displays tax page with correct structure', async ({ page }, testInfo) => {
+		await navigateTo(page, '/tax', testInfo);
 
 		// Wait for page to load
 		await page.waitForTimeout(2000);
@@ -28,8 +28,8 @@ test.describe('Tax Overview View', () => {
 		expect(hasHeading || hasVatContent).toBe(true);
 	});
 
-	test('has period selector', async ({ page }) => {
-		await navigateTo(page, '/tax');
+	test('has period selector', async ({ page }, testInfo) => {
+		await navigateTo(page, '/tax', testInfo);
 
 		await page.waitForTimeout(2000);
 
@@ -43,8 +43,8 @@ test.describe('Tax Overview View', () => {
 		expect(hasYearSelect || hasMonthSelect || hasDateInputs || true).toBe(true);
 	});
 
-	test('has generate declaration button', async ({ page }) => {
-		await navigateTo(page, '/tax');
+	test('has generate declaration button', async ({ page }, testInfo) => {
+		await navigateTo(page, '/tax', testInfo);
 
 		await page.waitForTimeout(2000);
 
@@ -60,8 +60,8 @@ test.describe('Tax Overview View', () => {
 		}
 	});
 
-	test('displays declarations table or empty state', async ({ page }) => {
-		await navigateTo(page, '/tax');
+	test('displays declarations table or empty state', async ({ page }, testInfo) => {
+		await navigateTo(page, '/tax', testInfo);
 
 		await page.waitForTimeout(2000);
 
@@ -77,8 +77,8 @@ test.describe('Tax Overview View', () => {
 		expect(hasTable || hasEmpty || hasCard || true).toBe(true);
 	});
 
-	test('shows VAT amounts when declarations exist', async ({ page }) => {
-		await navigateTo(page, '/tax');
+	test('shows VAT amounts when declarations exist', async ({ page }, testInfo) => {
+		await navigateTo(page, '/tax', testInfo);
 
 		await page.waitForTimeout(2000);
 

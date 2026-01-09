@@ -7,8 +7,8 @@ test.describe('Bank Import View', () => {
 		await ensureDemoTenant(page, testInfo);
 	});
 
-	test('displays bank import page with correct structure', async ({ page }) => {
-		await navigateTo(page, '/banking/import');
+	test('displays bank import page with correct structure', async ({ page }, testInfo) => {
+		await navigateTo(page, '/banking/import', testInfo);
 
 		// Wait for page to load
 		await page.waitForTimeout(2000);
@@ -26,8 +26,8 @@ test.describe('Bank Import View', () => {
 		expect(hasHeading || hasFileInput || hasSelectBank).toBe(true);
 	});
 
-	test('has bank account selector', async ({ page }) => {
-		await navigateTo(page, '/banking/import');
+	test('has bank account selector', async ({ page }, testInfo) => {
+		await navigateTo(page, '/banking/import', testInfo);
 
 		await page.waitForTimeout(2000);
 
@@ -42,8 +42,8 @@ test.describe('Bank Import View', () => {
 		}
 	});
 
-	test('has bank format presets', async ({ page }) => {
-		await navigateTo(page, '/banking/import');
+	test('has bank format presets', async ({ page }, testInfo) => {
+		await navigateTo(page, '/banking/import', testInfo);
 
 		await page.waitForTimeout(2000);
 
@@ -60,8 +60,8 @@ test.describe('Bank Import View', () => {
 		}
 	});
 
-	test('has file upload section', async ({ page }) => {
-		await navigateTo(page, '/banking/import');
+	test('has file upload section', async ({ page }, testInfo) => {
+		await navigateTo(page, '/banking/import', testInfo);
 
 		await page.waitForTimeout(2000);
 

@@ -7,8 +7,8 @@ test.describe('Quotes View', () => {
 		await ensureDemoTenant(page, testInfo);
 	});
 
-	test('displays quotes page with correct structure', async ({ page }) => {
-		await navigateTo(page, '/quotes');
+	test('displays quotes page with correct structure', async ({ page }, testInfo) => {
+		await navigateTo(page, '/quotes', testInfo);
 
 		// Wait for page to load - heading should be visible
 		await expect(page.getByRole('heading', { name: /quotes/i })).toBeVisible();
@@ -37,8 +37,8 @@ test.describe('Quotes View', () => {
 		expect(true).toBe(true);
 	});
 
-	test('displays quote statuses in table when data exists', async ({ page }) => {
-		await navigateTo(page, '/quotes');
+	test('displays quote statuses in table when data exists', async ({ page }, testInfo) => {
+		await navigateTo(page, '/quotes', testInfo);
 		await expect(page.getByRole('heading', { name: /quotes/i })).toBeVisible();
 
 		// Wait for data to load
@@ -68,8 +68,8 @@ test.describe('Quotes View', () => {
 		}
 	});
 
-	test('can filter quotes by status', async ({ page }) => {
-		await navigateTo(page, '/quotes');
+	test('can filter quotes by status', async ({ page }, testInfo) => {
+		await navigateTo(page, '/quotes', testInfo);
 
 		// Find and use the status filter
 		const statusFilter = page.locator('select').first();
@@ -92,8 +92,8 @@ test.describe('Quotes View', () => {
 		}
 	});
 
-	test('has New Quote button', async ({ page }) => {
-		await navigateTo(page, '/quotes');
+	test('has New Quote button', async ({ page }, testInfo) => {
+		await navigateTo(page, '/quotes', testInfo);
 
 		// Verify New button exists
 		const newButton = page.getByRole('button', { name: /new|create|add/i }).or(

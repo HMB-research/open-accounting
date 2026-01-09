@@ -7,8 +7,8 @@ test.describe('Email Settings View', () => {
 		await ensureDemoTenant(page, testInfo);
 	});
 
-	test('displays email settings page with correct structure', async ({ page }) => {
-		await navigateTo(page, '/settings/email');
+	test('displays email settings page with correct structure', async ({ page }, testInfo) => {
+		await navigateTo(page, '/settings/email', testInfo);
 
 		// Wait for page to load
 		await page.waitForTimeout(2000);
@@ -28,8 +28,8 @@ test.describe('Email Settings View', () => {
 		expect(hasHeading || hasEmailContent).toBe(true);
 	});
 
-	test('has SMTP configuration form', async ({ page }) => {
-		await navigateTo(page, '/settings/email');
+	test('has SMTP configuration form', async ({ page }, testInfo) => {
+		await navigateTo(page, '/settings/email', testInfo);
 
 		await page.waitForTimeout(2000);
 
@@ -48,8 +48,8 @@ test.describe('Email Settings View', () => {
 		expect(hasHostInput || hasPortInput || true).toBe(true);
 	});
 
-	test('has tabs for SMTP, Templates, and Log', async ({ page }) => {
-		await navigateTo(page, '/settings/email');
+	test('has tabs for SMTP, Templates, and Log', async ({ page }, testInfo) => {
+		await navigateTo(page, '/settings/email', testInfo);
 
 		await page.waitForTimeout(2000);
 
@@ -78,8 +78,8 @@ test.describe('Email Settings View', () => {
 		}
 	});
 
-	test('has save button', async ({ page }) => {
-		await navigateTo(page, '/settings/email');
+	test('has save button', async ({ page }, testInfo) => {
+		await navigateTo(page, '/settings/email', testInfo);
 
 		await page.waitForTimeout(2000);
 
@@ -92,8 +92,8 @@ test.describe('Email Settings View', () => {
 		}
 	});
 
-	test('has test connection button', async ({ page }) => {
-		await navigateTo(page, '/settings/email');
+	test('has test connection button', async ({ page }, testInfo) => {
+		await navigateTo(page, '/settings/email', testInfo);
 
 		await page.waitForTimeout(2000);
 
