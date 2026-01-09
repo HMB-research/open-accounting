@@ -123,7 +123,7 @@ func (r *PostgresRepository) List(ctx context.Context, schemaName, tenantID stri
 	}
 	defer rows.Close()
 
-	var contacts []Contact
+	contacts := []Contact{}
 	for rows.Next() {
 		var c Contact
 		if err := rows.Scan(
