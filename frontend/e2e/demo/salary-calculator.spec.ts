@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
-import { loginAsDemo, navigateTo, ensureDemoTenant } from './utils';
+import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
 
 test.describe('Demo Salary Calculator - Page Structure', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/payroll/calculator', testInfo);
 		await page.waitForLoadState('networkidle');
@@ -46,7 +46,7 @@ test.describe('Demo Salary Calculator - Page Structure', () => {
 
 test.describe('Demo Salary Calculator - Calculations', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/payroll/calculator', testInfo);
 		await page.waitForLoadState('networkidle');
@@ -142,7 +142,7 @@ test.describe('Demo Salary Calculator - Calculations', () => {
 
 test.describe('Demo Salary Calculator - Edge Cases', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/payroll/calculator', testInfo);
 		await page.waitForLoadState('networkidle');

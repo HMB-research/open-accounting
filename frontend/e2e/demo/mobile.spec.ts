@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginAsDemo, navigateTo, ensureDemoTenant } from './utils';
+import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
 
 /**
  * Mobile-specific E2E tests for demo environment
@@ -10,7 +10,7 @@ test.describe('Mobile Navigation', () => {
 	test.use({ viewport: { width: 375, height: 667 } }); // iPhone SE viewport
 
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 	});
 
@@ -80,7 +80,7 @@ test.describe('Mobile Tables', () => {
 	test.use({ viewport: { width: 375, height: 667 } });
 
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 	});
 
@@ -111,7 +111,7 @@ test.describe('Mobile Forms', () => {
 	test.use({ viewport: { width: 375, height: 667 } });
 
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 	});
 
@@ -168,7 +168,7 @@ test.describe('Mobile Dashboard', () => {
 	test.use({ viewport: { width: 375, height: 667 } });
 
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 	});
 
@@ -213,7 +213,7 @@ test.describe('Tablet Viewport', () => {
 	test.use({ viewport: { width: 768, height: 1024 } }); // iPad viewport
 
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 	});
 

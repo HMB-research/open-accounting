@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
-import { loginAsDemo, navigateTo, ensureDemoTenant } from './utils';
+import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
 
 test.describe('Demo Cost Centers - Page Structure', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/settings/cost-centers', testInfo);
 		await page.waitForLoadState('networkidle');
@@ -32,7 +32,7 @@ test.describe('Demo Cost Centers - Page Structure', () => {
 
 test.describe('Demo Cost Centers - Empty State', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/settings/cost-centers', testInfo);
 		await page.waitForLoadState('networkidle');
@@ -55,7 +55,7 @@ test.describe('Demo Cost Centers - Empty State', () => {
 
 test.describe('Demo Cost Centers - Create Modal', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/settings/cost-centers', testInfo);
 		await page.waitForLoadState('networkidle');
@@ -117,7 +117,7 @@ test.describe('Demo Cost Centers - Create Modal', () => {
 
 test.describe('Demo Cost Centers - Form Validation', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/settings/cost-centers', testInfo);
 		await page.waitForLoadState('networkidle');
@@ -158,7 +158,7 @@ test.describe('Demo Cost Centers - Form Validation', () => {
 
 test.describe('Demo Cost Centers - Budget Period Selection', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/settings/cost-centers', testInfo);
 		await page.waitForLoadState('networkidle');
@@ -190,7 +190,7 @@ test.describe('Demo Cost Centers - Budget Period Selection', () => {
 
 test.describe('Demo Cost Centers - Table Display', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/settings/cost-centers', testInfo);
 		await page.waitForLoadState('networkidle');

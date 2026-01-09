@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginAsDemo, navigateTo, getDemoCredentials, ensureDemoTenant, DEMO_API_URL } from './utils';
+import { ensureAuthenticated, navigateTo, getDemoCredentials, ensureDemoTenant, DEMO_API_URL } from './utils';
 
 /**
  * Demo Data Verification Tests
@@ -18,7 +18,7 @@ import { loginAsDemo, navigateTo, getDemoCredentials, ensureDemoTenant, DEMO_API
 
 test.describe('Demo Data Verification - All Views Must Have Data', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 	});
 

@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
-import { loginAsDemo, navigateTo, ensureDemoTenant, getDemoCredentials } from './utils';
+import { ensureAuthenticated, navigateTo, ensureDemoTenant, getDemoCredentials } from './utils';
 
 test.describe('Demo Invoices - Seed Data Verification', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/invoices', testInfo);
 		await page.waitForLoadState('networkidle');
@@ -48,7 +48,7 @@ test.describe('Demo Invoices - Seed Data Verification', () => {
 
 test.describe('Invoice Creation - Basic', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/invoices', testInfo);
 		await page.waitForLoadState('networkidle');
@@ -145,7 +145,7 @@ test.describe('Invoice Creation - Basic', () => {
 
 test.describe('Invoice Creation - Inline Contact Feature', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/invoices', testInfo);
 		await page.waitForLoadState('networkidle');

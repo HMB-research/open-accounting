@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
-import { loginAsDemo, navigateTo, ensureDemoTenant } from './utils';
+import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
 
 test.describe('Demo Leave Management - Page Structure Verification', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/employees/absences', testInfo);
 		await page.waitForLoadState('networkidle');
@@ -93,7 +93,7 @@ test.describe('Demo Leave Management - Page Structure Verification', () => {
 
 test.describe('Demo Leave Management - Request Leave Modal', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/employees/absences', testInfo);
 		await page.waitForLoadState('networkidle');
@@ -143,7 +143,7 @@ test.describe('Demo Leave Management - Request Leave Modal', () => {
 
 test.describe('Demo Leave Management - Employee Selection', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/employees/absences', testInfo);
 		await page.waitForLoadState('networkidle');

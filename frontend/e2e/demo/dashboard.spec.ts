@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
-import { loginAsDemo, ensureDemoTenant, getDemoCredentials } from './utils';
+import { ensureAuthenticated, ensureDemoTenant, getDemoCredentials } from './utils';
 
 test.describe('Demo Dashboard - Seeded Data Verification', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
-		await loginAsDemo(page, testInfo);
+		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 	});
 
