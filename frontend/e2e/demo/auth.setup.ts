@@ -1,12 +1,22 @@
 import { test as setup, expect } from '@playwright/test';
+import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
 import { DEMO_CREDENTIALS, DEMO_URL } from './utils';
+
+// ESM-compatible __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Auth state directory - must match utils.ts and playwright.demo.config.ts
+const AUTH_DIR = path.join(__dirname, '..', '..', '.auth');
 
 // This runs once per worker before any tests
 // Each worker gets its own demo user based on parallelIndex
 setup('authenticate demo user', async ({ page }, testInfo) => {
 	const workerIndex = testInfo.parallelIndex % DEMO_CREDENTIALS.length;
 	const creds = DEMO_CREDENTIALS[workerIndex];
-	const authFile = `frontend/.auth/worker-${workerIndex}.json`;
+	const authFile = path.join(AUTH_DIR, `worker-${workerIndex}.json`);
 
 	console.log(`[Worker ${workerIndex}] Authenticating as ${creds.email}...`);
 
@@ -31,6 +41,11 @@ setup('authenticate demo user', async ({ page }, testInfo) => {
 	await expect(page.getByText(/dashboard|cash flow|revenue/i).first()).toBeVisible({ timeout: 10000 });
 
 	console.log(`[Worker ${workerIndex}] Login successful, saving state to ${authFile}`);
+
+	// Ensure auth directory exists
+	if (!fs.existsSync(AUTH_DIR)) {
+		fs.mkdirSync(AUTH_DIR, { recursive: true });
+	}
 
 	// Save authentication state for this worker
 	await page.context().storageState({ path: authFile });
