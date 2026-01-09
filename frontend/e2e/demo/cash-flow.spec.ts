@@ -10,7 +10,8 @@ test.describe('Demo Cash Flow Statement - Page Structure Verification', () => {
 	});
 
 	test('displays cash flow statement page heading', async ({ page }) => {
-		await expect(page.getByRole('heading', { name: /cash flow|rahavoog/i })).toBeVisible();
+		// Use .first() to avoid strict mode violation when multiple headings match
+		await expect(page.getByRole('heading', { name: /cash flow|rahavoog/i }).first()).toBeVisible();
 	});
 
 	test('shows date range controls', async ({ page }) => {

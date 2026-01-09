@@ -69,10 +69,15 @@ test.describe('Demo Cost Centers - Create Modal', () => {
 		const modal = page.locator('[role="dialog"], .modal');
 		await expect(modal).toBeVisible({ timeout: 5000 });
 
-		// Close modal (try cancel button or close button)
-		const closeBtn = modal.getByRole('button', { name: /cancel|tühista|close|sulge/i }).first()
-			.or(modal.locator('.btn-close, button[aria-label*="close"]').first());
-		await closeBtn.click();
+		// Close modal - try cancel button first, then close button
+		const cancelBtn = modal.getByRole('button', { name: /cancel|tühista/i }).first();
+		const cancelVisible = await cancelBtn.isVisible().catch(() => false);
+		if (cancelVisible) {
+			await cancelBtn.click();
+		} else {
+			// Fallback to close button
+			await modal.locator('.btn-close, button[aria-label*="close"]').first().click();
+		}
 
 		// Modal should be hidden
 		await expect(modal).not.toBeVisible({ timeout: 5000 });
