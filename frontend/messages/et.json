@@ -864,6 +864,7 @@
 	"email_selectTemplate": "Vali mall muutmiseks",
 	"email_availableVars": "Saadaolevad muutujad",
 	"email_noEmailsSent": "E-kirju pole veel saadetud.",
+	"email_noTemplates": "E-kirja malle pole saadaval.",
 	"email_recipient": "Saaja",
 	"email_type": "Tüüp",
 	"email_saveTemplate": "Salvesta mall",

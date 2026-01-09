@@ -864,6 +864,7 @@
 	"email_selectTemplate": "Select a template to edit",
 	"email_availableVars": "Available variables",
 	"email_noEmailsSent": "No emails have been sent yet.",
+	"email_noTemplates": "No email templates available.",
 	"email_recipient": "Recipient",
 	"email_type": "Type",
 	"email_saveTemplate": "Save Template",

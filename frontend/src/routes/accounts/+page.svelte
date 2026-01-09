@@ -147,6 +147,10 @@
 
 	{#if isLoading}
 		<p>{m.common_loading()}</p>
+	{:else if accounts.length === 0}
+		<div class="empty-state card">
+			<p>{m.accounts_noAccounts()}</p>
+		</div>
 	{:else}
 		{@const groups = groupByType(accounts)}
 		{#each typeOrder as type}
