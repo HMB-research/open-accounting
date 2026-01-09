@@ -65,12 +65,15 @@ test.describe('Demo Dashboard - Seeded Data Verification', () => {
 		// Skip on mobile - navigation is hidden behind hamburger menu
 		test.skip(browserName === 'webkit' || page.viewportSize()?.width! < 768, 'Mobile navigation is collapsed');
 
-		// Check for navigation links in the nav element
+		// Wait for navigation to be fully rendered
 		const nav = page.getByRole('navigation');
-		await expect(nav.getByRole('link', { name: /Dashboard/i })).toBeVisible();
-		await expect(nav.getByRole('link', { name: /Accounts/i })).toBeVisible();
-		await expect(nav.getByRole('link', { name: /Journal/i })).toBeVisible();
-		await expect(nav.getByRole('link', { name: /Contacts/i })).toBeVisible();
-		await expect(nav.getByRole('link', { name: /Invoices/i })).toBeVisible();
+		await expect(nav).toBeVisible({ timeout: 10000 });
+
+		// Check for navigation links - use increased timeout for slower CI environments
+		await expect(nav.getByRole('link', { name: /Dashboard/i })).toBeVisible({ timeout: 10000 });
+		await expect(nav.getByRole('link', { name: /Accounts/i })).toBeVisible({ timeout: 5000 });
+		await expect(nav.getByRole('link', { name: /Journal/i })).toBeVisible({ timeout: 5000 });
+		await expect(nav.getByRole('link', { name: /Contacts/i })).toBeVisible({ timeout: 5000 });
+		await expect(nav.getByRole('link', { name: /Invoices/i })).toBeVisible({ timeout: 5000 });
 	});
 });

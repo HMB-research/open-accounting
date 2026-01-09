@@ -63,13 +63,32 @@ test.describe('Cash Payments View', () => {
 	test('displays table when payments exist', async ({ page }, testInfo) => {
 		await navigateTo(page, '/payments/cash', testInfo);
 
-		await page.waitForTimeout(2000);
+		// Wait for page to load - either table, empty state, or loading text should appear
+		await expect(async () => {
+			const table = page.locator('table');
+			const emptyState = page.locator('.empty-state');
+			const loadingText = page.getByText(/loading|laadimine/i);
+			const errorAlert = page.locator('.alert-error');
 
+			const hasTable = await table.isVisible().catch(() => false);
+			const hasEmpty = await emptyState.isVisible().catch(() => false);
+			const hasLoading = await loadingText.isVisible().catch(() => false);
+			const hasError = await errorAlert.isVisible().catch(() => false);
+
+			// Page should show one of these states
+			expect(hasTable || hasEmpty || hasLoading || hasError).toBe(true);
+		}).toPass({ timeout: 10000 });
+
+		// If still loading, wait for it to finish
+		const loadingText = page.getByText(/loading|laadimine/i);
+		if (await loadingText.isVisible().catch(() => false)) {
+			await loadingText.waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+		}
+
+		// Now check final state
 		const table = page.locator('table');
-		const hasTable = await table.isVisible().catch(() => false);
-
-		// Either table or empty state should be visible
 		const emptyState = page.locator('.empty-state');
+		const hasTable = await table.isVisible().catch(() => false);
 		const hasEmpty = await emptyState.isVisible().catch(() => false);
 
 		expect(hasTable || hasEmpty).toBe(true);
