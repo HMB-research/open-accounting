@@ -25,7 +25,8 @@ const isLocalTesting = baseURL.includes('localhost');
  */
 export default defineConfig({
 	testDir: './e2e',
-	testMatch: ['**/demo/*.spec.ts', 'demo-env.spec.ts', 'demo-all-views.spec.ts'],
+	// Include demo tests, auth tests (login page), and demo-env tests
+	testMatch: ['**/demo/*.spec.ts', 'demo-env.spec.ts', 'demo-all-views.spec.ts', 'auth.spec.ts'],
 	fullyParallel: true, // Enable parallel execution
 	forbidOnly: !!process.env.CI,
 	retries: 2, // Retry on network flakiness
