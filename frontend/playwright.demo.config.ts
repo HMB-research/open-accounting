@@ -1,5 +1,10 @@
 import { defineConfig, devices } from '@playwright/test';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+// ESM-compatible __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Use environment variables for local testing, fall back to Railway for remote demo testing
 const baseURL = process.env.BASE_URL || 'https://open-accounting.up.railway.app';
