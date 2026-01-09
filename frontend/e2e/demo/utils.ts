@@ -171,16 +171,29 @@ export async function navigateTo(page: Page, path: string, testInfo?: TestInfo):
 		url = `${url}${separator}tenant=${creds.tenantId}`;
 	}
 	await page.goto(url);
-	// Wait for DOM to be ready (removed fixed 500ms wait)
+	// Wait for DOM to be ready
 	await page.waitForLoadState('domcontentloaded');
 
-	// Wait for any loading overlays to disappear instead of fixed wait
+	// Wait for any loading overlays to disappear
 	const loadingIndicator = page.locator('.loading, .spinner, [data-loading="true"], .skeleton');
 	if (await loadingIndicator.first().isVisible({ timeout: 100 }).catch(() => false)) {
 		await loadingIndicator.first().waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {
 			// Loading indicator may have already disappeared
 		});
 	}
+
+	// Wait for main content container to be visible (indicates page has rendered)
+	await page.locator('.main-content, main, [role="main"]').first().waitFor({
+		state: 'visible',
+		timeout: 10000
+	}).catch(() => {
+		// Main content selector might not exist on all pages
+	});
+
+	// Wait for network to settle (API calls to complete)
+	await page.waitForLoadState('networkidle').catch(() => {
+		// Network might not settle in timeout, continue anyway
+	});
 }
 
 /**
