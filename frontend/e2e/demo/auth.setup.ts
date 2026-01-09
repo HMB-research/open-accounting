@@ -44,6 +44,14 @@ setup('authenticate all demo users', async ({ browser }) => {
 			await emailInput.fill(creds.email);
 			await passwordInput.fill(creds.password);
 
+			// Check "Remember Me" to store tokens in localStorage (required for session persistence)
+			// Without this, tokens go to sessionStorage which Playwright's storageState doesn't save
+			const rememberMeCheckbox = page.locator('input[type="checkbox"]').first();
+			if (await rememberMeCheckbox.isVisible().catch(() => false)) {
+				await rememberMeCheckbox.check();
+				console.log(`[Auth Setup] Checked "Remember Me" for ${creds.email}`);
+			}
+
 			// Submit and wait for dashboard
 			const signInButton = page.getByRole('button', { name: /sign in|login|logi sisse/i });
 			await signInButton.click();
