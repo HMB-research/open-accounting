@@ -101,6 +101,9 @@ Tests run in parallel with 3 workers, each using a dedicated demo user:
 |------|---------|
 | `e2e/demo/data-verification.spec.ts` | Strict tests that FAIL if any view is empty |
 | `e2e/demo/reset.spec.ts` | Tests demo reset functionality |
+| `e2e/demo/quotes.spec.ts` | Quotes view structure and filtering tests |
+| `e2e/demo/orders.spec.ts` | Orders view structure and filtering tests |
+| `e2e/demo/fixed-assets.spec.ts` | Fixed assets view structure and filtering tests |
 | `e2e/demo/*.spec.ts` | Individual view tests |
 | `e2e/demo-all-views.spec.ts` | Comprehensive page load tests |
 
@@ -117,6 +120,9 @@ The `data-verification.spec.ts` file contains strict tests that verify actual da
 | Journal | 4+ journal entries |
 | Contacts | 7 contacts (TechStart, Nordic, etc.) |
 | Invoices | 9 invoices with INV-* numbers |
+| Quotes | 4 quotes with QT-* numbers |
+| Orders | 3 orders with ORD-* numbers |
+| Fixed Assets | 6 assets with FA-* numbers |
 | Payments | 4+ payments |
 | Employees | 5 employees (Maria, Jaan, Anna, etc.) |
 | Payroll | 3 payroll runs (2024-10, 11, 12) |
