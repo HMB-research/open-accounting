@@ -1749,6 +1749,9 @@ SELECT add_reconciliation_tables_to_schema('tenant_acme');
 SELECT add_payroll_tables('tenant_acme');
 SELECT add_recurring_email_fields_to_schema('tenant_acme');
 SELECT add_leave_management_tables('tenant_acme');
+SELECT add_quotes_and_orders_tables('tenant_acme');
+SELECT add_fixed_assets_tables('tenant_acme');
+SELECT create_inventory_tables('tenant_acme');
 
 -- Chart of Accounts (Estonian standard - 28 accounts)
 INSERT INTO tenant_acme.accounts (id, tenant_id, code, name, account_type, is_system) VALUES
@@ -2095,6 +2098,78 @@ INSERT INTO tenant_acme.leave_records (id, tenant_id, employee_id, absence_type_
     (SELECT id FROM tenant_acme.absence_types WHERE code = 'STUDY_LEAVE' LIMIT 1),
     '2024-10-14', '2024-10-18', 5, 5, 'APPROVED', '2024-10-01', 'a0000000-0000-0000-0000-000000000001'::uuid, '2024-10-02', 'a0000000-0000-0000-0000-000000000001'::uuid, 'Exam preparation')
 ON CONFLICT DO NOTHING;
+
+-- QUOTES
+INSERT INTO tenant_acme.quotes (id, tenant_id, quote_number, contact_id, quote_date, valid_until, status, subtotal, vat_amount, total, notes, created_by) VALUES
+('90000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'QT-2024-001', 'd0000000-0000-0000-0001-000000000001'::uuid, '2024-11-01', '2024-11-30', 'DRAFT', 1500.00, 300.00, 1800.00, 'Website redesign proposal', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('90000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'QT-2024-002', 'd0000000-0000-0000-0001-000000000002'::uuid, '2024-11-10', '2024-12-10', 'SENT', 3200.00, 640.00, 3840.00, 'E-commerce platform integration', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('90000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'QT-2024-003', 'd0000000-0000-0000-0001-000000000003'::uuid, '2024-10-15', '2024-11-15', 'CONVERTED', 5000.00, 1000.00, 6000.00, 'Full system migration - converted to order', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('90000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'QT-2024-004', 'd0000000-0000-0000-0001-000000000004'::uuid, '2024-09-01', '2024-09-30', 'ACCEPTED', 2800.00, 560.00, 3360.00, 'API development services', 'a0000000-0000-0000-0000-000000000001'::uuid);
+
+-- Quote lines
+INSERT INTO tenant_acme.quote_lines (id, tenant_id, quote_id, line_number, description, quantity, unit, unit_price, vat_rate, line_subtotal, line_vat, line_total) VALUES
+-- QT-2024-001 lines
+('91000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '90000000-0000-0000-0001-000000000001'::uuid, 1, 'UI/UX Design', 20, 'hours', 50.00, 20.00, 1000.00, 200.00, 1200.00),
+('91000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '90000000-0000-0000-0001-000000000001'::uuid, 2, 'Frontend Development', 10, 'hours', 50.00, 20.00, 500.00, 100.00, 600.00),
+-- QT-2024-002 lines
+('91000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '90000000-0000-0000-0001-000000000002'::uuid, 1, 'Platform Integration', 40, 'hours', 60.00, 20.00, 2400.00, 480.00, 2880.00),
+('91000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '90000000-0000-0000-0001-000000000002'::uuid, 2, 'Testing & QA', 16, 'hours', 50.00, 20.00, 800.00, 160.00, 960.00),
+-- QT-2024-003 lines (converted quote)
+('91000000-0000-0000-0001-000000000005'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '90000000-0000-0000-0001-000000000003'::uuid, 1, 'System Migration', 50, 'hours', 80.00, 20.00, 4000.00, 800.00, 4800.00),
+('91000000-0000-0000-0001-000000000006'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '90000000-0000-0000-0001-000000000003'::uuid, 2, 'Training', 20, 'hours', 50.00, 20.00, 1000.00, 200.00, 1200.00),
+-- QT-2024-004 lines
+('91000000-0000-0000-0001-000000000007'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '90000000-0000-0000-0001-000000000004'::uuid, 1, 'API Design', 16, 'hours', 75.00, 20.00, 1200.00, 240.00, 1440.00),
+('91000000-0000-0000-0001-000000000008'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '90000000-0000-0000-0001-000000000004'::uuid, 2, 'API Implementation', 32, 'hours', 50.00, 20.00, 1600.00, 320.00, 1920.00);
+
+-- ORDERS
+INSERT INTO tenant_acme.orders (id, tenant_id, order_number, contact_id, order_date, expected_delivery, status, subtotal, vat_amount, total, notes, quote_id, created_by) VALUES
+('92000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'ORD-2024-001', 'd0000000-0000-0000-0001-000000000003'::uuid, '2024-10-20', '2024-12-01', 'CONFIRMED', 5000.00, 1000.00, 6000.00, 'Full system migration order', '90000000-0000-0000-0001-000000000003'::uuid, 'a0000000-0000-0000-0000-000000000001'::uuid),
+('92000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'ORD-2024-002', 'd0000000-0000-0000-0001-000000000001'::uuid, '2024-11-15', '2024-12-15', 'PENDING', 2200.00, 440.00, 2640.00, 'Maintenance contract', NULL, 'a0000000-0000-0000-0000-000000000001'::uuid),
+('92000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'ORD-2024-003', 'd0000000-0000-0000-0001-000000000002'::uuid, '2024-11-20', '2025-01-15', 'PROCESSING', 4500.00, 900.00, 5400.00, 'Custom software development', NULL, 'a0000000-0000-0000-0000-000000000001'::uuid);
+
+-- Order lines
+INSERT INTO tenant_acme.order_lines (id, tenant_id, order_id, line_number, description, quantity, unit, unit_price, vat_rate, line_subtotal, line_vat, line_total) VALUES
+-- ORD-2024-001 lines (from converted quote)
+('93000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '92000000-0000-0000-0001-000000000001'::uuid, 1, 'System Migration', 50, 'hours', 80.00, 20.00, 4000.00, 800.00, 4800.00),
+('93000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '92000000-0000-0000-0001-000000000001'::uuid, 2, 'Training', 20, 'hours', 50.00, 20.00, 1000.00, 200.00, 1200.00),
+-- ORD-2024-002 lines
+('93000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '92000000-0000-0000-0001-000000000002'::uuid, 1, 'Monthly Support', 12, 'months', 150.00, 20.00, 1800.00, 360.00, 2160.00),
+('93000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '92000000-0000-0000-0001-000000000002'::uuid, 2, 'Setup Fee', 1, 'unit', 400.00, 20.00, 400.00, 80.00, 480.00),
+-- ORD-2024-003 lines
+('93000000-0000-0000-0001-000000000005'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '92000000-0000-0000-0001-000000000003'::uuid, 1, 'Requirements Analysis', 20, 'hours', 75.00, 20.00, 1500.00, 300.00, 1800.00),
+('93000000-0000-0000-0001-000000000006'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '92000000-0000-0000-0001-000000000003'::uuid, 2, 'Development', 60, 'hours', 50.00, 20.00, 3000.00, 600.00, 3600.00);
+
+-- Link converted quote to order
+UPDATE tenant_acme.quotes SET converted_to_order_id = '92000000-0000-0000-0001-000000000001'::uuid WHERE id = '90000000-0000-0000-0001-000000000003'::uuid;
+
+-- ASSET CATEGORIES
+INSERT INTO tenant_acme.asset_categories (id, tenant_id, name, description, default_useful_life_months, default_residual_value_percent, depreciation_method) VALUES
+('94000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'IT Equipment', 'Computers, servers, and networking equipment', 36, 10.00, 'STRAIGHT_LINE'),
+('94000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Office Furniture', 'Desks, chairs, and storage', 60, 5.00, 'STRAIGHT_LINE'),
+('94000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Vehicles', 'Company cars and transportation', 48, 20.00, 'DECLINING_BALANCE'),
+('94000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Software Licenses', 'Perpetual software licenses', 36, 0.00, 'STRAIGHT_LINE');
+
+-- FIXED ASSETS
+INSERT INTO tenant_acme.fixed_assets (id, tenant_id, asset_number, name, description, category_id, purchase_date, purchase_cost, residual_value, useful_life_months, depreciation_method, depreciation_start_date, book_value, accumulated_depreciation, status, serial_number, location, created_by) VALUES
+('95000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'FA-2024-001', 'Dell PowerEdge Server', 'Main production server', '94000000-0000-0000-0001-000000000001'::uuid, '2024-01-15', 8500.00, 850.00, 36, 'STRAIGHT_LINE', '2024-02-01', 6375.00, 2125.00, 'ACTIVE', 'SRV-2024-001-XYZ', 'Server Room', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('95000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'FA-2024-002', 'MacBook Pro 16"', 'Development laptop', '94000000-0000-0000-0001-000000000001'::uuid, '2024-03-01', 3200.00, 320.00, 36, 'STRAIGHT_LINE', '2024-03-01', 2560.00, 640.00, 'ACTIVE', 'MBP-2024-A1B2C3', 'Office', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('95000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'FA-2024-003', 'Herman Miller Aeron Chair', 'Executive office chair', '94000000-0000-0000-0001-000000000002'::uuid, '2024-02-15', 1500.00, 75.00, 60, 'STRAIGHT_LINE', '2024-03-01', 1310.00, 190.00, 'ACTIVE', NULL, 'CEO Office', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('95000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'FA-2024-004', 'Standing Desk Set', 'Adjustable standing desks (5 units)', '94000000-0000-0000-0001-000000000002'::uuid, '2024-04-01', 4000.00, 200.00, 60, 'STRAIGHT_LINE', '2024-04-01', 3620.00, 380.00, 'ACTIVE', NULL, 'Open Office', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('95000000-0000-0000-0001-000000000005'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'FA-2023-001', 'Old Projector', 'Conference room projector - disposed', '94000000-0000-0000-0001-000000000001'::uuid, '2021-06-01', 2000.00, 200.00, 36, 'STRAIGHT_LINE', '2021-07-01', 0.00, 1800.00, 'DISPOSED', 'PRJ-2021-XYZ', 'Storage', 'a0000000-0000-0000-0000-000000000001'::uuid),
+('95000000-0000-0000-0001-000000000006'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'FA-2024-005', 'New Monitor Setup', 'Pending activation', '94000000-0000-0000-0001-000000000001'::uuid, '2024-11-01', 2400.00, 240.00, 36, 'STRAIGHT_LINE', NULL, 2400.00, 0.00, 'DRAFT', 'MON-2024-SET', 'Warehouse', 'a0000000-0000-0000-0000-000000000001'::uuid);
+
+-- DEPRECIATION ENTRIES
+INSERT INTO tenant_acme.depreciation_entries (id, tenant_id, asset_id, depreciation_date, period_start, period_end, depreciation_amount, accumulated_total, book_value_after, created_by) VALUES
+-- Server depreciation (monthly entries)
+('96000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '95000000-0000-0000-0001-000000000001'::uuid, '2024-02-29', '2024-02-01', '2024-02-29', 212.50, 212.50, 8287.50, 'a0000000-0000-0000-0000-000000000001'::uuid),
+('96000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '95000000-0000-0000-0001-000000000001'::uuid, '2024-03-31', '2024-03-01', '2024-03-31', 212.50, 425.00, 8075.00, 'a0000000-0000-0000-0000-000000000001'::uuid),
+('96000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '95000000-0000-0000-0001-000000000001'::uuid, '2024-04-30', '2024-04-01', '2024-04-30', 212.50, 637.50, 7862.50, 'a0000000-0000-0000-0000-000000000001'::uuid),
+-- MacBook depreciation
+('96000000-0000-0000-0001-000000000004'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '95000000-0000-0000-0001-000000000002'::uuid, '2024-03-31', '2024-03-01', '2024-03-31', 80.00, 80.00, 3120.00, 'a0000000-0000-0000-0000-000000000001'::uuid),
+('96000000-0000-0000-0001-000000000005'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '95000000-0000-0000-0001-000000000002'::uuid, '2024-04-30', '2024-04-01', '2024-04-30', 80.00, 160.00, 3040.00, 'a0000000-0000-0000-0000-000000000001'::uuid),
+-- Chair depreciation
+('96000000-0000-0000-0001-000000000006'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '95000000-0000-0000-0001-000000000003'::uuid, '2024-03-31', '2024-03-01', '2024-03-31', 23.75, 23.75, 1476.25, 'a0000000-0000-0000-0000-000000000001'::uuid),
+('96000000-0000-0000-0001-000000000007'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '95000000-0000-0000-0001-000000000003'::uuid, '2024-04-30', '2024-04-01', '2024-04-30', 23.75, 47.50, 1452.50, 'a0000000-0000-0000-0000-000000000001'::uuid);
 `
 }
 
