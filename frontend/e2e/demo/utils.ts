@@ -166,9 +166,16 @@ export async function navigateTo(page: Page, path: string, testInfo?: TestInfo):
 		url = `${url}${separator}tenant=${creds.tenantId}`;
 	}
 	await page.goto(url);
-	// Use domcontentloaded instead of networkidle (more reliable for SPA)
+	// Wait for DOM to be ready (removed fixed 500ms wait)
 	await page.waitForLoadState('domcontentloaded');
-	await page.waitForTimeout(500);
+
+	// Wait for any loading overlays to disappear instead of fixed wait
+	const loadingIndicator = page.locator('.loading, .spinner, [data-loading="true"], .skeleton');
+	if (await loadingIndicator.first().isVisible({ timeout: 100 }).catch(() => false)) {
+		await loadingIndicator.first().waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {
+			// Loading indicator may have already disappeared
+		});
+	}
 }
 
 /**
