@@ -233,7 +233,7 @@ test.describe('Demo User - Error Handling', () => {
 		// Login first
 		await page.goto('/login');
 		await page.getByLabel(/email/i).fill('demo1@example.com');
-		await page.getByLabel(/password/i).fill('demo12345');
+		await page.locator('#password').fill('demo12345');
 		await page.getByRole('button', { name: /sign in|login/i }).click();
 
 		await page.waitForURL(/dashboard|home/i, { timeout: 15000 });

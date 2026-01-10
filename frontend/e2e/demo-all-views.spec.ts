@@ -33,7 +33,7 @@ test.describe('Demo All Views - Landing & Auth', () => {
 
 		await expect(page.getByRole('heading', { name: /welcome|login|sign in/i })).toBeVisible();
 		await expect(page.getByLabel(/email/i)).toBeVisible();
-		await expect(page.getByLabel(/password/i)).toBeVisible();
+		await expect(page.locator('#password')).toBeVisible();
 		await expect(page.getByRole('button', { name: /sign in|login/i })).toBeVisible();
 	});
 });

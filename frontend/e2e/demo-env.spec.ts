@@ -29,7 +29,7 @@ async function loginAsDemo(page: import('@playwright/test').Page) {
 	await page.waitForLoadState('networkidle');
 
 	const emailInput = page.getByLabel(/email/i);
-	const passwordInput = page.getByLabel(/password/i);
+	const passwordInput = page.locator('#password');
 
 	await emailInput.fill(DEMO_EMAIL);
 	await passwordInput.fill(DEMO_PASSWORD);
@@ -65,7 +65,7 @@ test.describe('Demo Environment - Health Checks', () => {
 
 		await expect(page.getByRole('heading', { name: /welcome|login|sign in/i })).toBeVisible();
 		await expect(page.getByLabel(/email/i)).toBeVisible();
-		await expect(page.getByLabel(/password/i)).toBeVisible();
+		await expect(page.locator('#password')).toBeVisible();
 		await expect(page.getByRole('button', { name: /sign in|login/i })).toBeVisible();
 	});
 });
@@ -85,7 +85,7 @@ test.describe('Demo Environment - Authentication', () => {
 		await page.goto(`${DEMO_URL}/login`);
 
 		await page.getByLabel(/email/i).fill('invalid@example.com');
-		await page.getByLabel(/password/i).fill('wrongpassword');
+		await page.locator('#password').fill('wrongpassword');
 		await page.getByRole('button', { name: /sign in|login/i }).click();
 
 		// Should stay on login page or show error
@@ -478,7 +478,7 @@ test.describe('Demo Environment - Performance', () => {
 		await page.waitForLoadState('networkidle');
 
 		await page.getByLabel(/email/i).fill(DEMO_EMAIL);
-		await page.getByLabel(/password/i).fill(DEMO_PASSWORD);
+		await page.locator('#password').fill(DEMO_PASSWORD);
 		await page.getByRole('button', { name: /sign in|login/i }).click();
 
 		// Wait for login to complete (allow more time for cold starts and network latency)

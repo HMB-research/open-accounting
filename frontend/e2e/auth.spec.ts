@@ -12,13 +12,13 @@ test.describe('Authentication - Login Page', () => {
 		// Check for login form elements - heading is "Welcome Back"
 		await expect(page.getByRole('heading', { name: /welcome|login|sign in/i })).toBeVisible();
 		await expect(page.getByLabel(/email/i)).toBeVisible();
-		await expect(page.getByLabel(/password/i)).toBeVisible();
+		await expect(page.locator('#password')).toBeVisible();
 		await expect(page.getByRole('button', { name: /sign in|login/i })).toBeVisible();
 	});
 
 	test('should show error state for invalid credentials', async ({ page }) => {
 		await page.getByLabel(/email/i).fill('invalid@example.com');
-		await page.getByLabel(/password/i).fill('wrongpassword');
+		await page.locator('#password').fill('wrongpassword');
 		await page.getByRole('button', { name: /sign in|login/i }).click();
 
 		// Wait for response - should either show error message or stay on login page
@@ -39,7 +39,7 @@ test.describe('Authentication - Login Page', () => {
 	test('should have working form inputs', async ({ page }) => {
 		// Test that inputs accept values
 		const emailInput = page.getByLabel(/email/i);
-		const passwordInput = page.getByLabel(/password/i);
+		const passwordInput = page.locator('#password');
 
 		await emailInput.fill('test@example.com');
 		await passwordInput.fill('password123');
@@ -79,7 +79,7 @@ test.describe('Authentication - Login Flow', () => {
 
 		// Fill credentials matching auth.setup.ts
 		await page.getByLabel(/email/i).fill('test@example.com');
-		await page.getByLabel(/password/i).fill('testpassword123');
+		await page.locator('#password').fill('testpassword123');
 		await page.getByRole('button', { name: /sign in|login/i }).click();
 
 		// Wait for navigation or error - either is acceptable
@@ -103,7 +103,7 @@ test.describe('Authentication - Demo Credentials', () => {
 		await page.goto('/login');
 
 		// Demo password is 9 characters
-		const passwordInput = page.getByLabel(/password/i);
+		const passwordInput = page.locator('#password');
 		await page.getByLabel(/email/i).fill('demo1@example.com');
 		await passwordInput.fill('demo12345');
 
@@ -143,7 +143,7 @@ test.describe('Authentication - Demo Credentials', () => {
 			throw new Error(`Mode toggle failed. Current heading: "${heading}"`);
 		}
 
-		const passwordInput = page.getByLabel(/password/i);
+		const passwordInput = page.locator('#password');
 
 		// Password input SHOULD have minlength validation in register mode
 		const minlength = await passwordInput.getAttribute('minlength');
@@ -155,7 +155,7 @@ test.describe('Authentication - Demo Credentials', () => {
 
 		// Fill demo credentials
 		await page.getByLabel(/email/i).fill('demo1@example.com');
-		await page.getByLabel(/password/i).fill('demo12345');
+		await page.locator('#password').fill('demo12345');
 
 		// Click login - should not show browser validation error
 		await page.getByRole('button', { name: /sign in|login/i }).click();
