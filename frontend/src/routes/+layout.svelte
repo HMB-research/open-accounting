@@ -4,6 +4,7 @@
 	import { api } from '$lib/api';
 	import { pluginManager, type PluginNavigationItem } from '$lib/plugins';
 	import LanguageSelector from '$lib/components/LanguageSelector.svelte';
+	import TenantSelector from '$lib/components/TenantSelector.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 
 	let { children } = $props();
@@ -78,15 +79,26 @@
 
 				<!-- Desktop Navigation -->
 				<div class="nav-links hide-mobile-flex">
+					<TenantSelector />
 					<a href={getNavUrl('/dashboard')}>{m.nav_dashboard()}</a>
-					<a href={getNavUrl('/accounts')}>{m.nav_accounts()}</a>
-					<a href={getNavUrl('/journal')}>{m.nav_journal()}</a>
-					<a href={getNavUrl('/contacts')}>{m.nav_contacts()}</a>
-					<a href={getNavUrl('/invoices')}>{m.nav_invoices()}</a>
-					<a href={getNavUrl('/quotes')}>{m.nav_quotes()}</a>
-					<a href={getNavUrl('/orders')}>{m.nav_orders()}</a>
-					<a href={getNavUrl('/assets')}>{m.nav_assets()}</a>
-					<a href={getNavUrl('/inventory')}>{m.nav_inventory()}</a>
+					<div class="nav-dropdown">
+						<span class="nav-dropdown-trigger">{m.nav_financial()}</span>
+						<div class="nav-dropdown-menu">
+							<a href={getNavUrl('/accounts')}>{m.nav_accounts()}</a>
+							<a href={getNavUrl('/journal')}>{m.nav_journal()}</a>
+							<a href={getNavUrl('/assets')}>{m.nav_assets()}</a>
+							<a href={getNavUrl('/inventory')}>{m.nav_inventory()}</a>
+						</div>
+					</div>
+					<div class="nav-dropdown">
+						<span class="nav-dropdown-trigger">{m.nav_sales()}</span>
+						<div class="nav-dropdown-menu">
+							<a href={getNavUrl('/contacts')}>{m.nav_contacts()}</a>
+							<a href={getNavUrl('/invoices')}>{m.nav_invoices()}</a>
+							<a href={getNavUrl('/quotes')}>{m.nav_quotes()}</a>
+							<a href={getNavUrl('/orders')}>{m.nav_orders()}</a>
+						</div>
+					</div>
 					<div class="nav-dropdown">
 						<span class="nav-dropdown-trigger">{m.nav_payments()}</span>
 						<div class="nav-dropdown-menu">
@@ -142,15 +154,43 @@
 					<button class="mobile-nav-close" onclick={closeMobileMenu} aria-label="Close menu">×</button>
 				</div>
 				<div class="mobile-nav-content">
+					<div class="mobile-nav-tenant">
+						<TenantSelector />
+					</div>
+
 					<a href={getNavUrl('/dashboard')} class="mobile-nav-link">{m.nav_dashboard()}</a>
-					<a href={getNavUrl('/accounts')} class="mobile-nav-link">{m.nav_accounts()}</a>
-					<a href={getNavUrl('/journal')} class="mobile-nav-link">{m.nav_journal()}</a>
-					<a href={getNavUrl('/contacts')} class="mobile-nav-link">{m.nav_contacts()}</a>
-					<a href={getNavUrl('/invoices')} class="mobile-nav-link">{m.nav_invoices()}</a>
-					<a href={getNavUrl('/quotes')} class="mobile-nav-link">{m.nav_quotes()}</a>
-					<a href={getNavUrl('/orders')} class="mobile-nav-link">{m.nav_orders()}</a>
-					<a href={getNavUrl('/assets')} class="mobile-nav-link">{m.nav_assets()}</a>
-					<a href={getNavUrl('/inventory')} class="mobile-nav-link">{m.nav_inventory()}</a>
+
+					<!-- Financial Accordion -->
+					<div class="mobile-nav-accordion">
+						<button class="mobile-nav-accordion-trigger" onclick={() => toggleDropdown('financial')}>
+							<span>{m.nav_financial()}</span>
+							<span class="accordion-arrow" class:expanded={expandedDropdown === 'financial'}>▸</span>
+						</button>
+						{#if expandedDropdown === 'financial'}
+							<div class="mobile-nav-accordion-content">
+								<a href={getNavUrl('/accounts')} class="mobile-nav-link sub">{m.nav_accounts()}</a>
+								<a href={getNavUrl('/journal')} class="mobile-nav-link sub">{m.nav_journal()}</a>
+								<a href={getNavUrl('/assets')} class="mobile-nav-link sub">{m.nav_assets()}</a>
+								<a href={getNavUrl('/inventory')} class="mobile-nav-link sub">{m.nav_inventory()}</a>
+							</div>
+						{/if}
+					</div>
+
+					<!-- Sales Accordion -->
+					<div class="mobile-nav-accordion">
+						<button class="mobile-nav-accordion-trigger" onclick={() => toggleDropdown('sales')}>
+							<span>{m.nav_sales()}</span>
+							<span class="accordion-arrow" class:expanded={expandedDropdown === 'sales'}>▸</span>
+						</button>
+						{#if expandedDropdown === 'sales'}
+							<div class="mobile-nav-accordion-content">
+								<a href={getNavUrl('/contacts')} class="mobile-nav-link sub">{m.nav_contacts()}</a>
+								<a href={getNavUrl('/invoices')} class="mobile-nav-link sub">{m.nav_invoices()}</a>
+								<a href={getNavUrl('/quotes')} class="mobile-nav-link sub">{m.nav_quotes()}</a>
+								<a href={getNavUrl('/orders')} class="mobile-nav-link sub">{m.nav_orders()}</a>
+							</div>
+						{/if}
+					</div>
 
 					<!-- Payments Accordion -->
 					<div class="mobile-nav-accordion">
@@ -514,6 +554,20 @@
 		height: 1px;
 		background: var(--color-border);
 		margin: 0.5rem 0;
+	}
+
+	.mobile-nav-tenant {
+		padding: 0.75rem 1rem;
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.mobile-nav-tenant :global(.tenant-selector) {
+		width: 100%;
+	}
+
+	.mobile-nav-tenant :global(.tenant-trigger) {
+		width: 100%;
+		max-width: none;
 	}
 
 	.mobile-nav-section-title {
