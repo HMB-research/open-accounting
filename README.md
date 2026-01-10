@@ -65,10 +65,21 @@ Open Accounting is a **self-hosted, multi-tenant accounting platform** designed 
 | Feature | Description |
 |---------|-------------|
 | **Invoicing** | Sales and purchase invoices with line items and VAT |
+| **Quotes** | Sales quotes with draft/sent/accepted workflow, conversion to orders |
+| **Orders** | Order management with quote linking and status tracking |
 | **Contacts** | Customer and supplier management |
 | **Payments** | Payment recording with invoice allocation |
 | **PDF Generation** | Professional invoice PDFs with customizable branding |
 | **Recurring Invoices** | Automated invoice generation on schedule |
+
+### Fixed Assets
+| Feature | Description |
+|---------|-------------|
+| **Asset Tracking** | Register and track fixed assets with serial numbers and locations |
+| **Asset Categories** | IT Equipment, Office Furniture, Vehicles, Software with depreciation settings |
+| **Depreciation** | Straight-line and declining balance methods with configurable useful life |
+| **Asset Lifecycle** | Draft → Active → Disposed/Sold/Scrapped status workflow |
+| **Depreciation Entries** | Automatic depreciation calculations with audit trail |
 
 ### Banking & Reconciliation
 | Feature | Description |
@@ -217,6 +228,7 @@ open-accounting/
 | [Deployment](docs/DEPLOYMENT.md) | Production deployment guide |
 | [EMTA Integration](docs/EMTA_INTEGRATION.md) | Estonian Tax Board integration guide |
 | [Plugins](docs/PLUGINS.md) | Plugin development and marketplace guide |
+| [E2E Testing](docs/plans/2026-01-09-e2e-test-consolidation-design.md) | End-to-end testing architecture |
 | [Swagger UI](/swagger/) | Interactive API explorer (when server is running) |
 
 ---
@@ -253,10 +265,13 @@ open-accounting/
 - [x] Internationalization (English/Estonian) with Paraglide-JS
 - [x] Mobile-responsive frontend with touch-friendly UI
 - [x] Report exports (Excel, CSV, PDF)
+- [x] Quotes with quote-to-order conversion
+- [x] Order management
+- [x] Fixed assets with depreciation tracking
 
 ### Planned 📋
 - [ ] E-invoice support (Peppol) — *requires external Access Point*
-- [ ] Inventory management
+- [ ] Inventory management (stock tracking, warehouses)
 
 ---
 

@@ -2,6 +2,7 @@
 	import '../app.css';
 	import { page } from '$app/stores';
 	import { api } from '$lib/api';
+	import { isAuthenticated as authState } from '$lib/stores/auth';
 	import { pluginManager, type PluginNavigationItem } from '$lib/plugins';
 	import LanguageSelector from '$lib/components/LanguageSelector.svelte';
 	import TenantSelector from '$lib/components/TenantSelector.svelte';
@@ -9,7 +10,8 @@
 
 	let { children } = $props();
 
-	let isAuthenticated = $state(api.isAuthenticated);
+	// Use reactive auth state from the store
+	let isAuthenticated = $derived($authState);
 	let pluginNavItems = $state<PluginNavigationItem[]>([]);
 	let mobileMenuOpen = $state(false);
 	let expandedDropdown = $state<string | null>(null);
@@ -40,7 +42,7 @@
 	function handleLogout() {
 		api.logout();
 		pluginManager.clear();
-		isAuthenticated = false;
+		// isAuthenticated is derived from the store and will update automatically
 		window.location.href = '/login';
 	}
 

@@ -336,6 +336,9 @@
 			<div class="templates-layout">
 				<div class="template-list card">
 					<h3>{m.email_templates()}</h3>
+					{#if templates.length === 0}
+						<p class="text-muted">{m.email_noTemplates()}</p>
+					{/if}
 					{#each templates as template}
 						<button
 							class="template-item"
