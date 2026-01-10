@@ -154,6 +154,87 @@ refactor: restructure without behavior change
 chore: maintenance tasks
 ```
 
+## Error Handling Patterns
+
+### Tenant Validation (Frontend)
+
+All action handlers must validate tenant context and show errors to users:
+
+```typescript
+import { requireTenantId, parseApiError } from '$lib/utils/tenant';
+import ErrorAlert from '$lib/components/ErrorAlert.svelte';
+
+// In action handler:
+async function doAction() {
+    const tenantId = requireTenantId($page, (err) => (error = err));
+    if (!tenantId) return;  // Shows error to user automatically
+
+    actionLoading = true;
+    error = '';
+    try {
+        await api.someAction(tenantId, ...);
+        success = 'Action completed';
+    } catch (err) {
+        error = parseApiError(err);  // Handles 403, 401, network errors
+    } finally {
+        actionLoading = false;
+    }
+}
+```
+
+### Common Error Types
+
+| Error | Cause | User Message |
+|-------|-------|--------------|
+| No tenant | URL missing `?tenant=` param | "Please select an organization first" |
+| Access denied | User not member of tenant | "Access denied to this organization" |
+| Session expired | JWT expired | "Your session has expired. Please log in again." |
+| Network error | API unreachable | "Network error. Please try again." |
+
+### Key Files
+
+| Purpose | Location |
+|---------|----------|
+| Tenant validation | `frontend/src/lib/utils/tenant.ts` |
+| Error alerts | `frontend/src/lib/components/ErrorAlert.svelte` |
+| Global error page | `frontend/src/routes/+error.svelte` |
+| API error parsing | `frontend/src/lib/utils/tenant.ts` (parseApiError) |
+
+## MCP Server
+
+The project includes an MCP server for AI assistant integration.
+
+### Setup
+
+```bash
+cd mcp-server
+npm install
+npm run dev  # Development
+```
+
+### Add to Claude Code
+
+```bash
+claude mcp add open-accounting -- npx tsx /path/to/mcp-server/src/index.ts
+```
+
+### Environment Variables
+
+```bash
+OPEN_ACCOUNTING_API_URL=http://localhost:8080
+OPEN_ACCOUNTING_API_TOKEN=your-jwt-token
+```
+
+### Available Tools
+
+- `list_invoices` - List invoices with filters
+- `create_invoice` - Create new invoice
+- `get_account_balance` - Get account balance
+- `generate_report` - Generate financial reports
+- `list_contacts` - List customers/vendors
+- `record_payment` - Record a payment
+- `get_chart_of_accounts` - Get chart of accounts
+
 ## Quick Reference
 
 ### Common Commands

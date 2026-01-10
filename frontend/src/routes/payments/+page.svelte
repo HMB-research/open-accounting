@@ -4,12 +4,16 @@
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
 	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
+	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
+	import { requireTenantId, parseApiError } from '$lib/utils/tenant';
 
 	let payments = $state<Payment[]>([]);
 	let contacts = $state<Contact[]>([]);
 	let unpaidInvoices = $state<Invoice[]>([]);
 	let isLoading = $state(true);
 	let error = $state('');
+	let success = $state('');
+	let actionLoading = $state(false);
 	let showCreatePayment = $state(false);
 	let filterType = $state<PaymentType | ''>('');
 	let filterFromDate = $state('');
@@ -58,9 +62,11 @@
 
 	async function createPayment(e: Event) {
 		e.preventDefault();
-		const tenantId = $page.url.searchParams.get('tenant');
+		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId) return;
 
+		actionLoading = true;
+		error = '';
 		try {
 			const payment = await api.createPayment(tenantId, {
 				payment_type: newType,
@@ -75,8 +81,12 @@
 			payments = [payment, ...payments];
 			showCreatePayment = false;
 			resetForm();
+			success = m.payments_recordPayment();
+			setTimeout(() => (success = ''), 3000);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to create payment';
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
@@ -185,8 +195,12 @@
 		</div>
 	</div>
 
+	{#if success}
+		<ErrorAlert message={success} type="success" onDismiss={() => (success = '')} />
+	{/if}
+
 	{#if error}
-		<div class="alert alert-error">{error}</div>
+		<ErrorAlert message={error} type="error" onDismiss={() => (error = '')} />
 	{/if}
 
 	{#if isLoading}

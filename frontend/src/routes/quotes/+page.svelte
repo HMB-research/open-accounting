@@ -4,11 +4,15 @@
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
 	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
+	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
+	import { requireTenantId, parseApiError } from '$lib/utils/tenant';
 
 	let quotes = $state<Quote[]>([]);
 	let contacts = $state<Contact[]>([]);
 	let isLoading = $state(true);
 	let error = $state('');
+	let success = $state('');
+	let actionLoading = $state(false);
 	let showCreateQuote = $state(false);
 	let filterStatus = $state<QuoteStatus | ''>('');
 	let filterFromDate = $state('');
@@ -84,9 +88,11 @@
 
 	async function createQuote(e: Event) {
 		e.preventDefault();
-		const tenantId = $page.url.searchParams.get('tenant');
+		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId) return;
 
+		actionLoading = true;
+		error = '';
 		try {
 			const quote = await api.createQuote(tenantId, {
 				contact_id: newContactId,
@@ -104,8 +110,12 @@
 			quotes = [quote, ...quotes];
 			showCreateQuote = false;
 			resetForm();
+			success = m.quotes_createQuote();
+			setTimeout(() => (success = ''), 3000);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to create quote';
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
@@ -127,52 +137,74 @@
 	}
 
 	async function sendQuote(quoteId: string) {
-		const tenantId = $page.url.searchParams.get('tenant');
+		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId) return;
 
+		actionLoading = true;
+		error = '';
 		try {
 			await api.sendQuote(tenantId, quoteId);
+			success = m.quotes_statusSent();
+			setTimeout(() => (success = ''), 3000);
 			loadData(tenantId);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to send quote';
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
 	async function acceptQuote(quoteId: string) {
-		const tenantId = $page.url.searchParams.get('tenant');
+		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId) return;
 
+		actionLoading = true;
+		error = '';
 		try {
 			await api.acceptQuote(tenantId, quoteId);
+			success = m.quotes_statusAccepted();
+			setTimeout(() => (success = ''), 3000);
 			loadData(tenantId);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to accept quote';
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
 	async function rejectQuote(quoteId: string) {
-		const tenantId = $page.url.searchParams.get('tenant');
+		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId) return;
 
+		actionLoading = true;
+		error = '';
 		try {
 			await api.rejectQuote(tenantId, quoteId);
+			success = m.quotes_statusRejected();
+			setTimeout(() => (success = ''), 3000);
 			loadData(tenantId);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to reject quote';
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
 	async function deleteQuote(quoteId: string) {
-		const tenantId = $page.url.searchParams.get('tenant');
+		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId) return;
 
 		if (!confirm(m.quotes_confirmDelete())) return;
 
+		actionLoading = true;
+		error = '';
 		try {
 			await api.deleteQuote(tenantId, quoteId);
 			quotes = quotes.filter(q => q.id !== quoteId);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to delete quote';
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
@@ -247,8 +279,12 @@
 		</div>
 	</div>
 
+	{#if success}
+		<ErrorAlert message={success} type="success" onDismiss={() => (success = '')} />
+	{/if}
+
 	{#if error}
-		<div class="alert alert-error">{error}</div>
+		<ErrorAlert message={error} type="error" onDismiss={() => (error = '')} />
 	{/if}
 
 	{#if isLoading}

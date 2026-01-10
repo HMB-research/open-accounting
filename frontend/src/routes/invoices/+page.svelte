@@ -5,11 +5,15 @@
 	import * as m from '$lib/paraglide/messages.js';
 	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
 	import ContactFormModal from '$lib/components/ContactFormModal.svelte';
+	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
+	import { requireTenantId, parseApiError } from '$lib/utils/tenant';
 
 	let invoices = $state<Invoice[]>([]);
 	let contacts = $state<Contact[]>([]);
 	let isLoading = $state(true);
 	let error = $state('');
+	let success = $state('');
+	let actionLoading = $state(false);
 	let showCreateInvoice = $state(false);
 	let filterType = $state<InvoiceType | ''>('');
 	let filterStatus = $state<InvoiceStatus | ''>('');
@@ -90,9 +94,11 @@
 
 	async function createInvoice(e: Event) {
 		e.preventDefault();
-		const tenantId = $page.url.searchParams.get('tenant');
+		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId) return;
 
+		actionLoading = true;
+		error = '';
 		try {
 			const invoice = await api.createInvoice(tenantId, {
 				invoice_type: newType,
@@ -112,8 +118,12 @@
 			invoices = [invoice, ...invoices];
 			showCreateInvoice = false;
 			resetForm();
+			success = m.invoices_newInvoice();
+			setTimeout(() => (success = ''), 3000);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to create invoice';
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
@@ -146,25 +156,35 @@
 	}
 
 	async function sendInvoice(invoiceId: string) {
-		const tenantId = $page.url.searchParams.get('tenant');
+		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId) return;
 
+		actionLoading = true;
+		error = '';
 		try {
 			await api.sendInvoice(tenantId, invoiceId);
+			success = m.invoices_sent();
+			setTimeout(() => (success = ''), 3000);
 			loadData(tenantId);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to send invoice';
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
 	async function downloadPDF(invoiceId: string, invoiceNumber: string) {
-		const tenantId = $page.url.searchParams.get('tenant');
+		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId) return;
 
+		actionLoading = true;
+		error = '';
 		try {
 			await api.downloadInvoicePDF(tenantId, invoiceId, invoiceNumber);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to download PDF';
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
@@ -258,8 +278,12 @@
 		</div>
 	</div>
 
+	{#if success}
+		<ErrorAlert message={success} type="success" onDismiss={() => (success = '')} />
+	{/if}
+
 	{#if error}
-		<div class="alert alert-error">{error}</div>
+		<ErrorAlert message={error} type="error" onDismiss={() => (error = '')} />
 	{/if}
 
 	{#if isLoading}
