@@ -8,6 +8,8 @@
 		type PermissionRisk
 	} from '$lib/api';
 	import * as m from '$lib/paraglide/messages.js';
+	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
+	import { requireTenantId, parseApiError } from '$lib/utils/tenant';
 
 	let tenantPlugins = $state<TenantPlugin[]>([]);
 	let allPermissions = $state<Record<string, PluginPermission>>({});
@@ -15,6 +17,7 @@
 	let isLoading = $state(true);
 	let error = $state('');
 	let successMessage = $state('');
+	let actionLoading = $state(false);
 
 	// Modal states
 	let showSettings = $state(false);
@@ -47,25 +50,31 @@
 	}
 
 	async function enablePlugin(pluginId: string) {
-		const tenantId = $page.url.searchParams.get('tenant');
+		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId) return;
 
+		actionLoading = true;
+		error = '';
 		try {
 			const updated = await api.enableTenantPlugin(tenantId, pluginId);
 			tenantPlugins = tenantPlugins.map((p) => (p.plugin_id === updated.plugin_id ? updated : p));
 			successMessage = m.plugins_enabledSuccess();
 			setTimeout(() => (successMessage = ''), 3000);
 		} catch (err) {
-			error = err instanceof Error ? err.message : m.errors_saveFailed();
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
 	async function disablePlugin(pluginId: string) {
-		const tenantId = $page.url.searchParams.get('tenant');
+		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId) return;
 
 		if (!confirm(m.plugins_confirmDisable())) return;
 
+		actionLoading = true;
+		error = '';
 		try {
 			await api.disableTenantPlugin(tenantId, pluginId);
 			tenantPlugins = tenantPlugins.map((p) =>
@@ -74,28 +83,36 @@
 			successMessage = m.plugins_disabledSuccess();
 			setTimeout(() => (successMessage = ''), 3000);
 		} catch (err) {
-			error = err instanceof Error ? err.message : m.errors_saveFailed();
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
 	async function openSettingsModal(plugin: TenantPlugin) {
-		const tenantId = $page.url.searchParams.get('tenant');
+		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId) return;
 
+		actionLoading = true;
+		error = '';
 		try {
 			const settingsData = await api.getTenantPluginSettings(tenantId, plugin.plugin_id);
 			selectedPlugin = plugin;
 			editedSettings = { ...settingsData.settings };
 			showSettings = true;
 		} catch (err) {
-			error = err instanceof Error ? err.message : m.errors_loadFailed();
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
 	async function saveSettings() {
-		const tenantId = $page.url.searchParams.get('tenant');
+		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId || !selectedPlugin) return;
 
+		actionLoading = true;
+		error = '';
 		try {
 			await api.updateTenantPluginSettings(tenantId, selectedPlugin.plugin_id, editedSettings);
 			tenantPlugins = tenantPlugins.map((p) =>
@@ -106,7 +123,9 @@
 			successMessage = m.plugins_settingsSaved();
 			setTimeout(() => (successMessage = ''), 3000);
 		} catch (err) {
-			error = err instanceof Error ? err.message : m.errors_saveFailed();
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
@@ -155,11 +174,11 @@
 	</div>
 
 	{#if successMessage}
-		<div class="alert alert-success">{successMessage}</div>
+		<ErrorAlert message={successMessage} type="success" onDismiss={() => (successMessage = '')} />
 	{/if}
 
 	{#if error}
-		<div class="alert alert-error">{error}</div>
+		<ErrorAlert message={error} type="error" onDismiss={() => (error = '')} />
 	{/if}
 
 	{#if isLoading}
