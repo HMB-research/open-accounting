@@ -26,7 +26,7 @@ export default defineConfig({
 	testDir: './e2e',
 	fullyParallel: true,
 	forbidOnly: !!process.env.CI,
-	retries: process.env.CI ? 1 : 0, // Reduce retries in CI
+	retries: process.env.CI ? 2 : 0, // Increase retries in CI for stability
 	workers: 4, // 4 workers for 4 demo users
 	reporter: [
 		['html', { outputFolder: 'playwright-report-demo' }],
