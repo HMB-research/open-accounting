@@ -364,3 +364,48 @@ export async function waitForPageReady(page: Page, timeout = 10000): Promise<voi
 		await loadingOverlay.first().waitFor({ state: 'hidden', timeout });
 	}
 }
+
+/**
+ * Wait for table to have data rows OR an empty state message.
+ * Handles cases where demo data may not be seeded.
+ * @param page - Playwright page object
+ * @param timeout - Maximum wait time in ms (default: 15000)
+ * @returns Object indicating whether data exists
+ */
+export async function waitForDataOrEmpty(
+	page: Page,
+	timeout = 15000
+): Promise<{ hasData: boolean; isEmpty: boolean }> {
+	const tableBody = page.locator('table tbody');
+	const emptyIndicators = page.locator(
+		'.empty-state, [data-testid="empty"], text=/no data|no records|empty|no results/i'
+	);
+	const loadingIndicators = page.locator(
+		'.loading, .spinner, [data-loading="true"], .skeleton'
+	);
+
+	// Wait for loading to complete first
+	try {
+		await loadingIndicators.first().waitFor({ state: 'hidden', timeout: 5000 });
+	} catch {
+		// Loading might have already completed
+	}
+
+	// Race between table data and empty state
+	try {
+		await Promise.race([
+			tableBody.locator('tr').first().waitFor({ state: 'visible', timeout }),
+			emptyIndicators.first().waitFor({ state: 'visible', timeout })
+		]);
+	} catch {
+		// Neither appeared within timeout
+	}
+
+	const rowCount = await tableBody.locator('tr').count();
+	const hasEmpty = await emptyIndicators.first().isVisible().catch(() => false);
+
+	return {
+		hasData: rowCount > 0,
+		isEmpty: hasEmpty || rowCount === 0
+	};
+}
