@@ -1,5 +1,5 @@
 import { test, expect, TestInfo } from '@playwright/test';
-import { loginAsDemo, navigateTo, DEMO_URL, getDemoCredentials } from './demo/utils';
+import { loginAsDemo, navigateTo, DEMO_URL, getDemoCredentials, waitForDataOrEmpty } from './demo/utils';
 
 /**
  * Comprehensive E2E Tests for All Demo Views
@@ -211,6 +211,10 @@ test.describe('Demo All Views - Payroll', () => {
 
 		// Wait for page heading (level 1) to be visible
 		await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 15000 });
+
+		// Check for data or empty state
+		const { hasData, isEmpty } = await waitForDataOrEmpty(page, 10000);
+		expect(hasData || isEmpty).toBeTruthy();
 	});
 });
 
