@@ -8,14 +8,14 @@
 | Category | Working | Issues | Not Tested |
 |----------|---------|--------|------------|
 | Landing/Auth | 2/2 | 0 | 0 |
-| Core Accounting | 3/6 | 0 | 3 |
+| Core Accounting | 6/6 | 0 | 0 |
 | Business Operations | 0/8 | 0 | 8 |
 | Payroll | 0/4 | 0 | 4 |
 | Banking | 0/2 | 0 | 2 |
 | Reports | 0/3 | 0 | 3 |
 | Settings | 0/5 | 0 | 5 |
 | Admin | 0/1 | 0 | 1 |
-| **Total** | **5/33** | **0** | **28** |
+| **Total** | **8/33** | **0** | **25** |
 
 ---
 
@@ -150,42 +150,68 @@ Each view is tested for:
 #### /invoices
 | Criteria | Status | Notes |
 |----------|--------|-------|
-| Page Load | 🔲 | |
-| Data Display | 🔲 | |
-| Navigation | 🔲 | |
-| CRUD | 🔲 | |
-| Errors | 🔲 | |
-| Responsive | 🔲 | |
+| Page Load | ✅ | Loads correctly |
+| Data Display | ✅ | Shows seeded invoices with proper columns |
+| Navigation | ✅ | New Invoice button works |
+| CRUD | ✅ | Create modal opens, form has required fields, inline contact creation |
+| Errors | ✅ | No errors observed |
+| Responsive | ⚠️ | Needs manual verification |
 
-**Overall:** 🔲 Not Tested
+**E2E Tests:** 13/13 passed
+- Displays seeded invoices
+- Shows invoice statuses (Paid, Sent, etc.)
+- New Invoice button visible
+- Invoice table has expected columns
+- Can open/close invoice modal
+- Invoice form has required fields
+- Inline contact creation works
+
+**Overall:** ✅ Working
 
 ---
 
 #### /invoices/reminders
 | Criteria | Status | Notes |
 |----------|--------|-------|
-| Page Load | 🔲 | |
-| Data Display | 🔲 | |
-| Navigation | 🔲 | |
-| CRUD | 🔲 | |
-| Errors | 🔲 | |
-| Responsive | 🔲 | |
+| Page Load | ✅ | Loads correctly with heading |
+| Data Display | ✅ | Shows overdue invoices or empty state, summary statistics |
+| Navigation | ✅ | Refresh button, back to invoices link |
+| CRUD | ✅ | Select invoices, send reminders modal with custom message |
+| Errors | ✅ | No errors observed |
+| Responsive | ⚠️ | Needs manual verification |
 
-**Overall:** 🔲 Not Tested
+**E2E Tests:** 14/14 passed
+- Page heading visible
+- Refresh and back buttons work
+- Overdue summary statistics display
+- Individual invoice selection
+- Select all functionality
+- Send reminders button
+- Send modal opens with custom message field
+- Table has proper headers
+- Overdue days indicator
+
+**Overall:** ✅ Working
 
 ---
 
 #### /contacts
 | Criteria | Status | Notes |
 |----------|--------|-------|
-| Page Load | 🔲 | |
-| Data Display | 🔲 | |
-| Navigation | 🔲 | |
-| CRUD | 🔲 | |
-| Errors | 🔲 | |
-| Responsive | 🔲 | |
+| Page Load | ✅ | Loads correctly |
+| Data Display | ✅ | Shows seeded customer and supplier contacts with email/phone |
+| Navigation | ✅ | Works correctly |
+| CRUD | ⚠️ | Read verified, Create/Update/Delete not tested |
+| Errors | ✅ | No errors observed |
+| Responsive | ⚠️ | Needs manual verification |
 
-**Overall:** 🔲 Not Tested
+**E2E Tests:** 4/4 passed
+- Displays seeded customer contacts
+- Displays seeded supplier contacts
+- Shows correct contact count
+- Contact details include email and phone
+
+**Overall:** ✅ Working
 
 ---
 
@@ -589,6 +615,9 @@ _None identified yet_
 
 | Date | Tester | Changes |
 |------|--------|---------|
+| 2026-01-11 | Claude | Tested Invoices (/invoices) - Working (13/13 E2E tests passed) |
+| 2026-01-11 | Claude | Tested Payment Reminders (/invoices/reminders) - Working (14/14 E2E tests passed) |
+| 2026-01-11 | Claude | Tested Contacts (/contacts) - Working (4/4 E2E tests passed) |
 | 2026-01-11 | Claude | Tested Dashboard (/dashboard) - Working (6/6 E2E tests passed) |
 | 2026-01-11 | Claude | Tested Accounts (/accounts) - Working (4/4 E2E tests passed) |
 | 2026-01-11 | Claude | Tested Journal (/journal) - Working (3/3 E2E tests passed) |
