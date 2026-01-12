@@ -63,7 +63,7 @@ test.describe('Demo Recurring Invoices - Seed Data Verification', () => {
 			expect(hasFrequencies).toBeTruthy();
 		} else {
 			// If no data, just verify page loaded correctly
-			await expect(page.getByRole('heading')).toBeVisible();
+			await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 		}
 	});
 
@@ -112,7 +112,7 @@ test.describe('Demo Recurring Invoices - Seed Data Verification', () => {
 			).toBeTruthy();
 		} else {
 			// If no data, verify page structure
-			await expect(page.getByRole('heading')).toBeVisible();
+			await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 		}
 	});
 });
