@@ -8,14 +8,14 @@
 | Category | Working | Issues | Not Tested |
 |----------|---------|--------|------------|
 | Landing/Auth | 2/2 | 0 | 0 |
-| Core Accounting | 0/6 | 0 | 6 |
+| Core Accounting | 3/6 | 0 | 3 |
 | Business Operations | 0/8 | 0 | 8 |
 | Payroll | 0/4 | 0 | 4 |
 | Banking | 0/2 | 0 | 2 |
 | Reports | 0/3 | 0 | 3 |
 | Settings | 0/5 | 0 | 5 |
 | Admin | 0/1 | 0 | 1 |
-| **Total** | **2/33** | **0** | **31** |
+| **Total** | **5/33** | **0** | **28** |
 
 ---
 
@@ -89,42 +89,61 @@ Each view is tested for:
 #### /dashboard
 | Criteria | Status | Notes |
 |----------|--------|-------|
-| Page Load | 🔲 | |
-| Data Display | 🔲 | |
-| Navigation | 🔲 | |
+| Page Load | ✅ | Loads correctly with tenant selector |
+| Data Display | ✅ | Cash Flow card, Recent Activity, Revenue vs Expenses chart all visible |
+| Navigation | ✅ | Navigation header visible with main menu items |
 | CRUD | N/A | |
-| Errors | 🔲 | |
-| Responsive | 🔲 | |
+| Errors | ✅ | No errors observed |
+| Responsive | ⚠️ | Mobile navigation collapsed behind hamburger |
 
-**Overall:** 🔲 Not Tested
+**E2E Tests:** 6/6 passed
+- Organization selector or dashboard content displays
+- Cash Flow card visible
+- Recent Activity section visible
+- Revenue vs Expenses chart visible
+- New Organization button works
+- Navigation header with menu items
+
+**Overall:** ✅ Working
 
 ---
 
 #### /accounts
 | Criteria | Status | Notes |
 |----------|--------|-------|
-| Page Load | 🔲 | |
-| Data Display | 🔲 | |
-| Navigation | 🔲 | |
-| CRUD | 🔲 | |
-| Errors | 🔲 | |
-| Responsive | 🔲 | |
+| Page Load | ✅ | Loads correctly |
+| Data Display | ✅ | Shows 20+ accounts with codes (1000, 1100, etc.) and types (Asset, Liability) |
+| Navigation | ✅ | Navigation works |
+| CRUD | ⚠️ | Read verified, Create/Update/Delete not tested |
+| Errors | ✅ | No errors observed |
+| Responsive | ⚠️ | Needs manual verification |
 
-**Overall:** 🔲 Not Tested
+**E2E Tests:** 4/4 passed
+- Displays seeded accounts (Cash, Bank Account EUR)
+- Shows account codes (1000-series)
+- Shows different account types (Asset, Liability)
+- Shows minimum 20+ accounts
+
+**Overall:** ✅ Working
 
 ---
 
 #### /journal
 | Criteria | Status | Notes |
 |----------|--------|-------|
-| Page Load | 🔲 | |
-| Data Display | 🔲 | |
-| Navigation | 🔲 | |
-| CRUD | 🔲 | |
-| Errors | 🔲 | |
-| Responsive | 🔲 | |
+| Page Load | ✅ | Loads correctly with heading |
+| Data Display | ✅ | Shows entries or empty state appropriately |
+| Navigation | ✅ | New entry button visible |
+| CRUD | ⚠️ | Read verified, Create/Update/Delete not tested |
+| Errors | ✅ | No errors observed |
+| Responsive | ⚠️ | Needs manual verification |
 
-**Overall:** 🔲 Not Tested
+**E2E Tests:** 3/3 passed
+- Journal entries page heading visible
+- New entry button or empty state visible
+- Page structure correct (heading + action buttons)
+
+**Overall:** ✅ Working
 
 ---
 
@@ -570,6 +589,9 @@ _None identified yet_
 
 | Date | Tester | Changes |
 |------|--------|---------|
+| 2026-01-11 | Claude | Tested Dashboard (/dashboard) - Working (6/6 E2E tests passed) |
+| 2026-01-11 | Claude | Tested Accounts (/accounts) - Working (4/4 E2E tests passed) |
+| 2026-01-11 | Claude | Tested Journal (/journal) - Working (3/3 E2E tests passed) |
 | 2026-01-11 | Claude | Tested Landing page (/) - Working |
 | 2026-01-11 | Claude | Tested Login page (/login) - Working |
 | 2026-01-11 | - | Initial template created |
