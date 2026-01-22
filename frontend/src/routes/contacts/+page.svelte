@@ -2,6 +2,7 @@
 	import { page } from '$app/stores';
 	import { api, type Contact, type ContactType } from '$lib/api';
 	import * as m from '$lib/paraglide/messages.js';
+	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
 
 	let contacts = $state<Contact[]>([]);
 	let isLoading = $state(true);
@@ -92,18 +93,10 @@
 		}
 	}
 
-	function getTypeLabel(type: ContactType): string {
-		switch (type) {
-			case 'CUSTOMER': return m.contacts_customer();
-			case 'SUPPLIER': return m.contacts_supplier();
-			case 'BOTH': return m.contacts_both();
-		}
-	}
-
-	const typeBadgeClass: Record<ContactType, string> = {
-		CUSTOMER: 'badge-customer',
-		SUPPLIER: 'badge-supplier',
-		BOTH: 'badge-both'
+	const typeConfig: Record<ContactType, StatusConfig> = {
+		CUSTOMER: { class: 'badge-customer', label: m.contacts_customer() },
+		SUPPLIER: { class: 'badge-supplier', label: m.contacts_supplier() },
+		BOTH: { class: 'badge-both', label: m.contacts_both() }
 	};
 </script>
 
@@ -169,9 +162,7 @@
 							<tr class:inactive={!contact.is_active}>
 								<td class="name" data-label="Name">{contact.name}</td>
 								<td data-label="Type">
-									<span class="badge {typeBadgeClass[contact.contact_type]}">
-										{getTypeLabel(contact.contact_type)}
-									</span>
+									<StatusBadge status={contact.contact_type} config={typeConfig} />
 								</td>
 								<td class="email" data-label="Email">{contact.email || '-'}</td>
 								<td class="hide-mobile" data-label="Phone">{contact.phone || '-'}</td>
