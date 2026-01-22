@@ -4,6 +4,8 @@
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
 	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
+	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
+	import { formatCurrency, formatDate } from '$lib/utils/formatting';
 
 	let assets = $state<FixedAsset[]>([]);
 	let categories = $state<AssetCategory[]>([]);
@@ -201,14 +203,12 @@
 		}
 	}
 
-	function getStatusLabel(status: AssetStatus): string {
-		switch (status) {
-			case 'DRAFT': return m.assets_statusDraft();
-			case 'ACTIVE': return m.assets_statusActive();
-			case 'DISPOSED': return m.assets_statusDisposed();
-			case 'SOLD': return m.assets_statusSold();
-		}
-	}
+	const statusConfig: Record<AssetStatus, StatusConfig> = {
+		DRAFT: { class: 'badge-draft', label: m.assets_statusDraft() },
+		ACTIVE: { class: 'badge-active', label: m.assets_statusActive() },
+		DISPOSED: { class: 'badge-disposed', label: m.assets_statusDisposed() },
+		SOLD: { class: 'badge-sold', label: m.assets_statusSold() }
+	};
 
 	function getMethodLabel(method: DepreciationMethod): string {
 		switch (method) {
@@ -225,25 +225,6 @@
 			case 'DONATED': return m.assets_disposalDonated();
 			case 'LOST': return m.assets_disposalLost();
 		}
-	}
-
-	const statusBadgeClass: Record<AssetStatus, string> = {
-		DRAFT: 'badge-draft',
-		ACTIVE: 'badge-active',
-		DISPOSED: 'badge-disposed',
-		SOLD: 'badge-sold'
-	};
-
-	function formatCurrency(value: Decimal | number | string): string {
-		const num = typeof value === 'object' && 'toFixed' in value ? value.toNumber() : Number(value);
-		return new Intl.NumberFormat('et-EE', {
-			style: 'currency',
-			currency: 'EUR'
-		}).format(num);
-	}
-
-	function formatDate(dateStr: string): string {
-		return new Date(dateStr).toLocaleDateString('et-EE');
 	}
 
 	function getCategoryName(categoryId: string | undefined): string {
@@ -316,9 +297,7 @@
 								<td class="number" data-label={m.assets_assetNumber()}>{asset.asset_number}</td>
 								<td data-label={m.common_name()}>{asset.name}</td>
 								<td data-label={m.common_status()}>
-									<span class="badge {statusBadgeClass[asset.status]}">
-										{getStatusLabel(asset.status)}
-									</span>
+									<StatusBadge status={asset.status} config={statusConfig} />
 								</td>
 								<td class="hide-mobile" data-label={m.assets_category()}>{getCategoryName(asset.category_id)}</td>
 								<td class="hide-mobile" data-label={m.assets_purchaseDate()}>{formatDate(asset.purchase_date)}</td>

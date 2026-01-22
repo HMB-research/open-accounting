@@ -9,6 +9,7 @@
 	} from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
+	import { formatCurrency, formatDate } from '$lib/utils/formatting';
 
 	let recurringInvoices = $state<RecurringInvoice[]>([]);
 	let contacts = $state<Contact[]>([]);
@@ -175,18 +176,6 @@
 		if (newLines.length > 1) {
 			newLines = newLines.filter((_, i) => i !== index);
 		}
-	}
-
-	function formatCurrency(value: Decimal | number | string): string {
-		const num = typeof value === 'object' && 'toFixed' in value ? value.toNumber() : Number(value);
-		return new Intl.NumberFormat('et-EE', {
-			style: 'currency',
-			currency: 'EUR'
-		}).format(num);
-	}
-
-	function formatDate(dateStr: string): string {
-		return new Date(dateStr).toLocaleDateString('en-GB');
 	}
 
 	function frequencyLabel(f: Frequency): string {
