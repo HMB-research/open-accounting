@@ -143,4 +143,10 @@
 		background: #fee2e2;
 		color: #dc2626;
 	}
+
+	/* Submission statuses */
+	:global(.badge-submitted) {
+		background: #dbeafe;
+		color: #1e40af;
+	}
 </style>

@@ -4,6 +4,9 @@
 	import { api, type KMDDeclaration } from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
+	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
+
+	type VATStatus = 'DRAFT' | 'SUBMITTED' | 'ACCEPTED';
 
 	let tenantId = $derived($page.url.searchParams.get('tenant') || '');
 	let isLoading = $state(false);
@@ -72,27 +75,11 @@
 		return new Decimal(amount).toFixed(2);
 	}
 
-	function getStatusClass(status: string): string {
-		switch (status) {
-			case 'SUBMITTED':
-				return 'status-submitted';
-			case 'ACCEPTED':
-				return 'status-accepted';
-			default:
-				return 'status-draft';
-		}
-	}
-
-	function getStatusLabel(status: string): string {
-		switch (status) {
-			case 'SUBMITTED':
-				return m.vat_status_submitted();
-			case 'ACCEPTED':
-				return m.vat_status_accepted();
-			default:
-				return m.vat_status_draft();
-		}
-	}
+	const statusConfig: Record<VATStatus, StatusConfig> = {
+		DRAFT: { class: 'badge-draft', label: m.vat_status_draft() },
+		SUBMITTED: { class: 'badge-submitted', label: m.vat_status_submitted() },
+		ACCEPTED: { class: 'badge-accepted', label: m.vat_status_accepted() }
+	};
 
 	function calculatePayable(decl: KMDDeclaration): Decimal {
 		const output = decl.total_output_vat instanceof Decimal
@@ -180,10 +167,9 @@
 									onclick={() => (selectedDeclaration = decl)}
 								>
 									<td>{decl.year}-{String(decl.month).padStart(2, '0')}</td>
-									<td
-										><span class="status {getStatusClass(decl.status)}"
-											>{getStatusLabel(decl.status)}</span
-										></td
+									<td>
+										<StatusBadge status={decl.status} config={statusConfig} />
+									</td
 									>
 									<td class="amount">{formatAmount(calculatePayable(decl))} EUR</td>
 								</tr>
@@ -383,29 +369,6 @@
 
 	.table tbody tr.selected {
 		background: var(--color-primary-light, #e0f2fe);
-	}
-
-	.status {
-		display: inline-block;
-		padding: 0.25rem 0.5rem;
-		border-radius: 4px;
-		font-size: 0.75rem;
-		font-weight: 500;
-	}
-
-	.status-draft {
-		background: var(--color-bg);
-		color: var(--color-text-muted);
-	}
-
-	.status-submitted {
-		background: #fef3c7;
-		color: #92400e;
-	}
-
-	.status-accepted {
-		background: #d1fae5;
-		color: #065f46;
 	}
 
 	.empty-state,
