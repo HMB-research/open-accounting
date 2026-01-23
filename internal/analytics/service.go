@@ -202,3 +202,12 @@ func (s *Service) GetTopCustomers(ctx context.Context, tenantID, schemaName stri
 
 	return s.repo.GetTopCustomers(ctx, schemaName, limit)
 }
+
+// GetRecentActivity returns recent activity from invoices, payments, journal entries, and contacts
+func (s *Service) GetRecentActivity(ctx context.Context, tenantID, schemaName string, limit int) ([]ActivityItem, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	return s.repo.GetRecentActivity(ctx, schemaName, limit)
+}
