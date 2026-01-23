@@ -154,7 +154,7 @@ describe('API Client Retry Integration', () => {
 	beforeEach(() => {
 		mockFetch = vi.fn();
 		originalFetch = global.fetch;
-		global.fetch = mockFetch;
+		global.fetch = mockFetch as typeof fetch;
 	});
 
 	afterEach(() => {

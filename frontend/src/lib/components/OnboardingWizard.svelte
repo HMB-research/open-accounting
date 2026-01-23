@@ -34,23 +34,26 @@
 
 	let { tenant, oncomplete }: Props = $props();
 
+	// Capture initial values from tenant prop (these are form defaults, not reactive)
+	const initialSettings = tenant.settings;
+
 	let currentStep = $state(1);
 	let isSubmitting = $state(false);
 	let error = $state('');
 
 	// Step 1: Company Profile
 	let companyName = $state(tenant.name || '');
-	let regCode = $state(tenant.settings?.reg_code || '');
-	let vatNumber = $state(tenant.settings?.vat_number || '');
-	let address = $state(tenant.settings?.address || '');
-	let email = $state(tenant.settings?.email || '');
-	let phone = $state(tenant.settings?.phone || '');
+	let regCode = $state(initialSettings?.reg_code || '');
+	let vatNumber = $state(initialSettings?.vat_number || '');
+	let address = $state(initialSettings?.address || '');
+	let email = $state(initialSettings?.email || '');
+	let phone = $state(initialSettings?.phone || '');
 
 	// Step 2: Branding (optional)
-	let logo = $state(tenant.settings?.logo || '');
-	let pdfPrimaryColor = $state(tenant.settings?.pdf_primary_color || '#4f46e5');
-	let bankDetails = $state(tenant.settings?.bank_details || '');
-	let invoiceTerms = $state(tenant.settings?.invoice_terms || '');
+	let logo = $state(initialSettings?.logo || '');
+	let pdfPrimaryColor = $state(initialSettings?.pdf_primary_color || '#4f46e5');
+	let bankDetails = $state(initialSettings?.bank_details || '');
+	let invoiceTerms = $state(initialSettings?.invoice_terms || '');
 
 	// Step 3: First Contact (optional)
 	let contactName = $state('');
