@@ -189,8 +189,7 @@ func (h *Handlers) GetRecentActivity(w http.ResponseWriter, r *http.Request) {
 
 	activity, err := h.analyticsService.GetRecentActivity(r.Context(), tenantID, schemaName, limit)
 	if err != nil {
-		log.Printf("ERROR: Failed to get recent activity for schema=%s limit=%d: %v", schemaName, limit, err)
-		respondError(w, http.StatusInternalServerError, "Failed to get recent activity: "+err.Error())
+		respondError(w, http.StatusInternalServerError, "Failed to get recent activity")
 		return
 	}
 
