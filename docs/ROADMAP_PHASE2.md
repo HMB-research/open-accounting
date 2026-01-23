@@ -126,7 +126,7 @@ GET /tenants/{id}/activity?limit=10
 
 | Task | File(s) | Notes |
 |------|---------|-------|
-| Add xlsx library | `frontend/package.json` | `npm install xlsx` |
+| Add xlsx library | `frontend/package.json` | `bun add xlsx` |
 | Create ExportButton component | `frontend/src/lib/components/ExportButton.svelte` | PDF/Excel/CSV options |
 | Add P&L API endpoint | `internal/analytics/pnl.go` | Monthly breakdown |
 | Add Cash Flow Statement API | `internal/analytics/cashflow_statement.go` | Operating/Investing/Financing |
@@ -316,17 +316,15 @@ e2e:
       with:
         go-version: '1.24'
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v2
       with:
-        node-version: '22'
-        cache: 'npm'
-        cache-dependency-path: frontend/package-lock.json
+        bun-version: latest
 
     - name: Install dependencies
       run: |
-        cd frontend && npm ci
-        npx playwright install --with-deps
+        cd frontend && bun install
+        bunx playwright install --with-deps
 
     - name: Build backend
       run: go build -o api ./cmd/api
@@ -345,10 +343,10 @@ e2e:
         JWT_SECRET: test-secret-key
 
     - name: Build frontend
-      run: cd frontend && npm run build
+      run: cd frontend && bun run build
 
     - name: Run E2E tests
-      run: cd frontend && npx playwright test
+      run: cd frontend && bunx playwright test
       env:
         BASE_URL: http://localhost:3000
 
@@ -405,7 +403,7 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: 'npm run dev',
+    command: 'bun run dev',
     url: 'http://localhost:5173',
     reuseExistingServer: !process.env.CI,
   },

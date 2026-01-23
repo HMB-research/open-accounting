@@ -30,7 +30,7 @@ The demo E2E tests verify that:
 
 2. Frontend dev server running:
    ```bash
-   cd frontend && npm run dev
+   cd frontend && bun run dev
    ```
 
 3. Environment variables set:
@@ -44,14 +44,14 @@ The demo E2E tests verify that:
 
 ```bash
 cd frontend
-npm run test:e2e:demo:verify
+bun run test:e2e:demo:verify
 ```
 
 ### Run the Ralph Loop (Retry Until Pass)
 
 ```bash
 cd frontend
-npm run test:e2e:demo:loop:verify
+bun run test:e2e:demo:loop:verify
 ```
 
 The Ralph Loop will:

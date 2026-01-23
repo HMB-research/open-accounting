@@ -283,18 +283,18 @@ function getStatusLabel(status: string): string {
 #### Build Commands
 ```bash
 # Compile translations
-npm run paraglide
+bun run paraglide
 
 # Full build (includes paraglide)
-npm run build
+bun run build
 
 # Type check
-npm run check
+bun run check
 ```
 
 #### Adding New Translations
 1. Add keys to `messages/en.json` and `messages/et.json`
-2. Run `npm run paraglide` to generate TypeScript functions
+2. Run `bun run paraglide` to generate TypeScript functions
 3. Import and use in components: `m.your_new_key()`
 
 #### Language Detection Priority
@@ -319,13 +319,13 @@ Vitest with jsdom environment for unit and integration tests:
 cd frontend
 
 # Run all tests
-npm test
+bun test
 
 # Watch mode
-npm run test:watch
+bun run test:watch
 
 # Coverage report
-npm run test:coverage
+bun run test:coverage
 ```
 
 #### Test Structure

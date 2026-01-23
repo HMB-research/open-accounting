@@ -6,40 +6,39 @@ SvelteKit-based web application for Open Accounting.
 
 ```bash
 # Install dependencies
-npm install
+bun install
 
 # Compile translations (required before first run)
-npm run paraglide
+bun run paraglide
 
 # Start development server
-npm run dev
+bun run dev
 
 # Access at http://localhost:5173
 ```
 
 ## Prerequisites
 
-- Node.js 22+
-- npm 10+
+- Bun 1.0+ (or Node.js 22+)
 - Running backend API at http://localhost:8080
 
 ## Available Scripts
 
 | Script | Description |
 |--------|-------------|
-| `npm run dev` | Start development server with HMR |
-| `npm run build` | Build for production |
-| `npm run preview` | Preview production build |
-| `npm run check` | TypeScript type checking |
-| `npm run check:watch` | Watch mode type checking |
-| `npm run lint` | Run ESLint |
-| `npm run format` | Format code with Prettier |
-| `npm run test` | Run unit tests (Vitest) |
-| `npm run test:watch` | Watch mode unit tests |
-| `npm run test:coverage` | Run tests with coverage report |
-| `npm run test:e2e` | Run E2E tests (Playwright) |
-| `npm run test:e2e:ui` | E2E tests with UI |
-| `npm run test:e2e:debug` | Debug E2E tests |
+| `bun run dev` | Start development server with HMR |
+| `bun run build` | Build for production |
+| `bun run preview` | Preview production build |
+| `bun run check` | TypeScript type checking |
+| `bun run check:watch` | Watch mode type checking |
+| `bun run lint` | Run ESLint |
+| `bun run format` | Format code with Prettier |
+| `bun run test` | Run unit tests (Vitest) |
+| `bun run test:watch` | Watch mode unit tests |
+| `bun run test:coverage` | Run tests with coverage report |
+| `bun run test:e2e` | Run E2E tests (Playwright) |
+| `bun run test:e2e:ui` | E2E tests with UI |
+| `bun run test:e2e:debug` | Debug E2E tests |
 
 ## Project Structure
 
@@ -199,13 +198,13 @@ const contact = await api.createContact(tenantId, {
 
 ```bash
 # Run all unit tests
-npm run test
+bun run test
 
 # Watch mode
-npm run test:watch
+bun run test:watch
 
 # With coverage
-npm run test:coverage
+bun run test:coverage
 ```
 
 Test files: `src/**/*.test.ts`
@@ -214,13 +213,13 @@ Test files: `src/**/*.test.ts`
 
 ```bash
 # Run E2E tests
-npm run test:e2e
+bun run test:e2e
 
 # With UI
-npm run test:e2e:ui
+bun run test:e2e:ui
 
 # Debug mode
-npm run test:e2e:debug
+bun run test:e2e:debug
 ```
 
 Test files: `e2e/**/*.spec.ts`
@@ -232,7 +231,7 @@ E2E tests run against the demo environment with seeded data.
 Translations are managed with Paraglide-JS (compile-time i18n):
 
 1. **Source files**: `messages/en.json`, `messages/et.json`
-2. **Compile**: `npm run paraglide`
+2. **Compile**: `bun run paraglide`
 3. **Generated**: `src/lib/paraglide/messages.js`
 
 Usage in components:
@@ -250,7 +249,7 @@ Adding new translations:
 
 1. Add key to `messages/en.json`
 2. Add key to `messages/et.json`
-3. Run `npm run paraglide`
+3. Run `bun run paraglide`
 4. Import and use in component
 
 ## Environment Variables
@@ -269,20 +268,20 @@ Adding new translations:
 
 ```bash
 # Format all files
-npm run format
+bun run format
 
 # Check linting
-npm run lint
+bun run lint
 ```
 
 ## Building for Production
 
 ```bash
 # Build
-npm run build
+bun run build
 
 # Preview build
-npm run preview
+bun run preview
 
 # Output in 'build/' directory
 ```
@@ -293,7 +292,7 @@ The production build uses `@sveltejs/adapter-node` for server deployment.
 
 ### "Translations not found"
 
-Run `npm run paraglide` to compile translations before starting dev server.
+Run `bun run paraglide` to compile translations before starting dev server.
 
 ### "API connection refused"
 
@@ -301,7 +300,7 @@ Ensure the backend is running at http://localhost:8080.
 
 ### "Type errors in generated files"
 
-Run `npm run check` to regenerate SvelteKit types.
+Run `bun run check` to regenerate SvelteKit types.
 
 ## Related Documentation
 
