@@ -3,6 +3,7 @@
 	import { api, type Employee, type EmploymentType } from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
+	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
 
 	let employees = $state<Employee[]>([]);
 	let isLoading = $state(true);
@@ -117,19 +118,10 @@
 		return `${new Decimal(value).mul(100).toFixed(0)}%`;
 	}
 
-	function getTypeLabel(type: EmploymentType): string {
-		switch (type) {
-			case 'FULL_TIME': return m.employees_fullTime();
-			case 'PART_TIME': return m.employees_partTime();
-			case 'CONTRACT': return m.employees_contract();
-			default: return type;
-		}
-	}
-
-	const typeBadgeClass: Record<EmploymentType, string> = {
-		FULL_TIME: 'badge-fulltime',
-		PART_TIME: 'badge-parttime',
-		CONTRACT: 'badge-contract'
+	const typeConfig: Record<EmploymentType, StatusConfig> = {
+		FULL_TIME: { class: 'badge-fulltime', label: m.employees_fullTime() },
+		PART_TIME: { class: 'badge-parttime', label: m.employees_partTime() },
+		CONTRACT: { class: 'badge-contract', label: m.employees_contract() }
 	};
 
 	$effect(() => {
@@ -215,9 +207,7 @@
 								{/if}
 							</td>
 							<td data-label={m.employees_type()}>
-								<span class="badge {typeBadgeClass[employee.employment_type]}">
-									{getTypeLabel(employee.employment_type)}
-								</span>
+								<StatusBadge status={employee.employment_type} config={typeConfig} />
 							</td>
 							<td data-label={m.employees_basicExemption()}>
 								{#if employee.apply_basic_exemption}
