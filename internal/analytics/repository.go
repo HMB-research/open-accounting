@@ -280,7 +280,7 @@ func (r *PostgresRepository) GetRecentActivity(ctx context.Context, schemaName s
 					WHEN i.invoice_type = 'SALES' THEN 'Invoice ' || i.invoice_number || ' to ' || c.name
 					ELSE 'Bill ' || i.invoice_number || ' from ' || c.name
 				END as description,
-				COALESCE(i.updated_at, i.created_at) as created_at,
+				i.created_at as created_at,
 				i.total as amount
 			FROM %[1]s.invoices i
 			LEFT JOIN %[1]s.contacts c ON i.contact_id = c.id
