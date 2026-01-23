@@ -302,8 +302,7 @@ func (r *PostgresRepository) GetRecentActivity(ctx context.Context, schemaName s
 				p.payment_date::timestamptz as created_at,
 				p.amount as amount
 			FROM %[1]s.payments p
-			LEFT JOIN %[1]s.invoices i ON p.invoice_id = i.id
-			LEFT JOIN %[1]s.contacts c ON i.contact_id = c.id
+			LEFT JOIN %[1]s.contacts c ON p.contact_id = c.id
 
 			UNION ALL
 
