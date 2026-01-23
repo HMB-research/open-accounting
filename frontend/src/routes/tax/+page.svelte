@@ -262,10 +262,6 @@
 		margin-bottom: 0;
 	}
 
-	.declarations {
-		/* Divider between items handled by border-bottom on each item */
-	}
-
 	.declaration-item {
 		display: flex;
 		justify-content: space-between;

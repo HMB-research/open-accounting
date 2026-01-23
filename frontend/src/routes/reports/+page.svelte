@@ -815,12 +815,6 @@
 			gap: 1rem;
 		}
 
-		.header .btn {
-			width: 100%;
-			min-height: 44px;
-			justify-content: center;
-		}
-
 		.control-row {
 			flex-direction: column;
 			gap: 0.75rem;
@@ -877,7 +871,6 @@
 	}
 
 	@media print {
-		.header button,
 		.report-controls {
 			display: none;
 		}
