@@ -6,8 +6,8 @@ Model Context Protocol (MCP) server for Open Accounting, enabling AI assistants 
 
 ```bash
 cd mcp-server
-npm install
-npm run build
+bun install
+bun run build
 ```
 
 ## Configuration
@@ -21,7 +21,7 @@ Set environment variables:
 Add to your Claude Code configuration:
 
 ```bash
-claude mcp add open-accounting -- npx tsx /path/to/mcp-server/src/index.ts
+claude mcp add open-accounting -- bun run /path/to/mcp-server/src/index.ts
 ```
 
 Or after building:
@@ -46,7 +46,7 @@ claude mcp add open-accounting -- node /path/to/mcp-server/dist/index.js
 ## Development
 
 ```bash
-npm run dev  # Run with tsx (hot reload)
-npm run build  # Build TypeScript
-npm start  # Run built version
+bun run dev    # Run with Bun (hot reload)
+bun run build  # Build TypeScript
+bun run start  # Run built version
 ```

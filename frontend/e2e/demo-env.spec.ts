@@ -7,7 +7,7 @@ import { test, expect } from '@playwright/test';
  * - Local environment (CI): Uses BASE_URL and PUBLIC_API_URL environment variables
  * - Production demo: Falls back to Railway URLs
  *
- * Run with: npm run test:e2e:demo
+ * Run with: bun run test:e2e:demo
  *
  * Prerequisites:
  * - Demo environment must be deployed and accessible

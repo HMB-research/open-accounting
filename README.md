@@ -182,7 +182,7 @@ go run ./cmd/migrate -db "$DATABASE_URL" -path migrations -direction up
 go run ./cmd/api
 
 # Start frontend (terminal 2)
-cd frontend && npm install && npm run dev
+cd frontend && bun install && bun run dev
 ```
 
 ---

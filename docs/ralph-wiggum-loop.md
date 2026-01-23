@@ -36,6 +36,8 @@ The Ralph Wiggum loop is based on [awesomeclaude.ai/ralph-wiggum](https://awesom
 
 ## View Inventory
 
+> **Last Updated:** 2026-01-23
+
 ### All Application Views
 
 | Route | View Name | Has Demo Data | Has E2E Test | Status |
@@ -49,29 +51,31 @@ The Ralph Wiggum loop is based on [awesomeclaude.ai/ralph-wiggum](https://awesom
 | `/quotes` | Quotes | ✅ | ✅ | DONE |
 | `/orders` | Orders | ✅ | ✅ | DONE |
 | `/payments` | Payments | ✅ | ✅ | DONE |
-| `/payments/cash` | Cash Payments | ❓ | ❌ | NEEDS WORK |
+| `/payments/cash` | Cash Payments | ✅ | ✅ | DONE |
 | `/recurring` | Recurring Invoices | ✅ | ✅ | DONE |
 | `/employees` | Employees | ✅ | ✅ | DONE |
 | `/employees/absences` | Absences | ✅ | ✅ | DONE |
 | `/payroll` | Payroll Runs | ✅ | ✅ | DONE |
 | `/payroll/calculator` | Salary Calculator | ✅ | ✅ | DONE |
 | `/banking` | Bank Accounts | ✅ | ✅ | DONE |
-| `/banking/import` | Bank Import | ❓ | ❌ | NEEDS WORK |
+| `/banking/import` | Bank Import | ✅ | ✅ | DONE |
 | `/assets` | Fixed Assets | ✅ | ✅ | DONE |
-| `/inventory` | Inventory | ❌ | ❌ | NEEDS WORK |
+| `/inventory` | Inventory | ⚠️ | ✅ | PARTIAL |
 | `/reports` | Reports | ✅ | ✅ | DONE |
 | `/reports/balance-confirmations` | Balance Confirmations | ✅ | ✅ | DONE |
 | `/reports/cash-flow` | Cash Flow | ✅ | ✅ | DONE |
-| `/tax` | Tax Overview | ❓ | ❌ | NEEDS WORK |
+| `/tax` | Tax Overview | ✅ | ✅ | DONE |
 | `/vat-returns` | VAT Returns | ✅ | ✅ | DONE |
 | `/tsd` | TSD Declarations | ✅ | ✅ | DONE |
 | `/settings` | Settings | ✅ | ✅ | DONE |
-| `/settings/company` | Company Settings | ❓ | ❌ | NEEDS WORK |
-| `/settings/email` | Email Settings | ❓ | ❌ | NEEDS WORK |
-| `/settings/plugins` | Plugins (Tenant) | ❓ | ❌ | NEEDS WORK |
+| `/settings/company` | Company Settings | ✅ | ✅ | DONE |
+| `/settings/email` | Email Settings | ✅ | ✅ | DONE |
+| `/settings/plugins` | Plugins (Tenant) | ✅ | ✅ | DONE |
 | `/settings/cost-centers` | Cost Centers | ✅ | ✅ | DONE |
-| `/admin/plugins` | Plugins (Admin) | ❓ | ❌ | NEEDS WORK |
+| `/admin/plugins` | Plugins (Admin) | ✅ | ✅ | DONE |
 | `/login` | Login | N/A | ✅ | DONE |
+
+**Summary:** 32/33 views complete. Only `/inventory` has partial demo data (stub exists).
 
 ### Demo Data Tables
 
@@ -230,7 +234,7 @@ run_e2e_test() {
     local name=$(echo "$route" | sed 's/\///g' | sed 's/-/_/g')
 
     cd frontend
-    if npm run test:e2e:demo -- --grep "$name" 2>/dev/null; then
+    if bun run test:e2e:demo -- --grep "$name" 2>/dev/null; then
         cd ..
         return 0
     fi
@@ -464,7 +468,7 @@ test.describe('[View Name] View', () => {
 ### 3. Run and Verify
 ```bash
 cd frontend
-npm run test:e2e:demo -- --grep "[view-name]"
+bun run test:e2e:demo -- --grep "[view-name]"
 ```
 
 ## Completion Signal
@@ -513,7 +517,7 @@ while [[ $ITERATION -lt $MAX_ITERATIONS ]]; do
     cat /tmp/ralph-prompt.md | claude --print
 
     # Run tests to verify
-    cd frontend && npm run test:e2e:demo && cd ..
+    cd frontend && bun run test:e2e:demo && cd ..
 
     # Reset demo data if tests failed
     if [[ $? -ne 0 ]]; then
@@ -564,7 +568,7 @@ When adding a new route to the application:
 ### Tests fail after demo reset
 ```bash
 # Wait longer for data propagation
-sleep 10 && cd frontend && npm run test:e2e:demo
+sleep 10 && cd frontend && bun run test:e2e:demo
 ```
 
 ### Demo data not appearing

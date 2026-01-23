@@ -7,7 +7,7 @@ import { ensureAuthenticated, navigateTo, getDemoCredentials, ensureDemoTenant, 
  * These tests verify that demo pages load correctly and show either data or empty state.
  * Tests check for proper page structure and absence of error states.
  *
- * Run with: npm run test:e2e:demo:verify
+ * Run with: bun run test:e2e:demo:verify
  */
 
 /**

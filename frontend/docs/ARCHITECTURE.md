@@ -249,8 +249,8 @@ Location: `src/tests/`
 - Component logic (not rendering due to Svelte 5 limitations)
 
 ```bash
-npm run test          # Run tests
-npm run test:coverage # With coverage
+bun test              # Run tests
+bun run test:coverage # With coverage
 ```
 
 ### E2E Tests (Playwright)
@@ -262,8 +262,8 @@ Location: `e2e/`
 - Cross-browser verification
 
 ```bash
-npm run test:e2e      # Run all E2E tests
-npm run test:demo     # Demo mode tests only
+bun run test:e2e      # Run all E2E tests
+bun run test:demo     # Demo mode tests only
 ```
 
 ## CSS Architecture

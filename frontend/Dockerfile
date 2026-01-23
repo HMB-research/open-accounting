@@ -1,31 +1,32 @@
-# Build stage
-FROM node:22-alpine AS builder
+# Build stage - use Bun for fast dependency installation and build
+FROM oven/bun:1-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy package files and lockfile
+COPY package.json bun.lock ./
 
 # Install dependencies
-RUN npm ci
+RUN bun install --frozen-lockfile
 
 # Copy source code
 COPY . .
 
 # Build the application
-RUN npm run build
+RUN bun run build
 
-# Production stage
+# Production stage - use Node.js for runtime (adapter-node output)
 FROM node:22-alpine
 
 WORKDIR /app
 
-# Copy built application
+# Copy built application and package files
 COPY --from=builder /app/build ./build
-COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/package.json /app/bun.lock ./
 
-# Install production dependencies only
-RUN npm ci --omit=dev
+# Install production dependencies only with Bun for speed
+COPY --from=oven/bun:1-alpine /usr/local/bin/bun /usr/local/bin/bun
+RUN bun install --production --frozen-lockfile
 
 # Use the built-in node user (already exists in node:alpine)
 USER node

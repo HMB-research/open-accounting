@@ -9,7 +9,7 @@ import { loginAsDemo, navigateTo, DEMO_URL, getDemoCredentials, waitForDataOrEmp
  * 2. Displays seeded demo data
  * 3. Has proper navigation
  *
- * Run with: npm run test:e2e:demo
+ * Run with: bun run test:e2e:demo
  */
 
 test.describe('Demo All Views - Landing & Auth', () => {

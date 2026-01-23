@@ -121,7 +121,7 @@ E2E tests support parallel execution with isolated demo data:
 
 3. **Check E2E logs**: Review `frontend/playwright-report-demo/` for failure screenshots and traces
 
-4. **Test locally**: `cd frontend && npm run test:e2e:demo`
+4. **Test locally**: `cd frontend && bun run test:e2e:demo`
 
 ## Documentation Checklist
 
@@ -208,8 +208,8 @@ The project includes an MCP server for AI assistant integration.
 
 ```bash
 cd mcp-server
-npm install
-npm run dev  # Development
+bun install
+bun run dev  # Development
 ```
 
 ### Add to Claude Code
@@ -247,12 +247,12 @@ go run ./cmd/api                              # Start API server
 
 # Frontend
 cd frontend
-npm run dev                                   # Dev server
-npm test                                      # Vitest unit tests
-npm run test:e2e                              # Playwright E2E
-npm run test:e2e:demo                         # Demo-specific E2E
-npm run check                                 # TypeScript check
-npm run paraglide                             # Compile translations
+bun run dev                                   # Dev server
+bun test                                      # Vitest unit tests
+bun run test:e2e                              # Playwright E2E
+bun run test:e2e:demo                         # Demo-specific E2E
+bun run check                                 # TypeScript check
+bun run paraglide                             # Compile translations
 ```
 
 ### Project URLs (Local)

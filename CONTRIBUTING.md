@@ -41,7 +41,7 @@ make lint
 
 ### TypeScript/Svelte
 - Follow existing code patterns
-- Run `npm run check` in the frontend directory
+- Run `bun run check` in the frontend directory
 - Use TypeScript for type safety
 
 ## Testing Requirements
@@ -66,10 +66,10 @@ go test -race -cover ./...
 go test -tags=integration -race -cover ./...
 
 # Frontend tests
-cd frontend && npm test
+cd frontend && bun test
 
 # Frontend with coverage
-cd frontend && npm run test:coverage
+cd frontend && bun run test:coverage
 ```
 
 ### Writing Integration Tests

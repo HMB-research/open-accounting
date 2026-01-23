@@ -9,9 +9,9 @@ import { test, expect } from '@playwright/test';
  * 2. Local/CI environments don't have demo seed data
  *
  * To run these tests against the live demo:
- *   npm run test:e2e:demo
+ *   bun run test:e2e:demo
  * Or directly:
- *   npx playwright test --config=playwright.demo.config.ts demo-dashboard
+ *   bunx playwright test --config=playwright.demo.config.ts demo-dashboard
  */
 
 // Check if we're running against the demo environment
@@ -21,7 +21,7 @@ const isDemoEnvironment = process.env.PUBLIC_API_URL?.includes('railway.app') ||
 // Skip these tests unless targeting the demo environment
 test.describe('Demo User - Dashboard Integration', () => {
 	// Skip unless explicitly running against demo environment
-	test.skip(() => !isDemoEnvironment, 'Demo tests require production demo user - use npm run test:e2e:demo');
+	test.skip(() => !isDemoEnvironment, 'Demo tests require production demo user - use bun run test:e2e:demo');
 
 	// Start fresh without any stored auth state
 	test.use({ storageState: { cookies: [], origins: [] } });
@@ -225,7 +225,7 @@ test.describe('Demo User - Dashboard Integration', () => {
 
 test.describe('Demo User - Error Handling', () => {
 	// Skip unless explicitly running against demo environment
-	test.skip(() => !isDemoEnvironment, 'Demo tests require production demo user - use npm run test:e2e:demo');
+	test.skip(() => !isDemoEnvironment, 'Demo tests require production demo user - use bun run test:e2e:demo');
 
 	test.use({ storageState: { cookies: [], origins: [] } });
 

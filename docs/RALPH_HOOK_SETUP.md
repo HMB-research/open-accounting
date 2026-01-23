@@ -37,7 +37,7 @@ To increase test coverage to 95%:
 /ralph-loop "Increase test coverage to 95%.
 
 WORKFLOW:
-1. Run 'npm run test:coverage' in frontend/ to see current coverage
+1. Run 'bun run test:coverage' in frontend/ to see current coverage
 2. Run 'go test -coverprofile=coverage.out ./internal/...' for backend coverage
 3. Identify files with lowest coverage
 4. Write comprehensive unit tests for those files
@@ -57,7 +57,7 @@ When coverage reaches 95%, output: <promise>COVERAGE_95_ACHIEVED</promise>" --ma
 /ralph-loop "Make all pages mobile-friendly.
 
 WORKFLOW:
-1. Run E2E mobile tests: cd frontend && npm run test:e2e -- --project='Mobile Chrome'
+1. Run E2E mobile tests: cd frontend && bun run test:e2e -- --project='Mobile Chrome'
 2. Fix any failing mobile tests
 3. Audit each route for mobile responsiveness:
    - Touch targets >= 44px
@@ -116,9 +116,9 @@ cat .claude/ralph-loop.local.md
 **Frontend (Vitest):**
 ```bash
 cd frontend
-npm run test                  # Run tests once
-npm run test:watch           # Watch mode
-npm run test:coverage        # With coverage report
+bun test                     # Run tests once
+bun run test:watch           # Watch mode
+bun run test:coverage        # With coverage report
 ```
 
 **Backend (Go):**
@@ -142,19 +142,19 @@ go tool cover -html=coverage.out -o coverage.html
 cd frontend
 
 # All browsers
-npm run test:e2e
+bun run test:e2e
 
 # Specific browser
-npm run test:e2e:chromium
+bun run test:e2e:chromium
 
 # Mobile only
-npx playwright test --project='Mobile Chrome'
+bunx playwright test --project='Mobile Chrome'
 
 # With UI
-npm run test:e2e:ui
+bun run test:e2e:ui
 
 # Debug mode
-npm run test:e2e:debug
+bun run test:e2e:debug
 ```
 
 ### Coverage Targets
@@ -254,9 +254,9 @@ golangci-lint run --timeout=5m
 
 # Frontend
 cd frontend
-npm run check
-npm test -- --run
-npm run build
+bun run check
+bun test -- --run
+bun run build
 ```
 
 ## File Locations

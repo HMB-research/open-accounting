@@ -186,7 +186,7 @@ Follow existing patterns from quotes.spec.ts, orders.spec.ts, or fixed-assets.sp
 ### 3. Run and Verify
 \`\`\`bash
 cd frontend
-npm run test:e2e:demo -- --grep "$(echo "$name" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')"
+bun run test:e2e:demo -- --grep "$(echo "$name" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')"
 \`\`\`
 
 ## Completion Signal
