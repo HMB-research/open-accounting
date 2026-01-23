@@ -454,6 +454,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/analytics/dashboard", h.GetDashboardSummary)
 				r.Get("/analytics/revenue-expense", h.GetRevenueExpenseChart)
 				r.Get("/analytics/cash-flow", h.GetCashFlowChart)
+				r.Get("/analytics/activity", h.GetRecentActivity)
 				r.Get("/reports/aging/receivables", h.GetReceivablesAging)
 				r.Get("/reports/aging/payables", h.GetPayablesAging)
 
