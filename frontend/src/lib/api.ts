@@ -79,6 +79,70 @@ interface ApiError {
 	error: string;
 }
 
+export interface RetryConfig {
+	maxRetries: number;
+	baseDelayMs: number;
+	maxDelayMs: number;
+}
+
+export const DEFAULT_RETRY_CONFIG: RetryConfig = {
+	maxRetries: 3,
+	baseDelayMs: 1000,
+	maxDelayMs: 10000
+};
+
+/**
+ * Minimal retry config for testing - fast retries with minimal delay
+ */
+export const TEST_RETRY_CONFIG: RetryConfig = {
+	maxRetries: 3,
+	baseDelayMs: 10,
+	maxDelayMs: 50
+};
+
+/**
+ * Check if an error is retryable (network errors or server errors)
+ */
+export function isRetryableError(error: unknown, status?: number): boolean {
+	// Network errors (fetch failed)
+	if (error instanceof TypeError && error.message.includes('fetch')) {
+		return true;
+	}
+
+	// Server errors (5xx) are retryable
+	if (status && status >= 500 && status <= 599) {
+		return true;
+	}
+
+	// Rate limiting (429) is retryable
+	if (status === 429) {
+		return true;
+	}
+
+	return false;
+}
+
+/**
+ * Calculate delay with exponential backoff and jitter
+ */
+export function calculateBackoffDelay(attempt: number, config: RetryConfig): number {
+	// Exponential backoff: base * 2^attempt
+	const exponentialDelay = config.baseDelayMs * Math.pow(2, attempt);
+
+	// Add jitter (0-25% of delay) to prevent thundering herd
+	const jitter = exponentialDelay * 0.25 * Math.random();
+
+	// Cap at max delay
+	return Math.min(exponentialDelay + jitter, config.maxDelayMs);
+}
+
+/**
+ * Sleep for specified milliseconds
+ */
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 class ApiClient {
 	/**
 	 * Get the current access token from the auth store
@@ -122,7 +186,8 @@ class ApiClient {
 		method: string,
 		path: string,
 		body?: unknown,
-		skipAuth = false
+		skipAuth = false,
+		retryConfig: RetryConfig = DEFAULT_RETRY_CONFIG
 	): Promise<T> {
 		const headers: Record<string, string> = {
 			'Content-Type': 'application/json'
@@ -132,27 +197,66 @@ class ApiClient {
 			headers['Authorization'] = `Bearer ${this.accessToken}`;
 		}
 
-		const response = await fetch(`${getApiBase()}${path}`, {
-			method,
-			headers,
-			body: body ? JSON.stringify(body) : undefined
-		});
+		let lastError: Error | null = null;
+		let lastStatus: number | undefined;
 
-		// Handle token refresh on 401
-		if (response.status === 401 && !skipAuth) {
-			if (this.refreshToken) {
-				const refreshed = await this.refreshAccessToken();
-				if (refreshed) {
-					return this.request(method, path, body, false);
+		for (let attempt = 0; attempt <= retryConfig.maxRetries; attempt++) {
+			try {
+				const response = await fetch(`${getApiBase()}${path}`, {
+					method,
+					headers,
+					body: body ? JSON.stringify(body) : undefined
+				});
+
+				lastStatus = response.status;
+
+				// Handle token refresh on 401
+				if (response.status === 401 && !skipAuth) {
+					if (this.refreshToken) {
+						const refreshed = await this.refreshAccessToken();
+						if (refreshed) {
+							return this.request(method, path, body, false, retryConfig);
+						}
+					}
+					// Refresh failed or no refresh token - clear tokens and redirect to login
+					this.clearTokens();
+					if (browser) {
+						window.location.href = '/login';
+					}
+					throw new Error('Session expired. Please log in again.');
 				}
+
+				// Check if we should retry server errors
+				if (isRetryableError(null, response.status) && attempt < retryConfig.maxRetries) {
+					const delay = calculateBackoffDelay(attempt, retryConfig);
+					await sleep(delay);
+					continue;
+				}
+
+				// Process response
+				return await this.processResponse<T>(response);
+			} catch (error) {
+				lastError = error instanceof Error ? error : new Error(String(error));
+
+				// Only retry on retryable errors
+				if (isRetryableError(error, lastStatus) && attempt < retryConfig.maxRetries) {
+					const delay = calculateBackoffDelay(attempt, retryConfig);
+					await sleep(delay);
+					continue;
+				}
+
+				throw lastError;
 			}
-			// Refresh failed or no refresh token - clear tokens and redirect to login
-			this.clearTokens();
-			if (browser) {
-				window.location.href = '/login';
-			}
-			throw new Error('Session expired. Please log in again.');
 		}
+
+		// Should not reach here, but handle just in case
+		throw lastError || new Error('Request failed after retries');
+	}
+
+	/**
+	 * Process the response and extract data
+	 */
+	private async processResponse<T>(response: Response): Promise<T> {
 
 		let data: unknown;
 		try {

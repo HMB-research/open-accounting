@@ -1,9 +1,34 @@
 <script lang="ts">
+	/**
+	 * Multi-step onboarding wizard for new tenant setup.
+	 * Guides users through company profile, branding, and first contact creation.
+	 *
+	 * Steps:
+	 * 1. Company Profile - Name, registration, VAT, contact details
+	 * 2. Branding - Logo, colors, bank details, invoice terms
+	 * 3. First Contact - Optional customer or supplier creation
+	 * 4. Complete - Quick actions to get started
+	 *
+	 * @example
+	 * ```svelte
+	 * {#if tenant.needs_onboarding}
+	 *   <OnboardingWizard
+	 *     {tenant}
+	 *     oncomplete={() => tenant.needs_onboarding = false}
+	 *   />
+	 * {/if}
+	 * ```
+	 */
 	import { api, type Tenant, type TenantSettings } from '$lib/api';
 	import * as m from '$lib/paraglide/messages.js';
 
+	/**
+	 * Props for OnboardingWizard component
+	 */
 	interface Props {
+		/** The tenant being onboarded */
 		tenant: Tenant;
+		/** Callback when onboarding is completed or skipped */
 		oncomplete: () => void;
 	}
 
