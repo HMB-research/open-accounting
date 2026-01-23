@@ -1,12 +1,33 @@
 <script lang="ts">
+	/**
+	 * Date range filter component with preset options and custom date inputs.
+	 * Supports common presets like "Last 7 Days", "This Month", "This Year" etc.
+	 *
+	 * @example
+	 * ```svelte
+	 * <DateRangeFilter
+	 *   bind:fromDate
+	 *   bind:toDate
+	 *   onchange={(from, to) => loadData(from, to)}
+	 * />
+	 * ```
+	 */
 	import * as m from '$lib/paraglide/messages.js';
 	import { type DatePreset, calculateDateRange, getTodayISO } from '$lib/utils/dates.js';
 
+	/**
+	 * Props for DateRangeFilter component
+	 */
 	interface Props {
+		/** Start date in ISO format (YYYY-MM-DD), bindable */
 		fromDate?: string;
+		/** End date in ISO format (YYYY-MM-DD), bindable */
 		toDate?: string;
+		/** Callback when dates change */
 		onchange?: (from: string, to: string) => void;
+		/** Show preset dropdown (Today, Last 7 Days, etc.) */
 		showPresets?: boolean;
+		/** Use compact styling for smaller layouts */
 		compact?: boolean;
 	}
 

@@ -1,11 +1,31 @@
 <script lang="ts">
+	/**
+	 * Export button component with dropdown menu for Excel, CSV, and PDF export.
+	 * Uses ExcelJS for spreadsheet generation with auto-column width.
+	 *
+	 * @example
+	 * ```svelte
+	 * <ExportButton
+	 *   data={[[{ name: 'John', amount: 100 }]]}
+	 *   headers={[['Name', 'Amount']]}
+	 *   filename="report"
+	 * />
+	 * ```
+	 */
 	import ExcelJS from 'exceljs';
 	import * as m from '$lib/paraglide/messages.js';
 
+	/**
+	 * Props for ExportButton component
+	 */
 	interface Props {
+		/** Array of sheet data - each inner array contains row objects for one sheet */
 		data: Record<string, unknown>[][];
+		/** Array of header arrays - one header array per sheet */
 		headers: string[][];
+		/** Base filename for download (without extension) */
 		filename: string;
+		/** Optional custom sheet names for Excel export */
 		sheetNames?: string[];
 	}
 

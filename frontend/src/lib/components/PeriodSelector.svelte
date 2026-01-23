@@ -1,12 +1,35 @@
 <script lang="ts">
+	/**
+	 * Period selector component for choosing fiscal periods.
+	 * Used in reports and dashboards for filtering by month, quarter, or year.
+	 * Automatically calculates date ranges for standard periods.
+	 *
+	 * @example
+	 * ```svelte
+	 * <PeriodSelector
+	 *   bind:value={period}
+	 *   bind:startDate
+	 *   bind:endDate
+	 *   onchange={(p, s, e) => loadReport(s, e)}
+	 * />
+	 * ```
+	 */
 	import * as m from '$lib/paraglide/messages.js';
 
+	/** Available period types */
 	type Period = 'THIS_MONTH' | 'LAST_MONTH' | 'THIS_QUARTER' | 'THIS_YEAR' | 'CUSTOM';
 
+	/**
+	 * Props for PeriodSelector component
+	 */
 	interface Props {
+		/** Selected period type, bindable */
 		value?: Period;
+		/** Start date in ISO format (YYYY-MM-DD), bindable */
 		startDate?: string;
+		/** End date in ISO format (YYYY-MM-DD), bindable */
 		endDate?: string;
+		/** Callback when period or dates change */
 		onchange?: (period: Period, start: string, end: string) => void;
 	}
 

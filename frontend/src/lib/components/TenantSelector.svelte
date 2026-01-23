@@ -1,4 +1,14 @@
 <script lang="ts">
+	/**
+	 * Tenant selector dropdown for switching between organizations.
+	 * Fetches user's tenant memberships on mount and allows switching
+	 * the active tenant via URL query parameter.
+	 *
+	 * @example
+	 * ```svelte
+	 * <TenantSelector />
+	 * ```
+	 */
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { api, type TenantMembership } from '$lib/api';

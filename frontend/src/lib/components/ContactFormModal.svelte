@@ -1,11 +1,33 @@
 <script lang="ts">
+	/**
+	 * Modal dialog for creating new contacts (customers/suppliers).
+	 * Provides a form with all contact fields including name, type,
+	 * contact info, address, and payment terms.
+	 *
+	 * @example
+	 * ```svelte
+	 * <ContactFormModal
+	 *   open={showModal}
+	 *   tenantId={selectedTenant}
+	 *   onSave={(contact) => contacts = [...contacts, contact]}
+	 *   onClose={() => showModal = false}
+	 * />
+	 * ```
+	 */
 	import { api, type Contact, type ContactType } from '$lib/api';
 	import * as m from '$lib/paraglide/messages.js';
 
+	/**
+	 * Props for ContactFormModal component
+	 */
 	interface Props {
+		/** Whether the modal is visible */
 		open: boolean;
+		/** ID of the tenant to create the contact for */
 		tenantId: string;
+		/** Callback when contact is successfully created */
 		onSave: (contact: Contact) => void;
+		/** Callback when modal is closed (cancel or backdrop click) */
 		onClose: () => void;
 	}
 

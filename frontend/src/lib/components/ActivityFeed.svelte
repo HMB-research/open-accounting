@@ -1,17 +1,41 @@
 <script lang="ts">
+	/**
+	 * Activity feed component displaying recent actions in the dashboard.
+	 * Shows invoices, payments, journal entries, and contact updates
+	 * with relative timestamps and amounts.
+	 *
+	 * @example
+	 * ```svelte
+	 * <ActivityFeed items={recentActivity} loading={isLoading} />
+	 * ```
+	 */
 	import * as m from '$lib/paraglide/messages.js';
 
+	/**
+	 * Structure of an activity item
+	 */
 	export interface ActivityItem {
+		/** Unique identifier */
 		id: string;
+		/** Type of activity - determines icon */
 		type: 'INVOICE' | 'PAYMENT' | 'ENTRY' | 'CONTACT';
+		/** Action performed (e.g., "created", "updated") */
 		action: string;
+		/** Human-readable description */
 		description: string;
+		/** Optional monetary amount */
 		amount?: string;
+		/** ISO timestamp of when action occurred */
 		created_at: string;
 	}
 
+	/**
+	 * Props for ActivityFeed component
+	 */
 	interface Props {
+		/** Array of activity items to display */
 		items: ActivityItem[];
+		/** Show loading spinner */
 		loading?: boolean;
 	}
 

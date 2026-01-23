@@ -1,13 +1,38 @@
 <script lang="ts">
+	/**
+	 * Alert component for displaying error, warning, info, and success messages.
+	 * Supports dismissible alerts with optional action buttons.
+	 * Includes dark mode support and proper accessibility attributes.
+	 *
+	 * @example
+	 * ```svelte
+	 * <ErrorAlert
+	 *   message="Operation failed"
+	 *   type="error"
+	 *   dismissible
+	 *   onDismiss={() => error = ''}
+	 * />
+	 * ```
+	 */
 	import * as m from '$lib/paraglide/messages.js';
 
+	/**
+	 * Props for ErrorAlert component
+	 */
 	interface Props {
+		/** The message to display in the alert */
 		message: string;
+		/** Type of alert determining color scheme and icon */
 		type?: 'error' | 'warning' | 'info' | 'success';
+		/** Whether the alert can be dismissed with a close button */
 		dismissible?: boolean;
+		/** Callback when alert is dismissed */
 		onDismiss?: () => void;
+		/** Optional action button configuration */
 		action?: {
+			/** Button label text */
 			label: string;
+			/** Click handler for the action button */
 			onClick: () => void;
 		};
 	}

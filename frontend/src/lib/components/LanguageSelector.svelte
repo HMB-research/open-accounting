@@ -1,4 +1,14 @@
 <script lang="ts">
+	/**
+	 * Language selector dropdown for switching between available locales.
+	 * Uses Paraglide-JS runtime for locale management.
+	 * Currently supports English (en) and Estonian (et).
+	 *
+	 * @example
+	 * ```svelte
+	 * <LanguageSelector />
+	 * ```
+	 */
 	import { getLocale, setLocale, locales, type Locale } from '$lib/paraglide/runtime.js';
 
 	let currentLocale = $state(getLocale());

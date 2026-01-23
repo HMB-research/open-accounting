@@ -114,14 +114,20 @@ describe('API Client - Core Functionality', () => {
 		});
 
 		it('should throw generic error if no error message', async () => {
-			mockFetch.mockResolvedValueOnce({
+			// Mock 4 responses (initial + 3 retries) for 5xx error with retry logic
+			const errorResponse = {
 				ok: false,
 				status: 500,
 				json: async () => ({})
-			});
+			};
+			mockFetch
+				.mockResolvedValueOnce(errorResponse)
+				.mockResolvedValueOnce(errorResponse)
+				.mockResolvedValueOnce(errorResponse)
+				.mockResolvedValueOnce(errorResponse);
 
 			await expect(api.register('bad@email', 'pass', 'Name')).rejects.toThrow('Request failed');
-		});
+		}, 30000); // Increase timeout to account for retry delays
 	});
 
 	describe('Decimal Parsing', () => {
