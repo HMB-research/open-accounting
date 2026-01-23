@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { api, type BankAccount, type BankTransaction, type MatchSuggestion } from '$lib/api';
+	import { api, type BankAccount, type BankTransaction, type MatchSuggestion, type TransactionStatus } from '$lib/api';
 	import { goto } from '$app/navigation';
 	import * as m from '$lib/paraglide/messages.js';
 	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
+	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
+	import { formatDate } from '$lib/utils/formatting';
 
 	let tenantId = $state('');
 	let bankAccounts = $state<BankAccount[]>([]);
@@ -177,27 +179,11 @@
 		return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
 	}
 
-	function getStatusLabel(status: string): string {
-		switch (status) {
-			case 'UNMATCHED': return m.banking_unmatched();
-			case 'MATCHED': return m.banking_matched();
-			case 'RECONCILED': return m.banking_reconciled();
-			default: return status;
-		}
-	}
-
-	function formatDate(dateStr: string): string {
-		return new Date(dateStr).toLocaleDateString();
-	}
-
-	function getStatusBadgeClass(status: string): string {
-		switch (status) {
-			case 'UNMATCHED': return 'bg-yellow-100 text-yellow-800';
-			case 'MATCHED': return 'bg-green-100 text-green-800';
-			case 'RECONCILED': return 'bg-blue-100 text-blue-800';
-			default: return 'bg-gray-100 text-gray-800';
-		}
-	}
+	const statusConfig: Record<TransactionStatus, StatusConfig> = {
+		UNMATCHED: { class: 'badge-unmatched', label: m.banking_unmatched() },
+		MATCHED: { class: 'badge-matched', label: m.banking_matched() },
+		RECONCILED: { class: 'badge-reconciled', label: m.banking_reconciled() }
+	};
 
 	const filteredTransactions = $derived(
 		statusFilter === 'all' ? transactions : transactions.filter(t => t.status === statusFilter)
@@ -320,9 +306,7 @@
 									{formatAmount(transaction.amount)}
 								</td>
 								<td class="px-6 py-4 whitespace-nowrap text-center">
-									<span class="px-2 py-1 text-xs rounded-full {getStatusBadgeClass(transaction.status)}">
-										{getStatusLabel(transaction.status)}
-									</span>
+									<StatusBadge status={transaction.status} config={statusConfig} />
 								</td>
 								<td class="px-6 py-4 whitespace-nowrap text-right text-sm">
 									{#if transaction.status === 'UNMATCHED'}

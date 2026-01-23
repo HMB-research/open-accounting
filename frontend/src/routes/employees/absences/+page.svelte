@@ -11,6 +11,7 @@
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
 	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
+	import { formatDate } from '$lib/utils/formatting';
 
 	let absenceTypes = $state<AbsenceType[]>([]);
 	let leaveBalances = $state<LeaveBalance[]>([]);
@@ -178,10 +179,6 @@
 			return value.toFixed(1);
 		}
 		return new Decimal(value).toFixed(1);
-	}
-
-	function formatDate(dateStr: string): string {
-		return new Date(dateStr).toLocaleDateString();
 	}
 
 	const statusConfig: Record<LeaveStatus, StatusConfig> = {

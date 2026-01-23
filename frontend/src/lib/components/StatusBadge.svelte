@@ -149,4 +149,20 @@
 		background: #dbeafe;
 		color: #1e40af;
 	}
+
+	/* Banking statuses */
+	:global(.badge-unmatched) {
+		background: #fef3c7;
+		color: #92400e;
+	}
+
+	:global(.badge-matched) {
+		background: #dcfce7;
+		color: #166534;
+	}
+
+	:global(.badge-reconciled) {
+		background: #dbeafe;
+		color: #1e40af;
+	}
 </style>
