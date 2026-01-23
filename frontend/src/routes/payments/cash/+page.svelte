@@ -358,16 +358,6 @@
 		color: var(--color-text-muted);
 	}
 
-	.badge-received {
-		background: #dcfce7;
-		color: #166534;
-	}
-
-	.badge-made {
-		background: #fee2e2;
-		color: #dc2626;
-	}
-
 	.empty-state {
 		text-align: center;
 		padding: 3rem;

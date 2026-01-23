@@ -461,36 +461,6 @@
 		text-align: right;
 	}
 
-	.badge-draft {
-		background: #e5e7eb;
-		color: #374151;
-	}
-
-	.badge-sent {
-		background: #dbeafe;
-		color: #1d4ed8;
-	}
-
-	.badge-accepted {
-		background: #dcfce7;
-		color: #166534;
-	}
-
-	.badge-rejected {
-		background: #fee2e2;
-		color: #dc2626;
-	}
-
-	.badge-expired {
-		background: #fef3c7;
-		color: #b45309;
-	}
-
-	.badge-converted {
-		background: #f3e8ff;
-		color: #7c3aed;
-	}
-
 	.actions {
 		display: flex;
 		gap: 0.5rem;

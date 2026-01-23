@@ -293,21 +293,6 @@
 		align-items: center;
 	}
 
-	.badge-draft {
-		background: #fef3c7;
-		color: #92400e;
-	}
-
-	.badge-submitted {
-		background: #dbeafe;
-		color: #1e40af;
-	}
-
-	.badge-accepted {
-		background: #d1fae5;
-		color: #065f46;
-	}
-
 	.btn-sm {
 		padding: 0.25rem 0.75rem;
 		font-size: 0.875rem;

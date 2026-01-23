@@ -401,16 +401,6 @@
 		font-weight: 500;
 	}
 
-	.badge-received {
-		background: #dcfce7;
-		color: #166534;
-	}
-
-	.badge-made {
-		background: #fee2e2;
-		color: #dc2626;
-	}
-
 	.btn-small {
 		padding: 0.25rem 0.5rem;
 		font-size: 0.75rem;
