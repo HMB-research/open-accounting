@@ -35,6 +35,34 @@ export function getApiBase(): string {
 	return url;
 }
 
+/**
+ * Build a query string from a filter object.
+ * Handles undefined/null values by skipping them, and converts
+ * boolean values to 'true' string.
+ *
+ * @param filter - Object with filter parameters
+ * @returns Query string with leading '?' or empty string if no params
+ */
+export function buildQuery(filter?: object): string {
+	if (!filter) return '';
+
+	const params = new URLSearchParams();
+
+	for (const [key, value] of Object.entries(filter)) {
+		if (value === undefined || value === null || value === '') {
+			continue;
+		}
+		if (typeof value === 'boolean') {
+			params.set(key, 'true');
+		} else {
+			params.set(key, String(value));
+		}
+	}
+
+	const queryString = params.toString();
+	return queryString ? `?${queryString}` : '';
+}
+
 interface TokenResponse {
 	access_token: string;
 	refresh_token: string;
@@ -307,11 +335,7 @@ class ApiClient {
 
 	// Contact endpoints
 	async listContacts(tenantId: string, filter?: ContactFilter) {
-		const params = new URLSearchParams();
-		if (filter?.type) params.set('type', filter.type);
-		if (filter?.active_only) params.set('active_only', 'true');
-		if (filter?.search) params.set('search', filter.search);
-		const query = params.toString() ? `?${params.toString()}` : '';
+		const query = buildQuery(filter);
 		return this.request<Contact[]>('GET', `/api/v1/tenants/${tenantId}/contacts${query}`);
 	}
 
@@ -336,14 +360,7 @@ class ApiClient {
 
 	// Invoice endpoints
 	async listInvoices(tenantId: string, filter?: InvoiceFilter) {
-		const params = new URLSearchParams();
-		if (filter?.type) params.set('type', filter.type);
-		if (filter?.status) params.set('status', filter.status);
-		if (filter?.contact_id) params.set('contact_id', filter.contact_id);
-		if (filter?.from_date) params.set('from_date', filter.from_date);
-		if (filter?.to_date) params.set('to_date', filter.to_date);
-		if (filter?.search) params.set('search', filter.search);
-		const query = params.toString() ? `?${params.toString()}` : '';
+		const query = buildQuery(filter);
 		return this.request<Invoice[]>('GET', `/api/v1/tenants/${tenantId}/invoices${query}`);
 	}
 
@@ -397,13 +414,7 @@ class ApiClient {
 
 	// Payment endpoints
 	async listPayments(tenantId: string, filter?: PaymentFilter) {
-		const params = new URLSearchParams();
-		if (filter?.type) params.set('type', filter.type);
-		if (filter?.method) params.set('method', filter.method);
-		if (filter?.contact_id) params.set('contact_id', filter.contact_id);
-		if (filter?.from_date) params.set('from_date', filter.from_date);
-		if (filter?.to_date) params.set('to_date', filter.to_date);
-		const query = params.toString() ? `?${params.toString()}` : '';
+		const query = buildQuery(filter);
 		return this.request<Payment[]>('GET', `/api/v1/tenants/${tenantId}/payments${query}`);
 	}
 
@@ -432,13 +443,7 @@ class ApiClient {
 
 	// Quote endpoints
 	async listQuotes(tenantId: string, filter?: QuoteFilter) {
-		const params = new URLSearchParams();
-		if (filter?.status) params.set('status', filter.status);
-		if (filter?.contact_id) params.set('contact_id', filter.contact_id);
-		if (filter?.from_date) params.set('from_date', filter.from_date);
-		if (filter?.to_date) params.set('to_date', filter.to_date);
-		if (filter?.search) params.set('search', filter.search);
-		const query = params.toString() ? `?${params.toString()}` : '';
+		const query = buildQuery(filter);
 		return this.request<Quote[]>('GET', `/api/v1/tenants/${tenantId}/quotes${query}`);
 	}
 
@@ -472,13 +477,7 @@ class ApiClient {
 
 	// Orders endpoints
 	async listOrders(tenantId: string, filter?: OrderFilter) {
-		const params = new URLSearchParams();
-		if (filter?.status) params.set('status', filter.status);
-		if (filter?.contact_id) params.set('contact_id', filter.contact_id);
-		if (filter?.from_date) params.set('from_date', filter.from_date);
-		if (filter?.to_date) params.set('to_date', filter.to_date);
-		if (filter?.search) params.set('search', filter.search);
-		const query = params.toString() ? `?${params.toString()}` : '';
+		const query = buildQuery(filter);
 		return this.request<Order[]>('GET', `/api/v1/tenants/${tenantId}/orders${query}`);
 	}
 

@@ -3,6 +3,7 @@
 	import { api, type PayrollRun, type Payslip, type PayrollStatus } from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
+	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
 
 	let payrollRuns = $state<PayrollRun[]>([]);
 	let isLoading = $state(true);
@@ -152,23 +153,12 @@
 		return new Decimal(value).toFixed(2);
 	}
 
-	function getStatusLabel(status: PayrollStatus): string {
-		switch (status) {
-			case 'DRAFT': return m.payroll_statusDraft();
-			case 'CALCULATED': return m.payroll_statusCalculated();
-			case 'APPROVED': return m.payroll_statusApproved();
-			case 'PAID': return m.payroll_statusPaid();
-			case 'DECLARED': return m.payroll_statusDeclared();
-			default: return status;
-		}
-	}
-
-	const statusBadgeClass: Record<PayrollStatus, string> = {
-		DRAFT: 'badge-draft',
-		CALCULATED: 'badge-calculated',
-		APPROVED: 'badge-approved',
-		PAID: 'badge-paid',
-		DECLARED: 'badge-declared'
+	const statusConfig: Record<PayrollStatus, StatusConfig> = {
+		DRAFT: { class: 'badge-draft', label: m.payroll_statusDraft() },
+		CALCULATED: { class: 'badge-calculated', label: m.payroll_statusCalculated() },
+		APPROVED: { class: 'badge-approved', label: m.payroll_statusApproved() },
+		PAID: { class: 'badge-paid', label: m.payroll_statusPaid() },
+		DECLARED: { class: 'badge-declared', label: m.payroll_statusDeclared() }
 	};
 
 	function canCalculate(run: PayrollRun): boolean {
@@ -237,9 +227,7 @@
 						<tr>
 							<td class="period" data-label={m.payroll_period()}>{getMonthName(run.period_month)} {run.period_year}</td>
 							<td data-label={m.payroll_status()}>
-								<span class="badge {statusBadgeClass[run.status]}">
-									{getStatusLabel(run.status)}
-								</span>
+								<StatusBadge status={run.status} config={statusConfig} />
 							</td>
 							<td class="text-right mono" data-label={m.payroll_grossTotal()}>{formatDecimal(run.total_gross)}</td>
 							<td class="text-right mono" data-label={m.payroll_netTotal()}>{formatDecimal(run.total_net)}</td>

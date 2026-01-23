@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
+	import { formatCurrency } from '$lib/utils/formatting';
 
 	let tenantId = $state('');
 	let loading = $state(true);
@@ -65,14 +66,6 @@
 		} catch (e) {
 			error = e instanceof Error ? e.message : m.tax_failedToDownload();
 		}
-	}
-
-	function formatCurrency(value: Decimal | string | number): string {
-		const num = value instanceof Decimal ? value.toNumber() : Number(value);
-		return new Intl.NumberFormat('et-EE', {
-			style: 'currency',
-			currency: 'EUR'
-		}).format(num);
 	}
 
 	function getPayable(decl: KMDDeclaration): Decimal {

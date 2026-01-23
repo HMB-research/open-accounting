@@ -3,6 +3,7 @@
 	import { api, type TSDDeclaration, type TSDStatus } from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
+	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
 
 	let declarations = $state<TSDDeclaration[]>([]);
 	let isLoading = $state(true);
@@ -122,21 +123,11 @@
 		});
 	}
 
-	function getStatusLabel(status: TSDStatus): string {
-		switch (status) {
-			case 'DRAFT': return m.tsd_statusDraft();
-			case 'SUBMITTED': return m.tsd_statusSubmitted();
-			case 'ACCEPTED': return m.tsd_statusAccepted();
-			case 'REJECTED': return m.tsd_statusRejected();
-			default: return status;
-		}
-	}
-
-	const statusBadgeClass: Record<TSDStatus, string> = {
-		DRAFT: 'badge-draft',
-		SUBMITTED: 'badge-submitted',
-		ACCEPTED: 'badge-accepted',
-		REJECTED: 'badge-rejected'
+	const statusConfig: Record<TSDStatus, StatusConfig> = {
+		DRAFT: { class: 'badge-draft', label: m.tsd_statusDraft() },
+		SUBMITTED: { class: 'badge-submitted', label: m.tsd_statusSubmitted() },
+		ACCEPTED: { class: 'badge-accepted', label: m.tsd_statusAccepted() },
+		REJECTED: { class: 'badge-rejected', label: m.tsd_statusRejected() }
 	};
 
 	function canSubmit(declaration: TSDDeclaration): boolean {
@@ -220,9 +211,7 @@
 								{declaration.period_year}
 							</td>
 							<td data-label={m.tsd_status()}>
-								<span class="badge {statusBadgeClass[declaration.status]}">
-									{getStatusLabel(declaration.status)}
-								</span>
+								<StatusBadge status={declaration.status} config={statusConfig} />
 								{#if declaration.submitted_at}
 									<div class="submitted-date">
 										{formatDate(declaration.submitted_at)}

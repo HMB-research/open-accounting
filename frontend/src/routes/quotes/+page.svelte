@@ -1,11 +1,19 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { api, type Quote, type QuoteStatus, type Contact } from '$lib/api';
-	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
 	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
 	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
+	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
 	import { requireTenantId, parseApiError } from '$lib/utils/tenant';
+	import {
+		formatCurrency,
+		formatDate,
+		calculateLineTotal as calcLineTotal,
+		calculateLinesTotal,
+		createEmptyLine,
+		type LineItem
+	} from '$lib/utils/formatting';
 
 	let quotes = $state<Quote[]>([]);
 	let contacts = $state<Contact[]>([]);
@@ -23,9 +31,7 @@
 	let newQuoteDate = $state(new Date().toISOString().split('T')[0]);
 	let newValidUntil = $state(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
 	let newNotes = $state('');
-	let newLines = $state([
-		{ description: '', quantity: '1', unit_price: '0', vat_rate: '22', discount_percent: '0' }
-	]);
+	let newLines = $state<LineItem[]>([createEmptyLine()]);
 
 	$effect(() => {
 		const tenantId = $page.url.searchParams.get('tenant');
@@ -57,10 +63,7 @@
 	}
 
 	function addLine() {
-		newLines = [
-			...newLines,
-			{ description: '', quantity: '1', unit_price: '0', vat_rate: '22', discount_percent: '0' }
-		];
+		newLines = [...newLines, createEmptyLine()];
 	}
 
 	function removeLine(index: number) {
@@ -69,22 +72,8 @@
 		}
 	}
 
-	function calculateLineTotal(line: typeof newLines[0]): Decimal {
-		const qty = new Decimal(line.quantity || 0);
-		const price = new Decimal(line.unit_price || 0);
-		const discount = new Decimal(line.discount_percent || 0);
-		const vat = new Decimal(line.vat_rate || 0);
-
-		const gross = qty.mul(price);
-		const discountAmt = gross.mul(discount).div(100);
-		const subtotal = gross.minus(discountAmt);
-		const vatAmt = subtotal.mul(vat).div(100);
-		return subtotal.plus(vatAmt);
-	}
-
-	let invoiceTotal = $derived.by(() => {
-		return newLines.reduce((sum, line) => sum.plus(calculateLineTotal(line)), new Decimal(0));
-	});
+	// Use imported calcLineTotal for line calculations
+	let quoteTotal = $derived(calculateLinesTotal(newLines));
 
 	async function createQuote(e: Event) {
 		e.preventDefault();
@@ -124,9 +113,7 @@
 		newQuoteDate = new Date().toISOString().split('T')[0];
 		newValidUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 		newNotes = '';
-		newLines = [
-			{ description: '', quantity: '1', unit_price: '0', vat_rate: '22', discount_percent: '0' }
-		];
+		newLines = [createEmptyLine()];
 	}
 
 	async function handleFilter() {
@@ -208,37 +195,17 @@
 		}
 	}
 
-	function getStatusLabel(status: QuoteStatus): string {
-		switch (status) {
-			case 'DRAFT': return m.quotes_statusDraft();
-			case 'SENT': return m.quotes_statusSent();
-			case 'ACCEPTED': return m.quotes_statusAccepted();
-			case 'REJECTED': return m.quotes_statusRejected();
-			case 'EXPIRED': return m.quotes_statusExpired();
-			case 'CONVERTED': return m.quotes_statusConverted();
-		}
-	}
-
-	const statusBadgeClass: Record<QuoteStatus, string> = {
-		DRAFT: 'badge-draft',
-		SENT: 'badge-sent',
-		ACCEPTED: 'badge-accepted',
-		REJECTED: 'badge-rejected',
-		EXPIRED: 'badge-expired',
-		CONVERTED: 'badge-converted'
+	// Status configuration for StatusBadge component
+	const statusConfig: Record<QuoteStatus, StatusConfig> = {
+		DRAFT: { class: 'badge-draft', label: m.quotes_statusDraft() },
+		SENT: { class: 'badge-sent', label: m.quotes_statusSent() },
+		ACCEPTED: { class: 'badge-accepted', label: m.quotes_statusAccepted() },
+		REJECTED: { class: 'badge-rejected', label: m.quotes_statusRejected() },
+		EXPIRED: { class: 'badge-expired', label: m.quotes_statusExpired() },
+		CONVERTED: { class: 'badge-converted', label: m.quotes_statusConverted() }
 	};
 
-	function formatCurrency(value: Decimal | number | string): string {
-		const num = typeof value === 'object' && 'toFixed' in value ? value.toNumber() : Number(value);
-		return new Intl.NumberFormat('et-EE', {
-			style: 'currency',
-			currency: 'EUR'
-		}).format(num);
-	}
-
-	function formatDate(dateStr: string): string {
-		return new Date(dateStr).toLocaleDateString('et-EE');
-	}
+	// formatCurrency and formatDate imported from $lib/utils/formatting
 
 	function getContactName(contactId: string): string {
 		const contact = contacts.find((c) => c.id === contactId);
@@ -313,9 +280,7 @@
 							<tr>
 								<td class="number" data-label={m.quotes_number()}>{quote.quote_number}</td>
 								<td data-label={m.invoices_status()}>
-									<span class="badge {statusBadgeClass[quote.status]}">
-										{getStatusLabel(quote.status)}
-									</span>
+									<StatusBadge status={quote.status} config={statusConfig} />
 								</td>
 								<td class="hide-mobile" data-label={m.invoices_customer()}>{getContactName(quote.contact_id)}</td>
 								<td data-label={m.common_date()}>{formatDate(quote.quote_date)}</td>
@@ -417,7 +382,7 @@
 									bind:value={line.vat_rate}
 									required
 								/>
-								<span class="line-total">{formatCurrency(calculateLineTotal(line))}</span>
+								<span class="line-total">{formatCurrency(calcLineTotal(line))}</span>
 								{#if newLines.length > 1}
 									<button type="button" class="btn btn-small btn-danger" onclick={() => removeLine(i)}>
 										&times;
@@ -431,10 +396,10 @@
 					</button>
 				</div>
 
-				<div class="invoice-totals">
+				<div class="quote-totals">
 					<div class="total-row">
 						<span>{m.common_total()}:</span>
-						<span class="total-value">{formatCurrency(invoiceTotal)}</span>
+						<span class="total-value">{formatCurrency(quoteTotal)}</span>
 					</div>
 				</div>
 
@@ -621,7 +586,7 @@
 		font-family: var(--font-mono);
 	}
 
-	.invoice-totals {
+	.quote-totals {
 		background: var(--color-bg-secondary);
 		padding: 1rem;
 		border-radius: 0.5rem;

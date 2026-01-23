@@ -5,6 +5,8 @@
 	import * as m from '$lib/paraglide/messages.js';
 	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
 	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
+	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
+	import { formatCurrency, formatDate } from '$lib/utils/formatting';
 	import { requireTenantId, parseApiError } from '$lib/utils/tenant';
 
 	let payments = $state<Payment[]>([]);
@@ -116,16 +118,9 @@
 		}
 	}
 
-	function getTypeLabel(type: PaymentType): string {
-		switch (type) {
-			case 'RECEIVED': return m.payments_paymentReceived();
-			case 'MADE': return m.payments_paymentMade();
-		}
-	}
-
-	const typeBadgeClass: Record<PaymentType, string> = {
-		RECEIVED: 'badge-received',
-		MADE: 'badge-made'
+	const typeConfig: Record<PaymentType, StatusConfig> = {
+		RECEIVED: { class: 'badge-received', label: m.payments_paymentReceived() },
+		MADE: { class: 'badge-made', label: m.payments_paymentMade() }
 	};
 
 	function getMethodLabel(method: string): string {
@@ -135,18 +130,6 @@
 			case 'CARD': return m.payments_card();
 			default: return m.payments_other();
 		}
-	}
-
-	function formatCurrency(value: Decimal | number | string): string {
-		const num = typeof value === 'object' && 'toFixed' in value ? value.toNumber() : Number(value);
-		return new Intl.NumberFormat('et-EE', {
-			style: 'currency',
-			currency: 'EUR'
-		}).format(num);
-	}
-
-	function formatDate(dateStr: string): string {
-		return new Date(dateStr).toLocaleDateString('et-EE');
 	}
 
 	function getContactName(contactId: string | undefined): string {
@@ -231,9 +214,7 @@
 							<tr>
 								<td class="number" data-label="Number">{payment.payment_number}</td>
 								<td data-label="Type">
-									<span class="badge {typeBadgeClass[payment.payment_type]}">
-										{getTypeLabel(payment.payment_type)}
-									</span>
+									<StatusBadge status={payment.payment_type} config={typeConfig} />
 								</td>
 								<td class="hide-mobile" data-label="Contact">{getContactName(payment.contact_id)}</td>
 								<td data-label="Date">{formatDate(payment.payment_date)}</td>

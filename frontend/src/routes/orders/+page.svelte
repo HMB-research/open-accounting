@@ -4,6 +4,15 @@
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
 	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
+	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
+	import {
+		formatCurrency,
+		formatDate,
+		calculateLineTotal as calcLineTotal,
+		calculateLinesTotal,
+		createEmptyLine,
+		type LineItem
+	} from '$lib/utils/formatting';
 
 	let orders = $state<Order[]>([]);
 	let contacts = $state<Contact[]>([]);
@@ -19,9 +28,7 @@
 	let newOrderDate = $state(new Date().toISOString().split('T')[0]);
 	let newExpectedDelivery = $state('');
 	let newNotes = $state('');
-	let newLines = $state([
-		{ description: '', quantity: '1', unit_price: '0', vat_rate: '22', discount_percent: '0' }
-	]);
+	let newLines = $state<LineItem[]>([createEmptyLine()]);
 
 	$effect(() => {
 		const tenantId = $page.url.searchParams.get('tenant');
@@ -53,10 +60,7 @@
 	}
 
 	function addLine() {
-		newLines = [
-			...newLines,
-			{ description: '', quantity: '1', unit_price: '0', vat_rate: '22', discount_percent: '0' }
-		];
+		newLines = [...newLines, createEmptyLine()];
 	}
 
 	function removeLine(index: number) {
@@ -65,22 +69,7 @@
 		}
 	}
 
-	function calculateLineTotal(line: typeof newLines[0]): Decimal {
-		const qty = new Decimal(line.quantity || 0);
-		const price = new Decimal(line.unit_price || 0);
-		const discount = new Decimal(line.discount_percent || 0);
-		const vat = new Decimal(line.vat_rate || 0);
-
-		const gross = qty.mul(price);
-		const discountAmt = gross.mul(discount).div(100);
-		const subtotal = gross.minus(discountAmt);
-		const vatAmt = subtotal.mul(vat).div(100);
-		return subtotal.plus(vatAmt);
-	}
-
-	let orderTotal = $derived.by(() => {
-		return newLines.reduce((sum, line) => sum.plus(calculateLineTotal(line)), new Decimal(0));
-	});
+	let orderTotal = $derived(calculateLinesTotal(newLines));
 
 	async function createOrder(e: Event) {
 		e.preventDefault();
@@ -114,9 +103,7 @@
 		newOrderDate = new Date().toISOString().split('T')[0];
 		newExpectedDelivery = '';
 		newNotes = '';
-		newLines = [
-			{ description: '', quantity: '1', unit_price: '0', vat_rate: '22', discount_percent: '0' }
-		];
+		newLines = [createEmptyLine()];
 	}
 
 	async function handleFilter() {
@@ -202,37 +189,14 @@
 		}
 	}
 
-	function getStatusLabel(status: OrderStatus): string {
-		switch (status) {
-			case 'PENDING': return m.orders_statusPending();
-			case 'CONFIRMED': return m.orders_statusConfirmed();
-			case 'PROCESSING': return m.orders_statusProcessing();
-			case 'SHIPPED': return m.orders_statusShipped();
-			case 'DELIVERED': return m.orders_statusDelivered();
-			case 'CANCELLED': return m.orders_statusCancelled();
-		}
-	}
-
-	const statusBadgeClass: Record<OrderStatus, string> = {
-		PENDING: 'badge-pending',
-		CONFIRMED: 'badge-confirmed',
-		PROCESSING: 'badge-processing',
-		SHIPPED: 'badge-shipped',
-		DELIVERED: 'badge-delivered',
-		CANCELLED: 'badge-cancelled'
+	const statusConfig: Record<OrderStatus, StatusConfig> = {
+		PENDING: { class: 'badge-pending', label: m.orders_statusPending() },
+		CONFIRMED: { class: 'badge-confirmed', label: m.orders_statusConfirmed() },
+		PROCESSING: { class: 'badge-processing', label: m.orders_statusProcessing() },
+		SHIPPED: { class: 'badge-shipped', label: m.orders_statusShipped() },
+		DELIVERED: { class: 'badge-delivered', label: m.orders_statusDelivered() },
+		CANCELLED: { class: 'badge-cancelled', label: m.orders_statusCancelled() }
 	};
-
-	function formatCurrency(value: Decimal | number | string): string {
-		const num = typeof value === 'object' && 'toFixed' in value ? value.toNumber() : Number(value);
-		return new Intl.NumberFormat('et-EE', {
-			style: 'currency',
-			currency: 'EUR'
-		}).format(num);
-	}
-
-	function formatDate(dateStr: string): string {
-		return new Date(dateStr).toLocaleDateString('et-EE');
-	}
 
 	function getContactName(contactId: string): string {
 		const contact = contacts.find((c) => c.id === contactId);
@@ -303,9 +267,7 @@
 							<tr>
 								<td class="number" data-label={m.orders_number()}>{order.order_number}</td>
 								<td data-label={m.invoices_status()}>
-									<span class="badge {statusBadgeClass[order.status]}">
-										{getStatusLabel(order.status)}
-									</span>
+									<StatusBadge status={order.status} config={statusConfig} />
 								</td>
 								<td class="hide-mobile" data-label={m.invoices_customer()}>{getContactName(order.contact_id)}</td>
 								<td data-label={m.common_date()}>{formatDate(order.order_date)}</td>
@@ -421,7 +383,7 @@
 									bind:value={line.vat_rate}
 									required
 								/>
-								<span class="line-total">{formatCurrency(calculateLineTotal(line))}</span>
+								<span class="line-total">{formatCurrency(calcLineTotal(line))}</span>
 								{#if newLines.length > 1}
 									<button type="button" class="btn btn-small btn-danger" onclick={() => removeLine(i)}>
 										&times;
