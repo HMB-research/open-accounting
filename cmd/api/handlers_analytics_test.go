@@ -18,20 +18,20 @@ import (
 
 // mockAnalyticsRepository implements analytics.Repository for testing
 type mockAnalyticsRepository struct {
-	revenue           decimal.Decimal
-	expenses          decimal.Decimal
-	receivablesTotal  decimal.Decimal
+	revenue            decimal.Decimal
+	expenses           decimal.Decimal
+	receivablesTotal   decimal.Decimal
 	receivablesOverdue decimal.Decimal
-	payablesTotal     decimal.Decimal
-	payablesOverdue   decimal.Decimal
-	draftCount        int
-	pendingCount      int
-	overdueCount      int
-	monthlyData       []analytics.MonthlyData
-	cashFlowData      []analytics.MonthlyCashFlowData
-	agingData         []analytics.ContactAging
-	topCustomers      []analytics.TopItem
-	activityItems     []analytics.ActivityItem
+	payablesTotal      decimal.Decimal
+	payablesOverdue    decimal.Decimal
+	draftCount         int
+	pendingCount       int
+	overdueCount       int
+	monthlyData        []analytics.MonthlyData
+	cashFlowData       []analytics.MonthlyCashFlowData
+	agingData          []analytics.ContactAging
+	topCustomers       []analytics.TopItem
+	activityItems      []analytics.ActivityItem
 
 	revenueErr     error
 	receivablesErr error

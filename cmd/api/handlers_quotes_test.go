@@ -26,12 +26,12 @@ type mockQuotesRepository struct {
 	quotes      map[string]*quotes.Quote
 	quoteNumber int
 
-	createErr         error
-	getErr            error
-	listErr           error
-	updateErr         error
-	deleteErr         error
-	updateStatusErr   error
+	createErr       error
+	getErr          error
+	listErr         error
+	updateErr       error
+	deleteErr       error
+	updateStatusErr error
 }
 
 func newMockQuotesRepository() *mockQuotesRepository {

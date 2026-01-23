@@ -40,25 +40,25 @@ type mockInventoryRepository struct {
 	movements   map[string][]inventory.InventoryMovement
 	productCode int
 
-	createProductErr    error
-	getProductErr       error
-	listProductsErr     error
-	updateProductErr    error
-	deleteProductErr    error
-	createCategoryErr   error
-	getCategoryErr      error
-	listCategoriesErr   error
-	deleteCategoryErr   error
-	createWarehouseErr  error
-	getWarehouseErr     error
-	listWarehousesErr   error
-	updateWarehouseErr  error
-	deleteWarehouseErr  error
-	getStockErr         error
-	upsertStockErr      error
-	createMovementErr   error
-	listMovementsErr    error
-	updateProductStock  error
+	createProductErr   error
+	getProductErr      error
+	listProductsErr    error
+	updateProductErr   error
+	deleteProductErr   error
+	createCategoryErr  error
+	getCategoryErr     error
+	listCategoriesErr  error
+	deleteCategoryErr  error
+	createWarehouseErr error
+	getWarehouseErr    error
+	listWarehousesErr  error
+	updateWarehouseErr error
+	deleteWarehouseErr error
+	getStockErr        error
+	upsertStockErr     error
+	createMovementErr  error
+	listMovementsErr   error
+	updateProductStock error
 }
 
 func newMockInventoryRepository() *mockInventoryRepository {

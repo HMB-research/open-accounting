@@ -26,12 +26,12 @@ type mockInvoicingRepository struct {
 	invoiceNumber int
 
 	// Error injection
-	createErr       error
-	getErr          error
-	listErr         error
-	updateStatusErr error
+	createErr        error
+	getErr           error
+	listErr          error
+	updateStatusErr  error
 	updatePaymentErr error
-	generateNumErr  error
+	generateNumErr   error
 }
 
 func newMockInvoicingRepository() *mockInvoicingRepository {

@@ -26,21 +26,21 @@ var (
 
 // mockAssetsRepository implements assets.Repository for testing
 type mockAssetsRepository struct {
-	assets               map[string]*assets.FixedAsset
-	categories           map[string]*assets.AssetCategory
-	depreciationEntries  map[string][]assets.DepreciationEntry
-	assetNumber          int
+	assets              map[string]*assets.FixedAsset
+	categories          map[string]*assets.AssetCategory
+	depreciationEntries map[string][]assets.DepreciationEntry
+	assetNumber         int
 
-	createErr          error
-	getErr             error
-	listErr            error
-	updateErr          error
-	deleteErr          error
-	createCategoryErr  error
-	getCategoryErr     error
-	listCategoriesErr  error
-	deleteCategoryErr  error
-	depreciationErr    error
+	createErr         error
+	getErr            error
+	listErr           error
+	updateErr         error
+	deleteErr         error
+	createCategoryErr error
+	getCategoryErr    error
+	listCategoriesErr error
+	deleteCategoryErr error
+	depreciationErr   error
 }
 
 func newMockAssetsRepository() *mockAssetsRepository {
@@ -263,9 +263,9 @@ func TestCreateAssetCategory(t *testing.T) {
 	}
 
 	body := map[string]interface{}{
-		"name":                        "Vehicles",
-		"depreciation_method":         "STRAIGHT_LINE",
-		"default_useful_life_months":  60,
+		"name":                       "Vehicles",
+		"depreciation_method":        "STRAIGHT_LINE",
+		"default_useful_life_months": 60,
 	}
 	bodyBytes, _ := json.Marshal(body)
 
