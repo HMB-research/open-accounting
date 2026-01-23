@@ -474,21 +474,6 @@
 		opacity: 0.6;
 	}
 
-	.badge-fulltime {
-		background: #dcfce7;
-		color: #166534;
-	}
-
-	.badge-parttime {
-		background: #fef3c7;
-		color: #92400e;
-	}
-
-	.badge-contract {
-		background: #e0e7ff;
-		color: #3730a3;
-	}
-
 	.badge-active {
 		background: #dcfce7;
 		color: #166534;
