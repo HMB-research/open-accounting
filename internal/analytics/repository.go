@@ -26,6 +26,9 @@ type Repository interface {
 
 	// Top items
 	GetTopCustomers(ctx context.Context, schemaName string, limit int) ([]TopItem, error)
+
+	// Activity feed
+	GetRecentActivity(ctx context.Context, schemaName string, limit int) ([]ActivityItem, error)
 }
 
 // MonthlyData represents monthly financial data
@@ -253,6 +256,104 @@ func (r *PostgresRepository) GetTopCustomers(ctx context.Context, schemaName str
 		if err := rows.Scan(&item.ID, &item.Name, &item.Amount, &item.Count); err != nil {
 			return nil, err
 		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+// GetRecentActivity retrieves recent activity from invoices, payments, journal entries, and contacts
+func (r *PostgresRepository) GetRecentActivity(ctx context.Context, schemaName string, limit int) ([]ActivityItem, error) {
+	query := fmt.Sprintf(`
+		WITH activity AS (
+			-- Recent invoices
+			SELECT
+				i.id::text as id,
+				'INVOICE' as type,
+				CASE
+					WHEN i.status = 'DRAFT' THEN 'created'
+					WHEN i.status = 'SENT' THEN 'sent'
+					WHEN i.status = 'PAID' THEN 'paid'
+					WHEN i.status = 'VOIDED' THEN 'voided'
+					ELSE 'updated'
+				END as action,
+				CASE
+					WHEN i.invoice_type = 'SALES' THEN 'Invoice ' || i.invoice_number || ' to ' || c.name
+					ELSE 'Bill ' || i.invoice_number || ' from ' || c.name
+				END as description,
+				COALESCE(i.updated_at, i.created_at) as created_at,
+				i.total as amount
+			FROM %[1]s.invoices i
+			LEFT JOIN %[1]s.contacts c ON i.contact_id = c.id
+
+			UNION ALL
+
+			-- Recent payments
+			SELECT
+				p.id::text as id,
+				'PAYMENT' as type,
+				CASE
+					WHEN p.payment_type = 'RECEIVED' THEN 'received'
+					ELSE 'made'
+				END as action,
+				CASE
+					WHEN p.payment_type = 'RECEIVED' THEN 'Payment received from ' || COALESCE(c.name, 'Unknown')
+					ELSE 'Payment made to ' || COALESCE(c.name, 'Unknown')
+				END as description,
+				p.payment_date::timestamptz as created_at,
+				p.amount as amount
+			FROM %[1]s.payments p
+			LEFT JOIN %[1]s.invoices i ON p.invoice_id = i.id
+			LEFT JOIN %[1]s.contacts c ON i.contact_id = c.id
+
+			UNION ALL
+
+			-- Recent journal entries
+			SELECT
+				je.id::text as id,
+				'ENTRY' as type,
+				CASE
+					WHEN je.status = 'POSTED' THEN 'posted'
+					ELSE 'created'
+				END as action,
+				'Journal entry: ' || COALESCE(je.description, je.reference) as description,
+				je.created_at as created_at,
+				(SELECT COALESCE(SUM(base_debit), 0) FROM %[1]s.journal_entry_lines WHERE journal_entry_id = je.id) as amount
+			FROM %[1]s.journal_entries je
+			WHERE je.description IS NOT NULL OR je.reference IS NOT NULL
+
+			UNION ALL
+
+			-- Recent contacts
+			SELECT
+				c.id::text as id,
+				'CONTACT' as type,
+				'created' as action,
+				'New contact: ' || c.name as description,
+				c.created_at as created_at,
+				NULL::numeric as amount
+			FROM %[1]s.contacts c
+		)
+		SELECT id, type, action, description, created_at, amount
+		FROM activity
+		WHERE created_at IS NOT NULL
+		ORDER BY created_at DESC
+		LIMIT $1
+	`, schemaName)
+
+	rows, err := r.pool.Query(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []ActivityItem
+	for rows.Next() {
+		var item ActivityItem
+		var amount *decimal.Decimal
+		if err := rows.Scan(&item.ID, &item.Type, &item.Action, &item.Description, &item.CreatedAt, &amount); err != nil {
+			return nil, err
+		}
+		item.Amount = amount
 		items = append(items, item)
 	}
 	return items, nil
