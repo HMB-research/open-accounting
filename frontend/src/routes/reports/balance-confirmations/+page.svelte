@@ -226,8 +226,10 @@
 
 <!-- Contact Detail Modal -->
 {#if showDetailModal && contactDetail}
-	<div class="modal-overlay" onclick={closeModal} role="presentation">
-		<div class="modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+	<div class="modal-overlay" onclick={closeModal} onkeydown={(e) => e.key === 'Escape' && closeModal()} role="presentation">
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+		<div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
 			<div class="modal-header">
 				<h2>{m.balance_confirmation_detail_title()}</h2>
 				<button class="btn-close" onclick={closeModal} aria-label="Close">&times;</button>
