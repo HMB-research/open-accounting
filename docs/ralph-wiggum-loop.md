@@ -36,6 +36,8 @@ The Ralph Wiggum loop is based on [awesomeclaude.ai/ralph-wiggum](https://awesom
 
 ## View Inventory
 
+> **Last Updated:** 2026-01-23
+
 ### All Application Views
 
 | Route | View Name | Has Demo Data | Has E2E Test | Status |
@@ -49,29 +51,31 @@ The Ralph Wiggum loop is based on [awesomeclaude.ai/ralph-wiggum](https://awesom
 | `/quotes` | Quotes | ✅ | ✅ | DONE |
 | `/orders` | Orders | ✅ | ✅ | DONE |
 | `/payments` | Payments | ✅ | ✅ | DONE |
-| `/payments/cash` | Cash Payments | ❓ | ❌ | NEEDS WORK |
+| `/payments/cash` | Cash Payments | ✅ | ✅ | DONE |
 | `/recurring` | Recurring Invoices | ✅ | ✅ | DONE |
 | `/employees` | Employees | ✅ | ✅ | DONE |
 | `/employees/absences` | Absences | ✅ | ✅ | DONE |
 | `/payroll` | Payroll Runs | ✅ | ✅ | DONE |
 | `/payroll/calculator` | Salary Calculator | ✅ | ✅ | DONE |
 | `/banking` | Bank Accounts | ✅ | ✅ | DONE |
-| `/banking/import` | Bank Import | ❓ | ❌ | NEEDS WORK |
+| `/banking/import` | Bank Import | ✅ | ✅ | DONE |
 | `/assets` | Fixed Assets | ✅ | ✅ | DONE |
-| `/inventory` | Inventory | ❌ | ❌ | NEEDS WORK |
+| `/inventory` | Inventory | ⚠️ | ✅ | PARTIAL |
 | `/reports` | Reports | ✅ | ✅ | DONE |
 | `/reports/balance-confirmations` | Balance Confirmations | ✅ | ✅ | DONE |
 | `/reports/cash-flow` | Cash Flow | ✅ | ✅ | DONE |
-| `/tax` | Tax Overview | ❓ | ❌ | NEEDS WORK |
+| `/tax` | Tax Overview | ✅ | ✅ | DONE |
 | `/vat-returns` | VAT Returns | ✅ | ✅ | DONE |
 | `/tsd` | TSD Declarations | ✅ | ✅ | DONE |
 | `/settings` | Settings | ✅ | ✅ | DONE |
-| `/settings/company` | Company Settings | ❓ | ❌ | NEEDS WORK |
-| `/settings/email` | Email Settings | ❓ | ❌ | NEEDS WORK |
-| `/settings/plugins` | Plugins (Tenant) | ❓ | ❌ | NEEDS WORK |
+| `/settings/company` | Company Settings | ✅ | ✅ | DONE |
+| `/settings/email` | Email Settings | ✅ | ✅ | DONE |
+| `/settings/plugins` | Plugins (Tenant) | ✅ | ✅ | DONE |
 | `/settings/cost-centers` | Cost Centers | ✅ | ✅ | DONE |
-| `/admin/plugins` | Plugins (Admin) | ❓ | ❌ | NEEDS WORK |
+| `/admin/plugins` | Plugins (Admin) | ✅ | ✅ | DONE |
 | `/login` | Login | N/A | ✅ | DONE |
+
+**Summary:** 32/33 views complete. Only `/inventory` has partial demo data (stub exists).
 
 ### Demo Data Tables
 

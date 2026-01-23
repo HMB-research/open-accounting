@@ -1,8 +1,8 @@
 # Frontend Test Coverage Status
 
-> Last Updated: 2026-01-10
-> Unit Tests: 240 passing
-> E2E Tests: 15+ passing (demo configuration)
+> Last Updated: 2026-01-23
+> Unit Tests: 240+ passing
+> E2E Tests: 32 spec files (demo configuration)
 
 ## Quick Stats
 
@@ -64,33 +64,47 @@
 
 ## E2E Test Coverage
 
-### Demo Tests (Primary)
+### Demo Tests (Complete - 32 spec files)
 
-| Test File | Tests | Status |
+| Test File | Route | Status |
 |-----------|-------|--------|
-| fixed-assets.spec.ts | 6 | ✅ Passing |
-| orders.spec.ts | 5 | ✅ Passing |
-| quotes.spec.ts | 4 | ✅ Passing |
-| dashboard.spec.ts | Multiple | ✅ Passing |
-| invoices.spec.ts | Multiple | ✅ Passing |
-| contacts.spec.ts | Multiple | ✅ Passing |
-| payments.spec.ts | Multiple | ✅ Passing |
-| recurring.spec.ts | Multiple | ✅ Passing |
-| employees.spec.ts | Multiple | ✅ Passing |
-| payroll.spec.ts | Multiple | ✅ Passing |
-| banking.spec.ts | Multiple | ✅ Passing |
-| reports.spec.ts | Multiple | ✅ Passing |
-| settings.spec.ts | Multiple | ✅ Passing |
+| absences.spec.ts | `/employees/absences` | ✅ Passing |
+| accounts.spec.ts | `/accounts` | ✅ Passing |
+| balance-confirmations.spec.ts | `/reports/balance-confirmations` | ✅ Passing |
+| bank-import.spec.ts | `/banking/import` | ✅ Passing |
+| banking.spec.ts | `/banking` | ✅ Passing |
+| cash-flow.spec.ts | `/reports/cash-flow` | ✅ Passing |
+| cash-payments.spec.ts | `/payments/cash` | ✅ Passing |
+| contacts.spec.ts | `/contacts` | ✅ Passing |
+| cost-centers.spec.ts | `/settings/cost-centers` | ✅ Passing |
+| dashboard.spec.ts | `/dashboard` | ✅ Passing |
+| email-settings.spec.ts | `/settings/email` | ✅ Passing |
+| employees.spec.ts | `/employees` | ✅ Passing |
+| fixed-assets.spec.ts | `/assets` | ✅ Passing |
+| inventory.spec.ts | `/inventory` | ✅ Passing |
+| invoices.spec.ts | `/invoices` | ✅ Passing |
+| journal.spec.ts | `/journal` | ✅ Passing |
+| orders.spec.ts | `/orders` | ✅ Passing |
+| payment-reminders.spec.ts | `/invoices/reminders` | ✅ Passing |
+| payments.spec.ts | `/payments` | ✅ Passing |
+| payroll.spec.ts | `/payroll` | ✅ Passing |
+| plugins-settings.spec.ts | `/settings/plugins` | ✅ Passing |
+| quotes.spec.ts | `/quotes` | ✅ Passing |
+| recurring.spec.ts | `/recurring` | ✅ Passing |
+| reports.spec.ts | `/reports` | ✅ Passing |
+| salary-calculator.spec.ts | `/payroll/calculator` | ✅ Passing |
+| settings.spec.ts | `/settings` | ✅ Passing |
+| tax-overview.spec.ts | `/tax` | ✅ Passing |
+| tsd.spec.ts | `/tsd` | ✅ Passing |
+| vat-returns.spec.ts | `/vat-returns` | ✅ Passing |
 
-### Routes Without E2E Coverage
+### Additional E2E Tests
 
-| Route | Status | Notes |
-|-------|--------|-------|
-| `/employees/absences` | ❌ Missing | Create absences.spec.ts |
-| `/reports/balance-confirmations` | ⚠️ Basic | Enhance coverage |
-| `/reports/cash-flow` | ⚠️ Basic | Enhance coverage |
-| `/settings/cost-centers` | ❌ Missing | Create cost-centers.spec.ts |
-| `/payroll/calculator` | ⚠️ Basic | Enhance coverage |
+| Test File | Purpose |
+|-----------|---------|
+| data-verification.spec.ts | Demo data presence verification |
+| mobile.spec.ts | Mobile responsiveness tests |
+| reset.spec.ts | Demo reset functionality |
 
 ---
 
@@ -153,5 +167,6 @@ bun run test:e2e:headed     # With browser visible
 
 | Date | Change | Tests Added |
 |------|--------|-------------|
+| 2026-01-23 | Updated E2E inventory - all 32 spec files documented | 0 |
+| 2026-01-23 | Migrated test commands from npm to bun | 0 |
 | 2026-01-10 | Initial tracking document created | 0 |
-| - | - | - |
