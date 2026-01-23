@@ -344,21 +344,6 @@
 		opacity: 0.6;
 	}
 
-	.badge-customer {
-		background: #dcfce7;
-		color: #166534;
-	}
-
-	.badge-supplier {
-		background: #fef3c7;
-		color: #92400e;
-	}
-
-	.badge-both {
-		background: #e0e7ff;
-		color: #3730a3;
-	}
-
 	.empty-state {
 		text-align: center;
 		padding: 3rem;
