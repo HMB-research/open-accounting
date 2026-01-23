@@ -97,3 +97,13 @@ type AccountBalanceWidget struct {
 	Balance     decimal.Decimal `json:"balance"`
 	Currency    string          `json:"currency"`
 }
+
+// ActivityItem represents a recent activity entry
+type ActivityItem struct {
+	ID          string           `json:"id"`
+	Type        string           `json:"type"`        // INVOICE, PAYMENT, ENTRY, CONTACT
+	Action      string           `json:"action"`      // created, updated, paid, etc.
+	Description string           `json:"description"` // Human-readable description
+	CreatedAt   time.Time        `json:"created_at"`
+	Amount      *decimal.Decimal `json:"amount,omitempty"` // Optional amount for financial activities
+}

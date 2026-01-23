@@ -14,6 +14,10 @@ RUN go mod download
 # Copy source code
 COPY . .
 
+# Generate swagger docs
+RUN go install github.com/swaggo/swag/cmd/swag@latest && \
+    swag init -g cmd/api/main.go -o docs --parseDependency --parseInternal
+
 # Build the API server
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /api ./cmd/api
 

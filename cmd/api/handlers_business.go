@@ -165,6 +165,37 @@ func (h *Handlers) GetPayablesAging(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, report)
 }
 
+// GetRecentActivity returns recent activity feed
+// @Summary Get recent activity
+// @Description Get recent activity from invoices, payments, journal entries, and contacts
+// @Tags Analytics
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param limit query int false "Number of items (default 10)"
+// @Success 200 {array} analytics.ActivityItem
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/analytics/activity [get]
+func (h *Handlers) GetRecentActivity(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	limit := 10
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := parseIntParam(l); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	activity, err := h.analyticsService.GetRecentActivity(r.Context(), tenantID, schemaName, limit)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get recent activity")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, activity)
+}
+
 func parseIntParam(s string) (int, error) {
 	var i int
 	_, err := fmt.Sscanf(s, "%d", &i)

@@ -50,6 +50,10 @@ type MockRepository struct {
 	TopCustomersData  []TopItem
 	TopCustomersError error
 
+	// GetRecentActivity mock data
+	RecentActivityData  []ActivityItem
+	RecentActivityError error
+
 	// Track calls
 	LastSchemaName  string
 	LastInvoiceType string
@@ -103,6 +107,12 @@ func (m *MockRepository) GetTopCustomers(ctx context.Context, schemaName string,
 	m.LastSchemaName = schemaName
 	m.LastLimit = limit
 	return m.TopCustomersData, m.TopCustomersError
+}
+
+func (m *MockRepository) GetRecentActivity(ctx context.Context, schemaName string, limit int) ([]ActivityItem, error) {
+	m.LastSchemaName = schemaName
+	m.LastLimit = limit
+	return m.RecentActivityData, m.RecentActivityError
 }
 
 func TestNewService(t *testing.T) {
