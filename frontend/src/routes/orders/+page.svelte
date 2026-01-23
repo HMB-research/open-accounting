@@ -346,7 +346,7 @@
 				</div>
 
 				<div class="form-group">
-					<label class="label">{m.invoices_lineItems()}</label>
+					<span class="label">{m.invoices_lineItems()}</span>
 					<div class="lines-container">
 						{#each newLines as line, i}
 							<div class="line-row">
@@ -460,36 +460,6 @@
 
 	.text-right {
 		text-align: right;
-	}
-
-	.badge-pending {
-		background: #fef3c7;
-		color: #b45309;
-	}
-
-	.badge-confirmed {
-		background: #dbeafe;
-		color: #1d4ed8;
-	}
-
-	.badge-processing {
-		background: #f3e8ff;
-		color: #7c3aed;
-	}
-
-	.badge-shipped {
-		background: #e0e7ff;
-		color: #4338ca;
-	}
-
-	.badge-delivered {
-		background: #dcfce7;
-		color: #166534;
-	}
-
-	.badge-cancelled {
-		background: #fee2e2;
-		color: #dc2626;
 	}
 
 	.actions {

@@ -359,13 +359,6 @@
 {/if}
 
 <style>
-	.header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 1.5rem;
-	}
-
 	h1 {
 		font-size: 1.75rem;
 	}
@@ -399,16 +392,6 @@
 	.unallocated-warning {
 		color: #f59e0b;
 		font-weight: 500;
-	}
-
-	.badge-received {
-		background: #dcfce7;
-		color: #166534;
-	}
-
-	.badge-made {
-		background: #fee2e2;
-		color: #dc2626;
 	}
 
 	.btn-small {

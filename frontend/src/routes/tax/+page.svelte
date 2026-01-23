@@ -262,10 +262,6 @@
 		margin-bottom: 0;
 	}
 
-	.declarations {
-		/* Divider between items handled by border-bottom on each item */
-	}
-
 	.declaration-item {
 		display: flex;
 		justify-content: space-between;
@@ -291,21 +287,6 @@
 		display: flex;
 		gap: 0.5rem;
 		align-items: center;
-	}
-
-	.badge-draft {
-		background: #fef3c7;
-		color: #92400e;
-	}
-
-	.badge-submitted {
-		background: #dbeafe;
-		color: #1e40af;
-	}
-
-	.badge-accepted {
-		background: #d1fae5;
-		color: #065f46;
 	}
 
 	.btn-sm {

@@ -168,14 +168,14 @@
 	{#if error}
 		<div class="alert alert-danger alert-dismissible fade show" role="alert">
 			{error}
-			<button type="button" class="btn-close" onclick={() => (error = '')}></button>
+			<button type="button" class="btn-close" aria-label={m.common_close()} onclick={() => (error = '')}></button>
 		</div>
 	{/if}
 
 	{#if success}
 		<div class="alert alert-success alert-dismissible fade show" role="alert">
 			{success}
-			<button type="button" class="btn-close" onclick={() => (success = '')}></button>
+			<button type="button" class="btn-close" aria-label={m.common_close()} onclick={() => (success = '')}></button>
 		</div>
 	{/if}
 
@@ -260,7 +260,7 @@
 					<h5 class="modal-title">
 						{isEditing ? m.costCenter_edit() : m.costCenter_addNew()}
 					</h5>
-					<button type="button" class="btn-close" onclick={() => (showModal = false)}></button>
+					<button type="button" class="btn-close" aria-label={m.common_close()} onclick={() => (showModal = false)}></button>
 				</div>
 				<form onsubmit={saveCostCenter}>
 					<div class="modal-body">
@@ -358,7 +358,7 @@
 			<div class="modal-content">
 				<div class="modal-header">
 					<h5 class="modal-title">{m.costCenter_confirmDelete()}</h5>
-					<button type="button" class="btn-close" onclick={() => (showDeleteConfirm = false)}></button>
+					<button type="button" class="btn-close" aria-label={m.common_close()} onclick={() => (showDeleteConfirm = false)}></button>
 				</div>
 				<div class="modal-body">
 					<p>{m.costCenter_deleteWarning({ name: deletingName })}</p>

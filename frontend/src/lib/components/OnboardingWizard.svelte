@@ -200,7 +200,7 @@
 
 					<div class="form-grid">
 						<div class="form-group">
-							<label class="label">{m.onboarding_companyLogo()}</label>
+							<span class="label">{m.onboarding_companyLogo()}</span>
 							<div class="logo-upload">
 								{#if logo}
 									<div class="logo-preview">

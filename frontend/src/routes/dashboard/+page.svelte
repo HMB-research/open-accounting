@@ -36,8 +36,8 @@
 	let showCreateTenant = $state(false);
 	let newTenantName = $state('');
 	let newTenantSlug = $state('');
-	let chartCanvas: HTMLCanvasElement;
-	let cashFlowCanvas: HTMLCanvasElement;
+	let chartCanvas = $state<HTMLCanvasElement | undefined>(undefined);
+	let cashFlowCanvas = $state<HTMLCanvasElement | undefined>(undefined);
 	let chartInstance: Chart | null = null;
 	let cashFlowChartInstance: Chart | null = null;
 

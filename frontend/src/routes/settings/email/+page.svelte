@@ -607,21 +607,6 @@
 		font-weight: 500;
 	}
 
-	.badge-success {
-		background: rgba(34, 197, 94, 0.1);
-		color: #22c55e;
-	}
-
-	.badge-danger {
-		background: rgba(239, 68, 68, 0.1);
-		color: #ef4444;
-	}
-
-	.badge-muted {
-		background: var(--color-border);
-		color: var(--color-text-muted);
-	}
-
 	.alert-success {
 		background: rgba(34, 197, 94, 0.1);
 		color: #22c55e;

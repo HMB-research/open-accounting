@@ -518,36 +518,6 @@
 		text-align: right;
 	}
 
-	.badge-draft {
-		background: #f3f4f6;
-		color: #6b7280;
-	}
-
-	.badge-sent {
-		background: #dbeafe;
-		color: #1d4ed8;
-	}
-
-	.badge-partial {
-		background: #fef3c7;
-		color: #92400e;
-	}
-
-	.badge-paid {
-		background: #dcfce7;
-		color: #166534;
-	}
-
-	.badge-overdue {
-		background: #fee2e2;
-		color: #dc2626;
-	}
-
-	.badge-voided {
-		background: #f3f4f6;
-		color: #9ca3af;
-	}
-
 	.btn-small {
 		padding: 0.25rem 0.5rem;
 		font-size: 0.75rem;

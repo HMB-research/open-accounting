@@ -223,8 +223,9 @@
 		<!-- Bank Account Selector -->
 		<div class="bg-white rounded-lg shadow mb-6 p-4">
 			<div class="flex flex-wrap gap-4 items-center">
-				<label class="font-medium text-gray-700">{m.banking_bankAccount()}</label>
+				<label for="bank-account-selector" class="font-medium text-gray-700">{m.banking_bankAccount()}</label>
 				<select
+					id="bank-account-selector"
 					bind:value={selectedAccount}
 					class="border border-gray-300 rounded-lg px-3 py-2 min-w-[200px]"
 				>
@@ -352,29 +353,29 @@
 			<form onsubmit={(e) => { e.preventDefault(); createAccount(); }}>
 				<div class="space-y-4">
 					<div>
-						<label class="block text-sm font-medium text-gray-700 mb-1">{m.banking_accountName()}</label>
-						<input type="text" bind:value={newAccount.name} required class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="Main Business Account" />
+						<label for="new-account-name" class="block text-sm font-medium text-gray-700 mb-1">{m.banking_accountName()}</label>
+						<input id="new-account-name" type="text" bind:value={newAccount.name} required class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="Main Business Account" />
 					</div>
 					<div>
-						<label class="block text-sm font-medium text-gray-700 mb-1">{m.banking_accountNumber()}</label>
-						<input type="text" bind:value={newAccount.account_number} required class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="EE123456789" />
+						<label for="new-account-number" class="block text-sm font-medium text-gray-700 mb-1">{m.banking_accountNumber()}</label>
+						<input id="new-account-number" type="text" bind:value={newAccount.account_number} required class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="EE123456789" />
 					</div>
 					<div>
-						<label class="block text-sm font-medium text-gray-700 mb-1">{m.banking_bankName()}</label>
-						<input type="text" bind:value={newAccount.bank_name} class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="Swedbank" />
+						<label for="new-bank-name" class="block text-sm font-medium text-gray-700 mb-1">{m.banking_bankName()}</label>
+						<input id="new-bank-name" type="text" bind:value={newAccount.bank_name} class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="Swedbank" />
 					</div>
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<label class="block text-sm font-medium text-gray-700 mb-1">{m.settings_currency()}</label>
-							<select bind:value={newAccount.currency} class="w-full border border-gray-300 rounded-lg px-3 py-2">
+							<label for="new-account-currency" class="block text-sm font-medium text-gray-700 mb-1">{m.settings_currency()}</label>
+							<select id="new-account-currency" bind:value={newAccount.currency} class="w-full border border-gray-300 rounded-lg px-3 py-2">
 								<option value="EUR">EUR</option>
 								<option value="USD">USD</option>
 								<option value="GBP">GBP</option>
 							</select>
 						</div>
 						<div>
-							<label class="block text-sm font-medium text-gray-700 mb-1">{m.banking_openingBalance()}</label>
-							<input type="text" bind:value={newAccount.opening_balance} class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="0.00" />
+							<label for="new-opening-balance" class="block text-sm font-medium text-gray-700 mb-1">{m.banking_openingBalance()}</label>
+							<input id="new-opening-balance" type="text" bind:value={newAccount.opening_balance} class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="0.00" />
 						</div>
 					</div>
 				</div>
