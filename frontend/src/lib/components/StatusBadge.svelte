@@ -149,4 +149,36 @@
 		background: #dbeafe;
 		color: #1e40af;
 	}
+
+	/* Banking statuses */
+	:global(.badge-unmatched) {
+		background: #fef3c7;
+		color: #92400e;
+	}
+
+	:global(.badge-matched) {
+		background: #dcfce7;
+		color: #166534;
+	}
+
+	:global(.badge-reconciled) {
+		background: #dbeafe;
+		color: #1e40af;
+	}
+
+	/* Employment types */
+	:global(.badge-fulltime) {
+		background: #dcfce7;
+		color: #166534;
+	}
+
+	:global(.badge-parttime) {
+		background: #fef3c7;
+		color: #92400e;
+	}
+
+	:global(.badge-contract) {
+		background: #e0e7ff;
+		color: #3730a3;
+	}
 </style>

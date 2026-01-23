@@ -5,6 +5,15 @@
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
 	import { formatCurrency } from '$lib/utils/formatting';
+	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
+
+	type KMDStatus = 'DRAFT' | 'SUBMITTED' | 'ACCEPTED';
+
+	const statusConfig: Record<KMDStatus, StatusConfig> = {
+		DRAFT: { class: 'badge-draft', label: m.vat_status_draft() },
+		SUBMITTED: { class: 'badge-submitted', label: m.vat_status_submitted() },
+		ACCEPTED: { class: 'badge-accepted', label: m.vat_status_accepted() }
+	};
 
 	let tenantId = $state('');
 	let loading = $state(true);
@@ -146,7 +155,7 @@
 								</div>
 							</div>
 							<div class="declaration-actions">
-								<span class="badge badge-{decl.status.toLowerCase()}">{decl.status}</span>
+								<StatusBadge status={decl.status} config={statusConfig} />
 								<button onclick={() => downloadXml(decl)} class="btn btn-secondary btn-sm">
 									{m.tax_downloadXml()}
 								</button>
