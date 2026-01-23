@@ -261,7 +261,7 @@
 				<h2>{m.settings_brandingInvoice()}</h2>
 				<div class="form-grid">
 					<div class="form-group">
-						<label class="label">{m.settings_logo()}</label>
+						<span class="label">{m.settings_logo()}</span>
 						<div class="logo-upload">
 							{#if logo}
 								<div class="logo-preview">

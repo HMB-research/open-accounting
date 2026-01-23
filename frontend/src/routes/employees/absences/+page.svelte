@@ -661,26 +661,6 @@
 		background: #b91c1c;
 	}
 
-	.badge-pending {
-		background: #fef3c7;
-		color: #92400e;
-	}
-
-	.badge-approved {
-		background: #dcfce7;
-		color: #166534;
-	}
-
-	.badge-rejected {
-		background: #fef2f2;
-		color: #991b1b;
-	}
-
-	.badge-cancelled {
-		background: #f3f4f6;
-		color: #374151;
-	}
-
 	.empty-state {
 		text-align: center;
 		padding: 3rem;

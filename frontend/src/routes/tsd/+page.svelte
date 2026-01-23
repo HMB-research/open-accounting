@@ -454,26 +454,6 @@
 		font-size: 0.75rem;
 	}
 
-	.badge-draft {
-		background: #f3f4f6;
-		color: #374151;
-	}
-
-	.badge-submitted {
-		background: #fef3c7;
-		color: #92400e;
-	}
-
-	.badge-accepted {
-		background: #dcfce7;
-		color: #166534;
-	}
-
-	.badge-rejected {
-		background: #fef2f2;
-		color: #991b1b;
-	}
-
 	.empty-state {
 		text-align: center;
 		padding: 3rem;

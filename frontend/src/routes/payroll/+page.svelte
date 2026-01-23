@@ -503,31 +503,6 @@
 		background: #15803d;
 	}
 
-	.badge-draft {
-		background: #f3f4f6;
-		color: #374151;
-	}
-
-	.badge-calculated {
-		background: #fef3c7;
-		color: #92400e;
-	}
-
-	.badge-approved {
-		background: #dcfce7;
-		color: #166534;
-	}
-
-	.badge-paid {
-		background: #e0e7ff;
-		color: #3730a3;
-	}
-
-	.badge-declared {
-		background: #f0fdf4;
-		color: #065f46;
-	}
-
 	.empty-state {
 		text-align: center;
 		padding: 3rem;

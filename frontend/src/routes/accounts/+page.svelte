@@ -259,13 +259,6 @@
 {/if}
 
 <style>
-	.header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 2rem;
-	}
-
 	h1 {
 		font-size: 1.75rem;
 	}

@@ -565,26 +565,6 @@
 		text-align: right;
 	}
 
-	.badge-draft {
-		background: #f3f4f6;
-		color: #6b7280;
-	}
-
-	.badge-active {
-		background: #dcfce7;
-		color: #166534;
-	}
-
-	.badge-disposed {
-		background: #fee2e2;
-		color: #dc2626;
-	}
-
-	.badge-sold {
-		background: #dbeafe;
-		color: #1d4ed8;
-	}
-
 	.actions {
 		display: flex;
 		gap: 0.5rem;

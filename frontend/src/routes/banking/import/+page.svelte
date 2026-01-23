@@ -238,8 +238,8 @@
 
 				<!-- Bank Account -->
 				<div class="mb-4">
-					<label class="block text-sm font-medium text-gray-700 mb-1">{m.bankingImport_bankAccount()}</label>
-					<select bind:value={selectedAccountId} class="w-full border border-gray-300 rounded-lg px-3 py-2">
+					<label for="import-bank-account" class="block text-sm font-medium text-gray-700 mb-1">{m.bankingImport_bankAccount()}</label>
+					<select id="import-bank-account" bind:value={selectedAccountId} class="w-full border border-gray-300 rounded-lg px-3 py-2">
 						{#each bankAccounts as account}
 							<option value={account.id}>{account.name}</option>
 						{/each}
@@ -248,14 +248,14 @@
 
 				<!-- File Upload -->
 				<div class="mb-4">
-					<label class="block text-sm font-medium text-gray-700 mb-1">{m.bankingImport_csvFile()}</label>
-					<input type="file" accept=".csv,.txt" onchange={handleFileSelect} class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+					<label for="import-csv-file" class="block text-sm font-medium text-gray-700 mb-1">{m.bankingImport_csvFile()}</label>
+					<input id="import-csv-file" type="file" accept=".csv,.txt" onchange={handleFileSelect} class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
 				</div>
 
 				<!-- Bank Preset -->
 				<div class="mb-4">
-					<label class="block text-sm font-medium text-gray-700 mb-1">{m.bankingImport_bankFormatPreset()}</label>
-					<select onchange={(e) => applyPreset((e.target as HTMLSelectElement).value)} class="w-full border border-gray-300 rounded-lg px-3 py-2">
+					<label for="import-bank-preset" class="block text-sm font-medium text-gray-700 mb-1">{m.bankingImport_bankFormatPreset()}</label>
+					<select id="import-bank-preset" onchange={(e) => applyPreset((e.target as HTMLSelectElement).value)} class="w-full border border-gray-300 rounded-lg px-3 py-2">
 						<option value="generic">{m.bankingImport_genericCsv()}</option>
 						<option value="swedbank">{m.bankingImport_swedbankEstonia()}</option>
 						<option value="seb">{m.bankingImport_sebEstonia()}</option>
@@ -269,24 +269,24 @@
 
 				<div class="grid grid-cols-2 gap-3 mb-4">
 					<div>
-						<label class="block text-xs font-medium text-blue-700 mb-1">{m.bankingImport_dateColumn()}</label>
-						<input type="number" bind:value={mapping.date_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" />
+						<label for="mapping-date-column" class="block text-xs font-medium text-blue-700 mb-1">{m.bankingImport_dateColumn()}</label>
+						<input id="mapping-date-column" type="number" bind:value={mapping.date_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" />
 					</div>
 					<div>
-						<label class="block text-xs font-medium text-green-700 mb-1">{m.bankingImport_descriptionColumn()}</label>
-						<input type="number" bind:value={mapping.description_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" />
+						<label for="mapping-description-column" class="block text-xs font-medium text-green-700 mb-1">{m.bankingImport_descriptionColumn()}</label>
+						<input id="mapping-description-column" type="number" bind:value={mapping.description_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" />
 					</div>
 					<div>
-						<label class="block text-xs font-medium text-yellow-700 mb-1">{m.bankingImport_amountColumn()}</label>
-						<input type="number" bind:value={mapping.amount_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" />
+						<label for="mapping-amount-column" class="block text-xs font-medium text-yellow-700 mb-1">{m.bankingImport_amountColumn()}</label>
+						<input id="mapping-amount-column" type="number" bind:value={mapping.amount_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" />
 					</div>
 					<div>
-						<label class="block text-xs font-medium text-purple-700 mb-1">{m.bankingImport_referenceColumn()}</label>
-						<input type="number" bind:value={mapping.reference_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" placeholder={m.common_optional()} />
+						<label for="mapping-reference-column" class="block text-xs font-medium text-purple-700 mb-1">{m.bankingImport_referenceColumn()}</label>
+						<input id="mapping-reference-column" type="number" bind:value={mapping.reference_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" placeholder={m.common_optional()} />
 					</div>
 					<div class="col-span-2">
-						<label class="block text-xs font-medium text-pink-700 mb-1">{m.bankingImport_counterpartyColumn()}</label>
-						<input type="number" bind:value={mapping.counterparty_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" placeholder={m.common_optional()} />
+						<label for="mapping-counterparty-column" class="block text-xs font-medium text-pink-700 mb-1">{m.bankingImport_counterpartyColumn()}</label>
+						<input id="mapping-counterparty-column" type="number" bind:value={mapping.counterparty_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" placeholder={m.common_optional()} />
 					</div>
 				</div>
 
@@ -294,8 +294,8 @@
 
 				<div class="grid grid-cols-2 gap-3 mb-4">
 					<div class="col-span-2">
-						<label class="block text-xs font-medium text-gray-700 mb-1">{m.bankingImport_dateFormat()}</label>
-						<select bind:value={mapping.date_format} class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
+						<label for="mapping-date-format" class="block text-xs font-medium text-gray-700 mb-1">{m.bankingImport_dateFormat()}</label>
+						<select id="mapping-date-format" bind:value={mapping.date_format} class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
 							<option value="2006-01-02">YYYY-MM-DD</option>
 							<option value="02.01.2006">DD.MM.YYYY</option>
 							<option value="01/02/2006">MM/DD/YYYY</option>
@@ -303,15 +303,15 @@
 						</select>
 					</div>
 					<div>
-						<label class="block text-xs font-medium text-gray-700 mb-1">{m.bankingImport_decimalSep()}</label>
-						<select bind:value={mapping.decimal_separator} class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
+						<label for="mapping-decimal-sep" class="block text-xs font-medium text-gray-700 mb-1">{m.bankingImport_decimalSep()}</label>
+						<select id="mapping-decimal-sep" bind:value={mapping.decimal_separator} class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
 							<option value=".">{m.bankingImport_dotDecimal()}</option>
 							<option value=",">{m.bankingImport_commaDecimal()}</option>
 						</select>
 					</div>
 					<div>
-						<label class="block text-xs font-medium text-gray-700 mb-1">{m.bankingImport_thousandsSep()}</label>
-						<select bind:value={mapping.thousands_separator} class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
+						<label for="mapping-thousands-sep" class="block text-xs font-medium text-gray-700 mb-1">{m.bankingImport_thousandsSep()}</label>
+						<select id="mapping-thousands-sep" bind:value={mapping.thousands_separator} class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
 							<option value="">{m.bankingImport_none()}</option>
 							<option value=",">{m.bankingImport_commaDecimal()}</option>
 							<option value=" ">{m.bankingImport_space()}</option>
