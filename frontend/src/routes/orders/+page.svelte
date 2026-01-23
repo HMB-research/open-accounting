@@ -346,7 +346,7 @@
 				</div>
 
 				<div class="form-group">
-					<label class="label">{m.invoices_lineItems()}</label>
+					<span class="label">{m.invoices_lineItems()}</span>
 					<div class="lines-container">
 						{#each newLines as line, i}
 							<div class="line-row">
