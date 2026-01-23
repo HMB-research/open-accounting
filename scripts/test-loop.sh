@@ -61,7 +61,7 @@ echo -e "  ${CYAN}TEST_FILTER:${NC}       ${TEST_FILTER:-'(all tests)'}"
 echo ""
 
 # Build the test command
-TEST_CMD="npx playwright test --config=playwright.demo.config.ts --project=demo-chromium"
+TEST_CMD="bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium"
 if [ -n "$TEST_FILTER" ]; then
     TEST_CMD="$TEST_CMD $TEST_FILTER"
 fi

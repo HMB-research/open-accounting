@@ -120,13 +120,13 @@ log_success "Demo data seeded successfully"
 cd "$FRONTEND_DIR"
 if [ ! -d "node_modules" ]; then
     log_info "Installing frontend dependencies..."
-    npm ci
+    bun install
 fi
 
 # Install Playwright browsers if needed
-if ! npx playwright --version > /dev/null 2>&1; then
+if ! bunx playwright --version > /dev/null 2>&1; then
     log_info "Installing Playwright browsers..."
-    npx playwright install chromium
+    bunx playwright install chromium
 fi
 
 # Run tests in a loop
@@ -149,11 +149,11 @@ while [ $ATTEMPT -lt $MAX_RETRIES ]; do
     export DEMO_RESET_SECRET=test-demo-secret
 
     # Start dev server in background for this attempt
-    npm run dev &
+    bun run dev &
     DEV_PID=$!
     sleep 5
 
-    if npx playwright test --config=playwright.demo.config.ts --project=demo-chromium; then
+    if bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium; then
         kill $DEV_PID 2>/dev/null || true
         echo ""
         log_success "============================================"
