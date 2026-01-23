@@ -6,7 +6,16 @@
 	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
 	import ContactFormModal from '$lib/components/ContactFormModal.svelte';
 	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
+	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
 	import { requireTenantId, parseApiError } from '$lib/utils/tenant';
+	import {
+		formatCurrency,
+		formatDate,
+		calculateLineTotal as calcLineTotal,
+		calculateLinesTotal,
+		createEmptyLine,
+		type LineItem
+	} from '$lib/utils/formatting';
 
 	let invoices = $state<Invoice[]>([]);
 	let contacts = $state<Contact[]>([]);
@@ -28,9 +37,7 @@
 	let newDueDate = $state(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
 	let newReference = $state('');
 	let newNotes = $state('');
-	let newLines = $state([
-		{ description: '', quantity: '1', unit_price: '0', vat_rate: '22', discount_percent: '0' }
-	]);
+	let newLines = $state<LineItem[]>([createEmptyLine()]);
 
 	$effect(() => {
 		const tenantId = $page.url.searchParams.get('tenant');
@@ -63,10 +70,7 @@
 	}
 
 	function addLine() {
-		newLines = [
-			...newLines,
-			{ description: '', quantity: '1', unit_price: '0', vat_rate: '22', discount_percent: '0' }
-		];
+		newLines = [...newLines, createEmptyLine()];
 	}
 
 	function removeLine(index: number) {
@@ -75,22 +79,8 @@
 		}
 	}
 
-	function calculateLineTotal(line: typeof newLines[0]): Decimal {
-		const qty = new Decimal(line.quantity || 0);
-		const price = new Decimal(line.unit_price || 0);
-		const discount = new Decimal(line.discount_percent || 0);
-		const vat = new Decimal(line.vat_rate || 0);
-
-		const gross = qty.mul(price);
-		const discountAmt = gross.mul(discount).div(100);
-		const subtotal = gross.minus(discountAmt);
-		const vatAmt = subtotal.mul(vat).div(100);
-		return subtotal.plus(vatAmt);
-	}
-
-	function calculateTotal(): Decimal {
-		return newLines.reduce((sum, line) => sum.plus(calculateLineTotal(line)), new Decimal(0));
-	}
+	// Use imported calcLineTotal for line calculations
+	// calculateLinesTotal for the total
 
 	async function createInvoice(e: Event) {
 		e.preventDefault();
@@ -134,9 +124,7 @@
 		newDueDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 		newReference = '';
 		newNotes = '';
-		newLines = [
-			{ description: '', quantity: '1', unit_price: '0', vat_rate: '22', discount_percent: '0' }
-		];
+		newLines = [createEmptyLine()];
 	}
 
 	function handleNewContactSaved(contact: Contact) {
@@ -196,37 +184,17 @@
 		}
 	}
 
-	function getStatusLabel(status: InvoiceStatus): string {
-		switch (status) {
-			case 'DRAFT': return m.invoices_draft();
-			case 'SENT': return m.invoices_sent();
-			case 'PARTIALLY_PAID': return m.invoices_partial();
-			case 'PAID': return m.invoices_paid();
-			case 'OVERDUE': return m.invoices_overdue();
-			case 'VOIDED': return m.invoices_voided();
-		}
-	}
-
-	const statusClass: Record<InvoiceStatus, string> = {
-		DRAFT: 'badge-draft',
-		SENT: 'badge-sent',
-		PARTIALLY_PAID: 'badge-partial',
-		PAID: 'badge-paid',
-		OVERDUE: 'badge-overdue',
-		VOIDED: 'badge-voided'
+	// Status configuration for StatusBadge component
+	const statusConfig: Record<InvoiceStatus, StatusConfig> = {
+		DRAFT: { class: 'badge-draft', label: m.invoices_draft() },
+		SENT: { class: 'badge-sent', label: m.invoices_sent() },
+		PARTIALLY_PAID: { class: 'badge-partial', label: m.invoices_partial() },
+		PAID: { class: 'badge-paid', label: m.invoices_paid() },
+		OVERDUE: { class: 'badge-overdue', label: m.invoices_overdue() },
+		VOIDED: { class: 'badge-voided', label: m.invoices_voided() }
 	};
 
-	function formatCurrency(value: Decimal | number | string): string {
-		const num = typeof value === 'object' && 'toFixed' in value ? value.toNumber() : Number(value);
-		return new Intl.NumberFormat('et-EE', {
-			style: 'currency',
-			currency: 'EUR'
-		}).format(num);
-	}
-
-	function formatDate(dateStr: string): string {
-		return new Date(dateStr).toLocaleDateString('et-EE');
-	}
+	// formatCurrency and formatDate imported from $lib/utils/formatting
 
 	function getContactName(invoice: Invoice): string {
 		// First try the populated contact object
@@ -318,9 +286,7 @@
 								<td data-label="Due Date">{formatDate(invoice.due_date)}</td>
 								<td class="amount" data-label="Total">{formatCurrency(invoice.total)}</td>
 								<td data-label="Status">
-									<span class="badge {statusClass[invoice.status]}">
-										{getStatusLabel(invoice.status)}
-									</span>
+									<StatusBadge status={invoice.status} config={statusConfig} />
 								</td>
 								<td class="actions actions-cell">
 									<button
@@ -473,7 +439,7 @@
 											bind:value={line.discount_percent}
 										/>
 									</td>
-									<td class="amount">{formatCurrency(calculateLineTotal(line))}</td>
+									<td class="amount">{formatCurrency(calcLineTotal(line))}</td>
 									<td>
 										{#if newLines.length > 1}
 											<button
@@ -491,7 +457,7 @@
 						<tfoot>
 							<tr>
 								<td colspan="5" style="text-align: right;"><strong>{m.common_total()}:</strong></td>
-								<td class="amount"><strong>{formatCurrency(calculateTotal())}</strong></td>
+								<td class="amount"><strong>{formatCurrency(calculateLinesTotal(newLines))}</strong></td>
 								<td></td>
 							</tr>
 						</tfoot>

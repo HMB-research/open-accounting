@@ -3,6 +3,7 @@
 	import { api, type Product, type ProductCategory, type Warehouse, type ProductType, type ProductStatus, type StockLevel, type InventoryMovement, type MovementType } from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
+	import { formatCurrency, formatDate } from '$lib/utils/formatting';
 
 	type Tab = 'products' | 'warehouses' | 'categories';
 
@@ -349,29 +350,11 @@
 		return warehouse?.name || '-';
 	}
 
-	function formatCurrency(value: Decimal | number | string | undefined): string {
-		if (value === undefined || value === '') return '-';
-		const num = typeof value === 'object' && 'toFixed' in value ? value.toNumber() : Number(value);
-		return new Intl.NumberFormat('et-EE', {
-			style: 'currency',
-			currency: 'EUR'
-		}).format(num);
-	}
-
 	function formatNumber(value: Decimal | number | string | undefined): string {
 		if (value === undefined || value === '') return '0';
 		const num = typeof value === 'object' && 'toFixed' in value ? value.toNumber() : Number(value);
 		return new Intl.NumberFormat('et-EE').format(num);
 	}
-
-	function formatDate(dateStr: string): string {
-		return new Date(dateStr).toLocaleDateString('et-EE');
-	}
-
-	const statusBadgeClass: Record<ProductStatus, string> = {
-		ACTIVE: 'badge-active',
-		INACTIVE: 'badge-inactive'
-	};
 
 	function isLowStock(product: Product): boolean {
 		const current = typeof product.current_stock === 'object' && 'toNumber' in product.current_stock
@@ -470,7 +453,7 @@
 									<td data-label={m.inventory_productName()}>{product.name}</td>
 									<td class="hide-mobile" data-label={m.inventory_productType()}>{getProductTypeLabel(product.product_type)}</td>
 									<td class="hide-mobile" data-label={m.inventory_category()}>{getCategoryName(product.category_id)}</td>
-									<td class="amount text-right" data-label={m.inventory_salesPrice()}>{formatCurrency(product.sales_price)}</td>
+									<td class="amount text-right" data-label={m.inventory_salesPrice()}>{product.sales_price ? formatCurrency(product.sales_price) : '-'}</td>
 									<td class="text-right" data-label={m.inventory_currentStock()}>
 										{formatNumber(product.current_stock)}
 										{#if isLowStock(product)}
@@ -881,7 +864,7 @@
 									</td>
 									<td>{getWarehouseName(movement.warehouse_id)}</td>
 									<td class="text-right">{formatNumber(movement.quantity)}</td>
-									<td class="text-right">{formatCurrency(movement.unit_cost)}</td>
+									<td class="text-right">{movement.unit_cost ? formatCurrency(movement.unit_cost) : '-'}</td>
 									<td>{movement.reference || '-'}</td>
 								</tr>
 							{/each}

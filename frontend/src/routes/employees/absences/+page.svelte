@@ -10,6 +10,7 @@
 	} from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
+	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
 
 	let absenceTypes = $state<AbsenceType[]>([]);
 	let leaveBalances = $state<LeaveBalance[]>([]);
@@ -183,26 +184,11 @@
 		return new Date(dateStr).toLocaleDateString();
 	}
 
-	function getStatusLabel(status: LeaveStatus): string {
-		switch (status) {
-			case 'PENDING':
-				return m.leave_status_pending();
-			case 'APPROVED':
-				return m.leave_status_approved();
-			case 'REJECTED':
-				return m.leave_status_rejected();
-			case 'CANCELLED':
-				return m.leave_status_cancelled();
-			default:
-				return status;
-		}
-	}
-
-	const statusBadgeClass: Record<LeaveStatus, string> = {
-		PENDING: 'badge-pending',
-		APPROVED: 'badge-approved',
-		REJECTED: 'badge-rejected',
-		CANCELLED: 'badge-cancelled'
+	const statusConfig: Record<LeaveStatus, StatusConfig> = {
+		PENDING: { class: 'badge-pending', label: m.leave_status_pending() },
+		APPROVED: { class: 'badge-approved', label: m.leave_status_approved() },
+		REJECTED: { class: 'badge-rejected', label: m.leave_status_rejected() },
+		CANCELLED: { class: 'badge-cancelled', label: m.leave_status_cancelled() }
 	};
 
 	function getAbsenceTypeName(typeId: string): string {
@@ -348,9 +334,7 @@
 									{formatDecimal(record.working_days)}
 								</td>
 								<td data-label={m.leave_status()}>
-									<span class="badge {statusBadgeClass[record.status]}">
-										{getStatusLabel(record.status)}
-									</span>
+									<StatusBadge status={record.status} config={statusConfig} />
 								</td>
 								<td class="actions actions-cell">
 									{#if canApprove(record)}

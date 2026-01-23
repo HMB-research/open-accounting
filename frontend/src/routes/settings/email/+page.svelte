@@ -5,10 +5,12 @@
 		type SMTPConfig,
 		type EmailTemplate,
 		type EmailLog,
+		type EmailStatus,
 		type TemplateType,
 		type UpdateTemplateRequest
 	} from '$lib/api';
 	import * as m from '$lib/paraglide/messages.js';
+	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
 
 	let selectedTenantId = $state('');
 	let isLoading = $state(true);
@@ -160,16 +162,11 @@
 		return new Date(dateStr).toLocaleString('en-GB');
 	}
 
-	function statusBadgeClass(status: string): string {
-		switch (status) {
-			case 'SENT':
-				return 'badge-success';
-			case 'FAILED':
-				return 'badge-danger';
-			default:
-				return 'badge-muted';
-		}
-	}
+	const statusConfig: Record<EmailStatus, StatusConfig> = {
+		PENDING: { class: 'badge-muted', label: 'PENDING' },
+		SENT: { class: 'badge-success', label: 'SENT' },
+		FAILED: { class: 'badge-danger', label: 'FAILED' }
+	};
 </script>
 
 <svelte:head>
@@ -430,9 +427,7 @@
 										</td>
 										<td data-label={m.email_subject()}>{log.subject}</td>
 										<td data-label={m.common_status()}>
-											<span class="badge {statusBadgeClass(log.status)}">
-												{log.status}
-											</span>
+											<StatusBadge status={log.status} config={statusConfig} />
 											{#if log.error_message}
 												<br /><small class="text-muted">{log.error_message}</small>
 											{/if}
