@@ -109,6 +109,7 @@ func main() {
 	reminderService := invoicing.NewReminderService(pool, emailService)
 	automatedReminderService := invoicing.NewAutomatedReminderService(pool, emailService)
 	costCenterService := accounting.NewCostCenterService(pool)
+	interestService := invoicing.NewInterestService(pool)
 
 	// Load enabled plugins on startup
 	if err := pluginService.LoadEnabledPlugins(ctx); err != nil {
@@ -154,6 +155,7 @@ func main() {
 		reminderService:          reminderService,
 		automatedReminderService: automatedReminderService,
 		costCenterService:        costCenterService,
+		interestService:          interestService,
 	}
 
 	// Setup router
@@ -487,6 +489,13 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/reminder-rules/{ruleID}", h.GetReminderRule)
 				r.Put("/reminder-rules/{ruleID}", h.UpdateReminderRule)
 				r.Delete("/reminder-rules/{ruleID}", h.DeleteReminderRule)
+
+				// Interest Calculations
+				r.Get("/settings/interest", h.GetInterestSettings)
+				r.Put("/settings/interest", h.UpdateInterestSettings)
+				r.Get("/invoices/overdue-with-interest", h.GetOverdueInvoicesWithInterest)
+				r.Get("/invoices/{invoiceID}/interest", h.GetInvoiceInterest)
+				r.Get("/invoices/{invoiceID}/interest/history", h.GetInvoiceInterestHistory)
 
 				// Email Actions (linked to invoices/payments)
 				r.Post("/invoices/{invoiceID}/email", h.EmailInvoice)

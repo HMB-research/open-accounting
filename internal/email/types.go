@@ -209,9 +209,14 @@ func DefaultTemplates() map[TemplateType]EmailTemplate {
 <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
 <h2>Payment Reminder</h2>
 <p>Dear {{.ContactName}},</p>
-<p>This is a friendly reminder that invoice {{.InvoiceNumber}} for {{.TotalAmount}} {{.Currency}} is now overdue.</p>
+<p>This is a friendly reminder that invoice {{.InvoiceNumber}} is now overdue.</p>
 <p><strong>Original Due Date:</strong> {{.DueDate}}</p>
 <p><strong>Days Overdue:</strong> {{.DaysOverdue}}</p>
+<table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+<tr><td style="padding: 8px 0;">Outstanding amount:</td><td style="text-align: right;">{{.TotalAmount}} {{.Currency}}</td></tr>
+{{if .InterestAmount}}<tr><td style="padding: 8px 0;">Interest ({{.InterestRate}} daily):</td><td style="text-align: right;">{{.InterestAmount}} {{.Currency}}</td></tr>
+<tr style="border-top: 1px solid #ccc; font-weight: bold;"><td style="padding: 8px 0;">Total due:</td><td style="text-align: right;">{{.TotalWithInterest}} {{.Currency}}</td></tr>{{end}}
+</table>
 <p>Please arrange payment at your earliest convenience.</p>
 <p>If you have already made payment, please disregard this reminder.</p>
 <p>Best regards,<br>{{.CompanyName}}</p>
@@ -238,6 +243,11 @@ type TemplateData struct {
 	IssueDate     string
 	DaysOverdue   int
 	DaysUntilDue  int // For pre-due reminders
+
+	// Interest fields (for overdue reminders)
+	InterestRate      string // Daily rate as percentage (e.g., "0.05%")
+	InterestAmount    string // Total interest accrued
+	TotalWithInterest string // Outstanding + interest
 
 	// Payment fields
 	Amount      string

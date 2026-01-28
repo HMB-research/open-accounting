@@ -982,6 +982,40 @@ class ApiClient {
 		);
 	}
 
+	// Interest Calculations
+	async getInterestSettings(tenantId: string) {
+		return this.request<InterestSettings>('GET', `/api/v1/tenants/${tenantId}/settings/interest`);
+	}
+
+	async updateInterestSettings(tenantId: string, data: UpdateInterestSettingsRequest) {
+		return this.request<InterestSettings>(
+			'PUT',
+			`/api/v1/tenants/${tenantId}/settings/interest`,
+			data
+		);
+	}
+
+	async getInvoiceInterest(tenantId: string, invoiceId: string) {
+		return this.request<InterestCalculationResult>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/invoices/${invoiceId}/interest`
+		);
+	}
+
+	async getInvoiceInterestHistory(tenantId: string, invoiceId: string) {
+		return this.request<InvoiceInterest[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/invoices/${invoiceId}/interest/history`
+		);
+	}
+
+	async getOverdueInvoicesWithInterest(tenantId: string) {
+		return this.request<InterestCalculationResult[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/invoices/overdue-with-interest`
+		);
+	}
+
 	// Banking endpoints
 	async listBankAccounts(tenantId: string, activeOnly = false) {
 		const query = activeOnly ? '?active_only=true' : '';
@@ -3504,6 +3538,44 @@ export interface CostCenterReport {
 	cost_centers: CostCenterSummary[];
 	total_expenses: string;
 	total_budget: string;
+}
+
+// Interest calculation types
+export interface InterestSettings {
+	rate: number;
+	annual_rate: number;
+	description: string;
+	is_enabled: boolean;
+}
+
+export interface UpdateInterestSettingsRequest {
+	rate: number;
+}
+
+export interface InterestCalculationResult {
+	invoice_id: string;
+	invoice_number: string;
+	due_date: string;
+	days_overdue: number;
+	outstanding_amount: string;
+	interest_rate: string;
+	daily_interest: string;
+	total_interest: string;
+	total_with_interest: string;
+	calculated_at: string;
+	currency: string;
+}
+
+export interface InvoiceInterest {
+	id: string;
+	invoice_id: string;
+	calculated_at: string;
+	days_overdue: number;
+	principal_amount: string;
+	interest_rate: string;
+	interest_amount: string;
+	total_with_interest: string;
+	created_at: string;
 }
 
 export const api = new ApiClient();
