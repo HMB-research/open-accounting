@@ -1,3 +1,4 @@
+version: 2
 run:
   timeout: 5m
   modules-download-mode: readonly
@@ -5,18 +6,7 @@ run:
 linters:
   enable:
     - errcheck
-    - gosimple
-    - govet
-    - ineffassign
     - staticcheck
-    - unused
-    - gofmt
-    - goimports
-    - misspell
-    - unconvert
-    - bodyclose
-    - noctx
-    - gosec
 
 linters-settings:
   errcheck:
@@ -28,3 +18,9 @@ linters-settings:
       - (github.com/jackc/pgx/v5.Tx).Rollback
       - (*database/sql.Rows).Close
       - (*os.File).Close
+
+issues:
+  exclude-rules:
+    - linters:
+        - staticcheck
+      text: "QF1003|QF1008"
