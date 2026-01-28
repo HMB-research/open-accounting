@@ -255,7 +255,11 @@ func (s *Service) FetchRegistryIndex(ctx context.Context, registryURL string) (*
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch registry index: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Warn().Err(err).Msg("Failed to close response body")
+		}
+	}()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to fetch registry index: HTTP %d", resp.StatusCode)
 	}
