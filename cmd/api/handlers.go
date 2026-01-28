@@ -63,6 +63,7 @@ type Handlers struct {
 	reminderService          *invoicing.ReminderService
 	automatedReminderService *invoicing.AutomatedReminderService
 	costCenterService        *accounting.CostCenterService
+	interestService          *invoicing.InterestService
 }
 
 // getSchemaName returns the schema name for a tenant
