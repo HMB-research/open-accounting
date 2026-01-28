@@ -950,6 +950,72 @@ class ApiClient {
 		);
 	}
 
+	// Reminder Rules (Automated Payment Reminders)
+	async listReminderRules(tenantId: string) {
+		return this.request<ReminderRule[]>('GET', `/api/v1/tenants/${tenantId}/reminder-rules`);
+	}
+
+	async getReminderRule(tenantId: string, ruleId: string) {
+		return this.request<ReminderRule>('GET', `/api/v1/tenants/${tenantId}/reminder-rules/${ruleId}`);
+	}
+
+	async createReminderRule(tenantId: string, data: CreateReminderRuleRequest) {
+		return this.request<ReminderRule>('POST', `/api/v1/tenants/${tenantId}/reminder-rules`, data);
+	}
+
+	async updateReminderRule(tenantId: string, ruleId: string, data: UpdateReminderRuleRequest) {
+		return this.request<ReminderRule>(
+			'PUT',
+			`/api/v1/tenants/${tenantId}/reminder-rules/${ruleId}`,
+			data
+		);
+	}
+
+	async deleteReminderRule(tenantId: string, ruleId: string) {
+		return this.request<void>('DELETE', `/api/v1/tenants/${tenantId}/reminder-rules/${ruleId}`);
+	}
+
+	async triggerReminders(tenantId: string) {
+		return this.request<AutomatedReminderResult[]>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/reminder-rules/trigger`
+		);
+	}
+
+	// Interest Calculations
+	async getInterestSettings(tenantId: string) {
+		return this.request<InterestSettings>('GET', `/api/v1/tenants/${tenantId}/settings/interest`);
+	}
+
+	async updateInterestSettings(tenantId: string, data: UpdateInterestSettingsRequest) {
+		return this.request<InterestSettings>(
+			'PUT',
+			`/api/v1/tenants/${tenantId}/settings/interest`,
+			data
+		);
+	}
+
+	async getInvoiceInterest(tenantId: string, invoiceId: string) {
+		return this.request<InterestCalculationResult>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/invoices/${invoiceId}/interest`
+		);
+	}
+
+	async getInvoiceInterestHistory(tenantId: string, invoiceId: string) {
+		return this.request<InvoiceInterest[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/invoices/${invoiceId}/interest/history`
+		);
+	}
+
+	async getOverdueInvoicesWithInterest(tenantId: string) {
+		return this.request<InterestCalculationResult[]>(
+			'GET',
+			`/api/v1/tenants/${tenantId}/invoices/overdue-with-interest`
+		);
+	}
+
 	// Banking endpoints
 	async listBankAccounts(tenantId: string, activeOnly = false) {
 		const query = activeOnly ? '?active_only=true' : '';
@@ -2667,6 +2733,47 @@ export interface EmailSentResponse {
 	message: string;
 }
 
+// Reminder Rule types
+export type TriggerType = 'BEFORE_DUE' | 'ON_DUE' | 'AFTER_DUE';
+
+export interface ReminderRule {
+	id: string;
+	tenant_id: string;
+	name: string;
+	trigger_type: TriggerType;
+	days_offset: number;
+	email_template_type: string;
+	is_active: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface CreateReminderRuleRequest {
+	name: string;
+	trigger_type: TriggerType;
+	days_offset: number;
+	email_template_type?: string;
+	is_active: boolean;
+}
+
+export interface UpdateReminderRuleRequest {
+	name?: string;
+	email_template_type?: string;
+	is_active?: boolean;
+}
+
+export interface AutomatedReminderResult {
+	tenant_id: string;
+	rule_id: string;
+	rule_name: string;
+	invoices_found: number;
+	reminders_sent: number;
+	skipped: number;
+	failed: number;
+	errors?: string[];
+	run_at: string;
+}
+
 // Banking types
 export type TransactionStatus = 'UNMATCHED' | 'MATCHED' | 'RECONCILED';
 export type ReconciliationStatus = 'IN_PROGRESS' | 'COMPLETED';
@@ -3431,6 +3538,44 @@ export interface CostCenterReport {
 	cost_centers: CostCenterSummary[];
 	total_expenses: string;
 	total_budget: string;
+}
+
+// Interest calculation types
+export interface InterestSettings {
+	rate: number;
+	annual_rate: number;
+	description: string;
+	is_enabled: boolean;
+}
+
+export interface UpdateInterestSettingsRequest {
+	rate: number;
+}
+
+export interface InterestCalculationResult {
+	invoice_id: string;
+	invoice_number: string;
+	due_date: string;
+	days_overdue: number;
+	outstanding_amount: string;
+	interest_rate: string;
+	daily_interest: string;
+	total_interest: string;
+	total_with_interest: string;
+	calculated_at: string;
+	currency: string;
+}
+
+export interface InvoiceInterest {
+	id: string;
+	invoice_id: string;
+	calculated_at: string;
+	days_overdue: number;
+	principal_amount: string;
+	interest_rate: string;
+	interest_amount: string;
+	total_with_interest: string;
+	created_at: string;
 }
 
 export const api = new ApiClient();

@@ -39,6 +39,10 @@ type TenantSettings struct {
 	PDFFooterText   string `json:"pdf_footer_text,omitempty"`
 	BankDetails     string `json:"bank_details,omitempty"`
 	InvoiceTerms    string `json:"invoice_terms,omitempty"`
+
+	// Late payment interest settings
+	// Rate is expressed as daily rate (e.g., 0.0005 = 0.05% per day ≈ 18% annually)
+	LatePaymentInterestRate float64 `json:"late_payment_interest_rate,omitempty"`
 }
 
 // DefaultSettings returns default tenant settings for Estonia

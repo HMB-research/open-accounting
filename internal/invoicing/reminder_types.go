@@ -25,7 +25,10 @@ type PaymentReminder struct {
 	ContactID      string         `json:"contact_id"`
 	ContactName    string         `json:"contact_name"`
 	ContactEmail   string         `json:"contact_email"`
-	ReminderNumber int            `json:"reminder_number"` // 1st, 2nd, 3rd reminder etc.
+	RuleID         *string        `json:"rule_id,omitempty"`      // Link to reminder rule
+	TriggerType    string         `json:"trigger_type,omitempty"` // BEFORE_DUE, ON_DUE, AFTER_DUE
+	DaysOffset     int            `json:"days_offset,omitempty"`  // Days from due date
+	ReminderNumber int            `json:"reminder_number"`        // 1st, 2nd, 3rd reminder etc.
 	Status         ReminderStatus `json:"status"`
 	SentAt         *time.Time     `json:"sent_at,omitempty"`
 	ErrorMessage   string         `json:"error_message,omitempty"`

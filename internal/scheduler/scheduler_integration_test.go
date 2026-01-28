@@ -80,7 +80,7 @@ func TestScheduler_WithRealRepository(t *testing.T) {
 	config := DefaultConfig()
 
 	// Create scheduler with real repository
-	scheduler := NewSchedulerWithRepository(repo, nil, config)
+	scheduler := NewSchedulerWithRepository(repo, nil, nil, config)
 
 	// Should not be running initially
 	if scheduler.IsRunning() {
