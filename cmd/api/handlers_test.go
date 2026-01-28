@@ -159,7 +159,7 @@ func TestDecodeJSON(t *testing.T) {
 func TestHealthEndpoint(t *testing.T) {
 	// Create a simple handler for the health check
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)

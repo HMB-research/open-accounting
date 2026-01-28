@@ -281,15 +281,15 @@ func TestService_List(t *testing.T) {
 	service := NewServiceWithRepository(repo)
 
 	// Create some contacts
-	service.Create(ctx, "tenant-1", "public", &CreateContactRequest{
+	_, _ = service.Create(ctx, "tenant-1", "public", &CreateContactRequest{
 		Name:        "Customer 1",
 		ContactType: ContactTypeCustomer,
 	})
-	service.Create(ctx, "tenant-1", "public", &CreateContactRequest{
+	_, _ = service.Create(ctx, "tenant-1", "public", &CreateContactRequest{
 		Name:        "Supplier 1",
 		ContactType: ContactTypeSupplier,
 	})
-	service.Create(ctx, "tenant-2", "public", &CreateContactRequest{
+	_, _ = service.Create(ctx, "tenant-2", "public", &CreateContactRequest{
 		Name:        "Other Tenant",
 		ContactType: ContactTypeCustomer,
 	})

@@ -707,6 +707,7 @@ func TestService_GetPlugin(t *testing.T) {
 			}
 			if result == nil {
 				t.Error("expected result but got nil")
+				return
 			}
 			if result.ID != tt.id {
 				t.Errorf("expected ID %v, got %v", tt.id, result.ID)
@@ -839,6 +840,7 @@ func TestService_AddRegistry(t *testing.T) {
 			}
 			if result == nil {
 				t.Error("expected result but got nil")
+				return
 			}
 			if result.Name != tt.req.Name {
 				t.Errorf("expected name %v, got %v", tt.req.Name, result.Name)
@@ -1744,7 +1746,7 @@ func TestService_DisablePlugin_Success(t *testing.T) {
 	service := NewServiceWithRepository(repo, hooks, "/tmp/plugins")
 
 	// First load the plugin
-	service.loadPlugin(repo.plugins[pluginID], &Manifest{Name: "test-plugin", Version: "1.0.0"})
+	_ = service.loadPlugin(repo.plugins[pluginID], &Manifest{Name: "test-plugin", Version: "1.0.0"})
 
 	err := service.DisablePlugin(ctx, pluginID)
 	if err != nil {
@@ -2035,6 +2037,7 @@ func TestService_NewService(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {
 			// Expected panic when pool is nil
+			t.Logf("Expected panic recovered: %v", r)
 		}
 	}()
 

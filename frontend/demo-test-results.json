@@ -1,0 +1,183 @@
+{
+  "config": {
+    "configFile": "/Users/tsopic/algo/open-accounting/frontend/playwright.demo.config.ts",
+    "rootDir": "/Users/tsopic/algo/open-accounting/frontend/e2e",
+    "forbidOnly": false,
+    "fullyParallel": true,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "html",
+        {
+          "outputFolder": "playwright-report-demo"
+        }
+      ],
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "demo-test-results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/Users/tsopic/algo/open-accounting/frontend/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "auth-setup",
+        "name": "auth-setup",
+        "testDir": "/Users/tsopic/algo/open-accounting/frontend/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/demo/auth.setup.ts"
+        ],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "/Users/tsopic/algo/open-accounting/frontend/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "demo-chromium",
+        "name": "demo-chromium",
+        "testDir": "/Users/tsopic/algo/open-accounting/frontend/e2e",
+        "testIgnore": [
+          "**/demo/auth.setup.ts"
+        ],
+        "testMatch": [
+          "**/demo/*.spec.ts",
+          "demo-env.spec.ts",
+          "demo-all-views.spec.ts",
+          "auth.spec.ts"
+        ],
+        "timeout": 60000
+      }
+    ],
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.57.0",
+    "workers": 4,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "demo/auth.setup.ts",
+      "file": "demo/auth.setup.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "authenticate all demo users",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "auth-setup",
+              "projectName": "auth-setup",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 5922,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "[Auth Setup] Authenticating all 4 demo users...\n"
+                    },
+                    {
+                      "text": "[Auth Setup] Authenticating demo user 1/4: demo1@example.com...\n"
+                    },
+                    {
+                      "text": "[Auth Setup] Checked \"Remember Me\" for demo1@example.com\n"
+                    },
+                    {
+                      "text": "[Auth Setup] Login successful for demo1@example.com, saving state to /Users/tsopic/algo/open-accounting/frontend/.auth/worker-0.json\n"
+                    },
+                    {
+                      "text": "[Auth Setup] Authenticating demo user 2/4: demo2@example.com...\n"
+                    },
+                    {
+                      "text": "[Auth Setup] Checked \"Remember Me\" for demo2@example.com\n"
+                    },
+                    {
+                      "text": "[Auth Setup] Login successful for demo2@example.com, saving state to /Users/tsopic/algo/open-accounting/frontend/.auth/worker-1.json\n"
+                    },
+                    {
+                      "text": "[Auth Setup] Authenticating demo user 3/4: demo3@example.com...\n"
+                    },
+                    {
+                      "text": "[Auth Setup] Checked \"Remember Me\" for demo3@example.com\n"
+                    },
+                    {
+                      "text": "[Auth Setup] Login successful for demo3@example.com, saving state to /Users/tsopic/algo/open-accounting/frontend/.auth/worker-2.json\n"
+                    },
+                    {
+                      "text": "[Auth Setup] Authenticating demo user 4/4: demo4@example.com...\n"
+                    },
+                    {
+                      "text": "[Auth Setup] Checked \"Remember Me\" for demo4@example.com\n"
+                    },
+                    {
+                      "text": "[Auth Setup] Login successful for demo4@example.com, saving state to /Users/tsopic/algo/open-accounting/frontend/.auth/worker-3.json\n"
+                    },
+                    {
+                      "text": "[Auth Setup] All 4 demo users authenticated successfully\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-01-22T20:36:23.401Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "dbd2995f34ab99b23d32-d46b7539fc0f8e5e100f",
+          "file": "demo/auth.setup.ts",
+          "line": 16,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-01-22T20:36:23.116Z",
+    "duration": 6414.385,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

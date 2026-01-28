@@ -216,7 +216,7 @@ func TestMiddleware(t *testing.T) {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		w.Write([]byte(claims.UserID))
+		_, _ = w.Write([]byte(claims.UserID))
 	})
 
 	middleware := service.Middleware(handler)

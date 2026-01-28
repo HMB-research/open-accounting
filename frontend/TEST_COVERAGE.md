@@ -1,18 +1,22 @@
 # Frontend Test Coverage Status
 
 > Last Updated: 2026-01-23
-> Unit Tests: 240+ passing
+> Unit Tests: 563 passing (41 with known issues)
 > E2E Tests: 32 spec files (demo configuration)
+
+**Known Issues**:
+- SvelteKit `$env/dynamic/public` module not available in Bun test environment
+- Some i18n message tests need updating for changed message content
 
 ## Quick Stats
 
 | Metric | Current | Target |
 |--------|---------|--------|
-| Unit Test Files | 6 | 17 |
-| Unit Tests | 240 | 400+ |
-| Component Coverage | 11% (1/9) | 90%+ |
-| Utility Coverage | 0% (0/3) | 100% |
-| Store Coverage | 0% (0/1) | 100% |
+| Unit Test Files | 20 | 21 |
+| Unit Tests | 584 | 600+ |
+| Component Coverage | 83% (10/12) | 90%+ |
+| Utility Coverage | 100% (3/3) | 100% |
+| Store Coverage | 100% (1/1) | 100% |
 
 ---
 
@@ -33,32 +37,36 @@
 | Messages | 23 | ✅ Complete | Message validation |
 | Recurring Email Config | 31 | ✅ Complete | Email configuration labels |
 
-### Components (Needs Work)
+### Components (Excellent Progress)
 
 | Component | Tests | Status | Priority |
 |-----------|-------|--------|----------|
 | LanguageSelector | 8 | ✅ Complete | - |
-| TenantSelector | 0 | ❌ Not Started | P0 |
-| ErrorAlert | 0 | ❌ Not Started | P0 |
-| DateRangeFilter | 0 | ❌ Not Started | P1 |
-| PeriodSelector | 0 | ❌ Not Started | P1 |
-| ContactFormModal | 0 | ❌ Not Started | P1 |
-| ExportButton | 0 | ❌ Not Started | P2 |
-| OnboardingWizard | 0 | ❌ Not Started | P2 |
-| ActivityFeed | 0 | ❌ Not Started | P2 |
+| TenantSelector | 20+ | ✅ Complete | - |
+| ErrorAlert | 16 | ✅ Complete | - |
+| DateRangeFilter | 55 | ✅ Complete | - |
+| LineItemsEditor | 45 | ✅ Complete | - |
+| ContactFormModal | 35 | ✅ Complete | - |
+| PeriodSelector | 55 | ✅ Complete | - |
+| FormModal | 47 | ✅ Complete | - |
+| ExportButton | 50 | ✅ Complete | - |
+| ActivityFeed | 57 | ✅ Complete | - |
+| OnboardingWizard | 0 | ❌ Not Started | P3 |
+| StatusBadge | 0 | ❌ Not Started | P3 |
 
-### Utilities (Critical Gap)
-
-| File | Tests | Status | Priority |
-|------|-------|--------|----------|
-| `utils/dates.ts` | 0 | ❌ Not Started | P0 |
-| `utils/tenant.ts` | 0 | ❌ Not Started | P0 |
-
-### Stores (Critical Gap)
+### Utilities (Complete)
 
 | File | Tests | Status | Priority |
 |------|-------|--------|----------|
-| `stores/auth.ts` | 0 | ❌ Not Started | P0 |
+| `utils/dates.ts` | 35 | ✅ Complete | - |
+| `utils/tenant.ts` | 30 | ✅ Complete | - |
+| `utils/formatting.ts` | 32 | ✅ Complete | - |
+
+### Stores (Complete)
+
+| File | Tests | Status | Priority |
+|------|-------|--------|----------|
+| `stores/auth.ts` | 25 | ✅ Complete | - |
 
 ---
 
@@ -110,39 +118,44 @@
 
 ## Test File Inventory
 
-### Current (6 files, 3,187 lines)
+### Current (20 files, 9,000+ lines)
 ```
 src/tests/
 ├── components/
-│   └── LanguageSelector.test.ts     (71 lines)
+│   ├── LanguageSelector.test.ts     (71 lines)
+│   ├── TenantSelector.test.ts       (283 lines)
+│   ├── ErrorAlert.test.ts           (179 lines)
+│   ├── DateRangeFilter.test.ts      (490 lines)
+│   ├── LineItemsEditor.test.ts      (420 lines)
+│   ├── ContactFormModal.test.ts     (410 lines)
+│   ├── PeriodSelector.test.ts       (380 lines)
+│   ├── FormModal.test.ts            (270 lines)
+│   ├── ExportButton.test.ts         (290 lines) ✅ NEW
+│   └── ActivityFeed.test.ts         (340 lines) ✅ NEW
 ├── i18n/
 │   ├── messages.test.ts             (249 lines)
 │   └── translation-completeness.test.ts (152 lines)
 ├── lib/
 │   ├── api.test.ts                  (1,957 lines)
+│   ├── api-retry.test.ts            (200 lines)
 │   └── plugins.test.ts              (446 lines)
 ├── recurring/
 │   └── email-config.test.ts         (312 lines)
+├── stores/
+│   └── auth.test.ts                 (207 lines)
+├── utils/
+│   ├── dates.test.ts                (260 lines)
+│   ├── formatting.test.ts           (266 lines)
+│   └── tenant.test.ts               (269 lines)
 └── setup.ts
 ```
 
-### Planned (11 new files)
+### Remaining (2 files - P3 Low Priority)
 ```
 src/tests/
-├── stores/
-│   └── auth.test.ts                 [NEW - P0]
-├── utils/
-│   ├── dates.test.ts                [NEW - P0]
-│   └── tenant.test.ts               [NEW - P0]
 ├── components/
-│   ├── TenantSelector.test.ts       [NEW - P0]
-│   ├── ErrorAlert.test.ts           [NEW - P0]
-│   ├── DateRangeFilter.test.ts      [NEW - P1]
-│   ├── PeriodSelector.test.ts       [NEW - P1]
-│   ├── ContactFormModal.test.ts     [NEW - P1]
-│   ├── ExportButton.test.ts         [NEW - P2]
-│   ├── OnboardingWizard.test.ts     [NEW - P2]
-│   └── ActivityFeed.test.ts         [NEW - P2]
+│   ├── OnboardingWizard.test.ts     [TODO - P3]
+│   └── StatusBadge.test.ts          [TODO - P3]
 ```
 
 ---
@@ -167,6 +180,9 @@ bun run test:e2e:headed     # With browser visible
 
 | Date | Change | Tests Added |
 |------|--------|-------------|
+| 2026-01-23 | Added ExportButton, ActivityFeed tests | 107 |
+| 2026-01-23 | Added FormModal, PeriodSelector tests | 102 |
+| 2026-01-23 | Added LineItemsEditor, DateRangeFilter, ContactFormModal tests | 135 |
 | 2026-01-23 | Updated E2E inventory - all 32 spec files documented | 0 |
 | 2026-01-23 | Migrated test commands from npm to bun | 0 |
 | 2026-01-10 | Initial tracking document created | 0 |

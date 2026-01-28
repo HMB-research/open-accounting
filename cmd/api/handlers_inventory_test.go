@@ -28,7 +28,7 @@ var (
 // contextWithPlainClaims sets claims using the plain string key that some handlers expect
 // (Note: some handlers use r.Context().Value("claims") instead of auth.GetClaims())
 func contextWithPlainClaims(ctx context.Context, claims *auth.Claims) context.Context {
-	return context.WithValue(ctx, "claims", claims)
+	return context.WithValue(ctx, auth.ClaimsContextKey, claims)
 }
 
 // mockInventoryRepository implements inventory.Repository for testing

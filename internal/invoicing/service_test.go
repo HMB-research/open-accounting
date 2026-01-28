@@ -431,21 +431,21 @@ func TestService_List(t *testing.T) {
 	service := NewServiceWithRepository(repo, nil)
 
 	// Create some invoices
-	service.Create(ctx, "tenant-1", "public", &CreateInvoiceRequest{
+	_, _ = service.Create(ctx, "tenant-1", "public", &CreateInvoiceRequest{
 		InvoiceType: InvoiceTypeSales,
 		ContactID:   "contact-1",
 		IssueDate:   time.Now(),
 		DueDate:     time.Now().AddDate(0, 0, 14),
 		Lines:       []CreateInvoiceLineRequest{{Description: "A", Quantity: decimal.NewFromInt(1), UnitPrice: decimal.NewFromFloat(100), VATRate: decimal.NewFromInt(22)}},
 	})
-	service.Create(ctx, "tenant-1", "public", &CreateInvoiceRequest{
+	_, _ = service.Create(ctx, "tenant-1", "public", &CreateInvoiceRequest{
 		InvoiceType: InvoiceTypePurchase,
 		ContactID:   "contact-2",
 		IssueDate:   time.Now(),
 		DueDate:     time.Now().AddDate(0, 0, 30),
 		Lines:       []CreateInvoiceLineRequest{{Description: "B", Quantity: decimal.NewFromInt(1), UnitPrice: decimal.NewFromFloat(200), VATRate: decimal.NewFromInt(22)}},
 	})
-	service.Create(ctx, "tenant-2", "public", &CreateInvoiceRequest{
+	_, _ = service.Create(ctx, "tenant-2", "public", &CreateInvoiceRequest{
 		InvoiceType: InvoiceTypeSales,
 		ContactID:   "contact-3",
 		IssueDate:   time.Now(),
@@ -548,7 +548,7 @@ func TestService_Send_NotDraft(t *testing.T) {
 		DueDate:     time.Now().AddDate(0, 0, 14),
 		Lines:       []CreateInvoiceLineRequest{{Description: "Test", Quantity: decimal.NewFromInt(1), UnitPrice: decimal.NewFromFloat(100), VATRate: decimal.NewFromInt(22)}},
 	})
-	service.Send(ctx, "tenant-1", "public", created.ID)
+	_ = service.Send(ctx, "tenant-1", "public", created.ID)
 
 	// Try to send again
 	err := service.Send(ctx, "tenant-1", "public", created.ID)
@@ -581,7 +581,7 @@ func TestService_RecordPayment(t *testing.T) {
 		DueDate:     time.Now().AddDate(0, 0, 14),
 		Lines:       []CreateInvoiceLineRequest{{Description: "Test", Quantity: decimal.NewFromInt(1), UnitPrice: decimal.NewFromFloat(100), VATRate: decimal.NewFromInt(22)}},
 	})
-	service.Send(ctx, "tenant-1", "public", created.ID)
+	_ = service.Send(ctx, "tenant-1", "public", created.ID)
 
 	// Record partial payment
 	err := service.RecordPayment(ctx, "tenant-1", "public", created.ID, decimal.NewFromFloat(50.00))
@@ -610,7 +610,7 @@ func TestService_RecordPayment_FullPayment(t *testing.T) {
 		DueDate:     time.Now().AddDate(0, 0, 14),
 		Lines:       []CreateInvoiceLineRequest{{Description: "Test", Quantity: decimal.NewFromInt(1), UnitPrice: decimal.NewFromFloat(100), VATRate: decimal.NewFromInt(22)}},
 	})
-	service.Send(ctx, "tenant-1", "public", created.ID)
+	_ = service.Send(ctx, "tenant-1", "public", created.ID)
 
 	// Pay full amount (122.00)
 	err := service.RecordPayment(ctx, "tenant-1", "public", created.ID, decimal.NewFromFloat(122.00))
@@ -638,7 +638,7 @@ func TestService_RecordPayment_Voided(t *testing.T) {
 	})
 
 	// Void the invoice
-	service.Void(ctx, "tenant-1", "public", created.ID)
+	_ = service.Void(ctx, "tenant-1", "public", created.ID)
 
 	// Try to record payment on voided invoice
 	err := service.RecordPayment(ctx, "tenant-1", "public", created.ID, decimal.NewFromFloat(50.00))
@@ -694,7 +694,7 @@ func TestService_Void_AlreadyVoided(t *testing.T) {
 		DueDate:     time.Now().AddDate(0, 0, 14),
 		Lines:       []CreateInvoiceLineRequest{{Description: "Test", Quantity: decimal.NewFromInt(1), UnitPrice: decimal.NewFromFloat(100), VATRate: decimal.NewFromInt(22)}},
 	})
-	service.Void(ctx, "tenant-1", "public", created.ID)
+	_ = service.Void(ctx, "tenant-1", "public", created.ID)
 
 	// Try to void again
 	err := service.Void(ctx, "tenant-1", "public", created.ID)
@@ -715,8 +715,8 @@ func TestService_Void_WithPayments(t *testing.T) {
 		DueDate:     time.Now().AddDate(0, 0, 14),
 		Lines:       []CreateInvoiceLineRequest{{Description: "Test", Quantity: decimal.NewFromInt(1), UnitPrice: decimal.NewFromFloat(100), VATRate: decimal.NewFromInt(22)}},
 	})
-	service.Send(ctx, "tenant-1", "public", created.ID)
-	service.RecordPayment(ctx, "tenant-1", "public", created.ID, decimal.NewFromFloat(50.00))
+	_ = service.Send(ctx, "tenant-1", "public", created.ID)
+	_ = service.RecordPayment(ctx, "tenant-1", "public", created.ID, decimal.NewFromFloat(50.00))
 
 	// Try to void invoice with payments
 	err := service.Void(ctx, "tenant-1", "public", created.ID)
@@ -908,7 +908,7 @@ func TestService_RecordPayment_OverpaymentCapped(t *testing.T) {
 		ContactID:   "contact-1",
 		Lines:       []CreateInvoiceLineRequest{{Description: "Test", Quantity: decimal.NewFromInt(1), UnitPrice: decimal.NewFromFloat(100), VATRate: decimal.NewFromInt(22)}},
 	})
-	service.Send(ctx, "tenant-1", "public", created.ID)
+	_ = service.Send(ctx, "tenant-1", "public", created.ID)
 
 	// Pay more than total - should be capped to total
 	err := service.RecordPayment(ctx, "tenant-1", "public", created.ID, decimal.NewFromFloat(200.00))
@@ -935,7 +935,7 @@ func TestService_RecordPayment_ZeroAmount(t *testing.T) {
 		ContactID:   "contact-1",
 		Lines:       []CreateInvoiceLineRequest{{Description: "Test", Quantity: decimal.NewFromInt(1), UnitPrice: decimal.NewFromFloat(100), VATRate: decimal.NewFromInt(22)}},
 	})
-	service.Send(ctx, "tenant-1", "public", created.ID)
+	_ = service.Send(ctx, "tenant-1", "public", created.ID)
 
 	// Record zero payment - status should remain unchanged
 	err := service.RecordPayment(ctx, "tenant-1", "public", created.ID, decimal.Zero)

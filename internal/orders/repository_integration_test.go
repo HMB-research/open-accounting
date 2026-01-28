@@ -20,7 +20,9 @@ func timePtr(t time.Time) *time.Time {
 	return &t
 }
 
-func createTestContact(t *testing.T, pool interface{ Exec(ctx context.Context, sql string, arguments ...interface{}) (interface{}, error) }, schemaName, tenantID string) string {
+func createTestContact(t *testing.T, pool interface {
+	Exec(ctx context.Context, sql string, arguments ...interface{}) (interface{}, error)
+}, schemaName, tenantID string) string {
 	t.Helper()
 	_ = context.Background() // placeholder for future use
 	contactID := uuid.New().String()

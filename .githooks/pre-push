@@ -1,0 +1,26 @@
+#!/bin/bash
+# Pre-push hook: catch lint issues before they hit CI
+# Install: git config core.hooksPath .githooks
+set -e
+cd "$(git rev-parse --show-toplevel)"
+
+echo "🔍 Pre-push lint check..."
+
+# Quick gofmt check (fast)
+UNFORMATTED=$(gofmt -l . 2>/dev/null | grep -v vendor || true)
+if [[ -n "$UNFORMATTED" ]]; then
+  echo "❌ Unformatted Go files — run 'gofmt -w .' first:"
+  echo "$UNFORMATTED"
+  exit 1
+fi
+
+# Full lint (slower but catches everything CI catches)
+if ! golangci-lint run --timeout=5m 2>/dev/null; then
+  echo ""
+  echo "❌ Lint errors detected. Fix before pushing."
+  echo "   Run: golangci-lint run --timeout=5m"
+  echo "   Auto-fix formatting: ./scripts/fix-lint.sh"
+  exit 1
+fi
+
+echo "✅ Lint clean, pushing..."

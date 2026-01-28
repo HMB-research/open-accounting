@@ -85,17 +85,17 @@ func TestRepository_ListProducts(t *testing.T) {
 	// Create multiple products
 	for i := 0; i < 3; i++ {
 		product := &Product{
-			ID:           uuid.New().String(),
-			TenantID:     tenant.ID,
-			Code:         uuid.New().String()[:8],
-			Name:         "Product " + uuid.New().String()[:8],
-			ProductType:  ProductTypeGoods,
-			Unit:         "pcs",
-			SalesPrice:   decimal.NewFromFloat(float64(10 * (i + 1))),
-			VATRate:      decimal.NewFromFloat(20.00),
-			IsActive:     true,
-			CreatedAt:    time.Now(),
-			UpdatedAt:    time.Now(),
+			ID:          uuid.New().String(),
+			TenantID:    tenant.ID,
+			Code:        uuid.New().String()[:8],
+			Name:        "Product " + uuid.New().String()[:8],
+			ProductType: ProductTypeGoods,
+			Unit:        "pcs",
+			SalesPrice:  decimal.NewFromFloat(float64(10 * (i + 1))),
+			VATRate:     decimal.NewFromFloat(20.00),
+			IsActive:    true,
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
 		}
 		if err := repo.CreateProduct(ctx, tenant.SchemaName, product); err != nil {
 			t.Fatalf("CreateProduct failed: %v", err)

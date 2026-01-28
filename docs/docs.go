@@ -1226,6 +1226,84 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/absence-types": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get all available absence/leave types",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Leave Management"
+                ],
+                "summary": "List absence types",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.AbsenceType"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/absence-types/{typeID}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get a specific absence type by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Leave Management"
+                ],
+                "summary": "Get absence type",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Absence Type ID",
+                        "name": "typeID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.AbsenceType"
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/accounts": {
             "get": {
                 "security": [
@@ -1387,6 +1465,60 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/analytics/activity": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get recent activity from invoices, payments, journal entries, and contacts",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Analytics"
+                ],
+                "summary": "Get recent activity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of items (default 10)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_analytics.ActivityItem"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/analytics/cash-flow": {
             "get": {
                 "security": [
@@ -1522,6 +1654,746 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/asset-categories": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get all asset categories for a tenant",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Fixed Assets"
+                ],
+                "summary": "List asset categories",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.AssetCategory"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a new asset category",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Fixed Assets"
+                ],
+                "summary": "Create asset category",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Category details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.CreateCategoryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.AssetCategory"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/asset-categories/{categoryID}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get asset category details by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Fixed Assets"
+                ],
+                "summary": "Get asset category",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Category ID",
+                        "name": "categoryID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.AssetCategory"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Delete an asset category",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Fixed Assets"
+                ],
+                "summary": "Delete asset category",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Category ID",
+                        "name": "categoryID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/assets": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get all fixed assets for a tenant with optional filtering",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Fixed Assets"
+                ],
+                "summary": "List fixed assets",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by status (DRAFT, ACTIVE, DISPOSED, SOLD)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by category ID",
+                        "name": "category_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search in name or asset number",
+                        "name": "search",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.FixedAsset"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a new fixed asset",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Fixed Assets"
+                ],
+                "summary": "Create fixed asset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Asset details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.CreateAssetRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.FixedAsset"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/assets/{assetID}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get fixed asset details by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Fixed Assets"
+                ],
+                "summary": "Get fixed asset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Asset ID",
+                        "name": "assetID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.FixedAsset"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update a draft or active fixed asset",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Fixed Assets"
+                ],
+                "summary": "Update fixed asset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Asset ID",
+                        "name": "assetID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Asset details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.UpdateAssetRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.FixedAsset"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Delete a draft fixed asset",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Fixed Assets"
+                ],
+                "summary": "Delete fixed asset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Asset ID",
+                        "name": "assetID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/assets/{assetID}/activate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mark a draft fixed asset as active",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Fixed Assets"
+                ],
+                "summary": "Activate fixed asset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Asset ID",
+                        "name": "assetID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "status": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/assets/{assetID}/depreciation": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get all depreciation entries for a fixed asset",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Fixed Assets"
+                ],
+                "summary": "Get depreciation history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Asset ID",
+                        "name": "assetID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.DepreciationEntry"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Record monthly depreciation for an active fixed asset",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Fixed Assets"
+                ],
+                "summary": "Record depreciation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Asset ID",
+                        "name": "assetID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.DepreciationEntry"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/assets/{assetID}/dispose": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mark an active fixed asset as disposed or sold",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Fixed Assets"
+                ],
+                "summary": "Dispose fixed asset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Asset ID",
+                        "name": "assetID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Disposal details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.DisposeAssetRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "status": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "type": "object",
                             "properties": {
@@ -3213,6 +4085,219 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/employees/{employeeID}/leave-balances": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get all leave balances for an employee",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Leave Management"
+                ],
+                "summary": "List leave balances",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Employee ID",
+                        "name": "employeeID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.LeaveBalance"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/employees/{employeeID}/leave-balances/{year}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get leave balances for an employee for a specific year",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Leave Management"
+                ],
+                "summary": "Get leave balances by year",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Employee ID",
+                        "name": "employeeID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Year",
+                        "name": "year",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.LeaveBalance"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/employees/{employeeID}/leave-balances/{year}/initialize": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Initialize leave balances for an employee for a specific year",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Leave Management"
+                ],
+                "summary": "Initialize leave balances",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Employee ID",
+                        "name": "employeeID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Year",
+                        "name": "year",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.LeaveBalance"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/employees/{employeeID}/leave-balances/{year}/{typeID}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update an employee's leave balance",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Leave Management"
+                ],
+                "summary": "Update leave balance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Employee ID",
+                        "name": "employeeID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Year",
+                        "name": "year",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Absence Type ID",
+                        "name": "typeID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Balance update",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.UpdateLeaveBalanceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.LeaveBalance"
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/employees/{employeeID}/salary": {
             "post": {
                 "security": [
@@ -3622,6 +4707,187 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/invoices/overdue": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get a summary of all overdue sales invoices for sending payment reminders",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Reminders"
+                ],
+                "summary": "Get overdue invoices",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.OverdueInvoicesSummary"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/invoices/reminders": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Send a payment reminder email for an overdue invoice",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Reminders"
+                ],
+                "summary": "Send payment reminder",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Reminder request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.SendReminderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.ReminderResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/invoices/reminders/bulk": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Send payment reminder emails for multiple overdue invoices",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Reminders"
+                ],
+                "summary": "Send bulk payment reminders",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Bulk reminder request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.SendBulkRemindersRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.BulkReminderResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/invoices/{invoiceID}": {
             "get": {
                 "security": [
@@ -3784,6 +5050,61 @@ const docTemplate = `{
                                 "error": {
                                     "type": "string"
                                 }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/invoices/{invoiceID}/reminders": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get the history of payment reminders sent for an invoice",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Reminders"
+                ],
+                "summary": "Get invoice reminder history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Invoice ID",
+                        "name": "invoiceID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.PaymentReminder"
                             }
                         }
                     },
@@ -4134,6 +5455,876 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntry"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/leave-records": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get leave records for a tenant or employee",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Leave Management"
+                ],
+                "summary": "List leave records",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by employee ID",
+                        "name": "employee_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by year",
+                        "name": "year",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.LeaveRecord"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a new leave/absence request",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Leave Management"
+                ],
+                "summary": "Create leave record",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Leave request details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.CreateLeaveRecordRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.LeaveRecord"
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/leave-records/{recordID}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get a specific leave record by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Leave Management"
+                ],
+                "summary": "Get leave record",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Leave Record ID",
+                        "name": "recordID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.LeaveRecord"
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/leave-records/{recordID}/approve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Approve a pending leave request",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Leave Management"
+                ],
+                "summary": "Approve leave record",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Leave Record ID",
+                        "name": "recordID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.LeaveRecord"
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/leave-records/{recordID}/cancel": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Cancel a pending or approved leave request",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Leave Management"
+                ],
+                "summary": "Cancel leave record",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Leave Record ID",
+                        "name": "recordID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.LeaveRecord"
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/leave-records/{recordID}/reject": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Reject a pending leave request",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Leave Management"
+                ],
+                "summary": "Reject leave record",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Leave Record ID",
+                        "name": "recordID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Rejection details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.RejectLeaveRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.LeaveRecord"
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/orders": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get all orders for a tenant with optional filtering",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orders"
+                ],
+                "summary": "List orders",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by status (PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELED)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by contact ID",
+                        "name": "contact_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter from date (YYYY-MM-DD)",
+                        "name": "from_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter to date (YYYY-MM-DD)",
+                        "name": "to_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search in order number",
+                        "name": "search",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.Order"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a new sales order",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orders"
+                ],
+                "summary": "Create order",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Order details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.CreateOrderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.Order"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/orders/{orderID}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get order details by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orders"
+                ],
+                "summary": "Get order",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "orderID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.Order"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update a pending or confirmed order",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orders"
+                ],
+                "summary": "Update order",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "orderID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Order details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.UpdateOrderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.Order"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Delete a pending order",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orders"
+                ],
+                "summary": "Delete order",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "orderID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/orders/{orderID}/cancel": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Cancel an order (not allowed if already delivered)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orders"
+                ],
+                "summary": "Cancel order",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "orderID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "status": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/orders/{orderID}/confirm": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mark a pending order as confirmed",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orders"
+                ],
+                "summary": "Confirm order",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "orderID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "status": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/orders/{orderID}/deliver": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mark a shipped order as delivered",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orders"
+                ],
+                "summary": "Deliver order",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "orderID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "status": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/orders/{orderID}/process": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mark a confirmed order as processing",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orders"
+                ],
+                "summary": "Process order",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "orderID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "status": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/orders/{orderID}/ship": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mark an order as shipped",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orders"
+                ],
+                "summary": "Ship order",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "orderID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "status": {
+                                    "type": "string"
+                                }
+                            }
                         }
                     },
                     "400": {
@@ -5261,6 +7452,493 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/quotes": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get all quotes for a tenant with optional filtering",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Quotes"
+                ],
+                "summary": "List quotes",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by status (DRAFT, SENT, ACCEPTED, REJECTED, EXPIRED, CONVERTED)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by contact ID",
+                        "name": "contact_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter from date (YYYY-MM-DD)",
+                        "name": "from_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter to date (YYYY-MM-DD)",
+                        "name": "to_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search in quote number",
+                        "name": "search",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_quotes.Quote"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a new sales quote",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Quotes"
+                ],
+                "summary": "Create quote",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Quote details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_quotes.CreateQuoteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_quotes.Quote"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/quotes/{quoteID}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get quote details by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Quotes"
+                ],
+                "summary": "Get quote",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Quote ID",
+                        "name": "quoteID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_quotes.Quote"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update a draft quote",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Quotes"
+                ],
+                "summary": "Update quote",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Quote ID",
+                        "name": "quoteID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Quote details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_quotes.UpdateQuoteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_quotes.Quote"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Delete a draft quote",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Quotes"
+                ],
+                "summary": "Delete quote",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Quote ID",
+                        "name": "quoteID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/quotes/{quoteID}/accept": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mark a quote as accepted by the customer",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Quotes"
+                ],
+                "summary": "Accept quote",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Quote ID",
+                        "name": "quoteID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "status": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/quotes/{quoteID}/reject": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mark a quote as rejected by the customer",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Quotes"
+                ],
+                "summary": "Reject quote",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Quote ID",
+                        "name": "quoteID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "status": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/quotes/{quoteID}/send": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mark a quote as sent to the customer",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Quotes"
+                ],
+                "summary": "Send quote",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Quote ID",
+                        "name": "quoteID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "status": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/reconciliations/{reconciliationID}": {
             "get": {
                 "security": [
@@ -6096,6 +8774,153 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/reports/balance-confirmations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get a summary of all receivables or payables grouped by contact",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Get balance confirmation summary",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Balance type (RECEIVABLE or PAYABLE)",
+                        "name": "type",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "As of date (YYYY-MM-DD)",
+                        "name": "as_of_date",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.BalanceConfirmationSummary"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/reports/balance-confirmations/{contactID}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get detailed balance confirmation with invoices for a specific contact",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Get balance confirmation for contact",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Contact ID",
+                        "name": "contactID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Balance type (RECEIVABLE or PAYABLE)",
+                        "name": "type",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "As of date (YYYY-MM-DD)",
+                        "name": "as_of_date",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.BalanceConfirmation"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/reports/balance-sheet": {
             "get": {
                 "security": [
@@ -6131,6 +8956,76 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.BalanceSheet"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/reports/cash-flow": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get cash flow statement report for a specific period (Estonian standard)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Get cash flow statement",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "start_date",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "end_date",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.CashFlowStatement"
                         }
                     },
                     "400": {
@@ -7604,6 +10499,33 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_analytics.ActivityItem": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "description": "created, updated, paid, etc.",
+                    "type": "string"
+                },
+                "amount": {
+                    "description": "Optional amount for financial activities",
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "description": "Human-readable description",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "type": {
+                    "description": "INVOICE, PAYMENT, ENTRY, CONTACT",
+                    "type": "string"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_analytics.AgingBucket": {
             "type": "object",
             "properties": {
@@ -7771,11 +10693,387 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "profit": {
+                    "description": "Revenue - Expenses",
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
                 "revenue": {
                     "type": "array",
                     "items": {
                         "type": "number"
                     }
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_assets.AssetCategory": {
+            "type": "object",
+            "properties": {
+                "accumulated_depreciation_account_id": {
+                    "type": "string"
+                },
+                "asset_account_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "default_residual_value_percent": {
+                    "type": "number"
+                },
+                "default_useful_life_months": {
+                    "type": "integer"
+                },
+                "depreciation_expense_account_id": {
+                    "type": "string"
+                },
+                "depreciation_method": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.DepreciationMethod"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_assets.AssetStatus": {
+            "type": "string",
+            "enum": [
+                "DRAFT",
+                "ACTIVE",
+                "DISPOSED",
+                "SOLD"
+            ],
+            "x-enum-varnames": [
+                "AssetStatusDraft",
+                "AssetStatusActive",
+                "AssetStatusDisposed",
+                "AssetStatusSold"
+            ]
+        },
+        "github_com_HMB-research_open-accounting_internal_assets.CreateAssetRequest": {
+            "type": "object",
+            "properties": {
+                "accumulated_depreciation_account_id": {
+                    "type": "string"
+                },
+                "asset_account_id": {
+                    "type": "string"
+                },
+                "category_id": {
+                    "type": "string"
+                },
+                "depreciation_expense_account_id": {
+                    "type": "string"
+                },
+                "depreciation_method": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.DepreciationMethod"
+                },
+                "depreciation_start_date": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "location": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "purchase_cost": {
+                    "type": "number"
+                },
+                "purchase_date": {
+                    "type": "string"
+                },
+                "residual_value": {
+                    "type": "number"
+                },
+                "serial_number": {
+                    "type": "string"
+                },
+                "supplier_id": {
+                    "type": "string"
+                },
+                "useful_life_months": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_assets.CreateCategoryRequest": {
+            "type": "object",
+            "properties": {
+                "accumulated_depreciation_account_id": {
+                    "type": "string"
+                },
+                "asset_account_id": {
+                    "type": "string"
+                },
+                "default_residual_value_percent": {
+                    "type": "number"
+                },
+                "default_useful_life_months": {
+                    "type": "integer"
+                },
+                "depreciation_expense_account_id": {
+                    "type": "string"
+                },
+                "depreciation_method": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.DepreciationMethod"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_assets.DepreciationEntry": {
+            "type": "object",
+            "properties": {
+                "accumulated_total": {
+                    "type": "number"
+                },
+                "asset_id": {
+                    "type": "string"
+                },
+                "book_value_after": {
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "depreciation_amount": {
+                    "type": "number"
+                },
+                "depreciation_date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "journal_entry_id": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_assets.DepreciationMethod": {
+            "type": "string",
+            "enum": [
+                "STRAIGHT_LINE",
+                "DECLINING_BALANCE",
+                "UNITS_OF_PRODUCTION"
+            ],
+            "x-enum-varnames": [
+                "DepreciationStraightLine",
+                "DepreciationDecliningBalance",
+                "DepreciationUnitsOfProd"
+            ]
+        },
+        "github_com_HMB-research_open-accounting_internal_assets.DisposalMethod": {
+            "type": "string",
+            "enum": [
+                "SOLD",
+                "SCRAPPED",
+                "DONATED",
+                "LOST"
+            ],
+            "x-enum-varnames": [
+                "DisposalSold",
+                "DisposalScrapped",
+                "DisposalDonated",
+                "DisposalLost"
+            ]
+        },
+        "github_com_HMB-research_open-accounting_internal_assets.DisposeAssetRequest": {
+            "type": "object",
+            "properties": {
+                "disposal_date": {
+                    "type": "string"
+                },
+                "disposal_method": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.DisposalMethod"
+                },
+                "disposal_notes": {
+                    "type": "string"
+                },
+                "disposal_proceeds": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_assets.FixedAsset": {
+            "type": "object",
+            "properties": {
+                "accumulated_depreciation": {
+                    "description": "Calculated Values",
+                    "type": "number"
+                },
+                "accumulated_depreciation_account_id": {
+                    "type": "string"
+                },
+                "asset_account_id": {
+                    "description": "Account Links",
+                    "type": "string"
+                },
+                "asset_number": {
+                    "type": "string"
+                },
+                "book_value": {
+                    "type": "number"
+                },
+                "category": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.AssetCategory"
+                },
+                "category_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "depreciation_expense_account_id": {
+                    "type": "string"
+                },
+                "depreciation_method": {
+                    "description": "Depreciation Settings",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.DepreciationMethod"
+                        }
+                    ]
+                },
+                "depreciation_start_date": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "disposal_date": {
+                    "description": "Disposal Information",
+                    "type": "string"
+                },
+                "disposal_method": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.DisposalMethod"
+                },
+                "disposal_notes": {
+                    "type": "string"
+                },
+                "disposal_proceeds": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "invoice_id": {
+                    "type": "string"
+                },
+                "last_depreciation_date": {
+                    "type": "string"
+                },
+                "location": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "purchase_cost": {
+                    "type": "number"
+                },
+                "purchase_date": {
+                    "description": "Purchase Information",
+                    "type": "string"
+                },
+                "residual_value": {
+                    "type": "number"
+                },
+                "serial_number": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.AssetStatus"
+                },
+                "supplier_id": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "useful_life_months": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_assets.UpdateAssetRequest": {
+            "type": "object",
+            "properties": {
+                "accumulated_depreciation_account_id": {
+                    "type": "string"
+                },
+                "asset_account_id": {
+                    "type": "string"
+                },
+                "category_id": {
+                    "type": "string"
+                },
+                "depreciation_expense_account_id": {
+                    "type": "string"
+                },
+                "depreciation_method": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.DepreciationMethod"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "location": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "residual_value": {
+                    "type": "number"
+                },
+                "serial_number": {
+                    "type": "string"
+                },
+                "useful_life_months": {
+                    "type": "integer"
                 }
             }
         },
@@ -8552,6 +11850,26 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_invoicing.BulkReminderResult": {
+            "type": "object",
+            "properties": {
+                "failed": {
+                    "type": "integer"
+                },
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.ReminderResult"
+                    }
+                },
+                "successful": {
+                    "type": "integer"
+                },
+                "total_requested": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_invoicing.CreateInvoiceLineRequest": {
             "type": "object",
             "properties": {
@@ -8787,6 +12105,406 @@ const docTemplate = `{
                 "InvoiceTypeCreditNote"
             ]
         },
+        "github_com_HMB-research_open-accounting_internal_invoicing.OverdueInvoice": {
+            "type": "object",
+            "properties": {
+                "amount_paid": {
+                    "type": "number"
+                },
+                "contact_email": {
+                    "type": "string"
+                },
+                "contact_id": {
+                    "type": "string"
+                },
+                "contact_name": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "days_overdue": {
+                    "type": "integer"
+                },
+                "due_date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "invoice_number": {
+                    "type": "string"
+                },
+                "issue_date": {
+                    "type": "string"
+                },
+                "last_reminder_at": {
+                    "type": "string"
+                },
+                "outstanding_amount": {
+                    "type": "number"
+                },
+                "reminder_count": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_invoicing.OverdueInvoicesSummary": {
+            "type": "object",
+            "properties": {
+                "average_days_overdue": {
+                    "type": "integer"
+                },
+                "contact_count": {
+                    "type": "integer"
+                },
+                "generated_at": {
+                    "type": "string"
+                },
+                "invoice_count": {
+                    "type": "integer"
+                },
+                "invoices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.OverdueInvoice"
+                    }
+                },
+                "total_overdue": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_invoicing.PaymentReminder": {
+            "type": "object",
+            "properties": {
+                "contact_email": {
+                    "type": "string"
+                },
+                "contact_id": {
+                    "type": "string"
+                },
+                "contact_name": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "invoice_id": {
+                    "type": "string"
+                },
+                "invoice_number": {
+                    "type": "string"
+                },
+                "reminder_number": {
+                    "description": "1st, 2nd, 3rd reminder etc.",
+                    "type": "integer"
+                },
+                "sent_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.ReminderStatus"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_invoicing.ReminderResult": {
+            "type": "object",
+            "properties": {
+                "invoice_id": {
+                    "type": "string"
+                },
+                "invoice_number": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "reminder_id": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_invoicing.ReminderStatus": {
+            "type": "string",
+            "enum": [
+                "PENDING",
+                "SENT",
+                "FAILED",
+                "CANCELED"
+            ],
+            "x-enum-varnames": [
+                "ReminderStatusPending",
+                "ReminderStatusSent",
+                "ReminderStatusFailed",
+                "ReminderStatusCanceled"
+            ]
+        },
+        "github_com_HMB-research_open-accounting_internal_invoicing.SendBulkRemindersRequest": {
+            "type": "object",
+            "properties": {
+                "invoice_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_invoicing.SendReminderRequest": {
+            "type": "object",
+            "properties": {
+                "invoice_id": {
+                    "type": "string"
+                },
+                "message": {
+                    "description": "Optional custom message",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_orders.CreateOrderLineRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "discount_percent": {
+                    "type": "number"
+                },
+                "product_id": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "number"
+                },
+                "unit": {
+                    "type": "string"
+                },
+                "unit_price": {
+                    "type": "number"
+                },
+                "vat_rate": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_orders.CreateOrderRequest": {
+            "type": "object",
+            "properties": {
+                "contact_id": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "exchange_rate": {
+                    "type": "number"
+                },
+                "expected_delivery": {
+                    "type": "string"
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.CreateOrderLineRequest"
+                    }
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "order_date": {
+                    "type": "string"
+                },
+                "quote_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_orders.Order": {
+            "type": "object",
+            "properties": {
+                "contact": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_contacts.Contact"
+                },
+                "contact_id": {
+                    "type": "string"
+                },
+                "converted_to_invoice_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "exchange_rate": {
+                    "type": "number"
+                },
+                "expected_delivery": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderLine"
+                    }
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "order_date": {
+                    "type": "string"
+                },
+                "order_number": {
+                    "type": "string"
+                },
+                "quote_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderStatus"
+                },
+                "subtotal": {
+                    "type": "number"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "total": {
+                    "type": "number"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "vat_amount": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_orders.OrderLine": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "discount_percent": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "line_number": {
+                    "type": "integer"
+                },
+                "line_subtotal": {
+                    "type": "number"
+                },
+                "line_total": {
+                    "type": "number"
+                },
+                "line_vat": {
+                    "type": "number"
+                },
+                "order_id": {
+                    "type": "string"
+                },
+                "product_id": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "number"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "unit": {
+                    "type": "string"
+                },
+                "unit_price": {
+                    "type": "number"
+                },
+                "vat_rate": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_orders.OrderStatus": {
+            "type": "string",
+            "enum": [
+                "PENDING",
+                "CONFIRMED",
+                "PROCESSING",
+                "SHIPPED",
+                "DELIVERED",
+                "CANCELED"
+            ],
+            "x-enum-varnames": [
+                "OrderStatusPending",
+                "OrderStatusConfirmed",
+                "OrderStatusProcessing",
+                "OrderStatusShipped",
+                "OrderStatusDelivered",
+                "OrderStatusCanceled"
+            ]
+        },
+        "github_com_HMB-research_open-accounting_internal_orders.UpdateOrderRequest": {
+            "type": "object",
+            "properties": {
+                "contact_id": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "exchange_rate": {
+                    "type": "number"
+                },
+                "expected_delivery": {
+                    "type": "string"
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.CreateOrderLineRequest"
+                    }
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "order_date": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_payments.AllocationRequest": {
             "type": "object",
             "properties": {
@@ -8935,6 +12653,75 @@ const docTemplate = `{
                 "PaymentTypeMade"
             ]
         },
+        "github_com_HMB-research_open-accounting_internal_payroll.AbsenceType": {
+            "type": "object",
+            "properties": {
+                "affects_salary": {
+                    "type": "boolean"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "default_days_per_year": {
+                    "description": "Accrual settings",
+                    "type": "number"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "document_type": {
+                    "description": "TK66, medical certificate, etc.",
+                    "type": "string"
+                },
+                "emta_code": {
+                    "description": "EMTA (Tax Board) classification",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "is_paid": {
+                    "description": "Configuration",
+                    "type": "boolean"
+                },
+                "is_system": {
+                    "description": "System types cannot be deleted",
+                    "type": "boolean"
+                },
+                "max_carryover_days": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "name_et": {
+                    "description": "Estonian name",
+                    "type": "string"
+                },
+                "requires_document": {
+                    "type": "boolean"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "tsd_code": {
+                    "description": "Estonian regulatory codes",
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_payroll.CreateEmployeeRequest": {
             "type": "object",
             "properties": {
@@ -8982,6 +12769,38 @@ const docTemplate = `{
                 },
                 "start_date": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_payroll.CreateLeaveRecordRequest": {
+            "type": "object",
+            "properties": {
+                "absence_type_id": {
+                    "type": "string"
+                },
+                "document_date": {
+                    "type": "string"
+                },
+                "document_number": {
+                    "type": "string"
+                },
+                "employee_id": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "total_days": {
+                    "type": "number"
+                },
+                "working_days": {
+                    "type": "number"
                 }
             }
         },
@@ -9088,6 +12907,174 @@ const docTemplate = `{
                 "EmploymentFullTime",
                 "EmploymentPartTime",
                 "EmploymentContract"
+            ]
+        },
+        "github_com_HMB-research_open-accounting_internal_payroll.LeaveBalance": {
+            "type": "object",
+            "properties": {
+                "absence_type": {
+                    "description": "Loaded relations",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.AbsenceType"
+                        }
+                    ]
+                },
+                "absence_type_id": {
+                    "type": "string"
+                },
+                "carryover_days": {
+                    "description": "Carried from previous year",
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "employee_id": {
+                    "type": "string"
+                },
+                "entitled_days": {
+                    "description": "Days tracking",
+                    "type": "number"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "pending_days": {
+                    "description": "Requested but not approved",
+                    "type": "number"
+                },
+                "remaining_days": {
+                    "description": "Calculated: entitled + carryover - used - pending",
+                    "type": "number"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "used_days": {
+                    "description": "Already taken",
+                    "type": "number"
+                },
+                "year": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_payroll.LeaveRecord": {
+            "type": "object",
+            "properties": {
+                "absence_type": {
+                    "description": "Loaded relations",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.AbsenceType"
+                        }
+                    ]
+                },
+                "absence_type_id": {
+                    "type": "string"
+                },
+                "approved_at": {
+                    "type": "string"
+                },
+                "approved_by": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "document_date": {
+                    "type": "string"
+                },
+                "document_number": {
+                    "description": "Documentation",
+                    "type": "string"
+                },
+                "document_url": {
+                    "type": "string"
+                },
+                "employee": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.Employee"
+                },
+                "employee_id": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "payroll_run_id": {
+                    "description": "Integration with payroll",
+                    "type": "string"
+                },
+                "rejected_at": {
+                    "type": "string"
+                },
+                "rejected_by": {
+                    "type": "string"
+                },
+                "rejection_reason": {
+                    "type": "string"
+                },
+                "requested_at": {
+                    "description": "Approval workflow",
+                    "type": "string"
+                },
+                "requested_by": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "description": "Period",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "Status workflow",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.LeaveStatus"
+                        }
+                    ]
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "total_days": {
+                    "description": "Duration",
+                    "type": "number"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "working_days": {
+                    "description": "Excluding weekends/holidays",
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_payroll.LeaveStatus": {
+            "type": "string",
+            "enum": [
+                "PENDING",
+                "APPROVED",
+                "REJECTED",
+                "CANCELED"
+            ],
+            "x-enum-varnames": [
+                "LeavePending",
+                "LeaveApproved",
+                "LeaveRejected",
+                "LeaveCanceled"
             ]
         },
         "github_com_HMB-research_open-accounting_internal_payroll.PayrollRun": {
@@ -9234,6 +13221,17 @@ const docTemplate = `{
                 },
                 "unemployment_insurance_employer": {
                     "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_payroll.RejectLeaveRequest": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                },
+                "rejected_by": {
+                    "type": "string"
                 }
             }
         },
@@ -9461,6 +13459,20 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "position": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_payroll.UpdateLeaveBalanceRequest": {
+            "type": "object",
+            "properties": {
+                "carryover_days": {
+                    "type": "number"
+                },
+                "entitled_days": {
+                    "type": "number"
+                },
+                "notes": {
                     "type": "string"
                 }
             }
@@ -9765,6 +13777,224 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_quotes.CreateQuoteLineRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "discount_percent": {
+                    "type": "number"
+                },
+                "product_id": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "number"
+                },
+                "unit": {
+                    "type": "string"
+                },
+                "unit_price": {
+                    "type": "number"
+                },
+                "vat_rate": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_quotes.CreateQuoteRequest": {
+            "type": "object",
+            "properties": {
+                "contact_id": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "exchange_rate": {
+                    "type": "number"
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_quotes.CreateQuoteLineRequest"
+                    }
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "quote_date": {
+                    "type": "string"
+                },
+                "valid_until": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_quotes.Quote": {
+            "type": "object",
+            "properties": {
+                "contact": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_contacts.Contact"
+                },
+                "contact_id": {
+                    "type": "string"
+                },
+                "converted_to_invoice_id": {
+                    "type": "string"
+                },
+                "converted_to_order_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "exchange_rate": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_quotes.QuoteLine"
+                    }
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "quote_date": {
+                    "type": "string"
+                },
+                "quote_number": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_quotes.QuoteStatus"
+                },
+                "subtotal": {
+                    "type": "number"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "total": {
+                    "type": "number"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "valid_until": {
+                    "type": "string"
+                },
+                "vat_amount": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_quotes.QuoteLine": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "discount_percent": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "line_number": {
+                    "type": "integer"
+                },
+                "line_subtotal": {
+                    "type": "number"
+                },
+                "line_total": {
+                    "type": "number"
+                },
+                "line_vat": {
+                    "type": "number"
+                },
+                "product_id": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "number"
+                },
+                "quote_id": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "unit": {
+                    "type": "string"
+                },
+                "unit_price": {
+                    "type": "number"
+                },
+                "vat_rate": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_quotes.QuoteStatus": {
+            "type": "string",
+            "enum": [
+                "DRAFT",
+                "SENT",
+                "ACCEPTED",
+                "REJECTED",
+                "EXPIRED",
+                "CONVERTED"
+            ],
+            "x-enum-varnames": [
+                "QuoteStatusDraft",
+                "QuoteStatusSent",
+                "QuoteStatusAccepted",
+                "QuoteStatusRejected",
+                "QuoteStatusExpired",
+                "QuoteStatusConverted"
+            ]
+        },
+        "github_com_HMB-research_open-accounting_internal_quotes.UpdateQuoteRequest": {
+            "type": "object",
+            "properties": {
+                "contact_id": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "exchange_rate": {
+                    "type": "number"
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_quotes.CreateQuoteLineRequest"
+                    }
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "quote_date": {
+                    "type": "string"
+                },
+                "valid_until": {
+                    "type": "string"
                 }
             }
         },
@@ -10102,6 +14332,226 @@ const docTemplate = `{
                 "send_email_on_generation": {
                     "description": "Email configuration",
                     "type": "boolean"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_reports.BalanceConfirmation": {
+            "type": "object",
+            "properties": {
+                "as_of_date": {
+                    "type": "string"
+                },
+                "contact_code": {
+                    "type": "string"
+                },
+                "contact_email": {
+                    "type": "string"
+                },
+                "contact_id": {
+                    "type": "string"
+                },
+                "contact_name": {
+                    "type": "string"
+                },
+                "generated_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "invoices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.BalanceInvoice"
+                    }
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "total_balance": {
+                    "type": "number"
+                },
+                "type": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.BalanceConfirmationType"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_reports.BalanceConfirmationSummary": {
+            "type": "object",
+            "properties": {
+                "as_of_date": {
+                    "type": "string"
+                },
+                "contact_count": {
+                    "type": "integer"
+                },
+                "contacts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.ContactBalance"
+                    }
+                },
+                "generated_at": {
+                    "type": "string"
+                },
+                "invoice_count": {
+                    "type": "integer"
+                },
+                "total_balance": {
+                    "type": "number"
+                },
+                "type": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.BalanceConfirmationType"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_reports.BalanceConfirmationType": {
+            "type": "string",
+            "enum": [
+                "RECEIVABLE",
+                "PAYABLE"
+            ],
+            "x-enum-comments": {
+                "BalanceTypePayable": "Supplier balance",
+                "BalanceTypeReceivable": "Customer balance"
+            },
+            "x-enum-descriptions": [
+                "Customer balance",
+                "Supplier balance"
+            ],
+            "x-enum-varnames": [
+                "BalanceTypeReceivable",
+                "BalanceTypePayable"
+            ]
+        },
+        "github_com_HMB-research_open-accounting_internal_reports.BalanceInvoice": {
+            "type": "object",
+            "properties": {
+                "amount_paid": {
+                    "type": "number"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "days_overdue": {
+                    "type": "integer"
+                },
+                "due_date": {
+                    "type": "string"
+                },
+                "invoice_date": {
+                    "type": "string"
+                },
+                "invoice_id": {
+                    "type": "string"
+                },
+                "invoice_number": {
+                    "type": "string"
+                },
+                "outstanding_amount": {
+                    "type": "number"
+                },
+                "total_amount": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_reports.CashFlowItem": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "description_et": {
+                    "type": "string"
+                },
+                "is_subtotal": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_reports.CashFlowStatement": {
+            "type": "object",
+            "properties": {
+                "closing_cash": {
+                    "type": "number"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "financing_activities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.CashFlowItem"
+                    }
+                },
+                "generated_at": {
+                    "type": "string"
+                },
+                "investing_activities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.CashFlowItem"
+                    }
+                },
+                "net_cash_change": {
+                    "type": "number"
+                },
+                "opening_cash": {
+                    "type": "number"
+                },
+                "operating_activities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.CashFlowItem"
+                    }
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "total_financing": {
+                    "type": "number"
+                },
+                "total_investing": {
+                    "type": "number"
+                },
+                "total_operating": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_reports.ContactBalance": {
+            "type": "object",
+            "properties": {
+                "balance": {
+                    "type": "number"
+                },
+                "contact_code": {
+                    "type": "string"
+                },
+                "contact_email": {
+                    "type": "string"
+                },
+                "contact_id": {
+                    "type": "string"
+                },
+                "contact_name": {
+                    "type": "string"
+                },
+                "invoice_count": {
+                    "type": "integer"
+                },
+                "oldest_invoice": {
+                    "type": "string"
                 }
             }
         },

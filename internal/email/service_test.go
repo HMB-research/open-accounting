@@ -1145,6 +1145,7 @@ func TestNewServiceWithRepository(t *testing.T) {
 
 	if svc == nil {
 		t.Error("NewServiceWithRepository returned nil")
+		return
 	}
 	if svc.repo != repo {
 		t.Error("repo not set correctly")

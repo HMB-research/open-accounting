@@ -306,6 +306,7 @@ func TestNewServiceWithRepository(t *testing.T) {
 
 	if service == nil {
 		t.Error("NewServiceWithRepository should return a non-nil service")
+		return
 	}
 	if service.repo == nil {
 		t.Error("Service should have a repository")

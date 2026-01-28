@@ -75,7 +75,7 @@ func TestHookRegistry_RegisterMultipleHandlers(t *testing.T) {
 	}
 
 	event := Event{Type: EventInvoiceCreated, TenantID: uuid.New(), Time: time.Now()}
-	registry.Emit(context.Background(), event)
+	_ = registry.Emit(context.Background(), event)
 
 	if len(callOrder) != 3 {
 		t.Errorf("Expected 3 handlers called, got %d", len(callOrder))
@@ -264,7 +264,7 @@ func TestHookRegistry_ConcurrentAccess(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			event := Event{Type: EventInvoiceCreated, TenantID: uuid.New(), Time: time.Now()}
-			registry.Emit(context.Background(), event)
+			_ = registry.Emit(context.Background(), event)
 		}()
 	}
 

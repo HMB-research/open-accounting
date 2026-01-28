@@ -86,14 +86,14 @@ func (s *Service) cloneRepository(ctx context.Context, repoURL string) (string, 
 	manifestPath := filepath.Join(targetDir, "plugin.yaml")
 	if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
 		// Clean up
-		os.RemoveAll(targetDir)
+		_ = os.RemoveAll(targetDir)
 		return "", fmt.Errorf("repository does not contain a plugin.yaml file")
 	}
 
 	// Verify LICENSE file exists
 	if !hasLicenseFile(targetDir) {
 		// Clean up
-		os.RemoveAll(targetDir)
+		_ = os.RemoveAll(targetDir)
 		return "", fmt.Errorf("repository does not contain a LICENSE file (open source license required)")
 	}
 
