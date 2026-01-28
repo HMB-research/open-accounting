@@ -70,8 +70,8 @@ type InvoiceForReminder struct {
 	AmountPaid        string `json:"amount_paid"`
 	OutstandingAmount string `json:"outstanding_amount"`
 	Currency          string `json:"currency"`
-	DaysUntilDue      int    `json:"days_until_due"`  // Negative if overdue
-	DaysOverdue       int    `json:"days_overdue"`    // 0 if not overdue
+	DaysUntilDue      int    `json:"days_until_due"` // Negative if overdue
+	DaysOverdue       int    `json:"days_overdue"`   // 0 if not overdue
 }
 
 // AutomatedReminderResult represents the result of an automated reminder run

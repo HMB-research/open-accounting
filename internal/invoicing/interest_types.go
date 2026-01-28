@@ -36,10 +36,10 @@ type InterestCalculationResult struct {
 
 // InterestSettings represents the interest configuration for a tenant
 type InterestSettings struct {
-	Rate        float64 `json:"rate"`          // Daily interest rate (e.g., 0.0005 = 0.05%)
-	AnnualRate  float64 `json:"annual_rate"`   // Annualized rate for display (rate * 365)
-	Description string  `json:"description"`   // Human-readable description
-	IsEnabled   bool    `json:"is_enabled"`    // Whether interest calculation is enabled
+	Rate        float64 `json:"rate"`        // Daily interest rate (e.g., 0.0005 = 0.05%)
+	AnnualRate  float64 `json:"annual_rate"` // Annualized rate for display (rate * 365)
+	Description string  `json:"description"` // Human-readable description
+	IsEnabled   bool    `json:"is_enabled"`  // Whether interest calculation is enabled
 }
 
 // UpdateInterestSettingsRequest is the request to update interest settings

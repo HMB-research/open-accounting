@@ -10,12 +10,12 @@ import (
 func TestInterestCalculation(t *testing.T) {
 	// Test the interest calculation formula: interest = outstanding × rate × days
 	tests := []struct {
-		name              string
-		outstanding       string
-		rate              float64
-		daysOverdue       int
-		expectedInterest  string
-		expectedTotal     string
+		name             string
+		outstanding      string
+		rate             float64
+		daysOverdue      int
+		expectedInterest string
+		expectedTotal    string
 	}{
 		{
 			name:             "standard calculation",
@@ -232,33 +232,33 @@ func TestInvoiceInterestType(t *testing.T) {
 
 func TestDaysOverdueCalculation(t *testing.T) {
 	tests := []struct {
-		name        string
-		dueDate     time.Time
-		asOfDate    time.Time
+		name         string
+		dueDate      time.Time
+		asOfDate     time.Time
 		expectedDays int
 	}{
 		{
-			name:        "30 days overdue",
-			dueDate:     time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
-			asOfDate:    time.Date(2025, 1, 31, 0, 0, 0, 0, time.UTC),
+			name:         "30 days overdue",
+			dueDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+			asOfDate:     time.Date(2025, 1, 31, 0, 0, 0, 0, time.UTC),
 			expectedDays: 30,
 		},
 		{
-			name:        "not yet due",
-			dueDate:     time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC),
-			asOfDate:    time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC),
+			name:         "not yet due",
+			dueDate:      time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC),
+			asOfDate:     time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC),
 			expectedDays: 0,
 		},
 		{
-			name:        "due today",
-			dueDate:     time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC),
-			asOfDate:    time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC),
+			name:         "due today",
+			dueDate:      time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC),
+			asOfDate:     time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC),
 			expectedDays: 0,
 		},
 		{
-			name:        "1 day overdue",
-			dueDate:     time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC),
-			asOfDate:    time.Date(2025, 1, 16, 0, 0, 0, 0, time.UTC),
+			name:         "1 day overdue",
+			dueDate:      time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC),
+			asOfDate:     time.Date(2025, 1, 16, 0, 0, 0, 0, time.UTC),
 			expectedDays: 1,
 		},
 	}

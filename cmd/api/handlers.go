@@ -39,27 +39,27 @@ import (
 
 // Handlers contains all HTTP handlers
 type Handlers struct {
-	pool              *pgxpool.Pool
-	tokenService      *auth.TokenService
-	tenantService     *tenant.Service
-	accountingService *accounting.Service
-	contactsService   *contacts.Service
-	invoicingService  *invoicing.Service
-	paymentsService   *payments.Service
-	pdfService        *pdf.Service
-	analyticsService  *analytics.Service
-	recurringService  *recurring.Service
-	emailService      *email.Service
-	bankingService    *banking.Service
-	taxService        *tax.Service
-	payrollService    *payroll.Service
-	absenceService    *payroll.AbsenceService
-	pluginService     *plugin.Service
-	quotesService     *quotes.Service
-	ordersService     *orders.Service
-	assetsService     *assets.Service
-	inventoryService  *inventory.Service
-	reportsService    *reports.Service
+	pool                     *pgxpool.Pool
+	tokenService             *auth.TokenService
+	tenantService            *tenant.Service
+	accountingService        *accounting.Service
+	contactsService          *contacts.Service
+	invoicingService         *invoicing.Service
+	paymentsService          *payments.Service
+	pdfService               *pdf.Service
+	analyticsService         *analytics.Service
+	recurringService         *recurring.Service
+	emailService             *email.Service
+	bankingService           *banking.Service
+	taxService               *tax.Service
+	payrollService           *payroll.Service
+	absenceService           *payroll.AbsenceService
+	pluginService            *plugin.Service
+	quotesService            *quotes.Service
+	ordersService            *orders.Service
+	assetsService            *assets.Service
+	inventoryService         *inventory.Service
+	reportsService           *reports.Service
 	reminderService          *invoicing.ReminderService
 	automatedReminderService *invoicing.AutomatedReminderService
 	costCenterService        *accounting.CostCenterService
