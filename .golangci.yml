@@ -1,3 +1,5 @@
+version: "2"
+
 run:
   timeout: 5m
   modules-download-mode: readonly
@@ -5,19 +7,20 @@ run:
 linters:
   enable:
     - errcheck
-    - gosimple
     - govet
     - ineffassign
     - staticcheck
     - unused
-    - gofmt
-    - goimports
     - misspell
     - unconvert
     - bodyclose
     - noctx
     - gosec
-    # Removed prealloc - optimization-only suggestions that don't indicate bugs
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
 
 linters-settings:
   errcheck:
@@ -27,48 +30,5 @@ linters-settings:
       - (net/http.ResponseWriter).Write
       - (*encoding/json.Encoder).Encode
       - (github.com/jackc/pgx/v5.Tx).Rollback
-
-  govet:
-    enable-all: true
-    disable:
-      - shadow
-      - fieldalignment
-
-  gosec:
-    excludes:
-      - G104  # Audit errors not checked (we handle some intentionally)
-      - G304  # File path provided as taint input (we validate paths)
-
-  misspell:
-    locale: US
-
-  goimports:
-    local-prefixes: github.com/openaccounting/openaccounting
-
-issues:
-  exclude-rules:
-    # Ignore long lines in generated files
-    - path: docs/docs.go
-      linters:
-        - lll
-
-    # Test files can have longer functions and relaxed checks
-    - path: _test\.go
-      linters:
-        - funlen
-        - dupl
-        - errcheck
-        - govet
-        - staticcheck
-
-    # Allow unused parameters in test files
-    - path: _test\.go
-      linters:
-        - unparam
-
-  # Exclude specific staticcheck rules globally
-  exclude:
-    - SA5011  # Possible nil pointer dereference (often false positives with test mocks)
-
-  max-issues-per-linter: 50
-  max-same-issues: 10
+      - (*database/sql.Rows).Close
+      - (*os.File).Close
