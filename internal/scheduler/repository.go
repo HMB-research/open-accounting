@@ -32,7 +32,7 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 // ListActiveTenants returns all active tenants for scheduled job processing
 func (r *PostgresRepository) ListActiveTenants(ctx context.Context) ([]TenantInfo, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, schema_name, COALESCE(company_name, '') FROM tenants WHERE is_active = true
+		SELECT id, schema_name, COALESCE(name, '') FROM tenants WHERE is_active = true
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("list active tenants: %w", err)

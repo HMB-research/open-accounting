@@ -60,8 +60,9 @@ type Handlers struct {
 	assetsService     *assets.Service
 	inventoryService  *inventory.Service
 	reportsService    *reports.Service
-	reminderService   *invoicing.ReminderService
-	costCenterService *accounting.CostCenterService
+	reminderService          *invoicing.ReminderService
+	automatedReminderService *invoicing.AutomatedReminderService
+	costCenterService        *accounting.CostCenterService
 }
 
 // getSchemaName returns the schema name for a tenant

@@ -107,6 +107,7 @@ func main() {
 	reportsService := reports.NewService(pool)
 	inventoryService := inventory.NewService(pool)
 	reminderService := invoicing.NewReminderService(pool, emailService)
+	automatedReminderService := invoicing.NewAutomatedReminderService(pool, emailService)
 	costCenterService := accounting.NewCostCenterService(pool)
 
 	// Load enabled plugins on startup
@@ -122,7 +123,7 @@ func main() {
 	if os.Getenv("SCHEDULER_ENABLED") == "false" {
 		schedulerConfig.Enabled = false
 	}
-	invoiceScheduler := scheduler.NewScheduler(pool, recurringService, schedulerConfig)
+	invoiceScheduler := scheduler.NewScheduler(pool, recurringService, automatedReminderService, schedulerConfig)
 	if err := invoiceScheduler.Start(); err != nil {
 		log.Warn().Err(err).Msg("Failed to start scheduler")
 	}
@@ -150,8 +151,9 @@ func main() {
 		assetsService:     assetsService,
 		inventoryService:  inventoryService,
 		reportsService:    reportsService,
-		reminderService:   reminderService,
-		costCenterService: costCenterService,
+		reminderService:          reminderService,
+		automatedReminderService: automatedReminderService,
+		costCenterService:        costCenterService,
 	}
 
 	// Setup router
@@ -477,6 +479,14 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/email-templates", h.ListEmailTemplates)
 				r.Put("/email-templates/{templateType}", h.UpdateEmailTemplate)
 				r.Get("/email-log", h.GetEmailLog)
+
+				// Reminder Rules (Automated Payment Reminders)
+				r.Get("/reminder-rules", h.ListReminderRules)
+				r.Post("/reminder-rules", h.CreateReminderRule)
+				r.Post("/reminder-rules/trigger", h.TriggerReminders)
+				r.Get("/reminder-rules/{ruleID}", h.GetReminderRule)
+				r.Put("/reminder-rules/{ruleID}", h.UpdateReminderRule)
+				r.Delete("/reminder-rules/{ruleID}", h.DeleteReminderRule)
 
 				// Email Actions (linked to invoices/payments)
 				r.Post("/invoices/{invoiceID}/email", h.EmailInvoice)
