@@ -66,3 +66,7 @@ test-results/
 *.db
 *.sqlite
 frontend/.auth/
+
+# Claude Code artifacts
+CLAUDE.md
+.claude/
