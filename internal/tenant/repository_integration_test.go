@@ -5,34 +5,136 @@ package tenant
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/testutil"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// Advisory lock key for test cleanup serialization (matches testutil)
+const testCleanupAdvisoryLockKey = 12345678
+
+// cleanupMutex serializes test tenant cleanup to prevent deadlocks
+var cleanupMutex sync.Mutex
+
+// createTestOwner creates a test user and registers cleanup.
+// This ensures proper isolation between parallel tests.
+func createTestOwner(t *testing.T, pool *pgxpool.Pool, emailPrefix string) string {
+	t.Helper()
+	ctx := context.Background()
+
+	ownerID := uuid.New().String()
+	ownerEmail := emailPrefix + "-" + uuid.New().String()[:8] + "@example.com"
+
+	_, err := pool.Exec(ctx, `
+		INSERT INTO public.users (id, email, password_hash, name, is_active, created_at, updated_at)
+		VALUES ($1, $2, 'hash', 'Test Owner', true, NOW(), NOW())
+	`, ownerID, ownerEmail)
+	if err != nil {
+		t.Fatalf("failed to create test owner: %v", err)
+	}
+
+	t.Cleanup(func() {
+		cleanupTestUser(t, pool, ownerID)
+	})
+
+	return ownerID
+}
+
+// cleanupTestUser removes a test user and their tenant associations
+func cleanupTestUser(t *testing.T, pool *pgxpool.Pool, userID string) {
+	t.Helper()
+
+	cleanupMutex.Lock()
+	defer cleanupMutex.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Logf("warning: failed to acquire connection for user cleanup: %v", err)
+		return
+	}
+	defer conn.Release()
+
+	// Acquire advisory lock
+	_, err = conn.Exec(ctx, "SELECT pg_advisory_lock($1)", testCleanupAdvisoryLockKey)
+	if err != nil {
+		t.Logf("warning: failed to acquire advisory lock: %v", err)
+	}
+	defer func() {
+		_, _ = conn.Exec(ctx, "SELECT pg_advisory_unlock($1)", testCleanupAdvisoryLockKey)
+	}()
+
+	// Remove from tenant_users first (foreign key)
+	_, _ = conn.Exec(ctx, "DELETE FROM public.tenant_users WHERE user_id = $1", userID)
+
+	// Delete user
+	_, err = conn.Exec(ctx, "DELETE FROM public.users WHERE id = $1", userID)
+	if err != nil {
+		t.Logf("warning: failed to delete test user %s: %v", userID, err)
+	}
+}
+
+// cleanupTestTenantAndSchema removes a test tenant and its schema
+func cleanupTestTenantAndSchema(t *testing.T, pool *pgxpool.Pool, tenantID, schemaName string) {
+	t.Helper()
+
+	cleanupMutex.Lock()
+	defer cleanupMutex.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Logf("warning: failed to acquire connection for tenant cleanup: %v", err)
+		return
+	}
+	defer conn.Release()
+
+	// Acquire advisory lock
+	_, err = conn.Exec(ctx, "SELECT pg_advisory_lock($1)", testCleanupAdvisoryLockKey)
+	if err != nil {
+		t.Logf("warning: failed to acquire advisory lock: %v", err)
+	}
+	defer func() {
+		_, _ = conn.Exec(ctx, "SELECT pg_advisory_unlock($1)", testCleanupAdvisoryLockKey)
+	}()
+
+	// Drop schema first
+	if schemaName != "" {
+		_, _ = conn.Exec(ctx, "DROP SCHEMA IF EXISTS "+schemaName+" CASCADE")
+	}
+
+	// Delete tenant_users
+	_, _ = conn.Exec(ctx, "DELETE FROM public.tenant_users WHERE tenant_id = $1", tenantID)
+
+	// Delete invitations
+	_, _ = conn.Exec(ctx, "DELETE FROM public.user_invitations WHERE tenant_id = $1", tenantID)
+
+	// Delete tenant
+	_, err = conn.Exec(ctx, "DELETE FROM public.tenants WHERE id = $1", tenantID)
+	if err != nil {
+		t.Logf("warning: failed to delete test tenant %s: %v", tenantID, err)
+	}
+}
 
 func TestPostgresRepository_CreateAndGetTenant(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	// Create a user first (owner)
-	ownerID := uuid.New().String()
-	ownerEmail := "owner-" + uuid.New().String()[:8] + "@example.com"
-	_, err := pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
-		VALUES ($1, $2, 'hash', 'Owner', NOW(), NOW())
-	`, ownerID, ownerEmail)
-	if err != nil {
-		t.Fatalf("failed to create owner: %v", err)
-	}
+	ownerID := createTestOwner(t, pool, "owner")
 
 	settings := DefaultSettings()
 	settingsJSON, _ := json.Marshal(settings)
 
 	tenantID := uuid.New().String()
-	// Schema name must start with letter to avoid SQL identifier issues
 	schemaName := "test_create_" + tenantID[:8]
 	tenant := &Tenant{
 		ID:         tenantID,
@@ -44,12 +146,15 @@ func TestPostgresRepository_CreateAndGetTenant(t *testing.T) {
 		UpdatedAt:  time.Now(),
 	}
 
-	err = repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
+	t.Cleanup(func() {
+		cleanupTestTenantAndSchema(t, pool, tenantID, schemaName)
+	})
+
+	err := repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
 	if err != nil {
 		t.Fatalf("CreateTenant failed: %v", err)
 	}
 
-	// Get the tenant
 	retrieved, err := repo.GetTenant(ctx, tenant.ID)
 	if err != nil {
 		t.Fatalf("GetTenant failed: %v", err)
@@ -68,16 +173,7 @@ func TestPostgresRepository_GetTenantBySlug(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	// Create a user first
-	ownerID := uuid.New().String()
-	ownerEmail := "slug-owner-" + uuid.New().String()[:8] + "@example.com"
-	_, err := pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
-		VALUES ($1, $2, 'hash', 'Owner', NOW(), NOW())
-	`, ownerID, ownerEmail)
-	if err != nil {
-		t.Fatalf("failed to create owner: %v", err)
-	}
+	ownerID := createTestOwner(t, pool, "slug-owner")
 
 	settings := DefaultSettings()
 	settingsJSON, _ := json.Marshal(settings)
@@ -95,12 +191,15 @@ func TestPostgresRepository_GetTenantBySlug(t *testing.T) {
 		UpdatedAt:  time.Now(),
 	}
 
-	err = repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
+	t.Cleanup(func() {
+		cleanupTestTenantAndSchema(t, pool, tenantID, schemaName)
+	})
+
+	err := repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
 	if err != nil {
 		t.Fatalf("CreateTenant failed: %v", err)
 	}
 
-	// Get by slug
 	retrieved, err := repo.GetTenantBySlug(ctx, slug)
 	if err != nil {
 		t.Fatalf("GetTenantBySlug failed: %v", err)
@@ -116,16 +215,7 @@ func TestPostgresRepository_UpdateTenant(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	// Create a user first
-	ownerID := uuid.New().String()
-	ownerEmail := "update-owner-" + uuid.New().String()[:8] + "@example.com"
-	_, err := pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
-		VALUES ($1, $2, 'hash', 'Owner', NOW(), NOW())
-	`, ownerID, ownerEmail)
-	if err != nil {
-		t.Fatalf("failed to create owner: %v", err)
-	}
+	ownerID := createTestOwner(t, pool, "update-owner")
 
 	settings := DefaultSettings()
 	settingsJSON, _ := json.Marshal(settings)
@@ -142,12 +232,15 @@ func TestPostgresRepository_UpdateTenant(t *testing.T) {
 		UpdatedAt:  time.Now(),
 	}
 
-	err = repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
+	t.Cleanup(func() {
+		cleanupTestTenantAndSchema(t, pool, tenantID, schemaName)
+	})
+
+	err := repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
 	if err != nil {
 		t.Fatalf("CreateTenant failed: %v", err)
 	}
 
-	// Update the tenant
 	newName := "Updated Name"
 	newSettings := DefaultSettings()
 	newSettings.Email = "updated@company.com"
@@ -158,7 +251,6 @@ func TestPostgresRepository_UpdateTenant(t *testing.T) {
 		t.Fatalf("UpdateTenant failed: %v", err)
 	}
 
-	// Verify update
 	retrieved, err := repo.GetTenant(ctx, tenant.ID)
 	if err != nil {
 		t.Fatalf("GetTenant failed: %v", err)
@@ -174,27 +266,21 @@ func TestPostgresRepository_UserTenantOperations(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	// Create owner user
-	ownerID := uuid.New().String()
-	ownerEmail := "ops-owner-" + uuid.New().String()[:8] + "@example.com"
-	_, err := pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
-		VALUES ($1, $2, 'hash', 'Owner', NOW(), NOW())
-	`, ownerID, ownerEmail)
-	if err != nil {
-		t.Fatalf("failed to create owner: %v", err)
-	}
+	ownerID := createTestOwner(t, pool, "ops-owner")
 
 	// Create second user
 	userID := uuid.New().String()
 	userEmail := "ops-user-" + uuid.New().String()[:8] + "@example.com"
-	_, err = pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
-		VALUES ($1, $2, 'hash', 'User', NOW(), NOW())
+	_, err := pool.Exec(ctx, `
+		INSERT INTO public.users (id, email, password_hash, name, is_active, created_at, updated_at)
+		VALUES ($1, $2, 'hash', 'User', true, NOW(), NOW())
 	`, userID, userEmail)
 	if err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
+	t.Cleanup(func() {
+		cleanupTestUser(t, pool, userID)
+	})
 
 	settings := DefaultSettings()
 	settingsJSON, _ := json.Marshal(settings)
@@ -211,18 +297,20 @@ func TestPostgresRepository_UserTenantOperations(t *testing.T) {
 		UpdatedAt:  time.Now(),
 	}
 
+	t.Cleanup(func() {
+		cleanupTestTenantAndSchema(t, pool, tenantID, schemaName)
+	})
+
 	err = repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
 	if err != nil {
 		t.Fatalf("CreateTenant failed: %v", err)
 	}
 
-	// Add user to tenant
 	err = repo.AddUserToTenant(ctx, tenant.ID, userID, RoleAccountant)
 	if err != nil {
 		t.Fatalf("AddUserToTenant failed: %v", err)
 	}
 
-	// Get user role
 	role, err := repo.GetUserRole(ctx, tenant.ID, userID)
 	if err != nil {
 		t.Fatalf("GetUserRole failed: %v", err)
@@ -231,13 +319,11 @@ func TestPostgresRepository_UserTenantOperations(t *testing.T) {
 		t.Errorf("expected role %s, got %s", RoleAccountant, role)
 	}
 
-	// Update role
 	err = repo.UpdateTenantUserRole(ctx, tenant.ID, userID, RoleAdmin)
 	if err != nil {
 		t.Fatalf("UpdateTenantUserRole failed: %v", err)
 	}
 
-	// Verify role update
 	role, err = repo.GetUserRole(ctx, tenant.ID, userID)
 	if err != nil {
 		t.Fatalf("GetUserRole failed: %v", err)
@@ -246,16 +332,14 @@ func TestPostgresRepository_UserTenantOperations(t *testing.T) {
 		t.Errorf("expected role %s, got %s", RoleAdmin, role)
 	}
 
-	// List tenant users
 	users, err := repo.ListTenantUsers(ctx, tenant.ID)
 	if err != nil {
 		t.Fatalf("ListTenantUsers failed: %v", err)
 	}
-	if len(users) < 2 { // owner + user
+	if len(users) < 2 {
 		t.Errorf("expected at least 2 users, got %d", len(users))
 	}
 
-	// List user tenants
 	tenants, err := repo.ListUserTenants(ctx, userID)
 	if err != nil {
 		t.Fatalf("ListUserTenants failed: %v", err)
@@ -264,13 +348,11 @@ func TestPostgresRepository_UserTenantOperations(t *testing.T) {
 		t.Errorf("expected at least 1 tenant, got %d", len(tenants))
 	}
 
-	// Remove user from tenant
 	err = repo.RemoveTenantUser(ctx, tenant.ID, userID)
 	if err != nil {
 		t.Fatalf("RemoveTenantUser failed: %v", err)
 	}
 
-	// Verify removal
 	_, err = repo.GetUserRole(ctx, tenant.ID, userID)
 	if err == nil {
 		t.Error("expected error after removing user")
@@ -291,12 +373,15 @@ func TestPostgresRepository_CreateAndGetUser(t *testing.T) {
 		UpdatedAt:    time.Now(),
 	}
 
+	t.Cleanup(func() {
+		cleanupTestUser(t, pool, user.ID)
+	})
+
 	err := repo.CreateUser(ctx, user)
 	if err != nil {
 		t.Fatalf("CreateUser failed: %v", err)
 	}
 
-	// Get by email
 	byEmail, err := repo.GetUserByEmail(ctx, user.Email)
 	if err != nil {
 		t.Fatalf("GetUserByEmail failed: %v", err)
@@ -305,7 +390,6 @@ func TestPostgresRepository_CreateAndGetUser(t *testing.T) {
 		t.Errorf("expected ID %s, got %s", user.ID, byEmail.ID)
 	}
 
-	// Get by ID
 	byID, err := repo.GetUserByID(ctx, user.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID failed: %v", err)
@@ -320,16 +404,7 @@ func TestPostgresRepository_CompleteOnboarding(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	// Create owner
-	ownerID := uuid.New().String()
-	ownerEmail := "onboard-owner-" + uuid.New().String()[:8] + "@example.com"
-	_, err := pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
-		VALUES ($1, $2, 'hash', 'Owner', NOW(), NOW())
-	`, ownerID, ownerEmail)
-	if err != nil {
-		t.Fatalf("failed to create owner: %v", err)
-	}
+	ownerID := createTestOwner(t, pool, "onboard-owner")
 
 	settings := DefaultSettings()
 	settingsJSON, _ := json.Marshal(settings)
@@ -346,18 +421,20 @@ func TestPostgresRepository_CompleteOnboarding(t *testing.T) {
 		UpdatedAt:  time.Now(),
 	}
 
-	err = repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
+	t.Cleanup(func() {
+		cleanupTestTenantAndSchema(t, pool, tenantID, schemaName)
+	})
+
+	err := repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
 	if err != nil {
 		t.Fatalf("CreateTenant failed: %v", err)
 	}
 
-	// Complete onboarding
 	err = repo.CompleteOnboarding(ctx, tenant.ID)
 	if err != nil {
 		t.Fatalf("CompleteOnboarding failed: %v", err)
 	}
 
-	// Verify onboarding completed
 	retrieved, err := repo.GetTenant(ctx, tenant.ID)
 	if err != nil {
 		t.Fatalf("GetTenant failed: %v", err)
@@ -373,16 +450,7 @@ func TestPostgresRepository_InvitationFlow(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	// Create owner
-	ownerID := uuid.New().String()
-	ownerEmail := "invite-owner-" + uuid.New().String()[:8] + "@example.com"
-	_, err := pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
-		VALUES ($1, $2, 'hash', 'Owner', NOW(), NOW())
-	`, ownerID, ownerEmail)
-	if err != nil {
-		t.Fatalf("failed to create owner: %v", err)
-	}
+	ownerID := createTestOwner(t, pool, "invite-owner")
 
 	settings := DefaultSettings()
 	settingsJSON, _ := json.Marshal(settings)
@@ -399,12 +467,15 @@ func TestPostgresRepository_InvitationFlow(t *testing.T) {
 		UpdatedAt:  time.Now(),
 	}
 
-	err = repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
+	t.Cleanup(func() {
+		cleanupTestTenantAndSchema(t, pool, tenantID, schemaName)
+	})
+
+	err := repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
 	if err != nil {
 		t.Fatalf("CreateTenant failed: %v", err)
 	}
 
-	// Create invitation
 	token := uuid.New().String()
 	invitation := &UserInvitation{
 		ID:        uuid.New().String(),
@@ -422,7 +493,6 @@ func TestPostgresRepository_InvitationFlow(t *testing.T) {
 		t.Fatalf("CreateInvitation failed: %v", err)
 	}
 
-	// Get invitation by token
 	retrieved, err := repo.GetInvitationByToken(ctx, token)
 	if err != nil {
 		t.Fatalf("GetInvitationByToken failed: %v", err)
@@ -431,7 +501,6 @@ func TestPostgresRepository_InvitationFlow(t *testing.T) {
 		t.Errorf("expected email %s, got %s", invitation.Email, retrieved.Email)
 	}
 
-	// List invitations
 	invitations, err := repo.ListInvitations(ctx, tenant.ID)
 	if err != nil {
 		t.Fatalf("ListInvitations failed: %v", err)
@@ -440,7 +509,6 @@ func TestPostgresRepository_InvitationFlow(t *testing.T) {
 		t.Errorf("expected at least 1 invitation, got %d", len(invitations))
 	}
 
-	// Revoke invitation
 	err = repo.RevokeInvitation(ctx, tenant.ID, invitation.ID)
 	if err != nil {
 		t.Fatalf("RevokeInvitation failed: %v", err)
@@ -452,16 +520,18 @@ func TestPostgresRepository_CheckUserIsMember(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	// Create owner
 	ownerEmail := "member-check-" + uuid.New().String()[:8] + "@example.com"
 	ownerID := uuid.New().String()
 	_, err := pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
-		VALUES ($1, $2, 'hash', 'Owner', NOW(), NOW())
+		INSERT INTO public.users (id, email, password_hash, name, is_active, created_at, updated_at)
+		VALUES ($1, $2, 'hash', 'Owner', true, NOW(), NOW())
 	`, ownerID, ownerEmail)
 	if err != nil {
 		t.Fatalf("failed to create owner: %v", err)
 	}
+	t.Cleanup(func() {
+		cleanupTestUser(t, pool, ownerID)
+	})
 
 	settings := DefaultSettings()
 	settingsJSON, _ := json.Marshal(settings)
@@ -478,12 +548,15 @@ func TestPostgresRepository_CheckUserIsMember(t *testing.T) {
 		UpdatedAt:  time.Now(),
 	}
 
+	t.Cleanup(func() {
+		cleanupTestTenantAndSchema(t, pool, tenantID, schemaName)
+	})
+
 	err = repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
 	if err != nil {
 		t.Fatalf("CreateTenant failed: %v", err)
 	}
 
-	// Check if owner is member
 	isMember, err := repo.CheckUserIsMember(ctx, tenant.ID, ownerEmail)
 	if err != nil {
 		t.Fatalf("CheckUserIsMember failed: %v", err)
@@ -492,7 +565,6 @@ func TestPostgresRepository_CheckUserIsMember(t *testing.T) {
 		t.Error("expected owner to be a member")
 	}
 
-	// Check non-member
 	isMember, err = repo.CheckUserIsMember(ctx, tenant.ID, "nonexistent@example.com")
 	if err != nil {
 		t.Fatalf("CheckUserIsMember failed: %v", err)
@@ -507,16 +579,7 @@ func TestPostgresRepository_DeleteTenant(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	// Create owner
-	ownerID := uuid.New().String()
-	ownerEmail := "delete-owner-" + uuid.New().String()[:8] + "@example.com"
-	_, err := pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
-		VALUES ($1, $2, 'hash', 'Owner', NOW(), NOW())
-	`, ownerID, ownerEmail)
-	if err != nil {
-		t.Fatalf("failed to create owner: %v", err)
-	}
+	ownerID := createTestOwner(t, pool, "delete-owner")
 
 	settings := DefaultSettings()
 	settingsJSON, _ := json.Marshal(settings)
@@ -533,32 +596,29 @@ func TestPostgresRepository_DeleteTenant(t *testing.T) {
 		UpdatedAt:  time.Now(),
 	}
 
-	err = repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
+	err := repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
 	if err != nil {
 		t.Fatalf("CreateTenant failed: %v", err)
 	}
 
 	// Acquire advisory lock to prevent deadlocks with parallel test cleanup
-	// Use same lock key as testutil cleanup (12345678)
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
 		t.Fatalf("failed to acquire connection: %v", err)
 	}
 	defer conn.Release()
 
-	_, err = conn.Exec(ctx, "SELECT pg_advisory_lock($1)", 12345678)
+	_, err = conn.Exec(ctx, "SELECT pg_advisory_lock($1)", testCleanupAdvisoryLockKey)
 	if err != nil {
 		t.Fatalf("failed to acquire advisory lock: %v", err)
 	}
-	defer func() { _, _ = conn.Exec(ctx, "SELECT pg_advisory_unlock($1)", 12345678) }()
+	defer func() { _, _ = conn.Exec(ctx, "SELECT pg_advisory_unlock($1)", testCleanupAdvisoryLockKey) }()
 
-	// Delete the tenant (pass both tenantID and schemaName)
 	err = repo.DeleteTenant(ctx, tenant.ID, tenant.SchemaName)
 	if err != nil {
 		t.Fatalf("DeleteTenant failed: %v", err)
 	}
 
-	// Verify tenant is deleted
 	_, err = repo.GetTenant(ctx, tenant.ID)
 	if err == nil {
 		t.Error("expected error when getting deleted tenant")
@@ -570,27 +630,21 @@ func TestPostgresRepository_RemoveUserFromTenant(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	// Create owner
-	ownerID := uuid.New().String()
-	ownerEmail := "remove-owner-" + uuid.New().String()[:8] + "@example.com"
-	_, err := pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
-		VALUES ($1, $2, 'hash', 'Owner', NOW(), NOW())
-	`, ownerID, ownerEmail)
-	if err != nil {
-		t.Fatalf("failed to create owner: %v", err)
-	}
+	ownerID := createTestOwner(t, pool, "remove-owner")
 
 	// Create user to remove
 	userID := uuid.New().String()
 	userEmail := "remove-user-" + uuid.New().String()[:8] + "@example.com"
-	_, err = pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
-		VALUES ($1, $2, 'hash', 'User', NOW(), NOW())
+	_, err := pool.Exec(ctx, `
+		INSERT INTO public.users (id, email, password_hash, name, is_active, created_at, updated_at)
+		VALUES ($1, $2, 'hash', 'User', true, NOW(), NOW())
 	`, userID, userEmail)
 	if err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
+	t.Cleanup(func() {
+		cleanupTestUser(t, pool, userID)
+	})
 
 	settings := DefaultSettings()
 	settingsJSON, _ := json.Marshal(settings)
@@ -607,24 +661,25 @@ func TestPostgresRepository_RemoveUserFromTenant(t *testing.T) {
 		UpdatedAt:  time.Now(),
 	}
 
+	t.Cleanup(func() {
+		cleanupTestTenantAndSchema(t, pool, tenantID, schemaName)
+	})
+
 	err = repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
 	if err != nil {
 		t.Fatalf("CreateTenant failed: %v", err)
 	}
 
-	// Add user to tenant
 	err = repo.AddUserToTenant(ctx, tenant.ID, userID, RoleAccountant)
 	if err != nil {
 		t.Fatalf("AddUserToTenant failed: %v", err)
 	}
 
-	// Remove user from tenant
 	err = repo.RemoveUserFromTenant(ctx, tenant.ID, userID)
 	if err != nil {
 		t.Fatalf("RemoveUserFromTenant failed: %v", err)
 	}
 
-	// Verify user is removed
 	_, err = repo.GetUserRole(ctx, tenant.ID, userID)
 	if err == nil {
 		t.Error("expected error when getting role for removed user")
@@ -636,16 +691,7 @@ func TestPostgresRepository_AcceptInvitation(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	// Create owner
-	ownerID := uuid.New().String()
-	ownerEmail := "accept-owner-" + uuid.New().String()[:8] + "@example.com"
-	_, err := pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
-		VALUES ($1, $2, 'hash', 'Owner', NOW(), NOW())
-	`, ownerID, ownerEmail)
-	if err != nil {
-		t.Fatalf("failed to create owner: %v", err)
-	}
+	ownerID := createTestOwner(t, pool, "accept-owner")
 
 	settings := DefaultSettings()
 	settingsJSON, _ := json.Marshal(settings)
@@ -662,12 +708,15 @@ func TestPostgresRepository_AcceptInvitation(t *testing.T) {
 		UpdatedAt:  time.Now(),
 	}
 
-	err = repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
+	t.Cleanup(func() {
+		cleanupTestTenantAndSchema(t, pool, tenantID, schemaName)
+	})
+
+	err := repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
 	if err != nil {
 		t.Fatalf("CreateTenant failed: %v", err)
 	}
 
-	// Create invitation
 	token := uuid.New().String()
 	invitedEmail := "invited-accept-" + uuid.New().String()[:8] + "@example.com"
 	invitation := &UserInvitation{
@@ -686,14 +735,16 @@ func TestPostgresRepository_AcceptInvitation(t *testing.T) {
 		t.Fatalf("CreateInvitation failed: %v", err)
 	}
 
-	// Accept the invitation with createUser=true (new user flow)
 	newUserID := uuid.New().String()
+	t.Cleanup(func() {
+		cleanupTestUser(t, pool, newUserID)
+	})
+
 	err = repo.AcceptInvitation(ctx, invitation, newUserID, "hashedpassword123", "New User", true)
 	if err != nil {
 		t.Fatalf("AcceptInvitation failed: %v", err)
 	}
 
-	// Verify user is now a member
 	role, err := repo.GetUserRole(ctx, tenant.ID, newUserID)
 	if err != nil {
 		t.Fatalf("GetUserRole failed: %v", err)
@@ -702,7 +753,6 @@ func TestPostgresRepository_AcceptInvitation(t *testing.T) {
 		t.Errorf("expected role %s, got %s", RoleAccountant, role)
 	}
 
-	// Verify invitation is marked as accepted
 	retrieved, err := repo.GetInvitationByToken(ctx, token)
 	if err != nil {
 		t.Fatalf("GetInvitationByToken failed: %v", err)
@@ -711,7 +761,6 @@ func TestPostgresRepository_AcceptInvitation(t *testing.T) {
 		t.Error("expected AcceptedAt to be set after accepting invitation")
 	}
 
-	// Verify user was created
 	user, err := repo.GetUserByEmail(ctx, invitedEmail)
 	if err != nil {
 		t.Fatalf("GetUserByEmail failed: %v", err)
@@ -726,16 +775,7 @@ func TestPostgresRepository_AcceptInvitation_ExistingUser(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	// Create owner
-	ownerID := uuid.New().String()
-	ownerEmail := "accept-existing-owner-" + uuid.New().String()[:8] + "@example.com"
-	_, err := pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
-		VALUES ($1, $2, 'hash', 'Owner', NOW(), NOW())
-	`, ownerID, ownerEmail)
-	if err != nil {
-		t.Fatalf("failed to create owner: %v", err)
-	}
+	ownerID := createTestOwner(t, pool, "accept-existing-owner")
 
 	settings := DefaultSettings()
 	settingsJSON, _ := json.Marshal(settings)
@@ -752,7 +792,11 @@ func TestPostgresRepository_AcceptInvitation_ExistingUser(t *testing.T) {
 		UpdatedAt:  time.Now(),
 	}
 
-	err = repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
+	t.Cleanup(func() {
+		cleanupTestTenantAndSchema(t, pool, tenantID, schemaName)
+	})
+
+	err := repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
 	if err != nil {
 		t.Fatalf("CreateTenant failed: %v", err)
 	}
@@ -761,14 +805,16 @@ func TestPostgresRepository_AcceptInvitation_ExistingUser(t *testing.T) {
 	existingUserID := uuid.New().String()
 	existingEmail := "existing-user-" + uuid.New().String()[:8] + "@example.com"
 	_, err = pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
-		VALUES ($1, $2, 'hash', 'Existing User', NOW(), NOW())
+		INSERT INTO public.users (id, email, password_hash, name, is_active, created_at, updated_at)
+		VALUES ($1, $2, 'hash', 'Existing User', true, NOW(), NOW())
 	`, existingUserID, existingEmail)
 	if err != nil {
 		t.Fatalf("failed to create existing user: %v", err)
 	}
+	t.Cleanup(func() {
+		cleanupTestUser(t, pool, existingUserID)
+	})
 
-	// Create invitation
 	token := uuid.New().String()
 	invitation := &UserInvitation{
 		ID:        uuid.New().String(),
@@ -786,13 +832,11 @@ func TestPostgresRepository_AcceptInvitation_ExistingUser(t *testing.T) {
 		t.Fatalf("CreateInvitation failed: %v", err)
 	}
 
-	// Accept the invitation with createUser=false (existing user flow)
 	err = repo.AcceptInvitation(ctx, invitation, existingUserID, "", "", false)
 	if err != nil {
 		t.Fatalf("AcceptInvitation failed: %v", err)
 	}
 
-	// Verify user is now a member with correct role
 	role, err := repo.GetUserRole(ctx, tenant.ID, existingUserID)
 	if err != nil {
 		t.Fatalf("GetUserRole failed: %v", err)
@@ -864,7 +908,6 @@ func TestPostgresRepository_CreateUser_DuplicateEmail(t *testing.T) {
 
 	email := "duplicate-" + uuid.New().String()[:8] + "@example.com"
 
-	// Create first user
 	user1 := &User{
 		ID:           uuid.New().String(),
 		Email:        email,
@@ -874,17 +917,15 @@ func TestPostgresRepository_CreateUser_DuplicateEmail(t *testing.T) {
 		UpdatedAt:    time.Now(),
 	}
 
+	t.Cleanup(func() {
+		cleanupTestUser(t, pool, user1.ID)
+	})
+
 	err := repo.CreateUser(ctx, user1)
 	if err != nil {
 		t.Fatalf("CreateUser (first) failed: %v", err)
 	}
 
-	// Clean up the user after test
-	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "DELETE FROM public.users WHERE id = $1", user1.ID)
-	})
-
-	// Try to create second user with same email
 	user2 := &User{
 		ID:           uuid.New().String(),
 		Email:        email,
@@ -915,12 +956,15 @@ func TestPostgresRepository_CreateUser_WithIsActive(t *testing.T) {
 		UpdatedAt:    time.Now(),
 	}
 
+	t.Cleanup(func() {
+		cleanupTestUser(t, pool, user.ID)
+	})
+
 	err := repo.CreateUser(ctx, user)
 	if err != nil {
 		t.Fatalf("CreateUser failed: %v", err)
 	}
 
-	// Verify user is active
 	retrieved, err := repo.GetUserByID(ctx, user.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID failed: %v", err)
@@ -935,7 +979,6 @@ func TestPostgresRepository_RemoveUserFromTenant_NotFound(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	// Try to remove a user that doesn't exist in the tenant
 	err := repo.RemoveUserFromTenant(ctx, uuid.New().String(), uuid.New().String())
 	if err != ErrUserNotInTenant {
 		t.Errorf("expected ErrUserNotInTenant, got: %v", err)
@@ -947,12 +990,10 @@ func TestPostgresRepository_RevokeInvitation_NotFound(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	// Try to revoke a non-existent invitation
 	err := repo.RevokeInvitation(ctx, uuid.New().String(), uuid.New().String())
 	if err == nil {
 		t.Error("expected error for non-existent invitation")
 	}
-	// Error message should indicate invitation not found
 	if err != nil && err.Error() != "invitation not found or already accepted" {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -963,16 +1004,7 @@ func TestPostgresRepository_ListTenantUsers_Empty(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	// Create owner
-	ownerID := uuid.New().String()
-	ownerEmail := "owner-empty-" + uuid.New().String()[:8] + "@example.com"
-	_, err := pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
-		VALUES ($1, $2, 'hash', 'Owner', NOW(), NOW())
-	`, ownerID, ownerEmail)
-	if err != nil {
-		t.Fatalf("failed to create owner: %v", err)
-	}
+	ownerID := createTestOwner(t, pool, "owner-empty")
 
 	settings := DefaultSettings()
 	settingsJSON, _ := json.Marshal(settings)
@@ -989,18 +1021,21 @@ func TestPostgresRepository_ListTenantUsers_Empty(t *testing.T) {
 		UpdatedAt:  time.Now(),
 	}
 
-	err = repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
+	t.Cleanup(func() {
+		cleanupTestTenantAndSchema(t, pool, tenantID, schemaName)
+	})
+
+	err := repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
 	if err != nil {
 		t.Fatalf("CreateTenant failed: %v", err)
 	}
 
 	// Remove the owner from tenant_users to test empty list
-	_, err = pool.Exec(ctx, "DELETE FROM tenant_users WHERE tenant_id = $1", tenantID)
+	_, err = pool.Exec(ctx, "DELETE FROM public.tenant_users WHERE tenant_id = $1", tenantID)
 	if err != nil {
 		t.Fatalf("failed to remove users: %v", err)
 	}
 
-	// List users - should return empty slice
 	users, err := repo.ListTenantUsers(ctx, tenantID)
 	if err != nil {
 		t.Fatalf("ListTenantUsers failed: %v", err)
@@ -1015,7 +1050,6 @@ func TestPostgresRepository_ListInvitations_Empty(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	// List invitations for non-existent tenant - should return empty slice
 	invitations, err := repo.ListInvitations(ctx, uuid.New().String())
 	if err != nil {
 		t.Fatalf("ListInvitations failed: %v", err)
@@ -1030,7 +1064,6 @@ func TestPostgresRepository_GetUserRole_NotInTenant(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	// Get role for user not in tenant
 	_, err := repo.GetUserRole(ctx, uuid.New().String(), uuid.New().String())
 	if err != ErrUserNotInTenant {
 		t.Errorf("expected ErrUserNotInTenant, got: %v", err)
@@ -1042,7 +1075,6 @@ func TestPostgresRepository_CheckUserIsMember_False(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	// Check membership for non-existent relationship
 	isMember, err := repo.CheckUserIsMember(ctx, uuid.New().String(), uuid.New().String())
 	if err != nil {
 		t.Fatalf("CheckUserIsMember failed: %v", err)
@@ -1057,27 +1089,21 @@ func TestPostgresRepository_UpdateTenantUserRole(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	// Create owner
-	ownerID := uuid.New().String()
-	ownerEmail := "role-owner-" + uuid.New().String()[:8] + "@example.com"
-	_, err := pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
-		VALUES ($1, $2, 'hash', 'Owner', NOW(), NOW())
-	`, ownerID, ownerEmail)
-	if err != nil {
-		t.Fatalf("failed to create owner: %v", err)
-	}
+	ownerID := createTestOwner(t, pool, "role-owner")
 
 	// Create user to update role
 	userID := uuid.New().String()
 	userEmail := "role-user-" + uuid.New().String()[:8] + "@example.com"
-	_, err = pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
-		VALUES ($1, $2, 'hash', 'User', NOW(), NOW())
+	_, err := pool.Exec(ctx, `
+		INSERT INTO public.users (id, email, password_hash, name, is_active, created_at, updated_at)
+		VALUES ($1, $2, 'hash', 'User', true, NOW(), NOW())
 	`, userID, userEmail)
 	if err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
+	t.Cleanup(func() {
+		cleanupTestUser(t, pool, userID)
+	})
 
 	settings := DefaultSettings()
 	settingsJSON, _ := json.Marshal(settings)
@@ -1094,24 +1120,25 @@ func TestPostgresRepository_UpdateTenantUserRole(t *testing.T) {
 		UpdatedAt:  time.Now(),
 	}
 
+	t.Cleanup(func() {
+		cleanupTestTenantAndSchema(t, pool, tenantID, schemaName)
+	})
+
 	err = repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
 	if err != nil {
 		t.Fatalf("CreateTenant failed: %v", err)
 	}
 
-	// Add user as accountant
 	err = repo.AddUserToTenant(ctx, tenant.ID, userID, RoleAccountant)
 	if err != nil {
 		t.Fatalf("AddUserToTenant failed: %v", err)
 	}
 
-	// Update role to admin
 	err = repo.UpdateTenantUserRole(ctx, tenant.ID, userID, RoleAdmin)
 	if err != nil {
 		t.Fatalf("UpdateTenantUserRole failed: %v", err)
 	}
 
-	// Verify role was updated
 	role, err := repo.GetUserRole(ctx, tenant.ID, userID)
 	if err != nil {
 		t.Fatalf("GetUserRole failed: %v", err)
@@ -1126,27 +1153,21 @@ func TestPostgresRepository_RemoveTenantUser(t *testing.T) {
 	repo := NewPostgresRepository(pool)
 	ctx := context.Background()
 
-	// Create owner
-	ownerID := uuid.New().String()
-	ownerEmail := "remove2-owner-" + uuid.New().String()[:8] + "@example.com"
-	_, err := pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
-		VALUES ($1, $2, 'hash', 'Owner', NOW(), NOW())
-	`, ownerID, ownerEmail)
-	if err != nil {
-		t.Fatalf("failed to create owner: %v", err)
-	}
+	ownerID := createTestOwner(t, pool, "remove2-owner")
 
 	// Create user to remove
 	userID := uuid.New().String()
 	userEmail := "remove2-user-" + uuid.New().String()[:8] + "@example.com"
-	_, err = pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
-		VALUES ($1, $2, 'hash', 'User', NOW(), NOW())
+	_, err := pool.Exec(ctx, `
+		INSERT INTO public.users (id, email, password_hash, name, is_active, created_at, updated_at)
+		VALUES ($1, $2, 'hash', 'User', true, NOW(), NOW())
 	`, userID, userEmail)
 	if err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
+	t.Cleanup(func() {
+		cleanupTestUser(t, pool, userID)
+	})
 
 	settings := DefaultSettings()
 	settingsJSON, _ := json.Marshal(settings)
@@ -1163,24 +1184,25 @@ func TestPostgresRepository_RemoveTenantUser(t *testing.T) {
 		UpdatedAt:  time.Now(),
 	}
 
+	t.Cleanup(func() {
+		cleanupTestTenantAndSchema(t, pool, tenantID, schemaName)
+	})
+
 	err = repo.CreateTenant(ctx, tenant, settingsJSON, ownerID)
 	if err != nil {
 		t.Fatalf("CreateTenant failed: %v", err)
 	}
 
-	// Add user to tenant
 	err = repo.AddUserToTenant(ctx, tenant.ID, userID, RoleAccountant)
 	if err != nil {
 		t.Fatalf("AddUserToTenant failed: %v", err)
 	}
 
-	// Remove using RemoveTenantUser (different from RemoveUserFromTenant)
 	err = repo.RemoveTenantUser(ctx, tenant.ID, userID)
 	if err != nil {
 		t.Fatalf("RemoveTenantUser failed: %v", err)
 	}
 
-	// Verify user was removed
 	isMember, err := repo.CheckUserIsMember(ctx, tenant.ID, userID)
 	if err != nil {
 		t.Fatalf("CheckUserIsMember failed: %v", err)
