@@ -1,10 +1,6 @@
 -- Migration 022: Add late payment interest calculations
 -- This migration adds support for tracking and calculating interest on overdue invoices
 
--- Create invoice_interest table to track calculated interest per invoice
--- Note: This is created per-tenant schema via the create_tenant_schema function
--- For existing tenants, we add it directly
-
 -- Function to add interest tracking to a tenant schema
 CREATE OR REPLACE FUNCTION add_interest_tables(schema_name TEXT) RETURNS void AS $$
 BEGIN
@@ -47,28 +43,32 @@ BEGIN
     END LOOP;
 END $$;
 
--- Update the create_tenant_schema function to include invoice_interest table
--- This ensures new tenants get the table automatically
-CREATE OR REPLACE FUNCTION create_tenant_schema(schema_name TEXT) RETURNS void AS $$
+-- Update create_tenant_schema to include interest tables for new tenants
+-- Preserves existing function from migration 019 and adds interest tables
+CREATE OR REPLACE FUNCTION create_tenant_schema(schema_name TEXT) RETURNS VOID AS $$
 BEGIN
-    -- Create schema
+    -- Create the schema
     EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
 
-    -- Create all base tables (existing logic preserved)
+    -- Create core accounting tables (from migration 001/011)
     PERFORM create_accounting_tables(schema_name);
-    PERFORM create_business_tables(schema_name);
-    PERFORM create_email_tables(schema_name);
-    PERFORM create_recurring_invoice_tables(schema_name);
-    PERFORM create_banking_tables(schema_name);
-    PERFORM create_payroll_tables(schema_name);
-    PERFORM create_quotes_orders_tables(schema_name);
-    PERFORM create_fixed_assets_tables(schema_name);
-    PERFORM create_inventory_tables(schema_name);
-    PERFORM create_leave_management_tables(schema_name);
-    PERFORM create_cost_center_tables(schema_name);
-    PERFORM create_reminder_rules_tables(schema_name);
 
-    -- Add interest tracking tables
+    -- Create payroll tables (from migration 007)
+    PERFORM add_payroll_tables(schema_name);
+
+    -- Create email tables (from migration 004/019)
+    PERFORM create_email_tables_only(schema_name);
+
+    -- Create KMD tables (from migration 019)
+    PERFORM add_kmd_tables_to_schema(schema_name);
+
+    -- Fix email_log schema (from migration 019)
+    PERFORM fix_email_log_schema(schema_name);
+
+    -- Create reminder rules tables (from migration 021)
+    PERFORM add_reminder_rules_to_schema(schema_name);
+
+    -- Add interest tracking tables (this migration)
     PERFORM add_interest_tables(schema_name);
 END;
 $$ LANGUAGE plpgsql;
