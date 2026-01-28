@@ -4,10 +4,54 @@ package main
 
 import (
 	"context"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/HMB-research/open-accounting/internal/testutil"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// Advisory lock key for test cleanup serialization (matches testutil)
+const demoTestCleanupAdvisoryLockKey = 12345678
+
+// cleanupMutex serializes test cleanup to prevent deadlocks
+var demoCleanupMutex sync.Mutex
+
+// cleanupDemoData removes demo data with proper locking
+func cleanupDemoData(t *testing.T, pool *pgxpool.Pool, demoUserID, demoTenantID, schemaName string) {
+	t.Helper()
+
+	demoCleanupMutex.Lock()
+	defer demoCleanupMutex.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Logf("warning: failed to acquire connection for demo cleanup: %v", err)
+		return
+	}
+	defer conn.Release()
+
+	// Acquire advisory lock
+	_, err = conn.Exec(ctx, "SELECT pg_advisory_lock($1)", demoTestCleanupAdvisoryLockKey)
+	if err != nil {
+		t.Logf("warning: failed to acquire advisory lock: %v", err)
+	}
+	defer func() {
+		_, _ = conn.Exec(ctx, "SELECT pg_advisory_unlock($1)", demoTestCleanupAdvisoryLockKey)
+	}()
+
+	// Drop schema first
+	_, _ = conn.Exec(ctx, "DROP SCHEMA IF EXISTS "+schemaName+" CASCADE")
+
+	// Delete from public tables
+	_, _ = conn.Exec(ctx, "DELETE FROM public.tenant_users WHERE tenant_id = $1", demoTenantID)
+	_, _ = conn.Exec(ctx, "DELETE FROM public.tenants WHERE id = $1", demoTenantID)
+	_, _ = conn.Exec(ctx, "DELETE FROM public.users WHERE id = $1", demoUserID)
+}
 
 func TestDemoSeedSQL_ValidSchema(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
@@ -20,20 +64,17 @@ func TestDemoSeedSQL_ValidSchema(t *testing.T) {
 	demoTenantID := "b0000000-0000-0000-0001-000000000001"
 	schemaName := "tenant_demo1"
 
-	// Drop tenant schema if exists
-	_, err := pool.Exec(ctx, "DROP SCHEMA IF EXISTS "+schemaName+" CASCADE")
-	if err != nil {
-		t.Fatalf("Failed to drop tenant schema: %v", err)
-	}
+	// Register cleanup first (runs even if test fails)
+	t.Cleanup(func() {
+		cleanupDemoData(t, pool, demoUserID, demoTenantID, schemaName)
+	})
 
-	// Delete demo data from public tables
-	_, _ = pool.Exec(ctx, "DELETE FROM tenant_users WHERE tenant_id = $1", demoTenantID)
-	_, _ = pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1", demoTenantID)
-	_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id = $1", demoUserID)
+	// Clean up any existing data first (from previous failed runs)
+	cleanupDemoData(t, pool, demoUserID, demoTenantID, schemaName)
 
 	// Execute the seed SQL for user 1
 	seedSQL := generateDemoSeedForUser(getDemoSeedTemplate(), 1)
-	_, err = pool.Exec(ctx, seedSQL)
+	_, err := pool.Exec(ctx, seedSQL)
 	if err != nil {
 		t.Fatalf("Demo seed SQL failed: %v", err)
 	}
@@ -118,12 +159,6 @@ func TestDemoSeedSQL_ValidSchema(t *testing.T) {
 	if bankAccountCount < 1 {
 		t.Errorf("Expected at least 1 bank account, got %d", bankAccountCount)
 	}
-
-	// Cleanup
-	_, _ = pool.Exec(ctx, "DROP SCHEMA IF EXISTS "+schemaName+" CASCADE")
-	_, _ = pool.Exec(ctx, "DELETE FROM tenant_users WHERE tenant_id = $1", demoTenantID)
-	_, _ = pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1", demoTenantID)
-	_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id = $1", demoUserID)
 
 	t.Log("Demo seed SQL validation passed")
 }
