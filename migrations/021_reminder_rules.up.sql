@@ -5,6 +5,10 @@
 CREATE OR REPLACE FUNCTION add_reminder_rules_to_schema(schema_name TEXT)
 RETURNS void AS $$
 BEGIN
+    -- Ensure email_templates has 'name' column (may be missing if created by create_email_tables_only)
+    EXECUTE format('
+        ALTER TABLE %I.email_templates ADD COLUMN IF NOT EXISTS name VARCHAR(100)
+    ', schema_name);
     -- Reminder rules table - defines when to send reminders
     EXECUTE format('
         CREATE TABLE IF NOT EXISTS %I.reminder_rules (
