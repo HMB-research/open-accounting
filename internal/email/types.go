@@ -237,6 +237,7 @@ type TemplateData struct {
 	DueDate       string
 	IssueDate     string
 	DaysOverdue   int
+	DaysUntilDue  int // For pre-due reminders
 
 	// Payment fields
 	Amount      string
