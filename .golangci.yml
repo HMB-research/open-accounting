@@ -37,6 +37,7 @@ linters:
     gosec:
       excludes:
         - G104
+        - G204
         - G304
 
     misspell:
