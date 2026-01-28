@@ -72,7 +72,7 @@ func (d *Decimal) Scan(value interface{}) error {
 
 // Value implements driver.Valuer interface
 func (d Decimal) Value() (driver.Value, error) {
-	return d.Decimal.String(), nil
+	return d.String(), nil
 }
 
 // GormDataType returns the GORM data type for this field
@@ -82,7 +82,7 @@ func (Decimal) GormDataType() string {
 
 // GormDBDataType returns the database data type based on dialect
 func (Decimal) GormDBDataType(db *gorm.DB, field *schema.Field) string {
-	switch db.Dialector.Name() {
+	switch db.Name() {
 	case "postgres":
 		return "NUMERIC(28,8)"
 	case "mysql":
@@ -152,7 +152,7 @@ func (JSONB) GormDataType() string {
 
 // GormDBDataType returns the database data type based on dialect
 func (JSONB) GormDBDataType(db *gorm.DB, field *schema.Field) string {
-	switch db.Dialector.Name() {
+	switch db.Name() {
 	case "postgres":
 		return "JSONB"
 	case "mysql":
@@ -201,7 +201,7 @@ func (JSONBRaw) GormDataType() string {
 
 // GormDBDataType returns the database data type based on dialect
 func (JSONBRaw) GormDBDataType(db *gorm.DB, field *schema.Field) string {
-	switch db.Dialector.Name() {
+	switch db.Name() {
 	case "postgres":
 		return "JSONB"
 	case "mysql":
