@@ -245,11 +245,14 @@ func (r *PostgresRepository) UpdatePayment(ctx context.Context, schemaName, tena
 
 // GenerateNumber generates a new invoice number
 func (r *PostgresRepository) GenerateNumber(ctx context.Context, schemaName, tenantID string, invoiceType InvoiceType) (string, error) {
-	prefix := "INV"
-	if invoiceType == InvoiceTypePurchase {
+	var prefix string
+	switch invoiceType {
+	case InvoiceTypePurchase:
 		prefix = "BILL"
-	} else if invoiceType == InvoiceTypeCreditNote {
+	case InvoiceTypeCreditNote:
 		prefix = "CN"
+	default:
+		prefix = "INV"
 	}
 
 	var seq int

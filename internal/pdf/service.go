@@ -161,11 +161,14 @@ func (s *Service) addHeader(m core.Maroto, t *tenant.Tenant) {
 
 func (s *Service) addInvoiceTitle(m core.Maroto, invoice *invoicing.Invoice) {
 	// Invoice title
-	title := "INVOICE"
-	if invoice.InvoiceType == invoicing.InvoiceTypeCreditNote {
+	var title string
+	switch invoice.InvoiceType {
+	case invoicing.InvoiceTypeCreditNote:
 		title = "CREDIT NOTE"
-	} else if invoice.InvoiceType == invoicing.InvoiceTypePurchase {
+	case invoicing.InvoiceTypePurchase:
 		title = "PURCHASE INVOICE"
+	default:
+		title = "INVOICE"
 	}
 
 	m.AddRow(12,
