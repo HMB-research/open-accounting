@@ -1402,7 +1402,7 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 	userParam := r.URL.Query().Get("user")
 	if userParam != "" {
 		userNum, err := strconv.Atoi(userParam)
-		if err != nil || userNum < 1 || userNum > 4 {
+		if err != nil || userNum < 1 || userNum > len(allDemoUsers) {
 			log.Warn().Str("user", userParam).Msg("Demo reset rejected: invalid user parameter")
 			respondError(w, http.StatusBadRequest, "Invalid user parameter. Must be 1, 2, 3, or 4")
 			return

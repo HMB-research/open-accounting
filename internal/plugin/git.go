@@ -3,6 +3,8 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -57,7 +59,7 @@ func (s *Service) cloneRepository(ctx context.Context, repoURL string) (string, 
 	}
 
 	// Create plugins directory if it doesn't exist
-	if err := os.MkdirAll(s.pluginDir, 0755); err != nil {
+	if err := os.MkdirAll(s.pluginDir, 0750); err != nil {
 		return "", fmt.Errorf("failed to create plugins directory: %w", err)
 	}
 
@@ -69,6 +71,11 @@ func (s *Service) cloneRepository(ctx context.Context, repoURL string) (string, 
 		if err := os.RemoveAll(targetDir); err != nil {
 			return "", fmt.Errorf("failed to remove existing plugin directory: %w", err)
 		}
+	}
+
+	// Validate the repository URL before passing to git
+	if _, err := parseRepositoryType(repoURL); err != nil {
+		return "", fmt.Errorf("refusing to clone: %w", err)
 	}
 
 	// Clone the repository
@@ -85,15 +92,17 @@ func (s *Service) cloneRepository(ctx context.Context, repoURL string) (string, 
 	// Verify plugin.yaml exists
 	manifestPath := filepath.Join(targetDir, "plugin.yaml")
 	if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
-		// Clean up
-		os.RemoveAll(targetDir)
+		if cleanErr := os.RemoveAll(targetDir); cleanErr != nil {
+			log.Warn().Err(cleanErr).Str("dir", targetDir).Msg("Failed to clean up cloned directory")
+		}
 		return "", fmt.Errorf("repository does not contain a plugin.yaml file")
 	}
 
 	// Verify LICENSE file exists
 	if !hasLicenseFile(targetDir) {
-		// Clean up
-		os.RemoveAll(targetDir)
+		if cleanErr := os.RemoveAll(targetDir); cleanErr != nil {
+			log.Warn().Err(cleanErr).Str("dir", targetDir).Msg("Failed to clean up cloned directory")
+		}
 		return "", fmt.Errorf("repository does not contain a LICENSE file (open source license required)")
 	}
 
@@ -108,7 +117,20 @@ func (s *Service) updateRepository(ctx context.Context, pluginName string) error
 		return fmt.Errorf("plugin not found in filesystem")
 	}
 
-	cmd := exec.CommandContext(ctx, "git", "-C", pluginPath, "pull", "--ff-only")
+	// Validate pluginPath is within the expected plugins directory
+	absPluginPath, err := filepath.Abs(pluginPath)
+	if err != nil {
+		return fmt.Errorf("invalid plugin path: %w", err)
+	}
+	absPluginDir, err := filepath.Abs(s.pluginDir)
+	if err != nil {
+		return fmt.Errorf("invalid plugin directory: %w", err)
+	}
+	if !strings.HasPrefix(absPluginPath, absPluginDir+string(filepath.Separator)) {
+		return fmt.Errorf("plugin path is outside the plugins directory")
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "-C", absPluginPath, "pull", "--ff-only")
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 
 	output, err := cmd.CombinedOutput()
@@ -224,11 +246,26 @@ func (s *Service) FetchRegistryIndex(ctx context.Context, registryURL string) (*
 		return nil, fmt.Errorf("unsupported registry host: %s", u.Host)
 	}
 
-	// Fetch the file using curl (simpler than adding http client)
-	cmd := exec.CommandContext(ctx, "curl", "-sSfL", rawURL)
-	output, err := cmd.Output()
+	// Fetch the registry index over HTTP
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch registry index: %w", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Warn().Err(err).Msg("Failed to close response body")
+		}
+	}()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch registry index: HTTP %d", resp.StatusCode)
+	}
+	output, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read registry index: %w", err)
 	}
 
 	// Parse the index
