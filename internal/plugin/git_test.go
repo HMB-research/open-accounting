@@ -396,7 +396,7 @@ func TestService_RemovePluginFiles(t *testing.T) {
 	// Create a temporary directory structure
 	tmpDir := t.TempDir()
 	pluginDir := tmpDir + "/plugins"
-	err := os.MkdirAll(pluginDir, 0755)
+	err := os.MkdirAll(pluginDir, 0750)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -410,7 +410,7 @@ func TestService_RemovePluginFiles(t *testing.T) {
 			setup: func() string {
 				// Create plugin directory with manifest
 				pluginPath := pluginDir + "/test-owner-test-plugin"
-				err := os.MkdirAll(pluginPath, 0755)
+				err := os.MkdirAll(pluginPath, 0750)
 				require.NoError(t, err)
 				manifestContent := `name: test-plugin
 display_name: Test Plugin

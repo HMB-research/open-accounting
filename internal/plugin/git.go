@@ -74,7 +74,7 @@ func (s *Service) cloneRepository(ctx context.Context, repoURL string) (string, 
 	// Clone the repository
 	log.Info().Str("url", repoURL).Str("target", targetDir).Msg("Cloning plugin repository")
 
-	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", repoURL, targetDir)
+	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", repoURL, targetDir) //nolint:gosec // repoURL is validated above
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 
 	output, err := cmd.CombinedOutput()
@@ -108,7 +108,7 @@ func (s *Service) updateRepository(ctx context.Context, pluginName string) error
 		return fmt.Errorf("plugin not found in filesystem")
 	}
 
-	cmd := exec.CommandContext(ctx, "git", "-C", pluginPath, "pull", "--ff-only")
+	cmd := exec.CommandContext(ctx, "git", "-C", pluginPath, "pull", "--ff-only") //nolint:gosec // pluginPath is resolved internally
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 
 	output, err := cmd.CombinedOutput()
@@ -225,7 +225,7 @@ func (s *Service) FetchRegistryIndex(ctx context.Context, registryURL string) (*
 	}
 
 	// Fetch the file using curl (simpler than adding http client)
-	cmd := exec.CommandContext(ctx, "curl", "-sSfL", rawURL)
+	cmd := exec.CommandContext(ctx, "curl", "-sSfL", rawURL) //nolint:gosec // rawURL is constructed from validated registry URL
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch registry index: %w", err)
