@@ -950,6 +950,38 @@ class ApiClient {
 		);
 	}
 
+	// Reminder Rules (Automated Payment Reminders)
+	async listReminderRules(tenantId: string) {
+		return this.request<ReminderRule[]>('GET', `/api/v1/tenants/${tenantId}/reminder-rules`);
+	}
+
+	async getReminderRule(tenantId: string, ruleId: string) {
+		return this.request<ReminderRule>('GET', `/api/v1/tenants/${tenantId}/reminder-rules/${ruleId}`);
+	}
+
+	async createReminderRule(tenantId: string, data: CreateReminderRuleRequest) {
+		return this.request<ReminderRule>('POST', `/api/v1/tenants/${tenantId}/reminder-rules`, data);
+	}
+
+	async updateReminderRule(tenantId: string, ruleId: string, data: UpdateReminderRuleRequest) {
+		return this.request<ReminderRule>(
+			'PUT',
+			`/api/v1/tenants/${tenantId}/reminder-rules/${ruleId}`,
+			data
+		);
+	}
+
+	async deleteReminderRule(tenantId: string, ruleId: string) {
+		return this.request<void>('DELETE', `/api/v1/tenants/${tenantId}/reminder-rules/${ruleId}`);
+	}
+
+	async triggerReminders(tenantId: string) {
+		return this.request<AutomatedReminderResult[]>(
+			'POST',
+			`/api/v1/tenants/${tenantId}/reminder-rules/trigger`
+		);
+	}
+
 	// Banking endpoints
 	async listBankAccounts(tenantId: string, activeOnly = false) {
 		const query = activeOnly ? '?active_only=true' : '';
@@ -2665,6 +2697,47 @@ export interface EmailSentResponse {
 	success: boolean;
 	log_id: string;
 	message: string;
+}
+
+// Reminder Rule types
+export type TriggerType = 'BEFORE_DUE' | 'ON_DUE' | 'AFTER_DUE';
+
+export interface ReminderRule {
+	id: string;
+	tenant_id: string;
+	name: string;
+	trigger_type: TriggerType;
+	days_offset: number;
+	email_template_type: string;
+	is_active: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface CreateReminderRuleRequest {
+	name: string;
+	trigger_type: TriggerType;
+	days_offset: number;
+	email_template_type?: string;
+	is_active: boolean;
+}
+
+export interface UpdateReminderRuleRequest {
+	name?: string;
+	email_template_type?: string;
+	is_active?: boolean;
+}
+
+export interface AutomatedReminderResult {
+	tenant_id: string;
+	rule_id: string;
+	rule_name: string;
+	invoices_found: number;
+	reminders_sent: number;
+	skipped: number;
+	failed: number;
+	errors?: string[];
+	run_at: string;
 }
 
 // Banking types
