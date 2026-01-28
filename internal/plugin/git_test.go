@@ -447,7 +447,7 @@ version: 1.0.0`
 		t.Run(tt.name, func(t *testing.T) {
 			// Fresh plugin directory for each test
 			testPluginDir := t.TempDir() + "/plugins"
-			err := os.MkdirAll(testPluginDir, 0755)
+			err := os.MkdirAll(testPluginDir, 0750)
 			require.NoError(t, err)
 
 			repo := NewMockRepository()
@@ -458,7 +458,7 @@ version: 1.0.0`
 				// Create plugin directory with manifest for success case
 				if tt.name == "success_remove_plugin" {
 					pluginPath := testPluginDir + "/test-owner-test-plugin"
-					err := os.MkdirAll(pluginPath, 0755)
+					err := os.MkdirAll(pluginPath, 0750)
 					require.NoError(t, err)
 					manifestContent := `name: test-plugin
 display_name: Test Plugin
@@ -489,12 +489,12 @@ version: 1.0.0`
 func TestService_RemovePluginFiles_InvalidManifest(t *testing.T) {
 	tmpDir := t.TempDir()
 	pluginDir := tmpDir + "/plugins"
-	err := os.MkdirAll(pluginDir, 0755)
+	err := os.MkdirAll(pluginDir, 0750)
 	require.NoError(t, err)
 
 	// Create plugin directory with invalid manifest
 	pluginPath := pluginDir + "/invalid-plugin"
-	err = os.MkdirAll(pluginPath, 0755)
+	err = os.MkdirAll(pluginPath, 0750)
 	require.NoError(t, err)
 	err = os.WriteFile(pluginPath+"/plugin.yaml", []byte("invalid: yaml: content"), 0600)
 	require.NoError(t, err)
@@ -520,12 +520,12 @@ func TestService_RemovePluginFiles_EmptyPluginDir(t *testing.T) {
 func TestService_GetPluginPath(t *testing.T) {
 	tmpDir := t.TempDir()
 	pluginDir := tmpDir + "/plugins"
-	err := os.MkdirAll(pluginDir, 0755)
+	err := os.MkdirAll(pluginDir, 0750)
 	require.NoError(t, err)
 
 	// Create plugin directory with valid manifest
 	pluginPath := pluginDir + "/owner-my-plugin"
-	err = os.MkdirAll(pluginPath, 0755)
+	err = os.MkdirAll(pluginPath, 0750)
 	require.NoError(t, err)
 	manifestContent := `name: my-plugin
 display_name: My Plugin
@@ -574,19 +574,19 @@ func TestService_GetPluginPath_NonExistentDir(t *testing.T) {
 func TestService_GetPluginPath_InvalidManifest(t *testing.T) {
 	tmpDir := t.TempDir()
 	pluginDir := tmpDir + "/plugins"
-	err := os.MkdirAll(pluginDir, 0755)
+	err := os.MkdirAll(pluginDir, 0750)
 	require.NoError(t, err)
 
 	// Create plugin directory with invalid manifest
 	invalidPath := pluginDir + "/invalid-plugin"
-	err = os.MkdirAll(invalidPath, 0755)
+	err = os.MkdirAll(invalidPath, 0750)
 	require.NoError(t, err)
 	err = os.WriteFile(invalidPath+"/plugin.yaml", []byte("not valid yaml: ["), 0600)
 	require.NoError(t, err)
 
 	// Create another with valid manifest
 	validPath := pluginDir + "/valid-plugin"
-	err = os.MkdirAll(validPath, 0755)
+	err = os.MkdirAll(validPath, 0750)
 	require.NoError(t, err)
 	err = os.WriteFile(validPath+"/plugin.yaml", []byte("name: valid-plugin\ndisplay_name: Valid\nversion: 1.0.0"), 0600)
 	require.NoError(t, err)
@@ -607,7 +607,7 @@ func TestService_GetPluginPath_InvalidManifest(t *testing.T) {
 func TestService_GetPluginPath_SkipsFiles(t *testing.T) {
 	tmpDir := t.TempDir()
 	pluginDir := tmpDir + "/plugins"
-	err := os.MkdirAll(pluginDir, 0755)
+	err := os.MkdirAll(pluginDir, 0750)
 	require.NoError(t, err)
 
 	// Create a file (not a directory)
