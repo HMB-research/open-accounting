@@ -366,6 +366,13 @@ func TestPostgresRepository_EmailLogOperations(t *testing.T) {
 func TestPostgresRepository_ListTemplates_Empty(t *testing.T) {
 	tenant, repo, ctx := setupEmailTest(t)
 
+	// Clear any default templates that were created by migrations
+	pool := testutil.SetupTestDB(t)
+	_, err := pool.Exec(ctx, `DELETE FROM `+tenant.SchemaName+`.email_templates WHERE tenant_id = $1`, tenant.ID)
+	if err != nil {
+		t.Fatalf("Failed to clear default templates: %v", err)
+	}
+
 	// List templates when none exist
 	templates, err := repo.ListTemplates(ctx, tenant.SchemaName, tenant.ID)
 	if err != nil {
@@ -757,6 +764,13 @@ func TestMergeSMTPConfig_UpdatePassword(t *testing.T) {
 
 func TestPostgresRepository_ListTemplates_MultipleTemplates(t *testing.T) {
 	tenant, repo, ctx := setupEmailTest(t)
+
+	// Clear any default templates that were created by migrations
+	pool := testutil.SetupTestDB(t)
+	_, err := pool.Exec(ctx, `DELETE FROM `+tenant.SchemaName+`.email_templates WHERE tenant_id = $1`, tenant.ID)
+	if err != nil {
+		t.Fatalf("Failed to clear default templates: %v", err)
+	}
 
 	// Create multiple templates
 	templates := []*EmailTemplate{

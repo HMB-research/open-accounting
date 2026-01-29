@@ -107,7 +107,9 @@ func main() {
 	reportsService := reports.NewService(pool)
 	inventoryService := inventory.NewService(pool)
 	reminderService := invoicing.NewReminderService(pool, emailService)
+	automatedReminderService := invoicing.NewAutomatedReminderService(pool, emailService)
 	costCenterService := accounting.NewCostCenterService(pool)
+	interestService := invoicing.NewInterestService(pool)
 
 	// Load enabled plugins on startup
 	if err := pluginService.LoadEnabledPlugins(ctx); err != nil {
@@ -122,36 +124,38 @@ func main() {
 	if os.Getenv("SCHEDULER_ENABLED") == "false" {
 		schedulerConfig.Enabled = false
 	}
-	invoiceScheduler := scheduler.NewScheduler(pool, recurringService, schedulerConfig)
+	invoiceScheduler := scheduler.NewScheduler(pool, recurringService, automatedReminderService, schedulerConfig)
 	if err := invoiceScheduler.Start(); err != nil {
 		log.Warn().Err(err).Msg("Failed to start scheduler")
 	}
 
 	// Create handlers
 	handlers := &Handlers{
-		pool:              pool,
-		tokenService:      tokenService,
-		tenantService:     tenantService,
-		accountingService: accountingService,
-		contactsService:   contactsService,
-		invoicingService:  invoicingService,
-		paymentsService:   paymentsService,
-		pdfService:        pdfService,
-		analyticsService:  analyticsService,
-		recurringService:  recurringService,
-		emailService:      emailService,
-		bankingService:    bankingService,
-		taxService:        taxService,
-		payrollService:    payrollService,
-		absenceService:    absenceService,
-		pluginService:     pluginService,
-		quotesService:     quotesService,
-		ordersService:     ordersService,
-		assetsService:     assetsService,
-		inventoryService:  inventoryService,
-		reportsService:    reportsService,
-		reminderService:   reminderService,
-		costCenterService: costCenterService,
+		pool:                     pool,
+		tokenService:             tokenService,
+		tenantService:            tenantService,
+		accountingService:        accountingService,
+		contactsService:          contactsService,
+		invoicingService:         invoicingService,
+		paymentsService:          paymentsService,
+		pdfService:               pdfService,
+		analyticsService:         analyticsService,
+		recurringService:         recurringService,
+		emailService:             emailService,
+		bankingService:           bankingService,
+		taxService:               taxService,
+		payrollService:           payrollService,
+		absenceService:           absenceService,
+		pluginService:            pluginService,
+		quotesService:            quotesService,
+		ordersService:            ordersService,
+		assetsService:            assetsService,
+		inventoryService:         inventoryService,
+		reportsService:           reportsService,
+		reminderService:          reminderService,
+		automatedReminderService: automatedReminderService,
+		costCenterService:        costCenterService,
+		interestService:          interestService,
 	}
 
 	// Setup router
@@ -477,6 +481,21 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/email-templates", h.ListEmailTemplates)
 				r.Put("/email-templates/{templateType}", h.UpdateEmailTemplate)
 				r.Get("/email-log", h.GetEmailLog)
+
+				// Reminder Rules (Automated Payment Reminders)
+				r.Get("/reminder-rules", h.ListReminderRules)
+				r.Post("/reminder-rules", h.CreateReminderRule)
+				r.Post("/reminder-rules/trigger", h.TriggerReminders)
+				r.Get("/reminder-rules/{ruleID}", h.GetReminderRule)
+				r.Put("/reminder-rules/{ruleID}", h.UpdateReminderRule)
+				r.Delete("/reminder-rules/{ruleID}", h.DeleteReminderRule)
+
+				// Interest Calculations
+				r.Get("/settings/interest", h.GetInterestSettings)
+				r.Put("/settings/interest", h.UpdateInterestSettings)
+				r.Get("/invoices/overdue-with-interest", h.GetOverdueInvoicesWithInterest)
+				r.Get("/invoices/{invoiceID}/interest", h.GetInvoiceInterest)
+				r.Get("/invoices/{invoiceID}/interest/history", h.GetInvoiceInterestHistory)
 
 				// Email Actions (linked to invoices/payments)
 				r.Post("/invoices/{invoiceID}/email", h.EmailInvoice)

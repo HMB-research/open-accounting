@@ -142,7 +142,7 @@ jobs:
       - name: Run integration tests
         env:
           DATABASE_URL: postgres://test:test@localhost:5432/openaccounting_test?sslmode=disable
-        run: go test -v -race -tags=integration -coverprofile=coverage-integration.out ./...
+        run: go test -v -race -tags=integration -coverprofile=coverage-integration.out $(go list ./... | grep -v /testutil)
 
       - name: Upload integration coverage
         uses: codecov/codecov-action@v4

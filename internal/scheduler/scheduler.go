@@ -10,6 +10,7 @@ import (
 	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog/log"
 
+	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/recurring"
 )
 
@@ -18,10 +19,17 @@ type RecurringService interface {
 	GenerateDueInvoices(ctx context.Context, tenantID, schemaName, userID string) ([]recurring.GenerationResult, error)
 }
 
+// AutomatedReminderService defines the interface for automated reminders
+type AutomatedReminderService interface {
+	ProcessRemindersForTenant(ctx context.Context, tenantID, schemaName, companyName string) ([]invoicing.AutomatedReminderResult, error)
+}
+
 // Config holds scheduler configuration
 type Config struct {
 	// Schedule in cron format (e.g., "0 6 * * *" for 6:00 AM daily)
 	RecurringInvoiceSchedule string
+	// Schedule for payment reminders
+	ReminderSchedule string
 	// Whether the scheduler is enabled
 	Enabled bool
 }
@@ -30,6 +38,7 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		RecurringInvoiceSchedule: "0 6 * * *", // 6:00 AM daily
+		ReminderSchedule:         "0 9 * * *", // 9:00 AM daily
 		Enabled:                  true,
 	}
 }
@@ -39,27 +48,30 @@ type Scheduler struct {
 	cron      *cron.Cron
 	repo      Repository
 	recurring RecurringService
+	reminder  AutomatedReminderService
 	config    Config
 	running   bool
 	mu        sync.Mutex
 }
 
 // NewScheduler creates a new scheduler instance
-func NewScheduler(db *pgxpool.Pool, recurringService *recurring.Service, config Config) *Scheduler {
+func NewScheduler(db *pgxpool.Pool, recurringService *recurring.Service, reminderService *invoicing.AutomatedReminderService, config Config) *Scheduler {
 	return &Scheduler{
 		cron:      cron.New(cron.WithSeconds()),
 		repo:      NewPostgresRepository(db),
 		recurring: recurringService,
+		reminder:  reminderService,
 		config:    config,
 	}
 }
 
-// NewSchedulerWithRepository creates a scheduler with a custom repository (for testing)
-func NewSchedulerWithRepository(repo Repository, recurringService RecurringService, config Config) *Scheduler {
+// NewSchedulerWithRepository creates a scheduler with custom repositories (for testing)
+func NewSchedulerWithRepository(repo Repository, recurringService RecurringService, reminderService AutomatedReminderService, config Config) *Scheduler {
 	return &Scheduler{
 		cron:      cron.New(cron.WithSeconds()),
 		repo:      repo,
 		recurring: recurringService,
+		reminder:  reminderService,
 		config:    config,
 	}
 }
@@ -86,12 +98,23 @@ func (s *Scheduler) Start() error {
 		return fmt.Errorf("failed to add recurring invoice job: %w", err)
 	}
 
+	// Add payment reminder job
+	if s.reminder != nil && s.config.ReminderSchedule != "" {
+		reminderSchedule := "0 " + s.config.ReminderSchedule
+		_, err := s.cron.AddFunc(reminderSchedule, s.processPaymentReminders)
+		if err != nil {
+			return fmt.Errorf("failed to add reminder job: %w", err)
+		}
+		log.Info().Str("schedule", s.config.ReminderSchedule).Msg("Payment reminder job scheduled")
+	}
+
 	s.cron.Start()
 	s.running = true
 
 	log.Info().
-		Str("schedule", s.config.RecurringInvoiceSchedule).
-		Msg("Scheduler started - recurring invoice generation scheduled")
+		Str("recurring_schedule", s.config.RecurringInvoiceSchedule).
+		Str("reminder_schedule", s.config.ReminderSchedule).
+		Msg("Scheduler started")
 
 	return nil
 }
@@ -165,9 +188,65 @@ func (s *Scheduler) generateDueInvoices() {
 		Msg("Completed scheduled recurring invoice generation")
 }
 
+// processPaymentReminders sends automated payment reminders for all tenants
+func (s *Scheduler) processPaymentReminders() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+
+	log.Info().Msg("Starting scheduled payment reminder processing")
+
+	tenants, err := s.repo.ListActiveTenants(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to get tenants for reminder processing")
+		return
+	}
+
+	totalReminders := 0
+	totalErrors := 0
+
+	for _, t := range tenants {
+		results, err := s.reminder.ProcessRemindersForTenant(ctx, t.ID, t.SchemaName, t.CompanyName)
+		if err != nil {
+			log.Error().Err(err).Str("tenant_id", t.ID).Msg("Failed to process reminders for tenant")
+			totalErrors++
+			continue
+		}
+
+		for _, result := range results {
+			totalReminders += result.RemindersSent
+			if len(result.Errors) > 0 {
+				log.Warn().
+					Str("tenant_id", t.ID).
+					Str("rule", result.RuleName).
+					Int("sent", result.RemindersSent).
+					Int("failed", result.Failed).
+					Strs("errors", result.Errors).
+					Msg("Reminder rule completed with errors")
+			} else if result.RemindersSent > 0 {
+				log.Info().
+					Str("tenant_id", t.ID).
+					Str("rule", result.RuleName).
+					Int("sent", result.RemindersSent).
+					Int("skipped", result.Skipped).
+					Msg("Reminder rule completed")
+			}
+		}
+	}
+
+	log.Info().
+		Int("reminders_sent", totalReminders).
+		Int("tenant_errors", totalErrors).
+		Msg("Completed scheduled payment reminder processing")
+}
+
 // RunNow manually triggers the recurring invoice generation
 func (s *Scheduler) RunNow() {
 	s.generateDueInvoices()
+}
+
+// RunRemindersNow manually triggers the payment reminder processing
+func (s *Scheduler) RunRemindersNow() {
+	s.processPaymentReminders()
 }
 
 // IsRunning returns whether the scheduler is currently running
