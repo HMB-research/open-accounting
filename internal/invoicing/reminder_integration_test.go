@@ -18,36 +18,28 @@ func TestReminderRuleIntegration(t *testing.T) {
 	repo := NewReminderRulePostgresRepository(pool)
 	ctx := context.Background()
 
-	// First, create the reminder_rules table in the tenant schema (matching migration schema)
-	_, err := pool.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS `+tenant.SchemaName+`.reminder_rules (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			tenant_id UUID NOT NULL,
-			name VARCHAR(255) NOT NULL,
-			trigger_type VARCHAR(20) NOT NULL,
-			days_offset INTEGER NOT NULL DEFAULT 0,
-			email_template_type VARCHAR(50) NOT NULL,
-			is_active BOOLEAN NOT NULL DEFAULT true,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		)
-	`)
+	// The reminder_rules table is created by the migration via create_tenant_schema.
+	// Clear any existing rules to ensure test isolation (migration inserts default rules).
+	_, err := pool.Exec(ctx, `DELETE FROM `+tenant.SchemaName+`.reminder_rules WHERE tenant_id = $1`, tenant.ID)
 	if err != nil {
-		t.Fatalf("Failed to create reminder_rules table: %v", err)
+		t.Fatalf("Failed to clear existing reminder rules: %v", err)
 	}
 
 	// Generate proper UUIDs for tests
 	ruleID := uuid.New().String()
 	nonexistentID := uuid.New().String()
 
+	// Use a unique days_offset (99) that won't conflict with any default rules
+	testDaysOffset := 99
+
 	// Test 1: Create a rule
 	t.Run("CreateRule", func(t *testing.T) {
 		rule := &ReminderRule{
 			ID:                ruleID,
 			TenantID:          tenant.ID,
-			Name:              "7 Days Overdue",
+			Name:              "Test Rule - 99 Days Overdue",
 			TriggerType:       TriggerAfterDue,
-			DaysOffset:        7,
+			DaysOffset:        testDaysOffset,
 			EmailTemplateType: "OVERDUE_REMINDER",
 			IsActive:          true,
 			CreatedAt:         time.Now(),
@@ -71,8 +63,8 @@ func TestReminderRuleIntegration(t *testing.T) {
 			t.Errorf("Expected 1 rule, got %d", len(rules))
 		}
 
-		if rules[0].Name != "7 Days Overdue" {
-			t.Errorf("Expected name '7 Days Overdue', got '%s'", rules[0].Name)
+		if rules[0].Name != "Test Rule - 99 Days Overdue" {
+			t.Errorf("Expected name 'Test Rule - 99 Days Overdue', got '%s'", rules[0].Name)
 		}
 	})
 
@@ -83,8 +75,8 @@ func TestReminderRuleIntegration(t *testing.T) {
 			t.Fatalf("GetRule failed: %v", err)
 		}
 
-		if rule.Name != "7 Days Overdue" {
-			t.Errorf("Expected name '7 Days Overdue', got '%s'", rule.Name)
+		if rule.Name != "Test Rule - 99 Days Overdue" {
+			t.Errorf("Expected name 'Test Rule - 99 Days Overdue', got '%s'", rule.Name)
 		}
 		if rule.TriggerType != TriggerAfterDue {
 			t.Errorf("Expected trigger type AFTER_DUE, got '%s'", rule.TriggerType)

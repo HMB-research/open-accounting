@@ -15,7 +15,7 @@ import (
 func TestPostgresRepository_VoidJournalEntry(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	userID := testutil.CreateTestUser(t, pool, "test@example.com")
+	userID := testutil.CreateTestUser(t, pool, "void-journal-"+uuid.New().String()[:8]+"@example.com")
 	testutil.AddUserToTenant(t, pool, tenant.ID, userID, "admin")
 	repo := NewRepository(pool)
 	ctx := context.Background()
@@ -147,7 +147,7 @@ func TestPostgresRepository_VoidJournalEntry(t *testing.T) {
 func TestPostgresRepository_CreateJournalEntry(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	userID := testutil.CreateTestUser(t, pool, "test@example.com")
+	userID := testutil.CreateTestUser(t, pool, "create-journal-"+uuid.New().String()[:8]+"@example.com")
 	testutil.AddUserToTenant(t, pool, tenant.ID, userID, "admin")
 	repo := NewRepository(pool)
 	ctx := context.Background()
@@ -337,7 +337,7 @@ func TestPostgresRepository_CreateAccount(t *testing.T) {
 func TestPostgresRepository_GetAccountBalance(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	userID := testutil.CreateTestUser(t, pool, "test@example.com")
+	userID := testutil.CreateTestUser(t, pool, "get-balance-"+uuid.New().String()[:8]+"@example.com")
 	testutil.AddUserToTenant(t, pool, tenant.ID, userID, "admin")
 	repo := NewRepository(pool)
 	ctx := context.Background()
@@ -365,7 +365,7 @@ func TestPostgresRepository_GetAccountBalance(t *testing.T) {
 func TestPostgresRepository_GetTrialBalance(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	userID := testutil.CreateTestUser(t, pool, "test@example.com")
+	userID := testutil.CreateTestUser(t, pool, "trial-balance-"+uuid.New().String()[:8]+"@example.com")
 	testutil.AddUserToTenant(t, pool, tenant.ID, userID, "admin")
 	repo := NewRepository(pool)
 	ctx := context.Background()
@@ -561,7 +561,7 @@ func TestPostgresRepository_GetPeriodBalances_Empty(t *testing.T) {
 func TestPostgresRepository_UpdateJournalEntryStatus(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	userID := testutil.CreateTestUser(t, pool, "test@example.com")
+	userID := testutil.CreateTestUser(t, pool, "update-status-"+uuid.New().String()[:8]+"@example.com")
 	testutil.AddUserToTenant(t, pool, tenant.ID, userID, "admin")
 	repo := NewRepository(pool)
 	ctx := context.Background()
