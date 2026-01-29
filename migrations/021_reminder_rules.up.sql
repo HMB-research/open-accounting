@@ -9,6 +9,25 @@ BEGIN
     EXECUTE format('
         ALTER TABLE %I.email_templates ADD COLUMN IF NOT EXISTS name VARCHAR(100)
     ', schema_name);
+
+    -- Update email_templates check constraint to include new template types
+    EXECUTE format('
+        ALTER TABLE %I.email_templates DROP CONSTRAINT IF EXISTS email_templates_template_type_check
+    ', schema_name);
+    EXECUTE format('
+        ALTER TABLE %I.email_templates ADD CONSTRAINT email_templates_template_type_check 
+        CHECK (template_type IN (
+            ''INVOICE_SEND'',
+            ''INVOICE_REMINDER'',
+            ''PAYMENT_RECEIPT'',
+            ''OVERDUE_REMINDER'',
+            ''WELCOME'',
+            ''CUSTOM'',
+            ''PAYMENT_DUE_SOON'',
+            ''PAYMENT_DUE_TODAY''
+        ))
+    ', schema_name);
+
     -- Reminder rules table - defines when to send reminders
     EXECUTE format('
         CREATE TABLE IF NOT EXISTS %I.reminder_rules (
