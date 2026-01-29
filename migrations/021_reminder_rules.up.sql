@@ -5,6 +5,25 @@
 CREATE OR REPLACE FUNCTION add_reminder_rules_to_schema(schema_name TEXT)
 RETURNS void AS $$
 BEGIN
+    -- Drop and recreate check constraint with new types
+    EXECUTE format('
+        ALTER TABLE %I.email_templates DROP CONSTRAINT IF EXISTS email_templates_template_type_check
+    ', schema_name);
+
+    EXECUTE format('
+        ALTER TABLE %I.email_templates ADD CONSTRAINT email_templates_template_type_check 
+        CHECK (template_type IN (
+            ''INVOICE_SEND'',
+            ''INVOICE_REMINDER'',
+            ''PAYMENT_RECEIPT'',
+            ''OVERDUE_REMINDER'',
+            ''WELCOME'',
+            ''CUSTOM'',
+            ''PAYMENT_DUE_SOON'',
+            ''PAYMENT_DUE_TODAY''
+        ))
+    ', schema_name);
+
     -- Ensure email_templates has 'name' column (may be missing if created by create_email_tables_only)
     EXECUTE format('
         ALTER TABLE %I.email_templates ADD COLUMN IF NOT EXISTS name VARCHAR(100)
