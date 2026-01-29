@@ -57,7 +57,7 @@ func TestDefaultConfig(t *testing.T) {
 
 func TestNewScheduler(t *testing.T) {
 	config := DefaultConfig()
-	scheduler := NewScheduler(nil, nil, config)
+	scheduler := NewScheduler(nil, nil, nil, config)
 
 	if scheduler == nil {
 		t.Fatal("NewScheduler returned nil")
@@ -75,7 +75,7 @@ func TestNewScheduler(t *testing.T) {
 
 func TestScheduler_IsRunning_Initially(t *testing.T) {
 	config := DefaultConfig()
-	scheduler := NewScheduler(nil, nil, config)
+	scheduler := NewScheduler(nil, nil, nil, config)
 
 	if scheduler.IsRunning() {
 		t.Error("scheduler should not be running initially")
@@ -87,7 +87,7 @@ func TestScheduler_StartDisabled(t *testing.T) {
 		RecurringInvoiceSchedule: "0 6 * * *",
 		Enabled:                  false,
 	}
-	scheduler := NewScheduler(nil, nil, config)
+	scheduler := NewScheduler(nil, nil, nil, config)
 
 	err := scheduler.Start()
 	if err != nil {
@@ -102,7 +102,7 @@ func TestScheduler_StartDisabled(t *testing.T) {
 
 func TestScheduler_StartEnabled(t *testing.T) {
 	config := DefaultConfig()
-	scheduler := NewScheduler(nil, nil, config)
+	scheduler := NewScheduler(nil, nil, nil, config)
 
 	err := scheduler.Start()
 	if err != nil {
@@ -119,7 +119,7 @@ func TestScheduler_StartEnabled(t *testing.T) {
 
 func TestScheduler_StartTwice(t *testing.T) {
 	config := DefaultConfig()
-	scheduler := NewScheduler(nil, nil, config)
+	scheduler := NewScheduler(nil, nil, nil, config)
 
 	// First start should succeed
 	err := scheduler.Start()
@@ -142,7 +142,7 @@ func TestScheduler_StartTwice(t *testing.T) {
 
 func TestScheduler_Stop(t *testing.T) {
 	config := DefaultConfig()
-	scheduler := NewScheduler(nil, nil, config)
+	scheduler := NewScheduler(nil, nil, nil, config)
 
 	// Start the scheduler
 	err := scheduler.Start()
@@ -167,7 +167,7 @@ func TestScheduler_Stop(t *testing.T) {
 
 func TestScheduler_StopNotRunning(t *testing.T) {
 	config := DefaultConfig()
-	scheduler := NewScheduler(nil, nil, config)
+	scheduler := NewScheduler(nil, nil, nil, config)
 
 	// Stop without starting should not panic and return canceled context
 	ctx := scheduler.Stop()
@@ -189,7 +189,7 @@ func TestScheduler_RunNow_WithNilDB(t *testing.T) {
 	// the database. This test documents this expected behavior.
 	// In production, the scheduler is always created with a valid repo.
 	config := DefaultConfig()
-	scheduler := NewScheduler(nil, nil, config)
+	scheduler := NewScheduler(nil, nil, nil, config)
 
 	// We expect RunNow to panic with nil repo - this is acceptable
 	// because in production, repo is never nil
@@ -206,7 +206,7 @@ func TestScheduler_RunNow_WithNilDB(t *testing.T) {
 func TestNewSchedulerWithRepository(t *testing.T) {
 	mockRepo := &MockRepository{}
 	config := DefaultConfig()
-	scheduler := NewSchedulerWithRepository(mockRepo, nil, config)
+	scheduler := NewSchedulerWithRepository(mockRepo, nil, nil, config)
 
 	if scheduler == nil {
 		t.Fatal("NewSchedulerWithRepository returned nil")
@@ -244,7 +244,7 @@ func TestScheduler_RunNow_WithMockRepository(t *testing.T) {
 			}
 			// nil recurring service is fine when there are no tenants or repo errors
 			config := DefaultConfig()
-			scheduler := NewSchedulerWithRepository(mockRepo, nil, config)
+			scheduler := NewSchedulerWithRepository(mockRepo, nil, nil, config)
 
 			// Should not panic
 			scheduler.RunNow()
@@ -302,7 +302,7 @@ func TestScheduler_InvalidScheduleFormat(t *testing.T) {
 		RecurringInvoiceSchedule: "invalid cron expression",
 		Enabled:                  true,
 	}
-	scheduler := NewScheduler(nil, nil, config)
+	scheduler := NewScheduler(nil, nil, nil, config)
 
 	err := scheduler.Start()
 	if err == nil {
@@ -313,7 +313,7 @@ func TestScheduler_InvalidScheduleFormat(t *testing.T) {
 
 func TestScheduler_ConcurrentAccess(t *testing.T) {
 	config := DefaultConfig()
-	scheduler := NewScheduler(nil, nil, config)
+	scheduler := NewScheduler(nil, nil, nil, config)
 
 	// Start the scheduler
 	err := scheduler.Start()
@@ -339,7 +339,7 @@ func TestScheduler_ConcurrentAccess(t *testing.T) {
 
 func TestScheduler_StopMultipleTimes(t *testing.T) {
 	config := DefaultConfig()
-	scheduler := NewScheduler(nil, nil, config)
+	scheduler := NewScheduler(nil, nil, nil, config)
 
 	err := scheduler.Start()
 	if err != nil {
@@ -379,7 +379,7 @@ func TestScheduler_ScheduleFormatWithSeconds(t *testing.T) {
 				RecurringInvoiceSchedule: tt.schedule,
 				Enabled:                  true,
 			}
-			scheduler := NewScheduler(nil, nil, config)
+			scheduler := NewScheduler(nil, nil, nil, config)
 
 			err := scheduler.Start()
 			if err != nil {
@@ -422,7 +422,7 @@ func TestScheduler_GenerateDueInvoices_WithTenants(t *testing.T) {
 	}
 
 	config := DefaultConfig()
-	scheduler := NewSchedulerWithRepository(mockRepo, mockRecurring, config)
+	scheduler := NewSchedulerWithRepository(mockRepo, mockRecurring, nil, config)
 
 	// Should not panic and process all tenants
 	scheduler.RunNow()
@@ -451,7 +451,7 @@ func TestScheduler_GenerateDueInvoices_TenantError(t *testing.T) {
 	}
 
 	config := DefaultConfig()
-	scheduler := NewSchedulerWithRepository(mockRepo, mockRecurring, config)
+	scheduler := NewSchedulerWithRepository(mockRepo, mockRecurring, nil, config)
 
 	// Should not panic and continue processing other tenants
 	scheduler.RunNow()
@@ -470,7 +470,7 @@ func TestScheduler_GenerateDueInvoices_AllErrors(t *testing.T) {
 	mockRecurring.errors["tenant-2"] = errors.New("error 2")
 
 	config := DefaultConfig()
-	scheduler := NewSchedulerWithRepository(mockRepo, mockRecurring, config)
+	scheduler := NewSchedulerWithRepository(mockRepo, mockRecurring, nil, config)
 
 	// Should not panic even when all tenants fail
 	scheduler.RunNow()
@@ -485,7 +485,7 @@ func TestScheduler_GenerateDueInvoices_EmptyResults(t *testing.T) {
 
 	// No results configured - returns empty slice
 	config := DefaultConfig()
-	scheduler := NewSchedulerWithRepository(mockRepo, mockRecurring, config)
+	scheduler := NewSchedulerWithRepository(mockRepo, mockRecurring, nil, config)
 
 	// Should handle empty results gracefully
 	scheduler.RunNow()
@@ -524,7 +524,7 @@ func TestScheduler_GenerateDueInvoices_MultipleInvoices(t *testing.T) {
 	}
 
 	config := DefaultConfig()
-	scheduler := NewSchedulerWithRepository(mockRepo, mockRecurring, config)
+	scheduler := NewSchedulerWithRepository(mockRepo, mockRecurring, nil, config)
 
 	// Should process all invoices
 	scheduler.RunNow()
