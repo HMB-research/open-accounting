@@ -1253,5 +1253,86 @@
 	"filter_today": "Today",
 	"filter_last7Days": "Last 7 Days",
 	"filter_last30Days": "Last 30 Days",
-	"filter_clearDates": "Clear Dates"
+	"filter_clearDates": "Clear Dates",
+
+	"landing_title": "Tallion - Simple Accounting for Estonian Businesses",
+	"landing_metaDescription": "Modern accounting software for Estonian small businesses and freelancers. Invoicing, expenses, reports, and tax compliance made simple.",
+	"landing_navFeatures": "Features",
+	"landing_navPricing": "Pricing",
+	"landing_goDashboard": "Dashboard",
+	"landing_signIn": "Sign In",
+	
+	"landing_heroBadge": "🚀 Built for Estonian businesses",
+	"landing_heroTitle": "Accounting that just works",
+	"landing_heroSubtitle": "Stop wrestling with spreadsheets. Tallion is modern accounting software designed specifically for Estonian small businesses and freelancers.",
+	"landing_heroFeature1": "Estonian tax compliance built-in",
+	"landing_heroFeature2": "Professional invoices in seconds",
+	"landing_heroFeature3": "Real-time financial overview",
+	
+	"landing_emailPlaceholder": "Enter your email",
+	"landing_joinWaitlist": "Join Waitlist",
+	"landing_waitlistNote": "Free early access for first 100 signups",
+	"landing_waitlistSuccess": "You're on the list! We'll notify you when Tallion launches.",
+	
+	"landing_previewRevenue": "Revenue",
+	"landing_previewExpenses": "Expenses",
+	"landing_previewProfit": "Net Profit",
+	
+	"landing_targetAudience": "Built for Estonian freelancers, OÜs, and small businesses",
+	
+	"landing_featuresTitle": "Everything you need to manage your finances",
+	"landing_featuresSubtitle": "From invoicing to tax reports, Tallion handles it all so you can focus on your business.",
+	
+	"landing_featureInvoicing": "Invoicing",
+	"landing_featureInvoicingDesc": "Create professional invoices in seconds. Track payments, send reminders, and get paid faster.",
+	"landing_featureExpenses": "Expense Tracking",
+	"landing_featureExpensesDesc": "Log expenses on the go. Categorize, attach receipts, and never lose track of deductions.",
+	"landing_featureReports": "Financial Reports",
+	"landing_featureReportsDesc": "Balance sheet, income statement, trial balance. Export to Excel or PDF anytime.",
+	"landing_featureBanking": "Bank Import",
+	"landing_featureBankingDesc": "Import bank statements and reconcile transactions automatically. Supports Estonian banks.",
+	"landing_featureTax": "TSD & KMD",
+	"landing_featureTaxDesc": "Generate TSD declarations and VAT reports ready for e-MTA submission.",
+	"landing_featureEInvoice": "E-Invoices",
+	"landing_featureEInvoiceDesc": "Send and receive Estonian e-invoices directly. Peppol network integration coming soon.",
+	"landing_comingSoon": "Coming Soon",
+	
+	"landing_whyTitle": "Why Tallion?",
+	"landing_whyEstonian": "Made for Estonia",
+	"landing_whyEstonianDesc": "Built from the ground up for Estonian regulations, tax codes, and business practices.",
+	"landing_whySimple": "Refreshingly Simple",
+	"landing_whySimpleDesc": "No accounting degree needed. Clean interface that makes sense from day one.",
+	"landing_whyOpen": "Open Source",
+	"landing_whyOpenDesc": "Transparent, community-driven, and you own your data. Self-host or use our cloud.",
+	"landing_whyAffordable": "Affordable",
+	"landing_whyAffordableDesc": "Fair pricing that scales with your business. Free tier for solo entrepreneurs.",
+	
+	"landing_pricingTitle": "Simple, transparent pricing",
+	"landing_pricingSubtitle": "Start free, upgrade when you need more. No surprises.",
+	"landing_pricingMonth": "month",
+	"landing_pricingFree": "Starter",
+	"landing_pricingPro": "Professional",
+	"landing_pricingBusiness": "Business",
+	"landing_pricingPopular": "Most Popular",
+	
+	"landing_pricingFeature1Free": "Up to 10 invoices/month",
+	"landing_pricingFeature2Free": "Basic expense tracking",
+	"landing_pricingFeature3Free": "Standard reports",
+	"landing_pricingFeature4Free": "Email support",
+	
+	"landing_pricingFeature1Pro": "Unlimited invoices",
+	"landing_pricingFeature2Pro": "Bank import & reconciliation",
+	"landing_pricingFeature3Pro": "TSD & VAT reports",
+	"landing_pricingFeature4Pro": "Multiple companies",
+	"landing_pricingFeature5Pro": "Priority support",
+	
+	"landing_pricingFeature1Biz": "Everything in Pro",
+	"landing_pricingFeature2Biz": "Team access (up to 5 users)",
+	"landing_pricingFeature3Biz": "E-invoice integration",
+	"landing_pricingFeature4Biz": "API access",
+	"landing_pricingFeature5Biz": "Dedicated support",
+	
+	"landing_ctaTitle": "Ready to simplify your accounting?",
+	"landing_ctaSubtitle": "Join the waitlist and be among the first to try Tallion.",
+	"landing_footerLicense": "Open source under MIT License."
 }

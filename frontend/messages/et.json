@@ -1253,5 +1253,86 @@
 	"filter_today": "Täna",
 	"filter_last7Days": "Viimased 7 päeva",
 	"filter_last30Days": "Viimased 30 päeva",
-	"filter_clearDates": "Tühjenda kuupäevad"
+	"filter_clearDates": "Tühjenda kuupäevad",
+
+	"landing_title": "Tallion - Lihtne raamatupidamine Eesti ettevõtetele",
+	"landing_metaDescription": "Kaasaegne raamatupidamistarkvara Eesti väikeettevõtetele ja vabakutselistele. Arveldamine, kulud, aruanded ja maksuarvestus lihtsaks tehtud.",
+	"landing_navFeatures": "Funktsioonid",
+	"landing_navPricing": "Hinnad",
+	"landing_goDashboard": "Töölaud",
+	"landing_signIn": "Logi sisse",
+	
+	"landing_heroBadge": "🚀 Loodud Eesti ettevõtetele",
+	"landing_heroTitle": "Raamatupidamine, mis lihtsalt töötab",
+	"landing_heroSubtitle": "Lõpeta Exceli tabelitega maadlemine. Tallion on kaasaegne raamatupidamistarkvara, mis on loodud spetsiaalselt Eesti väikeettevõtetele ja vabakutselistele.",
+	"landing_heroFeature1": "Eesti maksuseadused sisseehitatud",
+	"landing_heroFeature2": "Professionaalsed arved sekunditega",
+	"landing_heroFeature3": "Reaalajas finantsülevaade",
+	
+	"landing_emailPlaceholder": "Sisesta oma e-post",
+	"landing_joinWaitlist": "Liitu ootenimekirjaga",
+	"landing_waitlistNote": "Tasuta varajane ligipääs esimesele 100-le",
+	"landing_waitlistSuccess": "Oled nimekirjas! Teavitame sind, kui Tallion käivitub.",
+	
+	"landing_previewRevenue": "Tulud",
+	"landing_previewExpenses": "Kulud",
+	"landing_previewProfit": "Puhaskasum",
+	
+	"landing_targetAudience": "Loodud Eesti vabakutselistele, OÜ-dele ja väikeettevõtetele",
+	
+	"landing_featuresTitle": "Kõik vajalik finantside haldamiseks",
+	"landing_featuresSubtitle": "Arveldamisest maksuaruanneteni – Tallion teeb kõik ära, et sina saaksid keskenduda oma äri ajamisele.",
+	
+	"landing_featureInvoicing": "Arveldamine",
+	"landing_featureInvoicingDesc": "Loo professionaalsed arved sekunditega. Jälgi makseid, saada meeldetuletusi ja saa raha kiiremini kätte.",
+	"landing_featureExpenses": "Kulude jälgimine",
+	"landing_featureExpensesDesc": "Sisesta kulud liikvel olles. Kategoriseeri, lisa tšekid ja ära kunagi kaota mahaarvamisi silmist.",
+	"landing_featureReports": "Finantsaruanded",
+	"landing_featureReportsDesc": "Bilanss, kasumiaruanne, käibeandmik. Ekspordi Excelisse või PDF-i igal ajal.",
+	"landing_featureBanking": "Panga import",
+	"landing_featureBankingDesc": "Impordi pangaväljavõtteid ja tee tehingute võrdlus automaatselt. Toetab Eesti panku.",
+	"landing_featureTax": "TSD ja KMD",
+	"landing_featureTaxDesc": "Genereeri TSD deklaratsioonid ja käibemaksuaruanded e-MTA esitamiseks valmis.",
+	"landing_featureEInvoice": "E-arved",
+	"landing_featureEInvoiceDesc": "Saada ja võta vastu Eesti e-arveid otse. Peppol võrgu integratsioon tulekul.",
+	"landing_comingSoon": "Tulekul",
+	
+	"landing_whyTitle": "Miks Tallion?",
+	"landing_whyEstonian": "Loodud Eestile",
+	"landing_whyEstonianDesc": "Ehitatud nullist Eesti regulatsioonide, maksukoodide ja äritavade jaoks.",
+	"landing_whySimple": "Värskendavalt lihtne",
+	"landing_whySimpleDesc": "Raamatupidamise haridust pole vaja. Puhas kasutajaliides, mis on arusaadav esimesest päevast.",
+	"landing_whyOpen": "Avatud lähtekood",
+	"landing_whyOpenDesc": "Läbipaistev, kogukonna juhitud ja sinu andmed kuuluvad sulle. Majuta ise või kasuta meie pilve.",
+	"landing_whyAffordable": "Taskukohane",
+	"landing_whyAffordableDesc": "Õiglane hinnastus, mis skaleerub koos sinu äriga. Tasuta tase üksikettevõtjatele.",
+	
+	"landing_pricingTitle": "Lihtne, läbipaistev hinnakiri",
+	"landing_pricingSubtitle": "Alusta tasuta, uuenda kui vaja rohkem. Üllatusi pole.",
+	"landing_pricingMonth": "kuu",
+	"landing_pricingFree": "Starter",
+	"landing_pricingPro": "Professional",
+	"landing_pricingBusiness": "Business",
+	"landing_pricingPopular": "Populaarseim",
+	
+	"landing_pricingFeature1Free": "Kuni 10 arvet kuus",
+	"landing_pricingFeature2Free": "Põhiline kulude jälgimine",
+	"landing_pricingFeature3Free": "Standardaruanded",
+	"landing_pricingFeature4Free": "E-posti tugi",
+	
+	"landing_pricingFeature1Pro": "Piiramatu arved",
+	"landing_pricingFeature2Pro": "Panga import ja võrdlus",
+	"landing_pricingFeature3Pro": "TSD ja käibemaksuaruanded",
+	"landing_pricingFeature4Pro": "Mitu ettevõtet",
+	"landing_pricingFeature5Pro": "Prioriteetne tugi",
+	
+	"landing_pricingFeature1Biz": "Kõik Pro paketist",
+	"landing_pricingFeature2Biz": "Meeskonna ligipääs (kuni 5 kasutajat)",
+	"landing_pricingFeature3Biz": "E-arvete integratsioon",
+	"landing_pricingFeature4Biz": "API ligipääs",
+	"landing_pricingFeature5Biz": "Pühendunud tugi",
+	
+	"landing_ctaTitle": "Valmis oma raamatupidamist lihtsustama?",
+	"landing_ctaSubtitle": "Liitu ootenimekirjaga ja ole üks esimesi, kes Tallionit proovib.",
+	"landing_footerLicense": "Avatud lähtekoodiga MIT litsentsi all."
 }
