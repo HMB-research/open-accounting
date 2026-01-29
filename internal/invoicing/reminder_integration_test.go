@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/HMB-research/open-accounting/internal/testutil"
 )
 
@@ -17,11 +18,11 @@ func TestReminderRuleIntegration(t *testing.T) {
 	repo := NewReminderRulePostgresRepository(pool)
 	ctx := context.Background()
 
-	// First, create the reminder_rules table in the tenant schema
+	// First, create the reminder_rules table in the tenant schema (matching migration schema)
 	_, err := pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS `+tenant.SchemaName+`.reminder_rules (
-			id VARCHAR(36) PRIMARY KEY,
-			tenant_id VARCHAR(36) NOT NULL,
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			tenant_id UUID NOT NULL,
 			name VARCHAR(255) NOT NULL,
 			trigger_type VARCHAR(20) NOT NULL,
 			days_offset INTEGER NOT NULL DEFAULT 0,
@@ -35,10 +36,14 @@ func TestReminderRuleIntegration(t *testing.T) {
 		t.Fatalf("Failed to create reminder_rules table: %v", err)
 	}
 
+	// Generate proper UUIDs for tests
+	ruleID := uuid.New().String()
+	nonexistentID := uuid.New().String()
+
 	// Test 1: Create a rule
 	t.Run("CreateRule", func(t *testing.T) {
 		rule := &ReminderRule{
-			ID:                "rule-1",
+			ID:                ruleID,
 			TenantID:          tenant.ID,
 			Name:              "7 Days Overdue",
 			TriggerType:       TriggerAfterDue,
@@ -73,7 +78,7 @@ func TestReminderRuleIntegration(t *testing.T) {
 
 	// Test 3: Get single rule
 	t.Run("GetRule", func(t *testing.T) {
-		rule, err := repo.GetRule(ctx, tenant.SchemaName, tenant.ID, "rule-1")
+		rule, err := repo.GetRule(ctx, tenant.SchemaName, tenant.ID, ruleID)
 		if err != nil {
 			t.Fatalf("GetRule failed: %v", err)
 		}
@@ -89,7 +94,7 @@ func TestReminderRuleIntegration(t *testing.T) {
 	// Test 4: Update rule
 	t.Run("UpdateRule", func(t *testing.T) {
 		rule := &ReminderRule{
-			ID:                "rule-1",
+			ID:                ruleID,
 			TenantID:          tenant.ID,
 			Name:              "Updated Name",
 			EmailTemplateType: "CUSTOM_TEMPLATE",
@@ -102,7 +107,7 @@ func TestReminderRuleIntegration(t *testing.T) {
 		}
 
 		// Verify update
-		updated, err := repo.GetRule(ctx, tenant.SchemaName, tenant.ID, "rule-1")
+		updated, err := repo.GetRule(ctx, tenant.SchemaName, tenant.ID, ruleID)
 		if err != nil {
 			t.Fatalf("GetRule failed: %v", err)
 		}
@@ -130,7 +135,7 @@ func TestReminderRuleIntegration(t *testing.T) {
 
 	// Test 6: Delete rule
 	t.Run("DeleteRule", func(t *testing.T) {
-		err := repo.DeleteRule(ctx, tenant.SchemaName, tenant.ID, "rule-1")
+		err := repo.DeleteRule(ctx, tenant.SchemaName, tenant.ID, ruleID)
 		if err != nil {
 			t.Fatalf("DeleteRule failed: %v", err)
 		}
@@ -144,7 +149,7 @@ func TestReminderRuleIntegration(t *testing.T) {
 
 	// Test 7: Get non-existent rule
 	t.Run("GetNonExistentRule", func(t *testing.T) {
-		_, err := repo.GetRule(ctx, tenant.SchemaName, tenant.ID, "nonexistent")
+		_, err := repo.GetRule(ctx, tenant.SchemaName, tenant.ID, nonexistentID)
 		if err != ErrRuleNotFound {
 			t.Errorf("Expected ErrRuleNotFound, got %v", err)
 		}
@@ -152,7 +157,7 @@ func TestReminderRuleIntegration(t *testing.T) {
 
 	// Test 8: Delete non-existent rule
 	t.Run("DeleteNonExistentRule", func(t *testing.T) {
-		err := repo.DeleteRule(ctx, tenant.SchemaName, tenant.ID, "nonexistent")
+		err := repo.DeleteRule(ctx, tenant.SchemaName, tenant.ID, nonexistentID)
 		if err != ErrRuleNotFound {
 			t.Errorf("Expected ErrRuleNotFound, got %v", err)
 		}
