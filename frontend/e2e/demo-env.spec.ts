@@ -57,7 +57,7 @@ test.describe('Demo Environment - Health Checks', () => {
 
 	test('Frontend loads successfully', async ({ page }) => {
 		await page.goto(DEMO_URL);
-		await expect(page).toHaveTitle(/open accounting/i);
+		await expect(page).toHaveTitle(/tallion|open accounting/i);
 	});
 
 	test('Login page renders correctly', async ({ page }) => {
