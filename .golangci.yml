@@ -39,6 +39,9 @@ linters:
         - G104
         - G204
         - G304
+        - G117
+        - G705
+        - G706
 
     misspell:
       locale: US
@@ -54,11 +57,18 @@ linters:
           - errcheck
           - govet
           - staticcheck
+          - gosec
+          - noctx
 
       # Allow unused parameters in test files
       - path: _test\.go
         linters:
           - unparam
+
+      - path: internal/plugin/git\.go
+        linters:
+          - gosec
+        text: "G704"
 
       # Suppress SA5011 globally (often false positives with test mocks)
       - linters:

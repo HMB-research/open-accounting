@@ -355,6 +355,11 @@ func NewCostCenterService(db *pgxpool.Pool) *CostCenterService {
 	}
 }
 
+// NewCostCenterServiceWithRepository creates a new cost center service with a custom repository.
+func NewCostCenterServiceWithRepository(repo CostCenterRepository) *CostCenterService {
+	return &CostCenterService{repo: repo}
+}
+
 // GetCostCenter retrieves a cost center by ID
 func (s *CostCenterService) GetCostCenter(ctx context.Context, schemaName, tenantID, costCenterID string) (*CostCenter, error) {
 	return s.repo.GetByID(ctx, schemaName, tenantID, costCenterID)
@@ -497,7 +502,7 @@ func (m *MockCostCenterRepository) GetByID(_ context.Context, _, tenantID, costC
 
 // List mock implementation
 func (m *MockCostCenterRepository) List(_ context.Context, _, tenantID string, activeOnly bool) ([]CostCenter, error) {
-	var result []CostCenter
+	result := []CostCenter{}
 	for _, cc := range m.CostCenters {
 		if cc.TenantID == tenantID {
 			if activeOnly && !cc.IsActive {

@@ -420,6 +420,37 @@ func TestCreateInvoice(t *testing.T) {
 			wantStatus:     http.StatusBadRequest,
 			wantErrContain: "Contact",
 		},
+		{
+			name:     "create invoice blocked by period lock",
+			tenantID: "tenant-1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			body: map[string]interface{}{
+				"invoice_type": "SALES",
+				"contact_id":   "contact-1",
+				"issue_date":   "2026-01-15T00:00:00Z",
+				"due_date":     "2026-01-29T00:00:00Z",
+				"currency":     "EUR",
+				"lines": []map[string]interface{}{
+					{
+						"description": "Service Fee",
+						"quantity":    "1",
+						"unit_price":  "100.00",
+						"vat_rate":    "20",
+					},
+				},
+			},
+			setupMock: func(tr *mockTenantRepository, ir *mockInvoicingRepository) {
+				lockedTenant := tr.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				lockDate := "2026-01-31"
+				lockedTenant.Settings.PeriodLockDate = &lockDate
+			},
+			wantStatus:     http.StatusConflict,
+			wantErrContain: "period locked through 2026-01-31",
+		},
 	}
 
 	for _, tt := range tests {
@@ -732,6 +763,25 @@ func TestVoidInvoice(t *testing.T) {
 			},
 			wantStatus:     http.StatusBadRequest,
 			wantErrContain: "not found",
+		},
+		{
+			name:      "void invoice blocked by period lock",
+			tenantID:  "tenant-1",
+			invoiceID: "inv-1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			setupMock: func(tr *mockTenantRepository, ir *mockInvoicingRepository) {
+				lockedTenant := tr.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				lockDate := "2026-01-31"
+				lockedTenant.Settings.PeriodLockDate = &lockDate
+				invoice := ir.addTestInvoice("inv-1", "tenant-1", "contact-1", invoicing.InvoiceTypeSales, invoicing.StatusDraft)
+				invoice.IssueDate = time.Date(2026, time.January, 15, 0, 0, 0, 0, time.UTC)
+			},
+			wantStatus:     http.StatusConflict,
+			wantErrContain: "period locked through 2026-01-31",
 		},
 	}
 

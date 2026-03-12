@@ -67,6 +67,17 @@ export default defineConfig({
 				// Start with clean state - ensureAuthenticated will load auth file
 				storageState: { cookies: [], origins: [] }
 			}
+		},
+		// Blocking smoke suite for core accountant flow.
+		// Keep this intentionally small and stable so it can gate CI.
+		{
+			name: 'smoke-chromium',
+			testMatch: ['**/smoke/*.spec.ts'],
+			dependencies: ['auth-setup'],
+			use: {
+				...devices['Desktop Chrome'],
+				storageState: { cookies: [], origins: [] }
+			}
 		}
 	],
 

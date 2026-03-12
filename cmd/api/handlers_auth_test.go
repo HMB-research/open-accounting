@@ -84,6 +84,19 @@ func (m *mockTenantRepository) GetTenantBySlug(ctx context.Context, slug string)
 }
 
 func (m *mockTenantRepository) UpdateTenant(ctx context.Context, tenantID, name string, settingsJSON []byte, updatedAt time.Time) error {
+	t, ok := m.tenants[tenantID]
+	if !ok {
+		return tenant.ErrTenantNotFound
+	}
+	t.Name = name
+	t.UpdatedAt = updatedAt
+	if len(settingsJSON) > 0 {
+		var settings tenant.TenantSettings
+		if err := json.Unmarshal(settingsJSON, &settings); err != nil {
+			return err
+		}
+		t.Settings = settings
+	}
 	return nil
 }
 
