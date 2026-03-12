@@ -1,5 +1,3 @@
-//go:build integration
-
 package tenant
 
 import (
@@ -166,6 +164,91 @@ func TestPostgresRepository_UpdateTenant(t *testing.T) {
 
 	if retrieved.Name != newName {
 		t.Errorf("expected name %s, got %s", newName, retrieved.Name)
+	}
+}
+
+func TestPostgresRepository_PeriodCloseEvents(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	ownerID := uuid.New().String()
+	ownerEmail := "close-owner-" + uuid.New().String()[:8] + "@example.com"
+	_, err := pool.Exec(ctx, `
+		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
+		VALUES ($1, $2, 'hash', 'Owner', NOW(), NOW())
+	`, ownerID, ownerEmail)
+	if err != nil {
+		t.Fatalf("failed to create owner: %v", err)
+	}
+
+	settings := DefaultSettings()
+	settingsJSON, _ := json.Marshal(settings)
+
+	tenantID := uuid.New().String()
+	schemaName := "test_close_" + tenantID[:8]
+	tenantRecord := &Tenant{
+		ID:         tenantID,
+		Name:       "Close Tenant",
+		Slug:       "close-test-" + uuid.New().String()[:8],
+		SchemaName: schemaName,
+		IsActive:   true,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}
+
+	if err := repo.CreateTenant(ctx, tenantRecord, settingsJSON, ownerID); err != nil {
+		t.Fatalf("CreateTenant failed: %v", err)
+	}
+
+	updatedSettings := DefaultSettings()
+	updatedSettings.PeriodLockDate = strPtr("2026-01-31")
+	updatedSettingsJSON, _ := json.Marshal(updatedSettings)
+	eventTime := time.Now().UTC().Truncate(time.Second)
+	closeEvent := &PeriodCloseEvent{
+		ID:            uuid.New().String(),
+		TenantID:      tenantID,
+		Action:        PeriodCloseActionClose,
+		CloseKind:     PeriodCloseKindMonthEnd,
+		PeriodEndDate: "2026-01-31",
+		LockDateAfter: strPtr("2026-01-31"),
+		Note:          "Month-end close",
+		PerformedBy:   ownerID,
+		CreatedAt:     eventTime,
+	}
+
+	if err := repo.UpdateTenantWithPeriodCloseEvent(ctx, tenantID, tenantRecord.Name, updatedSettingsJSON, eventTime, closeEvent); err != nil {
+		t.Fatalf("UpdateTenantWithPeriodCloseEvent failed: %v", err)
+	}
+
+	retrievedTenant, err := repo.GetTenant(ctx, tenantID)
+	if err != nil {
+		t.Fatalf("GetTenant failed: %v", err)
+	}
+	if retrievedTenant.Settings.PeriodLockDate == nil || *retrievedTenant.Settings.PeriodLockDate != "2026-01-31" {
+		t.Fatalf("expected period lock date to be updated, got %#v", retrievedTenant.Settings.PeriodLockDate)
+	}
+
+	events, err := repo.ListPeriodCloseEvents(ctx, tenantID, 10)
+	if err != nil {
+		t.Fatalf("ListPeriodCloseEvents failed: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 period close event, got %d", len(events))
+	}
+	if events[0].ID != closeEvent.ID {
+		t.Fatalf("expected event ID %s, got %s", closeEvent.ID, events[0].ID)
+	}
+
+	latestEvent, err := repo.GetLatestCloseEventForPeriod(ctx, tenantID, "2026-01-31")
+	if err != nil {
+		t.Fatalf("GetLatestCloseEventForPeriod failed: %v", err)
+	}
+	if latestEvent == nil {
+		t.Fatal("expected latest close event, got nil")
+	}
+	if latestEvent.ID != closeEvent.ID {
+		t.Fatalf("expected latest close event %s, got %s", closeEvent.ID, latestEvent.ID)
 	}
 }
 

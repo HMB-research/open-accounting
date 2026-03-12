@@ -89,3 +89,25 @@ type ContactFilter struct {
 	ActiveOnly  bool
 	Search      string
 }
+
+// ImportContactsRequest contains CSV payload for bulk contact import.
+type ImportContactsRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+}
+
+// ImportContactsResult summarizes a bulk contact import.
+type ImportContactsResult struct {
+	FileName        string                   `json:"file_name,omitempty"`
+	RowsProcessed   int                      `json:"rows_processed"`
+	ContactsCreated int                      `json:"contacts_created"`
+	RowsSkipped     int                      `json:"rows_skipped"`
+	Errors          []ImportContactsRowError `json:"errors,omitempty"`
+}
+
+// ImportContactsRowError describes a row-level import failure.
+type ImportContactsRowError struct {
+	Row     int    `json:"row"`
+	Name    string `json:"name,omitempty"`
+	Message string `json:"message"`
+}

@@ -20,6 +20,7 @@ import (
 	_ "github.com/HMB-research/open-accounting/docs"
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/analytics"
+	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
@@ -87,6 +88,8 @@ func main() {
 
 	// Initialize services
 	tokenService := auth.NewTokenService(cfg.JWTSecret, cfg.AccessExpiry, cfg.RefreshExpiry)
+	apiTokenService := apitoken.NewService(pool)
+	tokenService.SetAPITokenValidator(apiTokenService)
 	tenantService := tenant.NewService(pool)
 	accountingService := accounting.NewService(pool)
 	contactsService := contacts.NewService(pool)
@@ -133,6 +136,7 @@ func main() {
 	handlers := &Handlers{
 		pool:                     pool,
 		tokenService:             tokenService,
+		apiTokenService:          apiTokenService,
 		tenantService:            tenantService,
 		accountingService:        accountingService,
 		contactsService:          contactsService,
@@ -334,13 +338,21 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 
 				// Onboarding
 				r.Post("/complete-onboarding", h.CompleteOnboarding)
+				r.Get("/period-close-events", h.ListPeriodCloseEvents)
+				r.Post("/period-close", h.ClosePeriod)
+				r.Post("/period-reopen", h.ReopenPeriod)
+				r.Get("/api-tokens", h.ListAPITokens)
+				r.Post("/api-tokens", h.CreateAPIToken)
+				r.Delete("/api-tokens/{tokenID}", h.RevokeAPIToken)
 
 				// Accounts
 				r.Get("/accounts", h.ListAccounts)
 				r.Post("/accounts", h.CreateAccount)
+				r.Post("/accounts/import", h.ImportAccounts)
 				r.Get("/accounts/{accountID}", h.GetAccount)
 
 				// Journal entries
+				r.Post("/journal-entries/import-opening-balances", h.ImportOpeningBalances)
 				r.Get("/journal-entries/{entryID}", h.GetJournalEntry)
 				r.Post("/journal-entries", h.CreateJournalEntry)
 				r.Post("/journal-entries/{entryID}/post", h.PostJournalEntry)
@@ -349,6 +361,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				// Contacts
 				r.Get("/contacts", h.ListContacts)
 				r.Post("/contacts", h.CreateContact)
+				r.Post("/contacts/import", h.ImportContacts)
 				r.Get("/contacts/{contactID}", h.GetContact)
 				r.Put("/contacts/{contactID}", h.UpdateContact)
 				r.Delete("/contacts/{contactID}", h.DeleteContact)
@@ -356,6 +369,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				// Invoices
 				r.Get("/invoices", h.ListInvoices)
 				r.Post("/invoices", h.CreateInvoice)
+				r.Post("/invoices/import", h.ImportInvoices)
 				r.Get("/invoices/{invoiceID}", h.GetInvoice)
 				r.Get("/invoices/{invoiceID}/pdf", h.GetInvoicePDF)
 				r.Post("/invoices/{invoiceID}/send", h.SendInvoice)

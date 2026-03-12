@@ -1,5 +1,3 @@
-//go:build integration
-
 // Package testutil provides test utilities for integration tests.
 package testutil
 
@@ -73,8 +71,9 @@ func SetupTestSchema(t *testing.T, pool *pgxpool.Pool) string {
 	}
 	defer releaseSchemaLifecycleConn(ctx, conn)
 
-	// Create the schema using the existing create_tenant_schema function
-	_, err = conn.Exec(ctx, "SELECT create_tenant_schema($1)", schemaName)
+	// SetupTestSchema is intended for isolated scratch schemas, not full tenant bootstraps.
+	// Newer tenant bootstrap migrations assume a backing tenant row, so use plain schema DDL here.
+	_, err = conn.Exec(ctx, fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", schemaName))
 	if err != nil {
 		t.Fatalf("failed to create test schema: %v", err)
 	}

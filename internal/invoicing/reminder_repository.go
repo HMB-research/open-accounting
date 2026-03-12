@@ -119,8 +119,9 @@ func (r *ReminderPostgresRepository) CreateReminder(ctx context.Context, schemaN
 	query := fmt.Sprintf(`
 		INSERT INTO %s.payment_reminders (
 			id, tenant_id, invoice_id, invoice_number, contact_id, contact_name,
-			contact_email, reminder_number, status, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			contact_email, rule_id, trigger_type, days_offset, reminder_number,
+			status, sent_at, error_message, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 	`, schemaName)
 
 	_, err := r.db.Exec(ctx, query,
@@ -131,8 +132,13 @@ func (r *ReminderPostgresRepository) CreateReminder(ctx context.Context, schemaN
 		reminder.ContactID,
 		reminder.ContactName,
 		reminder.ContactEmail,
+		reminder.RuleID,
+		reminder.TriggerType,
+		reminder.DaysOffset,
 		reminder.ReminderNumber,
 		reminder.Status,
+		reminder.SentAt,
+		reminder.ErrorMessage,
 		reminder.CreatedAt,
 		reminder.UpdatedAt,
 	)
@@ -221,6 +227,9 @@ func (r *ReminderPostgresRepository) ensureReminderTable(ctx context.Context, sc
 			contact_id UUID NOT NULL,
 			contact_name VARCHAR(255) NOT NULL,
 			contact_email VARCHAR(255),
+			rule_id UUID,
+			trigger_type VARCHAR(20) NOT NULL DEFAULT 'AFTER_DUE',
+			days_offset INTEGER NOT NULL DEFAULT 0,
 			reminder_number INTEGER NOT NULL DEFAULT 1,
 			status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
 			sent_at TIMESTAMP WITH TIME ZONE,
@@ -229,11 +238,18 @@ func (r *ReminderPostgresRepository) ensureReminderTable(ctx context.Context, sc
 			updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 		);
 
+		ALTER TABLE %s.payment_reminders
+			ADD COLUMN IF NOT EXISTS rule_id UUID;
+		ALTER TABLE %s.payment_reminders
+			ADD COLUMN IF NOT EXISTS trigger_type VARCHAR(20) NOT NULL DEFAULT 'AFTER_DUE';
+		ALTER TABLE %s.payment_reminders
+			ADD COLUMN IF NOT EXISTS days_offset INTEGER NOT NULL DEFAULT 0;
+
 		CREATE INDEX IF NOT EXISTS idx_payment_reminders_tenant_id
 			ON %s.payment_reminders(tenant_id);
 		CREATE INDEX IF NOT EXISTS idx_payment_reminders_invoice_id
 			ON %s.payment_reminders(invoice_id);
-	`, schemaName, schemaName, schemaName)
+	`, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName)
 
 	_, err := r.db.Exec(ctx, query)
 	return err

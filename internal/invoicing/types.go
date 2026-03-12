@@ -197,6 +197,30 @@ type CreateInvoiceLineRequest struct {
 	ProductID       *string         `json:"product_id,omitempty"`
 }
 
+// ImportInvoicesRequest contains CSV payload for bulk invoice import.
+type ImportInvoicesRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+	UserID     string `json:"-"`
+}
+
+// ImportInvoicesResult summarizes a bulk invoice import.
+type ImportInvoicesResult struct {
+	FileName        string                   `json:"file_name,omitempty"`
+	RowsProcessed   int                      `json:"rows_processed"`
+	InvoicesCreated int                      `json:"invoices_created"`
+	LinesImported   int                      `json:"lines_imported"`
+	RowsSkipped     int                      `json:"rows_skipped"`
+	Errors          []ImportInvoicesRowError `json:"errors,omitempty"`
+}
+
+// ImportInvoicesRowError describes a row-level import failure.
+type ImportInvoicesRowError struct {
+	Row           int    `json:"row"`
+	InvoiceNumber string `json:"invoice_number,omitempty"`
+	Message       string `json:"message"`
+}
+
 // InvoiceFilter provides filtering options
 type InvoiceFilter struct {
 	InvoiceType InvoiceType

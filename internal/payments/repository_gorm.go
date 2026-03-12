@@ -22,9 +22,16 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 	return &GORMRepository{db: db}
 }
 
+func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
+	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+}
+
 // Create inserts a new payment
 func (r *GORMRepository) Create(ctx context.Context, schemaName string, payment *Payment) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "payments")
+	if err != nil {
+		return err
+	}
 
 	paymentModel := paymentToModel(payment)
 	if err := db.Create(paymentModel).Error; err != nil {
@@ -35,10 +42,13 @@ func (r *GORMRepository) Create(ctx context.Context, schemaName string, payment 
 
 // GetByID retrieves a payment by ID
 func (r *GORMRepository) GetByID(ctx context.Context, schemaName, tenantID, paymentID string) (*Payment, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "payments")
+	if err != nil {
+		return nil, err
+	}
 
 	var paymentModel models.Payment
-	err := db.Where("id = ? AND tenant_id = ?", paymentID, tenantID).First(&paymentModel).Error
+	err = db.Where("id = ? AND tenant_id = ?", paymentID, tenantID).First(&paymentModel).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrPaymentNotFound
 	}
@@ -51,7 +61,10 @@ func (r *GORMRepository) GetByID(ctx context.Context, schemaName, tenantID, paym
 
 // List retrieves payments with optional filtering
 func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, filter *PaymentFilter) ([]Payment, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "payments")
+	if err != nil {
+		return nil, err
+	}
 
 	query := db.Where("tenant_id = ?", tenantID)
 
@@ -90,7 +103,10 @@ func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, 
 
 // CreateAllocation inserts a payment allocation
 func (r *GORMRepository) CreateAllocation(ctx context.Context, schemaName string, allocation *PaymentAllocation) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "payment_allocations")
+	if err != nil {
+		return err
+	}
 
 	allocationModel := allocationToModel(allocation)
 	if err := db.Create(allocationModel).Error; err != nil {
@@ -101,7 +117,10 @@ func (r *GORMRepository) CreateAllocation(ctx context.Context, schemaName string
 
 // GetAllocations retrieves allocations for a payment
 func (r *GORMRepository) GetAllocations(ctx context.Context, schemaName, tenantID, paymentID string) ([]PaymentAllocation, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "payment_allocations")
+	if err != nil {
+		return nil, err
+	}
 
 	var allocationModels []models.PaymentAllocation
 	if err := db.Where("payment_id = ? AND tenant_id = ?", paymentID, tenantID).
@@ -119,7 +138,10 @@ func (r *GORMRepository) GetAllocations(ctx context.Context, schemaName, tenantI
 
 // GetNextPaymentNumber returns the next payment number sequence
 func (r *GORMRepository) GetNextPaymentNumber(ctx context.Context, schemaName, tenantID string, paymentType PaymentType) (int, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	paymentsTable, err := database.QualifiedTable(schemaName, "payments")
+	if err != nil {
+		return 0, err
+	}
 
 	prefix := "PMT"
 	if paymentType == PaymentTypeMade {
@@ -127,10 +149,10 @@ func (r *GORMRepository) GetNextPaymentNumber(ctx context.Context, schemaName, t
 	}
 
 	var seq int
-	err := db.Raw(fmt.Sprintf(`
+	err = r.db.WithContext(ctx).Raw(fmt.Sprintf(`
 		SELECT COALESCE(MAX(CAST(SUBSTRING(payment_number FROM '%s-([0-9]+)') AS INTEGER)), 0) + 1
-		FROM payments WHERE tenant_id = ? AND payment_type = ?
-	`, prefix), tenantID, paymentType).Scan(&seq).Error
+		FROM %s WHERE tenant_id = ? AND payment_type = ?
+	`, prefix, paymentsTable), tenantID, paymentType).Scan(&seq).Error
 	if err != nil {
 		return 0, fmt.Errorf("get next payment number: %w", err)
 	}
@@ -140,20 +162,27 @@ func (r *GORMRepository) GetNextPaymentNumber(ctx context.Context, schemaName, t
 
 // GetUnallocatedPayments returns payments with unallocated amounts
 func (r *GORMRepository) GetUnallocatedPayments(ctx context.Context, schemaName, tenantID string, paymentType PaymentType) ([]Payment, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	paymentsTable, err := database.QualifiedTable(schemaName, "payments")
+	if err != nil {
+		return nil, err
+	}
+	allocationsTable, err := database.QualifiedTable(schemaName, "payment_allocations")
+	if err != nil {
+		return nil, err
+	}
 
 	var paymentModels []models.Payment
-	err := db.Raw(`
+	err = r.db.WithContext(ctx).Raw(fmt.Sprintf(`
 		SELECT p.id, p.tenant_id, p.payment_number, p.payment_type, p.contact_id, p.payment_date,
 		       p.amount, p.currency, p.exchange_rate, p.base_amount, p.payment_method, p.bank_account,
 		       p.reference, p.notes, p.journal_entry_id, p.created_at, p.created_by
-		FROM payments p
+		FROM %s p
 		WHERE p.tenant_id = ? AND p.payment_type = ?
 		  AND p.amount > COALESCE((
-		      SELECT SUM(pa.amount) FROM payment_allocations pa WHERE pa.payment_id = p.id
+		      SELECT SUM(pa.amount) FROM %s pa WHERE pa.payment_id = p.id
 		  ), 0)
 		ORDER BY p.payment_date
-	`, tenantID, paymentType).Scan(&paymentModels).Error
+	`, paymentsTable, allocationsTable), tenantID, paymentType).Scan(&paymentModels).Error
 	if err != nil {
 		return nil, fmt.Errorf("get unallocated payments: %w", err)
 	}

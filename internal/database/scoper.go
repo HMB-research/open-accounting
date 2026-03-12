@@ -3,104 +3,48 @@
 package database
 
 import (
-	"context"
 	"fmt"
-	"sync"
 
 	"gorm.io/gorm"
 )
 
-type contextKey string
-
-const schemaKey contextKey = "tenant_schema"
-
-// WithSchema adds schema name to context
-func WithSchema(ctx context.Context, schemaName string) context.Context {
-	return context.WithValue(ctx, schemaKey, schemaName)
-}
-
-// GetSchema retrieves schema from context
-func GetSchema(ctx context.Context) string {
-	if v := ctx.Value(schemaKey); v != nil {
-		return v.(string)
-	}
-	return "public"
-}
-
-// SchemaScope returns a GORM scope that sets search_path for a tenant schema
+// SchemaScope is a legacy helper that sets search_path for a tenant schema.
+// Deprecated: use TenantTable with explicit qualified tables instead.
 func SchemaScope(schemaName string) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
 		if schemaName == "" || schemaName == "public" {
 			return db
 		}
-		return db.Exec(fmt.Sprintf("SET search_path TO %s, public", schemaName))
+		quotedSchema, err := QuoteIdentifier(schemaName)
+		if err != nil {
+			db = db.Session(&gorm.Session{})
+			_ = db.AddError(err)
+			return db
+		}
+		return db.Exec(fmt.Sprintf("SET search_path TO %s, public", quotedSchema))
 	}
 }
 
-// TenantDB returns a scoped DB for a tenant schema
-// This sets the search_path to the tenant's schema
+// TenantDB is a legacy helper for tenant-scoped GORM access.
+// Deprecated: use TenantTable with explicit qualified table names instead.
 func TenantDB(db *gorm.DB, schemaName string) *gorm.DB {
+	if db == nil {
+		return nil
+	}
 	if schemaName == "" || schemaName == "public" {
 		return db
 	}
 	return db.Scopes(SchemaScope(schemaName))
 }
 
-// TenantDBCache provides cached tenant-scoped DB instances
-// to avoid repeated SET search_path calls for the same tenant
-type TenantDBCache struct {
-	mu    sync.RWMutex
-	cache map[string]*gorm.DB
-	base  *gorm.DB
-}
-
-// NewTenantDBCache creates a new cache for tenant-scoped DB instances
-func NewTenantDBCache(baseDB *gorm.DB) *TenantDBCache {
-	return &TenantDBCache{
-		cache: make(map[string]*gorm.DB),
-		base:  baseDB,
+// TenantTable returns a GORM handle bound to an explicit schema-qualified table.
+func TenantTable(db *gorm.DB, schemaName, tableName string) (*gorm.DB, error) {
+	if db == nil {
+		return nil, fmt.Errorf("nil gorm DB")
 	}
-}
-
-// Get returns a DB instance scoped to the given schema
-// Results are cached to improve performance
-func (c *TenantDBCache) Get(schemaName string) *gorm.DB {
-	if schemaName == "" || schemaName == "public" {
-		return c.base
+	qualifiedTable, err := QualifiedTable(schemaName, tableName)
+	if err != nil {
+		return nil, err
 	}
-
-	// Fast path: read lock
-	c.mu.RLock()
-	if db, ok := c.cache[schemaName]; ok {
-		c.mu.RUnlock()
-		return db
-	}
-	c.mu.RUnlock()
-
-	// Slow path: write lock
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	// Double-check after acquiring write lock
-	if db, ok := c.cache[schemaName]; ok {
-		return db
-	}
-
-	db := TenantDB(c.base, schemaName)
-	c.cache[schemaName] = db
-	return db
-}
-
-// Clear removes all cached DB instances
-func (c *TenantDBCache) Clear() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.cache = make(map[string]*gorm.DB)
-}
-
-// Remove removes a specific schema from the cache
-func (c *TenantDBCache) Remove(schemaName string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.cache, schemaName)
+	return db.Session(&gorm.Session{NewDB: true}).Table(qualifiedTable), nil
 }
