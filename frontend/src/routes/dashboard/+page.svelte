@@ -16,6 +16,7 @@
 	import OnboardingWizard from '$lib/components/OnboardingWizard.svelte';
 	import PeriodSelector from '$lib/components/PeriodSelector.svelte';
 	import ActivityFeed from '$lib/components/ActivityFeed.svelte';
+	import AccountantPortfolioPanel from '$lib/components/AccountantPortfolioPanel.svelte';
 	import AccountantReviewPanel from '$lib/components/AccountantReviewPanel.svelte';
 	import SetupCenter from '$lib/components/SetupCenter.svelte';
 	import * as m from '$lib/paraglide/messages.js';
@@ -401,6 +402,8 @@
 		</div>
 
 		{#if selectedTenant}
+			<AccountantPortfolioPanel memberships={tenants} currentTenantId={selectedTenant.id} />
+
 			<div class="workspace-hero card">
 				<div class="workspace-copy">
 					<div class="workspace-meta">

@@ -1,12 +1,14 @@
 <script lang="ts">
 	import Decimal from 'decimal.js';
-	import { api, type BankAccount, type BankTransaction, type JournalEntry, type OverdueInvoicesSummary, type PeriodCloseEvent, type Tenant } from '$lib/api';
+	import { type JournalEntry, type OverdueInvoicesSummary, type PeriodCloseEvent, type Tenant } from '$lib/api';
 	import * as m from '$lib/paraglide/messages.js';
-
-	type BankExceptionGroup = {
-		account: BankAccount;
-		transactions: BankTransaction[];
-	};
+	import {
+		flattenUnmatchedTransactions,
+		getSuggestedCloseDate,
+		loadTenantReviewSnapshot,
+		toDecimal,
+		type BankExceptionGroup
+	} from '$lib/review/workspace';
 
 	let { tenant }: { tenant: Tenant } = $props();
 
@@ -25,67 +27,28 @@
 		}
 
 		loadedTenantKey = tenantKey;
-		void loadReviewWorkspace(tenant.id);
+		void loadReviewWorkspace(tenant);
 	});
 
-	async function loadReviewWorkspace(tenantId: string) {
+	async function loadReviewWorkspace(reviewTenant: Tenant) {
 		isLoading = true;
 		error = '';
 
-		const [overdueResult, accountsResult, closeResult, journalResult] = await Promise.allSettled([
-			api.getOverdueInvoices(tenantId),
-			api.listBankAccounts(tenantId, true),
-			api.listPeriodCloseEvents(tenantId, 6),
-			api.listJournalEntries(tenantId, 6)
-		]);
+		const snapshot = await loadTenantReviewSnapshot(reviewTenant);
+		overdueSummary = snapshot.overdueSummary;
+		periodCloseEvents = snapshot.periodCloseEvents;
+		journalEntries = snapshot.journalEntries;
+		bankExceptions = snapshot.bankExceptions;
 
-		overdueSummary = overdueResult.status === 'fulfilled' ? overdueResult.value : null;
-		periodCloseEvents = closeResult.status === 'fulfilled' ? closeResult.value : [];
-		journalEntries = journalResult.status === 'fulfilled' ? journalResult.value : [];
-
-		if (accountsResult.status === 'fulfilled') {
-			bankExceptions = await loadUnmatchedTransactions(tenantId, accountsResult.value);
-		} else {
-			bankExceptions = [];
-		}
-
-		const failureCount = [overdueResult, accountsResult, closeResult, journalResult].filter((result) => result.status === 'rejected').length;
-		if (failureCount === 4) {
+		if (snapshot.errorCount === 4) {
 			error = m.errors_loadFailed();
 		}
 
 		isLoading = false;
 	}
 
-	async function loadUnmatchedTransactions(tenantId: string, accounts: BankAccount[]): Promise<BankExceptionGroup[]> {
-		const groups = await Promise.all(
-			accounts.map(async (account) => {
-				try {
-					const transactions = await api.listBankTransactions(tenantId, account.id, { status: 'UNMATCHED' });
-					return { account, transactions };
-				} catch {
-					return { account, transactions: [] };
-				}
-			})
-		);
-
-		return groups
-			.filter((group) => group.transactions.length > 0)
-			.sort((left, right) => right.transactions.length - left.transactions.length);
-	}
-
 	function buildTenantKey(value: Tenant): string {
 		return `${value.id}:${value.updated_at}:${value.settings?.period_lock_date ?? ''}`;
-	}
-
-	function toDecimal(value: Decimal | number | string | null | undefined): Decimal {
-		if (Decimal.isDecimal(value)) {
-			return value;
-		}
-		if (value == null || value === '') {
-			return new Decimal(0);
-		}
-		return new Decimal(value);
 	}
 
 	function formatCurrency(value: Decimal | number | string): string {
@@ -108,40 +71,6 @@
 		}).format(new Date(value));
 	}
 
-	function parseDateValue(value: string | null | undefined): Date | null {
-		if (!value) {
-			return null;
-		}
-
-		const [year, month, day] = value.split('-').map((part) => Number(part));
-		if (!year || !month || !day) {
-			return null;
-		}
-
-		return new Date(Date.UTC(year, month - 1, day));
-	}
-
-	function formatIsoDate(value: Date): string {
-		const year = value.getUTCFullYear();
-		const month = String(value.getUTCMonth() + 1).padStart(2, '0');
-		const day = String(value.getUTCDate()).padStart(2, '0');
-		return `${year}-${month}-${day}`;
-	}
-
-	function monthEndOffset(value: Date, monthOffset: number): Date {
-		return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + monthOffset + 1, 0));
-	}
-
-	function getSuggestedCloseDate(periodLockDate: string | null | undefined): string {
-		const currentLock = parseDateValue(periodLockDate);
-		if (currentLock) {
-			return formatIsoDate(monthEndOffset(currentLock, 1));
-		}
-
-		const today = new Date();
-		return formatIsoDate(monthEndOffset(today, -1));
-	}
-
 	function getEntryTotal(entry: JournalEntry): Decimal {
 		return entry.lines.reduce((sum, line) => sum.add(toDecimal(line.base_debit)), new Decimal(0));
 	}
@@ -154,11 +83,7 @@
 		return event.close_kind === 'year_end' ? m.settings_periodYearEnd() : m.settings_periodMonthEnd();
 	}
 
-	const unmatchedTransactions = $derived(
-		bankExceptions
-			.flatMap((group) => group.transactions.map((transaction) => ({ account: group.account, transaction })))
-			.sort((left, right) => new Date(right.transaction.transaction_date).getTime() - new Date(left.transaction.transaction_date).getTime())
-	);
+	const unmatchedTransactions = $derived(flattenUnmatchedTransactions(bankExceptions));
 	const unmatchedAmount = $derived(
 		unmatchedTransactions.reduce((sum, item) => sum.add(toDecimal(item.transaction.amount).abs()), new Decimal(0))
 	);
@@ -179,7 +104,7 @@
 			<h3>{m.dashboard_reviewQueueTitle()}</h3>
 			<p>{m.dashboard_reviewQueueDesc()}</p>
 		</div>
-		<button class="btn btn-secondary review-refresh" type="button" onclick={() => loadReviewWorkspace(tenant.id)} disabled={isLoading}>
+		<button class="btn btn-secondary review-refresh" type="button" onclick={() => loadReviewWorkspace(tenant)} disabled={isLoading}>
 			{m.common_refresh()}
 		</button>
 	</div>

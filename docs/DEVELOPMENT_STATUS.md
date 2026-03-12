@@ -19,7 +19,7 @@ Local verification completed on 2026-03-12:
 
 - `go test ./...` passes
 - `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)` passes against a fresh PostgreSQL database
-- `cd frontend && bun run test` passes with 19 files and 480 tests
+- `cd frontend && bun run test` passes with 20 files and 482 tests
 - `cd frontend && bun run check` passes with 0 errors and 0 warnings
 - `cd frontend && bun run test:e2e:smoke` passes against a fresh locally seeded demo environment
 - Backend integration tests are now blocking in CI
@@ -49,7 +49,7 @@ Still not done:
 | Period lock on core write paths | `Working` | Tenant `period_lock_date` blocks core back-dated writes across the main mutation paths. |
 | Close/reopen workflow with audit trail | `Beta` | Explicit close and reopen actions exist in the API and company settings, with history and operator notes. Fiscal-year checklist/carry-forward work is still missing. |
 | Invoice, journal-entry, and payment document attachments | `Beta` | Files can be uploaded, listed, downloaded, and deleted for core accounting records. Reconciliation evidence, approval flow, and retention policy controls are still missing. |
-| Accountant review workspace | `Beta` | The dashboard now surfaces overdue invoices, unmatched bank transactions, close status, and recent journal entries in one review queue. Cross-tenant task rollups and deeper exception handling are still missing. |
+| Accountant review workspace | `Beta` | The dashboard now includes both a tenant review queue and a cross-tenant portfolio rollup for overdue invoices, banking exceptions, and close pressure. Dedicated exception actions and deeper review workflows are still missing. |
 | Plugin marketplace | `Beta` | Significant functionality exists, but it is not part of the primary product wedge for reliability. |
 | Inventory and warehouse flows | `Beta` | Inventory structures exist, but the module is not yet complete enough to market as finished. |
 | Core accountant smoke E2E gate | `Working` | CI now blocks on auth setup plus invoices, reports, banking, and payroll route coverage. |
@@ -71,7 +71,7 @@ Still not done:
 
 1. Implement employee and incumbent-system migration imports.
 2. Finish fiscal-year close, carry-forward, and year-end checklist workflows on top of the new close/reopen foundation.
-3. Extend the new dashboard review queue into cross-tenant exception rollups and deeper accounting review actions.
+3. Extend the new accountant portfolio rollup into deeper exception actions, review notes, and dedicated accounting follow-up workflows.
 4. Extend the current attachment layer into reconciliation evidence, approval, and retention workflows.
 5. Remove insecure production defaults and add stronger session management.
 
