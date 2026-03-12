@@ -35,7 +35,7 @@ test.describe('Demo TSD Declarations', () => {
 			expect(hasRelevantContent).toBeTruthy();
 		} else {
 			// If no data, just verify page loaded correctly
-			await expect(page.getByRole('heading')).toBeVisible();
+			await expect(page.getByRole('heading', { level: 1, name: /tsd/i })).toBeVisible();
 		}
 	});
 
@@ -48,7 +48,7 @@ test.describe('Demo TSD Declarations', () => {
 			expect(pageContent.includes('submitted') || pageContent.includes('draft')).toBeTruthy();
 		} else {
 			// Empty state is acceptable
-			await expect(page.getByRole('heading')).toBeVisible();
+			await expect(page.getByRole('heading', { level: 1, name: /tsd/i })).toBeVisible();
 		}
 	});
 
@@ -83,7 +83,7 @@ test.describe('Demo TSD Declarations', () => {
 			expect(pageContent).toMatch(/[\d,]+\.\d{2}/);
 		} else {
 			// If no data, verify page structure
-			await expect(page.getByRole('heading')).toBeVisible();
+			await expect(page.getByRole('heading', { level: 1, name: /tsd/i })).toBeVisible();
 		}
 	});
 });

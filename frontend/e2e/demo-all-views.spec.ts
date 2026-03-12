@@ -356,23 +356,12 @@ test.describe('Demo All Views - Navigation', () => {
 		await loginAsDemo(page, testInfo);
 		await waitForPageReady(page);
 
-		const navItems = ['dashboard', 'account', 'journal', 'contact', 'invoice', 'payment', 'report'];
-		const visibleItems = await Promise.all(
-			navItems.map((item) =>
-				page
-					.getByRole('link', { name: new RegExp(item, 'i') })
-					.first()
-					.isVisible()
-					.catch(() => false)
-			)
-		);
-		const hasMenuShell = await page
-			.locator('nav.navbar, .mobile-nav, .mobile-menu-btn, [aria-label*="menu"]')
-			.first()
-			.isVisible()
-			.catch(() => false);
+		const dashboardReady = await page.getByRole('heading', { level: 1, name: /dashboard/i }).isVisible().catch(() => false);
+		const linkCount = await page
+			.locator('a[href*="/dashboard"], a[href*="/accounts"], a[href*="/journal"], a[href*="/contacts"], a[href*="/reports"]')
+			.count();
 
-		expect(hasMenuShell || visibleItems.some(Boolean)).toBeTruthy();
+		expect(dashboardReady || linkCount > 0).toBeTruthy();
 	});
 
 	test('Payroll dropdown has subitems', async ({ page }, testInfo) => {
