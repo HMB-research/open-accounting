@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -65,7 +66,7 @@ func TestGetMigrationFilesAndExtractVersion(t *testing.T) {
 }
 
 func TestMigrationLifecycle(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := setupMigrationTestDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -122,7 +123,7 @@ func TestMigrationLifecycle(t *testing.T) {
 }
 
 func TestMainRunsMigrateUp(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := setupMigrationTestDB(t)
 	dir := t.TempDir()
 	version := fmt.Sprintf("999998_%d_main_up", time.Now().UnixNano())
 	tableName := fmt.Sprintf("migration_main_%d", time.Now().UnixNano())
@@ -143,7 +144,7 @@ func TestMainRunsMigrateUp(t *testing.T) {
 }
 
 func TestMainRejectsInvalidDirection(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := setupMigrationTestDB(t)
 	cmd := exec.Command(os.Args[0], "-test.run=TestMainHelperProcess", "--", "-db", connStringFromPool(pool), "-direction", "sideways")
 	cmd.Env = append(os.Environ(), "GO_WANT_MIGRATE_HELPER=1")
 	out, err := cmd.CombinedOutput()
@@ -168,7 +169,7 @@ func TestMainRequiresDatabaseURL(t *testing.T) {
 }
 
 func TestMigrateUpHonorsStepsAndSkipsApplied(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := setupMigrationTestDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -207,7 +208,7 @@ func TestMigrateUpHonorsStepsAndSkipsApplied(t *testing.T) {
 }
 
 func TestMigrateDownDefaultsToSingleRollback(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := setupMigrationTestDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -261,4 +262,63 @@ func tableExists(t *testing.T, ctx context.Context, pool *pgxpool.Pool, tableNam
 func connStringFromPool(pool *pgxpool.Pool) string {
 	cfg := pool.Config().ConnConfig
 	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable", cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.Database)
+}
+
+func setupMigrationTestDB(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+
+	baseURL := os.Getenv("DATABASE_URL")
+	if baseURL == "" {
+		return testutil.SetupTestDB(t)
+	}
+
+	adminURL, err := url.Parse(baseURL)
+	if err != nil {
+		t.Fatalf("failed to parse DATABASE_URL: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	adminPool, err := pgxpool.New(ctx, adminURL.String())
+	if err != nil {
+		t.Fatalf("failed to connect admin pool: %v", err)
+	}
+
+	dbName := fmt.Sprintf("migrate_test_%d", time.Now().UnixNano())
+	if _, err := adminPool.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s", dbName)); err != nil {
+		adminPool.Close()
+		t.Fatalf("failed to create migration test database %s: %v", dbName, err)
+	}
+
+	testURL := *adminURL
+	testURL.Path = "/" + dbName
+
+	pool, err := pgxpool.New(ctx, testURL.String())
+	if err != nil {
+		_, _ = adminPool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s WITH (FORCE)", dbName))
+		adminPool.Close()
+		t.Fatalf("failed to connect migration test database %s: %v", dbName, err)
+	}
+
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		_, _ = adminPool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s WITH (FORCE)", dbName))
+		adminPool.Close()
+		t.Fatalf("failed to ping migration test database %s: %v", dbName, err)
+	}
+
+	t.Cleanup(func() {
+		pool.Close()
+
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cleanupCancel()
+
+		if _, err := adminPool.Exec(cleanupCtx, fmt.Sprintf("DROP DATABASE IF EXISTS %s WITH (FORCE)", dbName)); err != nil {
+			t.Logf("warning: failed to drop migration test database %s: %v", dbName, err)
+		}
+		adminPool.Close()
+	})
+
+	return pool
 }

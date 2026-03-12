@@ -27,6 +27,8 @@ type PostgresContainer struct {
 // containerInstance is a singleton for the test container
 var containerInstance *PostgresContainer
 
+const migrationAdvisoryLockKey = 23456789
+
 // GetTestContainer returns a shared PostgreSQL container for integration tests.
 // If DATABASE_URL is set, it uses that instead of starting a container.
 // The container is shared across all tests to avoid startup overhead.
@@ -35,7 +37,11 @@ func GetTestContainer(t *testing.T) *pgxpool.Pool {
 
 	// Check if DATABASE_URL is set - use external database if so
 	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
-		return setupExternalDB(t, dbURL)
+		if containerInstance != nil && containerInstance.ConnStr == dbURL && containerInstance.Pool != nil {
+			return containerInstance.Pool
+		}
+		containerInstance = setupExternalDB(t, dbURL)
+		return containerInstance.Pool
 	}
 
 	// Use testcontainers
@@ -47,7 +53,7 @@ func GetTestContainer(t *testing.T) *pgxpool.Pool {
 }
 
 // setupExternalDB connects to an external database specified by DATABASE_URL
-func setupExternalDB(t *testing.T, dbURL string) *pgxpool.Pool {
+func setupExternalDB(t *testing.T, dbURL string) *PostgresContainer {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -63,11 +69,15 @@ func setupExternalDB(t *testing.T, dbURL string) *pgxpool.Pool {
 		t.Fatalf("failed to ping database: %v", err)
 	}
 
-	t.Cleanup(func() {
+	if err := runMigrations(t, pool); err != nil {
 		pool.Close()
-	})
+		t.Fatalf("failed to prepare external database: %v", err)
+	}
 
-	return pool
+	return &PostgresContainer{
+		Pool:    pool,
+		ConnStr: dbURL,
+	}
 }
 
 // startContainer starts a new PostgreSQL container and runs migrations
@@ -164,16 +174,73 @@ func runMigrations(t *testing.T, pool *pgxpool.Pool) error {
 	sort.Strings(migrations)
 
 	ctx := context.Background()
+	lockConn, err := pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire migration lock connection: %w", err)
+	}
+	defer lockConn.Release()
+
+	if _, err := lockConn.Exec(ctx, "SELECT pg_advisory_lock($1)", migrationAdvisoryLockKey); err != nil {
+		return fmt.Errorf("acquire migration advisory lock: %w", err)
+	}
+	defer func() {
+		_, _ = lockConn.Exec(ctx, "SELECT pg_advisory_unlock($1)", migrationAdvisoryLockKey)
+	}()
+
+	if err := ensureBootstrapMigrationsTable(ctx, pool); err != nil {
+		return fmt.Errorf("ensure bootstrap migrations table: %w", err)
+	}
+
+	migratorApplied, err := getAppliedSchemaMigrations(ctx, pool)
+	if err != nil {
+		return fmt.Errorf("get applied schema migrations: %w", err)
+	}
+	if len(migratorApplied) > 0 {
+		if err := backfillBootstrapMigrations(ctx, pool); err != nil {
+			return fmt.Errorf("backfill bootstrap migrations: %w", err)
+		}
+	}
+
+	bootstrapApplied, err := getAppliedBootstrapMigrations(ctx, pool)
+	if err != nil {
+		return fmt.Errorf("get applied bootstrap migrations: %w", err)
+	}
+
+	applied := make(map[string]bool, len(migratorApplied)+len(bootstrapApplied))
+	for version := range migratorApplied {
+		applied[version] = true
+	}
+	for version := range bootstrapApplied {
+		applied[version] = true
+	}
+
 	for _, migration := range migrations {
+		version := strings.TrimSuffix(migration, ".up.sql")
+		if applied[version] {
+			continue
+		}
+
 		migrationPath := filepath.Join(migrationsDir, migration)
 		content, err := os.ReadFile(migrationPath)
 		if err != nil {
 			return fmt.Errorf("failed to read migration %s: %w", migration, err)
 		}
 
-		_, err = pool.Exec(ctx, string(content))
+		tx, err := pool.Begin(ctx)
 		if err != nil {
+			return fmt.Errorf("begin migration %s: %w", migration, err)
+		}
+
+		if _, err = tx.Exec(ctx, string(content)); err != nil {
+			_ = tx.Rollback(ctx)
 			return fmt.Errorf("failed to execute migration %s: %w", migration, err)
+		}
+		if _, err = tx.Exec(ctx, "INSERT INTO testutil_bootstrap_migrations (version) VALUES ($1)", version); err != nil {
+			_ = tx.Rollback(ctx)
+			return fmt.Errorf("failed to record migration %s: %w", migration, err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("failed to commit migration %s: %w", migration, err)
 		}
 
 		t.Logf("Applied migration: %s", migration)
@@ -184,13 +251,90 @@ func runMigrations(t *testing.T, pool *pgxpool.Pool) error {
 
 // CleanupContainer cleans up the container (call from TestMain if needed)
 func CleanupContainer() {
-	if containerInstance != nil && containerInstance.Container != nil {
+	if containerInstance != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		containerInstance.Pool.Close()
-		if err := containerInstance.Container.Terminate(ctx); err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "failed to terminate test container: %v\n", err)
+		if containerInstance.Pool != nil {
+			containerInstance.Pool.Close()
+		}
+		if containerInstance.Container != nil {
+			if err := containerInstance.Container.Terminate(ctx); err != nil {
+				_, _ = fmt.Fprintf(os.Stderr, "failed to terminate test container: %v\n", err)
+			}
 		}
 		containerInstance = nil
 	}
+}
+
+func ensureBootstrapMigrationsTable(ctx context.Context, pool *pgxpool.Pool) error {
+	_, err := pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS testutil_bootstrap_migrations (
+			version TEXT PRIMARY KEY,
+			applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)
+	`)
+	return err
+}
+
+func getAppliedBootstrapMigrations(ctx context.Context, pool *pgxpool.Pool) (map[string]bool, error) {
+	rows, err := pool.Query(ctx, "SELECT version FROM testutil_bootstrap_migrations")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	applied := make(map[string]bool)
+	for rows.Next() {
+		var version string
+		if err := rows.Scan(&version); err != nil {
+			return nil, err
+		}
+		applied[version] = true
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return applied, nil
+}
+
+func getAppliedSchemaMigrations(ctx context.Context, pool *pgxpool.Pool) (map[string]bool, error) {
+	var exists bool
+	if err := pool.QueryRow(ctx, "SELECT to_regclass('public.schema_migrations') IS NOT NULL").Scan(&exists); err != nil {
+		return nil, err
+	}
+	if !exists {
+		return map[string]bool{}, nil
+	}
+
+	rows, err := pool.Query(ctx, "SELECT version FROM schema_migrations")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	applied := make(map[string]bool)
+	for rows.Next() {
+		var version string
+		if err := rows.Scan(&version); err != nil {
+			return nil, err
+		}
+		applied[version] = true
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return applied, nil
+}
+
+func backfillBootstrapMigrations(ctx context.Context, pool *pgxpool.Pool) error {
+	_, err := pool.Exec(ctx, `
+		INSERT INTO testutil_bootstrap_migrations (version)
+		SELECT version FROM schema_migrations
+		ON CONFLICT (version) DO NOTHING
+	`)
+	return err
 }

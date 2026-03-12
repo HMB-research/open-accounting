@@ -45,7 +45,7 @@ func TestDatabaseSetupPaths(t *testing.T) {
 
 func TestSchemaTenantAndUserHelpers(t *testing.T) {
 	pool := SetupTestDB(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	schemaName := SetupTestSchema(t, pool)
