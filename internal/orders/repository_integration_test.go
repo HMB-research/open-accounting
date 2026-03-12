@@ -10,23 +10,6 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func strPtr(s string) *string {
-	return &s
-}
-
-func timePtr(t time.Time) *time.Time {
-	return &t
-}
-
-func createTestContact(t *testing.T, pool interface{ Exec(ctx context.Context, sql string, arguments ...interface{}) (interface{}, error) }, schemaName, tenantID string) string {
-	t.Helper()
-	_ = context.Background() // placeholder for future use
-	contactID := uuid.New().String()
-
-	// The pool interface doesn't match exactly, so we'll work around this
-	return contactID
-}
-
 func TestRepository_CreateAndGetOrder(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)

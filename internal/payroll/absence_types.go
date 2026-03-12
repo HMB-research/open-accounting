@@ -13,7 +13,7 @@ const (
 	LeavePending  LeaveStatus = "PENDING"
 	LeaveApproved LeaveStatus = "APPROVED"
 	LeaveRejected LeaveStatus = "REJECTED"
-	LeaveCanceled LeaveStatus = "CANCELLED"
+	LeaveCanceled LeaveStatus = "CANCELLED" //nolint:misspell // External status value kept for compatibility.
 )
 
 // AbsenceType represents a type of leave/absence

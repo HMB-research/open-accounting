@@ -92,13 +92,17 @@ func startContainer(t *testing.T) *PostgresContainer {
 
 	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
-		container.Terminate(ctx)
+		if terminateErr := container.Terminate(ctx); terminateErr != nil {
+			t.Fatalf("failed to get connection string: %v (terminate container: %v)", err, terminateErr)
+		}
 		t.Fatalf("failed to get connection string: %v", err)
 	}
 
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {
-		container.Terminate(ctx)
+		if terminateErr := container.Terminate(ctx); terminateErr != nil {
+			t.Fatalf("failed to create pool: %v (terminate container: %v)", err, terminateErr)
+		}
 		t.Fatalf("failed to create pool: %v", err)
 	}
 
@@ -113,7 +117,9 @@ func startContainer(t *testing.T) *PostgresContainer {
 	// Run migrations
 	if err := runMigrations(t, pool); err != nil {
 		pool.Close()
-		container.Terminate(ctx)
+		if terminateErr := container.Terminate(ctx); terminateErr != nil {
+			t.Fatalf("failed to run migrations: %v (terminate container: %v)", err, terminateErr)
+		}
 		t.Fatalf("failed to run migrations: %v", err)
 	}
 
@@ -182,7 +188,9 @@ func CleanupContainer() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		containerInstance.Pool.Close()
-		containerInstance.Container.Terminate(ctx)
+		if err := containerInstance.Container.Terminate(ctx); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "failed to terminate test container: %v\n", err)
+		}
 		containerInstance = nil
 	}
 }

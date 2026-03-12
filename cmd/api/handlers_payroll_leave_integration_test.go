@@ -33,8 +33,8 @@ func setupPayrollIntegrationHandlers(t *testing.T) (*Handlers, *testutil.TestTen
 	}
 
 	h := &Handlers{
-		pool:          pool,
-		tenantService: tenantpkg.NewService(pool),
+		pool:           pool,
+		tenantService:  tenantpkg.NewService(pool),
 		payrollService: payroll.NewService(pool),
 		absenceService: payroll.NewAbsenceServiceWithPool(pool),
 	}
@@ -301,9 +301,9 @@ func TestCalculateTaxPreviewHandler(t *testing.T) {
 	result := invokeJSON[payroll.TaxCalculation](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
 		h.CalculateTaxPreview(w, r)
 	}, makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/payroll/tax-preview", map[string]any{
-		"gross_salary":           "3000.00",
-		"apply_basic_exemption":  true,
-		"funded_pension_rate":    "0.02",
+		"gross_salary":          "3000.00",
+		"apply_basic_exemption": true,
+		"funded_pension_rate":   "0.02",
 	}, nil))
 	if result.NetSalary.IsZero() {
 		t.Fatal("expected non-zero tax preview result")

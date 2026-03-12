@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/recurring"
 )
 
 // MockRepository implements Repository for testing

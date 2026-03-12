@@ -10,10 +10,6 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func timePtr(t time.Time) *time.Time {
-	return &t
-}
-
 func TestRepository_CreateAndGetQuote(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)

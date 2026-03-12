@@ -121,10 +121,10 @@ func TestJournalEntryHandlers_CreatePostVoidAndGet(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 
 	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries", map[string]interface{}{
-		"entry_date":   "2026-02-10T00:00:00Z",
-		"description":  "Sales journal",
-		"reference":    "REF-1",
-		"source_type":  "MANUAL",
+		"entry_date":  "2026-02-10T00:00:00Z",
+		"description": "Sales journal",
+		"reference":   "REF-1",
+		"source_type": "MANUAL",
 		"lines": []map[string]interface{}{
 			{"account_id": "cash", "debit_amount": "100.00"},
 			{"account_id": "sales", "credit_amount": "100.00"},
@@ -195,18 +195,18 @@ func TestReportHandlers(t *testing.T) {
 	}
 	accountingRepo.periodBalances = []accounting.AccountBalance{
 		{
-			AccountID:     "sales",
-			AccountCode:   "4000",
-			AccountName:   "Sales",
-			AccountType:   accounting.AccountTypeRevenue,
-			NetBalance:    decimal.NewFromInt(-500),
+			AccountID:   "sales",
+			AccountCode: "4000",
+			AccountName: "Sales",
+			AccountType: accounting.AccountTypeRevenue,
+			NetBalance:  decimal.NewFromInt(-500),
 		},
 		{
-			AccountID:     "expense",
-			AccountCode:   "5000",
-			AccountName:   "Expense",
-			AccountType:   accounting.AccountTypeExpense,
-			NetBalance:    decimal.NewFromInt(200),
+			AccountID:   "expense",
+			AccountCode: "5000",
+			AccountName: "Expense",
+			AccountType: accounting.AccountTypeExpense,
+			NetBalance:  decimal.NewFromInt(200),
 		},
 	}
 

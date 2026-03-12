@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/HMB-research/open-accounting/internal/testutil"
+	"github.com/google/uuid"
 )
 
 func TestReminderRuleIntegration(t *testing.T) {
@@ -179,10 +179,10 @@ func TestReminderRepositoriesIntegration(t *testing.T) {
 	afterDueInvoiceID := uuid.New().String()
 	paidInvoiceID := uuid.New().String()
 	for _, invoice := range []struct {
-		id        string
-		number    string
-		dueDate   string
-		status    string
+		id         string
+		number     string
+		dueDate    string
+		status     string
 		amountPaid string
 	}{
 		{beforeDueInvoiceID, "INV-BEFORE", "2025-02-08", "SENT", "0"},

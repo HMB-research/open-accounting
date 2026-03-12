@@ -530,11 +530,11 @@ func TestParseDaysToExpiryAndOptionalIntEdgeCases(t *testing.T) {
 
 	assert.Nil(t, parseDaysToExpiry(-1))
 
-	value, err := parseOptionalInt(" 42 ")
+	_, err := parseOptionalInt(" 42 ")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "parse integer")
 
-	value, err = parseOptionalInt("42")
+	value, err := parseOptionalInt("42")
 	require.NoError(t, err)
 	assert.Equal(t, 42, value)
 

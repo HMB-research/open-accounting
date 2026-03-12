@@ -18,11 +18,11 @@ import (
 )
 
 type fakeDBTX struct {
-	lastExecQuery  string
-	lastExecArgs   []any
-	lastQuery      string
-	lastQueryArgs  []any
-	lastQueryRow   string
+	lastExecQuery    string
+	lastExecArgs     []any
+	lastQuery        string
+	lastQueryArgs    []any
+	lastQueryRow     string
 	lastQueryRowArgs []any
 
 	rows pgx.Rows

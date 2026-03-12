@@ -22,19 +22,19 @@ type mockAccountingRepository struct {
 	accounts       map[string]*accounting.Account
 	journalEntries map[string]*accounting.JournalEntry
 
-	accountBalance      decimal.Decimal
-	trialBalances       []accounting.AccountBalance
-	periodBalances      []accounting.AccountBalance
-	listAccountsErr     error
-	createAccountErr    error
-	getAccountErr       error
-	getJournalErr       error
-	createJournalErr    error
-	updateJournalErr    error
-	getBalanceErr       error
-	getTrialBalanceErr  error
+	accountBalance       decimal.Decimal
+	trialBalances        []accounting.AccountBalance
+	periodBalances       []accounting.AccountBalance
+	listAccountsErr      error
+	createAccountErr     error
+	getAccountErr        error
+	getJournalErr        error
+	createJournalErr     error
+	updateJournalErr     error
+	getBalanceErr        error
+	getTrialBalanceErr   error
 	getPeriodBalancesErr error
-	voidJournalErr      error
+	voidJournalErr       error
 }
 
 func newMockAccountingRepository() *mockAccountingRepository {

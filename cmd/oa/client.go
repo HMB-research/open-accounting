@@ -202,11 +202,14 @@ func (c *apiClient) request(ctx context.Context, method, apiPath string, body an
 		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(bearerToken))
 	}
 
+	//nolint:gosec // The CLI intentionally talks to a user-configured Open Accounting base URL.
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("request %s %s: %w", method, apiPath, err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return decodeAPIError(resp)
