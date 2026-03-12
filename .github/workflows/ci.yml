@@ -22,6 +22,7 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
       docker: ${{ steps.filter.outputs.docker }}
+      ci: ${{ steps.filter.outputs.ci }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -39,11 +40,13 @@ jobs:
             docker:
               - 'Dockerfile'
               - 'docker-compose.yml'
+            ci:
+              - '.github/workflows/**'
 
   test:
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.backend == 'true' || github.ref == 'refs/heads/main'
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
 
     services:
       postgres:
@@ -87,7 +90,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.backend == 'true' || github.ref == 'refs/heads/main'
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
 
     steps:
       - uses: actions/checkout@v4
@@ -106,8 +109,7 @@ jobs:
   integration-test:
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.backend == 'true' || github.ref == 'refs/heads/main'
-    continue-on-error: true  # Non-blocking until integration tests are stable
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
 
     services:
       postgres:
@@ -160,7 +162,7 @@ jobs:
       (needs.test.result == 'success' || needs.test.result == 'skipped') &&
       (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
       (needs.integration-test.result == 'success' || needs.integration-test.result == 'skipped') &&
-      (needs.changes.outputs.backend == 'true' || github.ref == 'refs/heads/main')
+      (needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main')
 
     steps:
       - uses: actions/checkout@v4
@@ -187,7 +189,7 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.frontend == 'true' || github.ref == 'refs/heads/main'
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
 
     steps:
       - uses: actions/checkout@v4
@@ -212,12 +214,127 @@ jobs:
         run: bun run build
 
   # E2E tests run against local database with seeded demo data
+  e2e-smoke:
+    runs-on: ubuntu-latest
+    needs: [changes, test, lint, integration-test, frontend]
+    if: |
+      always() &&
+      (needs.test.result == 'success' || needs.test.result == 'skipped') &&
+      (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
+      (needs.integration-test.result == 'success' || needs.integration-test.result == 'skipped') &&
+      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped') &&
+      (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main')
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: openaccounting_demo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: bun install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: bunx playwright install --with-deps chromium
+
+      - name: Build backend
+        run: |
+          CGO_ENABLED=0 go build -o api ./cmd/api
+          CGO_ENABLED=0 go build -o migrate ./cmd/migrate
+
+      - name: Run migrations
+        run: ./migrate -db "postgres://test:test@localhost:5432/openaccounting_demo?sslmode=disable"
+
+      - name: Start backend in demo mode
+        run: |
+          ./api &
+          API_PID=$!
+          echo "Started API server with PID $API_PID"
+
+          echo "Waiting for API to be ready..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8080/health > /dev/null 2>&1; then
+              echo "API is ready after $i seconds"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "API failed to start after 30 seconds"
+              exit 1
+            fi
+            sleep 1
+          done
+        env:
+          DATABASE_URL: postgres://test:test@localhost:5432/openaccounting_demo?sslmode=disable
+          JWT_SECRET: test-secret-key-for-ci
+          PORT: 8080
+          DEMO_MODE: 'true'
+          DEMO_RESET_SECRET: test-demo-secret
+
+      - name: Seed demo data via API
+        run: |
+          echo "Calling demo reset endpoint to seed all 4 demo users..."
+          response=$(curl -s -w "\n%{http_code}" -X POST http://localhost:8080/api/demo/reset \
+            -H "Content-Type: application/json" \
+            -H "X-Demo-Secret: test-demo-secret")
+          http_code=$(echo "$response" | tail -1)
+          body=$(echo "$response" | head -n -1)
+          echo "Response: $body"
+          if [ "$http_code" != "200" ]; then
+            echo "Error: Demo reset failed with status $http_code"
+            exit 1
+          fi
+          echo "Demo data seeded successfully"
+
+      - name: Run smoke E2E tests
+        working-directory: frontend
+        run: bun run test:e2e:smoke
+        env:
+          CI: true
+          BASE_URL: http://localhost:5173
+          PUBLIC_API_URL: http://localhost:8080
+          DEMO_RESET_SECRET: test-demo-secret
+
+      - name: Upload Playwright smoke report
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-smoke-report
+          path: frontend/playwright-report-demo/
+          retention-days: 7
+
+  # E2E tests run against local database with seeded demo data
   # Sharded across 2 runners for parallel execution (~50% faster)
   e2e:
     runs-on: ubuntu-latest
-    needs: [changes]
+    needs: [changes, e2e-smoke]
     continue-on-error: true  # Demo tests are informational
-    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || github.ref == 'refs/heads/main'
+    if: |
+      always() &&
+      (needs.e2e-smoke.result == 'success' || needs.e2e-smoke.result == 'skipped') &&
+      (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main')
 
     strategy:
       fail-fast: false
@@ -332,12 +449,13 @@ jobs:
   # Demo E2E tests run against the live Railway demo environment
   e2e-demo:
     runs-on: ubuntu-latest
-    needs: [changes, frontend]
+    needs: [changes, frontend, e2e-smoke]
     continue-on-error: true  # Demo tests are informational - don't block deployment
     if: |
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
-      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped')
+      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped') &&
+      (needs.e2e-smoke.result == 'success' || needs.e2e-smoke.result == 'skipped')
 
     steps:
       - uses: actions/checkout@v4
@@ -393,14 +511,15 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
-    needs: [changes, test, lint, frontend]
+    needs: [changes, test, lint, frontend, e2e-smoke]
     if: |
       always() &&
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
       (needs.test.result == 'success' || needs.test.result == 'skipped') &&
       (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
-      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped')
+      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped') &&
+      (needs.e2e-smoke.result == 'success' || needs.e2e-smoke.result == 'skipped')
 
     steps:
       - uses: actions/checkout@v4

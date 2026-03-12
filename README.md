@@ -17,6 +17,10 @@
 
 > **⚠️ Development Status**
 > This project is under active development and not yet production-ready. APIs may change, and features may be incomplete. Contributions and feedback welcome!
+>
+> Verified locally on 2026-03-12:
+> `go test ./...`, `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)`, `cd frontend && bun run test`, and `cd frontend && bun run test:e2e:smoke` pass.
+> Production hardening, period close controls, imports, and attachment workflows are still in progress.
 
 ---
 
@@ -37,7 +41,9 @@ Try Open Accounting without installing anything:
 
 ## What is Open Accounting?
 
-Open Accounting is a **self-hosted, multi-tenant accounting platform** designed for small to medium businesses, accountants managing multiple clients, and SaaS builders who need embedded accounting. Built with modern technologies and focused on **Estonian/EU compliance**, it provides:
+Open Accounting is a **self-hosted, multi-tenant accounting platform** focused today on **Estonian SMB and accountant workflows**. The current wedge is accounting, invoicing, payroll, bank import/reconciliation, and KMD/TSD export for self-hosted teams that want source access and tenant isolation.
+
+It is not yet a full SmartAccounts/Merit replacement or a production-hardened embedded accounting platform. Built with modern technologies and focused on **Estonian/EU compliance**, it provides:
 
 - **True Double-Entry Bookkeeping** — Immutable journal entries with full audit trail
 - **Multi-Company Support** — One installation serves multiple businesses with complete data isolation
@@ -48,6 +54,8 @@ Open Accounting is a **self-hosted, multi-tenant accounting platform** designed 
 ---
 
 ## ✨ Features
+
+> Status note: features listed below exist in the repository. That does not mean each one is production-hardened, accountant-grade, or at full parity with proprietary incumbents.
 
 ### Core Accounting
 | Feature | Description |
@@ -111,9 +119,9 @@ Open Accounting is a **self-hosted, multi-tenant accounting platform** designed 
 ### Estonian Compliance
 | Feature | Description |
 |---------|-------------|
-| **KMD Declaration** | Automated VAT declaration generation |
-| **TSD Declaration** | Payroll tax declaration with e-MTA XML export |
-| **e-MTA Export** | XML format compatible with Estonian Tax Board |
+| **KMD Declaration** | VAT declaration generation with export for manual filing |
+| **TSD Declaration** | Payroll tax declaration with XML/CSV export |
+| **e-MTA Export** | XML export for manual upload to the Estonian Tax Board |
 | **Estonian Defaults** | Pre-configured for Estonian accounting standards |
 
 ### Plugin Marketplace
@@ -139,7 +147,7 @@ Open Accounting is a **self-hosted, multi-tenant accounting platform** designed 
 | **Database** | PostgreSQL 16+ |
 | **Auth** | JWT with access/refresh tokens |
 | **API Docs** | Swagger/OpenAPI |
-| **Testing** | Go test (90%+ coverage), Vitest (frontend) |
+| **Testing** | Go unit tests, backend integration tests, Vitest, Playwright demo suite |
 | **CI/CD** | GitHub Actions, Codecov |
 | **Container** | Docker, Docker Compose |
 
@@ -246,7 +254,9 @@ open-accounting/
 
 ## 🗺 Roadmap
 
-### Implemented ✅
+### Working in repo
+- Feature presence only; not a claim of production parity or operational maturity.
+
 - [x] Double-entry bookkeeping with journal entries
 - [x] Multi-tenant architecture with schema isolation
 - [x] User authentication and RBAC
@@ -269,9 +279,12 @@ open-accounting/
 - [x] Order management
 - [x] Fixed assets with depreciation tracking
 
-### Planned 📋
-- [ ] E-invoice support (Peppol) — *requires external Access Point*
-- [ ] Inventory management (stock tracking, warehouses)
+### Still missing for reliable production use
+- [ ] Opening balance and migration imports
+- [ ] Period lock and close workflows
+- [ ] Attachment and document handling
+- [ ] Backup/restore verification and stronger auth/session controls
+- [ ] E-invoice, direct bank feeds, SEPA initiation, and automatic e-MTA submission
 
 ---
 
