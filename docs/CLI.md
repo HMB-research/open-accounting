@@ -107,6 +107,12 @@ go run ./cmd/oa contacts create --name "New Customer" --type CUSTOMER --email cu
 go run ./cmd/oa contacts import --file ./contacts.csv
 ```
 
+## Invoices
+
+```bash
+go run ./cmd/oa invoices import --file ./invoices.csv
+```
+
 ## Opening balances
 
 ```bash
@@ -135,6 +141,14 @@ code,name,account_type,description,parent_code
 name,type,email,payment_terms_days,country_code,credit_limit
 Northwind OU,CUSTOMER,ap@northwind.example,14,EE,1500.00
 Supply Partner,SUPPLIER,purchases@supply.example,30,EE,2500.00
+```
+
+### Invoices
+
+```csv
+invoice_number,invoice_type,contact_code,issue_date,due_date,status,amount_paid,reference,notes,line_description,quantity,unit,unit_price,discount_percent,vat_rate
+INV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,SENT,0,PO-12345,Imported migration invoice,Implementation work,1,hour,100.00,0,22
+INV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,SENT,0,PO-12345,Imported migration invoice,Support retainer,1,month,50.00,0,22
 ```
 
 ### Opening balances

@@ -782,6 +782,35 @@ describe("API Client - Core Functionality", () => {
       expect(result.invoice_number).toBe("INV-002");
     });
 
+    it("should import invoices", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          file_name: "invoices.csv",
+          rows_processed: 2,
+          invoices_created: 1,
+          lines_imported: 2,
+          rows_skipped: 0,
+        }),
+      });
+
+      const result = await api.importInvoices("tenant-123", {
+        file_name: "invoices.csv",
+        csv_content:
+          "invoice_number,invoice_type,contact_name,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" +
+          "INV-EXT-001,SALES,Acme Corp,2026-02-01,2026-02-15,Implementation work,1,100.00,22\n",
+      });
+
+      expect(result.invoices_created).toBe(1);
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/invoices/import"),
+        expect.objectContaining({
+          method: "POST",
+        }),
+      );
+    });
+
     it("should get invoice", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

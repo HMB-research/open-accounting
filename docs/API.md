@@ -240,6 +240,8 @@ This currently applies to:
 - payment creation from bank transactions
 - opening-balance import
 
+Invoice import also enforces the lock, but because it is a bulk operation, locked invoice rows are returned as row errors in the import summary instead of failing the whole request with `409 Conflict`.
+
 ---
 
 ## Accounts (Chart of Accounts)
@@ -281,6 +283,36 @@ Content-Type: application/json
   "account_type": "ASSET",
   "parent_id": "uuid",  // Optional
   "description": "Office petty cash"
+}
+```
+
+### Import Invoices
+
+```http
+POST /tenants/{tenantId}/invoices/import
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "file_name": "invoices.csv",
+  "csv_content": "invoice_number,invoice_type,contact_code,issue_date,due_date,status,amount_paid,reference,notes,line_description,quantity,unit,unit_price,discount_percent,vat_rate\nINV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,SENT,0,PO-12345,Imported migration invoice,Implementation work,1,hour,100.00,0,22\nINV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,SENT,0,PO-12345,Imported migration invoice,Support retainer,1,month,50.00,0,22"
+}
+```
+
+Rows are grouped by `invoice_number` and `invoice_type`. Contacts are resolved by the first populated contact identifier in this priority order:
+- `contact_code`
+- `contact_reg_code`
+- `contact_email`
+- `contact_name`
+
+**Response (200 OK):**
+```json
+{
+  "file_name": "invoices.csv",
+  "rows_processed": 2,
+  "invoices_created": 1,
+  "lines_imported": 2,
+  "rows_skipped": 0
 }
 ```
 

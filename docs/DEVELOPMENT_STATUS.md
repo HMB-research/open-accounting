@@ -19,8 +19,8 @@ Local verification completed on 2026-03-12:
 
 - `go test ./...` passes
 - `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)` passes against a fresh PostgreSQL database
-- `cd frontend && bun run test` passes with 13 files and 430 tests
-- `cd frontend && bun run check` passes with two existing Svelte warnings in `frontend/src/lib/components/OnboardingWizard.svelte`
+- `cd frontend && bun run test` passes with 15 files and 437 tests
+- `cd frontend && bun run check` passes with 0 errors and 0 warnings
 - `cd frontend && bun run test:e2e:smoke` passes against a fresh locally seeded demo environment
 - Backend integration tests are now blocking in CI
 - Core accountant smoke E2E is now blocking in CI
@@ -41,8 +41,8 @@ Still not done:
 | KMD generation/export | `Working` | KMD generation/export exists; direct e-MTA submission does not. |
 | Quotes, orders, fixed assets | `Working` | Features exist and have tests, but accountant-grade polish is still limited. |
 | Multi-tenant auth, RBAC, tenant isolation | `Working` | Core tenant model is in place; auth hardening is still needed for production trust. |
-| CLI and API token automation | `Working` | `cmd/oa` supports token bootstrap, token management, accounts, contacts, and opening-balance imports using tenant-scoped API tokens. |
-| Chart of accounts, contacts, and opening-balance imports | `Working` | CSV imports exist in API, web UI, and CLI for core setup data. |
+| CLI and API token automation | `Working` | `cmd/oa` supports token bootstrap, token management, accounts, contacts, invoices, and opening-balance imports using tenant-scoped API tokens. |
+| Chart of accounts, contacts, invoice, and opening-balance imports | `Working` | CSV imports exist in API, web UI, and CLI for core setup and migration data. |
 | Report exports | `Beta` | CSV/XLSX export exists, but the current path is mostly client-side and not yet authoritative. |
 | Cash flow reporting | `Beta` | Present in code and UI, but needs more accountant-grade validation before stronger claims. |
 | Settings and admin workflows | `Beta` | Basic settings exist, but production admin depth is still thin. |
@@ -51,7 +51,7 @@ Still not done:
 | Inventory and warehouse flows | `Beta` | Inventory structures exist, but the module is not yet complete enough to market as finished. |
 | Core accountant smoke E2E gate | `Working` | CI now blocks on auth setup plus invoices, reports, banking, and payroll route coverage. |
 | Demo seeded flows and broad view coverage | `Demo-only` | Useful for demos and regression checks, not the same as release-quality smoke coverage. |
-| Invoice, employee, and external migration imports | `Missing` | Adoption gap remains for historical data migration and incumbent-system cutover. |
+| Employee and incumbent-system migration imports | `Missing` | Adoption gap remains for payroll history and broader historical cutover. |
 | Month-end close, year-end close, and reopen workflow | `Missing` | Hard requirement for trustworthy accounting operations. |
 | Attachments and document workflows | `Missing` | Purchase invoice, receipt, and reconciliation evidence handling is still absent. |
 | Direct bank feeds, SEPA initiation, e-invoice, OCR, automatic e-MTA submission | `Blocked` | Requires external partnerships, licensing, certification, or additional infrastructure. |
@@ -66,7 +66,7 @@ Still not done:
 
 ## Immediate Priorities
 
-1. Implement invoice, employee, and incumbent-system migration imports.
+1. Implement employee and incumbent-system migration imports.
 2. Expand period lock into close, reopen, and month-end/year-end workflows.
 3. Add attachments and document storage for accounting records.
 4. Remove insecure production defaults and add stronger session management.

@@ -16,6 +16,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -156,6 +157,14 @@ func (c *apiClient) createContact(ctx context.Context, tenantID string, req *con
 func (c *apiClient) importContacts(ctx context.Context, tenantID string, req *contacts.ImportContactsRequest) (*contacts.ImportContactsResult, error) {
 	var resp contacts.ImportContactsResult
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "contacts", "import"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) importInvoices(ctx context.Context, tenantID string, req *invoicing.ImportInvoicesRequest) (*invoicing.ImportInvoicesResult, error) {
+	var resp invoicing.ImportInvoicesResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "invoices", "import"), req, c.apiToken, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil

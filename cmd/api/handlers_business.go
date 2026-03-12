@@ -514,6 +514,56 @@ func (h *Handlers) CreateInvoice(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, invoice)
 }
 
+// ImportInvoices imports invoices from CSV data.
+// @Summary Import invoices
+// @Description Import invoices from grouped CSV data and skip duplicate, invalid, or locked rows
+// @Tags Invoices
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body invoicing.ImportInvoicesRequest true "CSV import payload"
+// @Success 200 {object} invoicing.ImportInvoicesResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/invoices/import [post]
+func (h *Handlers) ImportInvoices(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req invoicing.ImportInvoicesRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+
+	if req.FileName == "" {
+		req.FileName = "invoices_import.csv"
+	}
+	req.UserID = claims.UserID
+
+	contactsList, err := h.contactsService.List(r.Context(), tenantID, schemaName, nil)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load contacts")
+		return
+	}
+
+	result, err := h.invoicingService.ImportCSV(r.Context(), tenantID, schemaName, contactsList, &req, func(issueDate time.Time) error {
+		return h.ensurePeriodUnlocked(r.Context(), tenantID, issueDate)
+	})
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // GetInvoice returns an invoice by ID
 // @Summary Get invoice
 // @Description Get invoice details by ID

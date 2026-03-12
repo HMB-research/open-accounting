@@ -578,6 +578,14 @@ class ApiClient {
     );
   }
 
+  async importInvoices(tenantId: string, data: ImportInvoicesRequest) {
+    return this.request<ImportInvoicesResult>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/invoices/import`,
+      data,
+    );
+  }
+
   async getInvoice(tenantId: string, invoiceId: string) {
     return this.request<Invoice>(
       "GET",
@@ -2549,6 +2557,26 @@ export interface CreateInvoiceLineRequest {
   vat_rate: string;
   account_id?: string;
   product_id?: string;
+}
+
+export interface ImportInvoicesRequest {
+  csv_content: string;
+  file_name?: string;
+}
+
+export interface ImportInvoicesRowError {
+  row: number;
+  invoice_number?: string;
+  message: string;
+}
+
+export interface ImportInvoicesResult {
+  file_name?: string;
+  rows_processed: number;
+  invoices_created: number;
+  lines_imported: number;
+  rows_skipped: number;
+  errors?: ImportInvoicesRowError[];
 }
 
 export interface InvoiceFilter {

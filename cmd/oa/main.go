@@ -17,6 +17,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -52,6 +53,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runAccounts(ctx, args[1:])
 	case "contacts":
 		return a.runContacts(ctx, args[1:])
+	case "invoices":
+		return a.runInvoices(ctx, args[1:])
 	case "journal":
 		return a.runJournal(ctx, args[1:])
 	case "help", "--help", "-h":
@@ -78,6 +81,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  contacts list             List contacts")
 	_, _ = fmt.Fprintln(a.stdout, "  contacts create           Create a contact")
 	_, _ = fmt.Fprintln(a.stdout, "  contacts import           Import contacts from CSV")
+	_, _ = fmt.Fprintln(a.stdout, "  invoices import           Import invoices from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  journal import-opening-balances  Import opening balances from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "")
 	_, _ = fmt.Fprintln(a.stdout, "Environment overrides:")
@@ -487,6 +491,50 @@ func (a *cliApp) runContacts(ctx context.Context, args []string) error {
 
 	default:
 		return fmt.Errorf("unknown contacts subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runInvoices(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("invoices subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "import":
+		fs := flag.NewFlagSet("invoices import", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		filePath := fs.String("file", "", "CSV file path")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*filePath) == "" {
+			return errors.New("file is required")
+		}
+
+		content, fileName, err := readCSVInput(*filePath)
+		if err != nil {
+			return err
+		}
+		result, err := client.importInvoices(ctx, cfg.TenantID, &invoicing.ImportInvoicesRequest{
+			FileName:   fileName,
+			CSVContent: content,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Processed %d rows, created %d invoices, imported %d lines, skipped %d rows\n", result.RowsProcessed, result.InvoicesCreated, result.LinesImported, result.RowsSkipped)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown invoices subcommand %q", args[0])
 	}
 }
 
