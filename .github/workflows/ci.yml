@@ -8,6 +8,7 @@ on:
 
 env:
   GO_VERSION: '1.24'
+  BUN_VERSION: '1.3.5'
 
 # Cancel redundant runs when new commits arrive
 concurrency:
@@ -24,24 +25,80 @@ jobs:
       docker: ${{ steps.filter.outputs.docker }}
       ci: ${{ steps.filter.outputs.ci }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
+      - uses: actions/checkout@v6
         with:
-          filters: |
-            backend:
-              - 'cmd/**'
-              - 'internal/**'
-              - 'go.mod'
-              - 'go.sum'
-              - 'migrations/**'
-            frontend:
-              - 'frontend/**'
-            docker:
-              - 'Dockerfile'
-              - 'docker-compose.yml'
-            ci:
-              - '.github/workflows/**'
+          fetch-depth: 0
+
+      - name: Detect changed paths
+        id: filter
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base_sha="${{ github.event.pull_request.base.sha }}"
+            head_sha="${{ github.event.pull_request.head.sha }}"
+            diff_range="$base_sha...$head_sha"
+          elif [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            base_sha="${{ github.event.before }}"
+            head_sha="${{ github.sha }}"
+            diff_range="$base_sha..$head_sha"
+          else
+            diff_range=""
+          fi
+
+          if [ -n "$diff_range" ]; then
+            changed_files="$(git diff --name-only "$diff_range")"
+          else
+            changed_files="$(git ls-tree -r --name-only HEAD)"
+          fi
+
+          echo "Changed files:"
+          if [ -n "$changed_files" ]; then
+            printf '%s\n' "$changed_files"
+          else
+            echo "(none)"
+          fi
+
+          backend=false
+          frontend=false
+          docker=false
+          ci=false
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+
+            case "$file" in
+              cmd/*|internal/*|go.mod|go.sum|migrations/*)
+                backend=true
+                ;;
+            esac
+
+            case "$file" in
+              frontend/*)
+                frontend=true
+                ;;
+            esac
+
+            case "$file" in
+              Dockerfile|docker-compose.yml)
+                docker=true
+                ;;
+            esac
+
+            case "$file" in
+              .github/workflows/*)
+                ci=true
+                ;;
+            esac
+          done <<EOF
+          $changed_files
+          EOF
+
+          {
+            echo "backend=$backend"
+            echo "frontend=$frontend"
+            echo "docker=$docker"
+            echo "ci=$ci"
+          } >> "$GITHUB_OUTPUT"
 
   test:
     runs-on: ubuntu-latest
@@ -64,10 +121,10 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -81,7 +138,7 @@ jobs:
         run: go test -v -race -coverprofile=coverage.out ./...
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.out
@@ -93,10 +150,10 @@ jobs:
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -127,10 +184,10 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -147,7 +204,7 @@ jobs:
         run: go test -v -race -tags=integration -coverprofile=coverage-integration.out $(go list ./... | grep -v /testutil)
 
       - name: Upload integration coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage-integration.out
@@ -165,10 +222,10 @@ jobs:
       (needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main')
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -179,7 +236,7 @@ jobs:
           CGO_ENABLED=0 go build -ldflags="-w -s" -o migrate ./cmd/migrate
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: binaries
           path: |
@@ -192,10 +249,14 @@ jobs:
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Install Bun
+        shell: bash
+        run: |
+          curl -fsSL https://bun.sh/install | bash -s -- "bun-v${{ env.BUN_VERSION }}"
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+          "$HOME/.bun/bin/bun" --version
 
       - name: Install dependencies
         working-directory: frontend
@@ -241,16 +302,20 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Install Bun
+        shell: bash
+        run: |
+          curl -fsSL https://bun.sh/install | bash -s -- "bun-v${{ env.BUN_VERSION }}"
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+          "$HOME/.bun/bin/bun" --version
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -318,7 +383,7 @@ jobs:
           DEMO_RESET_SECRET: test-demo-secret
 
       - name: Upload Playwright smoke report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: failure()
         with:
           name: playwright-smoke-report
@@ -357,16 +422,20 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Install Bun
+        shell: bash
+        run: |
+          curl -fsSL https://bun.sh/install | bash -s -- "bun-v${{ env.BUN_VERSION }}"
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+          "$HOME/.bun/bin/bun" --version
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -439,7 +508,7 @@ jobs:
           DEMO_RESET_SECRET: test-demo-secret
 
       - name: Upload Playwright report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: failure()
         with:
           name: playwright-report-shard-${{ matrix.shard }}
@@ -458,10 +527,14 @@ jobs:
       (needs.e2e-smoke.result == 'success' || needs.e2e-smoke.result == 'skipped')
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Install Bun
+        shell: bash
+        run: |
+          curl -fsSL https://bun.sh/install | bash -s -- "bun-v${{ env.BUN_VERSION }}"
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+          "$HOME/.bun/bin/bun" --version
 
       - name: Install dependencies
         working-directory: frontend
@@ -502,7 +575,7 @@ jobs:
           DEMO_RESET_SECRET: ${{ secrets.DEMO_RESET_SECRET }}
 
       - name: Upload Playwright report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: failure()
         with:
           name: playwright-demo-report
@@ -522,13 +595,13 @@ jobs:
       (needs.e2e-smoke.result == 'success' || needs.e2e-smoke.result == 'skipped')
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Build Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: false
