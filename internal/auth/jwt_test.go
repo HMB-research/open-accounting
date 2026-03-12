@@ -11,6 +11,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type stubAPITokenValidator struct {
+	claims *Claims
+	err    error
+}
+
+func (s *stubAPITokenValidator) ValidateAPIToken(ctx context.Context, token string) (*Claims, error) {
+	return s.claims, s.err
+}
+
 func TestNewTokenService(t *testing.T) {
 	service := NewTokenService("test-secret", 15*time.Minute, 7*24*time.Hour)
 
@@ -273,6 +282,27 @@ func TestMiddleware(t *testing.T) {
 		middleware.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("falls back to api token validator", func(t *testing.T) {
+		service.SetAPITokenValidator(&stubAPITokenValidator{
+			claims: &Claims{
+				UserID:    "user-api",
+				Email:     "api@example.com",
+				TenantID:  "tenant-1",
+				Role:      "accountant",
+				TokenKind: TokenKindAPIToken,
+			},
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.Header.Set("Authorization", "Bearer oa_deadbeef")
+		w := httptest.NewRecorder()
+
+		middleware.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "user-api", w.Body.String())
 	})
 }
 

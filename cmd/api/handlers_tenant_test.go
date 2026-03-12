@@ -117,6 +117,41 @@ func TestListMyTenants(t *testing.T) {
 	}
 }
 
+func TestTenantContextRejectsAPITokenForDifferentTenant(t *testing.T) {
+	h, repo := setupTenantTestHandlers()
+	repo.addTestTenant("tenant-1", "Tenant One", "tenant-one")
+	repo.addTestTenant("tenant-2", "Tenant Two", "tenant-two")
+	repo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+		{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner, IsDefault: true},
+	}
+	repo.tenantUsers["tenant-2"] = []tenant.TenantUser{
+		{TenantID: "tenant-2", UserID: "user-1", Role: tenant.RoleOwner},
+	}
+
+	claims := &auth.Claims{
+		UserID:    "user-1",
+		Email:     "user@example.com",
+		TenantID:  "tenant-1",
+		Role:      tenant.RoleOwner,
+		TokenKind: auth.TokenKindAPIToken,
+	}
+
+	req := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-2/accounts", nil, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-2"})
+	w := httptest.NewRecorder()
+
+	handler := h.TenantContext(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	var resp map[string]string
+	err := json.NewDecoder(w.Body).Decode(&resp)
+	require.NoError(t, err)
+	assert.Contains(t, resp["error"], "scoped to a different tenant")
+}
+
 // =============================================================================
 // CreateTenant Handler Tests
 // =============================================================================

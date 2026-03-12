@@ -34,26 +34,24 @@
 
 	let { tenant, oncomplete }: Props = $props();
 
-	// Capture initial values from tenant prop (these are form defaults, not reactive)
-	const initialSettings = tenant.settings;
-
 	let currentStep = $state(1);
 	let isSubmitting = $state(false);
 	let error = $state('');
+	let initializedTenantId = $state('');
 
 	// Step 1: Company Profile
-	let companyName = $state(tenant.name || '');
-	let regCode = $state(initialSettings?.reg_code || '');
-	let vatNumber = $state(initialSettings?.vat_number || '');
-	let address = $state(initialSettings?.address || '');
-	let email = $state(initialSettings?.email || '');
-	let phone = $state(initialSettings?.phone || '');
+	let companyName = $state('');
+	let regCode = $state('');
+	let vatNumber = $state('');
+	let address = $state('');
+	let email = $state('');
+	let phone = $state('');
 
 	// Step 2: Branding (optional)
-	let logo = $state(initialSettings?.logo || '');
-	let pdfPrimaryColor = $state(initialSettings?.pdf_primary_color || '#4f46e5');
-	let bankDetails = $state(initialSettings?.bank_details || '');
-	let invoiceTerms = $state(initialSettings?.invoice_terms || '');
+	let logo = $state('');
+	let pdfPrimaryColor = $state('#4f46e5');
+	let bankDetails = $state('');
+	let invoiceTerms = $state('');
 
 	// Step 3: First Contact (optional)
 	let contactName = $state('');
@@ -61,6 +59,72 @@
 	let contactType = $state<'CUSTOMER' | 'SUPPLIER'>('CUSTOMER');
 
 	const totalSteps = 4;
+
+	$effect(() => {
+		if (!tenant?.id || initializedTenantId === tenant.id) return;
+
+		const settings = tenant.settings ?? {};
+
+		currentStep = 1;
+		error = '';
+		companyName = tenant.name || '';
+		regCode = settings.reg_code || '';
+		vatNumber = settings.vat_number || '';
+		address = settings.address || '';
+		email = settings.email || '';
+		phone = settings.phone || '';
+		logo = settings.logo || '';
+		pdfPrimaryColor = settings.pdf_primary_color || '#4f46e5';
+		bankDetails = settings.bank_details || '';
+		invoiceTerms = settings.invoice_terms || '';
+		contactName = '';
+		contactEmail = '';
+		contactType = 'CUSTOMER';
+		initializedTenantId = tenant.id;
+	});
+
+	function getStepTitle(step: number): string {
+		switch (step) {
+			case 1:
+				return m.onboarding_step1Title();
+			case 2:
+				return m.onboarding_step2Title();
+			case 3:
+				return m.onboarding_step3Title();
+			default:
+				return m.onboarding_step4Title();
+		}
+	}
+
+	function getStepDescription(step: number): string {
+		switch (step) {
+			case 1:
+				return m.onboarding_companyInfoDesc();
+			case 2:
+				return m.onboarding_brandingDesc();
+			case 3:
+				return m.onboarding_addFirstContactDesc();
+			default:
+				return m.onboarding_allSetDesc();
+		}
+	}
+
+	function getStepHighlights(step: number): string[] {
+		switch (step) {
+			case 1:
+				return [m.settings_companyProfile(), m.settings_regCode(), m.settings_vatNumber(), m.settings_email()];
+			case 2:
+				return [m.onboarding_companyLogo(), m.onboarding_bankDetails(), m.onboarding_invoiceTerms(), m.settings_primaryColor()];
+			case 3:
+				return [m.onboarding_customer(), m.onboarding_supplier(), m.contacts_importContacts()];
+			default:
+				return [m.invoices_newInvoice(), m.contacts_importContacts(), m.journal_importOpeningBalances(), m.settings_periodLockDate()];
+		}
+	}
+
+	function isStepOptional(step: number): boolean {
+		return step === 2 || step === 3;
+	}
 
 	async function saveProgress() {
 		isSubmitting = true;
@@ -94,17 +158,22 @@
 	}
 
 	async function nextStep() {
+		if (currentStep === 1 && !companyName.trim()) {
+			error = m.onboarding_companyNameRequired();
+			return;
+		}
+
 		if (currentStep === 1 || currentStep === 2) {
 			const saved = await saveProgress();
 			if (!saved) return;
 		}
 
-		if (currentStep === 3 && contactName && contactEmail) {
+		if (currentStep === 3 && contactName.trim()) {
 			// Create the contact
 			try {
 				await api.createContact(tenant.id, {
-					name: contactName,
-					email: contactEmail,
+					name: contactName.trim(),
+					email: contactEmail.trim() || undefined,
 					contact_type: contactType
 				});
 			} catch (err) {
@@ -185,7 +254,35 @@
 			<div class="alert alert-error">{error}</div>
 		{/if}
 
-		<div class="wizard-content">
+		<div class="wizard-stage">
+			<aside class="wizard-sidebar">
+				<div class="sidebar-pill-row">
+					<span class="sidebar-step-chip">0{currentStep}</span>
+					<span class="sidebar-step-type">{isStepOptional(currentStep) ? m.common_optional() : m.onboarding_required()}</span>
+				</div>
+				<h2>{getStepTitle(currentStep)}</h2>
+				<p class="sidebar-description">{getStepDescription(currentStep)}</p>
+
+				<ul class="sidebar-highlights">
+					{#each getStepHighlights(currentStep) as highlight}
+						<li>{highlight}</li>
+					{/each}
+				</ul>
+
+				{#if currentStep === 3}
+					<div class="sidebar-note">
+						<strong>{m.contacts_importContacts()}</strong>
+						<p>{m.onboarding_contactImportHint()}</p>
+					</div>
+				{:else if currentStep === 4}
+					<div class="sidebar-note">
+						<strong>{m.onboarding_afterSetupTitle()}</strong>
+						<p>{m.onboarding_afterSetupDesc()}</p>
+					</div>
+				{/if}
+			</aside>
+
+			<div class="wizard-content">
 			{#if currentStep === 1}
 				<!-- Step 1: Company Profile -->
 				<div class="step-content">
@@ -299,6 +396,7 @@
 							<input class="input" type="email" id="contactEmail" bind:value={contactEmail} placeholder={m.onboarding_contactEmailPlaceholder()} />
 						</div>
 					</div>
+					<p class="inline-note">{m.onboarding_contactImportHint()}</p>
 				</div>
 
 			{:else}
@@ -321,7 +419,10 @@
 								<line x1="16" y1="13" x2="8" y2="13" />
 								<line x1="16" y1="17" x2="8" y2="17" />
 							</svg>
-							<span>{m.onboarding_createInvoice()}</span>
+							<div>
+								<strong>{m.onboarding_createInvoice()}</strong>
+								<p>{m.onboarding_createInvoiceDesc()}</p>
+							</div>
 						</a>
 						<a href="/contacts?tenant={tenant.id}" class="quick-action-card">
 							<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -330,25 +431,35 @@
 								<path d="M23 21v-2a4 4 0 0 0-3-3.87" />
 								<path d="M16 3.13a4 4 0 0 1 0 7.75" />
 							</svg>
-							<span>{m.onboarding_addContacts()}</span>
+							<div>
+								<strong>{m.onboarding_addContacts()}</strong>
+								<p>{m.onboarding_addContactsDesc()}</p>
+							</div>
 						</a>
-						<a href="/accounts?tenant={tenant.id}" class="quick-action-card">
+						<a href="/journal?tenant={tenant.id}" class="quick-action-card">
 							<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 								<line x1="12" y1="1" x2="12" y2="23" />
 								<path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
 							</svg>
-							<span>{m.onboarding_viewAccounts()}</span>
+							<div>
+								<strong>{m.onboarding_importOpeningBalances()}</strong>
+								<p>{m.onboarding_importOpeningBalancesDesc()}</p>
+							</div>
 						</a>
 						<a href="/settings/company?tenant={tenant.id}" class="quick-action-card">
 							<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 								<circle cx="12" cy="12" r="3" />
 								<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
 							</svg>
-							<span>{m.onboarding_moreSettings()}</span>
+							<div>
+								<strong>{m.onboarding_moreSettings()}</strong>
+								<p>{m.onboarding_moreSettingsDesc()}</p>
+							</div>
 						</a>
 					</div>
 				</div>
 			{/if}
+			</div>
 		</div>
 
 		<div class="wizard-footer">
@@ -393,7 +504,7 @@
 
 	.onboarding-wizard {
 		width: 100%;
-		max-width: 700px;
+		max-width: 960px;
 		max-height: 90vh;
 		overflow-y: auto;
 		display: flex;
@@ -477,8 +588,105 @@
 		background: var(--color-primary);
 	}
 
-	.wizard-content {
+	.wizard-stage {
+		display: grid;
+		grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+		gap: 1.5rem;
+		align-items: start;
 		padding: 1.5rem 0;
+	}
+
+	.wizard-sidebar {
+		position: sticky;
+		top: 0;
+		padding: 1.25rem;
+		border-radius: 0.875rem;
+		border: 1px solid var(--color-border);
+		background:
+			radial-gradient(circle at top right, rgba(37, 99, 235, 0.12), transparent 42%),
+			linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+	}
+
+	.sidebar-pill-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-bottom: 1rem;
+	}
+
+	.sidebar-step-chip,
+	.sidebar-step-type {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.2rem 0.6rem;
+		border-radius: 999px;
+		font-size: 0.75rem;
+		font-weight: 700;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+	}
+
+	.sidebar-step-chip {
+		background: rgba(37, 99, 235, 0.12);
+		color: var(--color-primary);
+	}
+
+	.sidebar-step-type {
+		background: rgba(148, 163, 184, 0.16);
+		color: #475569;
+	}
+
+	.wizard-sidebar h2 {
+		font-size: 1.25rem;
+		margin-bottom: 0.45rem;
+	}
+
+	.sidebar-description {
+		color: var(--color-text-muted);
+		margin-bottom: 1rem;
+	}
+
+	.sidebar-highlights {
+		list-style: none;
+		display: grid;
+		gap: 0.6rem;
+		margin-bottom: 1rem;
+	}
+
+	.sidebar-highlights li {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+		font-size: 0.9rem;
+	}
+
+	.sidebar-highlights li::before {
+		content: '';
+		width: 0.55rem;
+		height: 0.55rem;
+		border-radius: 999px;
+		background: linear-gradient(135deg, var(--color-primary), #38bdf8);
+		flex-shrink: 0;
+	}
+
+	.sidebar-note {
+		padding: 0.9rem 1rem;
+		border-radius: 0.75rem;
+		background: rgba(255, 255, 255, 0.8);
+		border: 1px solid rgba(37, 99, 235, 0.12);
+	}
+
+	.sidebar-note strong {
+		display: block;
+		margin-bottom: 0.35rem;
+	}
+
+	.sidebar-note p {
+		font-size: 0.85rem;
+		color: var(--color-text-muted);
+	}
+
+	.wizard-content {
 		flex: 1;
 	}
 
@@ -596,6 +804,15 @@
 		color: var(--color-primary);
 	}
 
+	.inline-note {
+		margin-top: 1rem;
+		padding: 0.8rem 1rem;
+		border-radius: 0.75rem;
+		background: rgba(37, 99, 235, 0.08);
+		color: var(--color-text-muted);
+		font-size: 0.875rem;
+	}
+
 	.complete-step {
 		text-align: center;
 	}
@@ -614,9 +831,8 @@
 
 	.quick-action-card {
 		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 0.5rem;
+		align-items: flex-start;
+		gap: 0.85rem;
 		padding: 1rem;
 		border: 1px solid var(--color-border);
 		border-radius: 8px;
@@ -632,11 +848,22 @@
 
 	.quick-action-card svg {
 		color: var(--color-primary);
+		flex-shrink: 0;
 	}
 
-	.quick-action-card span {
-		font-size: 0.875rem;
-		font-weight: 500;
+	.quick-action-card div {
+		text-align: left;
+	}
+
+	.quick-action-card strong {
+		display: block;
+		font-size: 0.95rem;
+		margin-bottom: 0.2rem;
+	}
+
+	.quick-action-card p {
+		font-size: 0.82rem;
+		color: var(--color-text-muted);
 	}
 
 	.wizard-footer {
@@ -666,6 +893,14 @@
 	}
 
 	@media (max-width: 640px) {
+		.wizard-stage {
+			grid-template-columns: 1fr;
+		}
+
+		.wizard-sidebar {
+			position: static;
+		}
+
 		.form-grid {
 			grid-template-columns: 1fr;
 		}

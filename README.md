@@ -20,22 +20,30 @@
 >
 > Verified locally on 2026-03-12:
 > `go test ./...`, `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)`, `cd frontend && bun run test`, and `cd frontend && bun run test:e2e:smoke` pass.
-> Production hardening, period close controls, imports, and attachment workflows are still in progress.
+> Production hardening, broader migration imports, close workflows, and attachment workflows are still in progress.
+
+CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API token once and then uses that token for subsequent reads and mutations.
 
 ---
 
-## 🎮 Live Demo
+## 🎮 Demo
 
-Try Open Accounting without installing anything:
+The previous hosted Railway demo is currently offline.
 
-**[open-accounting.up.railway.app](https://open-accounting.up.railway.app)**
+For a resettable local demo instead:
+
+```bash
+docker-compose up -d db
+export DATABASE_URL="postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable"
+go run ./cmd/migrate -db "$DATABASE_URL" -path migrations -direction up
+DEMO_MODE=true DEMO_RESET_SECRET=test-demo-secret go run ./cmd/api
+curl -X POST http://localhost:8080/api/demo/reset -H 'X-Demo-Secret: test-demo-secret'
+```
 
 | Credential | Value |
 |------------|-------|
 | **Email** | `demo1@example.com` |
 | **Password** | `demo12345` |
-
-> Demo data can be reset via API. Feel free to create invoices, contacts, and explore all features!
 
 ---
 
@@ -102,7 +110,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 |---------|-------------|
 | **Tenant Isolation** | Schema-per-tenant for complete data separation |
 | **User Management** | Invite users, assign roles, manage permissions |
-| **JWT Authentication** | Secure token-based authentication |
+| **JWT and API token auth** | JWT access/refresh tokens plus tenant-scoped API tokens for automation |
 | **RBAC** | Role-based access control with permission checks |
 | **API Rate Limiting** | Token bucket rate limiting with configurable thresholds |
 
@@ -145,7 +153,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 | **Frontend** | SvelteKit 2, Svelte 5, Vite 7, TypeScript |
 | **i18n** | Paraglide-JS (compile-time translations) |
 | **Database** | PostgreSQL 16+ |
-| **Auth** | JWT with access/refresh tokens |
+| **Auth** | JWT access/refresh tokens plus tenant-scoped API tokens |
 | **API Docs** | Swagger/OpenAPI |
 | **Testing** | Go unit tests, backend integration tests, Vitest, Playwright demo suite |
 | **CI/CD** | GitHub Actions, Codecov |
@@ -193,6 +201,21 @@ go run ./cmd/api
 cd frontend && bun install && bun run dev
 ```
 
+### CLI bootstrap
+
+```bash
+go run ./cmd/oa auth init \
+  --base-url http://localhost:8080 \
+  --email you@example.com \
+  --password 'your-password'
+
+go run ./cmd/oa accounts list
+go run ./cmd/oa contacts import --file ./contacts.csv
+go run ./cmd/oa journal import-opening-balances --file ./opening-balances.csv --entry-date 2026-01-01
+```
+
+More examples are in [docs/CLI.md](docs/CLI.md).
+
 ---
 
 ## 📁 Project Structure
@@ -201,7 +224,8 @@ cd frontend && bun install && bun run dev
 open-accounting/
 ├── cmd/
 │   ├── api/              # HTTP API server (main application)
-│   └── migrate/          # Database migration CLI tool
+│   ├── migrate/          # Database migration CLI tool
+│   └── oa/               # Operator CLI using tenant-scoped API tokens
 │
 ├── internal/
 │   ├── accounting/       # Core: accounts, journal entries, reports
@@ -233,6 +257,7 @@ open-accounting/
 |----------|-------------|
 | [API Reference](docs/API.md) | Complete REST API documentation with examples |
 | [Architecture](docs/ARCHITECTURE.md) | System design, multi-tenancy, authentication flow |
+| [CLI Guide](docs/CLI.md) | API-token bootstrap, token management, and import examples for the `oa` CLI |
 | [Deployment](docs/DEPLOYMENT.md) | Production deployment guide |
 | [EMTA Integration](docs/EMTA_INTEGRATION.md) | Estonian Tax Board integration guide |
 | [Plugins](docs/PLUGINS.md) | Plugin development and marketplace guide |
@@ -278,10 +303,13 @@ open-accounting/
 - [x] Quotes with quote-to-order conversion
 - [x] Order management
 - [x] Fixed assets with depreciation tracking
+- [x] Tenant-scoped API token auth and Go CLI
+- [x] CSV import for chart of accounts, contacts, and opening balances
+- [x] Tenant period lock on core write paths
 
 ### Still missing for reliable production use
-- [ ] Opening balance and migration imports
-- [ ] Period lock and close workflows
+- [ ] Invoice, employee, and external migration imports
+- [ ] Month-end/year-end close workflows and reopen audit trail
 - [ ] Attachment and document handling
 - [ ] Backup/restore verification and stronger auth/session controls
 - [ ] E-invoice, direct bank feeds, SEPA initiation, and automatic e-MTA submission

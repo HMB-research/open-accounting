@@ -10,12 +10,16 @@ http://localhost:8080/api/v1
 
 ## Authentication
 
-All endpoints (except `/auth/*` and `/invitations/*`) require a Bearer token:
+All endpoints (except `/auth/*`, `/invitations/*`, and demo reset/status endpoints when enabled) require a Bearer token:
 
 ```bash
-curl -H "Authorization: Bearer <access_token>" \
+curl -H "Authorization: Bearer <access_token-or-api-token>" \
      https://api.example.com/api/v1/me
 ```
+
+Bearer auth supports two token types:
+- JWT access tokens from `/auth/login` and `/auth/refresh`
+- tenant-scoped API tokens created under `/tenants/{tenantId}/api-tokens`
 
 ### Register
 
@@ -83,6 +87,57 @@ Content-Type: application/json
   "refresh_token": "eyJhbGc...",
   "tenant_id": "uuid"  // Optional: switch tenant context
 }
+```
+
+---
+
+## API Tokens
+
+Tenant-scoped API tokens are intended for CLI and automation usage. They are valid only for the tenant path they were created for.
+
+### List API Tokens
+
+```http
+GET /tenants/{tenantId}/api-tokens
+Authorization: Bearer <jwt-or-api-token>
+```
+
+### Create API Token
+
+```http
+POST /tenants/{tenantId}/api-tokens
+Authorization: Bearer <jwt-or-api-token>
+Content-Type: application/json
+
+{
+  "name": "CI automation",
+  "expires_at": "2026-06-01T00:00:00Z"  // Optional
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "token": "oa_...",
+  "api_token": {
+    "id": "uuid",
+    "tenant_id": "uuid",
+    "user_id": "uuid",
+    "name": "CI automation",
+    "token_prefix": "oa_1234abcd5678",
+    "expires_at": "2026-06-01T00:00:00Z",
+    "created_at": "2026-03-12T00:00:00Z"
+  }
+}
+```
+
+The raw `token` value is returned only once at creation time.
+
+### Revoke API Token
+
+```http
+DELETE /tenants/{tenantId}/api-tokens/{tokenId}
+Authorization: Bearer <jwt-or-api-token>
 ```
 
 ---
@@ -157,6 +212,34 @@ GET /tenants/{tenantId}
 Authorization: Bearer <token>
 ```
 
+### Update Tenant
+
+```http
+PUT /tenants/{tenantId}
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "Acme Corp",
+  "settings": {
+    "period_lock_date": "2026-01-31"
+  }
+}
+```
+
+`period_lock_date` uses `YYYY-MM-DD`. Send an empty string to clear it.
+
+### Period Lock Behavior
+
+When `settings.period_lock_date` is set, core write paths reject back-dated operations on or before the lock date with `409 Conflict`.
+
+This currently applies to:
+- journal entry create, post, and void
+- invoice create and void
+- payment creation
+- payment creation from bank transactions
+- opening-balance import
+
 ---
 
 ## Accounts (Chart of Accounts)
@@ -180,8 +263,7 @@ Authorization: Bearer <token>
     "name": "Cash",
     "account_type": "ASSET",
     "parent_id": null,
-    "is_active": true,
-    "balance": "1000.00"
+    "is_active": true
   }
 ]
 ```
@@ -204,6 +286,21 @@ Content-Type: application/json
 
 **Account Types:** `ASSET`, `LIABILITY`, `EQUITY`, `REVENUE`, `EXPENSE`
 
+### Import Accounts
+
+```http
+POST /tenants/{tenantId}/accounts/import
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "file_name": "accounts.csv",
+  "csv_content": "code,name,account_type\n1000,Cash,ASSET\n4000,Sales Revenue,REVENUE\n"
+}
+```
+
+Supported header aliases include `code` / `account_code`, `name` / `account_name`, and `account_type` / `type`.
+
 ---
 
 ## Journal Entries
@@ -222,14 +319,14 @@ Content-Type: application/json
   "lines": [
     {
       "account_id": "uuid",
-      "debit": "100.00",
-      "credit": "0.00",
+      "debit_amount": "100.00",
+      "credit_amount": "0.00",
       "description": "Office supplies"
     },
     {
       "account_id": "uuid",
-      "debit": "0.00",
-      "credit": "100.00",
+      "debit_amount": "0.00",
+      "credit_amount": "100.00",
       "description": "Payment from cash"
     }
   ]
@@ -261,6 +358,24 @@ Content-Type: application/json
 }
 ```
 
+### Import Opening Balances
+
+```http
+POST /tenants/{tenantId}/journal-entries/import-opening-balances
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "file_name": "opening-balances.csv",
+  "entry_date": "2026-01-01",
+  "reference": "OB-2026",
+  "description": "Opening balances",
+  "csv_content": "account_code,debit,credit,description\n1000,1500.00,0,Cash opening balance\n3000,0,1500.00,Owner equity opening balance\n"
+}
+```
+
+The import creates a journal entry and posts it immediately. If the tenant period is locked for the chosen date, the API returns `409 Conflict`.
+
 ---
 
 ## Contacts
@@ -273,7 +388,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
-- `type` (string): `customer`, `supplier`, or `both`
+- `type` (string): `CUSTOMER`, `SUPPLIER`, or `BOTH`
 - `search` (string): Search by name or email
 
 ### Create Contact
@@ -285,13 +400,31 @@ Content-Type: application/json
 
 {
   "name": "ABC Supplier",
-  "type": "supplier",
+  "contact_type": "SUPPLIER",
   "email": "contact@abc.com",
   "phone": "+372 555 1234",
   "vat_number": "EE123456789",
-  "address": "123 Main St, Tallinn"
+  "address_line1": "123 Main St",
+  "city": "Tallinn",
+  "country_code": "EE",
+  "payment_terms_days": 30
 }
 ```
+
+### Import Contacts
+
+```http
+POST /tenants/{tenantId}/contacts/import
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "file_name": "contacts.csv",
+  "csv_content": "name,type,email,payment_terms_days\nNorthwind OU,CUSTOMER,ap@northwind.example,14\nSupply Partner,SUPPLIER,purchases@supply.example,30\n"
+}
+```
+
+Supported header aliases include `name` / `company_name`, `type`, `payment_terms_days` / `payment_days`, and standard contact metadata such as `email`, `phone`, `reg_code`, and `vat_number`.
 
 ---
 

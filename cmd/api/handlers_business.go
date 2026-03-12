@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -280,6 +281,46 @@ func (h *Handlers) CreateContact(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusCreated, contact)
+}
+
+// ImportContacts imports contacts from CSV data.
+// @Summary Import contacts
+// @Description Import contacts from CSV data and skip duplicate or invalid rows
+// @Tags Contacts
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body contacts.ImportContactsRequest true "CSV import payload"
+// @Success 200 {object} contacts.ImportContactsResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/contacts/import [post]
+func (h *Handlers) ImportContacts(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req contacts.ImportContactsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+
+	if req.FileName == "" {
+		req.FileName = "contacts_import.csv"
+	}
+
+	result, err := h.contactsService.ImportCSV(r.Context(), tenantID, schemaName, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
 }
 
 // GetContact returns a contact by ID

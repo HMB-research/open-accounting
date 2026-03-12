@@ -37,9 +37,9 @@ This document describes the high-level architecture of Open Accounting.
 │  │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘           ││
 │  │       └───────────┴──────────┬┴───────────┘                 ││
 │  │                              │                               ││
-│  │  ┌─────────┐ ┌─────────┐ ┌──▼──────┐ ┌─────────┐           ││
-│  │  │ Tenant  │ │  Auth   │ │Contacts │ │   Tax   │           ││
-│  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘           ││
+│  │  ┌─────────┐ ┌─────────┐ ┌──────────┐ ┌─────────┐          ││
+│  │  │ Tenant  │ │  Auth   │ │ API Token│ │Contacts │          ││
+│  │  └─────────┘ └─────────┘ └──────────┘ └─────────┘          ││
 │  └─────────────────────────────────────────────────────────────┘│
 └──────────────────────────────┬──────────────────────────────────┘
                                │
@@ -52,6 +52,7 @@ This document describes the high-level architecture of Open Accounting.
 │  │  • tenants      │  │  • entries     │  │  • entries     │    │
 │  │  • tenant_users │  │  • invoices    │  │  • invoices    │    │
 │  │  • invitations  │  │  • payments    │  │  • payments    │    │
+│  │  • api_tokens   │  │  • contacts    │  │  • contacts    │    │
 │  └────────────────┘  └────────────────┘  └────────────────┘    │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -66,6 +67,7 @@ Contains shared tables:
 - `tenants` - Organization registry
 - `tenant_users` - User-tenant memberships with roles
 - `user_invitations` - Pending invitations
+- `api_tokens` - Hashed tenant-scoped API tokens for CLI/automation usage
 
 ### Tenant Schemas
 Each tenant gets a dedicated PostgreSQL schema (e.g., `tenant_acme`) containing:
@@ -85,39 +87,53 @@ Each tenant gets a dedicated PostgreSQL schema (e.g., `tenant_acme`) containing:
 ## Authentication Flow
 
 ```
-┌──────────┐     ┌──────────┐     ┌──────────┐
-│  Client  │────▶│   API    │────▶│ Database │
-└──────────┘     └──────────┘     └──────────┘
-     │                │
-     │  1. Login      │
-     │  (email/pass)  │
-     │───────────────▶│
-     │                │  2. Validate credentials
-     │                │  3. Generate JWT tokens
-     │◀───────────────│
-     │  access_token  │
-     │  refresh_token │
-     │                │
-     │  4. API call   │
-     │  + Bearer token│
-     │───────────────▶│
-     │                │  5. Validate token
-     │                │  6. Extract claims
-     │                │  7. Check tenant access
-     │◀───────────────│
-     │   Response     │
+┌──────────────┐     ┌──────────┐     ┌──────────┐
+│ Web / CLI    │────▶│   API    │────▶│ Database │
+└──────────────┘     └──────────┘     └──────────┘
+      │                   │
+      │  1. Login         │
+      │  (email/pass)     │
+      │──────────────────▶│
+      │                   │  2. Validate credentials
+      │                   │  3. Generate JWT tokens
+      │◀──────────────────│
+      │ access_token      │
+      │ refresh_token     │
+      │                   │
+      │  4. Optional: create tenant-scoped API token
+      │──────────────────▶│
+      │                   │  5. Persist token hash + metadata
+      │◀──────────────────│
+      │ raw api token     │
+      │                   │
+      │  6. API call + Bearer token
+      │──────────────────▶│
+      │                   │  7. Validate JWT or API token
+      │                   │  8. Extract claims
+      │                   │  9. Check tenant access
+      │◀──────────────────│
+      │ Response          │
 ```
 
-### JWT Claims
+### Auth Claims
 ```json
 {
   "user_id": "uuid",
   "email": "user@example.com",
   "tenant_id": "uuid",    // Current tenant context
   "role": "accountant",   // Role in current tenant
+  "token_kind": "access_token",
   "exp": 1234567890
 }
 ```
+
+`token_kind` is `access_token` for JWT access tokens and `api_token` for tenant-scoped API tokens used by the CLI or automation.
+
+### API Token Notes
+
+- API tokens are stored hashed in `public.api_tokens`; the raw token is shown only once at creation time.
+- API tokens are tenant-scoped and rejected if used on a different tenant path.
+- The `cmd/oa` CLI uses email/password only during bootstrap; normal reads and writes use the stored API token.
 
 ## Role-Based Access Control
 

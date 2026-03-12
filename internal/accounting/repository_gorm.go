@@ -137,10 +137,15 @@ func (r *GORMRepository) createJournalEntryInTx(ctx context.Context, tx *gorm.DB
 		je.CreatedAt = time.Now()
 	}
 
-	// Generate entry number
+	// Generate the next sequence from any trailing digits in existing entry numbers.
 	var seq int
 	err := tx.Raw(`
-		SELECT COALESCE(MAX(CAST(SUBSTRING(entry_number FROM 4) AS INTEGER)), 0) + 1
+		SELECT COALESCE(MAX(
+			CASE
+				WHEN entry_number ~ '[0-9]+$' THEN CAST(SUBSTRING(entry_number FROM '([0-9]+)$') AS INTEGER)
+				ELSE 0
+			END
+		), 0) + 1
 		FROM journal_entries WHERE tenant_id = ?
 	`, je.TenantID).Scan(&seq).Error
 	if err != nil {

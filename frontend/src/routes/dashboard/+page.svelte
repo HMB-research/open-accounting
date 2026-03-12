@@ -16,6 +16,7 @@
 	import OnboardingWizard from '$lib/components/OnboardingWizard.svelte';
 	import PeriodSelector from '$lib/components/PeriodSelector.svelte';
 	import ActivityFeed from '$lib/components/ActivityFeed.svelte';
+	import SetupCenter from '$lib/components/SetupCenter.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 
 	Chart.register(...registerables);
@@ -97,6 +98,10 @@
 				// Ignore error, we'll just proceed with existing data
 			}
 		}
+	}
+
+	function openOnboarding() {
+		showOnboarding = true;
 	}
 
 	$effect(() => {
@@ -395,6 +400,40 @@
 		</div>
 
 		{#if selectedTenant}
+			<div class="workspace-hero card">
+				<div class="workspace-copy">
+					<div class="workspace-badge" data-state={selectedTenant.onboarding_completed ? 'ready' : 'setup'}>
+						{selectedTenant.onboarding_completed ? m.dashboard_workspaceReady() : m.dashboard_setupInProgress()}
+					</div>
+					<h2>{selectedTenant.name}</h2>
+					<p>
+						{selectedTenant.onboarding_completed
+							? m.dashboard_workspaceReadyDesc()
+							: m.dashboard_workspaceSetupDesc()}
+					</p>
+				</div>
+
+				<div class="workspace-actions">
+					{#if selectedTenant.onboarding_completed}
+						<a href="/invoices?tenant={selectedTenant.id}" class="btn btn-primary">
+							{m.invoices_newInvoice()}
+						</a>
+						<a href="/reports?tenant={selectedTenant.id}" class="btn btn-secondary">
+							{m.dashboard_openReports()}
+						</a>
+					{:else}
+						<button class="btn btn-primary" type="button" onclick={openOnboarding}>
+							{m.dashboard_continueGuidedSetup()}
+						</button>
+						<a href="/settings/company?tenant={selectedTenant.id}" class="btn btn-secondary">
+							{m.dashboard_setupTaskCompanyAction()}
+						</a>
+					{/if}
+				</div>
+			</div>
+
+			<SetupCenter tenant={selectedTenant} {summary} onopenwalkthrough={openOnboarding} />
+
 			<!-- Summary Cards -->
 			{#if summary}
 				<div class="summary-grid">
@@ -583,11 +622,79 @@
 		max-width: 300px;
 	}
 
+	.workspace-hero {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 1.5rem;
+		margin-bottom: 1.5rem;
+		background:
+			radial-gradient(circle at top right, rgba(37, 99, 235, 0.12), transparent 34%),
+			linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+	}
+
+	.workspace-copy {
+		max-width: 44rem;
+	}
+
+	.workspace-badge {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.25rem 0.65rem;
+		border-radius: 999px;
+		font-size: 0.75rem;
+		font-weight: 700;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		margin-bottom: 0.75rem;
+	}
+
+	.workspace-badge[data-state='ready'] {
+		background: rgba(34, 197, 94, 0.12);
+		color: #15803d;
+	}
+
+	.workspace-badge[data-state='setup'] {
+		background: rgba(37, 99, 235, 0.12);
+		color: var(--color-primary);
+	}
+
+	.workspace-hero h2 {
+		font-size: 1.6rem;
+		margin-bottom: 0.4rem;
+	}
+
+	.workspace-hero p {
+		color: var(--color-text-muted);
+		max-width: 42rem;
+	}
+
+	.workspace-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+		justify-content: flex-end;
+	}
+
 	/* Mobile responsive styles */
 	@media (max-width: 768px) {
 		.header {
 			flex-direction: column;
 			align-items: stretch;
+		}
+
+		.workspace-hero {
+			flex-direction: column;
+		}
+
+		.workspace-actions {
+			width: 100%;
+		}
+
+		.workspace-actions .btn {
+			width: 100%;
+			justify-content: center;
+			min-height: 44px;
 		}
 
 		.header .btn {

@@ -18,6 +18,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/analytics"
 	"github.com/HMB-research/open-accounting/internal/apierror"
+	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
@@ -41,6 +42,7 @@ import (
 type Handlers struct {
 	pool                     *pgxpool.Pool
 	tokenService             *auth.TokenService
+	apiTokenService          *apitoken.Service
 	tenantService            *tenant.Service
 	accountingService        *accounting.Service
 	contactsService          *contacts.Service
@@ -108,6 +110,11 @@ func (h *Handlers) TenantContext(next http.Handler) http.Handler {
 		tenantID := chi.URLParam(r, "tenantID")
 		if tenantID == "" {
 			respondError(w, http.StatusBadRequest, "Tenant ID required")
+			return
+		}
+
+		if claims.TokenKind == auth.TokenKindAPIToken && claims.TenantID != "" && claims.TenantID != tenantID {
+			respondError(w, http.StatusForbidden, "API token is scoped to a different tenant")
 			return
 		}
 
@@ -583,6 +590,107 @@ func (h *Handlers) CreateAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusCreated, account)
+}
+
+// ImportAccounts imports accounts from CSV data.
+// @Summary Import accounts
+// @Description Import chart of accounts rows from CSV data and skip duplicate or invalid rows
+// @Tags Accounts
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body accounting.ImportAccountsRequest true "CSV import payload"
+// @Success 200 {object} accounting.ImportAccountsResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/accounts/import [post]
+func (h *Handlers) ImportAccounts(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req accounting.ImportAccountsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+
+	if req.FileName == "" {
+		req.FileName = "accounts_import.csv"
+	}
+
+	result, err := h.accountingService.ImportAccountsCSV(r.Context(), schemaName, tenantID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// ImportOpeningBalances imports opening balances from CSV and posts them as a journal entry.
+// @Summary Import opening balances
+// @Description Import opening balances from CSV data, create a journal entry, and post it immediately
+// @Tags Journal Entries
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body accounting.ImportOpeningBalancesRequest true "Opening-balance CSV payload"
+// @Success 200 {object} accounting.ImportOpeningBalancesResult
+// @Failure 400 {object} object{error=string}
+// @Failure 401 {object} object{error=string}
+// @Router /tenants/{tenantID}/journal-entries/import-opening-balances [post]
+func (h *Handlers) ImportOpeningBalances(w http.ResponseWriter, r *http.Request) {
+	claims, ok := auth.GetClaims(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Not authenticated")
+		return
+	}
+
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req accounting.ImportOpeningBalancesRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+	if strings.TrimSpace(req.EntryDate) == "" {
+		respondError(w, http.StatusBadRequest, "entry_date is required")
+		return
+	}
+
+	entryDate, err := time.Parse("2006-01-02", req.EntryDate)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "entry_date must be in YYYY-MM-DD format")
+		return
+	}
+	if h.rejectLockedPeriod(w, r.Context(), tenantID, entryDate) {
+		return
+	}
+
+	req.UserID = claims.UserID
+	if req.FileName == "" {
+		req.FileName = "opening_balances.csv"
+	}
+
+	result, err := h.accountingService.ImportOpeningBalancesCSV(r.Context(), schemaName, tenantID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
 }
 
 // GetAccount returns an account by ID
