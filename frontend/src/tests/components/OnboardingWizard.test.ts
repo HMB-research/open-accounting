@@ -94,7 +94,7 @@ describe('OnboardingWizard', () => {
 			});
 		});
 		expect(screen.getAllByText('Branding')[0]).toBeInTheDocument();
-		expect(screen.getByText('Optional')).toBeInTheDocument();
+		expect(screen.getAllByText('Optional').length).toBeGreaterThan(0);
 	});
 
 	it('creates the first contact even when email is omitted', async () => {
