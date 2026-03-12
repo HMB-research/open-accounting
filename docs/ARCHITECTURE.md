@@ -391,7 +391,7 @@ type PostgresRepository struct {
 
 - `pgx` is the primary runtime path for tenant-domain repositories.
 - `sqlc` is used for shared/public schema tables where generation is straightforward.
-- `gorm` adapters exist behind build tags for legacy or optional paths, but new tenant-scoped work should prefer explicit schema-qualified tables over `search_path`.
+- `gorm` adapters exist behind build tags for legacy or optional paths, and tenant-scoped adapters now use explicit schema-qualified tables instead of relying on `search_path`.
 
 ### Multi-Tenant Schema Qualification
 

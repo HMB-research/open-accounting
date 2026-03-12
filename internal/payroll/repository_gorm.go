@@ -25,6 +25,10 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 	return &GORMRepository{db: db}
 }
 
+func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
+	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+}
+
 // BeginTx is not supported in GORM implementation
 // Use GORM's Transaction method instead
 func (r *GORMRepository) BeginTx(ctx context.Context) (pgx.Tx, error) {
@@ -38,7 +42,10 @@ func (r *GORMRepository) WithTx(tx pgx.Tx) Repository {
 
 // CreateEmployee inserts a new employee
 func (r *GORMRepository) CreateEmployee(ctx context.Context, schemaName string, emp *Employee) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "employees")
+	if err != nil {
+		return err
+	}
 
 	empModel := employeeToModel(emp)
 	if err := db.Create(empModel).Error; err != nil {
@@ -49,10 +56,13 @@ func (r *GORMRepository) CreateEmployee(ctx context.Context, schemaName string, 
 
 // GetEmployee retrieves an employee by ID
 func (r *GORMRepository) GetEmployee(ctx context.Context, schemaName, tenantID, employeeID string) (*Employee, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "employees")
+	if err != nil {
+		return nil, err
+	}
 
 	var empModel models.Employee
-	err := db.Where("tenant_id = ? AND id = ?", tenantID, employeeID).First(&empModel).Error
+	err = db.Where("tenant_id = ? AND id = ?", tenantID, employeeID).First(&empModel).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrEmployeeNotFound
 	}
@@ -65,7 +75,10 @@ func (r *GORMRepository) GetEmployee(ctx context.Context, schemaName, tenantID, 
 
 // ListEmployees returns employees for a tenant
 func (r *GORMRepository) ListEmployees(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]Employee, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "employees")
+	if err != nil {
+		return nil, err
+	}
 
 	query := db.Where("tenant_id = ?", tenantID)
 	if activeOnly {
@@ -88,10 +101,12 @@ func (r *GORMRepository) ListEmployees(ctx context.Context, schemaName, tenantID
 
 // UpdateEmployee updates an existing employee
 func (r *GORMRepository) UpdateEmployee(ctx context.Context, schemaName string, emp *Employee) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "employees")
+	if err != nil {
+		return err
+	}
 
-	result := db.Model(&models.Employee{}).
-		Where("tenant_id = ? AND id = ?", emp.TenantID, emp.ID).
+	result := db.Where("tenant_id = ? AND id = ?", emp.TenantID, emp.ID).
 		Updates(map[string]interface{}{
 			"employee_number":        emp.EmployeeNumber,
 			"first_name":             emp.FirstName,
@@ -119,17 +134,22 @@ func (r *GORMRepository) UpdateEmployee(ctx context.Context, schemaName string, 
 
 // EndCurrentBaseSalary ends an existing base salary
 func (r *GORMRepository) EndCurrentBaseSalary(ctx context.Context, schemaName, tenantID, employeeID string, effectiveTo time.Time) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "salary_components")
+	if err != nil {
+		return err
+	}
 
-	return db.Model(&models.SalaryComponent{}).
-		Where("tenant_id = ? AND employee_id = ? AND component_type = ? AND effective_to IS NULL",
-			tenantID, employeeID, "BASE_SALARY").
+	return db.Where("tenant_id = ? AND employee_id = ? AND component_type = ? AND effective_to IS NULL",
+		tenantID, employeeID, "BASE_SALARY").
 		Update("effective_to", effectiveTo).Error
 }
 
 // CreateSalaryComponent inserts a new salary component
 func (r *GORMRepository) CreateSalaryComponent(ctx context.Context, schemaName string, comp *SalaryComponent) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "salary_components")
+	if err != nil {
+		return err
+	}
 
 	compModel := salaryComponentToModel(comp)
 	if err := db.Create(compModel).Error; err != nil {
@@ -140,13 +160,15 @@ func (r *GORMRepository) CreateSalaryComponent(ctx context.Context, schemaName s
 
 // GetCurrentSalary returns the current salary for an employee
 func (r *GORMRepository) GetCurrentSalary(ctx context.Context, schemaName, tenantID, employeeID string) (decimal.Decimal, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "salary_components")
+	if err != nil {
+		return decimal.Zero, err
+	}
 
 	var result struct {
 		Total models.Decimal
 	}
-	err := db.Model(&models.SalaryComponent{}).
-		Select("COALESCE(SUM(amount), 0) as total").
+	err = db.Select("COALESCE(SUM(amount), 0) as total").
 		Where("tenant_id = ? AND employee_id = ? AND is_recurring = ?", tenantID, employeeID, true).
 		Where("effective_from <= CURRENT_DATE").
 		Where("effective_to IS NULL OR effective_to >= CURRENT_DATE").
@@ -160,7 +182,10 @@ func (r *GORMRepository) GetCurrentSalary(ctx context.Context, schemaName, tenan
 
 // CreatePayrollRun inserts a new payroll run
 func (r *GORMRepository) CreatePayrollRun(ctx context.Context, schemaName string, run *PayrollRun) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "payroll_runs")
+	if err != nil {
+		return err
+	}
 
 	runModel := payrollRunToModel(run)
 	if err := db.Create(runModel).Error; err != nil {
@@ -171,10 +196,13 @@ func (r *GORMRepository) CreatePayrollRun(ctx context.Context, schemaName string
 
 // GetPayrollRun retrieves a payroll run by ID
 func (r *GORMRepository) GetPayrollRun(ctx context.Context, schemaName, tenantID, runID string) (*PayrollRun, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "payroll_runs")
+	if err != nil {
+		return nil, err
+	}
 
 	var runModel models.PayrollRun
-	err := db.Where("tenant_id = ? AND id = ?", tenantID, runID).First(&runModel).Error
+	err = db.Where("tenant_id = ? AND id = ?", tenantID, runID).First(&runModel).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrPayrollRunNotFound
 	}
@@ -187,7 +215,10 @@ func (r *GORMRepository) GetPayrollRun(ctx context.Context, schemaName, tenantID
 
 // ListPayrollRuns lists payroll runs for a tenant
 func (r *GORMRepository) ListPayrollRuns(ctx context.Context, schemaName, tenantID string, year int) ([]PayrollRun, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "payroll_runs")
+	if err != nil {
+		return nil, err
+	}
 
 	query := db.Where("tenant_id = ?", tenantID)
 	if year > 0 {
@@ -210,10 +241,12 @@ func (r *GORMRepository) ListPayrollRuns(ctx context.Context, schemaName, tenant
 
 // UpdatePayrollRun updates a payroll run
 func (r *GORMRepository) UpdatePayrollRun(ctx context.Context, schemaName string, run *PayrollRun) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "payroll_runs")
+	if err != nil {
+		return err
+	}
 
-	return db.Model(&models.PayrollRun{}).
-		Where("id = ?", run.ID).
+	return db.Where("id = ?", run.ID).
 		Updates(map[string]interface{}{
 			"status":              run.Status,
 			"total_gross":         run.TotalGross.String(),
@@ -225,10 +258,12 @@ func (r *GORMRepository) UpdatePayrollRun(ctx context.Context, schemaName string
 
 // ApprovePayrollRun approves a payroll run
 func (r *GORMRepository) ApprovePayrollRun(ctx context.Context, schemaName, tenantID, runID, approverID string) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "payroll_runs")
+	if err != nil {
+		return err
+	}
 
-	result := db.Model(&models.PayrollRun{}).
-		Where("tenant_id = ? AND id = ? AND status = ?", tenantID, runID, PayrollCalculated).
+	result := db.Where("tenant_id = ? AND id = ? AND status = ?", tenantID, runID, PayrollCalculated).
 		Updates(map[string]interface{}{
 			"status":      PayrollApproved,
 			"approved_by": approverID,
@@ -246,14 +281,20 @@ func (r *GORMRepository) ApprovePayrollRun(ctx context.Context, schemaName, tena
 
 // DeletePayslipsByRunID deletes all payslips for a run
 func (r *GORMRepository) DeletePayslipsByRunID(ctx context.Context, schemaName, runID string) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "payslips")
+	if err != nil {
+		return err
+	}
 
 	return db.Where("payroll_run_id = ?", runID).Delete(&models.Payslip{}).Error
 }
 
 // CreatePayslip inserts a new payslip
 func (r *GORMRepository) CreatePayslip(ctx context.Context, schemaName string, payslip *Payslip) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "payslips")
+	if err != nil {
+		return err
+	}
 
 	payslipModel := payslipToModel(payslip)
 	if err := db.Create(payslipModel).Error; err != nil {

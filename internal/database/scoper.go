@@ -17,7 +17,9 @@ func SchemaScope(schemaName string) func(db *gorm.DB) *gorm.DB {
 		}
 		quotedSchema, err := QuoteIdentifier(schemaName)
 		if err != nil {
-			return db.AddError(err)
+			db = db.Session(&gorm.Session{})
+			_ = db.AddError(err)
+			return db
 		}
 		return db.Exec(fmt.Sprintf("SET search_path TO %s, public", quotedSchema))
 	}
