@@ -137,12 +137,17 @@ jobs:
           DATABASE_URL: postgres://test:test@localhost:5432/test?sslmode=disable
         run: go test -v -race -coverprofile=coverage.out ./...
 
-      - name: Upload coverage
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage.out
-          fail_ci_if_error: false
+      - name: Upload coverage to Codecov
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          if [ -z "${CODECOV_TOKEN:-}" ]; then
+            echo "CODECOV_TOKEN not set; skipping coverage upload"
+            exit 0
+          fi
+          curl -Os https://cli.codecov.io/latest/linux/codecov
+          chmod +x codecov
+          ./codecov --verbose upload-process --disable-search -t "$CODECOV_TOKEN" -n "test-${GITHUB_RUN_ID}" -f coverage.out || echo "Codecov upload failed"
 
   lint:
     runs-on: ubuntu-latest
@@ -203,13 +208,17 @@ jobs:
           DATABASE_URL: postgres://test:test@localhost:5432/openaccounting_test?sslmode=disable
         run: go test -v -race -tags=integration -coverprofile=coverage-integration.out $(go list ./... | grep -v /testutil)
 
-      - name: Upload integration coverage
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage-integration.out
-          flags: integration
-          fail_ci_if_error: false
+      - name: Upload integration coverage to Codecov
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          if [ -z "${CODECOV_TOKEN:-}" ]; then
+            echo "CODECOV_TOKEN not set; skipping integration coverage upload"
+            exit 0
+          fi
+          curl -Os https://cli.codecov.io/latest/linux/codecov
+          chmod +x codecov
+          ./codecov --verbose upload-process --disable-search -t "$CODECOV_TOKEN" -n "integration-${GITHUB_RUN_ID}" -F integration -f coverage-integration.out || echo "Codecov upload failed"
 
   build:
     runs-on: ubuntu-latest
