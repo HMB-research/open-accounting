@@ -50,7 +50,9 @@ func (h *Handlers) UploadDocument(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "File is required")
 		return
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	doc, err := h.documentsService.UploadDocument(r.Context(), schemaName, tenantID, &documents.UploadDocumentRequest{
 		EntityType:  entityType,
@@ -78,7 +80,9 @@ func (h *Handlers) DownloadDocument(w http.ResponseWriter, r *http.Request) {
 		respondDocumentError(w, err)
 		return
 	}
-	defer reader.Close()
+	defer func() {
+		_ = reader.Close()
+	}()
 
 	w.Header().Set("Content-Type", doc.ContentType)
 	w.Header().Set("Content-Disposition", `attachment; filename="`+doc.FileName+`"`)

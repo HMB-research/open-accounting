@@ -72,9 +72,9 @@ func setupDocumentHandlers(t *testing.T) (*Handlers, *mockDocumentRepository) {
 	repo := newMockDocumentRepository()
 
 	return &Handlers{
-		tenantService:     tenant.NewServiceWithRepository(tenantRepo),
-		documentsService:  documents.NewService(repo, store),
-		tokenService:      auth.NewTokenService("test-secret-key-for-testing-only", 15*time.Minute, 7*24*time.Hour),
+		tenantService:    tenant.NewServiceWithRepository(tenantRepo),
+		documentsService: documents.NewService(repo, store),
+		tokenService:     auth.NewTokenService("test-secret-key-for-testing-only", 15*time.Minute, 7*24*time.Hour),
 	}, repo
 }
 

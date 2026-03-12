@@ -23,7 +23,7 @@ func NewLocalStore(rootDir string) (*LocalStore, error) {
 	if strings.TrimSpace(rootDir) == "" {
 		return nil, fmt.Errorf("documents root directory is required")
 	}
-	if err := os.MkdirAll(rootDir, 0o755); err != nil {
+	if err := os.MkdirAll(rootDir, 0o750); err != nil {
 		return nil, fmt.Errorf("create documents root: %w", err)
 	}
 	return &LocalStore{rootDir: rootDir}, nil
@@ -35,7 +35,7 @@ func (s *LocalStore) Save(_ context.Context, key string, content io.Reader) erro
 		return err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o750); err != nil {
 		return fmt.Errorf("create documents directory: %w", err)
 	}
 
