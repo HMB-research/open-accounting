@@ -58,6 +58,7 @@ linters:
           - govet
           - staticcheck
           - gosec
+          - noctx
 
       # Allow unused parameters in test files
       - path: _test\.go
