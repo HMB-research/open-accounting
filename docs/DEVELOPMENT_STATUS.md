@@ -1,166 +1,75 @@
 # Open Accounting Development Status
 
-> Last Updated: 2026-01-23
-> Version: Under Active Development
+> Last updated: 2026-03-12
+> This is the current-state status document. Historical plan docs may be more optimistic than what is verified here.
 
-## Quick Reference
+## Status Definitions
 
-| Category | Complete | In Progress | Not Started |
-|----------|----------|-------------|-------------|
-| Core Accounting | 7/7 | 0 | 0 |
-| Business Operations | 7/7 | 0 | 0 |
-| Banking | 4/4 | 0 | 0 |
-| Payroll | 5/5 | 0 | 0 |
-| Settings | 5/5 | 0 | 0 |
-| **Total** | **28/28** | **0** | **0** |
+| Status | Meaning |
+|--------|---------|
+| `Working` | Feature exists, is exercised by the current codebase, and is part of the verified local baseline. |
+| `Beta` | Feature exists but still has meaningful product, workflow, or reliability gaps. |
+| `Demo-only` | Good enough for seeded/demo flows, not yet a trustworthy production capability. |
+| `Missing` | Not implemented to a useful degree yet, but not fundamentally blocked by an external dependency. |
+| `Blocked` | Depends on external partnerships, certification, or major missing infrastructure. |
 
----
+## Verified Engineering Baseline
 
-## Feature Status by Module
+Local verification completed on 2026-03-12:
 
-### Core Accounting ✅ Complete
+- `go test ./...` passes
+- `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)` passes against a fresh PostgreSQL database
+- `cd frontend && bun run test` passes with 13 files and 427 tests
+- `cd frontend && bun run check` passes with two existing Svelte warnings in `frontend/src/lib/components/OnboardingWizard.svelte`
+- `cd frontend && bun run test:e2e:smoke` passes against a fresh locally seeded demo environment
+- Backend integration tests are now blocking in CI
+- Core accountant smoke E2E is now blocking in CI
 
-| Feature | Status | Tests | Notes |
-|---------|--------|-------|-------|
-| Chart of Accounts | ✅ Complete | ✅ E2E | Hierarchical 5-type structure |
-| Journal Entries | ✅ Complete | ✅ E2E | Draft→Posted→Void workflow |
-| Trial Balance | ✅ Complete | ✅ E2E | Real-time balance reports |
-| Balance Sheet | ✅ Complete | ✅ E2E | Assets, liabilities, equity |
-| Income Statement | ✅ Complete | ✅ E2E | P&L reporting |
-| Report Exports | ✅ Complete | ✅ E2E | Excel, CSV, PDF formats |
-| VAT Tracking | ✅ Complete | ✅ E2E | Date-aware rates |
+Still not done:
 
-### Business Operations ✅ Complete
+- Demo E2E remains informational rather than a strict release gate
+- Documentation outside this file may still contain historical planning language
 
-| Feature | Status | Tests | Notes |
-|---------|--------|-------|-------|
-| Invoicing | ✅ Complete | ✅ E2E | Sales/purchase with line items |
-| Contacts | ✅ Complete | ✅ E2E | Customer/supplier management |
-| Payments | ✅ Complete | ✅ E2E | Recording and allocation |
-| PDF Generation | ✅ Complete | ✅ E2E | Customizable branding |
-| Recurring Invoices | ✅ Complete | ✅ E2E | Automated generation |
-| Quotes | ✅ Complete | ✅ E2E | Quote lifecycle with conversion |
-| Orders | ✅ Complete | ✅ E2E | Order management with invoicing |
+## Capability Matrix
 
-### Fixed Assets
+| Area | Status | Notes |
+|------|--------|-------|
+| Core ledger (accounts, journal entries, trial balance, balance sheet, income statement) | `Working` | Core accounting paths exist and are covered by passing backend tests. |
+| Invoicing, contacts, payments, recurring invoices | `Working` | Core SMB workflows are present and part of the verified baseline. |
+| Banking CSV import and reconciliation | `Working` | Manual import and reconciliation work; direct bank feeds do not. |
+| Payroll, TSD generation/export | `Working` | Payroll and TSD XML/CSV export exist; automatic submission does not. |
+| KMD generation/export | `Working` | KMD generation/export exists; direct e-MTA submission does not. |
+| Quotes, orders, fixed assets | `Working` | Features exist and have tests, but accountant-grade polish is still limited. |
+| Multi-tenant auth, RBAC, tenant isolation | `Working` | Core tenant model is in place; auth hardening is still needed for production trust. |
+| Report exports | `Beta` | CSV/XLSX export exists, but the current path is mostly client-side and not yet authoritative. |
+| Cash flow reporting | `Beta` | Present in code and UI, but needs more accountant-grade validation before stronger claims. |
+| Settings and admin workflows | `Beta` | Basic settings exist, but production admin depth is still thin. |
+| Plugin marketplace | `Beta` | Significant functionality exists, but it is not part of the primary product wedge for reliability. |
+| Inventory and warehouse flows | `Beta` | Inventory structures exist, but the module is not yet complete enough to market as finished. |
+| Core accountant smoke E2E gate | `Working` | CI now blocks on auth setup plus invoices, reports, banking, and payroll route coverage. |
+| Demo seeded flows and broad view coverage | `Demo-only` | Useful for demos and regression checks, not the same as release-quality smoke coverage. |
+| Opening balance and migration imports | `Missing` | High-value adoption blocker for real users. |
+| Period lock, month-end close, year-end close | `Missing` | Hard requirement for trustworthy accounting operations. |
+| Attachments and document workflows | `Missing` | Purchase invoice, receipt, and reconciliation evidence handling is still absent. |
+| Direct bank feeds, SEPA initiation, e-invoice, OCR, automatic e-MTA submission | `Blocked` | Requires external partnerships, licensing, certification, or additional infrastructure. |
 
-| Feature | Status | Tests | Notes |
-|---------|--------|-------|-------|
-| Asset Tracking | ✅ Complete | ✅ E2E | Serial numbers, locations |
-| Asset Categories | ✅ Complete | ✅ E2E | IT, Furniture, Vehicles, Software |
-| Depreciation | ✅ Complete | ✅ E2E | Straight-line, declining balance |
-| Asset Lifecycle | ✅ Complete | ✅ E2E | Draft→Active→Disposed workflow |
+## What The Project Can Honestly Claim Today
 
-### Banking & Reconciliation
+- Open Accounting is a broad, real codebase with working accounting, invoicing, payroll, banking, and multi-tenant foundations.
+- The local backend, frontend, and tagged backend integration test baselines are green as of 2026-03-12.
+- The project is still not production-ready for accounting firms that need close controls, imports, document retention, and hardened operations.
+- The strongest near-term wedge is Estonian SMB/accountant workflow with manual bank import, invoicing, payroll, KMD/TSD export, and core reporting.
 
-| Feature | Status | Tests | Notes |
-|---------|--------|-------|-------|
-| Bank Accounts | ✅ Complete | ✅ E2E | Multiple accounts per company |
-| Transaction Import | ✅ Complete | ✅ E2E | CSV import |
-| Auto-Matching | ✅ Complete | ✅ E2E | Intelligent matching |
-| Reconciliation | ✅ Complete | ✅ E2E | Full workflow |
+## Immediate Priorities
 
-### Payroll (Estonian)
+1. Implement opening balance and migration imports.
+2. Implement period locking and close workflows.
+3. Add attachments and document storage for accounting records.
+4. Remove insecure production defaults and add stronger session management.
+5. Separate smoke vs broader demo E2E coverage more cleanly over time.
 
-| Feature | Status | Tests | Notes |
-|---------|--------|-------|-------|
-| Employee Management | ✅ Complete | ✅ E2E | Full lifecycle |
-| Estonian Tax Calculations | ✅ Complete | ✅ E2E | Income, social, unemployment |
-| Funded Pension (II Pillar) | ✅ Complete | ✅ E2E | Configurable rates |
-| Payroll Runs | ✅ Complete | ✅ E2E | Draft→Approved→Paid |
-| TSD Declaration | ✅ Complete | ✅ E2E | XML/CSV export for e-MTA |
+## Related Docs
 
-### Estonian Compliance
-
-| Feature | Status | Tests | Notes |
-|---------|--------|-------|-------|
-| KMD Declaration | ✅ Complete | ✅ E2E | Automated VAT declaration |
-| TSD Declaration | ✅ Complete | ✅ E2E | Payroll tax declaration |
-| e-MTA Export | ✅ Complete | ✅ E2E | XML format compatible |
-
-### Settings & Administration ✅ Complete
-
-| Feature | Status | Tests | Notes |
-|---------|--------|-------|-------|
-| Company Settings | ✅ Complete | ✅ E2E | Company information |
-| Email Configuration | ✅ Complete | ✅ E2E | SMTP setup, templates |
-| Plugin Management | ✅ Complete | ✅ E2E | Install, enable, configure |
-| User Management | ✅ Complete | ✅ E2E | Roles, permissions |
-| Cost Centers | ✅ Complete | ✅ E2E | Cost tracking and reporting |
-
----
-
-## Future Enhancements
-
-### 1. Inventory Module (Planned)
-
-**Current State:** Basic stub exists, full implementation planned
-
-| Item | Status | Priority |
-|------|--------|----------|
-| Stock item management | ⚠️ Basic | P2 |
-| Stock level tracking | ❌ Not started | P2 |
-| Warehouse management | ❌ Not started | P3 |
-| Stock valuation | ❌ Not started | P3 |
-
-**E2E Coverage:** Basic page test exists (inventory.spec.ts)
-
-### 2. Advanced Features (Backlog)
-
-| Item | Status | Priority |
-|------|--------|----------|
-| Calendar integration for absences | ❌ Not started | P3 |
-| Quote email automation | ⚠️ Basic | P2 |
-| Order fulfillment tracking | ⚠️ Basic | P2 |
-| Advanced cost center reporting | ⚠️ Basic | P2 |
-
----
-
-## Frontend Test Coverage Summary
-
-| Category | Coverage | Status |
-|----------|----------|--------|
-| API Client | 95% | ✅ Complete |
-| Plugin System | 90% | ✅ Complete |
-| E2E Tests | 32 spec files | ✅ Complete |
-| Components | 11% | ⚠️ Enhancement opportunity |
-| Utilities | Partial | ⚠️ Enhancement opportunity |
-
-See [frontend/TEST_COVERAGE.md](../frontend/TEST_COVERAGE.md) for detailed breakdown.
-
----
-
-## Backend Test Coverage Summary
-
-| Package | Coverage | Notes |
-|---------|----------|-------|
-| Overall | ~52% | Target: 67%+ |
-| reports | 42% | Balance confirmation tests needed |
-| banking | 35% | Import/matcher tests needed |
-| accounting | 44% | UpdateCostCenter tests needed |
-
----
-
-## Recommended Priorities
-
-### Short Term (This Month)
-
-1. **Component unit tests** - TenantSelector, ErrorAlert, DateRangeFilter
-2. **Utility tests** - dates.ts, tenant.ts coverage
-3. **Backend coverage** - Reach 67% overall target
-
-### Medium Term (Next Quarter)
-
-1. **Inventory module completion** - Stock tracking, warehouses
-2. **Advanced reporting** - Cost center analysis
-3. **Visual regression testing** - Screenshot comparisons
-
----
-
-## Change Log
-
-| Date | Change | Author |
-|------|--------|--------|
-| 2026-01-23 | Updated status - all 28 features complete, E2E coverage verified | Claude |
-| 2026-01-23 | Migrated from npm to Bun package manager | Claude |
-| 2026-01-10 | Initial status document created | Claude |
+- [Reliability and Product Roadmap](./plans/2026-03-12-reliability-and-product-roadmap.md)
+- [Feature Mapping: Merit & SmartAccounts](./FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md)
+- [Deployment Guide](./DEPLOYMENT.md)

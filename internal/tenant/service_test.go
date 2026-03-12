@@ -2,6 +2,7 @@ package tenant
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -104,6 +105,13 @@ func (m *MockRepository) UpdateTenant(ctx context.Context, tenantID, name string
 	if ok {
 		t.Name = name
 		t.UpdatedAt = updatedAt
+		if len(settingsJSON) > 0 {
+			var settings TenantSettings
+			if err := json.Unmarshal(settingsJSON, &settings); err != nil {
+				return err
+			}
+			t.Settings = settings
+		}
 	}
 	return nil
 }
@@ -679,6 +687,69 @@ func TestService_UpdateTenant(t *testing.T) {
 			require.NotNil(t, tenant)
 		})
 	}
+}
+
+func TestService_UpdateTenantPeriodLockDate(t *testing.T) {
+	repo := NewMockRepository()
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: DefaultSettings(),
+	})
+	svc := NewServiceWithRepository(repo)
+
+	updatedTenant, err := svc.UpdateTenant(context.Background(), "tenant-123", &UpdateTenantRequest{
+		Settings: &TenantSettings{
+			PeriodLockDate: strPtr("2026-01-31"),
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, updatedTenant.Settings.PeriodLockDate)
+	assert.Equal(t, "2026-01-31", *updatedTenant.Settings.PeriodLockDate)
+}
+
+func TestService_UpdateTenantClearsPeriodLockDate(t *testing.T) {
+	repo := NewMockRepository()
+	initialSettings := DefaultSettings()
+	initialSettings.PeriodLockDate = strPtr("2026-01-31")
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: initialSettings,
+	})
+	svc := NewServiceWithRepository(repo)
+
+	updatedTenant, err := svc.UpdateTenant(context.Background(), "tenant-123", &UpdateTenantRequest{
+		Settings: &TenantSettings{
+			PeriodLockDate: strPtr(""),
+		},
+	})
+
+	require.NoError(t, err)
+	assert.Nil(t, updatedTenant.Settings.PeriodLockDate)
+}
+
+func TestService_UpdateTenantRejectsInvalidPeriodLockDate(t *testing.T) {
+	repo := NewMockRepository()
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: DefaultSettings(),
+	})
+	svc := NewServiceWithRepository(repo)
+
+	_, err := svc.UpdateTenant(context.Background(), "tenant-123", &UpdateTenantRequest{
+		Settings: &TenantSettings{
+			PeriodLockDate: strPtr("31-01-2026"),
+		},
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "YYYY-MM-DD")
 }
 
 func TestService_DeleteTenant(t *testing.T) {

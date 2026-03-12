@@ -28,6 +28,7 @@
 	let decimalSep = $state('');
 	let thousandsSep = $state('');
 	let fiscalYearStart = $state(1);
+	let periodLockDate = $state('');
 
 	onMount(async () => {
 		if (!tenantId) {
@@ -63,6 +64,7 @@
 		decimalSep = t.settings?.decimal_sep || ',';
 		thousandsSep = t.settings?.thousands_sep || ' ';
 		fiscalYearStart = t.settings?.fiscal_year_start_month || 1;
+		periodLockDate = t.settings?.period_lock_date || '';
 	}
 
 	async function saveSettings(e: Event) {
@@ -87,7 +89,8 @@
 				date_format: dateFormat,
 				decimal_sep: decimalSep,
 				thousands_sep: thousandsSep,
-				fiscal_year_start_month: fiscalYearStart
+				fiscal_year_start_month: fiscalYearStart,
+				period_lock_date: periodLockDate || ''
 			};
 
 			tenant = await api.updateTenant(tenantId, {
@@ -386,6 +389,17 @@
 							<option value=".">{m.settings_periodThousands()}</option>
 							<option value="">{m.settings_noneThousands()}</option>
 						</select>
+					</div>
+				</div>
+			</section>
+
+			<section class="card settings-section">
+				<h2>{m.settings_accountingControls()}</h2>
+				<div class="form-grid">
+					<div class="form-group full-width">
+						<label class="label" for="periodLockDate">{m.settings_periodLockDate()}</label>
+						<input class="input" type="date" id="periodLockDate" bind:value={periodLockDate} />
+						<span class="help-text">{m.settings_periodLockHelp()}</span>
 					</div>
 				</div>
 			</section>

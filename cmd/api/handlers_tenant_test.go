@@ -487,6 +487,37 @@ func TestUpdateTenant(t *testing.T) {
 	}
 }
 
+func TestUpdateTenantPeriodLockDate(t *testing.T) {
+	h, repo := setupTenantTestHandlers()
+	tenantRecord := repo.addTestTenant("tenant-1", "Old Name", "test-tenant")
+	repo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+		{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner},
+	}
+
+	req := makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1", map[string]interface{}{
+		"settings": map[string]interface{}{
+			"period_lock_date": "2026-01-31",
+		},
+	}, &auth.Claims{
+		UserID: "user-1",
+		Email:  "user@example.com",
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+
+	w := httptest.NewRecorder()
+	h.UpdateTenant(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+
+	var updatedTenant tenant.Tenant
+	err := json.NewDecoder(w.Body).Decode(&updatedTenant)
+	require.NoError(t, err)
+	require.NotNil(t, updatedTenant.Settings.PeriodLockDate)
+	assert.Equal(t, "2026-01-31", *updatedTenant.Settings.PeriodLockDate)
+	require.NotNil(t, tenantRecord.Settings.PeriodLockDate)
+	assert.Equal(t, "2026-01-31", *tenantRecord.Settings.PeriodLockDate)
+}
+
 // =============================================================================
 // ListTenantUsers Handler Tests
 // =============================================================================

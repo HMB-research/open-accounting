@@ -1666,6 +1666,7 @@ export interface TenantSettings {
 	decimal_sep: string;
 	thousands_sep: string;
 	fiscal_year_start_month: number;
+	period_lock_date?: string | null;
 	vat_number?: string;
 	reg_code?: string;
 	address?: string;

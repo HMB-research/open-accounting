@@ -669,6 +669,10 @@ func (h *Handlers) CreateJournalEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.rejectLockedPeriod(w, r.Context(), tenantID, req.EntryDate) {
+		return
+	}
+
 	entry, err := h.accountingService.CreateJournalEntry(r.Context(), schemaName, tenantID, &req)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
@@ -695,7 +699,17 @@ func (h *Handlers) PostJournalEntry(w http.ResponseWriter, r *http.Request) {
 	entryID := chi.URLParam(r, "entryID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
 
-	err := h.accountingService.PostJournalEntry(r.Context(), schemaName, tenantID, entryID, claims.UserID)
+	entry, err := h.accountingService.GetJournalEntry(r.Context(), schemaName, tenantID, entryID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if h.rejectLockedPeriod(w, r.Context(), tenantID, entry.EntryDate) {
+		return
+	}
+
+	err = h.accountingService.PostJournalEntry(r.Context(), schemaName, tenantID, entryID, claims.UserID)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -733,6 +747,16 @@ func (h *Handlers) VoidJournalEntry(w http.ResponseWriter, r *http.Request) {
 
 	if req.Reason == "" {
 		respondError(w, http.StatusBadRequest, "Void reason is required")
+		return
+	}
+
+	entry, err := h.accountingService.GetJournalEntry(r.Context(), schemaName, tenantID, entryID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if h.rejectLockedPeriod(w, r.Context(), tenantID, entry.EntryDate) {
 		return
 	}
 

@@ -8,6 +8,7 @@ on:
 
 env:
   GO_VERSION: '1.24'
+  BUN_VERSION: '1.3.5'
 
 # Cancel redundant runs when new commits arrive
 concurrency:
@@ -22,28 +23,87 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
       docker: ${{ steps.filter.outputs.docker }}
+      ci: ${{ steps.filter.outputs.ci }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
+      - uses: actions/checkout@v6
         with:
-          filters: |
-            backend:
-              - 'cmd/**'
-              - 'internal/**'
-              - 'go.mod'
-              - 'go.sum'
-              - 'migrations/**'
-            frontend:
-              - 'frontend/**'
-            docker:
-              - 'Dockerfile'
-              - 'docker-compose.yml'
+          fetch-depth: 0
+
+      - name: Detect changed paths
+        id: filter
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base_sha="${{ github.event.pull_request.base.sha }}"
+            head_sha="${{ github.event.pull_request.head.sha }}"
+            diff_range="$base_sha...$head_sha"
+          elif [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            base_sha="${{ github.event.before }}"
+            head_sha="${{ github.sha }}"
+            diff_range="$base_sha..$head_sha"
+          else
+            diff_range=""
+          fi
+
+          if [ -n "$diff_range" ]; then
+            changed_files="$(git diff --name-only "$diff_range")"
+          else
+            changed_files="$(git ls-tree -r --name-only HEAD)"
+          fi
+
+          echo "Changed files:"
+          if [ -n "$changed_files" ]; then
+            printf '%s\n' "$changed_files"
+          else
+            echo "(none)"
+          fi
+
+          backend=false
+          frontend=false
+          docker=false
+          ci=false
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+
+            case "$file" in
+              cmd/*|internal/*|go.mod|go.sum|migrations/*)
+                backend=true
+                ;;
+            esac
+
+            case "$file" in
+              frontend/*)
+                frontend=true
+                ;;
+            esac
+
+            case "$file" in
+              Dockerfile|docker-compose.yml)
+                docker=true
+                ;;
+            esac
+
+            case "$file" in
+              .github/workflows/*)
+                ci=true
+                ;;
+            esac
+          done <<EOF
+          $changed_files
+          EOF
+
+          {
+            echo "backend=$backend"
+            echo "frontend=$frontend"
+            echo "docker=$docker"
+            echo "ci=$ci"
+          } >> "$GITHUB_OUTPUT"
 
   test:
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.backend == 'true' || github.ref == 'refs/heads/main'
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
 
     services:
       postgres:
@@ -61,10 +121,10 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -77,23 +137,28 @@ jobs:
           DATABASE_URL: postgres://test:test@localhost:5432/test?sslmode=disable
         run: go test -v -race -coverprofile=coverage.out ./...
 
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage.out
-          fail_ci_if_error: false
+      - name: Upload coverage to Codecov
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          if [ -z "${CODECOV_TOKEN:-}" ]; then
+            echo "CODECOV_TOKEN not set; skipping coverage upload"
+            exit 0
+          fi
+          curl -Os https://cli.codecov.io/latest/linux/codecov
+          chmod +x codecov
+          ./codecov --verbose upload-process --disable-search -t "$CODECOV_TOKEN" -n "test-${GITHUB_RUN_ID}" -f coverage.out || echo "Codecov upload failed"
 
   lint:
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.backend == 'true' || github.ref == 'refs/heads/main'
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -106,8 +171,7 @@ jobs:
   integration-test:
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.backend == 'true' || github.ref == 'refs/heads/main'
-    continue-on-error: true  # Non-blocking until integration tests are stable
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
 
     services:
       postgres:
@@ -125,10 +189,10 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -144,13 +208,17 @@ jobs:
           DATABASE_URL: postgres://test:test@localhost:5432/openaccounting_test?sslmode=disable
         run: go test -v -race -tags=integration -coverprofile=coverage-integration.out $(go list ./... | grep -v /testutil)
 
-      - name: Upload integration coverage
-        uses: codecov/codecov-action@v4
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage-integration.out
-          flags: integration
-          fail_ci_if_error: false
+      - name: Upload integration coverage to Codecov
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          if [ -z "${CODECOV_TOKEN:-}" ]; then
+            echo "CODECOV_TOKEN not set; skipping integration coverage upload"
+            exit 0
+          fi
+          curl -Os https://cli.codecov.io/latest/linux/codecov
+          chmod +x codecov
+          ./codecov --verbose upload-process --disable-search -t "$CODECOV_TOKEN" -n "integration-${GITHUB_RUN_ID}" -F integration -f coverage-integration.out || echo "Codecov upload failed"
 
   build:
     runs-on: ubuntu-latest
@@ -160,13 +228,13 @@ jobs:
       (needs.test.result == 'success' || needs.test.result == 'skipped') &&
       (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
       (needs.integration-test.result == 'success' || needs.integration-test.result == 'skipped') &&
-      (needs.changes.outputs.backend == 'true' || github.ref == 'refs/heads/main')
+      (needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main')
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -177,7 +245,7 @@ jobs:
           CGO_ENABLED=0 go build -ldflags="-w -s" -o migrate ./cmd/migrate
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: binaries
           path: |
@@ -187,13 +255,17 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.frontend == 'true' || github.ref == 'refs/heads/main'
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Install Bun
+        shell: bash
+        run: |
+          curl -fsSL https://bun.sh/install | bash -s -- "bun-v${{ env.BUN_VERSION }}"
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+          "$HOME/.bun/bin/bun" --version
 
       - name: Install dependencies
         working-directory: frontend
@@ -212,12 +284,131 @@ jobs:
         run: bun run build
 
   # E2E tests run against local database with seeded demo data
+  e2e-smoke:
+    runs-on: ubuntu-latest
+    needs: [changes, test, lint, integration-test, frontend]
+    if: |
+      always() &&
+      (needs.test.result == 'success' || needs.test.result == 'skipped') &&
+      (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
+      (needs.integration-test.result == 'success' || needs.integration-test.result == 'skipped') &&
+      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped') &&
+      (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main')
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: openaccounting_demo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install Bun
+        shell: bash
+        run: |
+          curl -fsSL https://bun.sh/install | bash -s -- "bun-v${{ env.BUN_VERSION }}"
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+          "$HOME/.bun/bin/bun" --version
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: bun install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: bunx playwright install --with-deps chromium
+
+      - name: Build backend
+        run: |
+          CGO_ENABLED=0 go build -o api ./cmd/api
+          CGO_ENABLED=0 go build -o migrate ./cmd/migrate
+
+      - name: Run migrations
+        run: ./migrate -db "postgres://test:test@localhost:5432/openaccounting_demo?sslmode=disable"
+
+      - name: Start backend in demo mode
+        run: |
+          ./api &
+          API_PID=$!
+          echo "Started API server with PID $API_PID"
+
+          echo "Waiting for API to be ready..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8080/health > /dev/null 2>&1; then
+              echo "API is ready after $i seconds"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "API failed to start after 30 seconds"
+              exit 1
+            fi
+            sleep 1
+          done
+        env:
+          DATABASE_URL: postgres://test:test@localhost:5432/openaccounting_demo?sslmode=disable
+          JWT_SECRET: test-secret-key-for-ci
+          PORT: 8080
+          DEMO_MODE: 'true'
+          DEMO_RESET_SECRET: test-demo-secret
+
+      - name: Seed demo data via API
+        run: |
+          echo "Calling demo reset endpoint to seed all 4 demo users..."
+          response=$(curl -s -w "\n%{http_code}" -X POST http://localhost:8080/api/demo/reset \
+            -H "Content-Type: application/json" \
+            -H "X-Demo-Secret: test-demo-secret")
+          http_code=$(echo "$response" | tail -1)
+          body=$(echo "$response" | head -n -1)
+          echo "Response: $body"
+          if [ "$http_code" != "200" ]; then
+            echo "Error: Demo reset failed with status $http_code"
+            exit 1
+          fi
+          echo "Demo data seeded successfully"
+
+      - name: Run smoke E2E tests
+        working-directory: frontend
+        run: bun run test:e2e:smoke
+        env:
+          CI: true
+          BASE_URL: http://localhost:5173
+          PUBLIC_API_URL: http://localhost:8080
+          DEMO_RESET_SECRET: test-demo-secret
+
+      - name: Upload Playwright smoke report
+        uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: playwright-smoke-report
+          path: frontend/playwright-report-demo/
+          retention-days: 7
+
+  # E2E tests run against local database with seeded demo data
   # Sharded across 2 runners for parallel execution (~50% faster)
   e2e:
     runs-on: ubuntu-latest
-    needs: [changes]
+    needs: [changes, e2e-smoke]
     continue-on-error: true  # Demo tests are informational
-    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || github.ref == 'refs/heads/main'
+    if: |
+      always() &&
+      (needs.e2e-smoke.result == 'success' || needs.e2e-smoke.result == 'skipped') &&
+      (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main')
 
     strategy:
       fail-fast: false
@@ -240,16 +431,20 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Install Bun
+        shell: bash
+        run: |
+          curl -fsSL https://bun.sh/install | bash -s -- "bun-v${{ env.BUN_VERSION }}"
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+          "$HOME/.bun/bin/bun" --version
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -322,7 +517,7 @@ jobs:
           DEMO_RESET_SECRET: test-demo-secret
 
       - name: Upload Playwright report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: failure()
         with:
           name: playwright-report-shard-${{ matrix.shard }}
@@ -332,18 +527,23 @@ jobs:
   # Demo E2E tests run against the live Railway demo environment
   e2e-demo:
     runs-on: ubuntu-latest
-    needs: [changes, frontend]
+    needs: [changes, frontend, e2e-smoke]
     continue-on-error: true  # Demo tests are informational - don't block deployment
     if: |
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
-      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped')
+      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped') &&
+      (needs.e2e-smoke.result == 'success' || needs.e2e-smoke.result == 'skipped')
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Install Bun
+        shell: bash
+        run: |
+          curl -fsSL https://bun.sh/install | bash -s -- "bun-v${{ env.BUN_VERSION }}"
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+          "$HOME/.bun/bin/bun" --version
 
       - name: Install dependencies
         working-directory: frontend
@@ -384,7 +584,7 @@ jobs:
           DEMO_RESET_SECRET: ${{ secrets.DEMO_RESET_SECRET }}
 
       - name: Upload Playwright report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: failure()
         with:
           name: playwright-demo-report
@@ -393,23 +593,24 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
-    needs: [changes, test, lint, frontend]
+    needs: [changes, test, lint, frontend, e2e-smoke]
     if: |
       always() &&
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
       (needs.test.result == 'success' || needs.test.result == 'skipped') &&
       (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
-      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped')
+      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped') &&
+      (needs.e2e-smoke.result == 'success' || needs.e2e-smoke.result == 'skipped')
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Build Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: false

@@ -20,19 +20,20 @@ type Tenant struct {
 
 // TenantSettings contains configurable settings for a tenant
 type TenantSettings struct {
-	DefaultCurrency string `json:"default_currency"`
-	CountryCode     string `json:"country_code"`
-	Timezone        string `json:"timezone"`
-	DateFormat      string `json:"date_format"`
-	DecimalSep      string `json:"decimal_sep"`
-	ThousandsSep    string `json:"thousands_sep"`
-	FiscalYearStart int    `json:"fiscal_year_start_month"` // 1-12
-	VATNumber       string `json:"vat_number,omitempty"`
-	RegCode         string `json:"reg_code,omitempty"`
-	Address         string `json:"address,omitempty"`
-	Email           string `json:"email,omitempty"`
-	Phone           string `json:"phone,omitempty"`
-	Logo            string `json:"logo,omitempty"`
+	DefaultCurrency string  `json:"default_currency"`
+	CountryCode     string  `json:"country_code"`
+	Timezone        string  `json:"timezone"`
+	DateFormat      string  `json:"date_format"`
+	DecimalSep      string  `json:"decimal_sep"`
+	ThousandsSep    string  `json:"thousands_sep"`
+	FiscalYearStart int     `json:"fiscal_year_start_month"` // 1-12
+	PeriodLockDate  *string `json:"period_lock_date,omitempty"`
+	VATNumber       string  `json:"vat_number,omitempty"`
+	RegCode         string  `json:"reg_code,omitempty"`
+	Address         string  `json:"address,omitempty"`
+	Email           string  `json:"email,omitempty"`
+	Phone           string  `json:"phone,omitempty"`
+	Logo            string  `json:"logo,omitempty"`
 
 	// PDF/Invoice settings
 	PDFPrimaryColor string `json:"pdf_primary_color,omitempty"`

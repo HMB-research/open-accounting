@@ -399,15 +399,16 @@ query := fmt.Sprintf(`
 
 ## Testing Strategy
 
-### Test Coverage Requirements
+### Current Verification Gates
 
-The project maintains high test coverage standards:
+Coverage is tracked in CI and Codecov, but the repository does not currently claim fixed 90%+/95% thresholds as a maintained standard.
 
-| Layer | Target Coverage |
-|-------|----------------|
-| Backend (unit + integration) | 90%+ average |
-| Frontend | 95%+ |
-| Critical paths (auth, payments) | 95%+ |
+| Layer | Current Gate |
+|-------|--------------|
+| Backend | `go test ./...` must pass |
+| Backend integration | `go test -tags=integration -race ...` must pass |
+| Frontend | `bun run check` and `bun run test` must pass |
+| E2E | Demo suite exists; blocking smoke E2E is still in progress |
 
 ### Backend Testing
 
