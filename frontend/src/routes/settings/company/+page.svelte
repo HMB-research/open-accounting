@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { api, type ClosePeriodRequest, type PeriodCloseEvent, type ReopenPeriodRequest, type Tenant, type TenantSettings } from '$lib/api';
+	import WorkflowHero, { type WorkflowHeroAction, type WorkflowHeroAside, type WorkflowHeroStat } from '$lib/components/WorkflowHero.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 
 	let tenantId = $derived($page.url.searchParams.get('tenant') || '');
@@ -348,6 +349,47 @@
 	}
 
 	const monthIndices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+	const selectedFiscalYearLabel = $derived(getMonthLabel(Math.max(0, fiscalYearStart - 1)));
+	const heroStats = $derived.by<WorkflowHeroStat[]>(() => [
+		{
+			label: m.settings_regCode(),
+			value: regCode || m.common_notSet()
+		},
+		{
+			label: m.settings_vatNumber(),
+			value: vatNumber || m.common_notSet()
+		},
+		{
+			label: m.settings_fiscalYearStart(),
+			value: selectedFiscalYearLabel
+		},
+		{
+			label: m.settings_periodLockDate(),
+			value: currentPeriodLockDate ? formatDateLabel(currentPeriodLockDate) : m.settings_periodOpenStatus(),
+			tone: currentPeriodLockDate ? 'warning' : 'success'
+		}
+	]);
+	const heroActions = $derived.by<WorkflowHeroAction[]>(() => [
+		{
+			label: isSaving ? m.settings_saving() : m.settings_saveSettings(),
+			type: 'submit',
+			form: 'company-settings-form',
+			disabled: isSaving
+		},
+		{
+			label: m.nav_invoices(),
+			variant: 'secondary',
+			href: tenantId ? `/invoices?tenant=${tenantId}` : '/invoices'
+		}
+	]);
+	const heroAside = $derived.by<WorkflowHeroAside>(() => ({
+		kicker: m.settings_accountingControls(),
+		title: m.settings_heroAsideTitle(),
+		body: m.settings_heroAsideDesc(),
+		linkLabel: m.settings_periodHistoryTitle(),
+		href: tenantId ? `/settings/company?tenant=${tenantId}#period-history` : '/settings/company#period-history',
+		items: [m.settings_heroAsideItemOne(), m.settings_heroAsideItemTwo()]
+	}));
 </script>
 
 <svelte:head>
@@ -355,12 +397,18 @@
 </svelte:head>
 
 <div class="container">
-	<div class="page-header">
-		<div>
-			<a href="/settings?tenant={tenantId}" class="back-link">&larr; {m.settings_backToSettings()}</a>
-			<h1>{m.settings_companySettings()}</h1>
-		</div>
-	</div>
+	<WorkflowHero
+		backHref={tenantId ? `/settings?tenant=${tenantId}` : '/settings'}
+		backLabel={m.settings_backToSettings()}
+		eyebrow={m.settings_companyInfo()}
+		title={tenant?.name || m.settings_companySettings()}
+		description={m.settings_heroDesc()}
+		badgeLabel={closeStatusLabel}
+		badgeTone={currentPeriodLockDate ? 'warning' : 'success'}
+		actions={heroActions}
+		stats={heroStats}
+		aside={heroAside}
+	/>
 
 	{#if error}
 		<div class="alert alert-error">{error}</div>
@@ -377,7 +425,7 @@
 			<p>{m.settings_selectTenantDashboard()} <a href="/dashboard">{m.dashboard_title()}</a>.</p>
 		</div>
 	{:else}
-		<form onsubmit={saveSettings}>
+		<form id="company-settings-form" onsubmit={saveSettings}>
 			<!-- Company Information -->
 			<section class="card settings-section">
 				<h2>{m.settings_companyInfo()}</h2>
@@ -662,7 +710,7 @@
 					</div>
 				</div>
 
-				<div class="period-history">
+				<div class="period-history" id="period-history">
 					<div class="section-header compact">
 						<div>
 							<h3>{m.settings_periodHistoryTitle()}</h3>
@@ -715,23 +763,6 @@
 </div>
 
 <style>
-	.back-link {
-		display: inline-block;
-		margin-bottom: 0.5rem;
-		color: var(--color-text-muted);
-		text-decoration: none;
-		font-size: 0.875rem;
-	}
-
-	.back-link:hover {
-		color: var(--color-primary);
-	}
-
-	h1 {
-		font-size: 1.75rem;
-		margin: 0;
-	}
-
 	.settings-section {
 		margin-bottom: 1.5rem;
 	}

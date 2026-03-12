@@ -16,6 +16,7 @@ type RepositoryInterface interface {
 	GetAccountByID(ctx context.Context, schemaName, tenantID, accountID string) (*Account, error)
 	ListAccounts(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]Account, error)
 	CreateAccount(ctx context.Context, schemaName string, a *Account) error
+	ListJournalEntries(ctx context.Context, schemaName, tenantID string, limit int) ([]JournalEntry, error)
 	GetJournalEntryByID(ctx context.Context, schemaName, tenantID, entryID string) (*JournalEntry, error)
 	CreateJournalEntry(ctx context.Context, schemaName string, je *JournalEntry) error
 	CreateJournalEntryTx(ctx context.Context, schemaName string, tx pgx.Tx, je *JournalEntry) error
@@ -105,6 +106,87 @@ func (r *Repository) CreateAccount(ctx context.Context, schemaName string, a *Ac
 		return fmt.Errorf("create account: %w", err)
 	}
 	return nil
+}
+
+// ListJournalEntries retrieves the most recent journal entries with their lines.
+func (r *Repository) ListJournalEntries(ctx context.Context, schemaName, tenantID string, limit int) ([]JournalEntry, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	rows, err := r.db.Query(ctx, fmt.Sprintf(`
+		SELECT id, tenant_id, entry_number, entry_date, description, COALESCE(reference, ''), COALESCE(source_type, ''), source_id,
+		       status, posted_at, posted_by, voided_at, voided_by, COALESCE(void_reason, ''), created_at, created_by
+		FROM %s.journal_entries
+		WHERE tenant_id = $1
+		ORDER BY entry_date DESC, created_at DESC
+		LIMIT $2
+	`, schemaName), tenantID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list journal entries: %w", err)
+	}
+	defer rows.Close()
+
+	entries := make([]JournalEntry, 0, limit)
+	entryIDs := make([]string, 0, limit)
+	entryIndex := make(map[string]int, limit)
+
+	for rows.Next() {
+		var je JournalEntry
+		if err := rows.Scan(
+			&je.ID, &je.TenantID, &je.EntryNumber, &je.EntryDate, &je.Description, &je.Reference,
+			&je.SourceType, &je.SourceID, &je.Status, &je.PostedAt, &je.PostedBy,
+			&je.VoidedAt, &je.VoidedBy, &je.VoidReason, &je.CreatedAt, &je.CreatedBy,
+		); err != nil {
+			return nil, fmt.Errorf("scan journal entry: %w", err)
+		}
+
+		entryIndex[je.ID] = len(entries)
+		entryIDs = append(entryIDs, je.ID)
+		entries = append(entries, je)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate journal entries: %w", err)
+	}
+	if len(entryIDs) == 0 {
+		return entries, nil
+	}
+
+	lineRows, err := r.db.Query(ctx, fmt.Sprintf(`
+		SELECT id, tenant_id, journal_entry_id, account_id, COALESCE(description, ''),
+		       debit_amount, credit_amount, currency, exchange_rate, base_debit, base_credit
+		FROM %s.journal_entry_lines
+		WHERE tenant_id = $1 AND journal_entry_id = ANY($2::uuid[])
+		ORDER BY journal_entry_id, id
+	`, schemaName), tenantID, entryIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list journal entry lines: %w", err)
+	}
+	defer lineRows.Close()
+
+	for lineRows.Next() {
+		var line JournalEntryLine
+		if err := lineRows.Scan(
+			&line.ID, &line.TenantID, &line.JournalEntryID, &line.AccountID, &line.Description,
+			&line.DebitAmount, &line.CreditAmount, &line.Currency, &line.ExchangeRate,
+			&line.BaseDebit, &line.BaseCredit,
+		); err != nil {
+			return nil, fmt.Errorf("scan journal entry line: %w", err)
+		}
+
+		idx, ok := entryIndex[line.JournalEntryID]
+		if !ok {
+			continue
+		}
+		entries[idx].Lines = append(entries[idx].Lines, line)
+	}
+
+	if err := lineRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate journal entry lines: %w", err)
+	}
+
+	return entries, nil
 }
 
 // GetJournalEntryByID retrieves a journal entry with its lines

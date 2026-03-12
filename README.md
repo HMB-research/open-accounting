@@ -20,7 +20,7 @@
 >
 > Verified locally on 2026-03-12:
 > `go test ./...`, `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)`, `cd frontend && bun run test`, and `cd frontend && bun run test:e2e:smoke` pass.
-> Production hardening, broader migration imports, fiscal-year close/carry-forward work, and attachment workflows are still in progress.
+> Production hardening, broader migration imports, fiscal-year close/carry-forward work, and broader document retention/reconciliation workflows are still in progress.
 
 CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API token once and then uses that token for subsequent reads and mutations.
 
@@ -307,11 +307,12 @@ open-accounting/
 - [x] CSV import for chart of accounts, contacts, invoices, and opening balances
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings
+- [x] Document attachments for invoices, journal entries, and payments
 
 ### Still missing for reliable production use
 - [ ] Invoice, employee, and external migration imports
 - [ ] Fiscal year close checklist and carry-forward workflow
-- [ ] Attachment and document handling
+- [ ] Broader document retention, reconciliation evidence, and approval workflows
 - [ ] Backup/restore verification and stronger auth/session controls
 - [ ] E-invoice, direct bank feeds, SEPA initiation, and automatic e-MTA submission
 

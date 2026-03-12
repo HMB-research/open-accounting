@@ -77,6 +77,21 @@ func (m *MockRepository) CreateAccount(ctx context.Context, schemaName string, a
 	return nil
 }
 
+func (m *MockRepository) ListJournalEntries(ctx context.Context, schemaName, tenantID string, limit int) ([]JournalEntry, error) {
+	if m.getJournalErr != nil {
+		return nil, m.getJournalErr
+	}
+
+	result := make([]JournalEntry, 0, len(m.journalEntries))
+	for _, entry := range m.journalEntries {
+		if entry.TenantID != tenantID {
+			continue
+		}
+		result = append(result, *entry)
+	}
+	return result, nil
+}
+
 func (m *MockRepository) GetJournalEntryByID(ctx context.Context, schemaName, tenantID, entryID string) (*JournalEntry, error) {
 	if m.getJournalErr != nil {
 		return nil, m.getJournalErr

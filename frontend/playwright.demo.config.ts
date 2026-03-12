@@ -7,7 +7,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const isRemoteDemoTesting = process.env.TEST_DEMO === 'true';
-const baseURL = process.env.BASE_URL || 'http://127.0.0.1:4173';
+const baseURL = process.env.BASE_URL || 'http://localhost:5173';
+const localBaseURL = new URL(baseURL);
+const localWebServerHost = localBaseURL.hostname;
+const localWebServerPort = localBaseURL.port || (localBaseURL.protocol === 'https:' ? '443' : '80');
 
 if (isRemoteDemoTesting && !process.env.BASE_URL) {
 	throw new Error('BASE_URL is required when TEST_DEMO=true');
@@ -89,7 +92,7 @@ export default defineConfig({
 	// Start dev server when testing locally
 	...(isLocalTesting && {
 		webServer: {
-			command: 'bun run dev',
+			command: `bun run paraglide && bunx vite dev --host ${localWebServerHost} --port ${localWebServerPort}`,
 			url: baseURL,
 			reuseExistingServer: !process.env.CI,
 			timeout: 120000

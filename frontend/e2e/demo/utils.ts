@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export const DEMO_URL = process.env.BASE_URL || 'http://127.0.0.1:4173';
+export const DEMO_URL = process.env.BASE_URL || 'http://localhost:5173';
 export const DEMO_API_URL = process.env.PUBLIC_API_URL || 'http://localhost:8080';
 
 // Auth state directory - matches playwright.demo.config.ts

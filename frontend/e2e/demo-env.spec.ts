@@ -14,7 +14,7 @@ import { test, expect } from '@playwright/test';
  * - Demo users (demo1@example.com / demo12345) must exist
  */
 
-const DEMO_URL = process.env.BASE_URL || 'http://127.0.0.1:4173';
+const DEMO_URL = process.env.BASE_URL || 'http://localhost:5173';
 const DEMO_API = process.env.PUBLIC_API_URL || 'http://localhost:8080';
 
 // Demo credentials for multi-user testing - use demo1 as the default

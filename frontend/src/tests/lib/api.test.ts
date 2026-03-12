@@ -357,6 +357,104 @@ describe("API Client - Core Functionality", () => {
       );
       expect(result.event.action).toBe("reopen");
     });
+
+    it("should list recent journal entries", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [{ id: "je-1", entry_number: "JE-001" }],
+      });
+
+      const result = await api.listJournalEntries("tenant-123", 25);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/journal-entries?limit=25"),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result[0].entry_number).toBe("JE-001");
+    });
+
+    it("should list documents for an entity", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [{ id: "doc-1", entity_type: "invoice", entity_id: "inv-1" }],
+      });
+
+      const result = await api.listDocuments("tenant-123", "invoice", "inv-1");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/documents?entity_type=invoice&entity_id=inv-1"),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result[0].id).toBe("doc-1");
+    });
+
+    it("should upload documents with multipart form data", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({ id: "doc-1", entity_type: "payment", entity_id: "pay-1" }),
+      });
+
+      const file = new File(["receipt"], "receipt.pdf", { type: "application/pdf" });
+      await api.uploadDocument("tenant-123", "payment", "pay-1", file);
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [, requestInit] = mockFetch.mock.calls[0] as [string, RequestInit];
+      expect(requestInit.method).toBe("POST");
+      expect(requestInit.body).toBeInstanceOf(FormData);
+      const formData = requestInit.body as FormData;
+      expect(formData.get("entity_type")).toBe("payment");
+      expect(formData.get("entity_id")).toBe("pay-1");
+      expect(formData.get("file")).toBe(file);
+    });
+
+    it("should delete a document", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ status: "deleted" }),
+      });
+
+      const result = await api.deleteDocument("tenant-123", "doc-1");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/documents/doc-1"),
+        expect.objectContaining({ method: "DELETE" }),
+      );
+      expect(result.status).toBe("deleted");
+    });
+
+    it("should download a document and trigger a file save", async () => {
+      api.setTokens("valid-token", "refresh-token");
+
+      const blob = new Blob(["receipt"]);
+      const createObjectURL = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:doc-1");
+      const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+      const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        blob: async () => blob,
+      });
+
+      await api.downloadDocument("tenant-123", "doc-1", "receipt.pdf");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/documents/doc-1/download"),
+        expect.objectContaining({
+          method: "GET",
+          headers: expect.objectContaining({
+            Authorization: "Bearer valid-token",
+          }),
+        }),
+      );
+      expect(createObjectURL).toHaveBeenCalledWith(blob);
+      expect(click).toHaveBeenCalledTimes(1);
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:doc-1");
+    });
   });
 
   describe("Account Endpoints", () => {

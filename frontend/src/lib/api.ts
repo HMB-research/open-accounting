@@ -192,12 +192,21 @@ class ApiClient {
     skipAuth = false,
     retryConfig: RetryConfig = DEFAULT_RETRY_CONFIG,
   ): Promise<T> {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
+    const headers: Record<string, string> = {};
 
     if (!skipAuth && this.accessToken) {
       headers["Authorization"] = `Bearer ${this.accessToken}`;
+    }
+
+    const isFormData =
+      typeof FormData !== "undefined" && body instanceof FormData;
+    const requestBody = body
+      ? isFormData
+        ? body
+        : JSON.stringify(body)
+      : undefined;
+    if (body !== undefined && !isFormData) {
+      headers["Content-Type"] = "application/json";
     }
 
     let lastError: Error | null = null;
@@ -208,7 +217,7 @@ class ApiClient {
         const response = await fetch(`${getApiBase()}${path}`, {
           method,
           headers,
-          body: body ? JSON.stringify(body) : undefined,
+          body: requestBody,
         });
 
         lastStatus = response.status;
@@ -415,6 +424,70 @@ class ApiClient {
     );
   }
 
+  async listDocuments(
+    tenantId: string,
+    entityType: DocumentAttachment["entity_type"],
+    entityId: string,
+  ) {
+    const query = buildQuery({ entity_type: entityType, entity_id: entityId });
+    return this.request<DocumentAttachment[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/documents${query}`,
+    );
+  }
+
+  async uploadDocument(
+    tenantId: string,
+    entityType: DocumentAttachment["entity_type"],
+    entityId: string,
+    file: File,
+  ) {
+    const formData = new FormData();
+    formData.set("entity_type", entityType);
+    formData.set("entity_id", entityId);
+    formData.set("file", file);
+
+    return this.request<DocumentAttachment>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/documents`,
+      formData,
+    );
+  }
+
+  async deleteDocument(tenantId: string, documentId: string) {
+    return this.request<{ status: string }>(
+      "DELETE",
+      `/api/v1/tenants/${tenantId}/documents/${documentId}`,
+    );
+  }
+
+  async downloadDocument(tenantId: string, documentId: string, fileName: string) {
+    const response = await fetch(
+      `${getApiBase()}/api/v1/tenants/${tenantId}/documents/${documentId}/download`,
+      {
+        method: "GET",
+        headers: this.accessToken
+          ? { Authorization: `Bearer ${this.accessToken}` }
+          : {},
+      },
+    );
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({} as ApiError));
+      throw new Error(error.error || "Failed to download document");
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  }
+
   // Account endpoints
   async listAccounts(tenantId: string, activeOnly = false) {
     const query = activeOnly ? "?active_only=true" : "";
@@ -448,6 +521,13 @@ class ApiClient {
   }
 
   // Journal entry endpoints
+  async listJournalEntries(tenantId: string, limit = 50) {
+    return this.request<JournalEntry[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/journal-entries?limit=${limit}`,
+    );
+  }
+
   async getJournalEntry(tenantId: string, entryId: string) {
     return this.request<JournalEntry>(
       "GET",
@@ -2279,6 +2359,18 @@ export interface ReopenPeriodRequest {
 export interface PeriodCloseResponse {
   tenant: Tenant;
   event: PeriodCloseEvent;
+}
+
+export interface DocumentAttachment {
+  id: string;
+  tenant_id: string;
+  entity_type: "invoice" | "journal_entry" | "payment";
+  entity_id: string;
+  file_name: string;
+  content_type: string;
+  file_size: number;
+  uploaded_by: string;
+  created_at: string;
 }
 
 export interface TenantMembership {

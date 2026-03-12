@@ -284,6 +284,56 @@ This currently applies to:
 
 Invoice import also enforces the lock, but because it is a bulk operation, locked invoice rows are returned as row errors in the import summary instead of failing the whole request with `409 Conflict`.
 
+### List Recent Journal Entries
+
+```http
+GET /tenants/{tenantId}/journal-entries?limit=50
+Authorization: Bearer <token>
+```
+
+- returns the most recent journal entries with their lines
+- `limit` defaults to `50` and is capped at `200`
+
+### Document Attachments
+
+Document attachments currently support `invoice`, `journal_entry`, and `payment` entities.
+
+#### List Documents
+
+```http
+GET /tenants/{tenantId}/documents?entity_type=invoice&entity_id=<uuid>
+Authorization: Bearer <token>
+```
+
+#### Upload Document
+
+```http
+POST /tenants/{tenantId}/documents
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+
+entity_type=payment
+entity_id=<uuid>
+file=<binary>
+```
+
+- accepts PDFs, images, CSV files, text files, and similar supporting records
+- maximum file size is `10 MB`
+
+#### Download Document
+
+```http
+GET /tenants/{tenantId}/documents/{documentId}/download
+Authorization: Bearer <token>
+```
+
+#### Delete Document
+
+```http
+DELETE /tenants/{tenantId}/documents/{documentId}
+Authorization: Bearer <token>
+```
+
 ---
 
 ## Accounts (Chart of Accounts)
