@@ -387,20 +387,28 @@ type PostgresRepository struct {
 }
 ```
 
+### Data Access Direction
+
+- `pgx` is the primary runtime path for tenant-domain repositories.
+- `sqlc` is used for shared/public schema tables where generation is straightforward.
+- `gorm` adapters exist behind build tags for legacy or optional paths, but new tenant-scoped work should prefer explicit schema-qualified tables over `search_path`.
+
 ### Multi-Tenant Schema Qualification
 
-All repository queries use schema-qualified table names for tenant isolation:
+Tenant repositories qualify tables explicitly instead of mutating connection-level `search_path` state:
 
 ```go
+accountsTable, _ := database.QualifiedTable(schemaName, "accounts")
+
 query := fmt.Sprintf(`
-    SELECT id, name FROM %s.accounts WHERE id = $1
-`, schemaName)
+    SELECT id, name FROM %s WHERE id = $1
+`, accountsTable)
 ```
 
 ### Benefits
 
 1. **Testability** - Interfaces enable mocking for unit tests
-2. **Flexibility** - Implementation can be swapped (e.g., to GORM)
+2. **Safer Tenant Isolation** - Explicit table qualification avoids pooled-connection schema drift
 3. **Separation of Concerns** - Business logic doesn't depend on database details
 4. **Multi-Tenancy** - Schema name passed explicitly to every operation
 
@@ -424,7 +432,7 @@ Coverage is tracked in CI and Codecov, but the repository does not currently cla
 | Backend | `go test ./...` must pass |
 | Backend integration | `go test -tags=integration -race ...` must pass |
 | Frontend | `bun run check` and `bun run test` must pass |
-| E2E | Demo suite exists; blocking smoke E2E is still in progress |
+| E2E | Blocking smoke E2E plus informational demo shards |
 
 ### Backend Testing
 

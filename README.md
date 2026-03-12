@@ -149,7 +149,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 
 | Layer | Technology |
 |-------|------------|
-| **Backend** | Go 1.24+, Chi router, pgx/v5 |
+| **Backend** | Go 1.24+, Chi router, pgx/v5, sqlc (shared tables) |
 | **Frontend** | SvelteKit 2, Svelte 5, Vite 7, TypeScript |
 | **i18n** | Paraglide-JS (compile-time translations) |
 | **Database** | PostgreSQL 16+ |
