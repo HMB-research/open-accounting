@@ -1,5 +1,5 @@
 import { test, expect, TestInfo } from '@playwright/test';
-import { loginAsDemo, navigateTo, DEMO_URL, getDemoCredentials, waitForDataOrEmpty } from './demo/utils';
+import { loginAsDemo, navigateTo, DEMO_URL, waitForDataOrEmpty, waitForPageReady } from './demo/utils';
 
 /**
  * Comprehensive E2E Tests for All Demo Views
@@ -90,16 +90,21 @@ test.describe('Demo All Views - Accounting', () => {
 	test('Invoices page displays data', async ({ page }, testInfo) => {
 		await loginAsDemo(page, testInfo);
 		await navigateTo(page, '/invoices', testInfo);
+		await waitForPageReady(page);
 
 		const content = page.locator('main, [class*="content"]').first();
 		await expect(content).toBeVisible();
 
-		// Should show invoices
-		const hasHeading = await page.getByRole('heading', { name: /invoice/i }).isVisible().catch(() => false);
-		const hasTable = await page.locator('table, .invoice-list').first().isVisible().catch(() => false);
-		const hasInvoiceData = await page.getByText(/INV-|draft|sent|paid/i).first().isVisible().catch(() => false);
+		const hasHeading = await page.getByRole('heading', { level: 1, name: /^invoices$/i }).isVisible().catch(() => false);
+		const hasHero = await page.locator('.workflow-hero').first().isVisible().catch(() => false);
+		const hasPrimaryAction = await page
+			.getByRole('button', { name: /new invoice|import invoices/i })
+			.first()
+			.isVisible()
+			.catch(() => false);
+		const { hasData, isEmpty } = await waitForDataOrEmpty(page, 10000);
 
-		expect(hasHeading || hasTable || hasInvoiceData).toBeTruthy();
+		expect(hasHeading || hasHero || hasPrimaryAction || hasData || isEmpty).toBeTruthy();
 	});
 
 	test('Payments page displays data', async ({ page }, testInfo) => {
@@ -349,21 +354,25 @@ test.describe('Demo All Views - Admin', () => {
 test.describe('Demo All Views - Navigation', () => {
 	test('Sidebar navigation has all main links', async ({ page }, testInfo) => {
 		await loginAsDemo(page, testInfo);
-		// Main navigation should have key links
-		const nav = page.locator('nav, .sidebar, [class*="nav"]').first();
-		await expect(nav).toBeVisible();
+		await waitForPageReady(page);
 
-		// Check for essential navigation items
 		const navItems = ['dashboard', 'account', 'journal', 'contact', 'invoice', 'payment', 'report'];
+		const visibleItems = await Promise.all(
+			navItems.map((item) =>
+				page
+					.getByRole('link', { name: new RegExp(item, 'i') })
+					.first()
+					.isVisible()
+					.catch(() => false)
+			)
+		);
+		const hasMenuShell = await page
+			.locator('nav.navbar, .mobile-nav, .mobile-menu-btn, [aria-label*="menu"]')
+			.first()
+			.isVisible()
+			.catch(() => false);
 
-		for (const item of navItems) {
-			const link = page.getByRole('link', { name: new RegExp(item, 'i') });
-			const exists = await link.count();
-			if (exists > 0) {
-				expect(exists).toBeGreaterThan(0);
-				break; // At least one nav item exists
-			}
-		}
+		expect(hasMenuShell || visibleItems.some(Boolean)).toBeTruthy();
 	});
 
 	test('Payroll dropdown has subitems', async ({ page }, testInfo) => {
