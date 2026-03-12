@@ -35,7 +35,7 @@ func TestNewPool(t *testing.T) {
 		},
 		{
 			name:          "connection with invalid host",
-			connString:    "postgres://user:pass@nonexistent:5432/db",
+			connString:    "postgres://nonexistent:5432/db?sslmode=disable&connect_timeout=1",
 			expectedError: "failed to ping database",
 			shouldSucceed: false,
 		},
@@ -63,7 +63,7 @@ func TestNewQueriesFunction(t *testing.T) {
 	// This is about testing the constructor that has 0% coverage
 	// Since the function is very simple, we'll test that it doesn't panic
 	// and returns a non-nil value with a mock
-	
+
 	// We can't easily mock DBTX due to pgx types, so we test the concept
 	assert.NotPanics(t, func() {
 		// The New function should not panic even with nil
@@ -80,9 +80,9 @@ func TestPoolStructure(t *testing.T) {
 		Pool:    nil, // pgxpool.Pool would go here
 		queries: nil, // Queries would go here
 	}
-	
+
 	assert.NotNil(t, pool)
-	
+
 	// Test that Close doesn't panic even with nil Pool
 	assert.NotPanics(t, func() {
 		if pool.Pool != nil {
@@ -95,13 +95,13 @@ func TestPoolStructure(t *testing.T) {
 func TestQueriesWithTxConcept(t *testing.T) {
 	// Test the concept of creating a new Queries instance with a transaction
 	originalQueries := &Queries{db: nil}
-	
+
 	// The WithTx method should create a new instance
 	// We can't easily test the actual method due to pgx types,
 	// but we can test the concept
-	
+
 	newQueries := &Queries{db: nil} // This simulates WithTx behavior
-	
+
 	assert.NotNil(t, originalQueries)
 	assert.NotNil(t, newQueries)
 	// Should be different instances (we're just testing the concept)
@@ -111,7 +111,7 @@ func TestQueriesWithTxConcept(t *testing.T) {
 // TestPoolMethodsConcepts tests the concepts behind Pool methods
 func TestPoolMethodsConcepts(t *testing.T) {
 	// Test the concept of Pool methods without requiring actual database
-	
+
 	tests := []struct {
 		name string
 		test func()
@@ -143,7 +143,7 @@ func TestPoolMethodsConcepts(t *testing.T) {
 					executed = true
 					return nil
 				}
-				
+
 				// Simulate successful execution
 				err := testFn(&Queries{})
 				assert.NoError(t, err)

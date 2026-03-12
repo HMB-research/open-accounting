@@ -82,7 +82,7 @@ func (Decimal) GormDataType() string {
 
 // GormDBDataType returns the database data type based on dialect
 func (Decimal) GormDBDataType(db *gorm.DB, field *schema.Field) string {
-	if db == nil || db.Config == nil || db.Config.Dialector == nil {
+	if db == nil || db.Config == nil || db.Dialector == nil {
 		return "NUMERIC(28,8)"
 	}
 
@@ -156,7 +156,7 @@ func (JSONB) GormDataType() string {
 
 // GormDBDataType returns the database data type based on dialect
 func (JSONB) GormDBDataType(db *gorm.DB, field *schema.Field) string {
-	if db == nil || db.Config == nil || db.Config.Dialector == nil {
+	if db == nil || db.Config == nil || db.Dialector == nil {
 		return "JSONB"
 	}
 
@@ -209,7 +209,7 @@ func (JSONBRaw) GormDataType() string {
 
 // GormDBDataType returns the database data type based on dialect
 func (JSONBRaw) GormDBDataType(db *gorm.DB, field *schema.Field) string {
-	if db == nil || db.Config == nil || db.Config.Dialector == nil {
+	if db == nil || db.Config == nil || db.Dialector == nil {
 		return "JSONB"
 	}
 

@@ -48,9 +48,9 @@ func TestDecimalNewFunctions(t *testing.T) {
 // TestDecimalNewFromStringError tests error handling in NewDecimalFromString
 func TestDecimalNewFromStringError(t *testing.T) {
 	tests := []struct {
-		name          string
-		input         string
-		expectError   bool
+		name        string
+		input       string
+		expectError bool
 	}{
 		{
 			name:        "valid decimal string",
@@ -72,13 +72,13 @@ func TestDecimalNewFromStringError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := NewDecimalFromString(tt.input)
-			
+
 			if tt.expectError {
 				assert.Error(t, err)
 				assert.True(t, result.IsZero())
 				return
 			}
-			
+
 			assert.NoError(t, err)
 			assert.Equal(t, tt.input, result.String())
 		})
@@ -129,12 +129,12 @@ func TestDecimalScanValue(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var d Decimal
 			err := d.Scan(tt.value)
-			
+
 			if tt.expectErr {
 				assert.Error(t, err)
 				return
 			}
-			
+
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expected, d.String())
 		})
@@ -169,7 +169,7 @@ func TestDecimalValueMethod(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			value, err := tt.decimal.Value()
 			assert.NoError(t, err)
-			
+
 			// Value should return the string representation
 			stringValue, ok := value.(string)
 			assert.True(t, ok)
@@ -181,11 +181,11 @@ func TestDecimalValueMethod(t *testing.T) {
 // TestDecimalGormMethods tests GORM-related methods
 func TestDecimalGormMethods(t *testing.T) {
 	d := NewDecimalFromFloat(123.45)
-	
+
 	// Test GormDataType - should return NUMERIC(28,8) according to the implementation
 	dataType := d.GormDataType()
 	assert.Equal(t, "NUMERIC(28,8)", dataType)
-	
+
 	// Test GormDBDataType - skip this as it causes nil pointer with nil db
 	// dbDataType := d.GormDBDataType(nil, nil)
 	// assert.Contains(t, dbDataType, "NUMERIC")
@@ -194,12 +194,12 @@ func TestDecimalGormMethods(t *testing.T) {
 // TestDecimalJSONMarshalUnmarshal tests JSON serialization
 func TestDecimalJSONMarshalUnmarshal(t *testing.T) {
 	original := NewDecimalFromFloat(123.45)
-	
+
 	// Test marshaling
 	jsonData, err := original.MarshalJSON()
 	assert.NoError(t, err)
 	assert.Contains(t, string(jsonData), "123.45")
-	
+
 	// Test unmarshaling
 	var unmarshaled Decimal
 	err = unmarshaled.UnmarshalJSON(jsonData)
@@ -235,12 +235,12 @@ func TestDecimalJSONUnmarshalError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var d Decimal
 			err := d.UnmarshalJSON(tt.jsonData)
-			
+
 			if tt.expectError {
 				assert.Error(t, err)
 				return
 			}
-			
+
 			assert.NoError(t, err)
 		})
 	}
@@ -251,15 +251,15 @@ func TestDecimalComparisons(t *testing.T) {
 	d1 := NewDecimalFromFloat(123.45)
 	d2 := NewDecimalFromFloat(123.45)
 	d3 := NewDecimalFromFloat(100.00)
-	
+
 	// Test equality
 	assert.True(t, d1.Equal(d2.Decimal))
 	assert.False(t, d1.Equal(d3.Decimal))
-	
+
 	// Test comparisons
 	assert.True(t, d1.GreaterThan(d3.Decimal))
 	assert.False(t, d3.GreaterThan(d1.Decimal))
-	
+
 	// Test zero
 	zero := DecimalZero()
 	assert.True(t, zero.IsZero())
@@ -275,12 +275,12 @@ func TestJSONBScanValue(t *testing.T) {
 		expectNil bool
 	}{
 		{
-			name:     "scan string value",
-			value:    `{"key": "value"}`,
+			name:  "scan string value",
+			value: `{"key": "value"}`,
 		},
 		{
-			name:     "scan byte slice",
-			value:    []byte(`{"key": "value"}`),
+			name:  "scan byte slice",
+			value: []byte(`{"key": "value"}`),
 		},
 		{
 			name:      "scan nil",
@@ -298,12 +298,12 @@ func TestJSONBScanValue(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var j JSONB
 			err := j.Scan(tt.value)
-			
+
 			if tt.expectErr {
 				assert.Error(t, err)
 				return
 			}
-			
+
 			assert.NoError(t, err)
 			if tt.expectNil {
 				assert.Nil(t, j)
@@ -317,10 +317,10 @@ func TestJSONBScanValue(t *testing.T) {
 // TestJSONBValue tests JSONB Value method
 func TestJSONBValue(t *testing.T) {
 	j := JSONB{"key": "value"}
-	
+
 	value, err := j.Value()
 	require.NoError(t, err)
-	
+
 	byteValue, ok := value.([]byte)
 	require.True(t, ok)
 	assert.Contains(t, string(byteValue), "key")
@@ -330,11 +330,11 @@ func TestJSONBValue(t *testing.T) {
 // TestJSONBGormMethods tests GORM methods for JSONB
 func TestJSONBGormMethods(t *testing.T) {
 	j := JSONB{}
-	
+
 	// Test GormDataType
 	dataType := j.GormDataType()
 	assert.Equal(t, "JSONB", dataType)
-	
+
 	// Test GormDBDataType
 	dbDataType := j.GormDBDataType(nil, nil)
 	assert.Equal(t, "JSONB", dbDataType)

@@ -10,10 +10,10 @@ import (
 // TestEnsureSchema tests the EnsureSchema function that has 0% coverage
 func TestEnsureSchema(t *testing.T) {
 	tests := []struct {
-		name           string
-		service        *Service
-		schemaName     string
-		expectedError  string
+		name          string
+		service       *Service
+		schemaName    string
+		expectedError string
 	}{
 		{
 			name:          "service without database connection",
@@ -26,13 +26,13 @@ func TestEnsureSchema(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.service.EnsureSchema(context.Background(), tt.schemaName)
-			
+
 			if tt.expectedError != "" {
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), tt.expectedError)
 				return
 			}
-			
+
 			assert.NoError(t, err)
 		})
 	}
@@ -43,10 +43,10 @@ func TestEnsureSchema(t *testing.T) {
 // TestTransactionValidation tests transaction validation logic
 func TestTransactionValidation(t *testing.T) {
 	tests := []struct {
-		name         string
-		transaction  BankTransaction
-		isValid      bool
-		errorField   string
+		name        string
+		transaction BankTransaction
+		isValid     bool
+		errorField  string
 	}{
 		{
 			name: "valid transaction",
@@ -95,10 +95,10 @@ func TestTransactionValidation(t *testing.T) {
 // TestBankAccountValidation tests bank account validation logic
 func TestBankAccountValidation(t *testing.T) {
 	tests := []struct {
-		name        string
-		account     BankAccount
-		isValid     bool
-		errorField  string
+		name       string
+		account    BankAccount
+		isValid    bool
+		errorField string
 	}{
 		{
 			name: "valid bank account",
@@ -159,13 +159,13 @@ func TestBankAccountValidation(t *testing.T) {
 	}
 }
 
-// TestTransactionStatusTransitions tests valid transaction status transitions  
+// TestTransactionStatusTransitions tests valid transaction status transitions
 func TestTransactionStatusTransitions(t *testing.T) {
 	tests := []struct {
-		name        string
-		from        TransactionStatus
-		to          TransactionStatus
-		isValid     bool
+		name    string
+		from    TransactionStatus
+		to      TransactionStatus
+		isValid bool
 	}{
 		{
 			name:    "unmatched to matched",
