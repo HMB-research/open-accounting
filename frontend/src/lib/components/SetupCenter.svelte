@@ -129,6 +129,7 @@
 
 	let completedCount = $derived(tasks.filter((task) => task.completed).length);
 	let completionRatio = $derived(tasks.length === 0 ? 0 : (completedCount / tasks.length) * 100);
+	let nextTask = $derived(tasks.find((task) => !task.completed) ?? null);
 
 	function statusLabel(status: SetupTask['status']): string {
 		switch (status) {
@@ -144,7 +145,7 @@
 
 <section class="setup-center card">
 	<div class="setup-center-header">
-		<div>
+		<div class="setup-overview-copy">
 			<div class="setup-eyebrow">{m.dashboard_setupCenter()}</div>
 			<h3>{m.dashboard_setupCenterTitle()}</h3>
 			<p>{m.dashboard_setupCenterDesc()}</p>
@@ -168,6 +169,25 @@
 			{/if}
 		</div>
 	</div>
+
+	{#if nextTask}
+		<a class="setup-spotlight" href={nextTask.href}>
+			<div class="setup-spotlight-copy">
+				<div class="setup-spotlight-meta">
+					<span class="task-status" data-status={nextTask.status}>{statusLabel(nextTask.status)}</span>
+					<span class="setup-spotlight-link">{nextTask.actionLabel}</span>
+				</div>
+				<h4>{nextTask.title}</h4>
+				<p>{nextTask.description}</p>
+			</div>
+			<div class="setup-spotlight-mark" aria-hidden="true">
+				<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<path d="M7 17 17 7" />
+					<path d="M7 7h10v10" />
+				</svg>
+			</div>
+		</a>
+	{/if}
 
 	<div class="setup-task-grid">
 		{#each tasks as task (task.id)}
@@ -227,14 +247,19 @@
 <style>
 	.setup-center {
 		margin-bottom: 1.5rem;
+		position: relative;
+		overflow: hidden;
+		background:
+			radial-gradient(circle at top right, rgba(37, 99, 235, 0.1), transparent 22rem),
+			linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(255, 251, 244, 0.96));
 	}
 
 	.setup-center-header {
-		display: flex;
-		justify-content: space-between;
+		display: grid;
+		grid-template-columns: minmax(0, 1.4fr) minmax(250px, 0.8fr);
 		gap: 1.5rem;
-		margin-bottom: 1.5rem;
-		align-items: flex-start;
+		margin-bottom: 1rem;
+		align-items: stretch;
 	}
 
 	.setup-eyebrow {
@@ -247,20 +272,35 @@
 	}
 
 	.setup-center-header h3 {
-		font-size: 1.25rem;
-		margin-bottom: 0.35rem;
+		font-family: var(--font-display);
+		font-size: clamp(2rem, 4vw, 3rem);
+		line-height: 0.95;
+		margin-bottom: 0.55rem;
+		letter-spacing: -0.03em;
 	}
 
 	.setup-center-header p {
 		color: var(--color-text-muted);
 		max-width: 42rem;
+		font-size: 0.98rem;
+	}
+
+	.setup-overview-copy {
+		position: relative;
+		z-index: 1;
 	}
 
 	.setup-progress {
-		min-width: 220px;
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 0.75rem;
+		min-width: 220px;
+		padding: 1.25rem;
+		border-radius: 1.4rem;
+		background:
+			linear-gradient(180deg, rgba(20, 28, 45, 0.98), rgba(30, 44, 74, 0.96));
+		color: #f8f6f1;
+		box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
 	}
 
 	.setup-progress-label {
@@ -268,35 +308,98 @@
 		justify-content: space-between;
 		align-items: baseline;
 		font-size: 0.875rem;
-		color: var(--color-text-muted);
+		color: rgba(248, 246, 241, 0.72);
 	}
 
 	.setup-progress-label strong {
-		font-size: 1rem;
-		color: var(--color-text);
+		font-size: 1.2rem;
+		color: #fff;
 	}
 
 	.setup-progress-bar {
-		height: 0.5rem;
+		height: 0.6rem;
 		border-radius: 999px;
-		background: var(--color-bg);
+		background: rgba(248, 246, 241, 0.14);
 		overflow: hidden;
 	}
 
 	.setup-progress-fill {
 		height: 100%;
 		border-radius: inherit;
-		background: linear-gradient(90deg, var(--color-primary), #38bdf8);
+		background: linear-gradient(90deg, #8bd3ff, #ffffff 75%);
 	}
 
 	.setup-progress-summary {
 		font-size: 0.8rem;
+		color: rgba(248, 246, 241, 0.72);
+	}
+
+	.setup-progress :global(.btn) {
+		width: 100%;
+		justify-content: center;
+		margin-top: auto;
+	}
+
+	.setup-spotlight {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 1rem;
+		padding: 1rem 1.1rem;
+		margin-bottom: 1rem;
+		border-radius: 1.25rem;
+		border: 1px solid rgba(37, 99, 235, 0.16);
+		background: rgba(255, 255, 255, 0.56);
+		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+		text-decoration: none;
+	}
+
+	.setup-spotlight:hover {
+		text-decoration: none;
+		border-color: rgba(37, 99, 235, 0.34);
+		transform: translateY(-1px);
+	}
+
+	.setup-spotlight-meta {
+		display: flex;
+		align-items: center;
+		gap: 0.65rem;
+		flex-wrap: wrap;
+		margin-bottom: 0.55rem;
+	}
+
+	.setup-spotlight h4 {
+		font-size: 1.1rem;
+		margin-bottom: 0.2rem;
+	}
+
+	.setup-spotlight p {
 		color: var(--color-text-muted);
+		max-width: 40rem;
+	}
+
+	.setup-spotlight-link {
+		font-size: 0.8rem;
+		font-weight: 700;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--color-primary);
+	}
+
+	.setup-spotlight-mark {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 2.8rem;
+		height: 2.8rem;
+		border-radius: 999px;
+		background: rgba(37, 99, 235, 0.12);
+		color: var(--color-primary);
 	}
 
 	.setup-task-grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 		gap: 1rem;
 	}
 
@@ -304,30 +407,31 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.85rem;
-		padding: 1rem;
-		border-radius: 0.75rem;
-		border: 1px solid var(--color-border);
-		background: linear-gradient(180deg, #fff 0%, #f8fbff 100%);
+		padding: 1.15rem;
+		border-radius: 1.1rem;
+		border: 1px solid rgba(30, 41, 59, 0.1);
+		background: rgba(255, 255, 255, 0.72);
+		box-shadow: 0 14px 30px rgba(15, 23, 42, 0.04);
 	}
 
 	.setup-task-card.complete {
-		background: linear-gradient(180deg, #ffffff 0%, #f6fcf7 100%);
-		border-color: #bbf7d0;
+		background: linear-gradient(180deg, rgba(255, 255, 255, 0.84) 0%, rgba(246, 252, 247, 0.98) 100%);
+		border-color: rgba(34, 197, 94, 0.26);
 	}
 
 	.setup-task-card.next {
-		border-color: rgba(37, 99, 235, 0.35);
-		box-shadow: 0 12px 30px rgba(37, 99, 235, 0.08);
+		border-color: rgba(37, 99, 235, 0.28);
+		box-shadow: 0 22px 44px rgba(37, 99, 235, 0.12);
 	}
 
 	.task-icon {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 2.5rem;
-		height: 2.5rem;
-		border-radius: 0.75rem;
-		background: rgba(37, 99, 235, 0.12);
+		width: 2.75rem;
+		height: 2.75rem;
+		border-radius: 0.95rem;
+		background: rgba(37, 99, 235, 0.1);
 		color: var(--color-primary);
 	}
 
@@ -379,16 +483,25 @@
 	.task-link {
 		margin-top: auto;
 		font-weight: 600;
+		text-decoration: none;
+	}
+
+	.task-link:hover {
+		text-decoration: none;
 	}
 
 	@media (max-width: 900px) {
 		.setup-center-header {
-			flex-direction: column;
+			grid-template-columns: 1fr;
 		}
 
 		.setup-progress {
 			width: 100%;
 			min-width: 0;
+		}
+
+		.setup-spotlight {
+			grid-template-columns: 1fr;
 		}
 	}
 </style>

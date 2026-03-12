@@ -402,8 +402,11 @@
 		{#if selectedTenant}
 			<div class="workspace-hero card">
 				<div class="workspace-copy">
-					<div class="workspace-badge" data-state={selectedTenant.onboarding_completed ? 'ready' : 'setup'}>
-						{selectedTenant.onboarding_completed ? m.dashboard_workspaceReady() : m.dashboard_setupInProgress()}
+					<div class="workspace-meta">
+						<div class="workspace-badge" data-state={selectedTenant.onboarding_completed ? 'ready' : 'setup'}>
+							{selectedTenant.onboarding_completed ? m.dashboard_workspaceReady() : m.dashboard_setupInProgress()}
+						</div>
+						<span class="workspace-slug">/{selectedTenant.slug}</span>
 					</div>
 					<h2>{selectedTenant.name}</h2>
 					<p>
@@ -411,24 +414,64 @@
 							? m.dashboard_workspaceReadyDesc()
 							: m.dashboard_workspaceSetupDesc()}
 					</p>
+					<div class="workspace-rail">
+						<span>{m.nav_invoices()}</span>
+						<span>{m.nav_banking()}</span>
+						<span>{m.nav_payroll()}</span>
+						<span>{m.nav_reports()}</span>
+					</div>
+
+					<div class="workspace-actions">
+						{#if selectedTenant.onboarding_completed}
+							<a href="/invoices?tenant={selectedTenant.id}" class="btn btn-primary">
+								{m.invoices_newInvoice()}
+							</a>
+							<a href="/reports?tenant={selectedTenant.id}" class="btn btn-secondary">
+								{m.dashboard_openReports()}
+							</a>
+						{:else}
+							<button class="btn btn-primary" type="button" onclick={openOnboarding}>
+								{m.dashboard_continueGuidedSetup()}
+							</button>
+							<a href="/settings/company?tenant={selectedTenant.id}" class="btn btn-secondary">
+								{m.dashboard_setupTaskCompanyAction()}
+							</a>
+						{/if}
+					</div>
 				</div>
 
-				<div class="workspace-actions">
-					{#if selectedTenant.onboarding_completed}
-						<a href="/invoices?tenant={selectedTenant.id}" class="btn btn-primary">
-							{m.invoices_newInvoice()}
-						</a>
-						<a href="/reports?tenant={selectedTenant.id}" class="btn btn-secondary">
-							{m.dashboard_openReports()}
-						</a>
-					{:else}
-						<button class="btn btn-primary" type="button" onclick={openOnboarding}>
-							{m.dashboard_continueGuidedSetup()}
-						</button>
-						<a href="/settings/company?tenant={selectedTenant.id}" class="btn btn-secondary">
-							{m.dashboard_setupTaskCompanyAction()}
-						</a>
-					{/if}
+				<div class="workspace-side">
+					<section class="workspace-panel workspace-panel-primary">
+						<div class="workspace-panel-kicker">{m.dashboard_invoiceStatus()}</div>
+						<div class="workspace-signal-grid">
+							<div class="workspace-signal">
+								<span>{m.dashboard_receivables()}</span>
+								<strong>{summary ? formatCurrency(summary.total_receivables) : '--'}</strong>
+							</div>
+							<div class="workspace-signal">
+								<span>{m.dashboard_netIncome()}</span>
+								<strong>{summary ? formatCurrency(summary.net_income) : '--'}</strong>
+							</div>
+							<div class="workspace-signal">
+								<span>{m.invoices_overdue()}</span>
+								<strong>{summary ? summary.overdue_invoices : '--'}</strong>
+							</div>
+							<div class="workspace-signal">
+								<span>{m.dashboard_pending()}</span>
+								<strong>{summary ? summary.pending_invoices : '--'}</strong>
+							</div>
+						</div>
+					</section>
+
+					<section class="workspace-panel">
+						<div class="workspace-panel-kicker">{m.dashboard_quickActions()}</div>
+						<div class="workspace-chip-row">
+							<a href="/contacts?tenant={selectedTenant.id}" class="workspace-chip">{m.nav_contacts()}</a>
+							<a href="/journal?tenant={selectedTenant.id}" class="workspace-chip">{m.nav_journal()}</a>
+							<a href="/banking?tenant={selectedTenant.id}" class="workspace-chip">{m.nav_banking()}</a>
+							<a href="/tax?tenant={selectedTenant.id}" class="workspace-chip">{m.nav_tax()}</a>
+						</div>
+					</section>
 				</div>
 			</div>
 
@@ -623,18 +666,35 @@
 	}
 
 	.workspace-hero {
-		display: flex;
-		justify-content: space-between;
-		align-items: flex-start;
+		display: grid;
+		grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.95fr);
 		gap: 1.5rem;
-		margin-bottom: 1.5rem;
+		margin-bottom: 1.75rem;
+		padding: 1.75rem;
+		position: relative;
+		overflow: hidden;
 		background:
-			radial-gradient(circle at top right, rgba(37, 99, 235, 0.12), transparent 34%),
-			linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+			radial-gradient(circle at top right, rgba(37, 99, 235, 0.18), transparent 28%),
+			radial-gradient(circle at bottom left, rgba(15, 23, 42, 0.08), transparent 38%),
+			linear-gradient(135deg, rgba(255, 255, 255, 0.84), rgba(255, 250, 242, 0.96));
+		box-shadow: var(--shadow-soft);
 	}
 
 	.workspace-copy {
-		max-width: 44rem;
+		position: relative;
+		z-index: 1;
+		max-width: 46rem;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 1rem;
+	}
+
+	.workspace-meta {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		flex-wrap: wrap;
 	}
 
 	.workspace-badge {
@@ -659,21 +719,135 @@
 		color: var(--color-primary);
 	}
 
+	.workspace-slug {
+		font-family: var(--font-mono);
+		font-size: 0.78rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--color-text-muted);
+	}
+
 	.workspace-hero h2 {
-		font-size: 1.6rem;
-		margin-bottom: 0.4rem;
+		font-family: var(--font-display);
+		font-size: clamp(2.8rem, 6vw, 5.1rem);
+		line-height: 0.88;
+		margin-bottom: 0;
+		letter-spacing: -0.04em;
+		font-weight: 600;
 	}
 
 	.workspace-hero p {
 		color: var(--color-text-muted);
 		max-width: 42rem;
+		font-size: 1rem;
+	}
+
+	.workspace-rail {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.55rem;
+	}
+
+	.workspace-rail span {
+		padding: 0.45rem 0.8rem;
+		border-radius: 999px;
+		background: rgba(255, 255, 255, 0.65);
+		border: 1px solid rgba(30, 41, 59, 0.08);
+		font-size: 0.78rem;
+		font-weight: 600;
+		color: var(--color-text-muted);
 	}
 
 	.workspace-actions {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.75rem;
-		justify-content: flex-end;
+		justify-content: flex-start;
+	}
+
+	.workspace-side {
+		position: relative;
+		z-index: 1;
+		display: grid;
+		gap: 1rem;
+		align-content: start;
+	}
+
+	.workspace-panel {
+		padding: 1.1rem;
+		border-radius: 1.35rem;
+		border: 1px solid rgba(30, 41, 59, 0.08);
+		background: rgba(255, 255, 255, 0.66);
+		backdrop-filter: blur(16px);
+	}
+
+	.workspace-panel-primary {
+		background: linear-gradient(180deg, rgba(19, 30, 56, 0.98), rgba(33, 52, 87, 0.96));
+		color: #f8f6f1;
+		border-color: rgba(255, 255, 255, 0.08);
+		box-shadow: 0 24px 48px rgba(15, 23, 42, 0.16);
+	}
+
+	.workspace-panel-kicker {
+		font-size: 0.75rem;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--color-text-muted);
+		margin-bottom: 0.85rem;
+	}
+
+	.workspace-panel-primary .workspace-panel-kicker {
+		color: rgba(248, 246, 241, 0.72);
+	}
+
+	.workspace-signal-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.85rem;
+	}
+
+	.workspace-signal {
+		padding: 0.85rem;
+		border-radius: 1rem;
+		background: rgba(255, 255, 255, 0.08);
+	}
+
+	.workspace-signal span {
+		display: block;
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.07em;
+		color: rgba(248, 246, 241, 0.68);
+		margin-bottom: 0.3rem;
+	}
+
+	.workspace-signal strong {
+		font-size: 1.05rem;
+		line-height: 1.1;
+	}
+
+	.workspace-chip-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.55rem;
+	}
+
+	.workspace-chip {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.55rem 0.85rem;
+		border-radius: 999px;
+		background: rgba(37, 99, 235, 0.08);
+		border: 1px solid rgba(37, 99, 235, 0.12);
+		color: var(--color-primary);
+		font-weight: 600;
+		text-decoration: none;
+	}
+
+	.workspace-chip:hover {
+		text-decoration: none;
+		background: rgba(37, 99, 235, 0.12);
 	}
 
 	/* Mobile responsive styles */
@@ -684,7 +858,8 @@
 		}
 
 		.workspace-hero {
-			flex-direction: column;
+			grid-template-columns: 1fr;
+			padding: 1.35rem;
 		}
 
 		.workspace-actions {
@@ -791,24 +966,31 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 		gap: 1rem;
-		margin-bottom: 1.5rem;
+		margin: -0.4rem 0 1.5rem;
+		position: relative;
+		z-index: 1;
 	}
 
 	.summary-card {
-		background: var(--color-card);
-		border-radius: var(--radius-md);
+		background: rgba(255, 255, 255, 0.74);
+		border-radius: 1.15rem;
 		padding: 1.25rem;
-		border: 1px solid var(--color-border);
+		border: 1px solid rgba(30, 41, 59, 0.08);
+		box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
+		backdrop-filter: blur(14px);
 	}
 
 	.summary-label {
-		font-size: 0.875rem;
+		font-size: 0.72rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
 		color: var(--color-text-muted);
-		margin-bottom: 0.5rem;
+		margin-bottom: 0.65rem;
 	}
 
 	.summary-value {
-		font-size: 1.5rem;
+		font-size: 1.7rem;
 		font-weight: 600;
 		font-family: var(--font-mono);
 	}
@@ -842,6 +1024,7 @@
 
 	.invoice-status {
 		margin-bottom: 1.5rem;
+		background: rgba(255, 255, 255, 0.72);
 	}
 
 	.invoice-status h3 {
@@ -889,6 +1072,7 @@
 
 	.chart-card {
 		margin-bottom: 1.5rem;
+		background: linear-gradient(180deg, rgba(255, 255, 255, 0.8), rgba(255, 251, 244, 0.92));
 	}
 
 	.cash-flow-card {
@@ -960,6 +1144,14 @@
 		display: flex;
 		gap: 0.5rem;
 		flex-wrap: wrap;
+	}
+
+	.quick-links {
+		background: linear-gradient(135deg, rgba(255, 255, 255, 0.82), rgba(247, 250, 255, 0.94));
+	}
+
+	.quick-links :global(.btn-secondary) {
+		background: rgba(255, 255, 255, 0.8);
 	}
 
 	.modal-backdrop {

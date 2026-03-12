@@ -68,8 +68,8 @@ describe('SetupCenter', () => {
 
 		expect(screen.getByText('Setup center')).toBeInTheDocument();
 		expect(screen.getByText('0/5')).toBeInTheDocument();
-		expect(screen.getByText('Company profile')).toBeInTheDocument();
-		expect(screen.getByText('Next')).toBeInTheDocument();
+		expect(screen.getAllByText('Company profile')).not.toHaveLength(0);
+		expect(screen.getAllByText('Next')).not.toHaveLength(0);
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Continue guided setup' }));
 		expect(onopenwalkthrough).toHaveBeenCalledTimes(1);
