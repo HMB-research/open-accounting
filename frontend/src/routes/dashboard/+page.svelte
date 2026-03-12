@@ -16,6 +16,7 @@
 	import OnboardingWizard from '$lib/components/OnboardingWizard.svelte';
 	import PeriodSelector from '$lib/components/PeriodSelector.svelte';
 	import ActivityFeed from '$lib/components/ActivityFeed.svelte';
+	import AccountantReviewPanel from '$lib/components/AccountantReviewPanel.svelte';
 	import SetupCenter from '$lib/components/SetupCenter.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 
@@ -476,6 +477,7 @@
 			</div>
 
 			<SetupCenter tenant={selectedTenant} {summary} onopenwalkthrough={openOnboarding} />
+			<AccountantReviewPanel tenant={selectedTenant} />
 
 			<!-- Summary Cards -->
 			{#if summary}

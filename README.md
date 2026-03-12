@@ -20,7 +20,7 @@
 >
 > Verified locally on 2026-03-12:
 > `go test ./...`, `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)`, `cd frontend && bun run test`, and `cd frontend && bun run test:e2e:smoke` pass.
-> Production hardening, broader migration imports, fiscal-year close/carry-forward work, and broader document retention/reconciliation workflows are still in progress.
+> Production hardening, broader migration imports, fiscal-year close/carry-forward work, cross-tenant accountant review, and broader document retention/reconciliation workflows are still in progress.
 
 CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API token once and then uses that token for subsequent reads and mutations.
 
@@ -56,6 +56,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 - **True Double-Entry Bookkeeping** — Immutable journal entries with full audit trail
 - **Multi-Company Support** — One installation serves multiple businesses with complete data isolation
 - **Role-Based Access** — Owner, Admin, Accountant, and Viewer roles with granular permissions
+- **Accountant Review Queue** — Dashboard review surface for overdue invoices, unmatched bank transactions, close status, and recent journal activity
 - **Estonian Tax Compliance** — KMD (VAT) declarations with e-MTA XML export
 - **Modern Stack** — Go backend, SvelteKit frontend, PostgreSQL database
 
