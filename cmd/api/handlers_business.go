@@ -446,6 +446,10 @@ func (h *Handlers) CreateInvoice(w http.ResponseWriter, r *http.Request) {
 
 	req.UserID = claims.UserID
 
+	if req.IssueDate.IsZero() {
+		req.IssueDate = time.Now()
+	}
+
 	if req.ContactID == "" {
 		respondError(w, http.StatusBadRequest, "Contact is required")
 		return
@@ -453,6 +457,10 @@ func (h *Handlers) CreateInvoice(w http.ResponseWriter, r *http.Request) {
 
 	if len(req.Lines) == 0 {
 		respondError(w, http.StatusBadRequest, "At least one line is required")
+		return
+	}
+
+	if h.rejectLockedPeriod(w, r.Context(), tenantID, req.IssueDate) {
 		return
 	}
 
@@ -529,6 +537,16 @@ func (h *Handlers) VoidInvoice(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	invoiceID := chi.URLParam(r, "invoiceID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	invoice, err := h.invoicingService.GetByID(r.Context(), tenantID, schemaName, invoiceID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if h.rejectLockedPeriod(w, r.Context(), tenantID, invoice.IssueDate) {
+		return
+	}
 
 	if err := h.invoicingService.Void(r.Context(), tenantID, schemaName, invoiceID); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
@@ -667,8 +685,16 @@ func (h *Handlers) CreatePayment(w http.ResponseWriter, r *http.Request) {
 
 	req.UserID = claims.UserID
 
+	if req.PaymentDate.IsZero() {
+		req.PaymentDate = time.Now()
+	}
+
 	if req.Amount.LessThanOrEqual(decimal.Zero) {
 		respondError(w, http.StatusBadRequest, "Amount must be positive")
+		return
+	}
+
+	if h.rejectLockedPeriod(w, r.Context(), tenantID, req.PaymentDate) {
 		return
 	}
 
@@ -1826,6 +1852,16 @@ func (h *Handlers) CreatePaymentFromTransaction(w http.ResponseWriter, r *http.R
 	tenantID := chi.URLParam(r, "tenantID")
 	transactionID := chi.URLParam(r, "transactionID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	transaction, err := h.bankingService.GetTransaction(r.Context(), schemaName, tenantID, transactionID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if h.rejectLockedPeriod(w, r.Context(), tenantID, transaction.TransactionDate) {
+		return
+	}
 
 	paymentID, err := h.bankingService.CreatePaymentFromTransaction(r.Context(), schemaName, tenantID, claims.UserID, transactionID)
 	if err != nil {
