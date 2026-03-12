@@ -338,6 +338,9 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 
 				// Onboarding
 				r.Post("/complete-onboarding", h.CompleteOnboarding)
+				r.Get("/period-close-events", h.ListPeriodCloseEvents)
+				r.Post("/period-close", h.ClosePeriod)
+				r.Post("/period-reopen", h.ReopenPeriod)
 				r.Get("/api-tokens", h.ListAPITokens)
 				r.Post("/api-tokens", h.CreateAPIToken)
 				r.Delete("/api-tokens/{tokenID}", h.RevokeAPIToken)

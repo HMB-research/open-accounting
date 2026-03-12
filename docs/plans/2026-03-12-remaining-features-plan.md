@@ -15,7 +15,7 @@ Already in place:
 
 Still missing or incomplete:
 - employee and broader incumbent-system migration imports
-- close, reopen, and fiscal-year workflows
+- fiscal-year close and carry-forward workflows
 - attachments and document retention
 - stronger accountant review and exception workflows
 - server-side authoritative reporting/export pipeline
@@ -43,13 +43,11 @@ Goal:
 - make accounting periods defensible instead of merely editable with a lock date
 
 Work:
-- explicit month-end close action
-- reopen flow with privileged role checks
 - fiscal year configuration and year-end carry-forward workflow
-- close/reopen audit events and operator notes
+- fiscal year close checklist and retained earnings carry-forward
 
 Exit criteria:
-- finance users can close and reopen periods without dropping to SQL or editing tenant settings manually
+- finance users can complete year-end close and carry-forward without dropping to SQL or editing tenant settings manually
 
 ### Phase 3: Document Workflows
 

@@ -222,12 +222,54 @@ Content-Type: application/json
 {
   "name": "Acme Corp",
   "settings": {
-    "period_lock_date": "2026-01-31"
+    "email": "finance@acme.example"
   }
 }
 ```
 
-`period_lock_date` uses `YYYY-MM-DD`. Send an empty string to clear it.
+`period_lock_date` is returned on tenant reads, but it is no longer mutable through the generic tenant settings endpoint. Use the explicit period close/reopen endpoints below so changes are audited.
+
+### List Period Close Events
+
+```http
+GET /tenants/{tenantId}/period-close-events?limit=20
+Authorization: Bearer <token>
+```
+
+Returns recent close and reopen events for the tenant.
+
+### Close Period
+
+```http
+POST /tenants/{tenantId}/period-close
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "period_end_date": "2026-01-31",
+  "note": "Month-end checks completed"
+}
+```
+
+- `period_end_date` must be `YYYY-MM-DD`
+- the date must be the last day of a month
+- only roles with close permissions can perform this action
+
+### Reopen Period
+
+```http
+POST /tenants/{tenantId}/period-reopen
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "period_end_date": "2026-01-31",
+  "note": "Accrual correction required"
+}
+```
+
+- `note` is required
+- reopen restores the previous lock state for that period instead of guessing from the date alone
 
 ### Period Lock Behavior
 

@@ -392,6 +392,29 @@ class ApiClient {
     );
   }
 
+  async listPeriodCloseEvents(tenantId: string, limit: number = 20) {
+    return this.request<PeriodCloseEvent[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/period-close-events?limit=${limit}`,
+    );
+  }
+
+  async closePeriod(tenantId: string, data: ClosePeriodRequest) {
+    return this.request<PeriodCloseResponse>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/period-close`,
+      data,
+    );
+  }
+
+  async reopenPeriod(tenantId: string, data: ReopenPeriodRequest) {
+    return this.request<PeriodCloseResponse>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/period-reopen`,
+      data,
+    );
+  }
+
   // Account endpoints
   async listAccounts(tenantId: string, activeOnly = false) {
     const query = activeOnly ? "?active_only=true" : "";
@@ -2228,6 +2251,34 @@ export interface TenantSettings {
   pdf_footer_text?: string;
   bank_details?: string;
   invoice_terms?: string;
+}
+
+export interface PeriodCloseEvent {
+  id: string;
+  tenant_id: string;
+  action: "close" | "reopen";
+  close_kind: "month_end" | "year_end";
+  period_end_date: string;
+  lock_date_before?: string | null;
+  lock_date_after?: string | null;
+  note?: string;
+  performed_by: string;
+  created_at: string;
+}
+
+export interface ClosePeriodRequest {
+  period_end_date: string;
+  note?: string;
+}
+
+export interface ReopenPeriodRequest {
+  period_end_date: string;
+  note: string;
+}
+
+export interface PeriodCloseResponse {
+  tenant: Tenant;
+  event: PeriodCloseEvent;
 }
 
 export interface TenantMembership {

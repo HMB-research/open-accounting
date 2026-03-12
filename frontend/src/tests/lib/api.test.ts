@@ -290,6 +290,73 @@ describe("API Client - Core Functionality", () => {
 
       expect(result.success).toBe(true);
     });
+
+    it("should list period close events", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [
+          { id: "evt-1", action: "close", period_end_date: "2026-01-31" },
+        ],
+      });
+
+      const result = await api.listPeriodCloseEvents("tenant-123", 10);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/period-close-events?limit=10"),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result).toHaveLength(1);
+    });
+
+    it("should close a period", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          tenant: { id: "tenant-123", name: "Tenant" },
+          event: { id: "evt-1", action: "close", period_end_date: "2026-01-31" },
+        }),
+      });
+
+      const result = await api.closePeriod("tenant-123", {
+        period_end_date: "2026-01-31",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/period-close"),
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining("2026-01-31"),
+        }),
+      );
+      expect(result.event.action).toBe("close");
+    });
+
+    it("should reopen a period", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          tenant: { id: "tenant-123", name: "Tenant" },
+          event: { id: "evt-2", action: "reopen", period_end_date: "2026-01-31" },
+        }),
+      });
+
+      const result = await api.reopenPeriod("tenant-123", {
+        period_end_date: "2026-01-31",
+        note: "Undo close",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/period-reopen"),
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining("Undo close"),
+        }),
+      );
+      expect(result.event.action).toBe("reopen");
+    });
   });
 
   describe("Account Endpoints", () => {

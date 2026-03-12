@@ -484,7 +484,14 @@ func (h *Handlers) UpdateTenant(w http.ResponseWriter, r *http.Request) {
 
 	t, err := h.tenantService.UpdateTenant(r.Context(), tenantID, &req)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		switch {
+		case strings.Contains(err.Error(), "tenant not found"):
+			respondError(w, http.StatusNotFound, "Tenant not found")
+		case strings.Contains(err.Error(), "period lock must be managed through close or reopen actions"):
+			respondError(w, http.StatusBadRequest, err.Error())
+		default:
+			respondError(w, http.StatusInternalServerError, err.Error())
+		}
 		return
 	}
 

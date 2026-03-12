@@ -22,29 +22,34 @@ import (
 
 // mockTenantRepository provides a controllable tenant repository for testing handlers
 type mockTenantRepository struct {
-	tenants     map[string]*tenant.Tenant
-	users       map[string]*tenant.User
-	tenantUsers map[string][]tenant.TenantUser
-	invitations map[string]*tenant.UserInvitation
+	tenants           map[string]*tenant.Tenant
+	users             map[string]*tenant.User
+	tenantUsers       map[string][]tenant.TenantUser
+	invitations       map[string]*tenant.UserInvitation
+	periodCloseEvents map[string][]tenant.PeriodCloseEvent
 
 	// Error injection
-	createTenantErr       error
-	getTenantErr          error
-	getUserByEmailErr     error
-	getUserByIDErr        error
-	createUserErr         error
-	getUserRoleErr        error
-	addUserToTenantErr    error
-	completeOnboardingErr error
-	completedOnboardings  []string
+	createTenantErr          error
+	getTenantErr             error
+	getUserByEmailErr        error
+	getUserByIDErr           error
+	createUserErr            error
+	getUserRoleErr           error
+	addUserToTenantErr       error
+	completeOnboardingErr    error
+	updateTenantWithEventErr error
+	listPeriodCloseEventsErr error
+	getLatestCloseEventErr   error
+	completedOnboardings     []string
 }
 
 func newMockTenantRepository() *mockTenantRepository {
 	return &mockTenantRepository{
-		tenants:     make(map[string]*tenant.Tenant),
-		users:       make(map[string]*tenant.User),
-		tenantUsers: make(map[string][]tenant.TenantUser),
-		invitations: make(map[string]*tenant.UserInvitation),
+		tenants:           make(map[string]*tenant.Tenant),
+		users:             make(map[string]*tenant.User),
+		tenantUsers:       make(map[string][]tenant.TenantUser),
+		invitations:       make(map[string]*tenant.UserInvitation),
+		periodCloseEvents: make(map[string][]tenant.PeriodCloseEvent),
 	}
 }
 
@@ -102,6 +107,19 @@ func (m *mockTenantRepository) UpdateTenant(ctx context.Context, tenantID, name 
 	return nil
 }
 
+func (m *mockTenantRepository) UpdateTenantWithPeriodCloseEvent(ctx context.Context, tenantID, name string, settingsJSON []byte, updatedAt time.Time, event *tenant.PeriodCloseEvent) error {
+	if m.updateTenantWithEventErr != nil {
+		return m.updateTenantWithEventErr
+	}
+	if err := m.UpdateTenant(ctx, tenantID, name, settingsJSON, updatedAt); err != nil {
+		return err
+	}
+	if event != nil {
+		m.periodCloseEvents[tenantID] = append([]tenant.PeriodCloseEvent{*event}, m.periodCloseEvents[tenantID]...)
+	}
+	return nil
+}
+
 func (m *mockTenantRepository) DeleteTenant(ctx context.Context, tenantID, schemaName string) error {
 	delete(m.tenants, tenantID)
 	return nil
@@ -116,6 +134,30 @@ func (m *mockTenantRepository) CompleteOnboarding(ctx context.Context, tenantID 
 	}
 	m.completedOnboardings = append(m.completedOnboardings, tenantID)
 	return nil
+}
+
+func (m *mockTenantRepository) ListPeriodCloseEvents(ctx context.Context, tenantID string, limit int) ([]tenant.PeriodCloseEvent, error) {
+	if m.listPeriodCloseEventsErr != nil {
+		return nil, m.listPeriodCloseEventsErr
+	}
+	events := append([]tenant.PeriodCloseEvent(nil), m.periodCloseEvents[tenantID]...)
+	if limit > 0 && len(events) > limit {
+		events = events[:limit]
+	}
+	return events, nil
+}
+
+func (m *mockTenantRepository) GetLatestCloseEventForPeriod(ctx context.Context, tenantID, periodEndDate string) (*tenant.PeriodCloseEvent, error) {
+	if m.getLatestCloseEventErr != nil {
+		return nil, m.getLatestCloseEventErr
+	}
+	for _, event := range m.periodCloseEvents[tenantID] {
+		if event.Action == tenant.PeriodCloseActionClose && event.PeriodEndDate == periodEndDate {
+			eventCopy := event
+			return &eventCopy, nil
+		}
+	}
+	return nil, nil
 }
 
 func (m *mockTenantRepository) AddUserToTenant(ctx context.Context, tenantID, userID, role string) error {

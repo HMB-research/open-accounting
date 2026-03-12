@@ -69,6 +69,9 @@ func TestSetupRouterRegistersCoreRoutes(t *testing.T) {
 	assert.Contains(t, routes, "POST /api/v1/auth/login")
 	assert.Contains(t, routes, "GET /api/v1/me")
 	assert.Contains(t, routes, "POST /api/v1/tenants/{tenantID}/complete-onboarding")
+	assert.Contains(t, routes, "GET /api/v1/tenants/{tenantID}/period-close-events")
+	assert.Contains(t, routes, "POST /api/v1/tenants/{tenantID}/period-close")
+	assert.Contains(t, routes, "POST /api/v1/tenants/{tenantID}/period-reopen")
 	assert.Contains(t, routes, "GET /api/v1/admin/plugins")
 	assert.Contains(t, routes, "GET /swagger/*")
 }

@@ -46,13 +46,14 @@ Still not done:
 | Report exports | `Beta` | CSV/XLSX export exists, but the current path is mostly client-side and not yet authoritative. |
 | Cash flow reporting | `Beta` | Present in code and UI, but needs more accountant-grade validation before stronger claims. |
 | Settings and admin workflows | `Beta` | Basic settings exist, but production admin depth is still thin. |
-| Period lock on core write paths | `Beta` | Tenant `period_lock_date` blocks core back-dated writes, but close/reopen workflow is still incomplete. |
+| Period lock on core write paths | `Working` | Tenant `period_lock_date` blocks core back-dated writes across the main mutation paths. |
+| Close/reopen workflow with audit trail | `Beta` | Explicit close and reopen actions exist in the API and company settings, with history and operator notes. Fiscal-year checklist/carry-forward work is still missing. |
 | Plugin marketplace | `Beta` | Significant functionality exists, but it is not part of the primary product wedge for reliability. |
 | Inventory and warehouse flows | `Beta` | Inventory structures exist, but the module is not yet complete enough to market as finished. |
 | Core accountant smoke E2E gate | `Working` | CI now blocks on auth setup plus invoices, reports, banking, and payroll route coverage. |
 | Demo seeded flows and broad view coverage | `Demo-only` | Useful for demos and regression checks, not the same as release-quality smoke coverage. |
 | Employee and incumbent-system migration imports | `Missing` | Adoption gap remains for payroll history and broader historical cutover. |
-| Month-end close, year-end close, and reopen workflow | `Missing` | Hard requirement for trustworthy accounting operations. |
+| Fiscal year close checklist and carry-forward workflow | `Missing` | Hard requirement for trustworthy year-end operations beyond the current close/reopen controls. |
 | Attachments and document workflows | `Missing` | Purchase invoice, receipt, and reconciliation evidence handling is still absent. |
 | Direct bank feeds, SEPA initiation, e-invoice, OCR, automatic e-MTA submission | `Blocked` | Requires external partnerships, licensing, certification, or additional infrastructure. |
 
@@ -67,7 +68,7 @@ Still not done:
 ## Immediate Priorities
 
 1. Implement employee and incumbent-system migration imports.
-2. Expand period lock into close, reopen, and month-end/year-end workflows.
+2. Finish fiscal-year close, carry-forward, and year-end checklist workflows on top of the new close/reopen foundation.
 3. Add attachments and document storage for accounting records.
 4. Remove insecure production defaults and add stronger session management.
 5. Separate smoke vs broader demo E2E coverage more cleanly over time.
