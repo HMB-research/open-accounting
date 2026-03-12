@@ -22,12 +22,19 @@ type mockAccountingRepository struct {
 	accounts       map[string]*accounting.Account
 	journalEntries map[string]*accounting.JournalEntry
 
-	listAccountsErr  error
-	createAccountErr error
-	getAccountErr    error
-	getJournalErr    error
-	createJournalErr error
-	updateJournalErr error
+	accountBalance      decimal.Decimal
+	trialBalances       []accounting.AccountBalance
+	periodBalances      []accounting.AccountBalance
+	listAccountsErr     error
+	createAccountErr    error
+	getAccountErr       error
+	getJournalErr       error
+	createJournalErr    error
+	updateJournalErr    error
+	getBalanceErr       error
+	getTrialBalanceErr  error
+	getPeriodBalancesErr error
+	voidJournalErr      error
 }
 
 func newMockAccountingRepository() *mockAccountingRepository {
@@ -115,19 +122,47 @@ func (m *mockAccountingRepository) UpdateJournalEntryStatus(ctx context.Context,
 }
 
 func (m *mockAccountingRepository) GetAccountBalance(ctx context.Context, schemaName, tenantID, accountID string, asOfDate time.Time) (decimal.Decimal, error) {
-	return decimal.Zero, assert.AnError
+	if m.getBalanceErr != nil {
+		return decimal.Zero, m.getBalanceErr
+	}
+	if m.accountBalance.IsZero() {
+		return decimal.NewFromInt(1000), nil
+	}
+	return m.accountBalance, nil
 }
 
 func (m *mockAccountingRepository) GetTrialBalance(ctx context.Context, schemaName, tenantID string, asOfDate time.Time) ([]accounting.AccountBalance, error) {
-	return nil, assert.AnError
+	if m.getTrialBalanceErr != nil {
+		return nil, m.getTrialBalanceErr
+	}
+	return m.trialBalances, nil
 }
 
 func (m *mockAccountingRepository) GetPeriodBalances(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]accounting.AccountBalance, error) {
-	return nil, assert.AnError
+	if m.getPeriodBalancesErr != nil {
+		return nil, m.getPeriodBalancesErr
+	}
+	return m.periodBalances, nil
 }
 
 func (m *mockAccountingRepository) VoidJournalEntry(ctx context.Context, schemaName, tenantID, entryID, userID, reason string, reversal *accounting.JournalEntry) error {
-	return assert.AnError
+	if m.voidJournalErr != nil {
+		return m.voidJournalErr
+	}
+	entry, ok := m.journalEntries[entryID]
+	if !ok || entry.TenantID != tenantID {
+		return assert.AnError
+	}
+	entry.Status = accounting.StatusVoided
+	now := time.Now()
+	entry.VoidedAt = &now
+	entry.VoidedBy = &userID
+	entry.VoidReason = reason
+	if reversal != nil {
+		reversal.EntryNumber = "JE-00002"
+		m.journalEntries[reversal.ID] = reversal
+	}
+	return nil
 }
 
 func setupAccountingTestHandlers() (*Handlers, *mockTenantRepository, *mockAccountingRepository) {

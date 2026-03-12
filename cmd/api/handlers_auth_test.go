@@ -28,13 +28,15 @@ type mockTenantRepository struct {
 	invitations map[string]*tenant.UserInvitation
 
 	// Error injection
-	createTenantErr    error
-	getTenantErr       error
-	getUserByEmailErr  error
-	getUserByIDErr     error
-	createUserErr      error
-	getUserRoleErr     error
-	addUserToTenantErr error
+	createTenantErr       error
+	getTenantErr          error
+	getUserByEmailErr     error
+	getUserByIDErr        error
+	createUserErr         error
+	getUserRoleErr        error
+	addUserToTenantErr    error
+	completeOnboardingErr error
+	completedOnboardings  []string
 }
 
 func newMockTenantRepository() *mockTenantRepository {
@@ -106,6 +108,13 @@ func (m *mockTenantRepository) DeleteTenant(ctx context.Context, tenantID, schem
 }
 
 func (m *mockTenantRepository) CompleteOnboarding(ctx context.Context, tenantID string) error {
+	if m.completeOnboardingErr != nil {
+		return m.completeOnboardingErr
+	}
+	if t, ok := m.tenants[tenantID]; ok {
+		t.OnboardingCompleted = true
+	}
+	m.completedOnboardings = append(m.completedOnboardings, tenantID)
 	return nil
 }
 

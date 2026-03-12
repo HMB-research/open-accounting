@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -150,6 +151,98 @@ func TestTenantContextRejectsAPITokenForDifferentTenant(t *testing.T) {
 	err := json.NewDecoder(w.Body).Decode(&resp)
 	require.NoError(t, err)
 	assert.Contains(t, resp["error"], "scoped to a different tenant")
+}
+
+func TestCompleteOnboarding(t *testing.T) {
+	tests := []struct {
+		name           string
+		claims         *auth.Claims
+		setupMock      func(*mockTenantRepository)
+		wantStatus     int
+		wantErrContain string
+		checkResponse  func(*testing.T, *mockTenantRepository, map[string]interface{})
+	}{
+		{
+			name:   "completes onboarding for tenant member",
+			claims: &auth.Claims{UserID: "user-1", Email: "user@example.com"},
+			setupMock: func(m *mockTenantRepository) {
+				m.addTestTenant("tenant-1", "Tenant One", "tenant-one")
+				m.tenantUsers["tenant-1"] = []tenant.TenantUser{{
+					TenantID: "tenant-1",
+					UserID:   "user-1",
+					Role:     tenant.RoleOwner,
+				}}
+			},
+			wantStatus: http.StatusOK,
+			checkResponse: func(t *testing.T, m *mockTenantRepository, resp map[string]interface{}) {
+				assert.Equal(t, true, resp["success"])
+				assert.Equal(t, []string{"tenant-1"}, m.completedOnboardings)
+				assert.True(t, m.tenants["tenant-1"].OnboardingCompleted)
+			},
+		},
+		{
+			name:           "requires authentication",
+			claims:         nil,
+			wantStatus:     http.StatusUnauthorized,
+			wantErrContain: "Not authenticated",
+		},
+		{
+			name:   "rejects users without tenant access",
+			claims: &auth.Claims{UserID: "user-2", Email: "user2@example.com"},
+			setupMock: func(m *mockTenantRepository) {
+				m.addTestTenant("tenant-1", "Tenant One", "tenant-one")
+			},
+			wantStatus:     http.StatusForbidden,
+			wantErrContain: "Access denied",
+		},
+		{
+			name:   "returns internal error when completion fails",
+			claims: &auth.Claims{UserID: "user-1", Email: "user@example.com"},
+			setupMock: func(m *mockTenantRepository) {
+				m.addTestTenant("tenant-1", "Tenant One", "tenant-one")
+				m.tenantUsers["tenant-1"] = []tenant.TenantUser{{
+					TenantID: "tenant-1",
+					UserID:   "user-1",
+					Role:     tenant.RoleOwner,
+				}}
+				m.completeOnboardingErr = errors.New("onboarding storage failure")
+			},
+			wantStatus:     http.StatusInternalServerError,
+			wantErrContain: "onboarding storage failure",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, repo := setupTenantTestHandlers()
+			if tt.setupMock != nil {
+				tt.setupMock(repo)
+			}
+
+			req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/complete-onboarding", nil, tt.claims)
+			req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+			w := httptest.NewRecorder()
+
+			h.CompleteOnboarding(w, req)
+
+			assert.Equal(t, tt.wantStatus, w.Code, "response body: %s", w.Body.String())
+
+			if tt.wantErrContain != "" {
+				var resp map[string]string
+				err := json.NewDecoder(w.Body).Decode(&resp)
+				require.NoError(t, err)
+				assert.Contains(t, resp["error"], tt.wantErrContain)
+				return
+			}
+
+			if tt.checkResponse != nil {
+				var resp map[string]interface{}
+				err := json.NewDecoder(w.Body).Decode(&resp)
+				require.NoError(t, err)
+				tt.checkResponse(t, repo, resp)
+			}
+		})
+	}
 }
 
 // =============================================================================

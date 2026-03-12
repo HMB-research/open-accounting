@@ -1603,6 +1603,202 @@ describe("API Client - Core Functionality", () => {
 
       expect(result).toHaveLength(1);
     });
+
+    it("should get cash flow statement", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          tenant_id: "tenant-123",
+          start_date: "2024-01-01",
+          end_date: "2024-01-31",
+          operating_activities: [],
+          investing_activities: [],
+          financing_activities: [],
+          total_operating: "1000",
+          total_investing: "-200",
+          total_financing: "300",
+          net_cash_change: "1100",
+          opening_cash: "500",
+          closing_cash: "1600",
+          generated_at: "2024-02-01T00:00:00Z",
+        }),
+      });
+
+      const result = await api.getCashFlowStatement(
+        "tenant-123",
+        "2024-01-01",
+        "2024-01-31",
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/reports/cash-flow?start_date=2024-01-01&end_date=2024-01-31",
+        ),
+        expect.any(Object),
+      );
+      expect(result.net_cash_change.toString()).toBe("1100");
+    });
+
+    it("should get balance confirmation summary", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          type: "RECEIVABLE",
+          as_of_date: "2024-01-31",
+          total_balance: "1234.50",
+          contact_count: 2,
+          invoice_count: 3,
+          contacts: [],
+          generated_at: "2024-02-01T00:00:00Z",
+        }),
+      });
+
+      const result = await api.getBalanceConfirmationSummary(
+        "tenant-123",
+        "RECEIVABLE",
+        "2024-01-31",
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/reports/balance-confirmations?type=RECEIVABLE&as_of_date=2024-01-31",
+        ),
+        expect.any(Object),
+      );
+      expect(result.total_balance.toString()).toBe("1234.5");
+    });
+
+    it("should get balance confirmation detail", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "bc-1",
+          tenant_id: "tenant-123",
+          contact_id: "contact-1",
+          contact_name: "Acme",
+          type: "PAYABLE",
+          as_of_date: "2024-01-31",
+          total_balance: "250.00",
+          invoices: [],
+          generated_at: "2024-02-01T00:00:00Z",
+        }),
+      });
+
+      const result = await api.getBalanceConfirmation(
+        "tenant-123",
+        "contact-1",
+        "PAYABLE",
+        "2024-01-31",
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/reports/balance-confirmations/contact-1?type=PAYABLE&as_of_date=2024-01-31",
+        ),
+        expect.any(Object),
+      );
+      expect(result.total_balance.toString()).toBe("250");
+    });
+
+    it("should get overdue invoices summary", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          total_overdue: "89.90",
+          invoice_count: 1,
+          contact_count: 1,
+          average_days_overdue: 12,
+          invoices: [{ id: "inv-1" }],
+          generated_at: "2024-02-01T00:00:00Z",
+        }),
+      });
+
+      const result = await api.getOverdueInvoices("tenant-123");
+
+      expect(result.total_overdue.toString()).toBe("89.9");
+      expect(result.invoices).toHaveLength(1);
+    });
+
+    it("should send payment reminder", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          reminder_id: "rem-1",
+          message: "Sent",
+        }),
+      });
+
+      const result = await api.sendPaymentReminder(
+        "tenant-123",
+        "inv-1",
+        "Please pay",
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/invoices/reminders"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            invoice_id: "inv-1",
+            message: "Please pay",
+          }),
+        }),
+      );
+      expect(result.success).toBe(true);
+    });
+
+    it("should send bulk payment reminders", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          total_requested: 2,
+          successful: 2,
+          failed: 0,
+          results: [],
+        }),
+      });
+
+      const result = await api.sendBulkPaymentReminders(
+        "tenant-123",
+        ["inv-1", "inv-2"],
+        "Bulk notice",
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/invoices/reminders/bulk"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            invoice_ids: ["inv-1", "inv-2"],
+            message: "Bulk notice",
+          }),
+        }),
+      );
+      expect(result.successful).toBe(2);
+    });
+
+    it("should get invoice reminder history", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [{ id: "rem-1" }],
+      });
+
+      const result = await api.getInvoiceReminderHistory("tenant-123", "inv-1");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/invoices/inv-1/reminders"),
+        expect.any(Object),
+      );
+      expect(result).toHaveLength(1);
+    });
   });
 
   describe("Payroll Endpoints", () => {
@@ -1824,6 +2020,312 @@ describe("API Client - Core Functionality", () => {
       );
 
       expect(result.status).toBe("submitted");
+    });
+  });
+
+  describe("Cost Center Endpoints", () => {
+    beforeEach(() => {
+      api.setTokens("valid-token", "refresh-token");
+    });
+
+    it("should list cost centers with active filter", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [{ id: "cc-1", name: "Sales" }],
+      });
+
+      const result = await api.listCostCenters("tenant-123", true);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/cost-centers?active_only=true"),
+        expect.any(Object),
+      );
+      expect(result).toHaveLength(1);
+    });
+
+    it("should get cost center", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: "cc-1", name: "Sales" }),
+      });
+
+      const result = await api.getCostCenter("tenant-123", "cc-1");
+
+      expect(result.id).toBe("cc-1");
+    });
+
+    it("should create cost center", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({ id: "cc-new", name: "Support" }),
+      });
+
+      const result = await api.createCostCenter("tenant-123", {
+        code: "SUP",
+        name: "Support",
+        description: "Support team",
+        is_active: true,
+      });
+
+      expect(result.name).toBe("Support");
+    });
+
+    it("should update cost center", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: "cc-1", name: "Updated" }),
+      });
+
+      const result = await api.updateCostCenter("tenant-123", "cc-1", {
+        code: "SUP",
+        name: "Updated",
+        is_active: true,
+      });
+
+      expect(result.name).toBe("Updated");
+    });
+
+    it("should delete cost center", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => undefined,
+      });
+
+      await api.deleteCostCenter("tenant-123", "cc-1");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/cost-centers/cc-1"),
+        expect.objectContaining({ method: "DELETE" }),
+      );
+    });
+
+    it("should get cost center report with date filters", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          period_start: "2024-01-01",
+          period_end: "2024-01-31",
+          cost_centers: [],
+        }),
+      });
+
+      const result = await api.getCostCenterReport(
+        "tenant-123",
+        "2024-01-01",
+        "2024-01-31",
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/cost-centers/report?start_date=2024-01-01&end_date=2024-01-31",
+        ),
+        expect.any(Object),
+      );
+      expect(result.period_end).toBe("2024-01-31");
+    });
+  });
+
+  describe("Leave Management Endpoints", () => {
+    beforeEach(() => {
+      api.setTokens("valid-token", "refresh-token");
+    });
+
+    it("should list absence types with active filter", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [{ id: "abs-1", name: "Vacation" }],
+      });
+
+      const result = await api.listAbsenceTypes("tenant-123", true);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/absence-types?active_only=true"),
+        expect.any(Object),
+      );
+      expect(result).toHaveLength(1);
+    });
+
+    it("should get absence type", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: "abs-1", name: "Vacation" }),
+      });
+
+      const result = await api.getAbsenceType("tenant-123", "abs-1");
+
+      expect(result.id).toBe("abs-1");
+    });
+
+    it("should list leave balances for a year", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [{ id: "lb-1", remaining_days: "10" }],
+      });
+
+      const result = await api.listLeaveBalances("tenant-123", "emp-1", 2024);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/employees/emp-1/leave-balances?year=2024"),
+        expect.any(Object),
+      );
+      expect(result[0].remaining_days.toString()).toBe("10");
+    });
+
+    it("should get leave balances by year", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [{ type_id: "vacation", balance_days: "10" }],
+      });
+
+      const result = await api.getLeaveBalancesByYear(
+        "tenant-123",
+        "emp-1",
+        2024,
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/employees/emp-1/leave-balances/2024"),
+        expect.any(Object),
+      );
+      expect(result).toHaveLength(1);
+    });
+
+    it("should update leave balance", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: "lb-1", remaining_days: "12" }),
+      });
+
+      const result = await api.updateLeaveBalance(
+        "tenant-123",
+        "emp-1",
+        2024,
+        "vacation",
+        { entitled_days: new Decimal("12") },
+      );
+
+      expect(result.remaining_days.toString()).toBe("12");
+    });
+
+    it("should initialize leave balances", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [{ id: "lb-1", remaining_days: "15" }],
+      });
+
+      const result = await api.initializeLeaveBalances(
+        "tenant-123",
+        "emp-1",
+        2024,
+      );
+
+      expect(result[0].remaining_days.toString()).toBe("15");
+    });
+
+    it("should list leave records with filters", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [{ id: "leave-1" }],
+      });
+
+      const result = await api.listLeaveRecords("tenant-123", "emp-1", 2024);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/leave-records?employee_id=emp-1&year=2024"),
+        expect.any(Object),
+      );
+      expect(result).toHaveLength(1);
+    });
+
+    it("should create leave record", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({ id: "leave-new", status: "PENDING" }),
+      });
+
+      const result = await api.createLeaveRecord("tenant-123", {
+        employee_id: "emp-1",
+        absence_type_id: "vacation",
+        start_date: "2024-07-01",
+        end_date: "2024-07-05",
+        total_days: new Decimal("5"),
+        working_days: new Decimal("5"),
+      });
+
+      expect(result.id).toBe("leave-new");
+    });
+
+    it("should get leave record", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: "leave-1", status: "PENDING" }),
+      });
+
+      const result = await api.getLeaveRecord("tenant-123", "leave-1");
+
+      expect(result.id).toBe("leave-1");
+    });
+
+    it("should approve leave record", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: "leave-1", status: "APPROVED" }),
+      });
+
+      const result = await api.approveLeaveRecord("tenant-123", "leave-1");
+
+      expect(result.status).toBe("APPROVED");
+    });
+
+    it("should reject leave record", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: "leave-1", status: "REJECTED" }),
+      });
+
+      const result = await api.rejectLeaveRecord(
+        "tenant-123",
+        "leave-1",
+        "Missing approval",
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/leave-records/leave-1/reject"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ reason: "Missing approval" }),
+        }),
+      );
+      expect(result.status).toBe("REJECTED");
+    });
+
+    it("should cancel leave record", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: "leave-1", status: "CANCELLED" }),
+      });
+
+      const result = await api.cancelLeaveRecord("tenant-123", "leave-1");
+
+      expect(result.status).toBe("CANCELLED");
     });
   });
 

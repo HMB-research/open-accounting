@@ -17,6 +17,7 @@ type mockRepository struct {
 	listErr         error
 	revokeErr       error
 	validationErr   error
+	touchErr        error
 	touchedTokenIDs []string
 	validationRole  string
 	validationEmail string
@@ -88,6 +89,9 @@ func (m *mockRepository) GetValidationRecord(ctx context.Context, tokenHash stri
 }
 
 func (m *mockRepository) TouchToken(ctx context.Context, tokenID string, lastUsedAt time.Time) error {
+	if m.touchErr != nil {
+		return m.touchErr
+	}
 	token, ok := m.tokens[tokenID]
 	if !ok {
 		return ErrTokenNotFound
@@ -161,4 +165,49 @@ func TestService_RevokeToken(t *testing.T) {
 	err = service.RevokeToken(context.Background(), "user-1", "tenant-1", result.APIToken.ID)
 	require.NoError(t, err)
 	require.NotNil(t, repo.tokens[result.APIToken.ID].RevokedAt)
+}
+
+func TestService_ListTokens(t *testing.T) {
+	repo := newMockRepository()
+	service := NewServiceWithRepository(repo)
+
+	first, err := service.CreateToken(context.Background(), "user-1", "tenant-1", &CreateRequest{Name: "First"})
+	require.NoError(t, err)
+	second, err := service.CreateToken(context.Background(), "user-1", "tenant-1", &CreateRequest{Name: "Second"})
+	require.NoError(t, err)
+
+	tokens, err := service.ListTokens(context.Background(), "user-1", "tenant-1")
+	require.NoError(t, err)
+	assert.Len(t, tokens, 2)
+	assert.ElementsMatch(t, []string{first.APIToken.ID, second.APIToken.ID}, []string{tokens[0].ID, tokens[1].ID})
+}
+
+func TestService_RevokeTokenRejectsMissingIDAndNotFound(t *testing.T) {
+	repo := newMockRepository()
+	service := NewServiceWithRepository(repo)
+
+	err := service.RevokeToken(context.Background(), "user-1", "tenant-1", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "token id is required")
+
+	err = service.RevokeToken(context.Background(), "user-1", "tenant-1", "missing")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "api token not found")
+}
+
+func TestService_ValidateAPITokenReturnsErrors(t *testing.T) {
+	repo := newMockRepository()
+	service := NewServiceWithRepository(repo)
+
+	_, err := service.ValidateAPIToken(context.Background(), "oa_missing")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "api token not found")
+
+	result, err := service.CreateToken(context.Background(), "user-1", "tenant-1", &CreateRequest{Name: "CLI token"})
+	require.NoError(t, err)
+
+	repo.touchErr = assert.AnError
+	_, err = service.ValidateAPIToken(context.Background(), result.Token)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, assert.AnError)
 }
