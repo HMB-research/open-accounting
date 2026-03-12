@@ -46,6 +46,40 @@ type TenantSettings struct {
 	LatePaymentInterestRate float64 `json:"late_payment_interest_rate,omitempty"`
 }
 
+const (
+	PeriodCloseActionClose  = "close"
+	PeriodCloseActionReopen = "reopen"
+
+	PeriodCloseKindMonthEnd = "month_end"
+	PeriodCloseKindYearEnd  = "year_end"
+)
+
+// PeriodCloseEvent records a close or reopen action for a tenant.
+type PeriodCloseEvent struct {
+	ID             string    `json:"id"`
+	TenantID       string    `json:"tenant_id"`
+	Action         string    `json:"action"`
+	CloseKind      string    `json:"close_kind"`
+	PeriodEndDate  string    `json:"period_end_date"`
+	LockDateBefore *string   `json:"lock_date_before,omitempty"`
+	LockDateAfter  *string   `json:"lock_date_after,omitempty"`
+	Note           string    `json:"note,omitempty"`
+	PerformedBy    string    `json:"performed_by"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+// ClosePeriodRequest closes a month-end or year-end period.
+type ClosePeriodRequest struct {
+	PeriodEndDate string `json:"period_end_date"`
+	Note          string `json:"note,omitempty"`
+}
+
+// ReopenPeriodRequest reopens a previously closed period.
+type ReopenPeriodRequest struct {
+	PeriodEndDate string `json:"period_end_date"`
+	Note          string `json:"note,omitempty"`
+}
+
 // DefaultSettings returns default tenant settings for Estonia
 func DefaultSettings() TenantSettings {
 	return TenantSettings{
@@ -103,6 +137,7 @@ const (
 type RolePermissions struct {
 	CanManageUsers    bool
 	CanManageSettings bool
+	CanManageClose    bool
 	CanManageAccounts bool
 	CanCreateEntries  bool
 	CanApproveEntries bool
@@ -121,6 +156,7 @@ func GetRolePermissions(role string) RolePermissions {
 		return RolePermissions{
 			CanManageUsers:    true,
 			CanManageSettings: true,
+			CanManageClose:    true,
 			CanManageAccounts: true,
 			CanCreateEntries:  true,
 			CanApproveEntries: true,
@@ -135,6 +171,7 @@ func GetRolePermissions(role string) RolePermissions {
 		return RolePermissions{
 			CanManageUsers:    false,
 			CanManageSettings: false,
+			CanManageClose:    true,
 			CanManageAccounts: true,
 			CanCreateEntries:  true,
 			CanApproveEntries: true,
@@ -149,6 +186,7 @@ func GetRolePermissions(role string) RolePermissions {
 		return RolePermissions{
 			CanManageUsers:    false,
 			CanManageSettings: false,
+			CanManageClose:    false,
 			CanManageAccounts: false,
 			CanCreateEntries:  false,
 			CanApproveEntries: false,

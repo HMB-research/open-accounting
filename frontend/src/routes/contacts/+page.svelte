@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import { page } from '$app/stores';
-	import { api, type Contact, type ContactType } from '$lib/api';
+	import { api, type Contact, type ContactType, type ImportContactsResult } from '$lib/api';
 	import * as m from '$lib/paraglide/messages.js';
 	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
 
@@ -8,8 +9,14 @@
 	let isLoading = $state(true);
 	let error = $state('');
 	let showCreateContact = $state(false);
+	let showImportContacts = $state(false);
 	let filterType = $state<ContactType | ''>('');
 	let searchQuery = $state('');
+	let importError = $state('');
+	let importFileName = $state('');
+	let importCSVContent = $state('');
+	let isImporting = $state(false);
+	let importResult = $state<ImportContactsResult | null>(null);
 
 	// New contact form
 	let newName = $state('');
@@ -86,6 +93,88 @@
 		newPaymentDays = 14;
 	}
 
+	function openImportModal() {
+		showImportContacts = true;
+		importError = '';
+		importFileName = '';
+		importCSVContent = '';
+		importResult = null;
+	}
+
+	function closeImportModal() {
+		showImportContacts = false;
+		importError = '';
+		importFileName = '';
+		importCSVContent = '';
+		importResult = null;
+	}
+
+	async function handleImportFileChange(event: Event) {
+		const input = event.currentTarget as HTMLInputElement | null;
+		const file = input?.files?.[0];
+
+		importResult = null;
+
+		if (!file) {
+			importFileName = '';
+			importCSVContent = '';
+			return;
+		}
+
+		importFileName = file.name;
+		importCSVContent = await file.text();
+		importError = '';
+	}
+
+	async function submitImport(event: Event) {
+		event.preventDefault();
+
+		const tenantId = $page.url.searchParams.get('tenant');
+		if (!tenantId) return;
+
+		if (!importCSVContent.trim()) {
+			importError = m.contacts_importFileRequired();
+			return;
+		}
+
+		isImporting = true;
+		importError = '';
+
+		try {
+			importResult = await api.importContacts(tenantId, {
+				file_name: importFileName || undefined,
+				csv_content: importCSVContent
+			});
+
+			if (importResult.contacts_created > 0) {
+				await loadContacts(tenantId);
+			}
+		} catch (err) {
+			importError = err instanceof Error ? err.message : 'Failed to import contacts';
+		} finally {
+			isImporting = false;
+		}
+	}
+
+	function downloadImportTemplate() {
+		if (!browser) return;
+
+		const template = [
+			'name,contact_type,code,reg_code,vat_number,email,phone,address_line1,city,postal_code,country_code,payment_terms_days,credit_limit,notes',
+			'Example Customer,CUSTOMER,CUST-001,12345678,EE123456789,customer@example.com,+3725551234,Main Street 1,Tallinn,10111,EE,14,2500.00,Imported from CSV'
+		].join('\n');
+
+		const blob = new Blob([template], { type: 'text/csv;charset=utf-8' });
+		const url = window.URL.createObjectURL(blob);
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = 'contacts-import-template.csv';
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+		window.URL.revokeObjectURL(url);
+	}
+
 	async function handleSearch() {
 		const tenantId = $page.url.searchParams.get('tenant');
 		if (tenantId) {
@@ -105,14 +194,17 @@
 </svelte:head>
 
 <div class="container">
-	<div class="page-header">
-		<h1>{m.contacts_title()}</h1>
-		<div class="page-actions">
-			<button class="btn btn-primary" onclick={() => (showCreateContact = true)}>
-				+ {m.contacts_newContact()}
-			</button>
+		<div class="page-header">
+			<h1>{m.contacts_title()}</h1>
+			<div class="page-actions">
+				<button class="btn btn-secondary" onclick={openImportModal}>
+					{m.contacts_importContacts()}
+				</button>
+				<button class="btn btn-primary" onclick={() => (showCreateContact = true)}>
+					+ {m.contacts_newContact()}
+				</button>
+			</div>
 		</div>
-	</div>
 
 	<div class="filters card">
 		<div class="filter-row">
@@ -175,7 +267,111 @@
 			</div>
 		</div>
 	{/if}
-</div>
+	</div>
+
+{#if showImportContacts}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<div class="modal-backdrop" onclick={closeImportModal} role="presentation">
+		<div
+			class="modal card import-modal"
+			onclick={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="import-contacts-title"
+			tabindex="-1"
+		>
+			<h2 id="import-contacts-title">{m.contacts_importContacts()}</h2>
+			<p class="import-description">{m.contacts_importDescription()}</p>
+
+			{#if importError}
+				<div class="alert alert-error">{importError}</div>
+			{/if}
+
+			<form onsubmit={submitImport}>
+				<div class="form-group">
+					<label class="label" for="contact-import-file">{m.contacts_importChooseFile()}</label>
+					<input
+						class="input"
+						id="contact-import-file"
+						type="file"
+						accept=".csv,text/csv"
+						onchange={handleImportFileChange}
+					/>
+					<p class="form-hint">{m.contacts_importTemplateHint()}</p>
+					{#if importFileName}
+						<p class="selected-file">
+							{m.contacts_importSelectedFile()}: <span>{importFileName}</span>
+						</p>
+					{/if}
+				</div>
+
+				<div class="import-toolbar">
+					<button type="button" class="btn btn-secondary" onclick={downloadImportTemplate}>
+						{m.contacts_importTemplate()}
+					</button>
+				</div>
+
+				<div class="modal-actions">
+					<button type="button" class="btn btn-secondary" onclick={closeImportModal}>
+						{m.common_cancel()}
+					</button>
+					<button type="submit" class="btn btn-primary" disabled={isImporting}>
+						{isImporting ? m.contacts_importing() : m.contacts_importContacts()}
+					</button>
+				</div>
+			</form>
+
+			{#if importResult}
+				<div class="import-summary">
+					<h3>{m.contacts_importSummary()}</h3>
+					<div class="summary-grid">
+						<div class="summary-card">
+							<span class="summary-label">{m.contacts_importRowsProcessed()}</span>
+							<strong>{importResult.rows_processed}</strong>
+						</div>
+						<div class="summary-card">
+							<span class="summary-label">{m.contacts_importContactsCreated()}</span>
+							<strong>{importResult.contacts_created}</strong>
+						</div>
+						<div class="summary-card">
+							<span class="summary-label">{m.contacts_importRowsSkipped()}</span>
+							<strong>{importResult.rows_skipped}</strong>
+						</div>
+					</div>
+
+					{#if importResult.errors?.length}
+						<h3>{m.contacts_importErrors()}</h3>
+						<div class="table-container import-errors">
+							<table class="table table-mobile-cards">
+								<thead>
+									<tr>
+										<th>{m.contacts_importRow()}</th>
+										<th>{m.common_name()}</th>
+										<th>{m.contacts_importMessage()}</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each importResult.errors as rowError}
+										<tr>
+											<td data-label={m.contacts_importRow()}>{rowError.row}</td>
+											<td data-label={m.common_name()}>{rowError.name || '-'}</td>
+											<td data-label={m.contacts_importMessage()}>{rowError.message}</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					{:else}
+						<div class="alert alert-success">
+							{m.contacts_importContactsCreated()}: {importResult.contacts_created}
+						</div>
+					{/if}
+				</div>
+			{/if}
+		</div>
+	</div>
+{/if}
 
 {#if showCreateContact}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -327,6 +523,12 @@
 		min-width: 150px;
 	}
 
+	.page-actions {
+		display: flex;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+	}
+
 	.name {
 		font-weight: 500;
 	}
@@ -372,6 +574,10 @@
 		margin-bottom: 1.5rem;
 	}
 
+	.import-modal {
+		max-width: 760px;
+	}
+
 	.form-row {
 		display: flex;
 		gap: 1rem;
@@ -388,6 +594,64 @@
 		justify-content: flex-end;
 		gap: 0.5rem;
 		margin-top: 1.5rem;
+	}
+
+	.import-description,
+	.form-hint,
+	.selected-file,
+	.summary-label {
+		color: var(--color-text-muted);
+	}
+
+	.form-hint,
+	.selected-file {
+		margin-top: 0.5rem;
+		font-size: 0.925rem;
+	}
+
+	.selected-file span {
+		color: var(--color-text);
+		font-weight: 500;
+	}
+
+	.import-toolbar {
+		display: flex;
+		justify-content: flex-start;
+		margin-top: 1rem;
+	}
+
+	.import-summary {
+		margin-top: 2rem;
+		padding-top: 1.5rem;
+		border-top: 1px solid var(--color-border);
+	}
+
+	.import-summary h3 {
+		margin-bottom: 1rem;
+	}
+
+	.summary-grid {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 0.75rem;
+		margin-bottom: 1.5rem;
+	}
+
+	.summary-card {
+		padding: 1rem;
+		border: 1px solid var(--color-border);
+		border-radius: 0.75rem;
+		background: var(--color-bg);
+	}
+
+	.summary-card strong {
+		display: block;
+		font-size: 1.5rem;
+		margin-top: 0.35rem;
+	}
+
+	.import-errors {
+		margin-top: 1rem;
 	}
 
 	/* Mobile responsive */
@@ -450,6 +714,10 @@
 		.modal-actions button {
 			width: 100%;
 			min-height: 44px;
+		}
+
+		.summary-grid {
+			grid-template-columns: 1fr;
 		}
 
 		.empty-state {

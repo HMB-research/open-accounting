@@ -19,8 +19,8 @@ Local verification completed on 2026-03-12:
 
 - `go test ./...` passes
 - `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)` passes against a fresh PostgreSQL database
-- `cd frontend && bun run test` passes with 13 files and 427 tests
-- `cd frontend && bun run check` passes with two existing Svelte warnings in `frontend/src/lib/components/OnboardingWizard.svelte`
+- `cd frontend && bun run test` passes with 15 files and 437 tests
+- `cd frontend && bun run check` passes with 0 errors and 0 warnings
 - `cd frontend && bun run test:e2e:smoke` passes against a fresh locally seeded demo environment
 - Backend integration tests are now blocking in CI
 - Core accountant smoke E2E is now blocking in CI
@@ -41,15 +41,19 @@ Still not done:
 | KMD generation/export | `Working` | KMD generation/export exists; direct e-MTA submission does not. |
 | Quotes, orders, fixed assets | `Working` | Features exist and have tests, but accountant-grade polish is still limited. |
 | Multi-tenant auth, RBAC, tenant isolation | `Working` | Core tenant model is in place; auth hardening is still needed for production trust. |
+| CLI and API token automation | `Working` | `cmd/oa` supports token bootstrap, token management, accounts, contacts, invoices, and opening-balance imports using tenant-scoped API tokens. |
+| Chart of accounts, contacts, invoice, and opening-balance imports | `Working` | CSV imports exist in API, web UI, and CLI for core setup and migration data. |
 | Report exports | `Beta` | CSV/XLSX export exists, but the current path is mostly client-side and not yet authoritative. |
 | Cash flow reporting | `Beta` | Present in code and UI, but needs more accountant-grade validation before stronger claims. |
 | Settings and admin workflows | `Beta` | Basic settings exist, but production admin depth is still thin. |
+| Period lock on core write paths | `Working` | Tenant `period_lock_date` blocks core back-dated writes across the main mutation paths. |
+| Close/reopen workflow with audit trail | `Beta` | Explicit close and reopen actions exist in the API and company settings, with history and operator notes. Fiscal-year checklist/carry-forward work is still missing. |
 | Plugin marketplace | `Beta` | Significant functionality exists, but it is not part of the primary product wedge for reliability. |
 | Inventory and warehouse flows | `Beta` | Inventory structures exist, but the module is not yet complete enough to market as finished. |
 | Core accountant smoke E2E gate | `Working` | CI now blocks on auth setup plus invoices, reports, banking, and payroll route coverage. |
 | Demo seeded flows and broad view coverage | `Demo-only` | Useful for demos and regression checks, not the same as release-quality smoke coverage. |
-| Opening balance and migration imports | `Missing` | High-value adoption blocker for real users. |
-| Period lock, month-end close, year-end close | `Missing` | Hard requirement for trustworthy accounting operations. |
+| Employee and incumbent-system migration imports | `Missing` | Adoption gap remains for payroll history and broader historical cutover. |
+| Fiscal year close checklist and carry-forward workflow | `Missing` | Hard requirement for trustworthy year-end operations beyond the current close/reopen controls. |
 | Attachments and document workflows | `Missing` | Purchase invoice, receipt, and reconciliation evidence handling is still absent. |
 | Direct bank feeds, SEPA initiation, e-invoice, OCR, automatic e-MTA submission | `Blocked` | Requires external partnerships, licensing, certification, or additional infrastructure. |
 
@@ -57,13 +61,14 @@ Still not done:
 
 - Open Accounting is a broad, real codebase with working accounting, invoicing, payroll, banking, and multi-tenant foundations.
 - The local backend, frontend, and tagged backend integration test baselines are green as of 2026-03-12.
-- The project is still not production-ready for accounting firms that need close controls, imports, document retention, and hardened operations.
+- The project now includes a working Go CLI and tenant-scoped API tokens for scriptable reads and writes.
+- The project is still not production-ready for accounting firms that need broader migration imports, close controls, document retention, and hardened operations.
 - The strongest near-term wedge is Estonian SMB/accountant workflow with manual bank import, invoicing, payroll, KMD/TSD export, and core reporting.
 
 ## Immediate Priorities
 
-1. Implement opening balance and migration imports.
-2. Implement period locking and close workflows.
+1. Implement employee and incumbent-system migration imports.
+2. Finish fiscal-year close, carry-forward, and year-end checklist workflows on top of the new close/reopen foundation.
 3. Add attachments and document storage for accounting records.
 4. Remove insecure production defaults and add stronger session management.
 5. Separate smoke vs broader demo E2E coverage more cleanly over time.

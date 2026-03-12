@@ -4,8 +4,8 @@ import { test, expect } from '@playwright/test';
  * Live Demo Environment E2E Tests
  *
  * These tests run against:
- * - Local environment (CI): Uses BASE_URL and PUBLIC_API_URL environment variables
- * - Production demo: Falls back to Railway URLs
+ * - Local environment (default): Uses local BASE_URL and PUBLIC_API_URL defaults
+ * - Hosted demo (optional): Requires explicit BASE_URL, PUBLIC_API_URL, and TEST_DEMO=true
  *
  * Run with: bun run test:e2e:demo
  *
@@ -14,9 +14,8 @@ import { test, expect } from '@playwright/test';
  * - Demo users (demo1@example.com / demo12345) must exist
  */
 
-// Use environment variables for local testing, fall back to Railway for remote demo testing
-const DEMO_URL = process.env.BASE_URL || 'https://open-accounting.up.railway.app';
-const DEMO_API = process.env.PUBLIC_API_URL || 'https://open-accounting-api.up.railway.app';
+const DEMO_URL = process.env.BASE_URL || 'http://127.0.0.1:4173';
+const DEMO_API = process.env.PUBLIC_API_URL || 'http://localhost:8080';
 
 // Demo credentials for multi-user testing - use demo1 as the default
 const DEMO_EMAIL = 'demo1@example.com';

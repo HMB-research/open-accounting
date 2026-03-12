@@ -18,8 +18,11 @@ type Repository interface {
 	GetTenant(ctx context.Context, tenantID string) (*Tenant, error)
 	GetTenantBySlug(ctx context.Context, slug string) (*Tenant, error)
 	UpdateTenant(ctx context.Context, tenantID, name string, settingsJSON []byte, updatedAt time.Time) error
+	UpdateTenantWithPeriodCloseEvent(ctx context.Context, tenantID, name string, settingsJSON []byte, updatedAt time.Time, event *PeriodCloseEvent) error
 	DeleteTenant(ctx context.Context, tenantID, schemaName string) error
 	CompleteOnboarding(ctx context.Context, tenantID string) error
+	ListPeriodCloseEvents(ctx context.Context, tenantID string, limit int) ([]PeriodCloseEvent, error)
+	GetLatestCloseEventForPeriod(ctx context.Context, tenantID, periodEndDate string) (*PeriodCloseEvent, error)
 
 	// Tenant User operations
 	AddUserToTenant(ctx context.Context, tenantID, userID, role string) error

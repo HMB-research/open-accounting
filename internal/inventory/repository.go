@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
@@ -55,45 +56,53 @@ func NewPostgresRepository(db *pgxpool.Pool) Repository {
 	return &PostgresRepository{db: db}
 }
 
-// execInSchema executes a query in the specified schema
-func (r *PostgresRepository) execInSchema(ctx context.Context, schemaName, query string, args ...interface{}) error {
-	setSchemaQuery := fmt.Sprintf("SET search_path TO %s", schemaName)
-	_, err := r.db.Exec(ctx, setSchemaQuery)
+func (r *PostgresRepository) qualifyQuery(schemaName, tableName, queryTemplate string) (string, error) {
+	qualifiedTable, err := database.QualifiedTable(schemaName, tableName)
 	if err != nil {
-		return fmt.Errorf("set schema: %w", err)
+		return "", err
+	}
+	return fmt.Sprintf(queryTemplate, qualifiedTable), nil
+}
+
+// execInTable executes a query against an explicit schema-qualified table.
+func (r *PostgresRepository) execInTable(ctx context.Context, schemaName, tableName, queryTemplate string, args ...interface{}) error {
+	query, err := r.qualifyQuery(schemaName, tableName, queryTemplate)
+	if err != nil {
+		return err
 	}
 	_, err = r.db.Exec(ctx, query, args...)
 	return err
 }
 
-// queryInSchema executes a query in the specified schema and returns rows
-func (r *PostgresRepository) queryInSchema(ctx context.Context, schemaName, query string, args ...interface{}) (pgx.Rows, error) {
-	setSchemaQuery := fmt.Sprintf("SET search_path TO %s", schemaName)
-	_, err := r.db.Exec(ctx, setSchemaQuery)
+// queryInTable executes a query against an explicit schema-qualified table and returns rows.
+func (r *PostgresRepository) queryInTable(ctx context.Context, schemaName, tableName, queryTemplate string, args ...interface{}) (pgx.Rows, error) {
+	query, err := r.qualifyQuery(schemaName, tableName, queryTemplate)
 	if err != nil {
-		return nil, fmt.Errorf("set schema: %w", err)
+		return nil, err
 	}
 	return r.db.Query(ctx, query, args...)
 }
 
-// queryRowInSchema executes a query in the specified schema and returns a single row
-func (r *PostgresRepository) queryRowInSchema(ctx context.Context, schemaName, query string, args ...interface{}) pgx.Row {
-	setSchemaQuery := fmt.Sprintf("SET search_path TO %s", schemaName)
-	_, _ = r.db.Exec(ctx, setSchemaQuery)
-	return r.db.QueryRow(ctx, query, args...)
+// queryRowInTable executes a query against an explicit schema-qualified table and returns a single row.
+func (r *PostgresRepository) queryRowInTable(ctx context.Context, schemaName, tableName, queryTemplate string, args ...interface{}) (pgx.Row, error) {
+	query, err := r.qualifyQuery(schemaName, tableName, queryTemplate)
+	if err != nil {
+		return nil, err
+	}
+	return r.db.QueryRow(ctx, query, args...), nil
 }
 
 // CreateProduct creates a new product
 func (r *PostgresRepository) CreateProduct(ctx context.Context, schemaName string, product *Product) error {
 	query := `
-		INSERT INTO products (
+		INSERT INTO %s (
 			id, tenant_id, code, name, description, product_type, category_id, unit,
 			purchase_price, sale_price, vat_rate, min_stock_level, current_stock,
 			reorder_point, sale_account_id, purchase_account_id, inventory_account_id,
 			track_inventory, is_active, barcode, supplier_id, lead_time_days, created_at, updated_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)`
 
-	return r.execInSchema(ctx, schemaName, query,
+	return r.execInTable(ctx, schemaName, "products", query,
 		product.ID, product.TenantID, product.Code, product.Name, product.Description,
 		product.ProductType, nullIfEmpty(product.CategoryID), product.Unit,
 		product.PurchasePrice, product.SalesPrice, product.VATRate,
@@ -113,14 +122,17 @@ func (r *PostgresRepository) GetProductByID(ctx context.Context, schemaName, ten
 			sale_account_id, purchase_account_id, inventory_account_id,
 			COALESCE(track_inventory, false), COALESCE(is_active, true), COALESCE(barcode, ''),
 			supplier_id, COALESCE(lead_time_days, 0), created_at, updated_at
-		FROM products
+		FROM %s
 		WHERE id = $1 AND tenant_id = $2`
 
-	row := r.queryRowInSchema(ctx, schemaName, query, productID, tenantID)
+	row, err := r.queryRowInTable(ctx, schemaName, "products", query, productID, tenantID)
+	if err != nil {
+		return nil, err
+	}
 
 	var p Product
 	var categoryID, saleAcctID, purchaseAcctID, inventoryAcctID, supplierID *string
-	err := row.Scan(
+	err = row.Scan(
 		&p.ID, &p.TenantID, &p.Code, &p.Name, &p.Description, &p.ProductType,
 		&categoryID, &p.Unit, &p.PurchasePrice, &p.SalesPrice, &p.VATRate,
 		&p.MinStockLevel, &p.CurrentStock, &p.ReorderPoint,
@@ -162,7 +174,7 @@ func (r *PostgresRepository) ListProducts(ctx context.Context, schemaName, tenan
 			sale_account_id, purchase_account_id, inventory_account_id,
 			COALESCE(track_inventory, false), COALESCE(is_active, true), COALESCE(barcode, ''),
 			supplier_id, COALESCE(lead_time_days, 0), created_at, updated_at
-		FROM products
+		FROM %s
 		WHERE tenant_id = $1`
 
 	args := []interface{}{tenantID}
@@ -198,7 +210,7 @@ func (r *PostgresRepository) ListProducts(ctx context.Context, schemaName, tenan
 
 	query += " ORDER BY name"
 
-	rows, err := r.queryInSchema(ctx, schemaName, query, args...)
+	rows, err := r.queryInTable(ctx, schemaName, "products", query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +256,7 @@ func (r *PostgresRepository) ListProducts(ctx context.Context, schemaName, tenan
 // UpdateProduct updates a product
 func (r *PostgresRepository) UpdateProduct(ctx context.Context, schemaName string, product *Product) error {
 	query := `
-		UPDATE products SET
+		UPDATE %s SET
 			name = $1, description = $2, category_id = $3, unit = $4,
 			purchase_price = $5, sale_price = $6, vat_rate = $7,
 			min_stock_level = $8, reorder_point = $9,
@@ -252,7 +264,7 @@ func (r *PostgresRepository) UpdateProduct(ctx context.Context, schemaName strin
 			track_inventory = $13, is_active = $14, barcode = $15, supplier_id = $16, lead_time_days = $17, updated_at = $18
 		WHERE id = $19 AND tenant_id = $20`
 
-	return r.execInSchema(ctx, schemaName, query,
+	return r.execInTable(ctx, schemaName, "products", query,
 		product.Name, product.Description, nullIfEmpty(product.CategoryID), product.Unit,
 		product.PurchasePrice, product.SalesPrice, product.VATRate,
 		product.MinStockLevel, product.ReorderPoint,
@@ -265,14 +277,17 @@ func (r *PostgresRepository) UpdateProduct(ctx context.Context, schemaName strin
 
 // DeleteProduct deletes a product
 func (r *PostgresRepository) DeleteProduct(ctx context.Context, schemaName, tenantID, productID string) error {
-	query := `DELETE FROM products WHERE id = $1 AND tenant_id = $2`
-	return r.execInSchema(ctx, schemaName, query, productID, tenantID)
+	query := `DELETE FROM %s WHERE id = $1 AND tenant_id = $2`
+	return r.execInTable(ctx, schemaName, "products", query, productID, tenantID)
 }
 
 // GenerateCode generates a unique product code
 func (r *PostgresRepository) GenerateCode(ctx context.Context, schemaName, tenantID string) (string, error) {
-	query := `SELECT COALESCE(MAX(CAST(SUBSTRING(code FROM 'PRD-([0-9]+)') AS INTEGER)), 0) + 1 FROM products WHERE tenant_id = $1 AND code LIKE 'PRD-%'`
-	row := r.queryRowInSchema(ctx, schemaName, query, tenantID)
+	query := `SELECT COALESCE(MAX(CAST(SUBSTRING(code FROM 'PRD-([0-9]+)') AS INTEGER)), 0) + 1 FROM %s WHERE tenant_id = $1 AND code LIKE 'PRD-%%'`
+	row, err := r.queryRowInTable(ctx, schemaName, "products", query, tenantID)
+	if err != nil {
+		return "", err
+	}
 
 	var nextNum int
 	if err := row.Scan(&nextNum); err != nil {
@@ -284,10 +299,10 @@ func (r *PostgresRepository) GenerateCode(ctx context.Context, schemaName, tenan
 
 // CreateCategory creates a new category
 func (r *PostgresRepository) CreateCategory(ctx context.Context, schemaName string, category *ProductCategory) error {
-	query := `INSERT INTO product_categories (id, tenant_id, name, description, parent_id, created_at, updated_at)
+	query := `INSERT INTO %s (id, tenant_id, name, description, parent_id, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
-	return r.execInSchema(ctx, schemaName, query,
+	return r.execInTable(ctx, schemaName, "product_categories", query,
 		category.ID, category.TenantID, category.Name, category.Description,
 		nullIfEmpty(category.ParentID), category.CreatedAt, category.UpdatedAt,
 	)
@@ -295,12 +310,15 @@ func (r *PostgresRepository) CreateCategory(ctx context.Context, schemaName stri
 
 // GetCategoryByID retrieves a category by ID
 func (r *PostgresRepository) GetCategoryByID(ctx context.Context, schemaName, tenantID, categoryID string) (*ProductCategory, error) {
-	query := `SELECT id, tenant_id, name, COALESCE(description, ''), parent_id, created_at, updated_at FROM product_categories WHERE id = $1 AND tenant_id = $2`
-	row := r.queryRowInSchema(ctx, schemaName, query, categoryID, tenantID)
+	query := `SELECT id, tenant_id, name, COALESCE(description, ''), parent_id, created_at, updated_at FROM %s WHERE id = $1 AND tenant_id = $2`
+	row, err := r.queryRowInTable(ctx, schemaName, "product_categories", query, categoryID, tenantID)
+	if err != nil {
+		return nil, err
+	}
 
 	var c ProductCategory
 	var parentID *string
-	err := row.Scan(&c.ID, &c.TenantID, &c.Name, &c.Description, &parentID, &c.CreatedAt, &c.UpdatedAt)
+	err = row.Scan(&c.ID, &c.TenantID, &c.Name, &c.Description, &parentID, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, fmt.Errorf("category not found")
@@ -317,8 +335,8 @@ func (r *PostgresRepository) GetCategoryByID(ctx context.Context, schemaName, te
 
 // ListCategories retrieves all categories for a tenant
 func (r *PostgresRepository) ListCategories(ctx context.Context, schemaName, tenantID string) ([]ProductCategory, error) {
-	query := `SELECT id, tenant_id, name, COALESCE(description, ''), parent_id, created_at, updated_at FROM product_categories WHERE tenant_id = $1 ORDER BY name`
-	rows, err := r.queryInSchema(ctx, schemaName, query, tenantID)
+	query := `SELECT id, tenant_id, name, COALESCE(description, ''), parent_id, created_at, updated_at FROM %s WHERE tenant_id = $1 ORDER BY name`
+	rows, err := r.queryInTable(ctx, schemaName, "product_categories", query, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -342,16 +360,16 @@ func (r *PostgresRepository) ListCategories(ctx context.Context, schemaName, ten
 
 // DeleteCategory deletes a category
 func (r *PostgresRepository) DeleteCategory(ctx context.Context, schemaName, tenantID, categoryID string) error {
-	query := `DELETE FROM product_categories WHERE id = $1 AND tenant_id = $2`
-	return r.execInSchema(ctx, schemaName, query, categoryID, tenantID)
+	query := `DELETE FROM %s WHERE id = $1 AND tenant_id = $2`
+	return r.execInTable(ctx, schemaName, "product_categories", query, categoryID, tenantID)
 }
 
 // CreateWarehouse creates a new warehouse
 func (r *PostgresRepository) CreateWarehouse(ctx context.Context, schemaName string, warehouse *Warehouse) error {
-	query := `INSERT INTO warehouses (id, tenant_id, code, name, address, is_default, is_active, created_at, updated_at)
+	query := `INSERT INTO %s (id, tenant_id, code, name, address, is_default, is_active, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 
-	return r.execInSchema(ctx, schemaName, query,
+	return r.execInTable(ctx, schemaName, "warehouses", query,
 		warehouse.ID, warehouse.TenantID, warehouse.Code, warehouse.Name, warehouse.Address,
 		warehouse.IsDefault, warehouse.IsActive, warehouse.CreatedAt, warehouse.UpdatedAt,
 	)
@@ -359,11 +377,14 @@ func (r *PostgresRepository) CreateWarehouse(ctx context.Context, schemaName str
 
 // GetWarehouseByID retrieves a warehouse by ID
 func (r *PostgresRepository) GetWarehouseByID(ctx context.Context, schemaName, tenantID, warehouseID string) (*Warehouse, error) {
-	query := `SELECT id, tenant_id, code, name, COALESCE(address, ''), is_default, is_active, created_at, updated_at FROM warehouses WHERE id = $1 AND tenant_id = $2`
-	row := r.queryRowInSchema(ctx, schemaName, query, warehouseID, tenantID)
+	query := `SELECT id, tenant_id, code, name, COALESCE(address, ''), is_default, is_active, created_at, updated_at FROM %s WHERE id = $1 AND tenant_id = $2`
+	row, err := r.queryRowInTable(ctx, schemaName, "warehouses", query, warehouseID, tenantID)
+	if err != nil {
+		return nil, err
+	}
 
 	var w Warehouse
-	err := row.Scan(&w.ID, &w.TenantID, &w.Code, &w.Name, &w.Address, &w.IsDefault, &w.IsActive, &w.CreatedAt, &w.UpdatedAt)
+	err = row.Scan(&w.ID, &w.TenantID, &w.Code, &w.Name, &w.Address, &w.IsDefault, &w.IsActive, &w.CreatedAt, &w.UpdatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, fmt.Errorf("warehouse not found")
@@ -376,13 +397,13 @@ func (r *PostgresRepository) GetWarehouseByID(ctx context.Context, schemaName, t
 
 // ListWarehouses retrieves all warehouses for a tenant
 func (r *PostgresRepository) ListWarehouses(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]Warehouse, error) {
-	query := `SELECT id, tenant_id, code, name, COALESCE(address, ''), is_default, is_active, created_at, updated_at FROM warehouses WHERE tenant_id = $1`
+	query := `SELECT id, tenant_id, code, name, COALESCE(address, ''), is_default, is_active, created_at, updated_at FROM %s WHERE tenant_id = $1`
 	if activeOnly {
 		query += " AND is_active = true"
 	}
 	query += " ORDER BY name"
 
-	rows, err := r.queryInSchema(ctx, schemaName, query, tenantID)
+	rows, err := r.queryInTable(ctx, schemaName, "warehouses", query, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -402,8 +423,8 @@ func (r *PostgresRepository) ListWarehouses(ctx context.Context, schemaName, ten
 
 // UpdateWarehouse updates a warehouse
 func (r *PostgresRepository) UpdateWarehouse(ctx context.Context, schemaName string, warehouse *Warehouse) error {
-	query := `UPDATE warehouses SET name = $1, address = $2, is_default = $3, is_active = $4, updated_at = $5 WHERE id = $6 AND tenant_id = $7`
-	return r.execInSchema(ctx, schemaName, query,
+	query := `UPDATE %s SET name = $1, address = $2, is_default = $3, is_active = $4, updated_at = $5 WHERE id = $6 AND tenant_id = $7`
+	return r.execInTable(ctx, schemaName, "warehouses", query,
 		warehouse.Name, warehouse.Address, warehouse.IsDefault, warehouse.IsActive, warehouse.UpdatedAt,
 		warehouse.ID, warehouse.TenantID,
 	)
@@ -411,17 +432,20 @@ func (r *PostgresRepository) UpdateWarehouse(ctx context.Context, schemaName str
 
 // DeleteWarehouse deletes a warehouse
 func (r *PostgresRepository) DeleteWarehouse(ctx context.Context, schemaName, tenantID, warehouseID string) error {
-	query := `DELETE FROM warehouses WHERE id = $1 AND tenant_id = $2`
-	return r.execInSchema(ctx, schemaName, query, warehouseID, tenantID)
+	query := `DELETE FROM %s WHERE id = $1 AND tenant_id = $2`
+	return r.execInTable(ctx, schemaName, "warehouses", query, warehouseID, tenantID)
 }
 
 // GetStockLevel retrieves stock level for a product in a warehouse
 func (r *PostgresRepository) GetStockLevel(ctx context.Context, schemaName, tenantID, productID, warehouseID string) (*StockLevel, error) {
-	query := `SELECT id, tenant_id, product_id, warehouse_id, quantity, reserved_qty, available_qty, last_updated FROM stock_levels WHERE product_id = $1 AND warehouse_id = $2 AND tenant_id = $3`
-	row := r.queryRowInSchema(ctx, schemaName, query, productID, warehouseID, tenantID)
+	query := `SELECT id, tenant_id, product_id, warehouse_id, quantity, reserved_qty, available_qty, last_updated FROM %s WHERE product_id = $1 AND warehouse_id = $2 AND tenant_id = $3`
+	row, err := r.queryRowInTable(ctx, schemaName, "stock_levels", query, productID, warehouseID, tenantID)
+	if err != nil {
+		return nil, err
+	}
 
 	var s StockLevel
-	err := row.Scan(&s.ID, &s.TenantID, &s.ProductID, &s.WarehouseID, &s.Quantity, &s.ReservedQty, &s.AvailableQty, &s.LastUpdated)
+	err = row.Scan(&s.ID, &s.TenantID, &s.ProductID, &s.WarehouseID, &s.Quantity, &s.ReservedQty, &s.AvailableQty, &s.LastUpdated)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, fmt.Errorf("stock level not found")
@@ -434,8 +458,8 @@ func (r *PostgresRepository) GetStockLevel(ctx context.Context, schemaName, tena
 
 // GetStockLevelsByProduct retrieves all stock levels for a product
 func (r *PostgresRepository) GetStockLevelsByProduct(ctx context.Context, schemaName, tenantID, productID string) ([]StockLevel, error) {
-	query := `SELECT id, tenant_id, product_id, warehouse_id, quantity, reserved_qty, available_qty, last_updated FROM stock_levels WHERE product_id = $1 AND tenant_id = $2`
-	rows, err := r.queryInSchema(ctx, schemaName, query, productID, tenantID)
+	query := `SELECT id, tenant_id, product_id, warehouse_id, quantity, reserved_qty, available_qty, last_updated FROM %s WHERE product_id = $1 AND tenant_id = $2`
+	rows, err := r.queryInTable(ctx, schemaName, "stock_levels", query, productID, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -456,7 +480,7 @@ func (r *PostgresRepository) GetStockLevelsByProduct(ctx context.Context, schema
 // UpsertStockLevel creates or updates a stock level
 func (r *PostgresRepository) UpsertStockLevel(ctx context.Context, schemaName string, level *StockLevel) error {
 	query := `
-		INSERT INTO stock_levels (id, tenant_id, product_id, warehouse_id, quantity, reserved_qty, available_qty, last_updated)
+		INSERT INTO %s (id, tenant_id, product_id, warehouse_id, quantity, reserved_qty, available_qty, last_updated)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (tenant_id, product_id, warehouse_id) DO UPDATE SET
 			quantity = EXCLUDED.quantity,
@@ -464,7 +488,7 @@ func (r *PostgresRepository) UpsertStockLevel(ctx context.Context, schemaName st
 			available_qty = EXCLUDED.available_qty,
 			last_updated = EXCLUDED.last_updated`
 
-	return r.execInSchema(ctx, schemaName, query,
+	return r.execInTable(ctx, schemaName, "stock_levels", query,
 		level.ID, level.TenantID, level.ProductID, level.WarehouseID,
 		level.Quantity, level.ReservedQty, level.AvailableQty, level.LastUpdated,
 	)
@@ -473,12 +497,12 @@ func (r *PostgresRepository) UpsertStockLevel(ctx context.Context, schemaName st
 // CreateMovement creates a new inventory movement
 func (r *PostgresRepository) CreateMovement(ctx context.Context, schemaName string, movement *InventoryMovement) error {
 	query := `
-		INSERT INTO inventory_movements (
+		INSERT INTO %s (
 			id, tenant_id, product_id, warehouse_id, movement_type, quantity, unit_cost, total_cost,
 			reference, to_warehouse_id, notes, movement_date, created_at, created_by
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
 
-	return r.execInSchema(ctx, schemaName, query,
+	return r.execInTable(ctx, schemaName, "inventory_movements", query,
 		movement.ID, movement.TenantID, movement.ProductID, movement.WarehouseID,
 		movement.MovementType, movement.Quantity, movement.UnitCost, movement.TotalCost,
 		movement.Reference, nullIfEmpty(movement.ToWarehouseID), movement.Notes, movement.MovementDate,
@@ -491,11 +515,11 @@ func (r *PostgresRepository) ListMovements(ctx context.Context, schemaName, tena
 	query := `
 		SELECT id, tenant_id, product_id, warehouse_id, movement_type, quantity, unit_cost, total_cost,
 			COALESCE(reference, ''), to_warehouse_id, COALESCE(notes, ''), movement_date, created_at, COALESCE(created_by::text, '')
-		FROM inventory_movements
+		FROM %s
 		WHERE tenant_id = $1 AND product_id = $2
 		ORDER BY movement_date DESC, created_at DESC`
 
-	rows, err := r.queryInSchema(ctx, schemaName, query, tenantID, productID)
+	rows, err := r.queryInTable(ctx, schemaName, "inventory_movements", query, tenantID, productID)
 	if err != nil {
 		return nil, err
 	}
@@ -531,6 +555,6 @@ func nullIfEmpty(s string) interface{} {
 
 // UpdateProductStock updates the current stock of a product
 func (r *PostgresRepository) UpdateProductStock(ctx context.Context, schemaName, tenantID, productID string, newStock decimal.Decimal) error {
-	query := `UPDATE products SET current_stock = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`
-	return r.execInSchema(ctx, schemaName, query, newStock, productID, tenantID)
+	query := `UPDATE %s SET current_stock = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`
+	return r.execInTable(ctx, schemaName, "products", query, newStock, productID, tenantID)
 }

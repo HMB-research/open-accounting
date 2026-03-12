@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -21,7 +22,6 @@ import (
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/quotes"
-	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 
 	// Blank imports for swagger annotations
@@ -282,6 +282,46 @@ func (h *Handlers) CreateContact(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, contact)
 }
 
+// ImportContacts imports contacts from CSV data.
+// @Summary Import contacts
+// @Description Import contacts from CSV data and skip duplicate or invalid rows
+// @Tags Contacts
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body contacts.ImportContactsRequest true "CSV import payload"
+// @Success 200 {object} contacts.ImportContactsResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/contacts/import [post]
+func (h *Handlers) ImportContacts(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req contacts.ImportContactsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+
+	if req.FileName == "" {
+		req.FileName = "contacts_import.csv"
+	}
+
+	result, err := h.contactsService.ImportCSV(r.Context(), tenantID, schemaName, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // GetContact returns a contact by ID
 // @Summary Get contact
 // @Description Get contact details by ID
@@ -471,6 +511,56 @@ func (h *Handlers) CreateInvoice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusCreated, invoice)
+}
+
+// ImportInvoices imports invoices from CSV data.
+// @Summary Import invoices
+// @Description Import invoices from grouped CSV data and skip duplicate, invalid, or locked rows
+// @Tags Invoices
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body invoicing.ImportInvoicesRequest true "CSV import payload"
+// @Success 200 {object} invoicing.ImportInvoicesResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/invoices/import [post]
+func (h *Handlers) ImportInvoices(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req invoicing.ImportInvoicesRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+
+	if req.FileName == "" {
+		req.FileName = "invoices_import.csv"
+	}
+	req.UserID = claims.UserID
+
+	contactsList, err := h.contactsService.List(r.Context(), tenantID, schemaName, nil)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load contacts")
+		return
+	}
+
+	result, err := h.invoicingService.ImportCSV(r.Context(), tenantID, schemaName, contactsList, &req, func(issueDate time.Time) error {
+		return h.ensurePeriodUnlocked(r.Context(), tenantID, issueDate)
+	})
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
 }
 
 // GetInvoice returns an invoice by ID
@@ -804,287 +894,6 @@ func (h *Handlers) GetUnallocatedPayments(w http.ResponseWriter, r *http.Request
 	}
 
 	respondJSON(w, http.StatusOK, paymentsList)
-}
-
-// =============================================================================
-// RECURRING INVOICES HANDLERS
-// =============================================================================
-
-// ListRecurringInvoices returns all recurring invoices for a tenant
-// @Summary List recurring invoices
-// @Description Get all recurring invoice templates for a tenant
-// @Tags Recurring
-// @Produce json
-// @Security BearerAuth
-// @Param tenantID path string true "Tenant ID"
-// @Param active_only query bool false "Filter for active recurring invoices only"
-// @Success 200 {array} recurring.RecurringInvoice
-// @Failure 500 {object} object{error=string}
-// @Router /tenants/{tenantID}/recurring-invoices [get]
-func (h *Handlers) ListRecurringInvoices(w http.ResponseWriter, r *http.Request) {
-	tenantID := chi.URLParam(r, "tenantID")
-	schemaName := h.getSchemaName(r.Context(), tenantID)
-
-	activeOnly := r.URL.Query().Get("active_only") == "true"
-
-	invoices, err := h.recurringService.List(r.Context(), tenantID, schemaName, activeOnly)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "Failed to list recurring invoices")
-		return
-	}
-
-	respondJSON(w, http.StatusOK, invoices)
-}
-
-// CreateRecurringInvoice creates a new recurring invoice
-// @Summary Create recurring invoice
-// @Description Create a new recurring invoice template
-// @Tags Recurring
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param tenantID path string true "Tenant ID"
-// @Param request body recurring.CreateRecurringInvoiceRequest true "Recurring invoice details"
-// @Success 201 {object} recurring.RecurringInvoice
-// @Failure 400 {object} object{error=string}
-// @Router /tenants/{tenantID}/recurring-invoices [post]
-func (h *Handlers) CreateRecurringInvoice(w http.ResponseWriter, r *http.Request) {
-	claims, _ := auth.GetClaims(r.Context())
-	tenantID := chi.URLParam(r, "tenantID")
-	schemaName := h.getSchemaName(r.Context(), tenantID)
-
-	var req recurring.CreateRecurringInvoiceRequest
-	if err := decodeJSON(r, &req); err != nil {
-		respondError(w, http.StatusBadRequest, "Invalid request body")
-		return
-	}
-
-	req.UserID = claims.UserID
-
-	invoice, err := h.recurringService.Create(r.Context(), tenantID, schemaName, &req)
-	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	respondJSON(w, http.StatusCreated, invoice)
-}
-
-// CreateRecurringInvoiceFromInvoice creates a recurring invoice from an existing invoice
-// @Summary Create recurring invoice from existing invoice
-// @Description Create a new recurring invoice template based on an existing invoice
-// @Tags Recurring
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param tenantID path string true "Tenant ID"
-// @Param invoiceID path string true "Invoice ID to use as template"
-// @Param request body recurring.CreateFromInvoiceRequest true "Recurring invoice settings"
-// @Success 201 {object} recurring.RecurringInvoice
-// @Failure 400 {object} object{error=string}
-// @Router /tenants/{tenantID}/recurring-invoices/from-invoice/{invoiceID} [post]
-func (h *Handlers) CreateRecurringInvoiceFromInvoice(w http.ResponseWriter, r *http.Request) {
-	claims, _ := auth.GetClaims(r.Context())
-	tenantID := chi.URLParam(r, "tenantID")
-	invoiceID := chi.URLParam(r, "invoiceID")
-	schemaName := h.getSchemaName(r.Context(), tenantID)
-
-	var req recurring.CreateFromInvoiceRequest
-	if err := decodeJSON(r, &req); err != nil {
-		respondError(w, http.StatusBadRequest, "Invalid request body")
-		return
-	}
-
-	req.InvoiceID = invoiceID
-	req.UserID = claims.UserID
-
-	invoice, err := h.recurringService.CreateFromInvoice(r.Context(), tenantID, schemaName, &req)
-	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	respondJSON(w, http.StatusCreated, invoice)
-}
-
-// GetRecurringInvoice returns a recurring invoice by ID
-// @Summary Get recurring invoice
-// @Description Get recurring invoice details by ID
-// @Tags Recurring
-// @Produce json
-// @Security BearerAuth
-// @Param tenantID path string true "Tenant ID"
-// @Param recurringID path string true "Recurring Invoice ID"
-// @Success 200 {object} recurring.RecurringInvoice
-// @Failure 404 {object} object{error=string}
-// @Router /tenants/{tenantID}/recurring-invoices/{recurringID} [get]
-func (h *Handlers) GetRecurringInvoice(w http.ResponseWriter, r *http.Request) {
-	tenantID := chi.URLParam(r, "tenantID")
-	recurringID := chi.URLParam(r, "recurringID")
-	schemaName := h.getSchemaName(r.Context(), tenantID)
-
-	invoice, err := h.recurringService.GetByID(r.Context(), tenantID, schemaName, recurringID)
-	if err != nil {
-		respondError(w, http.StatusNotFound, "Recurring invoice not found")
-		return
-	}
-
-	respondJSON(w, http.StatusOK, invoice)
-}
-
-// UpdateRecurringInvoice updates a recurring invoice
-// @Summary Update recurring invoice
-// @Description Update recurring invoice details
-// @Tags Recurring
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param tenantID path string true "Tenant ID"
-// @Param recurringID path string true "Recurring Invoice ID"
-// @Param request body recurring.UpdateRecurringInvoiceRequest true "Updated details"
-// @Success 200 {object} recurring.RecurringInvoice
-// @Failure 400 {object} object{error=string}
-// @Router /tenants/{tenantID}/recurring-invoices/{recurringID} [put]
-func (h *Handlers) UpdateRecurringInvoice(w http.ResponseWriter, r *http.Request) {
-	tenantID := chi.URLParam(r, "tenantID")
-	recurringID := chi.URLParam(r, "recurringID")
-	schemaName := h.getSchemaName(r.Context(), tenantID)
-
-	var req recurring.UpdateRecurringInvoiceRequest
-	if err := decodeJSON(r, &req); err != nil {
-		respondError(w, http.StatusBadRequest, "Invalid request body")
-		return
-	}
-
-	invoice, err := h.recurringService.Update(r.Context(), tenantID, schemaName, recurringID, &req)
-	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	respondJSON(w, http.StatusOK, invoice)
-}
-
-// DeleteRecurringInvoice deletes a recurring invoice
-// @Summary Delete recurring invoice
-// @Description Delete a recurring invoice template
-// @Tags Recurring
-// @Produce json
-// @Security BearerAuth
-// @Param tenantID path string true "Tenant ID"
-// @Param recurringID path string true "Recurring Invoice ID"
-// @Success 200 {object} object{status=string}
-// @Failure 400 {object} object{error=string}
-// @Router /tenants/{tenantID}/recurring-invoices/{recurringID} [delete]
-func (h *Handlers) DeleteRecurringInvoice(w http.ResponseWriter, r *http.Request) {
-	tenantID := chi.URLParam(r, "tenantID")
-	recurringID := chi.URLParam(r, "recurringID")
-	schemaName := h.getSchemaName(r.Context(), tenantID)
-
-	if err := h.recurringService.Delete(r.Context(), tenantID, schemaName, recurringID); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	respondJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
-}
-
-// PauseRecurringInvoice pauses a recurring invoice
-// @Summary Pause recurring invoice
-// @Description Pause automatic generation of a recurring invoice
-// @Tags Recurring
-// @Produce json
-// @Security BearerAuth
-// @Param tenantID path string true "Tenant ID"
-// @Param recurringID path string true "Recurring Invoice ID"
-// @Success 200 {object} object{status=string}
-// @Failure 400 {object} object{error=string}
-// @Router /tenants/{tenantID}/recurring-invoices/{recurringID}/pause [post]
-func (h *Handlers) PauseRecurringInvoice(w http.ResponseWriter, r *http.Request) {
-	tenantID := chi.URLParam(r, "tenantID")
-	recurringID := chi.URLParam(r, "recurringID")
-	schemaName := h.getSchemaName(r.Context(), tenantID)
-
-	if err := h.recurringService.Pause(r.Context(), tenantID, schemaName, recurringID); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	respondJSON(w, http.StatusOK, map[string]string{"status": "paused"})
-}
-
-// ResumeRecurringInvoice resumes a paused recurring invoice
-// @Summary Resume recurring invoice
-// @Description Resume automatic generation of a paused recurring invoice
-// @Tags Recurring
-// @Produce json
-// @Security BearerAuth
-// @Param tenantID path string true "Tenant ID"
-// @Param recurringID path string true "Recurring Invoice ID"
-// @Success 200 {object} object{status=string}
-// @Failure 400 {object} object{error=string}
-// @Router /tenants/{tenantID}/recurring-invoices/{recurringID}/resume [post]
-func (h *Handlers) ResumeRecurringInvoice(w http.ResponseWriter, r *http.Request) {
-	tenantID := chi.URLParam(r, "tenantID")
-	recurringID := chi.URLParam(r, "recurringID")
-	schemaName := h.getSchemaName(r.Context(), tenantID)
-
-	if err := h.recurringService.Resume(r.Context(), tenantID, schemaName, recurringID); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	respondJSON(w, http.StatusOK, map[string]string{"status": "resumed"})
-}
-
-// GenerateRecurringInvoice manually generates an invoice from a recurring invoice
-// @Summary Generate invoice from recurring template
-// @Description Manually trigger generation of an invoice from a recurring invoice
-// @Tags Recurring
-// @Produce json
-// @Security BearerAuth
-// @Param tenantID path string true "Tenant ID"
-// @Param recurringID path string true "Recurring Invoice ID"
-// @Success 200 {object} recurring.GenerationResult
-// @Failure 400 {object} object{error=string}
-// @Router /tenants/{tenantID}/recurring-invoices/{recurringID}/generate [post]
-func (h *Handlers) GenerateRecurringInvoice(w http.ResponseWriter, r *http.Request) {
-	claims, _ := auth.GetClaims(r.Context())
-	tenantID := chi.URLParam(r, "tenantID")
-	recurringID := chi.URLParam(r, "recurringID")
-	schemaName := h.getSchemaName(r.Context(), tenantID)
-
-	result, err := h.recurringService.GenerateInvoice(r.Context(), tenantID, schemaName, recurringID, claims.UserID)
-	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	respondJSON(w, http.StatusOK, result)
-}
-
-// GenerateDueRecurringInvoices generates all due recurring invoices
-// @Summary Generate all due invoices
-// @Description Trigger generation of all recurring invoices that are due
-// @Tags Recurring
-// @Produce json
-// @Security BearerAuth
-// @Param tenantID path string true "Tenant ID"
-// @Success 200 {array} recurring.GenerationResult
-// @Failure 500 {object} object{error=string}
-// @Router /tenants/{tenantID}/recurring-invoices/generate-due [post]
-func (h *Handlers) GenerateDueRecurringInvoices(w http.ResponseWriter, r *http.Request) {
-	claims, _ := auth.GetClaims(r.Context())
-	tenantID := chi.URLParam(r, "tenantID")
-	schemaName := h.getSchemaName(r.Context(), tenantID)
-
-	results, err := h.recurringService.GenerateDueInvoices(r.Context(), tenantID, schemaName, claims.UserID)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "Failed to generate invoices")
-		return
-	}
-
-	respondJSON(w, http.StatusOK, results)
 }
 
 // =============================================================================

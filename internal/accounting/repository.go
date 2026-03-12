@@ -179,10 +179,15 @@ func (r *Repository) CreateJournalEntryTx(ctx context.Context, schemaName string
 		je.CreatedAt = time.Now()
 	}
 
-	// Generate entry number
+	// Generate the next sequence from any trailing digits in existing entry numbers.
 	var seq int
 	err := tx.QueryRow(ctx, fmt.Sprintf(`
-		SELECT COALESCE(MAX(CAST(SUBSTRING(entry_number FROM 4) AS INTEGER)), 0) + 1
+		SELECT COALESCE(MAX(
+			CASE
+				WHEN entry_number ~ '[0-9]+$' THEN CAST(SUBSTRING(entry_number FROM '([0-9]+)$') AS INTEGER)
+				ELSE 0
+			END
+		), 0) + 1
 		FROM %s.journal_entries WHERE tenant_id = $1
 	`, schemaName), je.TenantID).Scan(&seq)
 	if err != nil {

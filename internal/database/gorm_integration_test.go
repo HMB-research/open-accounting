@@ -143,6 +143,12 @@ func TestSchemaScope(t *testing.T) {
 		db := scope(gormDB.DB)
 		assert.NotNil(t, db)
 	})
+
+	t.Run("with invalid schema", func(t *testing.T) {
+		scope := SchemaScope("tenant-demo")
+		db := scope(gormDB.DB)
+		assert.Error(t, db.Error)
+	})
 }
 
 // Test TenantDB function
@@ -173,10 +179,13 @@ func TestTenantDB(t *testing.T) {
 		// Should return same DB
 		assert.Equal(t, gormDB.DB, db)
 	})
+
+	t.Run("with nil db", func(t *testing.T) {
+		assert.Nil(t, TenantDB(nil, "public"))
+	})
 }
 
-// Test TenantDBCache with real GORM DB
-func TestTenantDBCache_Integration(t *testing.T) {
+func TestTenantTable(t *testing.T) {
 	dbURL := getTestDatabaseURL(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -185,39 +194,15 @@ func TestTenantDBCache_Integration(t *testing.T) {
 	require.NoError(t, err)
 	defer gormDB.Close()
 
-	cache := NewTenantDBCache(gormDB.DB)
+	db, err := TenantTable(gormDB.DB, "public", "tenants")
+	require.NoError(t, err)
+	assert.NotNil(t, db)
 
-	t.Run("get creates new scoped DB", func(t *testing.T) {
-		db := cache.Get("tenant_test_1")
-		assert.NotNil(t, db)
-	})
+	var result int
+	err = db.Raw("SELECT 1").Scan(&result).Error
+	assert.NoError(t, err)
+	assert.Equal(t, 1, result)
 
-	t.Run("get returns cached DB", func(t *testing.T) {
-		db1 := cache.Get("tenant_test_2")
-		db2 := cache.Get("tenant_test_2")
-		// Should return the same cached instance
-		assert.Equal(t, db1, db2)
-	})
-
-	t.Run("remove clears specific schema", func(t *testing.T) {
-		db1 := cache.Get("tenant_test_3")
-		assert.NotNil(t, db1)
-
-		cache.Remove("tenant_test_3")
-
-		// Get again should create a new one
-		db2 := cache.Get("tenant_test_3")
-		assert.NotNil(t, db2)
-	})
-
-	t.Run("clear removes all cached DBs", func(t *testing.T) {
-		cache.Get("tenant_test_4")
-		cache.Get("tenant_test_5")
-
-		cache.Clear()
-
-		// Get should create new instances
-		db := cache.Get("tenant_test_4")
-		assert.NotNil(t, db)
-	})
+	_, err = TenantTable(gormDB.DB, "tenant-demo", "contacts")
+	assert.Error(t, err)
 }

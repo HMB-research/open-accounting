@@ -1,5 +1,3 @@
-//go:build integration
-
 package quotes
 
 import (
@@ -11,10 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
-
-func timePtr(t time.Time) *time.Time {
-	return &t
-}
 
 func TestRepository_CreateAndGetQuote(t *testing.T) {
 	pool := testutil.SetupTestDB(t)

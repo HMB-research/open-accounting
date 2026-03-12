@@ -21,18 +21,32 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 	return &GORMRepository{db: db}
 }
 
+func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
+	db, err := database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+	if err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
 // Create inserts a new contact
 func (r *GORMRepository) Create(ctx context.Context, schemaName string, contact *Contact) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "contacts")
+	if err != nil {
+		return err
+	}
 	return db.Create(contact).Error
 }
 
 // GetByID retrieves a contact by ID
 func (r *GORMRepository) GetByID(ctx context.Context, schemaName, tenantID, contactID string) (*Contact, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "contacts")
+	if err != nil {
+		return nil, err
+	}
 
 	var contact Contact
-	err := db.Where("id = ? AND tenant_id = ?", contactID, tenantID).First(&contact).Error
+	err = db.Where("id = ? AND tenant_id = ?", contactID, tenantID).First(&contact).Error
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrContactNotFound
@@ -46,7 +60,10 @@ func (r *GORMRepository) GetByID(ctx context.Context, schemaName, tenantID, cont
 
 // List retrieves contacts with optional filtering
 func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, filter *ContactFilter) ([]Contact, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "contacts")
+	if err != nil {
+		return nil, err
+	}
 
 	query := db.Where("tenant_id = ?", tenantID)
 
@@ -65,7 +82,7 @@ func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, 
 	}
 
 	var contacts []Contact
-	err := query.Order("name").Find(&contacts).Error
+	err = query.Order("name").Find(&contacts).Error
 	if err != nil {
 		return nil, err
 	}
@@ -75,12 +92,14 @@ func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, 
 
 // Update updates a contact
 func (r *GORMRepository) Update(ctx context.Context, schemaName string, contact *Contact) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "contacts")
+	if err != nil {
+		return err
+	}
 
 	contact.UpdatedAt = time.Now()
 
-	result := db.Model(&Contact{}).
-		Where("id = ? AND tenant_id = ?", contact.ID, contact.TenantID).
+	result := db.Where("id = ? AND tenant_id = ?", contact.ID, contact.TenantID).
 		Updates(map[string]interface{}{
 			"name":               contact.Name,
 			"reg_code":           contact.RegCode,
@@ -105,10 +124,12 @@ func (r *GORMRepository) Update(ctx context.Context, schemaName string, contact 
 
 // Delete soft-deletes a contact
 func (r *GORMRepository) Delete(ctx context.Context, schemaName, tenantID, contactID string) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "contacts")
+	if err != nil {
+		return err
+	}
 
-	result := db.Model(&Contact{}).
-		Where("id = ? AND tenant_id = ?", contactID, tenantID).
+	result := db.Where("id = ? AND tenant_id = ?", contactID, tenantID).
 		Updates(map[string]interface{}{
 			"is_active":  false,
 			"updated_at": time.Now(),

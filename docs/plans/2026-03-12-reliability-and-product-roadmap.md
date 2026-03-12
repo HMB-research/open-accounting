@@ -45,7 +45,7 @@ The repository has substantial breadth, but trust and product fit are the main b
 ### Product blockers
 
 - No migration/import story strong enough for real adoption.
-- Missing period controls and close workflows.
+- Missing fiscal-year close and carry-forward workflows.
 - Missing document and attachment workflows.
 - Security and operations are below accounting-product expectations.
 - Several parity features are still blocked by external partnerships or compliance requirements.

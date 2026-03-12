@@ -222,22 +222,24 @@ func (r *ReminderRulePostgresRepository) GetInvoicesForRule(ctx context.Context,
 	var invoices []InvoiceForReminder
 	for rows.Next() {
 		var inv InvoiceForReminder
-		var daysValue int
 		err := rows.Scan(
 			&inv.ID, &inv.InvoiceNumber, &inv.ContactID, &inv.ContactName, &inv.ContactEmail,
 			&inv.IssueDate, &inv.DueDate, &inv.Total, &inv.AmountPaid,
-			&inv.OutstandingAmount, &inv.Currency, &daysValue,
+			&inv.OutstandingAmount, &inv.Currency, new(int),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan invoice: %w", err)
 		}
 
-		if rule.TriggerType == TriggerAfterDue {
-			inv.DaysOverdue = daysValue
-			inv.DaysUntilDue = -daysValue
-		} else {
-			inv.DaysUntilDue = daysValue
-			inv.DaysOverdue = 0
+		dueDate, err := time.Parse("2006-01-02", inv.DueDate)
+		if err != nil {
+			return nil, fmt.Errorf("parse due date: %w", err)
+		}
+
+		daysUntilDue := int(dueDate.Sub(asOfDate).Hours() / 24)
+		inv.DaysUntilDue = daysUntilDue
+		if daysUntilDue < 0 {
+			inv.DaysOverdue = -daysUntilDue
 		}
 
 		invoices = append(invoices, inv)

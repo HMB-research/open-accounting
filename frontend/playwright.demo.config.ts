@@ -6,9 +6,14 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Use environment variables for local testing, fall back to Railway for remote demo testing
-const baseURL = process.env.BASE_URL || 'https://open-accounting.up.railway.app';
-const isLocalTesting = baseURL.includes('localhost');
+const isRemoteDemoTesting = process.env.TEST_DEMO === 'true';
+const baseURL = process.env.BASE_URL || 'http://127.0.0.1:4173';
+
+if (isRemoteDemoTesting && !process.env.BASE_URL) {
+	throw new Error('BASE_URL is required when TEST_DEMO=true');
+}
+
+const isLocalTesting = !isRemoteDemoTesting && (baseURL.includes('localhost') || baseURL.includes('127.0.0.1'));
 
 // Auth state directory - each worker creates its own file
 export const AUTH_DIR = path.join(__dirname, '.auth');

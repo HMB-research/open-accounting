@@ -28,6 +28,7 @@ export default defineConfig({
 		}
 	},
 	resolve: {
+		conditions: ['browser'],
 		alias: {
 			$lib: libDir,
 			$app: appMocksDir,
