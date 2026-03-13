@@ -106,6 +106,19 @@ func (m *mockAccountingRepository) ListJournalEntries(ctx context.Context, schem
 	return result, nil
 }
 
+func (m *mockAccountingRepository) GetJournalEntryBySource(ctx context.Context, schemaName, tenantID, sourceType, sourceID string) (*accounting.JournalEntry, error) {
+	if m.getJournalErr != nil {
+		return nil, m.getJournalErr
+	}
+	for _, entry := range m.journalEntries {
+		if entry.TenantID != tenantID || entry.SourceType != sourceType || entry.Status == accounting.StatusVoided || entry.SourceID == nil || *entry.SourceID != sourceID {
+			continue
+		}
+		return entry, nil
+	}
+	return nil, nil
+}
+
 func (m *mockAccountingRepository) CreateJournalEntry(ctx context.Context, schemaName string, je *accounting.JournalEntry) error {
 	if m.createJournalErr != nil {
 		return m.createJournalErr

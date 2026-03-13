@@ -1,6 +1,14 @@
 <script lang="ts">
 	import Decimal from 'decimal.js';
-	import { type JournalEntry, type OverdueInvoicesSummary, type PeriodCloseEvent, type Tenant } from '$lib/api';
+	import {
+		api,
+		type BankTransaction,
+		type FollowUpStatus,
+		type JournalEntry,
+		type OverdueInvoicesSummary,
+		type PeriodCloseEvent,
+		type Tenant
+	} from '$lib/api';
 	import * as m from '$lib/paraglide/messages.js';
 	import {
 		flattenUnmatchedTransactions,
@@ -18,6 +26,11 @@
 	let bankExceptions = $state<BankExceptionGroup[]>([]);
 	let periodCloseEvents = $state<PeriodCloseEvent[]>([]);
 	let journalEntries = $state<JournalEntry[]>([]);
+	let reviewDrafts = $state<Record<string, { followUpStatus: FollowUpStatus; reviewNote: string }>>({});
+	let reviewSavingId = $state('');
+	let reviewSavedId = $state('');
+	let reviewErrorId = $state('');
+	let reviewError = $state('');
 	let loadedTenantKey = '';
 
 	$effect(() => {
@@ -39,6 +52,10 @@
 		periodCloseEvents = snapshot.periodCloseEvents;
 		journalEntries = snapshot.journalEntries;
 		bankExceptions = snapshot.bankExceptions;
+		reviewDrafts = buildReviewDrafts(snapshot.bankExceptions);
+		reviewSavedId = '';
+		reviewErrorId = '';
+		reviewError = '';
 
 		if (snapshot.errorCount === 4) {
 			error = m.errors_loadFailed();
@@ -87,6 +104,12 @@
 	const unmatchedAmount = $derived(
 		unmatchedTransactions.reduce((sum, item) => sum.add(toDecimal(item.transaction.amount).abs()), new Decimal(0))
 	);
+	const missingEvidenceCount = $derived(
+		unmatchedTransactions.filter((item) => item.documentSummary.missing_evidence).length
+	);
+	const pendingEvidenceCount = $derived(
+		unmatchedTransactions.filter((item) => item.documentSummary.has_pending_review).length
+	);
 	const topOverdueInvoices = $derived(overdueSummary?.invoices.slice(0, 4) ?? []);
 	const topUnmatchedTransactions = $derived(unmatchedTransactions.slice(0, 4));
 	const topJournalEntries = $derived(journalEntries.slice(0, 4));
@@ -95,6 +118,82 @@
 	const currentLockDate = $derived(tenant.settings?.period_lock_date ?? null);
 	const suggestedCloseDate = $derived(getSuggestedCloseDate(currentLockDate));
 	const latestCloseEvent = $derived(periodCloseEvents[0] ?? null);
+
+	function getEvidenceLabel(missingEvidence: boolean, hasPendingReview: boolean): string {
+		if (missingEvidence) {
+			return m.dashboard_reviewEvidenceMissing();
+		}
+		if (hasPendingReview) {
+			return m.dashboard_reviewEvidencePending();
+		}
+		return m.dashboard_reviewEvidenceReviewed();
+	}
+
+	function buildReviewDrafts(groups: BankExceptionGroup[]) {
+		const drafts: Record<string, { followUpStatus: FollowUpStatus; reviewNote: string }> = {};
+		for (const item of flattenUnmatchedTransactions(groups)) {
+			drafts[item.transaction.id] = {
+				followUpStatus: normalizeFollowUpStatus(item.transaction.follow_up_status),
+				reviewNote: item.transaction.review_note ?? ''
+			};
+		}
+		return drafts;
+	}
+
+	function normalizeFollowUpStatus(value: FollowUpStatus | string | undefined): FollowUpStatus {
+		if (value === 'EVIDENCE_REQUIRED' || value === 'READY_TO_MATCH') {
+			return value;
+		}
+		return 'NONE';
+	}
+
+	function getFollowUpLabel(value: FollowUpStatus | string | undefined): string {
+		switch (normalizeFollowUpStatus(value)) {
+			case 'EVIDENCE_REQUIRED':
+				return m.dashboard_reviewFollowUpEvidenceRequired();
+			case 'READY_TO_MATCH':
+				return m.dashboard_reviewFollowUpReadyToMatch();
+			default:
+				return m.dashboard_reviewFollowUpNone();
+		}
+	}
+
+	function isReviewDirty(transaction: BankTransaction): boolean {
+		const draft = reviewDrafts[transaction.id];
+		if (!draft) {
+			return false;
+		}
+		return (
+			draft.followUpStatus !== normalizeFollowUpStatus(transaction.follow_up_status) ||
+			draft.reviewNote.trim() !== (transaction.review_note ?? '').trim()
+		);
+	}
+
+	async function saveTransactionReview(transaction: BankTransaction) {
+		const draft = reviewDrafts[transaction.id];
+		if (!draft) {
+			return;
+		}
+
+		reviewSavingId = transaction.id;
+		reviewSavedId = '';
+		reviewErrorId = '';
+		reviewError = '';
+
+		try {
+			await api.reviewBankTransaction(tenant.id, transaction.id, {
+				follow_up_status: draft.followUpStatus,
+				review_note: draft.reviewNote.trim()
+			});
+			await loadReviewWorkspace(tenant);
+			reviewSavedId = transaction.id;
+		} catch (err) {
+			reviewErrorId = transaction.id;
+			reviewError = err instanceof Error ? err.message : m.dashboard_reviewFollowUpSaveError();
+		} finally {
+			reviewSavingId = '';
+		}
+	}
 </script>
 
 <section class="review-board card">
@@ -176,26 +275,68 @@
 						<span>{m.common_amount()}</span>
 					</div>
 					<div>
-						<strong>{bankExceptions.length}</strong>
-						<span>{m.dashboard_reviewAccounts()}</span>
+						<strong>{missingEvidenceCount}</strong>
+						<span>{m.dashboard_reviewEvidenceMissing()}</span>
 					</div>
 					<div>
-						<strong>{topUnmatchedTransactions[0] ? formatDate(topUnmatchedTransactions[0].transaction.transaction_date) : m.common_notSet()}</strong>
-						<span>{m.common_date()}</span>
+						<strong>{pendingEvidenceCount}</strong>
+						<span>{m.dashboard_reviewEvidencePending()}</span>
 					</div>
 				</div>
 
 				{#if topUnmatchedTransactions.length > 0}
 					<ul class="review-list">
 						{#each topUnmatchedTransactions as item}
-							<li>
-								<div>
+							<li class="review-list-item-banking">
+								<div class="review-list-main">
 									<strong>{item.account.name}</strong>
 									<span>{item.transaction.description || item.transaction.counterparty_name || m.common_noData()}</span>
+									<span>{getEvidenceLabel(item.documentSummary.missing_evidence, item.documentSummary.has_pending_review)}</span>
+									<span>{getFollowUpLabel(item.transaction.follow_up_status)}</span>
+									{#if item.transaction.review_note}
+										<span class="review-note-preview">{item.transaction.review_note}</span>
+									{/if}
 								</div>
-								<div class="review-list-meta">
+								<div class="review-list-meta review-list-meta-banking">
 									<strong>{formatCurrency(toDecimal(item.transaction.amount).abs())}</strong>
 									<span>{formatDate(item.transaction.transaction_date)}</span>
+								</div>
+								<div class="review-transaction-review">
+									<label class="review-field">
+										<span>{m.dashboard_reviewFollowUpLabel()}</span>
+										<select
+											aria-label={m.dashboard_reviewFollowUpLabel()}
+											bind:value={reviewDrafts[item.transaction.id].followUpStatus}
+										>
+											<option value="NONE">{m.dashboard_reviewFollowUpNone()}</option>
+											<option value="EVIDENCE_REQUIRED">{m.dashboard_reviewFollowUpEvidenceRequired()}</option>
+											<option value="READY_TO_MATCH">{m.dashboard_reviewFollowUpReadyToMatch()}</option>
+										</select>
+									</label>
+									<label class="review-field review-field-note">
+										<span>{m.dashboard_reviewFollowUpNoteLabel()}</span>
+										<textarea
+											aria-label={m.dashboard_reviewFollowUpNoteLabel()}
+											rows="2"
+											bind:value={reviewDrafts[item.transaction.id].reviewNote}
+										></textarea>
+									</label>
+									<div class="review-inline-actions">
+										<button
+											class="btn btn-secondary review-inline-save"
+											type="button"
+											onclick={() => saveTransactionReview(item.transaction)}
+											disabled={reviewSavingId === item.transaction.id || !isReviewDirty(item.transaction)}
+										>
+											{reviewSavingId === item.transaction.id ? m.common_loading() : m.dashboard_reviewFollowUpSave()}
+										</button>
+										{#if reviewSavedId === item.transaction.id}
+											<span class="review-feedback review-feedback-success">{m.dashboard_reviewFollowUpSaved()}</span>
+										{/if}
+										{#if reviewErrorId === item.transaction.id}
+											<span class="review-feedback review-feedback-error">{reviewError}</span>
+										{/if}
+									</div>
 								</div>
 							</li>
 						{/each}
@@ -474,8 +615,89 @@
 		gap: 0.15rem;
 	}
 
+	.review-list-item-banking {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+	}
+
+	.review-list-main {
+		min-width: 0;
+	}
+
 	.review-list-meta {
 		text-align: right;
+	}
+
+	.review-list-meta-banking {
+		align-items: flex-end;
+	}
+
+	.review-note-preview {
+		font-style: italic;
+	}
+
+	.review-transaction-review {
+		grid-column: 1 / -1;
+		display: grid;
+		grid-template-columns: minmax(11rem, 13rem) minmax(0, 1fr) auto;
+		gap: 0.75rem;
+		padding-top: 0.75rem;
+		margin-top: 0.15rem;
+		border-top: 1px solid rgba(148, 163, 184, 0.12);
+	}
+
+	.review-field {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		font-size: 0.82rem;
+		color: var(--color-text-muted);
+	}
+
+	.review-field select,
+	.review-field textarea {
+		width: 100%;
+		border: 1px solid rgba(148, 163, 184, 0.28);
+		border-radius: 0.85rem;
+		background: rgba(255, 255, 255, 0.92);
+		color: var(--color-text);
+		padding: 0.7rem 0.8rem;
+		font: inherit;
+	}
+
+	.review-field textarea {
+		min-height: 5.1rem;
+		resize: vertical;
+	}
+
+	.review-field-note {
+		min-width: 0;
+	}
+
+	.review-inline-actions {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0.45rem;
+	}
+
+	.review-inline-save {
+		min-width: 9rem;
+		justify-content: center;
+	}
+
+	.review-feedback {
+		font-size: 0.78rem;
+		text-align: right;
+	}
+
+	.review-feedback-success {
+		color: #166534;
+	}
+
+	.review-feedback-error {
+		color: #b91c1c;
+		max-width: 16rem;
 	}
 
 	.review-empty {
@@ -499,6 +721,23 @@
 
 		.review-metrics {
 			grid-template-columns: 1fr;
+		}
+
+		.review-list-item-banking {
+			grid-template-columns: 1fr;
+		}
+
+		.review-list-meta-banking {
+			align-items: flex-start;
+			text-align: left;
+		}
+
+		.review-transaction-review {
+			grid-template-columns: 1fr;
+		}
+
+		.review-inline-actions {
+			align-items: stretch;
 		}
 
 		.review-list li {

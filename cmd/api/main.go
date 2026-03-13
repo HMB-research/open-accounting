@@ -355,9 +355,13 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/period-close-events", h.ListPeriodCloseEvents)
 				r.Post("/period-close", h.ClosePeriod)
 				r.Post("/period-reopen", h.ReopenPeriod)
+				r.Get("/year-end-close-status", h.GetYearEndCloseStatus)
+				r.Post("/year-end-carry-forward", h.CreateYearEndCarryForward)
 				r.Get("/documents", h.ListDocuments)
+				r.Post("/documents/review-summary", h.ListDocumentReviewSummaries)
 				r.Post("/documents", h.UploadDocument)
 				r.Get("/documents/{documentID}/download", h.DownloadDocument)
+				r.Post("/documents/{documentID}/mark-reviewed", h.MarkDocumentReviewed)
 				r.Delete("/documents/{documentID}", h.DeleteDocument)
 				r.Get("/api-tokens", h.ListAPITokens)
 				r.Post("/api-tokens", h.CreateAPIToken)
@@ -549,6 +553,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/bank-transactions/{transactionID}/suggestions", h.GetMatchSuggestions)
 				r.Post("/bank-transactions/{transactionID}/match", h.MatchBankTransaction)
 				r.Post("/bank-transactions/{transactionID}/unmatch", h.UnmatchBankTransaction)
+				r.Post("/bank-transactions/{transactionID}/review", h.ReviewBankTransaction)
 				r.Post("/bank-transactions/{transactionID}/create-payment", h.CreatePaymentFromTransaction)
 
 				// Bank Reconciliation
@@ -566,6 +571,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				// Payroll - Employees
 				r.Get("/employees", h.ListEmployees)
 				r.Post("/employees", h.CreateEmployee)
+				r.Post("/employees/import", h.ImportEmployees)
 				r.Get("/employees/{employeeID}", h.GetEmployee)
 				r.Put("/employees/{employeeID}", h.UpdateEmployee)
 				r.Post("/employees/{employeeID}/salary", h.SetBaseSalary)

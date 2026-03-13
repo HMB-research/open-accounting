@@ -18,6 +18,8 @@
 		overdueAmount: Decimal;
 		unmatchedCount: number;
 		unmatchedAmount: Decimal;
+		missingEvidenceCount: number;
+		pendingEvidenceCount: number;
 		needsClose: boolean;
 		suggestedCloseDate: string;
 		lastCloseEvent: PeriodCloseEvent | null;
@@ -142,17 +144,27 @@
 				(sum, item) => sum.add(toDecimal(item.transaction.amount).abs()),
 				new Decimal(0)
 			);
+			const missingEvidenceCount = unmatchedTransactions.filter(
+				(item) => item.documentSummary.missing_evidence
+			).length;
+			const pendingEvidenceCount = unmatchedTransactions.filter(
+				(item) => item.documentSummary.has_pending_review
+			).length;
 			const periodLockDate = snapshot.tenant.settings?.period_lock_date ?? null;
 			const closeIsDue = needsPeriodClose(periodLockDate);
 			const openTasks =
 				overdueCount +
 				unmatchedCount +
+				missingEvidenceCount +
+				pendingEvidenceCount +
 				(closeIsDue ? 1 : 0) +
 				(snapshot.tenant.onboarding_completed ? 0 : 1);
 			const urgency =
 				openTasks +
 				Math.min(5, Math.floor(overdueAmount.div(1000).toNumber())) +
 				Math.min(5, unmatchedCount) +
+				Math.min(5, missingEvidenceCount) +
+				Math.min(3, pendingEvidenceCount) +
 				(closeIsDue ? 3 : 0) +
 				(snapshot.tenant.onboarding_completed ? 0 : 2);
 
@@ -163,6 +175,8 @@
 				overdueAmount,
 				unmatchedCount,
 				unmatchedAmount,
+				missingEvidenceCount,
+				pendingEvidenceCount,
 				needsClose: closeIsDue,
 				suggestedCloseDate: getSuggestedCloseDate(periodLockDate),
 				lastCloseEvent: snapshot.periodCloseEvents[0] ?? null,
@@ -190,6 +204,12 @@
 	);
 	const totalUnmatchedTransactions = $derived(
 		attentionTenants.reduce((sum, item) => sum + item.unmatchedCount, 0)
+	);
+	const totalMissingEvidence = $derived(
+		attentionTenants.reduce((sum, item) => sum + item.missingEvidenceCount, 0)
+	);
+	const totalPendingEvidence = $derived(
+		attentionTenants.reduce((sum, item) => sum + item.pendingEvidenceCount, 0)
 	);
 	const tenantsNeedingClose = $derived(
 		attentionTenants.filter((item) => item.needsClose).length
@@ -240,6 +260,14 @@
 							<span>{m.dashboard_reviewPortfolioUnmatched()}</span>
 						</div>
 						<div>
+							<strong>{totalMissingEvidence}</strong>
+							<span>{m.dashboard_reviewPortfolioEvidenceMissing()}</span>
+						</div>
+						<div>
+							<strong>{totalPendingEvidence}</strong>
+							<span>{m.dashboard_reviewPortfolioEvidencePending()}</span>
+						</div>
+						<div>
 							<strong>{tenantsNeedingClose}</strong>
 							<span>{m.dashboard_reviewPortfolioCloseDueCount()}</span>
 						</div>
@@ -273,6 +301,12 @@
 											{#if item.unmatchedCount > 0}
 												<span class="portfolio-pill">{item.unmatchedCount} {m.dashboard_reviewPortfolioBankingTag()}</span>
 											{/if}
+											{#if item.missingEvidenceCount > 0}
+												<span class="portfolio-pill portfolio-pill-alert">{item.missingEvidenceCount} {m.dashboard_reviewPortfolioEvidenceMissingTag()}</span>
+											{/if}
+											{#if item.pendingEvidenceCount > 0}
+												<span class="portfolio-pill">{item.pendingEvidenceCount} {m.dashboard_reviewPortfolioEvidencePendingTag()}</span>
+											{/if}
 											{#if item.needsClose}
 												<span class="portfolio-pill portfolio-pill-alert">{m.dashboard_reviewPortfolioCloseTag()}</span>
 											{/if}
@@ -282,6 +316,14 @@
 										</div>
 
 										<p>{getCloseStatusLabel(item)}</p>
+										{#if item.missingEvidenceCount > 0 || item.pendingEvidenceCount > 0}
+											<p class="portfolio-evidence-note">
+												{m.dashboard_reviewPortfolioEvidenceStatus({
+													missing: item.missingEvidenceCount.toString(),
+													pending: item.pendingEvidenceCount.toString()
+												})}
+											</p>
+										{/if}
 
 										{#if item.lastCloseEvent}
 											<div class="portfolio-list-meta">
@@ -453,6 +495,11 @@
 	.portfolio-list-side {
 		display: grid;
 		gap: 0.5rem;
+	}
+
+	.portfolio-evidence-note {
+		font-size: 0.88rem;
+		color: rgba(83, 63, 48, 0.72);
 	}
 
 	.portfolio-tenant-head {

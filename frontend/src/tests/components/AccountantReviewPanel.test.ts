@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import Decimal from 'decimal.js';
 import { baseLocale, setLocale } from '$lib/paraglide/runtime.js';
 import type { Tenant } from '$lib/api';
@@ -9,6 +9,8 @@ const { apiMock } = vi.hoisted(() => ({
 		getOverdueInvoices: vi.fn(),
 		listBankAccounts: vi.fn(),
 		listBankTransactions: vi.fn(),
+		listDocumentReviewSummaries: vi.fn(),
+		reviewBankTransaction: vi.fn(),
 		listPeriodCloseEvents: vi.fn(),
 		listJournalEntries: vi.fn()
 	}
@@ -102,7 +104,19 @@ describe('AccountantReviewPanel', () => {
 				amount: new Decimal('-550'),
 				currency: 'EUR',
 				status: 'UNMATCHED',
+				follow_up_status: 'NONE',
 				created_at: '2026-02-08T00:00:00Z'
+			}
+		]);
+		apiMock.listDocumentReviewSummaries.mockResolvedValue([
+			{
+				entity_type: 'bank_transaction',
+				entity_id: 'tx-1',
+				total_count: 1,
+				pending_review_count: 1,
+				reviewed_count: 0,
+				missing_evidence: false,
+				has_pending_review: true
 			}
 		]);
 		apiMock.listPeriodCloseEvents.mockResolvedValue([
@@ -141,6 +155,21 @@ describe('AccountantReviewPanel', () => {
 				created_by: 'user-1'
 			}
 		]);
+		apiMock.reviewBankTransaction.mockResolvedValue({
+			id: 'tx-1',
+			tenant_id: 'tenant-1',
+			bank_account_id: 'bank-1',
+			transaction_date: '2026-02-08',
+			description: 'Unknown transfer',
+			amount: new Decimal('-550'),
+			currency: 'EUR',
+			status: 'UNMATCHED',
+			follow_up_status: 'EVIDENCE_REQUIRED',
+			review_note: 'Request signed receipt',
+			reviewed_by: 'user-1',
+			reviewed_at: '2026-02-09T09:00:00Z',
+			created_at: '2026-02-08T00:00:00Z'
+		});
 	});
 
 	it('loads and renders the accountant review queues', async () => {
@@ -160,10 +189,12 @@ describe('AccountantReviewPanel', () => {
 		expect(screen.getByText('Review the items that still need an accountant decision before the next close or filing window.')).toBeInTheDocument();
 		expect(screen.getByText('INV-001')).toBeInTheDocument();
 		expect(screen.getByText('Unknown transfer')).toBeInTheDocument();
+		expect(screen.getAllByText('Evidence pending review').length).toBeGreaterThan(0);
 		expect(screen.getByText('Month-end accrual')).toBeInTheDocument();
 		expect(screen.getAllByText('Closed').length).toBeGreaterThan(0);
 		expect(screen.getByRole('link', { name: 'Open reminders' })).toHaveAttribute('href', '/invoices/reminders?tenant=tenant-1');
 		expect(apiMock.listBankTransactions).toHaveBeenCalledWith('tenant-1', 'bank-1', { status: 'UNMATCHED' });
+		expect(apiMock.listDocumentReviewSummaries).toHaveBeenCalledWith('tenant-1', 'bank_transaction', ['tx-1']);
 	});
 
 	it('shows empty-state guidance when no review items are pending', async () => {
@@ -175,6 +206,7 @@ describe('AccountantReviewPanel', () => {
 			invoices: []
 		});
 		apiMock.listBankTransactions.mockResolvedValue([]);
+		apiMock.listDocumentReviewSummaries.mockResolvedValue([]);
 		apiMock.listPeriodCloseEvents.mockResolvedValue([]);
 		apiMock.listJournalEntries.mockResolvedValue([]);
 
@@ -190,5 +222,30 @@ describe('AccountantReviewPanel', () => {
 		expect(screen.getByText('No close or reopen actions have been recorded yet.')).toBeInTheDocument();
 		expect(screen.getByText('No recent journal entries to review yet.')).toBeInTheDocument();
 		expect(screen.getByText('No periods locked yet')).toBeInTheDocument();
+	});
+
+	it('saves follow-up updates from the review queue', async () => {
+		render(AccountantReviewPanel, {
+			tenant: createTenant()
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText('Unknown transfer')).toBeInTheDocument();
+		});
+
+		await fireEvent.change(screen.getByLabelText('Follow-up'), {
+			target: { value: 'EVIDENCE_REQUIRED' }
+		});
+		await fireEvent.input(screen.getByLabelText('Review note'), {
+			target: { value: 'Request signed receipt' }
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Save review' }));
+
+		await waitFor(() => {
+			expect(apiMock.reviewBankTransaction).toHaveBeenCalledWith('tenant-1', 'tx-1', {
+				follow_up_status: 'EVIDENCE_REQUIRED',
+				review_note: 'Request signed receipt'
+			});
+		});
 	});
 });

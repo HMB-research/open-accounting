@@ -303,7 +303,9 @@ describe("API Client - Core Functionality", () => {
       const result = await api.listPeriodCloseEvents("tenant-123", 10);
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/v1/tenants/tenant-123/period-close-events?limit=10"),
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/period-close-events?limit=10",
+        ),
         expect.objectContaining({ method: "GET" }),
       );
       expect(result).toHaveLength(1);
@@ -315,7 +317,11 @@ describe("API Client - Core Functionality", () => {
         status: 200,
         json: async () => ({
           tenant: { id: "tenant-123", name: "Tenant" },
-          event: { id: "evt-1", action: "close", period_end_date: "2026-01-31" },
+          event: {
+            id: "evt-1",
+            action: "close",
+            period_end_date: "2026-01-31",
+          },
         }),
       });
 
@@ -339,7 +345,11 @@ describe("API Client - Core Functionality", () => {
         status: 200,
         json: async () => ({
           tenant: { id: "tenant-123", name: "Tenant" },
-          event: { id: "evt-2", action: "reopen", period_end_date: "2026-01-31" },
+          event: {
+            id: "evt-2",
+            action: "reopen",
+            period_end_date: "2026-01-31",
+          },
         }),
       });
 
@@ -358,6 +368,57 @@ describe("API Client - Core Functionality", () => {
       expect(result.event.action).toBe("reopen");
     });
 
+    it("should load year-end close status", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          fiscal_year_label: "2025",
+          period_end_date: "2025-12-31",
+          carry_forward_ready: true,
+        }),
+      });
+
+      const result = await api.getYearEndCloseStatus(
+        "tenant-123",
+        "2025-12-31",
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/year-end-close-status?period_end_date=2025-12-31",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result.carry_forward_ready).toBe(true);
+    });
+
+    it("should create a year-end carry-forward", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          journal_entry: { id: "je-1", entry_number: "JE-00100" },
+          status: { existing_carry_forward: { id: "je-1" } },
+        }),
+      });
+
+      const result = await api.createYearEndCarryForward("tenant-123", {
+        period_end_date: "2025-12-31",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/year-end-carry-forward",
+        ),
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining("2025-12-31"),
+        }),
+      );
+      expect(result.journal_entry.entry_number).toBe("JE-00100");
+    });
+
     it("should list recent journal entries", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -368,7 +429,9 @@ describe("API Client - Core Functionality", () => {
       const result = await api.listJournalEntries("tenant-123", 25);
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/v1/tenants/tenant-123/journal-entries?limit=25"),
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/journal-entries?limit=25",
+        ),
         expect.objectContaining({ method: "GET" }),
       );
       expect(result[0].entry_number).toBe("JE-001");
@@ -378,27 +441,75 @@ describe("API Client - Core Functionality", () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => [{ id: "doc-1", entity_type: "invoice", entity_id: "inv-1" }],
+        json: async () => [
+          { id: "doc-1", entity_type: "invoice", entity_id: "inv-1" },
+        ],
       });
 
       const result = await api.listDocuments("tenant-123", "invoice", "inv-1");
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/v1/tenants/tenant-123/documents?entity_type=invoice&entity_id=inv-1"),
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/documents?entity_type=invoice&entity_id=inv-1",
+        ),
         expect.objectContaining({ method: "GET" }),
       );
       expect(result[0].id).toBe("doc-1");
+    });
+
+    it("should list document review summaries", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            entity_id: "tx-1",
+            missing_evidence: true,
+            pending_review_count: 0,
+          },
+        ],
+      });
+
+      const result = await api.listDocumentReviewSummaries(
+        "tenant-123",
+        "bank_transaction",
+        ["tx-1", "tx-2"],
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/documents/review-summary",
+        ),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            entity_type: "bank_transaction",
+            entity_ids: ["tx-1", "tx-2"],
+          }),
+        }),
+      );
+      expect(result[0].entity_id).toBe("tx-1");
     });
 
     it("should upload documents with multipart form data", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 201,
-        json: async () => ({ id: "doc-1", entity_type: "payment", entity_id: "pay-1" }),
+        json: async () => ({
+          id: "doc-1",
+          entity_type: "payment",
+          entity_id: "pay-1",
+        }),
       });
 
-      const file = new File(["receipt"], "receipt.pdf", { type: "application/pdf" });
-      await api.uploadDocument("tenant-123", "payment", "pay-1", file);
+      const file = new File(["receipt"], "receipt.pdf", {
+        type: "application/pdf",
+      });
+      await api.uploadDocument("tenant-123", "payment", "pay-1", file, {
+        document_type: "receipt",
+        notes: "Customer supplied receipt",
+        retention_until: "2027-03-31",
+      });
 
       expect(mockFetch).toHaveBeenCalledTimes(1);
       const [, requestInit] = mockFetch.mock.calls[0] as [string, RequestInit];
@@ -407,7 +518,31 @@ describe("API Client - Core Functionality", () => {
       const formData = requestInit.body as FormData;
       expect(formData.get("entity_type")).toBe("payment");
       expect(formData.get("entity_id")).toBe("pay-1");
+      expect(formData.get("document_type")).toBe("receipt");
+      expect(formData.get("notes")).toBe("Customer supplied receipt");
+      expect(formData.get("retention_until")).toBe("2027-03-31");
       expect(formData.get("file")).toBe(file);
+    });
+
+    it("should mark a document as reviewed", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "doc-1",
+          review_status: "REVIEWED",
+        }),
+      });
+
+      const result = await api.markDocumentReviewed("tenant-123", "doc-1");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/documents/doc-1/mark-reviewed",
+        ),
+        expect.objectContaining({ method: "POST" }),
+      );
+      expect(result.review_status).toBe("REVIEWED");
     });
 
     it("should delete a document", async () => {
@@ -430,9 +565,15 @@ describe("API Client - Core Functionality", () => {
       api.setTokens("valid-token", "refresh-token");
 
       const blob = new Blob(["receipt"]);
-      const createObjectURL = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:doc-1");
-      const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
-      const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+      const createObjectURL = vi
+        .spyOn(URL, "createObjectURL")
+        .mockReturnValue("blob:doc-1");
+      const revokeObjectURL = vi
+        .spyOn(URL, "revokeObjectURL")
+        .mockImplementation(() => {});
+      const click = vi
+        .spyOn(HTMLAnchorElement.prototype, "click")
+        .mockImplementation(() => {});
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -443,7 +584,9 @@ describe("API Client - Core Functionality", () => {
       await api.downloadDocument("tenant-123", "doc-1", "receipt.pdf");
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/v1/tenants/tenant-123/documents/doc-1/download"),
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/documents/doc-1/download",
+        ),
         expect.objectContaining({
           method: "GET",
           headers: expect.objectContaining({
@@ -1650,6 +1793,35 @@ describe("API Client - Core Functionality", () => {
       expect(result.status).toBe("unmatched");
     });
 
+    it("should update bank transaction review", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "txn-1",
+          follow_up_status: "EVIDENCE_REQUIRED",
+          review_note: "Request bank slip",
+        }),
+      });
+
+      const result = await api.reviewBankTransaction("tenant-123", "txn-1", {
+        follow_up_status: "EVIDENCE_REQUIRED",
+        review_note: "Request bank slip",
+      });
+
+      expect(result.follow_up_status).toBe("EVIDENCE_REQUIRED");
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:8080/api/v1/tenants/tenant-123/bank-transactions/txn-1/review",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            follow_up_status: "EVIDENCE_REQUIRED",
+            review_note: "Request bank slip",
+          }),
+        }),
+      );
+    });
+
     it("should create payment from transaction", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -1906,7 +2078,9 @@ describe("API Client - Core Functionality", () => {
       );
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/v1/tenants/tenant-123/invoices/reminders"),
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/invoices/reminders",
+        ),
         expect.objectContaining({
           method: "POST",
           body: JSON.stringify({
@@ -1937,7 +2111,9 @@ describe("API Client - Core Functionality", () => {
       );
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/v1/tenants/tenant-123/invoices/reminders/bulk"),
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/invoices/reminders/bulk",
+        ),
         expect.objectContaining({
           method: "POST",
           body: JSON.stringify({
@@ -1959,7 +2135,9 @@ describe("API Client - Core Functionality", () => {
       const result = await api.getInvoiceReminderHistory("tenant-123", "inv-1");
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/v1/tenants/tenant-123/invoices/inv-1/reminders"),
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/invoices/inv-1/reminders",
+        ),
         expect.any(Object),
       );
       expect(result).toHaveLength(1);
@@ -1999,6 +2177,35 @@ describe("API Client - Core Functionality", () => {
       });
 
       expect(result.first_name).toBe("Jane");
+    });
+
+    it("should import employees", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          rows_processed: 2,
+          employees_created: 2,
+          salaries_created: 1,
+          rows_skipped: 0,
+        }),
+      });
+
+      const result = await api.importEmployees("tenant-123", {
+        file_name: "employees.csv",
+        csv_content:
+          "employee_number,first_name,last_name,start_date\nEMP-001,Jane,Doe,2026-01-15",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/employees/import"),
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining("employees.csv"),
+        }),
+      );
+      expect(result.employees_created).toBe(2);
+      expect(result.salaries_created).toBe(1);
     });
 
     it("should get employee", async () => {
@@ -2203,7 +2410,9 @@ describe("API Client - Core Functionality", () => {
       const result = await api.listCostCenters("tenant-123", true);
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/v1/tenants/tenant-123/cost-centers?active_only=true"),
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/cost-centers?active_only=true",
+        ),
         expect.any(Object),
       );
       expect(result).toHaveLength(1);
@@ -2311,7 +2520,9 @@ describe("API Client - Core Functionality", () => {
       const result = await api.listAbsenceTypes("tenant-123", true);
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/v1/tenants/tenant-123/absence-types?active_only=true"),
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/absence-types?active_only=true",
+        ),
         expect.any(Object),
       );
       expect(result).toHaveLength(1);
@@ -2339,7 +2550,9 @@ describe("API Client - Core Functionality", () => {
       const result = await api.listLeaveBalances("tenant-123", "emp-1", 2024);
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/v1/tenants/tenant-123/employees/emp-1/leave-balances?year=2024"),
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/employees/emp-1/leave-balances?year=2024",
+        ),
         expect.any(Object),
       );
       expect(result[0].remaining_days.toString()).toBe("10");
@@ -2359,7 +2572,9 @@ describe("API Client - Core Functionality", () => {
       );
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/v1/tenants/tenant-123/employees/emp-1/leave-balances/2024"),
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/employees/emp-1/leave-balances/2024",
+        ),
         expect.any(Object),
       );
       expect(result).toHaveLength(1);
@@ -2409,7 +2624,9 @@ describe("API Client - Core Functionality", () => {
       const result = await api.listLeaveRecords("tenant-123", "emp-1", 2024);
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/v1/tenants/tenant-123/leave-records?employee_id=emp-1&year=2024"),
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/leave-records?employee_id=emp-1&year=2024",
+        ),
         expect.any(Object),
       );
       expect(result).toHaveLength(1);
@@ -2472,7 +2689,9 @@ describe("API Client - Core Functionality", () => {
       );
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/v1/tenants/tenant-123/leave-records/leave-1/reject"),
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/leave-records/leave-1/reject",
+        ),
         expect.objectContaining({
           method: "POST",
           body: JSON.stringify({ reason: "Missing approval" }),

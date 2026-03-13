@@ -32,6 +32,10 @@ func (s *Service) UploadDocument(ctx context.Context, schemaName, tenantID strin
 	if err != nil {
 		return nil, err
 	}
+	documentType, err := normalizeDocumentType(req.DocumentType)
+	if err != nil {
+		return nil, err
+	}
 
 	entityID := strings.TrimSpace(req.EntityID)
 	if entityID == "" {
@@ -61,15 +65,19 @@ func (s *Service) UploadDocument(ctx context.Context, schemaName, tenantID strin
 	}
 
 	doc := &Document{
-		ID:          uuid.New().String(),
-		TenantID:    tenantID,
-		EntityType:  entityType,
-		EntityID:    entityID,
-		FileName:    fileName,
-		ContentType: normalizeContentType(req.ContentType, fileName),
-		FileSize:    req.FileSize,
-		UploadedBy:  strings.TrimSpace(req.UploadedBy),
-		CreatedAt:   time.Now().UTC(),
+		ID:             uuid.New().String(),
+		TenantID:       tenantID,
+		EntityType:     entityType,
+		EntityID:       entityID,
+		DocumentType:   documentType,
+		FileName:       fileName,
+		ContentType:    normalizeContentType(req.ContentType, fileName),
+		FileSize:       req.FileSize,
+		Notes:          strings.TrimSpace(req.Notes),
+		RetentionUntil: req.RetentionUntil,
+		ReviewStatus:   ReviewStatusPending,
+		UploadedBy:     strings.TrimSpace(req.UploadedBy),
+		CreatedAt:      time.Now().UTC(),
 	}
 	doc.StorageKey = buildStorageKey(tenantID, doc.CreatedAt, doc.ID, fileName)
 
@@ -95,6 +103,75 @@ func (s *Service) ListDocuments(ctx context.Context, schemaName, tenantID, entit
 	}
 
 	return s.repo.ListDocuments(ctx, schemaName, tenantID, normalizedType, strings.TrimSpace(entityID))
+}
+
+func (s *Service) ListReviewSummaries(ctx context.Context, schemaName, tenantID, entityType string, entityIDs []string) ([]ReviewSummary, error) {
+	normalizedType, err := normalizeEntityType(entityType)
+	if err != nil {
+		return nil, err
+	}
+
+	normalizedIDs := make([]string, 0, len(entityIDs))
+	seen := make(map[string]struct{}, len(entityIDs))
+	for _, entityID := range entityIDs {
+		trimmed := strings.TrimSpace(entityID)
+		if trimmed == "" {
+			continue
+		}
+		if _, exists := seen[trimmed]; exists {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalizedIDs = append(normalizedIDs, trimmed)
+	}
+
+	if len(normalizedIDs) == 0 {
+		return []ReviewSummary{}, nil
+	}
+
+	summaryMap, err := s.repo.ListReviewSummaries(ctx, schemaName, tenantID, normalizedType, normalizedIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]ReviewSummary, 0, len(normalizedIDs))
+	for _, entityID := range normalizedIDs {
+		summary, ok := summaryMap[entityID]
+		if !ok {
+			summary = ReviewSummary{
+				EntityType:         normalizedType,
+				EntityID:           entityID,
+				MissingEvidence:    true,
+				HasPendingReview:   false,
+				TotalCount:         0,
+				PendingReviewCount: 0,
+				ReviewedCount:      0,
+			}
+		}
+		result = append(result, summary)
+	}
+
+	return result, nil
+}
+
+func (s *Service) MarkDocumentReviewed(ctx context.Context, schemaName, tenantID, documentID, reviewedBy string) (*Document, error) {
+	if strings.TrimSpace(reviewedBy) == "" {
+		return nil, fmt.Errorf("reviewed by user is required")
+	}
+
+	doc, err := s.repo.GetDocumentByID(ctx, schemaName, tenantID, strings.TrimSpace(documentID))
+	if err != nil {
+		return nil, err
+	}
+	if doc.ReviewStatus == ReviewStatusReviewed {
+		return doc, nil
+	}
+
+	if err := s.repo.MarkDocumentReviewed(ctx, schemaName, tenantID, strings.TrimSpace(documentID), strings.TrimSpace(reviewedBy), time.Now().UTC()); err != nil {
+		return nil, err
+	}
+
+	return s.repo.GetDocumentByID(ctx, schemaName, tenantID, strings.TrimSpace(documentID))
 }
 
 func (s *Service) OpenDocument(ctx context.Context, schemaName, tenantID, documentID string) (*Document, io.ReadCloser, error) {
@@ -132,8 +209,33 @@ func normalizeEntityType(value string) (string, error) {
 		return EntityTypeJournalEntry, nil
 	case EntityTypePayment:
 		return EntityTypePayment, nil
+	case EntityTypeBankTxn:
+		return EntityTypeBankTxn, nil
+	case EntityTypeAsset:
+		return EntityTypeAsset, nil
 	default:
 		return "", fmt.Errorf("unsupported document entity type")
+	}
+}
+
+func normalizeDocumentType(value string) (string, error) {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case "", DocumentTypeSupportingDocument:
+		return DocumentTypeSupportingDocument, nil
+	case DocumentTypeReceipt:
+		return DocumentTypeReceipt, nil
+	case DocumentTypeReconciliation:
+		return DocumentTypeReconciliation, nil
+	case DocumentTypeContract:
+		return DocumentTypeContract, nil
+	case DocumentTypeAssetRecord:
+		return DocumentTypeAssetRecord, nil
+	case DocumentTypeTaxSupport:
+		return DocumentTypeTaxSupport, nil
+	case DocumentTypeOther:
+		return DocumentTypeOther, nil
+	default:
+		return "", fmt.Errorf("unsupported document type")
 	}
 }
 

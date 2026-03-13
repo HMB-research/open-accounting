@@ -18,9 +18,9 @@
 > **⚠️ Development Status**
 > This project is under active development and not yet production-ready. APIs may change, and features may be incomplete. Contributions and feedback welcome!
 >
-> Verified locally on 2026-03-12:
+> Verified locally on 2026-03-13:
 > `go test ./...`, `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)`, `cd frontend && bun run test`, and `cd frontend && bun run test:e2e:smoke` pass.
-> Production hardening, broader migration imports, fiscal-year close/carry-forward work, deeper accountant exception actions, and broader document retention/reconciliation workflows are still in progress.
+> Production hardening, historical payroll migration, deeper accountant exception actions, and broader document retention/reconciliation workflows are still in progress.
 
 CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API token once and then uses that token for subsequent reads and mutations.
 
@@ -212,6 +212,8 @@ go run ./cmd/oa auth init \
 
 go run ./cmd/oa accounts list
 go run ./cmd/oa contacts import --file ./contacts.csv
+go run ./cmd/oa employees import --file ./employees.csv
+go run ./cmd/oa documents upload --entity-type bank_transaction --entity-id <transaction-id> --file ./evidence.pdf --document-type reconciliation_evidence
 go run ./cmd/oa journal import-opening-balances --file ./opening-balances.csv --entry-date 2026-01-01
 ```
 
@@ -305,15 +307,15 @@ open-accounting/
 - [x] Order management
 - [x] Fixed assets with depreciation tracking
 - [x] Tenant-scoped API token auth and Go CLI
-- [x] CSV import for chart of accounts, contacts, invoices, and opening balances
+- [x] CSV import for chart of accounts, contacts, employees, invoices, and opening balances
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings
-- [x] Document attachments for invoices, journal entries, and payments
+- [x] Fiscal-year close readiness and retained-earnings carry-forward workflow
+- [x] Document attachments for invoices, journal entries, payments, bank transactions, and fixed assets
 
 ### Still missing for reliable production use
-- [ ] Invoice, employee, and external migration imports
-- [ ] Fiscal year close checklist and carry-forward workflow
-- [ ] Broader document retention, reconciliation evidence, and approval workflows
+- [ ] Historical payroll and broader external migration imports
+- [ ] Full document approval workflow, retention admin controls, and broader evidence policy enforcement
 - [ ] Backup/restore verification and stronger auth/session controls
 - [ ] E-invoice, direct bank feeds, SEPA initiation, and automatic e-MTA submission
 

@@ -18,6 +18,7 @@ type RepositoryInterface interface {
 	CreateAccount(ctx context.Context, schemaName string, a *Account) error
 	ListJournalEntries(ctx context.Context, schemaName, tenantID string, limit int) ([]JournalEntry, error)
 	GetJournalEntryByID(ctx context.Context, schemaName, tenantID, entryID string) (*JournalEntry, error)
+	GetJournalEntryBySource(ctx context.Context, schemaName, tenantID, sourceType, sourceID string) (*JournalEntry, error)
 	CreateJournalEntry(ctx context.Context, schemaName string, je *JournalEntry) error
 	CreateJournalEntryTx(ctx context.Context, schemaName string, tx pgx.Tx, je *JournalEntry) error
 	UpdateJournalEntryStatus(ctx context.Context, schemaName, tenantID, entryID string, status JournalEntryStatus, userID string) error
@@ -237,6 +238,29 @@ func (r *Repository) GetJournalEntryByID(ctx context.Context, schemaName, tenant
 	return &je, nil
 }
 
+// GetJournalEntryBySource retrieves the most recent non-voided journal entry for a source pair.
+func (r *Repository) GetJournalEntryBySource(ctx context.Context, schemaName, tenantID, sourceType, sourceID string) (*JournalEntry, error) {
+	var entryID string
+	err := r.db.QueryRow(ctx, fmt.Sprintf(`
+		SELECT id
+		FROM %s.journal_entries
+		WHERE tenant_id = $1
+			AND source_type = $2
+			AND source_id = $3
+			AND status != $4
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, schemaName), tenantID, sourceType, sourceID, StatusVoided).Scan(&entryID)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get journal entry by source: %w", err)
+	}
+
+	return r.GetJournalEntryByID(ctx, schemaName, tenantID, entryID)
+}
+
 // CreateJournalEntry creates a new journal entry with lines
 func (r *Repository) CreateJournalEntry(ctx context.Context, schemaName string, je *JournalEntry) error {
 	tx, err := r.db.Begin(ctx)
@@ -435,7 +459,7 @@ func (r *Repository) GetPeriodBalances(ctx context.Context, schemaName, tenantID
 			LEFT JOIN %s.journal_entry_lines jel ON jel.account_id = a.id AND jel.tenant_id = a.tenant_id
 			LEFT JOIN %s.journal_entries je ON je.id = jel.journal_entry_id
 			WHERE a.tenant_id = $1
-			  AND (je.id IS NULL OR (je.entry_date >= $2 AND je.entry_date <= $3 AND je.status = 'POSTED'))
+			  AND (je.id IS NULL OR (je.entry_date >= $2 AND je.entry_date <= $3 AND je.status = 'POSTED' AND COALESCE(je.source_type, '') != $4))
 			  AND a.account_type IN ('REVENUE', 'EXPENSE')
 			GROUP BY a.id, a.code, a.name, a.account_type
 		)
@@ -453,7 +477,7 @@ func (r *Repository) GetPeriodBalances(ctx context.Context, schemaName, tenantID
 		FROM period_totals
 		WHERE total_debits != 0 OR total_credits != 0
 		ORDER BY account_type DESC, account_code
-	`, schemaName, schemaName, schemaName), tenantID, startDate, endDate)
+	`, schemaName, schemaName, schemaName), tenantID, startDate, endDate, SourceTypeYearEndCarryForward)
 	if err != nil {
 		return nil, fmt.Errorf("get period balances: %w", err)
 	}

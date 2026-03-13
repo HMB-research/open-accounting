@@ -11,6 +11,8 @@ import (
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/payroll"
 )
 
 func TestPrintJSON(t *testing.T) {
@@ -58,6 +60,32 @@ func TestPrintTables(t *testing.T) {
 	}})
 	assert.Contains(t, contactBuf.String(), "NAME")
 	assert.Contains(t, contactBuf.String(), "Acme Corp")
+
+	var employeeBuf bytes.Buffer
+	printEmployeesTable(&employeeBuf, []payroll.Employee{{
+		ID:             "employee-1",
+		EmployeeNumber: "EMP-001",
+		FirstName:      "Mari",
+		LastName:       "Maasikas",
+		EmploymentType: payroll.EmploymentFullTime,
+		Email:          "mari@example.com",
+		IsActive:       true,
+	}})
+	assert.Contains(t, employeeBuf.String(), "NUMBER")
+	assert.Contains(t, employeeBuf.String(), "Mari Maasikas")
+
+	var documentBuf bytes.Buffer
+	printDocumentsTable(&documentBuf, []documents.Document{{
+		ID:           "doc-1",
+		EntityType:   documents.EntityTypeBankTxn,
+		EntityID:     "txn-1",
+		DocumentType: documents.DocumentTypeReconciliation,
+		FileName:     "statement.pdf",
+		ReviewStatus: documents.ReviewStatusPending,
+		CreatedAt:    now,
+	}})
+	assert.Contains(t, documentBuf.String(), "ENTITY")
+	assert.Contains(t, documentBuf.String(), "statement.pdf")
 }
 
 func TestFormatHelpers(t *testing.T) {

@@ -424,6 +424,25 @@ class ApiClient {
     );
   }
 
+  async getYearEndCloseStatus(tenantId: string, periodEndDate: string) {
+    const query = buildQuery({ period_end_date: periodEndDate });
+    return this.request<YearEndCloseStatus>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/year-end-close-status${query}`,
+    );
+  }
+
+  async createYearEndCarryForward(
+    tenantId: string,
+    data: CreateYearEndCarryForwardRequest,
+  ) {
+    return this.request<YearEndCarryForwardResult>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/year-end-carry-forward`,
+      data,
+    );
+  }
+
   async listDocuments(
     tenantId: string,
     entityType: DocumentAttachment["entity_type"],
@@ -436,21 +455,57 @@ class ApiClient {
     );
   }
 
+  async listDocumentReviewSummaries(
+    tenantId: string,
+    entityType: DocumentAttachment["entity_type"],
+    entityIds: string[],
+  ) {
+    return this.request<DocumentReviewSummary[]>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/documents/review-summary`,
+      {
+        entity_type: entityType,
+        entity_ids: entityIds,
+      },
+    );
+  }
+
   async uploadDocument(
     tenantId: string,
     entityType: DocumentAttachment["entity_type"],
     entityId: string,
     file: File,
+    options?: {
+      document_type?: DocumentAttachment["document_type"];
+      notes?: string;
+      retention_until?: string;
+    },
   ) {
     const formData = new FormData();
     formData.set("entity_type", entityType);
     formData.set("entity_id", entityId);
     formData.set("file", file);
+    if (options?.document_type) {
+      formData.set("document_type", options.document_type);
+    }
+    if (options?.notes) {
+      formData.set("notes", options.notes);
+    }
+    if (options?.retention_until) {
+      formData.set("retention_until", options.retention_until);
+    }
 
     return this.request<DocumentAttachment>(
       "POST",
       `/api/v1/tenants/${tenantId}/documents`,
       formData,
+    );
+  }
+
+  async markDocumentReviewed(tenantId: string, documentId: string) {
+    return this.request<DocumentAttachment>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/documents/${documentId}/mark-reviewed`,
     );
   }
 
@@ -461,7 +516,11 @@ class ApiClient {
     );
   }
 
-  async downloadDocument(tenantId: string, documentId: string, fileName: string) {
+  async downloadDocument(
+    tenantId: string,
+    documentId: string,
+    fileName: string,
+  ) {
     const response = await fetch(
       `${getApiBase()}/api/v1/tenants/${tenantId}/documents/${documentId}/download`,
       {
@@ -473,7 +532,7 @@ class ApiClient {
     );
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({} as ApiError));
+      const error = await response.json().catch(() => ({}) as ApiError);
       throw new Error(error.error || "Failed to download document");
     }
 
@@ -1630,6 +1689,18 @@ class ApiClient {
     );
   }
 
+  async reviewBankTransaction(
+    tenantId: string,
+    transactionId: string,
+    data: UpdateBankTransactionReviewRequest,
+  ) {
+    return this.request<BankTransaction>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/bank-transactions/${transactionId}/review`,
+      data,
+    );
+  }
+
   async createPaymentFromTransaction(tenantId: string, transactionId: string) {
     return this.request<{ payment_id: string }>(
       "POST",
@@ -1875,6 +1946,14 @@ class ApiClient {
     return this.request<Employee>(
       "POST",
       `/api/v1/tenants/${tenantId}/employees`,
+      data,
+    );
+  }
+
+  async importEmployees(tenantId: string, data: ImportEmployeesRequest) {
+    return this.request<ImportEmployeesResult>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/employees/import`,
       data,
     );
   }
@@ -2361,16 +2440,86 @@ export interface PeriodCloseResponse {
   event: PeriodCloseEvent;
 }
 
+export interface AccountSummary {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface JournalEntrySummary {
+  id: string;
+  entry_number: string;
+  entry_date: string;
+  description: string;
+  reference?: string;
+  status: "DRAFT" | "POSTED" | "VOIDED";
+}
+
+export interface YearEndCloseStatus {
+  period_end_date: string;
+  fiscal_year_label: string;
+  fiscal_year_start_date: string;
+  fiscal_year_end_date: string;
+  carry_forward_date: string;
+  locked_through_date?: string | null;
+  is_fiscal_year_end: boolean;
+  period_closed: boolean;
+  has_profit_and_loss_activity: boolean;
+  carry_forward_needed: boolean;
+  carry_forward_ready: boolean;
+  has_retained_earnings_account: boolean;
+  retained_earnings_account?: AccountSummary | null;
+  net_income: Decimal;
+  existing_carry_forward?: JournalEntrySummary | null;
+}
+
+export interface CreateYearEndCarryForwardRequest {
+  period_end_date: string;
+}
+
+export interface YearEndCarryForwardResult {
+  journal_entry: JournalEntry;
+  status: YearEndCloseStatus;
+}
+
 export interface DocumentAttachment {
   id: string;
   tenant_id: string;
-  entity_type: "invoice" | "journal_entry" | "payment";
+  entity_type:
+    | "invoice"
+    | "journal_entry"
+    | "payment"
+    | "bank_transaction"
+    | "asset";
   entity_id: string;
+  document_type:
+    | "supporting_document"
+    | "receipt"
+    | "reconciliation_evidence"
+    | "contract"
+    | "asset_record"
+    | "tax_support"
+    | "other";
   file_name: string;
   content_type: string;
   file_size: number;
+  notes?: string;
+  retention_until?: string;
+  review_status: "PENDING" | "REVIEWED";
+  reviewed_by?: string;
+  reviewed_at?: string;
   uploaded_by: string;
   created_at: string;
+}
+
+export interface DocumentReviewSummary {
+  entity_type: DocumentAttachment["entity_type"];
+  entity_id: string;
+  total_count: number;
+  pending_review_count: number;
+  reviewed_count: number;
+  missing_evidence: boolean;
+  has_pending_review: boolean;
 }
 
 export interface TenantMembership {
@@ -3576,6 +3725,7 @@ export interface AutomatedReminderResult {
 
 // Banking types
 export type TransactionStatus = "UNMATCHED" | "MATCHED" | "RECONCILED";
+export type FollowUpStatus = "NONE" | "EVIDENCE_REQUIRED" | "READY_TO_MATCH";
 export type ReconciliationStatus = "IN_PROGRESS" | "COMPLETED";
 
 export interface BankAccount {
@@ -3606,10 +3756,19 @@ export interface BankTransaction {
   counterparty_name?: string;
   counterparty_account?: string;
   status: TransactionStatus;
+  follow_up_status?: FollowUpStatus;
+  review_note?: string;
+  reviewed_by?: string;
+  reviewed_at?: string;
   matched_payment_id?: string;
   reconciliation_id?: string;
   import_id?: string;
   created_at: string;
+}
+
+export interface UpdateBankTransactionReviewRequest {
+  follow_up_status?: FollowUpStatus;
+  review_note?: string;
 }
 
 export interface BankReconciliation {
@@ -3942,6 +4101,27 @@ export interface UpdateEmployeeRequest {
   basic_exemption_amount?: string;
   funded_pension_rate?: string;
   is_active?: boolean;
+}
+
+export interface ImportEmployeesRequest {
+  csv_content: string;
+  file_name?: string;
+}
+
+export interface ImportEmployeesRowError {
+  row: number;
+  employee_name?: string;
+  employee_number?: string;
+  message: string;
+}
+
+export interface ImportEmployeesResult {
+  file_name?: string;
+  rows_processed: number;
+  employees_created: number;
+  salaries_created: number;
+  rows_skipped: number;
+  errors?: ImportEmployeesRowError[];
 }
 
 export interface SalaryComponent {

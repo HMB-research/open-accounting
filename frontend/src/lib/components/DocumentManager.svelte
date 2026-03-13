@@ -15,12 +15,16 @@
 
 	let documents = $state<DocumentAttachment[]>([]);
 	let selectedFiles = $state<File[]>([]);
+	let selectedDocumentType = $state<DocumentAttachment['document_type']>('supporting_document');
+	let notes = $state('');
+	let retentionUntil = $state('');
 	let isLoading = $state(false);
 	let isUploading = $state(false);
 	let error = $state('');
 
 	$effect(() => {
 		if (open && tenantId && entityId) {
+			selectedDocumentType = defaultDocumentType(entityType);
 			void loadDocuments();
 		}
 	});
@@ -55,9 +59,13 @@
 
 		try {
 			for (const file of selectedFiles) {
-				await api.uploadDocument(tenantId, entityType, entityId, file);
+				await api.uploadDocument(tenantId, entityType, entityId, file, {
+					document_type: selectedDocumentType,
+					notes: notes.trim() || undefined,
+					retention_until: retentionUntil || undefined
+				});
 			}
-			selectedFiles = [];
+			resetUploadState();
 			await loadDocuments();
 		} catch (err) {
 			error = err instanceof Error ? err.message : m.documents_uploadError();
@@ -87,10 +95,26 @@
 		}
 	}
 
+	async function markReviewed(doc: DocumentAttachment) {
+		try {
+			const updated = await api.markDocumentReviewed(tenantId, doc.id);
+			documents = documents.map((item) => (item.id === updated.id ? updated : item));
+		} catch (err) {
+			error = err instanceof Error ? err.message : m.documents_reviewError();
+		}
+	}
+
 	function closeModal() {
-		selectedFiles = [];
-		error = '';
+		resetUploadState();
 		onClose?.();
+	}
+
+	function resetUploadState() {
+		selectedFiles = [];
+		selectedDocumentType = defaultDocumentType(entityType);
+		notes = '';
+		retentionUntil = '';
+		error = '';
 	}
 
 	function formatFileSize(size: number): string {
@@ -105,6 +129,46 @@
 
 	function formatDateTime(value: string): string {
 		return new Date(value).toLocaleString();
+	}
+
+	function formatDate(value: string): string {
+		return new Date(value).toLocaleDateString();
+	}
+
+	function defaultDocumentType(
+		type: DocumentAttachment['entity_type']
+	): DocumentAttachment['document_type'] {
+		switch (type) {
+			case 'bank_transaction':
+				return 'reconciliation_evidence';
+			case 'asset':
+				return 'asset_record';
+			case 'payment':
+				return 'receipt';
+			default:
+				return 'supporting_document';
+		}
+	}
+
+	function getDocumentTypeLabel(
+		type: DocumentAttachment['document_type']
+	): string {
+		switch (type) {
+			case 'supporting_document':
+				return m.documents_typeSupporting();
+			case 'receipt':
+				return m.documents_typeReceipt();
+			case 'reconciliation_evidence':
+				return m.documents_typeReconciliation();
+			case 'contract':
+				return m.documents_typeContract();
+			case 'asset_record':
+				return m.documents_typeAsset();
+			case 'tax_support':
+				return m.documents_typeTax();
+			default:
+				return m.documents_typeOther();
+		}
 	}
 </script>
 
@@ -139,6 +203,28 @@
 				<div class="document-upload-copy">
 					<h3>{m.documents_uploadTitle()}</h3>
 					<p>{m.documents_uploadDesc()}</p>
+				</div>
+				<div class="document-metadata-grid">
+					<div>
+						<label class="label" for="documentType">{m.documents_typeLabel()}</label>
+						<select class="input" id="documentType" bind:value={selectedDocumentType}>
+							<option value="supporting_document">{m.documents_typeSupporting()}</option>
+							<option value="receipt">{m.documents_typeReceipt()}</option>
+							<option value="reconciliation_evidence">{m.documents_typeReconciliation()}</option>
+							<option value="contract">{m.documents_typeContract()}</option>
+							<option value="asset_record">{m.documents_typeAsset()}</option>
+							<option value="tax_support">{m.documents_typeTax()}</option>
+							<option value="other">{m.documents_typeOther()}</option>
+						</select>
+					</div>
+					<div>
+						<label class="label" for="retentionUntil">{m.documents_retentionUntil()}</label>
+						<input class="input" type="date" id="retentionUntil" bind:value={retentionUntil} />
+					</div>
+				</div>
+				<div>
+					<label class="label" for="documentNotes">{m.documents_notesLabel()}</label>
+					<textarea class="input" id="documentNotes" rows="2" bind:value={notes} placeholder={m.documents_notesPlaceholder()}></textarea>
 				</div>
 				<div class="document-upload-controls">
 					<input
@@ -179,13 +265,39 @@
 							<li class="document-item">
 								<div class="document-meta">
 									<strong>{doc.file_name}</strong>
+									<div class="document-badges">
+										<span class="document-badge">{getDocumentTypeLabel(doc.document_type)}</span>
+										<span
+											class="document-badge"
+											class:document-badge-pending={doc.review_status === 'PENDING'}
+											class:document-badge-reviewed={doc.review_status === 'REVIEWED'}
+										>
+											{doc.review_status === 'REVIEWED' ? m.documents_reviewed() : m.documents_pendingReview()}
+										</span>
+									</div>
 									<div class="document-details">
 										<span>{formatFileSize(doc.file_size)}</span>
 										<span>{doc.content_type}</span>
 										<span>{formatDateTime(doc.created_at)}</span>
 									</div>
+									{#if doc.notes}
+										<p class="document-notes">{doc.notes}</p>
+									{/if}
+									<div class="document-details">
+										{#if doc.retention_until}
+											<span>{m.documents_retentionUntilLabel({ date: formatDate(doc.retention_until) })}</span>
+										{/if}
+										{#if doc.review_status === 'REVIEWED' && doc.reviewed_at}
+											<span>{m.documents_reviewedAt({ date: formatDateTime(doc.reviewed_at) })}</span>
+										{/if}
+									</div>
 								</div>
 								<div class="document-actions">
+									{#if doc.review_status !== 'REVIEWED'}
+										<button type="button" class="btn btn-secondary" onclick={() => markReviewed(doc)}>
+											{m.documents_markReviewed()}
+										</button>
+									{/if}
 									<button type="button" class="btn btn-secondary" onclick={() => downloadAttachment(doc)}>
 										{m.documents_downloadAction()}
 									</button>
@@ -252,6 +364,12 @@
 		display: grid;
 		gap: 1rem;
 		background: rgba(255, 255, 255, 0.6);
+	}
+
+	.document-metadata-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 1rem;
 	}
 
 	.document-upload-copy h3,
@@ -330,12 +448,45 @@
 		display: block;
 	}
 
+	.document-badges {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
+	}
+
+	.document-badge {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.2rem 0.55rem;
+		border-radius: 999px;
+		background: rgba(148, 163, 184, 0.14);
+		color: var(--color-text);
+		font-size: 0.78rem;
+	}
+
+	.document-badge-pending {
+		background: rgba(245, 158, 11, 0.16);
+		color: #9a6700;
+	}
+
+	.document-badge-reviewed {
+		background: rgba(34, 197, 94, 0.16);
+		color: #176b34;
+	}
+
 	.document-details {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.75rem;
 		margin-top: 0.35rem;
 		font-size: 0.85rem;
+		color: var(--color-text-muted);
+	}
+
+	.document-notes {
+		margin-top: 0.5rem;
+		font-size: 0.92rem;
 		color: var(--color-text-muted);
 	}
 
@@ -352,6 +503,10 @@
 	}
 
 	@media (max-width: 768px) {
+		.document-metadata-grid {
+			grid-template-columns: 1fr;
+		}
+
 		.document-header,
 		.document-item,
 		.document-upload-controls {

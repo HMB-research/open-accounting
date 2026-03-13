@@ -1,6 +1,6 @@
 # Open Accounting Development Status
 
-> Last updated: 2026-03-12
+> Last updated: 2026-03-13
 > This is the current-state status document. Historical plan docs may be more optimistic than what is verified here.
 
 ## Status Definitions
@@ -15,11 +15,11 @@
 
 ## Verified Engineering Baseline
 
-Local verification completed on 2026-03-12:
+Local verification completed on 2026-03-13:
 
 - `go test ./...` passes
 - `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)` passes against a fresh PostgreSQL database
-- `cd frontend && bun run test` passes with 20 files and 482 tests
+- `cd frontend && bun run test` passes with 21 files and 491 tests
 - `cd frontend && bun run check` passes with 0 errors and 0 warnings
 - `cd frontend && bun run test:e2e:smoke` passes against a fresh locally seeded demo environment
 - Backend integration tests are now blocking in CI
@@ -41,22 +41,22 @@ Still not done:
 | KMD generation/export | `Working` | KMD generation/export exists; direct e-MTA submission does not. |
 | Quotes, orders, fixed assets | `Working` | Features exist and have tests, but accountant-grade polish is still limited. |
 | Multi-tenant auth, RBAC, tenant isolation | `Working` | Core tenant model is in place; auth hardening is still needed for production trust. |
-| CLI and API token automation | `Working` | `cmd/oa` supports token bootstrap, token management, accounts, contacts, invoices, and opening-balance imports using tenant-scoped API tokens. |
-| Chart of accounts, contacts, invoice, and opening-balance imports | `Working` | CSV imports exist in API, web UI, and CLI for core setup and migration data. |
+| CLI and API token automation | `Working` | `cmd/oa` supports token bootstrap, token management, accounts, contacts, employees, invoices, document workflows, and opening-balance imports using tenant-scoped API tokens. |
+| Chart of accounts, contacts, employee, invoice, and opening-balance imports | `Working` | CSV imports exist in API, web UI, and CLI for core setup and migration data, including employee master data plus recurring base salary setup. |
 | Report exports | `Beta` | CSV/XLSX export exists, but the current path is mostly client-side and not yet authoritative. |
 | Cash flow reporting | `Beta` | Present in code and UI, but needs more accountant-grade validation before stronger claims. |
 | Settings and admin workflows | `Beta` | Basic settings exist, but production admin depth is still thin. |
 | Period lock on core write paths | `Working` | Tenant `period_lock_date` blocks core back-dated writes across the main mutation paths. |
-| Close/reopen workflow with audit trail | `Beta` | Explicit close and reopen actions exist in the API and company settings, with history and operator notes. Fiscal-year checklist/carry-forward work is still missing. |
-| Invoice, journal-entry, and payment document attachments | `Beta` | Files can be uploaded, listed, downloaded, and deleted for core accounting records. Reconciliation evidence, approval flow, and retention policy controls are still missing. |
-| Accountant review workspace | `Beta` | The dashboard now includes both a tenant review queue and a cross-tenant portfolio rollup for overdue invoices, banking exceptions, and close pressure. Dedicated exception actions and deeper review workflows are still missing. |
+| Close/reopen workflow with audit trail | `Beta` | Explicit close and reopen actions exist in the API and company settings, with history, operator notes, and a safety block against reopening a year-end after carry-forward has been posted. |
+| Fiscal year close checklist and carry-forward workflow | `Beta` | Company settings now expose year-end readiness, retained-earnings mapping, and an explicit carry-forward journal step after year-end lock. Reopen reversal and deeper year-end packs are still missing. |
+| Invoice, journal-entry, payment, bank-transaction, and asset document attachments | `Beta` | Files can be uploaded, listed, downloaded, and deleted for core accounting records, bank reconciliation evidence, and fixed assets. Basic document type, retention date, and review metadata now exist, but full approval flow and admin retention controls are still missing. |
+| Accountant review workspace | `Beta` | The dashboard now includes both a tenant review queue and a cross-tenant portfolio rollup for overdue invoices, banking exceptions, close pressure, and document-evidence follow-up on unmatched bank transactions. Accountants can now set bank-transaction follow-up states and review notes directly from the dashboard, but broader exception actions across other workflows are still missing. |
 | Plugin marketplace | `Beta` | Significant functionality exists, but it is not part of the primary product wedge for reliability. |
 | Inventory and warehouse flows | `Beta` | Inventory structures exist, but the module is not yet complete enough to market as finished. |
 | Core accountant smoke E2E gate | `Working` | CI now blocks on auth setup plus invoices, reports, banking, and payroll route coverage. |
 | Demo seeded flows and broad view coverage | `Demo-only` | Useful for demos and regression checks, not the same as release-quality smoke coverage. |
-| Employee and incumbent-system migration imports | `Missing` | Adoption gap remains for payroll history and broader historical cutover. |
-| Fiscal year close checklist and carry-forward workflow | `Missing` | Hard requirement for trustworthy year-end operations beyond the current close/reopen controls. |
-| Broader document retention and reconciliation evidence workflow | `Missing` | The current attachment layer does not yet cover reconciliation evidence review, approval flow, or retention/admin controls. |
+| Historical payroll and broader incumbent-system migration imports | `Missing` | Employee master-data import now exists, but payroll history and broader historical cutover are still missing. |
+| Broader document retention and reconciliation evidence workflow | `Beta` | Reconciliation evidence can now be attached to bank transactions and assets with document type, review status, and retention metadata. Approval workflow, policy automation, and admin retention controls are still missing. |
 | Direct bank feeds, SEPA initiation, e-invoice, OCR, automatic e-MTA submission | `Blocked` | Requires external partnerships, licensing, certification, or additional infrastructure. |
 
 ## What The Project Can Honestly Claim Today
@@ -64,15 +64,15 @@ Still not done:
 - Open Accounting is a broad, real codebase with working accounting, invoicing, payroll, banking, and multi-tenant foundations.
 - The local backend, frontend, and tagged backend integration test baselines are green as of 2026-03-12.
 - The project now includes a working Go CLI and tenant-scoped API tokens for scriptable reads and writes.
-- The project is still not production-ready for accounting firms that need broader migration imports, fiscal-year close/carry-forward, document retention controls, and hardened operations.
+- The project is still not production-ready for accounting firms that need historical payroll migration, year-end reversal/reopen tooling, document retention controls, and hardened operations.
 - The strongest near-term wedge is Estonian SMB/accountant workflow with manual bank import, invoicing, payroll, KMD/TSD export, and core reporting.
 
 ## Immediate Priorities
 
-1. Implement employee and incumbent-system migration imports.
-2. Finish fiscal-year close, carry-forward, and year-end checklist workflows on top of the new close/reopen foundation.
-3. Extend the new accountant portfolio rollup into deeper exception actions, review notes, and dedicated accounting follow-up workflows.
-4. Extend the current attachment layer into reconciliation evidence, approval, and retention workflows.
+1. Implement historical payroll and incumbent-system migration imports.
+2. Add year-end reversal/reopen handling and fuller year-end packs on top of the new close/reopen and carry-forward foundation.
+3. Extend the new accountant portfolio rollup into deeper exception actions beyond banking, including dedicated accounting follow-up workflows.
+4. Add approval workflow and admin retention controls on top of the new reconciliation-evidence document layer.
 5. Remove insecure production defaults and add stronger session management.
 
 ## Related Docs

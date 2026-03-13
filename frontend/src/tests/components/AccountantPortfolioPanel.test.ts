@@ -9,6 +9,7 @@ const { apiMock } = vi.hoisted(() => ({
 		getOverdueInvoices: vi.fn(),
 		listBankAccounts: vi.fn(),
 		listBankTransactions: vi.fn(),
+		listDocumentReviewSummaries: vi.fn(),
 		listPeriodCloseEvents: vi.fn(),
 		listJournalEntries: vi.fn()
 	}
@@ -125,6 +126,23 @@ describe('AccountantPortfolioPanel', () => {
 
 			return [];
 		});
+		apiMock.listDocumentReviewSummaries.mockImplementation(async (tenantId: string) => {
+			if (tenantId === 'tenant-1') {
+				return [
+					{
+						entity_type: 'bank_transaction',
+						entity_id: 'tx-1',
+						total_count: 0,
+						pending_review_count: 0,
+						reviewed_count: 0,
+						missing_evidence: true,
+						has_pending_review: false
+					}
+				];
+			}
+
+			return [];
+		});
 
 		apiMock.listPeriodCloseEvents.mockImplementation(async (tenantId: string) => {
 			if (tenantId === 'tenant-1') {
@@ -167,6 +185,7 @@ describe('AccountantPortfolioPanel', () => {
 		expect(screen.getByText('See what needs attention across your companies')).toBeInTheDocument();
 		expect(screen.getByText('2 overdue')).toBeInTheDocument();
 		expect(screen.getByText('1 banking')).toBeInTheDocument();
+		expect(screen.getAllByText('1 missing evidence').length).toBeGreaterThan(0);
 		expect(screen.getAllByText('Close due').length).toBeGreaterThan(0);
 		expect(screen.getAllByText('Current workspace').length).toBeGreaterThan(0);
 		expect(screen.getByRole('link', { name: 'Open workspace' })).toHaveAttribute('href', '/dashboard?tenant=tenant-1');
@@ -201,6 +220,7 @@ describe('AccountantPortfolioPanel', () => {
 		});
 		apiMock.listBankAccounts.mockResolvedValue([]);
 		apiMock.listBankTransactions.mockResolvedValue([]);
+		apiMock.listDocumentReviewSummaries.mockResolvedValue([]);
 		apiMock.listPeriodCloseEvents.mockResolvedValue([
 			{
 				id: 'close-2',

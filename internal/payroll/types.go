@@ -264,6 +264,30 @@ type UpdateEmployeeRequest struct {
 	IsActive             *bool            `json:"is_active,omitempty"`
 }
 
+// ImportEmployeesRequest contains CSV payload for bulk employee import.
+type ImportEmployeesRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+}
+
+// ImportEmployeesResult summarizes a bulk employee import.
+type ImportEmployeesResult struct {
+	FileName         string                    `json:"file_name,omitempty"`
+	RowsProcessed    int                       `json:"rows_processed"`
+	EmployeesCreated int                       `json:"employees_created"`
+	SalariesCreated  int                       `json:"salaries_created"`
+	RowsSkipped      int                       `json:"rows_skipped"`
+	Errors           []ImportEmployeesRowError `json:"errors,omitempty"`
+}
+
+// ImportEmployeesRowError describes a row-level import failure.
+type ImportEmployeesRowError struct {
+	Row            int    `json:"row"`
+	EmployeeName   string `json:"employee_name,omitempty"`
+	EmployeeNumber string `json:"employee_number,omitempty"`
+	Message        string `json:"message"`
+}
+
 // TaxCalculation holds the breakdown of taxes for a salary
 type TaxCalculation struct {
 	GrossSalary    decimal.Decimal `json:"gross_salary"`

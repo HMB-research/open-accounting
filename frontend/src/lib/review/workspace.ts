@@ -3,6 +3,7 @@ import {
 	api,
 	type BankAccount,
 	type BankTransaction,
+	type DocumentReviewSummary,
 	type JournalEntry,
 	type OverdueInvoicesSummary,
 	type PeriodCloseEvent,
@@ -12,6 +13,13 @@ import {
 export type BankExceptionGroup = {
 	account: BankAccount;
 	transactions: BankTransaction[];
+	documentSummaries: Record<string, DocumentReviewSummary>;
+};
+
+export type BankExceptionItem = {
+	account: BankAccount;
+	transaction: BankTransaction;
+	documentSummary: DocumentReviewSummary;
 };
 
 export type TenantReviewSnapshot = {
@@ -55,9 +63,24 @@ async function loadUnmatchedTransactions(tenantId: string, accounts: BankAccount
 		accounts.map(async (account) => {
 			try {
 				const transactions = await api.listBankTransactions(tenantId, account.id, { status: 'UNMATCHED' });
-				return { account, transactions };
+				let documentSummaries: Record<string, DocumentReviewSummary> = {};
+				if (transactions.length > 0) {
+					try {
+						const summaries = await api.listDocumentReviewSummaries(
+							tenantId,
+							'bank_transaction',
+							transactions.map((transaction) => transaction.id)
+						);
+						documentSummaries = Object.fromEntries(
+							summaries.map((summary) => [summary.entity_id, summary])
+						);
+					} catch {
+						documentSummaries = {};
+					}
+				}
+				return { account, transactions, documentSummaries };
 			} catch {
-				return { account, transactions: [] };
+				return { account, transactions: [], documentSummaries: {} };
 			}
 		})
 	);
@@ -69,8 +92,27 @@ async function loadUnmatchedTransactions(tenantId: string, accounts: BankAccount
 
 export function flattenUnmatchedTransactions(bankExceptions: BankExceptionGroup[]) {
 	return bankExceptions
-		.flatMap((group) => group.transactions.map((transaction) => ({ account: group.account, transaction })))
+		.flatMap((group) =>
+			group.transactions.map((transaction) => ({
+				account: group.account,
+				transaction,
+				documentSummary:
+					group.documentSummaries[transaction.id] ?? missingDocumentSummary(transaction.id)
+			}))
+		)
 		.sort((left, right) => new Date(right.transaction.transaction_date).getTime() - new Date(left.transaction.transaction_date).getTime());
+}
+
+function missingDocumentSummary(entityID: string): DocumentReviewSummary {
+	return {
+		entity_type: 'bank_transaction',
+		entity_id: entityID,
+		total_count: 0,
+		pending_review_count: 0,
+		reviewed_count: 0,
+		missing_evidence: true,
+		has_pending_review: false
+	};
 }
 
 export function toDecimal(value: Decimal | number | string | null | undefined): Decimal {
