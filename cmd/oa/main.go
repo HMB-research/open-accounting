@@ -17,7 +17,9 @@ import (
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -53,8 +55,12 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runAccounts(ctx, args[1:])
 	case "contacts":
 		return a.runContacts(ctx, args[1:])
+	case "employees":
+		return a.runEmployees(ctx, args[1:])
 	case "invoices":
 		return a.runInvoices(ctx, args[1:])
+	case "documents":
+		return a.runDocuments(ctx, args[1:])
 	case "journal":
 		return a.runJournal(ctx, args[1:])
 	case "help", "--help", "-h":
@@ -81,7 +87,14 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  contacts list             List contacts")
 	_, _ = fmt.Fprintln(a.stdout, "  contacts create           Create a contact")
 	_, _ = fmt.Fprintln(a.stdout, "  contacts import           Import contacts from CSV")
+	_, _ = fmt.Fprintln(a.stdout, "  employees list            List employees")
+	_, _ = fmt.Fprintln(a.stdout, "  employees create          Create an employee")
+	_, _ = fmt.Fprintln(a.stdout, "  employees import          Import employees from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  invoices import           Import invoices from CSV")
+	_, _ = fmt.Fprintln(a.stdout, "  documents list            List documents for a record")
+	_, _ = fmt.Fprintln(a.stdout, "  documents upload          Upload a document to a record")
+	_, _ = fmt.Fprintln(a.stdout, "  documents mark-reviewed   Mark a document as reviewed")
+	_, _ = fmt.Fprintln(a.stdout, "  documents delete          Delete a document")
 	_, _ = fmt.Fprintln(a.stdout, "  journal import-opening-balances  Import opening balances from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "")
 	_, _ = fmt.Fprintln(a.stdout, "Environment overrides:")
@@ -538,6 +551,150 @@ func (a *cliApp) runInvoices(ctx context.Context, args []string) error {
 	}
 }
 
+func (a *cliApp) runEmployees(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("employees subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("employees list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		activeOnly := fs.Bool("active-only", false, "List only active employees")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		employees, err := client.listEmployees(ctx, cfg.TenantID, *activeOnly)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, employees)
+		}
+		printEmployeesTable(a.stdout, employees)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("employees create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		employeeNumber := fs.String("employee-number", "", "Employee number")
+		firstName := fs.String("first-name", "", "First name")
+		lastName := fs.String("last-name", "", "Last name")
+		personalCode := fs.String("personal-code", "", "Personal code")
+		email := fs.String("email", "", "Email")
+		phone := fs.String("phone", "", "Phone")
+		address := fs.String("address", "", "Address")
+		bankAccount := fs.String("bank-account", "", "IBAN")
+		startDate := fs.String("start-date", "", "Employment start date in YYYY-MM-DD")
+		position := fs.String("position", "", "Position")
+		department := fs.String("department", "", "Department")
+		employmentType := fs.String("employment-type", "FULL_TIME", "Employment type: FULL_TIME, PART_TIME, CONTRACT")
+		applyBasicExemption := fs.Bool("apply-basic-exemption", true, "Apply basic exemption")
+		basicExemptionAmount := fs.String("basic-exemption-amount", "700.00", "Basic exemption amount")
+		fundedPensionRate := fs.String("funded-pension-rate", "0.02", "Funded pension rate")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		if strings.TrimSpace(*firstName) == "" || strings.TrimSpace(*lastName) == "" || strings.TrimSpace(*startDate) == "" {
+			return errors.New("first-name, last-name, and start-date are required")
+		}
+
+		parsedStartDate, err := time.Parse("2006-01-02", strings.TrimSpace(*startDate))
+		if err != nil {
+			return fmt.Errorf("parse start-date: %w", err)
+		}
+
+		basicExemptionValue := decimal.Zero
+		if *applyBasicExemption {
+			basicExemptionValue, err = decimal.NewFromString(strings.TrimSpace(*basicExemptionAmount))
+			if err != nil {
+				return fmt.Errorf("parse basic-exemption-amount: %w", err)
+			}
+		}
+
+		fundedPensionValue := decimal.Zero
+		if trimmed := strings.TrimSpace(*fundedPensionRate); trimmed != "" {
+			fundedPensionValue, err = decimal.NewFromString(trimmed)
+			if err != nil {
+				return fmt.Errorf("parse funded-pension-rate: %w", err)
+			}
+		}
+
+		employee, err := client.createEmployee(ctx, cfg.TenantID, &payroll.CreateEmployeeRequest{
+			EmployeeNumber:       strings.TrimSpace(*employeeNumber),
+			FirstName:            strings.TrimSpace(*firstName),
+			LastName:             strings.TrimSpace(*lastName),
+			PersonalCode:         strings.TrimSpace(*personalCode),
+			Email:                strings.TrimSpace(*email),
+			Phone:                strings.TrimSpace(*phone),
+			Address:              strings.TrimSpace(*address),
+			BankAccount:          strings.TrimSpace(*bankAccount),
+			StartDate:            parsedStartDate,
+			Position:             strings.TrimSpace(*position),
+			Department:           strings.TrimSpace(*department),
+			EmploymentType:       payroll.EmploymentType(strings.ToUpper(strings.TrimSpace(*employmentType))),
+			ApplyBasicExemption:  *applyBasicExemption,
+			BasicExemptionAmount: basicExemptionValue,
+			FundedPensionRate:    fundedPensionValue,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, employee)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created employee %s (%s)\n", employee.FullName(), employee.ID)
+		return nil
+
+	case "import":
+		fs := flag.NewFlagSet("employees import", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		filePath := fs.String("file", "", "CSV file path")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*filePath) == "" {
+			return errors.New("file is required")
+		}
+
+		content, fileName, err := readCSVInput(*filePath)
+		if err != nil {
+			return err
+		}
+		result, err := client.importEmployees(ctx, cfg.TenantID, &payroll.ImportEmployeesRequest{
+			FileName:   fileName,
+			CSVContent: content,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(
+			a.stdout,
+			"Processed %d rows, created %d employees, set %d salaries, skipped %d rows\n",
+			result.RowsProcessed,
+			result.EmployeesCreated,
+			result.SalariesCreated,
+			result.RowsSkipped,
+		)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown employees subcommand %q", args[0])
+	}
+}
+
 func (a *cliApp) runJournal(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New("journal subcommand required")
@@ -595,6 +752,131 @@ func (a *cliApp) runJournal(ctx context.Context, args []string) error {
 
 	default:
 		return fmt.Errorf("unknown journal subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("documents subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("documents list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		entityType := fs.String("entity-type", "", "Entity type: invoice, journal_entry, payment, bank_transaction, asset")
+		entityID := fs.String("entity-id", "", "Entity id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*entityType) == "" || strings.TrimSpace(*entityID) == "" {
+			return errors.New("entity-type and entity-id are required")
+		}
+
+		docs, err := client.listDocuments(ctx, cfg.TenantID, strings.TrimSpace(*entityType), strings.TrimSpace(*entityID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, docs)
+		}
+		printDocumentsTable(a.stdout, docs)
+		return nil
+
+	case "upload":
+		fs := flag.NewFlagSet("documents upload", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		entityType := fs.String("entity-type", "", "Entity type: invoice, journal_entry, payment, bank_transaction, asset")
+		entityID := fs.String("entity-id", "", "Entity id")
+		filePath := fs.String("file", "", "File path ('-' for stdin)")
+		documentType := fs.String("document-type", documents.DocumentTypeSupportingDocument, "Document type")
+		notes := fs.String("notes", "", "Optional notes")
+		retentionUntil := fs.String("retention-until", "", "Optional retention date in YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*entityType) == "" || strings.TrimSpace(*entityID) == "" || strings.TrimSpace(*filePath) == "" {
+			return errors.New("entity-type, entity-id, and file are required")
+		}
+
+		content, fileName, err := readFileInput(*filePath, "stdin.bin")
+		if err != nil {
+			return err
+		}
+		var retentionDate *time.Time
+		if strings.TrimSpace(*retentionUntil) != "" {
+			parsed, err := time.Parse("2006-01-02", strings.TrimSpace(*retentionUntil))
+			if err != nil {
+				return fmt.Errorf("parse retention-until: %w", err)
+			}
+			normalized := parsed.UTC()
+			retentionDate = &normalized
+		}
+
+		doc, err := client.uploadDocument(ctx, cfg.TenantID, &documents.UploadDocumentRequest{
+			EntityType:     strings.TrimSpace(*entityType),
+			EntityID:       strings.TrimSpace(*entityID),
+			DocumentType:   strings.TrimSpace(*documentType),
+			FileName:       fileName,
+			Notes:          strings.TrimSpace(*notes),
+			RetentionUntil: retentionDate,
+		}, content)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, doc)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Uploaded %s (%s) to %s %s\n", doc.FileName, doc.ID, doc.EntityType, doc.EntityID)
+		return nil
+
+	case "mark-reviewed":
+		fs := flag.NewFlagSet("documents mark-reviewed", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		documentID := fs.String("id", "", "Document id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*documentID) == "" {
+			return errors.New("id is required")
+		}
+
+		doc, err := client.markDocumentReviewed(ctx, cfg.TenantID, strings.TrimSpace(*documentID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, doc)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Marked document %s as reviewed\n", doc.ID)
+		return nil
+
+	case "delete":
+		fs := flag.NewFlagSet("documents delete", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		documentID := fs.String("id", "", "Document id")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*documentID) == "" {
+			return errors.New("id is required")
+		}
+
+		if err := client.deleteDocument(ctx, cfg.TenantID, strings.TrimSpace(*documentID)); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Deleted document %s\n", strings.TrimSpace(*documentID))
+		return nil
+
+	default:
+		return fmt.Errorf("unknown documents subcommand %q", args[0])
 	}
 }
 
@@ -670,20 +952,28 @@ func resolveTenantMembership(memberships []tenant.TenantMembership, selector str
 }
 
 func readCSVInput(filePath string) (content string, fileName string, err error) {
+	data, fileName, err := readFileInput(filePath, "stdin.csv")
+	if err != nil {
+		return "", "", err
+	}
+	return string(data), fileName, nil
+}
+
+func readFileInput(filePath string, stdinFileName string) (content []byte, fileName string, err error) {
 	if filePath == "-" {
 		data, err := io.ReadAll(os.Stdin)
 		if err != nil {
-			return "", "", fmt.Errorf("read stdin: %w", err)
+			return nil, "", fmt.Errorf("read stdin: %w", err)
 		}
-		return string(data), "stdin.csv", nil
+		return data, stdinFileName, nil
 	}
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return "", "", fmt.Errorf("read file %s: %w", filePath, err)
+		return nil, "", fmt.Errorf("read file %s: %w", filePath, err)
 	}
 
-	return string(data), filepath.Base(filePath), nil
+	return data, filepath.Base(filePath), nil
 }
 
 func isValidAccountType(value accounting.AccountType) bool {

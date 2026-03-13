@@ -79,6 +79,11 @@ func (s *Service) GetJournalEntry(ctx context.Context, schemaName, tenantID, ent
 	return s.repo.GetJournalEntryByID(ctx, schemaName, tenantID, entryID)
 }
 
+// ListJournalEntries retrieves recent journal entries for a tenant.
+func (s *Service) ListJournalEntries(ctx context.Context, schemaName, tenantID string, limit int) ([]JournalEntry, error) {
+	return s.repo.ListJournalEntries(ctx, schemaName, tenantID, limit)
+}
+
 // CreateJournalEntry creates a new journal entry
 func (s *Service) CreateJournalEntry(ctx context.Context, schemaName, tenantID string, req *CreateJournalEntryRequest) (*JournalEntry, error) {
 	entry := &JournalEntry{

@@ -1,0 +1,751 @@
+<script lang="ts">
+	import Decimal from 'decimal.js';
+	import {
+		api,
+		type BankTransaction,
+		type FollowUpStatus,
+		type JournalEntry,
+		type OverdueInvoicesSummary,
+		type PeriodCloseEvent,
+		type Tenant
+	} from '$lib/api';
+	import * as m from '$lib/paraglide/messages.js';
+	import {
+		flattenUnmatchedTransactions,
+		getSuggestedCloseDate,
+		loadTenantReviewSnapshot,
+		toDecimal,
+		type BankExceptionGroup
+	} from '$lib/review/workspace';
+
+	let { tenant }: { tenant: Tenant } = $props();
+
+	let isLoading = $state(true);
+	let error = $state('');
+	let overdueSummary = $state<OverdueInvoicesSummary | null>(null);
+	let bankExceptions = $state<BankExceptionGroup[]>([]);
+	let periodCloseEvents = $state<PeriodCloseEvent[]>([]);
+	let journalEntries = $state<JournalEntry[]>([]);
+	let reviewDrafts = $state<Record<string, { followUpStatus: FollowUpStatus; reviewNote: string }>>({});
+	let reviewSavingId = $state('');
+	let reviewSavedId = $state('');
+	let reviewErrorId = $state('');
+	let reviewError = $state('');
+	let loadedTenantKey = '';
+
+	$effect(() => {
+		const tenantKey = buildTenantKey(tenant);
+		if (!tenant.id || tenantKey === loadedTenantKey) {
+			return;
+		}
+
+		loadedTenantKey = tenantKey;
+		void loadReviewWorkspace(tenant);
+	});
+
+	async function loadReviewWorkspace(reviewTenant: Tenant) {
+		isLoading = true;
+		error = '';
+
+		const snapshot = await loadTenantReviewSnapshot(reviewTenant);
+		overdueSummary = snapshot.overdueSummary;
+		periodCloseEvents = snapshot.periodCloseEvents;
+		journalEntries = snapshot.journalEntries;
+		bankExceptions = snapshot.bankExceptions;
+		reviewDrafts = buildReviewDrafts(snapshot.bankExceptions);
+		reviewSavedId = '';
+		reviewErrorId = '';
+		reviewError = '';
+
+		if (snapshot.errorCount === 4) {
+			error = m.errors_loadFailed();
+		}
+
+		isLoading = false;
+	}
+
+	function buildTenantKey(value: Tenant): string {
+		return `${value.id}:${value.updated_at}:${value.settings?.period_lock_date ?? ''}`;
+	}
+
+	function formatCurrency(value: Decimal | number | string): string {
+		return new Intl.NumberFormat('et-EE', {
+			style: 'currency',
+			currency: 'EUR',
+			maximumFractionDigits: 0
+		}).format(toDecimal(value).toNumber());
+	}
+
+	function formatDate(value: string | undefined | null): string {
+		if (!value) {
+			return m.common_notSet();
+		}
+
+		return new Intl.DateTimeFormat('et-EE', {
+			year: 'numeric',
+			month: 'short',
+			day: 'numeric'
+		}).format(new Date(value));
+	}
+
+	function getEntryTotal(entry: JournalEntry): Decimal {
+		return entry.lines.reduce((sum, line) => sum.add(toDecimal(line.base_debit)), new Decimal(0));
+	}
+
+	function getCloseActionLabel(event: PeriodCloseEvent): string {
+		return event.action === 'reopen' ? m.settings_periodHistoryReopened() : m.settings_periodHistoryClosed();
+	}
+
+	function getCloseKindLabel(event: PeriodCloseEvent): string {
+		return event.close_kind === 'year_end' ? m.settings_periodYearEnd() : m.settings_periodMonthEnd();
+	}
+
+	const unmatchedTransactions = $derived(flattenUnmatchedTransactions(bankExceptions));
+	const unmatchedAmount = $derived(
+		unmatchedTransactions.reduce((sum, item) => sum.add(toDecimal(item.transaction.amount).abs()), new Decimal(0))
+	);
+	const missingEvidenceCount = $derived(
+		unmatchedTransactions.filter((item) => item.documentSummary.missing_evidence).length
+	);
+	const pendingEvidenceCount = $derived(
+		unmatchedTransactions.filter((item) => item.documentSummary.has_pending_review).length
+	);
+	const topOverdueInvoices = $derived(overdueSummary?.invoices.slice(0, 4) ?? []);
+	const topUnmatchedTransactions = $derived(unmatchedTransactions.slice(0, 4));
+	const topJournalEntries = $derived(journalEntries.slice(0, 4));
+	const journalDraftCount = $derived(journalEntries.filter((entry) => entry.status === 'DRAFT').length);
+	const journalPostedCount = $derived(journalEntries.filter((entry) => entry.status === 'POSTED').length);
+	const currentLockDate = $derived(tenant.settings?.period_lock_date ?? null);
+	const suggestedCloseDate = $derived(getSuggestedCloseDate(currentLockDate));
+	const latestCloseEvent = $derived(periodCloseEvents[0] ?? null);
+
+	function getEvidenceLabel(missingEvidence: boolean, hasPendingReview: boolean): string {
+		if (missingEvidence) {
+			return m.dashboard_reviewEvidenceMissing();
+		}
+		if (hasPendingReview) {
+			return m.dashboard_reviewEvidencePending();
+		}
+		return m.dashboard_reviewEvidenceReviewed();
+	}
+
+	function buildReviewDrafts(groups: BankExceptionGroup[]) {
+		const drafts: Record<string, { followUpStatus: FollowUpStatus; reviewNote: string }> = {};
+		for (const item of flattenUnmatchedTransactions(groups)) {
+			drafts[item.transaction.id] = {
+				followUpStatus: normalizeFollowUpStatus(item.transaction.follow_up_status),
+				reviewNote: item.transaction.review_note ?? ''
+			};
+		}
+		return drafts;
+	}
+
+	function normalizeFollowUpStatus(value: FollowUpStatus | string | undefined): FollowUpStatus {
+		if (value === 'EVIDENCE_REQUIRED' || value === 'READY_TO_MATCH') {
+			return value;
+		}
+		return 'NONE';
+	}
+
+	function getFollowUpLabel(value: FollowUpStatus | string | undefined): string {
+		switch (normalizeFollowUpStatus(value)) {
+			case 'EVIDENCE_REQUIRED':
+				return m.dashboard_reviewFollowUpEvidenceRequired();
+			case 'READY_TO_MATCH':
+				return m.dashboard_reviewFollowUpReadyToMatch();
+			default:
+				return m.dashboard_reviewFollowUpNone();
+		}
+	}
+
+	function isReviewDirty(transaction: BankTransaction): boolean {
+		const draft = reviewDrafts[transaction.id];
+		if (!draft) {
+			return false;
+		}
+		return (
+			draft.followUpStatus !== normalizeFollowUpStatus(transaction.follow_up_status) ||
+			draft.reviewNote.trim() !== (transaction.review_note ?? '').trim()
+		);
+	}
+
+	async function saveTransactionReview(transaction: BankTransaction) {
+		const draft = reviewDrafts[transaction.id];
+		if (!draft) {
+			return;
+		}
+
+		reviewSavingId = transaction.id;
+		reviewSavedId = '';
+		reviewErrorId = '';
+		reviewError = '';
+
+		try {
+			await api.reviewBankTransaction(tenant.id, transaction.id, {
+				follow_up_status: draft.followUpStatus,
+				review_note: draft.reviewNote.trim()
+			});
+			await loadReviewWorkspace(tenant);
+			reviewSavedId = transaction.id;
+		} catch (err) {
+			reviewErrorId = transaction.id;
+			reviewError = err instanceof Error ? err.message : m.dashboard_reviewFollowUpSaveError();
+		} finally {
+			reviewSavingId = '';
+		}
+	}
+</script>
+
+<section class="review-board card">
+	<div class="review-board-header">
+		<div>
+			<div class="review-kicker">{m.dashboard_reviewQueue()}</div>
+			<h3>{m.dashboard_reviewQueueTitle()}</h3>
+			<p>{m.dashboard_reviewQueueDesc()}</p>
+		</div>
+		<button class="btn btn-secondary review-refresh" type="button" onclick={() => loadReviewWorkspace(tenant)} disabled={isLoading}>
+			{m.common_refresh()}
+		</button>
+	</div>
+
+	{#if error}
+		<div class="alert alert-error">{error}</div>
+	{/if}
+
+	{#if isLoading}
+		<div class="review-loading">{m.common_loading()}</div>
+	{:else}
+		<div class="review-grid">
+			<article class="review-card review-card-emphasis">
+				<div class="review-card-topline">
+					<span class="review-card-kicker">{m.dashboard_reviewOverdueTitle()}</span>
+					<a href="/invoices/reminders?tenant={tenant.id}" class="review-action">{m.dashboard_reviewOpenReminders()}</a>
+				</div>
+				<div class="review-figure">
+					<strong>{overdueSummary ? formatCurrency(overdueSummary.total_overdue) : formatCurrency(0)}</strong>
+					<span>{m.dashboard_reviewOutstandingBalance()}</span>
+				</div>
+				<div class="review-metrics">
+					<div>
+						<strong>{overdueSummary?.invoice_count ?? 0}</strong>
+						<span>{m.invoices_overdue()}</span>
+					</div>
+					<div>
+						<strong>{overdueSummary?.contact_count ?? 0}</strong>
+						<span>{m.dashboard_reviewContacts()}</span>
+					</div>
+					<div>
+						<strong>{overdueSummary?.average_days_overdue ?? 0}</strong>
+						<span>{m.dashboard_reviewAverageDays()}</span>
+					</div>
+				</div>
+
+				{#if topOverdueInvoices.length > 0}
+					<ul class="review-list">
+						{#each topOverdueInvoices as invoice}
+							<li>
+								<div>
+									<strong>{invoice.invoice_number}</strong>
+									<span>{invoice.contact_name}</span>
+								</div>
+								<div class="review-list-meta">
+									<strong>{formatCurrency(invoice.outstanding_amount)}</strong>
+									<span>{invoice.days_overdue} {m.dashboard_reviewDaysShort()}</span>
+								</div>
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="review-empty">{m.dashboard_reviewNoOverdue()}</p>
+				{/if}
+			</article>
+
+			<article class="review-card">
+				<div class="review-card-topline">
+					<span class="review-card-kicker">{m.dashboard_reviewBankingTitle()}</span>
+					<a href="/banking?tenant={tenant.id}" class="review-action">{m.dashboard_reviewOpenBanking()}</a>
+				</div>
+				<div class="review-figure">
+					<strong>{unmatchedTransactions.length}</strong>
+					<span>{m.dashboard_reviewUnmatchedTransactions()}</span>
+				</div>
+				<div class="review-metrics">
+					<div>
+						<strong>{formatCurrency(unmatchedAmount)}</strong>
+						<span>{m.common_amount()}</span>
+					</div>
+					<div>
+						<strong>{missingEvidenceCount}</strong>
+						<span>{m.dashboard_reviewEvidenceMissing()}</span>
+					</div>
+					<div>
+						<strong>{pendingEvidenceCount}</strong>
+						<span>{m.dashboard_reviewEvidencePending()}</span>
+					</div>
+				</div>
+
+				{#if topUnmatchedTransactions.length > 0}
+					<ul class="review-list">
+						{#each topUnmatchedTransactions as item}
+							<li class="review-list-item-banking">
+								<div class="review-list-main">
+									<strong>{item.account.name}</strong>
+									<span>{item.transaction.description || item.transaction.counterparty_name || m.common_noData()}</span>
+									<span>{getEvidenceLabel(item.documentSummary.missing_evidence, item.documentSummary.has_pending_review)}</span>
+									<span>{getFollowUpLabel(item.transaction.follow_up_status)}</span>
+									{#if item.transaction.review_note}
+										<span class="review-note-preview">{item.transaction.review_note}</span>
+									{/if}
+								</div>
+								<div class="review-list-meta review-list-meta-banking">
+									<strong>{formatCurrency(toDecimal(item.transaction.amount).abs())}</strong>
+									<span>{formatDate(item.transaction.transaction_date)}</span>
+								</div>
+								<div class="review-transaction-review">
+									<label class="review-field">
+										<span>{m.dashboard_reviewFollowUpLabel()}</span>
+										<select
+											aria-label={m.dashboard_reviewFollowUpLabel()}
+											bind:value={reviewDrafts[item.transaction.id].followUpStatus}
+										>
+											<option value="NONE">{m.dashboard_reviewFollowUpNone()}</option>
+											<option value="EVIDENCE_REQUIRED">{m.dashboard_reviewFollowUpEvidenceRequired()}</option>
+											<option value="READY_TO_MATCH">{m.dashboard_reviewFollowUpReadyToMatch()}</option>
+										</select>
+									</label>
+									<label class="review-field review-field-note">
+										<span>{m.dashboard_reviewFollowUpNoteLabel()}</span>
+										<textarea
+											aria-label={m.dashboard_reviewFollowUpNoteLabel()}
+											rows="2"
+											bind:value={reviewDrafts[item.transaction.id].reviewNote}
+										></textarea>
+									</label>
+									<div class="review-inline-actions">
+										<button
+											class="btn btn-secondary review-inline-save"
+											type="button"
+											onclick={() => saveTransactionReview(item.transaction)}
+											disabled={reviewSavingId === item.transaction.id || !isReviewDirty(item.transaction)}
+										>
+											{reviewSavingId === item.transaction.id ? m.common_loading() : m.dashboard_reviewFollowUpSave()}
+										</button>
+										{#if reviewSavedId === item.transaction.id}
+											<span class="review-feedback review-feedback-success">{m.dashboard_reviewFollowUpSaved()}</span>
+										{/if}
+										{#if reviewErrorId === item.transaction.id}
+											<span class="review-feedback review-feedback-error">{reviewError}</span>
+										{/if}
+									</div>
+								</div>
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="review-empty">{m.dashboard_reviewNoBankingExceptions()}</p>
+				{/if}
+			</article>
+
+			<article class="review-card">
+				<div class="review-card-topline">
+					<span class="review-card-kicker">{m.dashboard_reviewCloseTitle()}</span>
+					<a href="/settings/company?tenant={tenant.id}" class="review-action">{m.dashboard_reviewOpenCloseControls()}</a>
+				</div>
+				<div class="review-figure">
+					<strong>
+						{#if currentLockDate}
+							{m.settings_periodClosedThrough({ date: formatDate(currentLockDate) })}
+						{:else}
+							{m.dashboard_reviewNoLockedPeriods()}
+						{/if}
+					</strong>
+					<span>{m.dashboard_reviewSuggestedCloseDate({ date: formatDate(suggestedCloseDate) })}</span>
+				</div>
+				<div class="review-metrics">
+					<div>
+						<strong>{latestCloseEvent ? getCloseActionLabel(latestCloseEvent) : m.common_notSet()}</strong>
+						<span>{m.dashboard_reviewLastAction()}</span>
+					</div>
+					<div>
+						<strong>{latestCloseEvent ? getCloseKindLabel(latestCloseEvent) : m.common_notSet()}</strong>
+						<span>{m.dashboard_reviewLastCloseType()}</span>
+					</div>
+					<div>
+						<strong>{latestCloseEvent ? formatDate(latestCloseEvent.period_end_date) : m.common_notSet()}</strong>
+						<span>{m.dashboard_reviewPeriodEnd()}</span>
+					</div>
+				</div>
+
+				{#if periodCloseEvents.length > 0}
+					<ul class="review-list">
+						{#each periodCloseEvents.slice(0, 4) as event}
+							<li>
+								<div>
+									<strong>{getCloseActionLabel(event)}</strong>
+									<span>{getCloseKindLabel(event)}</span>
+								</div>
+								<div class="review-list-meta">
+									<strong>{formatDate(event.period_end_date)}</strong>
+									<span>{formatDate(event.created_at)}</span>
+								</div>
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="review-empty">{m.dashboard_reviewNoCloseHistory()}</p>
+				{/if}
+			</article>
+
+			<article class="review-card">
+				<div class="review-card-topline">
+					<span class="review-card-kicker">{m.dashboard_reviewJournalTitle()}</span>
+					<a href="/journal?tenant={tenant.id}" class="review-action">{m.dashboard_reviewOpenJournal()}</a>
+				</div>
+				<div class="review-figure">
+					<strong>{journalEntries.length}</strong>
+					<span>{m.dashboard_reviewRecentEntries()}</span>
+				</div>
+				<div class="review-metrics">
+					<div>
+						<strong>{journalDraftCount}</strong>
+						<span>{m.dashboard_draft()}</span>
+					</div>
+					<div>
+						<strong>{journalPostedCount}</strong>
+						<span>{m.dashboard_reviewPosted()}</span>
+					</div>
+					<div>
+						<strong>{topJournalEntries[0] ? formatDate(topJournalEntries[0].entry_date) : m.common_notSet()}</strong>
+						<span>{m.common_date()}</span>
+					</div>
+				</div>
+
+				{#if topJournalEntries.length > 0}
+					<ul class="review-list">
+						{#each topJournalEntries as entry}
+							<li>
+								<div>
+									<strong>{entry.entry_number}</strong>
+									<span>{entry.description}</span>
+								</div>
+								<div class="review-list-meta">
+									<strong>{formatCurrency(getEntryTotal(entry))}</strong>
+									<span>{entry.status}</span>
+								</div>
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="review-empty">{m.dashboard_reviewNoJournalEntries()}</p>
+				{/if}
+			</article>
+		</div>
+	{/if}
+</section>
+
+<style>
+	.review-board {
+		margin-bottom: 1.75rem;
+		padding: 1.5rem;
+		background:
+			radial-gradient(circle at top left, rgba(251, 191, 36, 0.14), transparent 28%),
+			linear-gradient(145deg, rgba(255, 252, 247, 0.96), rgba(255, 255, 255, 0.86));
+		border: 1px solid rgba(148, 163, 184, 0.18);
+	}
+
+	.review-board-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 1rem;
+		margin-bottom: 1.25rem;
+	}
+
+	.review-kicker,
+	.review-card-kicker {
+		font-size: 0.78rem;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--color-text-muted);
+	}
+
+	.review-board-header h3 {
+		font-family: var(--font-display);
+		font-size: clamp(1.8rem, 4vw, 2.6rem);
+		line-height: 0.95;
+		margin: 0.4rem 0 0.5rem;
+	}
+
+	.review-board-header p {
+		max-width: 42rem;
+		color: var(--color-text-muted);
+		margin: 0;
+	}
+
+	.review-refresh {
+		flex-shrink: 0;
+	}
+
+	.review-loading {
+		padding: 1rem 0 0.25rem;
+		color: var(--color-text-muted);
+	}
+
+	.review-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 1rem;
+	}
+
+	.review-card {
+		padding: 1.25rem;
+		border-radius: 1.25rem;
+		background: rgba(255, 255, 255, 0.8);
+		border: 1px solid rgba(148, 163, 184, 0.16);
+		box-shadow: 0 24px 50px rgba(15, 23, 42, 0.06);
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		min-height: 100%;
+	}
+
+	.review-card-emphasis {
+		background:
+			linear-gradient(160deg, rgba(15, 23, 42, 0.94), rgba(30, 41, 59, 0.88)),
+			radial-gradient(circle at top right, rgba(251, 191, 36, 0.18), transparent 32%);
+		color: rgba(248, 250, 252, 0.94);
+	}
+
+	.review-card-emphasis .review-card-kicker,
+	.review-card-emphasis .review-action,
+	.review-card-emphasis .review-figure span,
+	.review-card-emphasis .review-metrics span,
+	.review-card-emphasis .review-empty,
+	.review-card-emphasis .review-list span {
+		color: rgba(226, 232, 240, 0.74);
+	}
+
+	.review-card-topline {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 1rem;
+	}
+
+	.review-action {
+		font-size: 0.82rem;
+		font-weight: 600;
+		color: var(--color-primary);
+		text-decoration: none;
+	}
+
+	.review-action:hover {
+		text-decoration: underline;
+	}
+
+	.review-figure {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.review-figure strong {
+		font-size: 1.5rem;
+		line-height: 1.1;
+	}
+
+	.review-figure span,
+	.review-metrics span,
+	.review-empty,
+	.review-list span {
+		color: var(--color-text-muted);
+	}
+
+	.review-metrics {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 0.75rem;
+	}
+
+	.review-metrics div {
+		padding: 0.75rem;
+		border-radius: 0.9rem;
+		background: rgba(248, 250, 252, 0.72);
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+	}
+
+	.review-card-emphasis .review-metrics div {
+		background: rgba(255, 255, 255, 0.08);
+	}
+
+	.review-metrics strong {
+		font-size: 1rem;
+	}
+
+	.review-list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.7rem;
+	}
+
+	.review-list li {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 1rem;
+		padding-top: 0.7rem;
+		border-top: 1px solid rgba(148, 163, 184, 0.16);
+	}
+
+	.review-list li:first-child {
+		padding-top: 0;
+		border-top: none;
+	}
+
+	.review-list li > div,
+	.review-list-meta {
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+	}
+
+	.review-list-item-banking {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+	}
+
+	.review-list-main {
+		min-width: 0;
+	}
+
+	.review-list-meta {
+		text-align: right;
+	}
+
+	.review-list-meta-banking {
+		align-items: flex-end;
+	}
+
+	.review-note-preview {
+		font-style: italic;
+	}
+
+	.review-transaction-review {
+		grid-column: 1 / -1;
+		display: grid;
+		grid-template-columns: minmax(11rem, 13rem) minmax(0, 1fr) auto;
+		gap: 0.75rem;
+		padding-top: 0.75rem;
+		margin-top: 0.15rem;
+		border-top: 1px solid rgba(148, 163, 184, 0.12);
+	}
+
+	.review-field {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		font-size: 0.82rem;
+		color: var(--color-text-muted);
+	}
+
+	.review-field select,
+	.review-field textarea {
+		width: 100%;
+		border: 1px solid rgba(148, 163, 184, 0.28);
+		border-radius: 0.85rem;
+		background: rgba(255, 255, 255, 0.92);
+		color: var(--color-text);
+		padding: 0.7rem 0.8rem;
+		font: inherit;
+	}
+
+	.review-field textarea {
+		min-height: 5.1rem;
+		resize: vertical;
+	}
+
+	.review-field-note {
+		min-width: 0;
+	}
+
+	.review-inline-actions {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0.45rem;
+	}
+
+	.review-inline-save {
+		min-width: 9rem;
+		justify-content: center;
+	}
+
+	.review-feedback {
+		font-size: 0.78rem;
+		text-align: right;
+	}
+
+	.review-feedback-success {
+		color: #166534;
+	}
+
+	.review-feedback-error {
+		color: #b91c1c;
+		max-width: 16rem;
+	}
+
+	.review-empty {
+		margin: 0;
+	}
+
+	@media (max-width: 900px) {
+		.review-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+
+	@media (max-width: 640px) {
+		.review-board-header {
+			flex-direction: column;
+		}
+
+		.review-refresh {
+			width: 100%;
+		}
+
+		.review-metrics {
+			grid-template-columns: 1fr;
+		}
+
+		.review-list-item-banking {
+			grid-template-columns: 1fr;
+		}
+
+		.review-list-meta-banking {
+			align-items: flex-start;
+			text-align: left;
+		}
+
+		.review-transaction-review {
+			grid-template-columns: 1fr;
+		}
+
+		.review-inline-actions {
+			align-items: stretch;
+		}
+
+		.review-list li {
+			flex-direction: column;
+		}
+
+		.review-list-meta {
+			text-align: left;
+		}
+	}
+</style>

@@ -91,6 +91,34 @@ func (m *mockAccountingRepository) GetJournalEntryByID(ctx context.Context, sche
 	return entry, nil
 }
 
+func (m *mockAccountingRepository) ListJournalEntries(ctx context.Context, schemaName, tenantID string, limit int) ([]accounting.JournalEntry, error) {
+	if m.getJournalErr != nil {
+		return nil, m.getJournalErr
+	}
+
+	result := make([]accounting.JournalEntry, 0, len(m.journalEntries))
+	for _, entry := range m.journalEntries {
+		if entry.TenantID != tenantID {
+			continue
+		}
+		result = append(result, *entry)
+	}
+	return result, nil
+}
+
+func (m *mockAccountingRepository) GetJournalEntryBySource(ctx context.Context, schemaName, tenantID, sourceType, sourceID string) (*accounting.JournalEntry, error) {
+	if m.getJournalErr != nil {
+		return nil, m.getJournalErr
+	}
+	for _, entry := range m.journalEntries {
+		if entry.TenantID != tenantID || entry.SourceType != sourceType || entry.Status == accounting.StatusVoided || entry.SourceID == nil || *entry.SourceID != sourceID {
+			continue
+		}
+		return entry, nil
+	}
+	return nil, nil
+}
+
 func (m *mockAccountingRepository) CreateJournalEntry(ctx context.Context, schemaName string, je *accounting.JournalEntry) error {
 	if m.createJournalErr != nil {
 		return m.createJournalErr
@@ -180,6 +208,50 @@ func setupAccountingTestHandlers() (*Handlers, *mockTenantRepository, *mockAccou
 	}
 
 	return h, tenantRepo, accountingRepo
+}
+
+func TestListJournalEntries(t *testing.T) {
+	h, _, accountingRepo := setupAccountingTestHandlers()
+	accountingRepo.journalEntries["je-1"] = &accounting.JournalEntry{
+		ID:          "je-1",
+		TenantID:    "tenant-1",
+		EntryNumber: "JE-00001",
+		Description: "Opening balance",
+		Status:      accounting.StatusPosted,
+		CreatedBy:   "user-1",
+	}
+	accountingRepo.journalEntries["je-2"] = &accounting.JournalEntry{
+		ID:          "je-2",
+		TenantID:    "tenant-1",
+		EntryNumber: "JE-00002",
+		Description: "Sales accrual",
+		Status:      accounting.StatusDraft,
+		CreatedBy:   "user-1",
+	}
+
+	req := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/journal-entries?limit=10", nil, createTestClaims("user-1", "acc@example.com", "tenant-1", "admin"))
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	w := httptest.NewRecorder()
+
+	h.ListJournalEntries(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp []accounting.JournalEntry
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	require.Len(t, resp, 2)
+}
+
+func TestListJournalEntriesRejectsInvalidLimit(t *testing.T) {
+	h, _, _ := setupAccountingTestHandlers()
+
+	req := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/journal-entries?limit=500", nil, createTestClaims("user-1", "acc@example.com", "tenant-1", "admin"))
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	w := httptest.NewRecorder()
+
+	h.ListJournalEntries(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
 }
 
 func TestImportAccounts(t *testing.T) {

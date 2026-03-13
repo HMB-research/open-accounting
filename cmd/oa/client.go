@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"path"
@@ -16,7 +17,9 @@ import (
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -176,6 +179,128 @@ func (c *apiClient) importOpeningBalances(ctx context.Context, tenantID string, 
 		return nil, err
 	}
 	return &resp, nil
+}
+
+func (c *apiClient) listEmployees(ctx context.Context, tenantID string, activeOnly bool) ([]payroll.Employee, error) {
+	urlPath := path.Join("/api/v1/tenants", tenantID, "employees")
+	if activeOnly {
+		urlPath += "?active_only=true"
+	}
+
+	var resp []payroll.Employee
+	if err := c.request(ctx, http.MethodGet, urlPath, nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createEmployee(ctx context.Context, tenantID string, req *payroll.CreateEmployeeRequest) (*payroll.Employee, error) {
+	var resp payroll.Employee
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "employees"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) importEmployees(ctx context.Context, tenantID string, req *payroll.ImportEmployeesRequest) (*payroll.ImportEmployeesResult, error) {
+	var resp payroll.ImportEmployeesResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "employees", "import"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) listDocuments(ctx context.Context, tenantID, entityType, entityID string) ([]documents.Document, error) {
+	values := url.Values{}
+	values.Set("entity_type", entityType)
+	values.Set("entity_id", entityID)
+
+	var resp []documents.Document
+	urlPath := path.Join("/api/v1/tenants", tenantID, "documents") + "?" + values.Encode()
+	if err := c.request(ctx, http.MethodGet, urlPath, nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) uploadDocument(ctx context.Context, tenantID string, req *documents.UploadDocumentRequest, fileContent []byte) (*documents.Document, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	if err := writer.WriteField("entity_type", strings.TrimSpace(req.EntityType)); err != nil {
+		return nil, fmt.Errorf("write entity_type: %w", err)
+	}
+	if err := writer.WriteField("entity_id", strings.TrimSpace(req.EntityID)); err != nil {
+		return nil, fmt.Errorf("write entity_id: %w", err)
+	}
+	if strings.TrimSpace(req.DocumentType) != "" {
+		if err := writer.WriteField("document_type", strings.TrimSpace(req.DocumentType)); err != nil {
+			return nil, fmt.Errorf("write document_type: %w", err)
+		}
+	}
+	if strings.TrimSpace(req.Notes) != "" {
+		if err := writer.WriteField("notes", strings.TrimSpace(req.Notes)); err != nil {
+			return nil, fmt.Errorf("write notes: %w", err)
+		}
+	}
+	if req.RetentionUntil != nil {
+		if err := writer.WriteField("retention_until", req.RetentionUntil.Format("2006-01-02")); err != nil {
+			return nil, fmt.Errorf("write retention_until: %w", err)
+		}
+	}
+
+	part, err := writer.CreateFormFile("file", strings.TrimSpace(req.FileName))
+	if err != nil {
+		return nil, fmt.Errorf("create multipart file: %w", err)
+	}
+	if _, err := part.Write(fileContent); err != nil {
+		return nil, fmt.Errorf("write multipart file: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("close multipart writer: %w", err)
+	}
+
+	fullURL := c.baseURL + path.Join("/api/v1/tenants", tenantID, "documents")
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, &body)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	httpReq.Header.Set("Accept", "application/json")
+	httpReq.Header.Set("Content-Type", writer.FormDataContentType())
+	if strings.TrimSpace(c.apiToken) != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+strings.TrimSpace(c.apiToken))
+	}
+
+	//nolint:gosec // The CLI intentionally talks to a user-configured Open Accounting base URL.
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("request POST /api/v1/tenants/%s/documents: %w", tenantID, err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, decodeAPIError(resp)
+	}
+
+	var doc documents.Document
+	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	return &doc, nil
+}
+
+func (c *apiClient) markDocumentReviewed(ctx context.Context, tenantID, documentID string) (*documents.Document, error) {
+	var resp documents.Document
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "documents", documentID, "mark-reviewed"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) deleteDocument(ctx context.Context, tenantID, documentID string) error {
+	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "documents", documentID), nil, c.apiToken, nil)
 }
 
 func (c *apiClient) request(ctx context.Context, method, apiPath string, body any, bearerToken string, out any) error {

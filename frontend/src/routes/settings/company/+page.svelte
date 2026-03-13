@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import { api, type ClosePeriodRequest, type PeriodCloseEvent, type ReopenPeriodRequest, type Tenant, type TenantSettings } from '$lib/api';
+	import { api, type ClosePeriodRequest, type PeriodCloseEvent, type ReopenPeriodRequest, type Tenant, type TenantSettings, type YearEndCloseStatus } from '$lib/api';
+	import WorkflowHero, { type WorkflowHeroAction, type WorkflowHeroAside, type WorkflowHeroStat } from '$lib/components/WorkflowHero.svelte';
+	import YearEndClosePanel from '$lib/components/YearEndClosePanel.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 
 	let tenantId = $derived($page.url.searchParams.get('tenant') || '');
@@ -12,8 +14,13 @@
 	let isHistoryLoading = $state(false);
 	let isClosingPeriod = $state(false);
 	let isReopeningPeriod = $state(false);
+	let isYearEndLoading = $state(false);
+	let isYearEndSubmitting = $state(false);
 	let error = $state('');
 	let success = $state('');
+	let yearEndError = $state('');
+	let yearEndSuccess = $state('');
+	let yearEndStatus = $state<YearEndCloseStatus | null>(null);
 
 	// Form state - will be populated from tenant
 	let companyName = $state('');
@@ -36,6 +43,7 @@
 	let closeNote = $state('');
 	let reopenPeriodEndDate = $state('');
 	let reopenNote = $state('');
+	let yearEndPeriodEndDate = $state('');
 
 	onMount(async () => {
 		if (!tenantId) {
@@ -67,6 +75,7 @@
 		periodCloseEvents = loadedHistory;
 		populateForm(loadedTenant);
 		populatePeriodActions(loadedTenant);
+		await loadYearEndStatus(yearEndPeriodEndDate);
 	}
 
 	function populateForm(t: Tenant) {
@@ -91,6 +100,7 @@
 	function populatePeriodActions(t: Tenant) {
 		closePeriodEndDate = getSuggestedCloseDate(t.settings?.period_lock_date || null);
 		reopenPeriodEndDate = t.settings?.period_lock_date || '';
+		yearEndPeriodEndDate = getSuggestedYearEndDate(t.settings?.period_lock_date || null, t.settings?.fiscal_year_start_month || 1);
 		closeNote = '';
 		reopenNote = '';
 	}
@@ -127,6 +137,7 @@
 			if (tenant) {
 				populateForm(tenant);
 				populatePeriodActions(tenant);
+				await loadYearEndStatus(yearEndPeriodEndDate);
 			}
 			success = m.settings_settingsSaved();
 		} catch (err) {
@@ -170,6 +181,51 @@
 		}
 	}
 
+	async function loadYearEndStatus(periodEndDate: string) {
+		if (!tenantId || !periodEndDate) {
+			yearEndStatus = null;
+			return;
+		}
+
+		isYearEndLoading = true;
+		yearEndError = '';
+		try {
+			yearEndStatus = await api.getYearEndCloseStatus(tenantId, periodEndDate);
+		} catch (err) {
+			yearEndStatus = null;
+			yearEndError = err instanceof Error ? err.message : m.errors_loadFailed();
+		} finally {
+			isYearEndLoading = false;
+		}
+	}
+
+	async function refreshYearEndStatus() {
+		await loadYearEndStatus(yearEndPeriodEndDate);
+	}
+
+	async function submitYearEndCarryForward() {
+		if (!tenantId || !yearEndPeriodEndDate) {
+			return;
+		}
+
+		isYearEndSubmitting = true;
+		yearEndError = '';
+		yearEndSuccess = '';
+
+		try {
+			const result = await api.createYearEndCarryForward(tenantId, {
+				period_end_date: yearEndPeriodEndDate
+			});
+			yearEndStatus = result.status;
+			yearEndSuccess = m.settings_yearEndCarryForwardSuccess({ entryNumber: result.journal_entry.entry_number });
+			await refreshPeriodCloseHistory();
+		} catch (err) {
+			yearEndError = err instanceof Error ? err.message : m.errors_saveFailed();
+		} finally {
+			isYearEndSubmitting = false;
+		}
+	}
+
 	async function submitClosePeriod(e?: Event) {
 		e?.preventDefault();
 		if (!tenantId) {
@@ -190,7 +246,11 @@
 			tenant = result.tenant;
 			populateForm(result.tenant);
 			populatePeriodActions(result.tenant);
+			if (result.event.close_kind === 'year_end') {
+				yearEndPeriodEndDate = result.event.period_end_date;
+			}
 			await refreshPeriodCloseHistory();
+			await loadYearEndStatus(yearEndPeriodEndDate);
 			success = m.settings_periodCloseSuccess();
 		} catch (err) {
 			error = err instanceof Error ? err.message : m.errors_saveFailed();
@@ -220,6 +280,7 @@
 			populateForm(result.tenant);
 			populatePeriodActions(result.tenant);
 			await refreshPeriodCloseHistory();
+			await loadYearEndStatus(yearEndPeriodEndDate);
 			success = m.settings_periodReopenSuccess();
 		} catch (err) {
 			error = err instanceof Error ? err.message : m.errors_saveFailed();
@@ -260,6 +321,25 @@
 
 		const today = new Date();
 		return formatIsoDate(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 0)));
+	}
+
+	function getSuggestedYearEndDate(periodLockDate: string | null, fiscalYearStartMonth: number): string {
+		const anchor = parseDateValue(periodLockDate) ?? new Date();
+		return formatIsoDate(getMostRecentFiscalYearEnd(anchor, fiscalYearStartMonth));
+	}
+
+	function getMostRecentFiscalYearEnd(anchorDate: Date, fiscalYearStartMonth: number): Date {
+		const normalizedFiscalYearStart = fiscalYearStartMonth >= 1 && fiscalYearStartMonth <= 12 ? fiscalYearStartMonth : 1;
+		const anchorMonth = anchorDate.getUTCMonth() + 1;
+		const anchorYear = anchorDate.getUTCFullYear();
+		const startYear = anchorMonth < normalizedFiscalYearStart ? anchorYear - 1 : anchorYear;
+
+		let fiscalYearEnd = new Date(Date.UTC(startYear + 1, normalizedFiscalYearStart - 1, 0));
+		if (fiscalYearEnd.getTime() > anchorDate.getTime()) {
+			fiscalYearEnd = new Date(Date.UTC(startYear, normalizedFiscalYearStart - 1, 0));
+		}
+
+		return fiscalYearEnd;
 	}
 
 	function formatDateLabel(value: string | null | undefined): string {
@@ -348,6 +428,47 @@
 	}
 
 	const monthIndices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+	const selectedFiscalYearLabel = $derived(getMonthLabel(Math.max(0, fiscalYearStart - 1)));
+	const heroStats = $derived.by<WorkflowHeroStat[]>(() => [
+		{
+			label: m.settings_regCode(),
+			value: regCode || m.common_notSet()
+		},
+		{
+			label: m.settings_vatNumber(),
+			value: vatNumber || m.common_notSet()
+		},
+		{
+			label: m.settings_fiscalYearStart(),
+			value: selectedFiscalYearLabel
+		},
+		{
+			label: m.settings_periodLockDate(),
+			value: currentPeriodLockDate ? formatDateLabel(currentPeriodLockDate) : m.settings_periodOpenStatus(),
+			tone: currentPeriodLockDate ? 'warning' : 'success'
+		}
+	]);
+	const heroActions = $derived.by<WorkflowHeroAction[]>(() => [
+		{
+			label: isSaving ? m.settings_saving() : m.settings_saveSettings(),
+			type: 'submit',
+			form: 'company-settings-form',
+			disabled: isSaving
+		},
+		{
+			label: m.nav_invoices(),
+			variant: 'secondary',
+			href: tenantId ? `/invoices?tenant=${tenantId}` : '/invoices'
+		}
+	]);
+	const heroAside = $derived.by<WorkflowHeroAside>(() => ({
+		kicker: m.settings_accountingControls(),
+		title: m.settings_heroAsideTitle(),
+		body: m.settings_heroAsideDesc(),
+		linkLabel: m.settings_periodHistoryTitle(),
+		href: tenantId ? `/settings/company?tenant=${tenantId}#period-history` : '/settings/company#period-history',
+		items: [m.settings_heroAsideItemOne(), m.settings_heroAsideItemTwo()]
+	}));
 </script>
 
 <svelte:head>
@@ -355,12 +476,18 @@
 </svelte:head>
 
 <div class="container">
-	<div class="page-header">
-		<div>
-			<a href="/settings?tenant={tenantId}" class="back-link">&larr; {m.settings_backToSettings()}</a>
-			<h1>{m.settings_companySettings()}</h1>
-		</div>
-	</div>
+	<WorkflowHero
+		backHref={tenantId ? `/settings?tenant=${tenantId}` : '/settings'}
+		backLabel={m.settings_backToSettings()}
+		eyebrow={m.settings_companyInfo()}
+		title={tenant?.name || m.settings_companySettings()}
+		description={m.settings_heroDesc()}
+		badgeLabel={closeStatusLabel}
+		badgeTone={currentPeriodLockDate ? 'warning' : 'success'}
+		actions={heroActions}
+		stats={heroStats}
+		aside={heroAside}
+	/>
 
 	{#if error}
 		<div class="alert alert-error">{error}</div>
@@ -377,7 +504,7 @@
 			<p>{m.settings_selectTenantDashboard()} <a href="/dashboard">{m.dashboard_title()}</a>.</p>
 		</div>
 	{:else}
-		<form onsubmit={saveSettings}>
+		<form id="company-settings-form" onsubmit={saveSettings}>
 			<!-- Company Information -->
 			<section class="card settings-section">
 				<h2>{m.settings_companyInfo()}</h2>
@@ -662,7 +789,7 @@
 					</div>
 				</div>
 
-				<div class="period-history">
+				<div class="period-history" id="period-history">
 					<div class="section-header compact">
 						<div>
 							<h3>{m.settings_periodHistoryTitle()}</h3>
@@ -705,6 +832,23 @@
 				</div>
 			</section>
 
+			<YearEndClosePanel
+				status={yearEndStatus}
+				periodEndDate={yearEndPeriodEndDate}
+				currency={tenant?.settings?.default_currency || 'EUR'}
+				errorMessage={yearEndError}
+				successMessage={yearEndSuccess}
+				isLoading={isYearEndLoading}
+				isSubmitting={isYearEndSubmitting}
+				onrefresh={refreshYearEndStatus}
+				onsubmit={submitYearEndCarryForward}
+				onperiodenddatechange={(value) => {
+					yearEndPeriodEndDate = value;
+					yearEndError = '';
+					yearEndSuccess = '';
+				}}
+			/>
+
 			<div class="form-actions">
 				<button type="submit" class="btn btn-primary" disabled={isSaving}>
 					{isSaving ? m.settings_saving() : m.settings_saveSettings()}
@@ -715,23 +859,6 @@
 </div>
 
 <style>
-	.back-link {
-		display: inline-block;
-		margin-bottom: 0.5rem;
-		color: var(--color-text-muted);
-		text-decoration: none;
-		font-size: 0.875rem;
-	}
-
-	.back-link:hover {
-		color: var(--color-primary);
-	}
-
-	h1 {
-		font-size: 1.75rem;
-		margin: 0;
-	}
-
 	.settings-section {
 		margin-bottom: 1.5rem;
 	}

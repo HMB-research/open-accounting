@@ -270,6 +270,40 @@ Content-Type: application/json
 
 - `note` is required
 - reopen restores the previous lock state for that period instead of guessing from the date alone
+- reopening a fiscal year is rejected once a year-end carry-forward journal has already been posted for that year
+
+### Year-End Close Status
+
+```http
+GET /tenants/{tenantId}/year-end-close-status?period_end_date=2025-12-31
+Authorization: Bearer <token>
+```
+
+Returns the fiscal-year readiness summary for the selected date, including:
+
+- fiscal-year start and end dates
+- whether the selected date matches the fiscal year-end
+- whether the tenant is currently locked through that date
+- whether revenue/expense activity exists for the year
+- retained-earnings account mapping
+- whether a carry-forward journal already exists
+
+### Post Year-End Carry-Forward
+
+```http
+POST /tenants/{tenantId}/year-end-carry-forward
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "period_end_date": "2025-12-31"
+}
+```
+
+- only roles with close permissions can perform this action
+- the fiscal year must already be closed through the selected year-end
+- a carry-forward cannot be posted twice for the same fiscal year
+- the journal entry is posted on the first day of the next fiscal year using `source_type = YEAR_END_CARRY_FORWARD`
 
 ### Period Lock Behavior
 
@@ -283,6 +317,86 @@ This currently applies to:
 - opening-balance import
 
 Invoice import also enforces the lock, but because it is a bulk operation, locked invoice rows are returned as row errors in the import summary instead of failing the whole request with `409 Conflict`.
+
+### Review Bank Transaction
+
+```http
+POST /tenants/{tenantId}/bank-transactions/{transactionId}/review
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "follow_up_status": "EVIDENCE_REQUIRED",
+  "review_note": "Request signed receipt from the client"
+}
+```
+
+- at least one of `follow_up_status` or `review_note` is required
+- `follow_up_status` supports `NONE`, `EVIDENCE_REQUIRED`, and `READY_TO_MATCH`
+- successful updates stamp `reviewed_by` and `reviewed_at` on the transaction
+- the same fields are returned by bank-transaction reads and list endpoints
+
+### List Recent Journal Entries
+
+```http
+GET /tenants/{tenantId}/journal-entries?limit=50
+Authorization: Bearer <token>
+```
+
+- returns the most recent journal entries with their lines
+- `limit` defaults to `50` and is capped at `200`
+
+### Document Attachments
+
+Document attachments currently support `invoice`, `journal_entry`, `payment`, `bank_transaction`, and `asset` entities.
+
+#### List Documents
+
+```http
+GET /tenants/{tenantId}/documents?entity_type=invoice&entity_id=<uuid>
+Authorization: Bearer <token>
+```
+
+#### Upload Document
+
+```http
+POST /tenants/{tenantId}/documents
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+
+entity_type=payment
+entity_id=<uuid>
+document_type=receipt
+notes=Matched%20to%20bank%20statement
+retention_until=2027-03-31
+file=<binary>
+```
+
+- accepts PDFs, images, CSV files, text files, and similar supporting records
+- maximum file size is `10 MB`
+- supported `document_type` values currently include `supporting_document`, `receipt`, `reconciliation_evidence`, `contract`, `asset_record`, `tax_support`, and `other`
+- uploads start in `PENDING` review status and can carry optional retention metadata
+
+#### Download Document
+
+```http
+GET /tenants/{tenantId}/documents/{documentId}/download
+Authorization: Bearer <token>
+```
+
+#### Mark Document Reviewed
+
+```http
+POST /tenants/{tenantId}/documents/{documentId}/mark-reviewed
+Authorization: Bearer <token>
+```
+
+#### Delete Document
+
+```http
+DELETE /tenants/{tenantId}/documents/{documentId}
+Authorization: Bearer <token>
+```
 
 ---
 
@@ -499,6 +613,69 @@ Content-Type: application/json
 ```
 
 Supported header aliases include `name` / `company_name`, `type`, `payment_terms_days` / `payment_days`, and standard contact metadata such as `email`, `phone`, `reg_code`, and `vat_number`.
+
+---
+
+## Payroll
+
+### List Employees
+
+```http
+GET /tenants/{tenantId}/employees
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `active_only` (boolean): return only active employees
+
+### Create Employee
+
+```http
+POST /tenants/{tenantId}/employees
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "employee_number": "EMP-001",
+  "first_name": "Mari",
+  "last_name": "Maasikas",
+  "personal_code": "49001010001",
+  "email": "mari@example.com",
+  "start_date": "2026-01-15T00:00:00Z",
+  "employment_type": "FULL_TIME",
+  "apply_basic_exemption": true,
+  "basic_exemption_amount": "700.00",
+  "funded_pension_rate": "0.02"
+}
+```
+
+### Import Employees
+
+```http
+POST /tenants/{tenantId}/employees/import
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "file_name": "employees.csv",
+  "csv_content": "employee_number,first_name,last_name,personal_code,email,start_date,employment_type,apply_basic_exemption,basic_exemption_amount,funded_pension_rate,base_salary,salary_effective_from\nEMP-001,Mari,Maasikas,49001010001,mari@example.com,2026-01-15,FULL_TIME,true,700.00,0.02,3200.00,2026-01-15\n"
+}
+```
+
+Supported header aliases include `employee_number` / `employee_no`, `personal_code` / `isikukood`, `employment_type` / `type`, `base_salary` / `salary`, and `salary_effective_from` / `effective_from`.
+
+**Response (200 OK):**
+```json
+{
+  "file_name": "employees.csv",
+  "rows_processed": 1,
+  "employees_created": 1,
+  "salaries_created": 1,
+  "rows_skipped": 0
+}
+```
+
+The importer creates employee records first and, when `base_salary` is provided, also creates a recurring base salary component in the same request.
 
 ---
 

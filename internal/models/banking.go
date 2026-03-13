@@ -13,6 +13,15 @@ const (
 	TransactionStatusReconciled TransactionStatus = "RECONCILED"
 )
 
+// TransactionFollowUpStatus represents accountant follow-up guidance for bank transactions.
+type TransactionFollowUpStatus string
+
+const (
+	TransactionFollowUpNone             TransactionFollowUpStatus = "NONE"
+	TransactionFollowUpEvidenceRequired TransactionFollowUpStatus = "EVIDENCE_REQUIRED"
+	TransactionFollowUpReadyToMatch     TransactionFollowUpStatus = "READY_TO_MATCH"
+)
+
 // ReconciliationStatus represents the status of a reconciliation session
 type ReconciliationStatus string
 
@@ -46,23 +55,27 @@ func (BankAccount) TableName() string {
 
 // BankTransaction represents an imported bank transaction (GORM model)
 type BankTransaction struct {
-	ID                  string            `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	TenantID            string            `gorm:"type:uuid;not null;index" json:"tenant_id"`
-	BankAccountID       string            `gorm:"column:bank_account_id;type:uuid;not null;index" json:"bank_account_id"`
-	TransactionDate     time.Time         `gorm:"column:transaction_date;type:date;not null" json:"transaction_date"`
-	ValueDate           *time.Time        `gorm:"column:value_date;type:date" json:"value_date,omitempty"`
-	Amount              Decimal           `gorm:"type:numeric(28,8);not null" json:"amount"`
-	Currency            string            `gorm:"size:3;not null;default:'EUR'" json:"currency"`
-	Description         string            `gorm:"type:text" json:"description,omitempty"`
-	Reference           string            `gorm:"size:255" json:"reference,omitempty"`
-	CounterpartyName    string            `gorm:"column:counterparty_name;size:255" json:"counterparty_name,omitempty"`
-	CounterpartyAccount string            `gorm:"column:counterparty_account;size:100" json:"counterparty_account,omitempty"`
-	Status              TransactionStatus `gorm:"size:20;not null;default:'UNMATCHED'" json:"status"`
-	MatchedPaymentID    *string           `gorm:"column:matched_payment_id;type:uuid" json:"matched_payment_id,omitempty"`
-	JournalEntryID      *string           `gorm:"column:journal_entry_id;type:uuid" json:"journal_entry_id,omitempty"`
-	ReconciliationID    *string           `gorm:"column:reconciliation_id;type:uuid" json:"reconciliation_id,omitempty"`
-	ImportedAt          time.Time         `gorm:"column:imported_at;not null;default:now()" json:"imported_at"`
-	ExternalID          string            `gorm:"column:external_id;size:255" json:"external_id,omitempty"`
+	ID                  string                    `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	TenantID            string                    `gorm:"type:uuid;not null;index" json:"tenant_id"`
+	BankAccountID       string                    `gorm:"column:bank_account_id;type:uuid;not null;index" json:"bank_account_id"`
+	TransactionDate     time.Time                 `gorm:"column:transaction_date;type:date;not null" json:"transaction_date"`
+	ValueDate           *time.Time                `gorm:"column:value_date;type:date" json:"value_date,omitempty"`
+	Amount              Decimal                   `gorm:"type:numeric(28,8);not null" json:"amount"`
+	Currency            string                    `gorm:"size:3;not null;default:'EUR'" json:"currency"`
+	Description         string                    `gorm:"type:text" json:"description,omitempty"`
+	Reference           string                    `gorm:"size:255" json:"reference,omitempty"`
+	CounterpartyName    string                    `gorm:"column:counterparty_name;size:255" json:"counterparty_name,omitempty"`
+	CounterpartyAccount string                    `gorm:"column:counterparty_account;size:100" json:"counterparty_account,omitempty"`
+	Status              TransactionStatus         `gorm:"size:20;not null;default:'UNMATCHED'" json:"status"`
+	FollowUpStatus      TransactionFollowUpStatus `gorm:"column:follow_up_status;size:30;not null;default:'NONE'" json:"follow_up_status"`
+	ReviewNote          string                    `gorm:"column:review_note;type:text" json:"review_note,omitempty"`
+	ReviewedBy          *string                   `gorm:"column:reviewed_by;type:uuid" json:"reviewed_by,omitempty"`
+	ReviewedAt          *time.Time                `gorm:"column:reviewed_at" json:"reviewed_at,omitempty"`
+	MatchedPaymentID    *string                   `gorm:"column:matched_payment_id;type:uuid" json:"matched_payment_id,omitempty"`
+	JournalEntryID      *string                   `gorm:"column:journal_entry_id;type:uuid" json:"journal_entry_id,omitempty"`
+	ReconciliationID    *string                   `gorm:"column:reconciliation_id;type:uuid" json:"reconciliation_id,omitempty"`
+	ImportedAt          time.Time                 `gorm:"column:imported_at;not null;default:now()" json:"imported_at"`
+	ExternalID          string                    `gorm:"column:external_id;size:255" json:"external_id,omitempty"`
 
 	// Relations
 	BankAccount *BankAccount `gorm:"foreignKey:BankAccountID" json:"bank_account,omitempty"`

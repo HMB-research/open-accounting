@@ -2,9 +2,11 @@
 	import { browser } from '$app/environment';
 	import { page } from '$app/stores';
 	import { api, type Contact, type ContactType, type ImportContactsResult } from '$lib/api';
+	import WorkflowHero, { type WorkflowHeroAction, type WorkflowHeroAside, type WorkflowHeroStat } from '$lib/components/WorkflowHero.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
 
+	let tenantId = $derived($page.url.searchParams.get('tenant') || '');
 	let contacts = $state<Contact[]>([]);
 	let isLoading = $state(true);
 	let error = $state('');
@@ -30,8 +32,76 @@
 	let newCountry = $state('EE');
 	let newPaymentDays = $state(14);
 
+	let totalCustomers = $derived(contacts.filter((contact) => contact.contact_type === 'CUSTOMER' || contact.contact_type === 'BOTH').length);
+	let totalSuppliers = $derived(contacts.filter((contact) => contact.contact_type === 'SUPPLIER' || contact.contact_type === 'BOTH').length);
+	let averageTerms = $derived(
+		contacts.length === 0
+			? 0
+			: Math.round(
+					contacts.reduce((sum, contact) => sum + (contact.payment_terms_days || 0), 0) / contacts.length
+				)
+	);
+
+	let heroStats = $derived.by<WorkflowHeroStat[]>(() => [
+		{
+			label: m.common_total(),
+			value: String(contacts.length),
+			detail: m.contacts_totalContactsHint()
+		},
+		{
+			label: m.contacts_customers(),
+			value: String(totalCustomers),
+			tone: totalCustomers > 0 ? 'success' : 'default'
+		},
+		{
+			label: m.contacts_suppliers(),
+			value: String(totalSuppliers),
+			tone: totalSuppliers > 0 ? 'success' : 'default'
+		},
+		{
+			label: m.contacts_paymentTerms(),
+			value: contacts.length > 0 ? `${averageTerms} ${m.contacts_days()}` : `14 ${m.contacts_days()}`,
+			detail: m.contacts_termsHint()
+		}
+	]);
+
+	let heroActions = $derived.by<WorkflowHeroAction[]>(() => [
+		{
+			label: m.contacts_importContacts(),
+			variant: 'secondary',
+			onclick: openImportModal,
+			disabled: !tenantId
+		},
+		{
+			label: m.contacts_newContact(),
+			onclick: () => (showCreateContact = true),
+			disabled: !tenantId
+		}
+	]);
+
+	let heroAside = $derived.by<WorkflowHeroAside>(() => {
+		if (contacts.length === 0) {
+			return {
+				kicker: m.dashboard_setupCenter(),
+				title: m.contacts_firstImportTitle(),
+				body: m.contacts_firstImportDesc(),
+				linkLabel: m.contacts_importContacts(),
+				href: tenantId ? `/contacts?tenant=${tenantId}` : '/contacts',
+				items: [m.contacts_firstImportItemOne(), m.contacts_firstImportItemTwo()]
+			};
+		}
+
+		return {
+			kicker: m.invoices_title(),
+			title: m.contacts_readyForBillingTitle(),
+			body: m.contacts_readyForBillingDesc(),
+			linkLabel: m.invoices_newInvoice(),
+			href: tenantId ? `/invoices?tenant=${tenantId}` : '/invoices',
+			items: [m.contacts_readyForBillingItemOne(), m.contacts_readyForBillingItemTwo()]
+		};
+	});
+
 	$effect(() => {
-		const tenantId = $page.url.searchParams.get('tenant');
 		if (tenantId) {
 			loadContacts(tenantId);
 		}
@@ -194,17 +264,14 @@
 </svelte:head>
 
 <div class="container">
-		<div class="page-header">
-			<h1>{m.contacts_title()}</h1>
-			<div class="page-actions">
-				<button class="btn btn-secondary" onclick={openImportModal}>
-					{m.contacts_importContacts()}
-				</button>
-				<button class="btn btn-primary" onclick={() => (showCreateContact = true)}>
-					+ {m.contacts_newContact()}
-				</button>
-			</div>
-		</div>
+	<WorkflowHero
+		eyebrow={m.dashboard_setupTaskContactsTitle()}
+		title={m.contacts_title()}
+		description={m.contacts_heroDesc()}
+		actions={heroActions}
+		stats={heroStats}
+		aside={heroAside}
+	/>
 
 	<div class="filters card">
 		<div class="filter-row">
@@ -223,6 +290,7 @@
 			/>
 			<button class="btn btn-secondary" onclick={handleSearch}>{m.common_search()}</button>
 		</div>
+		<p class="filter-hint">{m.contacts_filterHint({ count: String(contacts.length) })}</p>
 	</div>
 
 	{#if error}
@@ -233,7 +301,16 @@
 		<p>{m.common_loading()}</p>
 	{:else if contacts.length === 0}
 		<div class="empty-state card">
-			<p>{m.contacts_noContacts()} {m.contacts_createFirst()}</p>
+			<h2>{m.contacts_noContacts()}</h2>
+			<p>{m.contacts_createFirst()}</p>
+			<div class="empty-actions">
+				<button class="btn btn-secondary" onclick={openImportModal}>
+					{m.contacts_importContacts()}
+				</button>
+				<button class="btn btn-primary" onclick={() => (showCreateContact = true)}>
+					{m.contacts_newContact()}
+				</button>
+			</div>
 		</div>
 	{:else}
 		<div class="card">
@@ -498,13 +575,15 @@
 {/if}
 
 <style>
-	h1 {
-		font-size: 1.75rem;
-	}
-
 	.filters {
 		margin-bottom: 1.5rem;
 		padding: 1rem;
+	}
+
+	.filter-hint {
+		margin-top: 0.85rem;
+		font-size: 0.925rem;
+		color: var(--color-text-muted);
 	}
 
 	.filter-row {
@@ -521,12 +600,6 @@
 	.search-input {
 		flex: 1;
 		min-width: 150px;
-	}
-
-	.page-actions {
-		display: flex;
-		gap: 0.75rem;
-		flex-wrap: wrap;
 	}
 
 	.name {
@@ -550,6 +623,19 @@
 		text-align: center;
 		padding: 3rem;
 		color: var(--color-text-muted);
+	}
+
+	.empty-state h2 {
+		color: var(--color-text);
+		margin-bottom: 0.5rem;
+	}
+
+	.empty-actions {
+		display: flex;
+		justify-content: center;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+		margin-top: 1.25rem;
 	}
 
 	.modal-backdrop {
@@ -656,10 +742,6 @@
 
 	/* Mobile responsive */
 	@media (max-width: 768px) {
-		h1 {
-			font-size: 1.25rem;
-		}
-
 		.filters {
 			padding: 0.75rem;
 		}
@@ -722,6 +804,14 @@
 
 		.empty-state {
 			padding: 2rem 1rem;
+		}
+
+		.empty-actions {
+			flex-direction: column;
+		}
+
+		.empty-actions .btn {
+			width: 100%;
 		}
 	}
 </style>

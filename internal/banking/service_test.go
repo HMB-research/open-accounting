@@ -29,6 +29,7 @@ type MockRepository struct {
 	GetTransactionFn                 func(ctx context.Context, schemaName, tenantID, transactionID string) (*BankTransaction, error)
 	MatchTransactionFn               func(ctx context.Context, schemaName, tenantID, transactionID, paymentID string) error
 	UnmatchTransactionFn             func(ctx context.Context, schemaName, tenantID, transactionID string) error
+	UpdateTransactionReviewFn        func(ctx context.Context, schemaName, tenantID, transactionID string, update TransactionReviewUpdate) (*BankTransaction, error)
 	CreateReconciliationFn           func(ctx context.Context, schemaName string, r *BankReconciliation) error
 	GetReconciliationFn              func(ctx context.Context, schemaName, tenantID, reconciliationID string) (*BankReconciliation, error)
 	ListReconciliationsFn            func(ctx context.Context, schemaName, tenantID, bankAccountID string) ([]BankReconciliation, error)
@@ -184,6 +185,7 @@ func (m *MockRepository) MatchTransaction(ctx context.Context, schemaName, tenan
 		return ErrTransactionAlreadyMatched
 	}
 	t.Status = "MATCHED"
+	t.FollowUpStatus = FollowUpNone
 	t.MatchedPaymentID = &paymentID
 	return nil
 }
@@ -199,6 +201,25 @@ func (m *MockRepository) UnmatchTransaction(ctx context.Context, schemaName, ten
 	t.Status = "UNMATCHED"
 	t.MatchedPaymentID = nil
 	return nil
+}
+
+func (m *MockRepository) UpdateTransactionReview(ctx context.Context, schemaName, tenantID, transactionID string, update TransactionReviewUpdate) (*BankTransaction, error) {
+	if m.UpdateTransactionReviewFn != nil {
+		return m.UpdateTransactionReviewFn(ctx, schemaName, tenantID, transactionID, update)
+	}
+	t, ok := m.transactions[transactionID]
+	if !ok || t.TenantID != tenantID {
+		return nil, ErrTransactionNotFound
+	}
+	if update.FollowUpStatus != nil {
+		t.FollowUpStatus = *update.FollowUpStatus
+	}
+	if update.ReviewNote != nil {
+		t.ReviewNote = *update.ReviewNote
+	}
+	t.ReviewedBy = &update.ReviewedBy
+	t.ReviewedAt = &update.ReviewedAt
+	return t, nil
 }
 
 func (m *MockRepository) CreateTransaction(ctx context.Context, schemaName string, t *BankTransaction) error {
@@ -759,6 +780,83 @@ func TestService_UnmatchTransaction_NotMatched(t *testing.T) {
 	}
 }
 
+func TestService_UpdateTransactionReview(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo)
+	ctx := context.Background()
+
+	repo.transactions["tx-123"] = &BankTransaction{
+		ID:             "tx-123",
+		TenantID:       testTenantID,
+		Status:         StatusUnmatched,
+		FollowUpStatus: FollowUpNone,
+	}
+
+	note := "Collect supporting document"
+	result, err := service.UpdateTransactionReview(ctx, testSchemaName, testTenantID, "tx-123", "user-1", &UpdateTransactionReviewRequest{
+		FollowUpStatus: ptrFollowUpStatus(FollowUpEvidenceRequired),
+		ReviewNote:     &note,
+	})
+	if err != nil {
+		t.Fatalf("UpdateTransactionReview() error = %v", err)
+	}
+
+	if result.FollowUpStatus != FollowUpEvidenceRequired {
+		t.Errorf("expected follow-up status %q, got %q", FollowUpEvidenceRequired, result.FollowUpStatus)
+	}
+	if result.ReviewNote != note {
+		t.Errorf("expected review note %q, got %q", note, result.ReviewNote)
+	}
+	if result.ReviewedBy == nil || *result.ReviewedBy != "user-1" {
+		t.Fatalf("expected reviewed_by to be set to user-1, got %#v", result.ReviewedBy)
+	}
+	if result.ReviewedAt == nil {
+		t.Fatal("expected reviewed_at to be set")
+	}
+}
+
+func TestService_UpdateTransactionReview_RejectsInvalidRequest(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo)
+	ctx := context.Background()
+
+	_, err := service.UpdateTransactionReview(ctx, testSchemaName, testTenantID, "tx-123", "user-1", &UpdateTransactionReviewRequest{})
+	if err == nil {
+		t.Fatal("expected error for empty review update")
+	}
+
+	invalid := FollowUpStatus("INVALID")
+	_, err = service.UpdateTransactionReview(ctx, testSchemaName, testTenantID, "tx-123", "user-1", &UpdateTransactionReviewRequest{
+		FollowUpStatus: &invalid,
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid follow-up status")
+	}
+}
+
+func TestService_ListTransactions_NormalizesEmptyFollowUpStatus(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo)
+	ctx := context.Background()
+
+	repo.transactions["tx-123"] = &BankTransaction{
+		ID:       "tx-123",
+		TenantID: testTenantID,
+		Status:   StatusUnmatched,
+	}
+
+	transactions, err := service.ListTransactions(ctx, testSchemaName, testTenantID, nil)
+	if err != nil {
+		t.Fatalf("ListTransactions() error = %v", err)
+	}
+	if len(transactions) != 1 {
+		t.Fatalf("expected 1 transaction, got %d", len(transactions))
+	}
+	if transactions[0].FollowUpStatus != FollowUpNone {
+		t.Fatalf("expected normalized follow-up status %q, got %q", FollowUpNone, transactions[0].FollowUpStatus)
+	}
+}
+
 func TestService_CreateReconciliation(t *testing.T) {
 	repo := NewMockRepository()
 	service := NewServiceWithRepository(repo)
@@ -1091,4 +1189,8 @@ func TestErrorTypes(t *testing.T) {
 	if ErrReconciliationAlreadyDone == nil {
 		t.Error("ErrReconciliationAlreadyDone should not be nil")
 	}
+}
+
+func ptrFollowUpStatus(status FollowUpStatus) *FollowUpStatus {
+	return &status
 }

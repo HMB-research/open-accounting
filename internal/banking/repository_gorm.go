@@ -256,6 +256,7 @@ func (r *GORMRepository) MatchTransaction(ctx context.Context, schemaName, tenan
 		Updates(map[string]interface{}{
 			"matched_payment_id": paymentID,
 			"status":             StatusMatched,
+			"follow_up_status":   FollowUpNone,
 		})
 	if result.Error != nil {
 		return fmt.Errorf("match transaction: %w", result.Error)
@@ -285,6 +286,37 @@ func (r *GORMRepository) UnmatchTransaction(ctx context.Context, schemaName, ten
 		return ErrTransactionNotMatched
 	}
 	return nil
+}
+
+// UpdateTransactionReview updates accountant follow-up guidance for a bank transaction.
+func (r *GORMRepository) UpdateTransactionReview(ctx context.Context, schemaName, tenantID, transactionID string, update TransactionReviewUpdate) (*BankTransaction, error) {
+	db, err := r.tenantTable(ctx, schemaName, "bank_transactions")
+	if err != nil {
+		return nil, err
+	}
+
+	updates := map[string]interface{}{
+		"reviewed_by": update.ReviewedBy,
+		"reviewed_at": update.ReviewedAt,
+	}
+	if update.FollowUpStatus != nil {
+		updates["follow_up_status"] = *update.FollowUpStatus
+	}
+	if update.ReviewNote != nil {
+		updates["review_note"] = *update.ReviewNote
+	}
+
+	result := db.Model(&models.BankTransaction{}).
+		Where("id = ? AND tenant_id = ?", transactionID, tenantID).
+		Updates(updates)
+	if result.Error != nil {
+		return nil, fmt.Errorf("update transaction review: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return nil, ErrTransactionNotFound
+	}
+
+	return r.GetTransaction(ctx, schemaName, tenantID, transactionID)
 }
 
 // CreateTransaction inserts a new bank transaction
@@ -520,6 +552,10 @@ func bankAccountToModel(a *BankAccount) *models.BankAccount {
 }
 
 func modelToBankTransaction(m *models.BankTransaction) *BankTransaction {
+	followUpStatus := FollowUpStatus(m.FollowUpStatus)
+	if followUpStatus == "" {
+		followUpStatus = FollowUpNone
+	}
 	return &BankTransaction{
 		ID:                  m.ID,
 		TenantID:            m.TenantID,
@@ -533,6 +569,10 @@ func modelToBankTransaction(m *models.BankTransaction) *BankTransaction {
 		CounterpartyName:    m.CounterpartyName,
 		CounterpartyAccount: m.CounterpartyAccount,
 		Status:              TransactionStatus(m.Status),
+		FollowUpStatus:      followUpStatus,
+		ReviewNote:          m.ReviewNote,
+		ReviewedBy:          m.ReviewedBy,
+		ReviewedAt:          m.ReviewedAt,
 		MatchedPaymentID:    m.MatchedPaymentID,
 		JournalEntryID:      m.JournalEntryID,
 		ReconciliationID:    m.ReconciliationID,
@@ -542,6 +582,10 @@ func modelToBankTransaction(m *models.BankTransaction) *BankTransaction {
 }
 
 func bankTransactionToModel(t *BankTransaction) *models.BankTransaction {
+	followUpStatus := models.TransactionFollowUpStatus(t.FollowUpStatus)
+	if followUpStatus == "" {
+		followUpStatus = models.TransactionFollowUpNone
+	}
 	return &models.BankTransaction{
 		ID:                  t.ID,
 		TenantID:            t.TenantID,
@@ -555,6 +599,10 @@ func bankTransactionToModel(t *BankTransaction) *models.BankTransaction {
 		CounterpartyName:    t.CounterpartyName,
 		CounterpartyAccount: t.CounterpartyAccount,
 		Status:              models.TransactionStatus(t.Status),
+		FollowUpStatus:      followUpStatus,
+		ReviewNote:          t.ReviewNote,
+		ReviewedBy:          t.ReviewedBy,
+		ReviewedAt:          t.ReviewedAt,
 		MatchedPaymentID:    t.MatchedPaymentID,
 		JournalEntryID:      t.JournalEntryID,
 		ReconciliationID:    t.ReconciliationID,

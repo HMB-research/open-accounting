@@ -88,7 +88,7 @@ test.describe('Mobile Tables', () => {
 		await navigateTo(page, '/invoices', testInfo);
 
 		// Page should load without errors
-		await expect(page.getByRole('heading', { name: /invoices/i })).toBeVisible();
+		await expect(page.getByRole('heading', { level: 1, name: /^Invoices$/i })).toBeVisible();
 	});
 
 	test('contacts page should be usable on mobile', async ({ page }, testInfo) => {
@@ -250,6 +250,6 @@ test.describe('Tablet Viewport', () => {
 
 	test('invoices page should display properly on tablet', async ({ page }, testInfo) => {
 		await navigateTo(page, '/invoices', testInfo);
-		await expect(page.getByRole('heading', { name: /invoices/i })).toBeVisible();
+		await expect(page.getByRole('heading', { level: 1, name: /^Invoices$/i })).toBeVisible();
 	});
 });

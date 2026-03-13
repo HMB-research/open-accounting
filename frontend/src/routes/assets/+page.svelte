@@ -3,6 +3,7 @@
 	import { api, type FixedAsset, type AssetStatus, type AssetCategory, type DepreciationEntry, type DepreciationMethod, type DisposalMethod } from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
+	import DocumentManager from '$lib/components/DocumentManager.svelte';
 	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
 	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
 	import { formatCurrency, formatDate } from '$lib/utils/formatting';
@@ -14,10 +15,12 @@
 	let showCreateAsset = $state(false);
 	let showDisposeModal = $state(false);
 	let showDepreciationHistory = $state(false);
+	let showDocumentManager = $state(false);
 	let filterStatus = $state<AssetStatus | ''>('');
 	let filterFromDate = $state('');
 	let filterToDate = $state('');
 	let selectedAsset = $state<FixedAsset | null>(null);
+	let selectedAssetForDocuments = $state<FixedAsset | null>(null);
 	let depreciationHistory = $state<DepreciationEntry[]>([]);
 
 	// New asset form
@@ -203,6 +206,16 @@
 		}
 	}
 
+	function openDocumentManager(asset: FixedAsset) {
+		selectedAssetForDocuments = asset;
+		showDocumentManager = true;
+	}
+
+	function closeDocumentManager() {
+		showDocumentManager = false;
+		selectedAssetForDocuments = null;
+	}
+
 	const statusConfig: Record<AssetStatus, StatusConfig> = {
 		DRAFT: { class: 'badge-draft', label: m.assets_statusDraft() },
 		ACTIVE: { class: 'badge-active', label: m.assets_statusActive() },
@@ -326,6 +339,9 @@
 											{m.assets_viewHistory()}
 										</button>
 									{/if}
+									<button class="btn btn-small" onclick={() => openDocumentManager(asset)} title={m.documents_manageAction()}>
+										{m.documents_manageAction()}
+									</button>
 								</td>
 							</tr>
 						{/each}
@@ -422,6 +438,15 @@
 		</div>
 	</div>
 {/if}
+
+<DocumentManager
+	open={showDocumentManager && !!selectedAssetForDocuments}
+	tenantId={$page.url.searchParams.get('tenant') || ''}
+	entityType="asset"
+	entityId={selectedAssetForDocuments?.id || ''}
+	title={selectedAssetForDocuments ? m.documents_assetTitle({ number: selectedAssetForDocuments.asset_number }) : m.documents_manageAction()}
+	onClose={closeDocumentManager}
+/>
 
 {#if showDisposeModal && selectedAsset}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->

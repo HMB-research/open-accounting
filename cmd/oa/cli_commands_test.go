@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,6 +18,8 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -404,6 +407,207 @@ func TestCLIContactsInvoicesAndJournalCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "debit 500")
 }
 
+func TestCLIEmployeesCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	employeesFile := writeTempCSV(t, "employees.csv", "employee_number,first_name,last_name,start_date,base_salary\nEMP-001,Mari,Maasikas,2026-01-15,3200\n")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/employees":
+			require.Equal(t, "true", r.URL.Query().Get("active_only"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"id":              "emp-1",
+				"employee_number": "EMP-001",
+				"first_name":      "Mari",
+				"last_name":       "Maasikas",
+				"employment_type": "FULL_TIME",
+				"email":           "mari@example.com",
+				"is_active":       true,
+			}})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/employees":
+			var req payroll.CreateEmployeeRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Mari", req.FirstName)
+			assert.Equal(t, "Maasikas", req.LastName)
+			assert.Equal(t, payroll.EmploymentFullTime, req.EmploymentType)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":              "emp-1",
+				"employee_number": req.EmployeeNumber,
+				"first_name":      req.FirstName,
+				"last_name":       req.LastName,
+				"employment_type": req.EmploymentType,
+				"is_active":       true,
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/employees/import":
+			var req payroll.ImportEmployeesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "employees.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "EMP-001")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed":    1,
+				"employees_created": 1,
+				"salaries_created":  1,
+				"rows_skipped":      0,
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"employees", "list", "--active-only", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"employee_number": "EMP-001"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"employees",
+		"create",
+		"--employee-number", "EMP-001",
+		"--first-name", "Mari",
+		"--last-name", "Maasikas",
+		"--start-date", "2026-01-15",
+		"--employment-type", "FULL_TIME",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created employee Mari Maasikas (emp-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"employees", "import", "--file", employeesFile})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 employees, set 1 salaries, skipped 0 rows")
+}
+
+func TestCLIDocumentCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	uploadPath := writeTempCSV(t, "evidence.txt", "statement line")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/documents":
+			assert.Equal(t, "payment", r.URL.Query().Get("entity_type"))
+			assert.Equal(t, "pay-1", r.URL.Query().Get("entity_id"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"id":            "doc-1",
+				"tenant_id":     "tenant-1",
+				"entity_type":   "payment",
+				"entity_id":     "pay-1",
+				"document_type": "receipt",
+				"file_name":     "receipt.pdf",
+				"content_type":  "application/pdf",
+				"file_size":     1024,
+				"review_status": "PENDING",
+				"uploaded_by":   "user-1",
+				"created_at":    "2026-03-12T00:00:00Z",
+			}})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents":
+			require.NoError(t, r.ParseMultipartForm(2<<20))
+			assert.Equal(t, "bank_transaction", r.FormValue("entity_type"))
+			assert.Equal(t, "txn-1", r.FormValue("entity_id"))
+			assert.Equal(t, documents.DocumentTypeReconciliation, r.FormValue("document_type"))
+			assert.Equal(t, "Statement evidence", r.FormValue("notes"))
+			assert.Equal(t, "2027-03-31", r.FormValue("retention_until"))
+			file, header, err := r.FormFile("file")
+			require.NoError(t, err)
+			defer func() { _ = file.Close() }()
+			payload, err := io.ReadAll(file)
+			require.NoError(t, err)
+			assert.Equal(t, "evidence.txt", header.Filename)
+			assert.Equal(t, "statement line", string(payload))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":            "doc-2",
+				"tenant_id":     "tenant-1",
+				"entity_type":   "bank_transaction",
+				"entity_id":     "txn-1",
+				"document_type": "reconciliation_evidence",
+				"file_name":     "evidence.txt",
+				"content_type":  "text/plain",
+				"file_size":     len(payload),
+				"review_status": "PENDING",
+				"uploaded_by":   "user-1",
+				"created_at":    "2026-03-12T00:00:00Z",
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-2/mark-reviewed":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":            "doc-2",
+				"tenant_id":     "tenant-1",
+				"entity_type":   "bank_transaction",
+				"entity_id":     "txn-1",
+				"document_type": "reconciliation_evidence",
+				"file_name":     "evidence.txt",
+				"content_type":  "text/plain",
+				"file_size":     14,
+				"review_status": "REVIEWED",
+				"uploaded_by":   "user-1",
+				"created_at":    "2026-03-12T00:00:00Z",
+			})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-2":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"documents", "list", "--entity-type", "payment", "--entity-id", "pay-1", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"file_name": "receipt.pdf"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"documents",
+		"upload",
+		"--entity-type", "bank_transaction",
+		"--entity-id", "txn-1",
+		"--file", uploadPath,
+		"--document-type", "reconciliation_evidence",
+		"--notes", "Statement evidence",
+		"--retention-until", "2027-03-31",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Uploaded evidence.txt (doc-2)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"documents", "mark-reviewed", "--id", "doc-2"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Marked document doc-2 as reviewed")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"documents", "delete", "--id", "doc-2"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Deleted document doc-2")
+}
+
 func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	configureCLIEnv(t)
 
@@ -425,9 +629,17 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "contacts subcommand required")
 
+	err = app.runEmployees(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "employees subcommand required")
+
 	err = app.runInvoices(context.Background(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invoices subcommand required")
+
+	err = app.runDocuments(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "documents subcommand required")
 
 	err = app.runJournal(context.Background(), nil)
 	require.Error(t, err)
@@ -473,6 +685,18 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "stdin.csv", fileName)
 	assert.Equal(t, "from,stdin\n", content)
+
+	originalStdin = os.Stdin
+	r, w, err = os.Pipe()
+	require.NoError(t, err)
+	_, err = w.WriteString("binary-stdin")
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	os.Stdin = r
+	data, fileName, err := readFileInput("-", "stdin.bin")
+	require.NoError(t, err)
+	assert.Equal(t, "stdin.bin", fileName)
+	assert.Equal(t, []byte("binary-stdin"), data)
 
 	assert.True(t, isValidAccountType(accounting.AccountTypeRevenue))
 	assert.False(t, isValidAccountType("INVALID"))

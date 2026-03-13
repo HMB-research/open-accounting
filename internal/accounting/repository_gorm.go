@@ -132,6 +132,27 @@ func (r *GORMRepository) GetJournalEntryByID(ctx context.Context, schemaName, te
 	return je, nil
 }
 
+// GetJournalEntryBySource retrieves the most recent non-voided journal entry for a source pair.
+func (r *GORMRepository) GetJournalEntryBySource(ctx context.Context, schemaName, tenantID, sourceType, sourceID string) (*JournalEntry, error) {
+	db, err := r.tenantTable(ctx, schemaName, "journal_entries")
+	if err != nil {
+		return nil, err
+	}
+
+	var entry models.JournalEntry
+	err = db.Where("tenant_id = ? AND source_type = ? AND source_id = ? AND status <> ?", tenantID, sourceType, sourceID, StatusVoided).
+		Order("created_at DESC").
+		First(&entry).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get journal entry by source: %w", err)
+	}
+
+	return r.GetJournalEntryByID(ctx, schemaName, tenantID, entry.ID)
+}
+
 // CreateJournalEntry creates a new journal entry with lines
 func (r *GORMRepository) CreateJournalEntry(ctx context.Context, schemaName string, je *JournalEntry) error {
 	db, err := r.tenantTable(ctx, schemaName, "journal_entries")
@@ -403,7 +424,7 @@ func (r *GORMRepository) GetPeriodBalances(ctx context.Context, schemaName, tena
 			LEFT JOIN %s jel ON jel.account_id = a.id AND jel.tenant_id = a.tenant_id
 			LEFT JOIN %s je ON je.id = jel.journal_entry_id
 			WHERE a.tenant_id = ?
-			  AND (je.id IS NULL OR (je.entry_date >= ? AND je.entry_date <= ? AND je.status = 'POSTED'))
+			  AND (je.id IS NULL OR (je.entry_date >= ? AND je.entry_date <= ? AND je.status = 'POSTED' AND COALESCE(je.source_type, '') != ?))
 			  AND a.account_type IN ('REVENUE', 'EXPENSE')
 			GROUP BY a.id, a.code, a.name, a.account_type
 		)
@@ -421,7 +442,7 @@ func (r *GORMRepository) GetPeriodBalances(ctx context.Context, schemaName, tena
 		FROM period_totals
 		WHERE total_debits != 0 OR total_credits != 0
 		ORDER BY account_type DESC, account_code
-	`, accountsTable, linesTable, entriesTable), tenantID, startDate, endDate).Scan(&results).Error
+	`, accountsTable, linesTable, entriesTable), tenantID, startDate, endDate, SourceTypeYearEndCarryForward).Scan(&results).Error
 	if err != nil {
 		return nil, fmt.Errorf("get period balances: %w", err)
 	}

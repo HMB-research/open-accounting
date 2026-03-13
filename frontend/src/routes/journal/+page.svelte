@@ -8,7 +8,14 @@
     type CreateJournalEntryRequest,
     type ImportOpeningBalancesResult,
     type JournalEntry,
+    type Tenant,
   } from "$lib/api";
+  import WorkflowHero, {
+    type WorkflowHeroAction,
+    type WorkflowHeroAside,
+    type WorkflowHeroStat,
+  } from "$lib/components/WorkflowHero.svelte";
+  import DocumentManager from "$lib/components/DocumentManager.svelte";
   import Decimal from "decimal.js";
   import * as m from "$lib/paraglide/messages.js";
 
@@ -41,11 +48,13 @@
   let tenantId = $derived($page.url.searchParams.get("tenant") || "");
   let entries = $state<JournalEntry[]>([]);
   let accounts = $state<Account[]>([]);
+  let tenant = $state<Tenant | null>(null);
   let isLoading = $state(true);
   let error = $state("");
 
   let showCreate = $state(false);
   let showImportOpeningBalances = $state(false);
+  let showDocumentManager = $state(false);
   let formError = $state("");
   let openingBalanceImportError = $state("");
   let isImportingOpeningBalances = $state(false);
@@ -63,8 +72,8 @@
   let openingBalanceEntryDate = $state(openingBalanceDefaultDate());
   let openingBalanceDescription = $state(m.journal_importDefaultDescription());
   let openingBalanceReference = $state(defaultOpeningBalanceReference());
+  let selectedEntryForDocuments = $state<JournalEntry | null>(null);
 
-  // We don't have a list endpoint in the API yet, so we only show entries created in-session.
   onMount(async () => {
     if (!tenantId) {
       error = m.journal_noTenantSelected();
@@ -73,13 +82,110 @@
     }
 
     try {
-      accounts = await api.listAccounts(tenantId, true);
+      const [loadedAccounts, loadedEntries, loadedTenant] = await Promise.all([
+        api.listAccounts(tenantId, true),
+        api.listJournalEntries(tenantId, 50),
+        api.getTenant(tenantId),
+      ]);
+      accounts = loadedAccounts;
+      entries = loadedEntries;
+      tenant = loadedTenant;
     } catch (err) {
       error =
         err instanceof Error ? err.message : m.journal_failedToLoadAccounts();
     } finally {
       isLoading = false;
     }
+  });
+
+  function formatLockDate(value: string | null | undefined): string {
+    if (!value) return m.settings_periodOpenStatus();
+    const parsed = new Date(`${value}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return new Intl.DateTimeFormat(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    }).format(parsed);
+  }
+
+  let draftEntries = $derived(
+    entries.filter((entry) => entry.status === "DRAFT").length,
+  );
+  let postedEntries = $derived(
+    entries.filter((entry) => entry.status === "POSTED").length,
+  );
+  let currentPeriodLockDate = $derived(tenant?.settings?.period_lock_date || "");
+
+  let heroStats = $derived.by<WorkflowHeroStat[]>(() => [
+    {
+      label: m.journal_totalEntries(),
+      value: String(entries.length),
+      detail: m.journal_recentEntriesHint(),
+    },
+    {
+      label: m.journal_postedEntries(),
+      value: String(postedEntries),
+      tone: "success",
+      detail: m.journal_postedEntriesHint(),
+    },
+    {
+      label: m.journal_draftEntries(),
+      value: String(draftEntries),
+      tone: draftEntries > 0 ? "warning" : "default",
+      detail: m.journal_draftEntriesHint(),
+    },
+    {
+      label: m.settings_periodLockDate(),
+      value: formatLockDate(currentPeriodLockDate),
+      tone: currentPeriodLockDate ? "warning" : "success",
+      href: tenantId ? `/settings/company?tenant=${tenantId}` : undefined,
+    },
+  ]);
+
+  let heroActions = $derived.by<WorkflowHeroAction[]>(() => [
+    {
+      label: m.journal_importOpeningBalances(),
+      variant: "secondary",
+      onclick: openOpeningBalanceImportModal,
+      disabled: !tenantId,
+    },
+    {
+      label: m.journal_newEntry(),
+      onclick: () => (showCreate = true),
+      disabled: !tenantId,
+    },
+  ]);
+
+  let heroAside = $derived.by<WorkflowHeroAside>(() => {
+    if (currentPeriodLockDate) {
+      return {
+        kicker: m.settings_accountingControls(),
+        title: m.journal_closeControlTitle(),
+        body: m.journal_closeControlDesc({
+          date: formatLockDate(currentPeriodLockDate),
+        }),
+        linkLabel: m.journal_manageCloseControls(),
+        href: `/settings/company?tenant=${tenantId}`,
+        items: [
+          m.journal_closeControlItemOne(),
+          m.journal_closeControlItemTwo(),
+        ],
+      };
+    }
+
+    return {
+      kicker: m.dashboard_setupCenter(),
+      title: m.journal_openingBalanceTitle(),
+      body: m.journal_openingBalanceDesc(),
+      linkLabel: m.journal_importOpeningBalances(),
+      href: tenantId ? `/journal?tenant=${tenantId}` : "/journal",
+      items: [
+        m.journal_openingBalanceItemOne(),
+        m.journal_openingBalanceItemTwo(),
+      ],
+    };
   });
 
   function resetCreateForm() {
@@ -108,6 +214,16 @@
   function closeOpeningBalanceImportModal() {
     showImportOpeningBalances = false;
     resetOpeningBalanceImportState();
+  }
+
+  function openDocumentManager(entry: JournalEntry) {
+    selectedEntryForDocuments = entry;
+    showDocumentManager = true;
+  }
+
+  function closeDocumentManager() {
+    showDocumentManager = false;
+    selectedEntryForDocuments = null;
   }
 
   function addLine() {
@@ -295,22 +411,20 @@
 </svelte:head>
 
 <div class="container">
-  <div class="page-header">
-    <h1>{m.journal_title()}</h1>
-    {#if tenantId}
-      <div class="page-actions">
-        <button
-          class="btn btn-secondary"
-          onclick={openOpeningBalanceImportModal}
-        >
-          {m.journal_importOpeningBalances()}
-        </button>
-        <button class="btn btn-primary" onclick={() => (showCreate = true)}>
-          {m.journal_newEntry()}
-        </button>
-      </div>
-    {/if}
-  </div>
+  <WorkflowHero
+    eyebrow={m.settings_accountingControls()}
+    title={m.journal_title()}
+    description={m.journal_heroDesc()}
+    badgeLabel={
+      currentPeriodLockDate
+        ? m.settings_periodClosedThrough({ date: formatLockDate(currentPeriodLockDate) })
+        : m.settings_periodOpenStatus()
+    }
+    badgeTone={currentPeriodLockDate ? "warning" : "success"}
+    actions={heroActions}
+    stats={heroStats}
+    aside={heroAside}
+  />
 
   {#if error}
     <div class="alert alert-error">{error}</div>
@@ -354,6 +468,12 @@
               >
             </div>
             <div class="entry-actions">
+              <button
+                class="btn btn-sm btn-secondary"
+                onclick={() => openDocumentManager(entry)}
+              >
+                {m.documents_manageAction()}
+              </button>
               {#if entry.status === "DRAFT"}
                 <button
                   class="btn btn-sm btn-primary"
@@ -571,6 +691,21 @@
   </div>
 {/if}
 
+<DocumentManager
+  open={showDocumentManager}
+  tenantId={tenantId}
+  entityType="journal_entry"
+  entityId={selectedEntryForDocuments?.id || ""}
+  title={
+    selectedEntryForDocuments
+      ? m.documents_journalTitle({
+          number: selectedEntryForDocuments.entry_number,
+        })
+      : m.documents_manageAction()
+  }
+  onClose={closeDocumentManager}
+/>
+
 {#if showCreate}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -749,17 +884,6 @@
 {/if}
 
 <style>
-  .header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 2rem;
-  }
-
-  h1 {
-    font-size: 1.75rem;
-  }
-
   .empty-state {
     text-align: center;
     padding: 3rem;
@@ -995,10 +1119,6 @@
 
   /* Mobile responsive */
   @media (max-width: 768px) {
-    h1 {
-      font-size: 1.25rem;
-    }
-
     .entry-card {
       padding: 1rem;
     }

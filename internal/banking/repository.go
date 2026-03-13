@@ -27,6 +27,7 @@ type Repository interface {
 	GetTransaction(ctx context.Context, schemaName, tenantID, transactionID string) (*BankTransaction, error)
 	MatchTransaction(ctx context.Context, schemaName, tenantID, transactionID, paymentID string) error
 	UnmatchTransaction(ctx context.Context, schemaName, tenantID, transactionID string) error
+	UpdateTransactionReview(ctx context.Context, schemaName, tenantID, transactionID string, update TransactionReviewUpdate) (*BankTransaction, error)
 	CreateTransaction(ctx context.Context, schemaName string, t *BankTransaction) error
 	IsTransactionDuplicate(ctx context.Context, schemaName, tenantID, bankAccountID string, date time.Time, amount decimal.Decimal, externalID string) (bool, error)
 
@@ -58,9 +59,63 @@ type PostgresRepository struct {
 	db *pgxpool.Pool
 }
 
+const bankTransactionSelectColumns = `
+	id,
+	tenant_id,
+	bank_account_id,
+	transaction_date,
+	value_date,
+	amount,
+	currency,
+	COALESCE(description, ''),
+	COALESCE(reference, ''),
+	COALESCE(counterparty_name, ''),
+	COALESCE(counterparty_account, ''),
+	status,
+	COALESCE(follow_up_status, 'NONE'),
+	COALESCE(review_note, ''),
+	reviewed_by,
+	reviewed_at,
+	matched_payment_id,
+	journal_entry_id,
+	reconciliation_id,
+	imported_at,
+	COALESCE(external_id, '')
+`
+
+type bankTransactionScanner interface {
+	Scan(dest ...any) error
+}
+
 // NewPostgresRepository creates a new PostgreSQL repository
 func NewPostgresRepository(db *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{db: db}
+}
+
+func scanBankTransaction(scanner bankTransactionScanner, transaction *BankTransaction) error {
+	return scanner.Scan(
+		&transaction.ID,
+		&transaction.TenantID,
+		&transaction.BankAccountID,
+		&transaction.TransactionDate,
+		&transaction.ValueDate,
+		&transaction.Amount,
+		&transaction.Currency,
+		&transaction.Description,
+		&transaction.Reference,
+		&transaction.CounterpartyName,
+		&transaction.CounterpartyAccount,
+		&transaction.Status,
+		&transaction.FollowUpStatus,
+		&transaction.ReviewNote,
+		&transaction.ReviewedBy,
+		&transaction.ReviewedAt,
+		&transaction.MatchedPaymentID,
+		&transaction.JournalEntryID,
+		&transaction.ReconciliationID,
+		&transaction.ImportedAt,
+		&transaction.ExternalID,
+	)
 }
 
 // CreateBankAccount inserts a new bank account
@@ -209,12 +264,10 @@ func (r *PostgresRepository) CalculateAccountBalance(ctx context.Context, schema
 // ListTransactions lists bank transactions with filters
 func (r *PostgresRepository) ListTransactions(ctx context.Context, schemaName, tenantID string, filter *TransactionFilter) ([]BankTransaction, error) {
 	query := fmt.Sprintf(`
-		SELECT id, tenant_id, bank_account_id, transaction_date, value_date, amount, currency,
-			   COALESCE(description, ''), COALESCE(reference, ''), COALESCE(counterparty_name, ''), COALESCE(counterparty_account, ''), status,
-			   matched_payment_id, journal_entry_id, reconciliation_id, imported_at, COALESCE(external_id, '')
+		SELECT %s
 		FROM %s.bank_transactions
 		WHERE tenant_id = $1
-	`, schemaName)
+	`, bankTransactionSelectColumns, schemaName)
 
 	args := []interface{}{tenantID}
 	argNum := 2
@@ -262,11 +315,7 @@ func (r *PostgresRepository) ListTransactions(ctx context.Context, schemaName, t
 	var transactions []BankTransaction
 	for rows.Next() {
 		var t BankTransaction
-		if err := rows.Scan(
-			&t.ID, &t.TenantID, &t.BankAccountID, &t.TransactionDate, &t.ValueDate, &t.Amount, &t.Currency,
-			&t.Description, &t.Reference, &t.CounterpartyName, &t.CounterpartyAccount, &t.Status,
-			&t.MatchedPaymentID, &t.JournalEntryID, &t.ReconciliationID, &t.ImportedAt, &t.ExternalID,
-		); err != nil {
+		if err := scanBankTransaction(rows, &t); err != nil {
 			return nil, fmt.Errorf("scan transaction: %w", err)
 		}
 		transactions = append(transactions, t)
@@ -282,21 +331,15 @@ func (r *PostgresRepository) ListTransactions(ctx context.Context, schemaName, t
 // GetTransaction retrieves a single bank transaction
 func (r *PostgresRepository) GetTransaction(ctx context.Context, schemaName, tenantID, transactionID string) (*BankTransaction, error) {
 	var t BankTransaction
-	err := r.db.QueryRow(ctx, fmt.Sprintf(`
-		SELECT id, tenant_id, bank_account_id, transaction_date, value_date, amount, currency,
-			   COALESCE(description, ''), COALESCE(reference, ''), COALESCE(counterparty_name, ''), COALESCE(counterparty_account, ''), status,
-			   matched_payment_id, journal_entry_id, reconciliation_id, imported_at, COALESCE(external_id, '')
+	row := r.db.QueryRow(ctx, fmt.Sprintf(`
+		SELECT %s
 		FROM %s.bank_transactions
 		WHERE id = $1 AND tenant_id = $2
-	`, schemaName), transactionID, tenantID).Scan(
-		&t.ID, &t.TenantID, &t.BankAccountID, &t.TransactionDate, &t.ValueDate, &t.Amount, &t.Currency,
-		&t.Description, &t.Reference, &t.CounterpartyName, &t.CounterpartyAccount, &t.Status,
-		&t.MatchedPaymentID, &t.JournalEntryID, &t.ReconciliationID, &t.ImportedAt, &t.ExternalID,
-	)
-	if err == pgx.ErrNoRows {
-		return nil, ErrTransactionNotFound
-	}
-	if err != nil {
+	`, bankTransactionSelectColumns, schemaName), transactionID, tenantID)
+	if err := scanBankTransaction(row, &t); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, ErrTransactionNotFound
+		}
 		return nil, fmt.Errorf("get transaction: %w", err)
 	}
 	return &t, nil
@@ -306,7 +349,7 @@ func (r *PostgresRepository) GetTransaction(ctx context.Context, schemaName, ten
 func (r *PostgresRepository) MatchTransaction(ctx context.Context, schemaName, tenantID, transactionID, paymentID string) error {
 	result, err := r.db.Exec(ctx, fmt.Sprintf(`
 		UPDATE %s.bank_transactions
-		SET matched_payment_id = $1, status = 'MATCHED'
+		SET matched_payment_id = $1, status = 'MATCHED', follow_up_status = 'NONE'
 		WHERE id = $2 AND tenant_id = $3 AND status = 'UNMATCHED'
 	`, schemaName), paymentID, transactionID, tenantID)
 	if err != nil {
@@ -332,6 +375,33 @@ func (r *PostgresRepository) UnmatchTransaction(ctx context.Context, schemaName,
 		return ErrTransactionNotMatched
 	}
 	return nil
+}
+
+// UpdateTransactionReview updates accountant follow-up guidance for a bank transaction.
+func (r *PostgresRepository) UpdateTransactionReview(ctx context.Context, schemaName, tenantID, transactionID string, update TransactionReviewUpdate) (*BankTransaction, error) {
+	var followUpStatus any
+	if update.FollowUpStatus != nil {
+		followUpStatus = *update.FollowUpStatus
+	}
+
+	var transaction BankTransaction
+	row := r.db.QueryRow(ctx, fmt.Sprintf(`
+		UPDATE %s.bank_transactions
+		SET
+			follow_up_status = CASE WHEN $1::varchar IS NULL THEN follow_up_status ELSE $1 END,
+			review_note = CASE WHEN $2::text IS NULL THEN review_note ELSE $2 END,
+			reviewed_by = $3,
+			reviewed_at = $4
+		WHERE id = $5 AND tenant_id = $6
+		RETURNING %s
+	`, schemaName, bankTransactionSelectColumns), followUpStatus, update.ReviewNote, update.ReviewedBy, update.ReviewedAt, transactionID, tenantID)
+	if err := scanBankTransaction(row, &transaction); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, ErrTransactionNotFound
+		}
+		return nil, fmt.Errorf("update transaction review: %w", err)
+	}
+	return &transaction, nil
 }
 
 // CreateTransaction inserts a new bank transaction
