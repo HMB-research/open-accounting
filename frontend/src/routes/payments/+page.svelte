@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { api, type Payment, type PaymentType, type Contact, type Invoice } from '$lib/api';
+	import DocumentManager from '$lib/components/DocumentManager.svelte';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
 	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
@@ -17,6 +18,8 @@
 	let success = $state('');
 	let actionLoading = $state(false);
 	let showCreatePayment = $state(false);
+	let showDocumentManager = $state(false);
+	let selectedPaymentForDocuments = $state<Payment | null>(null);
 	let filterType = $state<PaymentType | ''>('');
 	let filterFromDate = $state('');
 	let filterToDate = $state('');
@@ -147,6 +150,16 @@
 		);
 		return new Decimal(total).minus(allocated);
 	}
+
+	function openPaymentDocuments(payment: Payment) {
+		selectedPaymentForDocuments = payment;
+		showDocumentManager = true;
+	}
+
+	function closePaymentDocuments() {
+		showDocumentManager = false;
+		selectedPaymentForDocuments = null;
+	}
 </script>
 
 <svelte:head>
@@ -206,6 +219,7 @@
 							<th>{m.common_amount()}</th>
 							<th class="hide-mobile">{m.payments_unallocated()}</th>
 							<th class="hide-mobile">{m.payments_reference()}</th>
+							<th>{m.common_actions()}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -224,6 +238,11 @@
 									{formatCurrency(unallocated)}
 								</td>
 								<td class="reference hide-mobile" data-label="Reference">{payment.reference || '-'}</td>
+								<td class="actions" data-label="Actions">
+									<button type="button" class="btn btn-secondary btn-small" onclick={() => openPaymentDocuments(payment)}>
+										{m.documents_manageAction()}
+									</button>
+								</td>
 							</tr>
 						{/each}
 					</tbody>
@@ -358,6 +377,19 @@
 	</div>
 {/if}
 
+<DocumentManager
+	open={showDocumentManager && !!selectedPaymentForDocuments}
+	tenantId={$page.url.searchParams.get('tenant') || ''}
+	entityType="payment"
+	entityId={selectedPaymentForDocuments?.id || ''}
+	title={
+		selectedPaymentForDocuments
+			? m.documents_paymentTitle({ number: selectedPaymentForDocuments.payment_number })
+			: m.documents_manageAction()
+	}
+	onClose={closePaymentDocuments}
+/>
+
 <style>
 	h1 {
 		font-size: 1.75rem;
@@ -387,6 +419,11 @@
 		font-family: var(--font-mono);
 		font-size: 0.875rem;
 		color: var(--color-text-muted);
+	}
+
+	.actions {
+		width: 1%;
+		white-space: nowrap;
 	}
 
 	.unallocated-warning {

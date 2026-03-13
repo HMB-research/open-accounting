@@ -72,6 +72,21 @@ func (h *Handlers) ReopenPeriod(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantRecord, err := h.tenantService.GetTenant(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Tenant not found")
+		return
+	}
+	yearEndCarryForwardExists, err := h.yearEndCarryForwardExists(r, tenantRecord, req.PeriodEndDate)
+	if err != nil {
+		respondYearEndCloseError(w, err)
+		return
+	}
+	if yearEndCarryForwardExists {
+		respondError(w, http.StatusConflict, "cannot reopen a fiscal year after carry-forward has been posted")
+		return
+	}
+
 	updatedTenant, event, err := h.tenantService.ReopenPeriod(r.Context(), tenantID, userID, &req)
 	if err != nil {
 		respondPeriodCloseError(w, err)
@@ -122,6 +137,8 @@ func respondPeriodCloseError(w http.ResponseWriter, err error) {
 	case strings.Contains(err.Error(), "is not currently closed"):
 		respondError(w, http.StatusConflict, err.Error())
 	case strings.Contains(err.Error(), "has not been closed yet"):
+		respondError(w, http.StatusConflict, err.Error())
+	case strings.Contains(err.Error(), "carry-forward has been posted"):
 		respondError(w, http.StatusConflict, err.Error())
 	default:
 		respondError(w, http.StatusInternalServerError, "Failed to update period close state")

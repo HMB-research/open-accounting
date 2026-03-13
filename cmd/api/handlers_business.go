@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -1643,6 +1644,45 @@ func (h *Handlers) UnmatchBankTransaction(w http.ResponseWriter, r *http.Request
 	}
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "unmatched"})
+}
+
+// ReviewBankTransaction updates accountant follow-up guidance on a bank transaction.
+// @Summary Review bank transaction
+// @Description Update follow-up status and review note for a bank transaction
+// @Tags Banking
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param transactionID path string true "Transaction ID"
+// @Param request body banking.UpdateTransactionReviewRequest true "Review update"
+// @Success 200 {object} banking.BankTransaction
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-transactions/{transactionID}/review [post]
+func (h *Handlers) ReviewBankTransaction(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	transactionID := chi.URLParam(r, "transactionID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req banking.UpdateTransactionReviewRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	transaction, err := h.bankingService.UpdateTransactionReview(r.Context(), schemaName, tenantID, transactionID, claims.UserID, &req)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, banking.ErrTransactionNotFound) {
+			status = http.StatusNotFound
+		}
+		respondError(w, status, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, transaction)
 }
 
 // CreatePaymentFromTransaction creates a payment from a bank transaction

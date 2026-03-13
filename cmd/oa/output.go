@@ -11,6 +11,8 @@ import (
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/payroll"
 )
 
 func printJSON(w io.Writer, value any) error {
@@ -54,6 +56,44 @@ func printContactsTable(w io.Writer, contactsList []contacts.Contact) {
 	_, _ = fmt.Fprintln(tw, "ID\tNAME\tTYPE\tEMAIL\tACTIVE")
 	for _, contact := range contactsList {
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%t\n", contact.ID, contact.Name, contact.ContactType, contact.Email, contact.IsActive)
+	}
+	_ = tw.Flush()
+}
+
+func printEmployeesTable(w io.Writer, employees []payroll.Employee) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNUMBER\tNAME\tTYPE\tEMAIL\tACTIVE")
+	for _, employee := range employees {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%t\n",
+			employee.ID,
+			employee.EmployeeNumber,
+			employee.FullName(),
+			employee.EmploymentType,
+			employee.Email,
+			employee.IsActive,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printDocumentsTable(w io.Writer, docs []documents.Document) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tENTITY\tTYPE\tFILE\tREVIEW\tRETENTION\tCREATED")
+	for _, doc := range docs {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s:%s\t%s\t%s\t%s\t%s\t%s\n",
+			doc.ID,
+			doc.EntityType,
+			doc.EntityID,
+			doc.DocumentType,
+			doc.FileName,
+			doc.ReviewStatus,
+			formatTimePtr(doc.RetentionUntil),
+			doc.CreatedAt.Format(time.RFC3339),
+		)
 	}
 	_ = tw.Flush()
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
@@ -44,6 +46,7 @@ type Handlers struct {
 	tenantService            *tenant.Service
 	accountingService        *accounting.Service
 	contactsService          *contacts.Service
+	documentsService         *documents.Service
 	invoicingService         *invoicing.Service
 	paymentsService          *payments.Service
 	pdfService               *pdf.Service
@@ -721,6 +724,40 @@ func (h *Handlers) GetAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, account)
+}
+
+// ListJournalEntries returns recent journal entries.
+// @Summary List journal entries
+// @Description List recent journal entries for a tenant
+// @Tags Journal Entries
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param limit query int false "Max entries to return" default(50)
+// @Success 200 {array} accounting.JournalEntry
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/journal-entries [get]
+func (h *Handlers) ListJournalEntries(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	limit := 50
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed <= 0 || parsed > 200 {
+			respondError(w, http.StatusBadRequest, "Limit must be between 1 and 200")
+			return
+		}
+		limit = parsed
+	}
+
+	entries, err := h.accountingService.ListJournalEntries(r.Context(), schemaName, tenantID, limit)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, entries)
 }
 
 // GetJournalEntry returns a journal entry by ID

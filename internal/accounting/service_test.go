@@ -77,6 +77,21 @@ func (m *MockRepository) CreateAccount(ctx context.Context, schemaName string, a
 	return nil
 }
 
+func (m *MockRepository) ListJournalEntries(ctx context.Context, schemaName, tenantID string, limit int) ([]JournalEntry, error) {
+	if m.getJournalErr != nil {
+		return nil, m.getJournalErr
+	}
+
+	result := make([]JournalEntry, 0, len(m.journalEntries))
+	for _, entry := range m.journalEntries {
+		if entry.TenantID != tenantID {
+			continue
+		}
+		result = append(result, *entry)
+	}
+	return result, nil
+}
+
 func (m *MockRepository) GetJournalEntryByID(ctx context.Context, schemaName, tenantID, entryID string) (*JournalEntry, error) {
 	if m.getJournalErr != nil {
 		return nil, m.getJournalErr
@@ -86,6 +101,19 @@ func (m *MockRepository) GetJournalEntryByID(ctx context.Context, schemaName, te
 		return nil, errors.New("journal entry not found")
 	}
 	return je, nil
+}
+
+func (m *MockRepository) GetJournalEntryBySource(ctx context.Context, schemaName, tenantID, sourceType, sourceID string) (*JournalEntry, error) {
+	if m.getJournalErr != nil {
+		return nil, m.getJournalErr
+	}
+	for _, entry := range m.journalEntries {
+		if entry.TenantID != tenantID || entry.SourceType != sourceType || entry.Status == StatusVoided || entry.SourceID == nil || *entry.SourceID != sourceID {
+			continue
+		}
+		return entry, nil
+	}
+	return nil, nil
 }
 
 func (m *MockRepository) CreateJournalEntry(ctx context.Context, schemaName string, je *JournalEntry) error {
@@ -773,6 +801,220 @@ func TestCreateAccountRequest(t *testing.T) {
 	assert.Equal(t, "Main cash account", req.Description)
 }
 
+func TestService_GetYearEndCloseStatus(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	svc := NewServiceWithRepo(nil, repo)
+
+	repo.accounts["retained"] = &Account{
+		ID:          "retained",
+		TenantID:    "tenant-1",
+		Code:        "3200",
+		Name:        "Retained Earnings",
+		AccountType: AccountTypeEquity,
+		IsActive:    true,
+	}
+	repo.periodBalances = []AccountBalance{
+		{
+			AccountID:     "revenue-1",
+			AccountCode:   "4100",
+			AccountName:   "Sales Revenue",
+			AccountType:   AccountTypeRevenue,
+			DebitBalance:  decimal.Zero,
+			CreditBalance: decimal.NewFromInt(1000),
+			NetBalance:    decimal.NewFromInt(1000),
+		},
+		{
+			AccountID:     "expense-1",
+			AccountCode:   "5100",
+			AccountName:   "Salary Expenses",
+			AccountType:   AccountTypeExpense,
+			DebitBalance:  decimal.NewFromInt(400),
+			CreditBalance: decimal.Zero,
+			NetBalance:    decimal.NewFromInt(400),
+		},
+	}
+
+	status, err := svc.GetYearEndCloseStatus(ctx, "tenant_test", "tenant-1", 1, "2025-12-31", stringPtr("2025-12-31"))
+
+	require.NoError(t, err)
+	require.NotNil(t, status)
+	assert.Equal(t, "2025", status.FiscalYearLabel)
+	assert.Equal(t, "2025-01-01", status.FiscalYearStartDate)
+	assert.Equal(t, "2025-12-31", status.FiscalYearEndDate)
+	assert.Equal(t, "2026-01-01", status.CarryForwardDate)
+	assert.True(t, status.IsFiscalYearEnd)
+	assert.True(t, status.PeriodClosed)
+	assert.True(t, status.HasProfitAndLossActivity)
+	assert.True(t, status.CarryForwardNeeded)
+	assert.True(t, status.CarryForwardReady)
+	assert.True(t, status.HasRetainedEarningsAccount)
+	require.NotNil(t, status.RetainedEarningsAccount)
+	assert.Equal(t, "retained", status.RetainedEarningsAccount.ID)
+	assert.True(t, status.NetIncome.Equal(decimal.NewFromInt(600)))
+	assert.Nil(t, status.ExistingCarryForward)
+}
+
+func TestService_GetYearEndCloseStatusDetectsExistingCarryForward(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	svc := NewServiceWithRepo(nil, repo)
+
+	fiscalYearEndDate, err := time.Parse(yearEndDateLayout, "2025-12-31")
+	require.NoError(t, err)
+	sourceID := yearEndCarryForwardSourceID("tenant-1", fiscalYearEndDate)
+
+	repo.accounts["retained"] = &Account{
+		ID:          "retained",
+		TenantID:    "tenant-1",
+		Code:        "3200",
+		Name:        "Retained Earnings",
+		AccountType: AccountTypeEquity,
+		IsActive:    true,
+	}
+	repo.periodBalances = []AccountBalance{
+		{
+			AccountID:     "revenue-1",
+			AccountCode:   "4100",
+			AccountName:   "Sales Revenue",
+			AccountType:   AccountTypeRevenue,
+			CreditBalance: decimal.NewFromInt(200),
+			NetBalance:    decimal.NewFromInt(200),
+		},
+	}
+	repo.journalEntries["carry-forward"] = &JournalEntry{
+		ID:          "carry-forward",
+		TenantID:    "tenant-1",
+		EntryNumber: "JE-00042",
+		EntryDate:   fiscalYearEndDate.AddDate(0, 0, 1),
+		Description: "Year-end carry-forward",
+		Reference:   "CF-20251231",
+		SourceType:  SourceTypeYearEndCarryForward,
+		SourceID:    &sourceID,
+		Status:      StatusPosted,
+	}
+
+	status, err := svc.GetYearEndCloseStatus(ctx, "tenant_test", "tenant-1", 1, "2025-12-31", stringPtr("2025-12-31"))
+
+	require.NoError(t, err)
+	assert.False(t, status.CarryForwardNeeded)
+	assert.False(t, status.CarryForwardReady)
+	require.NotNil(t, status.ExistingCarryForward)
+	assert.Equal(t, "carry-forward", status.ExistingCarryForward.ID)
+	assert.Equal(t, "JE-00042", status.ExistingCarryForward.EntryNumber)
+}
+
+func TestService_CreateYearEndCarryForward(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	svc := NewServiceWithRepo(nil, repo)
+
+	repo.accounts["retained"] = &Account{
+		ID:          "retained",
+		TenantID:    "tenant-1",
+		Code:        "3200",
+		Name:        "Retained Earnings",
+		AccountType: AccountTypeEquity,
+		IsActive:    true,
+	}
+	repo.periodBalances = []AccountBalance{
+		{
+			AccountID:     "revenue-1",
+			AccountCode:   "4100",
+			AccountName:   "Sales Revenue",
+			AccountType:   AccountTypeRevenue,
+			CreditBalance: decimal.NewFromInt(1000),
+			NetBalance:    decimal.NewFromInt(1000),
+		},
+		{
+			AccountID:    "expense-1",
+			AccountCode:  "5100",
+			AccountName:  "Salary Expenses",
+			AccountType:  AccountTypeExpense,
+			DebitBalance: decimal.NewFromInt(400),
+			NetBalance:   decimal.NewFromInt(400),
+		},
+	}
+
+	result, err := svc.CreateYearEndCarryForward(ctx, "tenant_test", "tenant-1", 1, stringPtr("2025-12-31"), &CreateYearEndCarryForwardRequest{
+		PeriodEndDate: "2025-12-31",
+		UserID:        "user-1",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.JournalEntry)
+	assert.Equal(t, SourceTypeYearEndCarryForward, result.JournalEntry.SourceType)
+	assert.Equal(t, StatusPosted, result.JournalEntry.Status)
+	assert.Equal(t, "2026-01-01", result.JournalEntry.EntryDate.Format(yearEndDateLayout))
+	require.Len(t, result.JournalEntry.Lines, 3)
+	assert.True(t, result.JournalEntry.Lines[0].DebitAmount.Equal(decimal.NewFromInt(1000)))
+	assert.True(t, result.JournalEntry.Lines[1].CreditAmount.Equal(decimal.NewFromInt(400)))
+	assert.Equal(t, "retained", result.JournalEntry.Lines[2].AccountID)
+	assert.True(t, result.JournalEntry.Lines[2].CreditAmount.Equal(decimal.NewFromInt(600)))
+	require.NotNil(t, result.Status)
+	require.NotNil(t, result.Status.ExistingCarryForward)
+	assert.Equal(t, result.JournalEntry.ID, result.Status.ExistingCarryForward.ID)
+}
+
+func TestService_CreateYearEndCarryForwardRequiresClosedYear(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	svc := NewServiceWithRepo(nil, repo)
+
+	repo.accounts["retained"] = &Account{
+		ID:          "retained",
+		TenantID:    "tenant-1",
+		Code:        "3200",
+		Name:        "Retained Earnings",
+		AccountType: AccountTypeEquity,
+		IsActive:    true,
+	}
+	repo.periodBalances = []AccountBalance{
+		{
+			AccountID:     "revenue-1",
+			AccountCode:   "4100",
+			AccountName:   "Sales Revenue",
+			AccountType:   AccountTypeRevenue,
+			CreditBalance: decimal.NewFromInt(250),
+			NetBalance:    decimal.NewFromInt(250),
+		},
+	}
+
+	_, err := svc.CreateYearEndCarryForward(ctx, "tenant_test", "tenant-1", 1, stringPtr("2025-11-30"), &CreateYearEndCarryForwardRequest{
+		PeriodEndDate: "2025-12-31",
+		UserID:        "user-1",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "fiscal year must be closed")
+}
+
+func TestService_CreateYearEndCarryForwardRejectsNonYearEndDate(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	svc := NewServiceWithRepo(nil, repo)
+
+	repo.periodBalances = []AccountBalance{
+		{
+			AccountID:     "revenue-1",
+			AccountCode:   "4100",
+			AccountName:   "Sales Revenue",
+			AccountType:   AccountTypeRevenue,
+			CreditBalance: decimal.NewFromInt(100),
+			NetBalance:    decimal.NewFromInt(100),
+		},
+	}
+
+	_, err := svc.CreateYearEndCarryForward(ctx, "tenant_test", "tenant-1", 1, stringPtr("2025-11-30"), &CreateYearEndCarryForwardRequest{
+		PeriodEndDate: "2025-11-30",
+		UserID:        "user-1",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must match the fiscal year end")
+}
+
 func TestCreateJournalEntryRequest(t *testing.T) {
 	sourceID := "inv-1"
 	req := CreateJournalEntryRequest{
@@ -792,4 +1034,8 @@ func TestCreateJournalEntryRequest(t *testing.T) {
 	assert.Equal(t, "INV-001", req.Reference)
 	assert.Equal(t, "INVOICE", req.SourceType)
 	assert.Len(t, req.Lines, 2)
+}
+
+func stringPtr(value string) *string {
+	return &value
 }

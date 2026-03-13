@@ -7,14 +7,17 @@
 		type ImportInvoicesResult,
 		type Invoice,
 		type InvoiceStatus,
-		type InvoiceType
+		type InvoiceType,
+		type Tenant
 	} from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
 	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
 	import ContactFormModal from '$lib/components/ContactFormModal.svelte';
+	import DocumentManager from '$lib/components/DocumentManager.svelte';
 	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
 	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
+	import WorkflowHero, { type WorkflowHeroAction, type WorkflowHeroAside, type WorkflowHeroStat } from '$lib/components/WorkflowHero.svelte';
 	import { requireTenantId, parseApiError } from '$lib/utils/tenant';
 	import {
 		formatCurrency,
@@ -25,8 +28,10 @@
 		type LineItem
 	} from '$lib/utils/formatting';
 
+	let tenantId = $derived($page.url.searchParams.get('tenant') || '');
 	let invoices = $state<Invoice[]>([]);
 	let contacts = $state<Contact[]>([]);
+	let tenant = $state<Tenant | null>(null);
 	let isLoading = $state(true);
 	let error = $state('');
 	let success = $state('');
@@ -38,6 +43,7 @@
 	let filterFromDate = $state('');
 	let filterToDate = $state('');
 	let showContactModal = $state(false);
+	let showDocumentManager = $state(false);
 	let importError = $state('');
 	let importFileName = $state('');
 	let importCSVContent = $state('');
@@ -52,9 +58,98 @@
 	let newReference = $state('');
 	let newNotes = $state('');
 	let newLines = $state<LineItem[]>([createEmptyLine()]);
+	let selectedInvoiceForDocuments = $state<Invoice | null>(null);
+
+	function decimalValue(value: Decimal | number | string | undefined | null): Decimal {
+		if (value instanceof Decimal) return value;
+		return new Decimal(value || 0);
+	}
+
+	let draftCount = $derived(invoices.filter((invoice) => invoice.status === 'DRAFT').length);
+	let overdueCount = $derived(invoices.filter((invoice) => invoice.status === 'OVERDUE').length);
+	let openBalance = $derived.by(() =>
+		invoices.reduce((sum, invoice) => {
+			if (invoice.status === 'PAID' || invoice.status === 'VOIDED') {
+				return sum;
+			}
+
+			return sum.plus(decimalValue(invoice.total).minus(decimalValue(invoice.amount_paid)));
+		}, new Decimal(0))
+	);
+	let currentPeriodLockDate = $derived(tenant?.settings?.period_lock_date || '');
+
+	let heroStats = $derived.by<WorkflowHeroStat[]>(() => [
+		{
+			label: m.common_total(),
+			value: String(invoices.length),
+			detail: m.invoices_totalInvoicesHint()
+		},
+		{
+			label: m.invoices_openBalance(),
+			value: formatCurrency(openBalance),
+			tone: openBalance.greaterThan(0) ? 'warning' : 'default'
+		},
+		{
+			label: m.invoices_overdue(),
+			value: String(overdueCount),
+			tone: overdueCount > 0 ? 'danger' : 'success'
+		},
+		{
+			label: m.settings_periodLockDate(),
+			value: currentPeriodLockDate ? formatDate(currentPeriodLockDate) : m.settings_periodOpenStatus(),
+			tone: currentPeriodLockDate ? 'warning' : 'success',
+			href: tenantId ? `/settings/company?tenant=${tenantId}` : undefined
+		}
+	]);
+
+	let heroActions = $derived.by<WorkflowHeroAction[]>(() => [
+		{
+			label: m.invoices_importInvoices(),
+			variant: 'secondary',
+			onclick: openImportModal,
+			disabled: !tenantId
+		},
+		{
+			label: m.invoices_newInvoice(),
+			onclick: () => (showCreateInvoice = true),
+			disabled: !tenantId
+		}
+	]);
+
+	let heroAside = $derived.by<WorkflowHeroAside>(() => {
+		if (contacts.length === 0) {
+			return {
+				kicker: m.contacts_title(),
+				title: m.invoices_contactsFirstTitle(),
+				body: m.invoices_contactsFirstDesc(),
+				linkLabel: m.contacts_newContact(),
+				href: tenantId ? `/contacts?tenant=${tenantId}` : '/contacts',
+				items: [m.invoices_contactsFirstItemOne(), m.invoices_contactsFirstItemTwo()]
+			};
+		}
+
+		if (currentPeriodLockDate) {
+			return {
+				kicker: m.settings_accountingControls(),
+				title: m.invoices_closeStatusTitle(),
+				body: m.invoices_closeStatusDesc({ date: formatDate(currentPeriodLockDate) }),
+				linkLabel: m.invoices_manageCloseControls(),
+				href: tenantId ? `/settings/company?tenant=${tenantId}` : '/settings/company',
+				items: [m.invoices_closeStatusItemOne(), m.invoices_closeStatusItemTwo()]
+			};
+		}
+
+		return {
+			kicker: m.dashboard_setupCenter(),
+			title: m.invoices_importLegacyTitle(),
+			body: m.invoices_importLegacyDesc(),
+			linkLabel: m.invoices_importInvoices(),
+			href: tenantId ? `/invoices?tenant=${tenantId}` : '/invoices',
+			items: [m.invoices_importLegacyItemOne(), m.invoices_importLegacyItemTwo()]
+		};
+	});
 
 	$effect(() => {
-		const tenantId = $page.url.searchParams.get('tenant');
 		if (tenantId) {
 			loadData(tenantId);
 		}
@@ -64,18 +159,20 @@
 		isLoading = true;
 		error = '';
 
-		try {
-			const [invoiceData, contactData] = await Promise.all([
+	try {
+			const [invoiceData, contactData, tenantData] = await Promise.all([
 				api.listInvoices(tenantId, {
 					type: filterType || undefined,
 					status: filterStatus || undefined,
 					from_date: filterFromDate || undefined,
 					to_date: filterToDate || undefined
 				}),
-				api.listContacts(tenantId, { active_only: true })
+				api.listContacts(tenantId, { active_only: true }),
+				api.getTenant(tenantId)
 			]);
 			invoices = invoiceData;
 			contacts = contactData;
+			tenant = tenantData;
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load data';
 		} finally {
@@ -107,6 +204,16 @@
 		importFileName = '';
 		importCSVContent = '';
 		importResult = null;
+	}
+
+	function openDocumentManager(invoice: Invoice) {
+		selectedInvoiceForDocuments = invoice;
+		showDocumentManager = true;
+	}
+
+	function closeDocumentManager() {
+		showDocumentManager = false;
+		selectedInvoiceForDocuments = null;
 	}
 
 	async function handleImportFileChange(event: Event) {
@@ -310,17 +417,16 @@
 </svelte:head>
 
 <div class="container">
-	<div class="page-header">
-		<h1>{m.invoices_title()}</h1>
-		<div class="page-actions">
-			<button class="btn btn-secondary" onclick={openImportModal}>
-				{m.invoices_importInvoices()}
-			</button>
-			<button class="btn btn-primary" onclick={() => (showCreateInvoice = true)}>
-				+ {m.invoices_newInvoice()}
-			</button>
-		</div>
-	</div>
+	<WorkflowHero
+		eyebrow={m.dashboard_invoiceStatus()}
+		title={m.invoices_title()}
+		description={m.invoices_heroDesc()}
+		badgeLabel={draftCount > 0 ? m.invoices_draftBadge({ count: String(draftCount) }) : m.invoices_readyToSend()}
+		badgeTone={draftCount > 0 ? 'warning' : 'success'}
+		actions={heroActions}
+		stats={heroStats}
+		aside={heroAside}
+	/>
 
 	<div class="filters card">
 		<div class="filter-row">
@@ -358,7 +464,16 @@
 		<p>{m.common_loading()}</p>
 	{:else if invoices.length === 0}
 		<div class="empty-state card">
-			<p>{m.invoices_noInvoices()} {m.invoices_createFirst()}</p>
+			<h2>{m.invoices_noInvoices()}</h2>
+			<p>{m.invoices_createFirst()}</p>
+			<div class="empty-actions">
+				<button class="btn btn-secondary" onclick={openImportModal}>
+					{m.invoices_importInvoices()}
+				</button>
+				<button class="btn btn-primary" onclick={() => (showCreateInvoice = true)}>
+					{m.invoices_newInvoice()}
+				</button>
+			</div>
 		</div>
 	{:else}
 		<div class="card">
@@ -391,6 +506,12 @@
 								<td class="actions actions-cell">
 									<button
 										class="btn btn-small btn-secondary"
+										onclick={() => openDocumentManager(invoice)}
+									>
+										{m.documents_manageAction()}
+									</button>
+									<button
+										class="btn btn-small btn-secondary"
 										onclick={() => downloadPDF(invoice.id, invoice.invoice_number)}
 										title="Download PDF"
 									>
@@ -416,6 +537,19 @@
 	tenantId={$page.url.searchParams.get('tenant') || ''}
 	onSave={handleNewContactSaved}
 	onClose={() => (showContactModal = false)}
+/>
+
+<DocumentManager
+	open={showDocumentManager}
+	tenantId={tenantId}
+	entityType="invoice"
+	entityId={selectedInvoiceForDocuments?.id || ''}
+	title={
+		selectedInvoiceForDocuments
+			? m.documents_invoiceTitle({ number: selectedInvoiceForDocuments.invoice_number })
+			: m.documents_manageAction()
+	}
+	onClose={closeDocumentManager}
 />
 
 {#if showImportInvoices}
@@ -674,10 +808,6 @@
 {/if}
 
 <style>
-	h1 {
-		font-size: 1.75rem;
-	}
-
 	.filters {
 		margin-bottom: 1.5rem;
 		padding: 1rem;
@@ -732,6 +862,19 @@
 		text-align: center;
 		padding: 3rem;
 		color: var(--color-text-muted);
+	}
+
+	.empty-state h2 {
+		color: var(--color-text);
+		margin-bottom: 0.5rem;
+	}
+
+	.empty-actions {
+		display: flex;
+		justify-content: center;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+		margin-top: 1.25rem;
 	}
 
 	.modal-backdrop {
@@ -882,19 +1025,11 @@
 
 	/* Mobile responsive styles */
 	@media (max-width: 768px) {
-		h1 {
-			font-size: 1.5rem;
-		}
-
 		.filter-row {
 			flex-direction: column;
 		}
 
 		.filter-row select {
-			min-height: 44px;
-		}
-
-		.page-actions .btn {
 			min-height: 44px;
 		}
 
@@ -943,6 +1078,14 @@
 		.btn-new-contact {
 			min-height: 44px;
 			padding: 0.5rem 1rem;
+		}
+
+		.empty-actions {
+			flex-direction: column;
+		}
+
+		.empty-actions .btn {
+			width: 100%;
 		}
 	}
 </style>

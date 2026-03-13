@@ -25,6 +25,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
@@ -50,6 +51,7 @@ type Config struct {
 	AccessExpiry   time.Duration
 	RefreshExpiry  time.Duration
 	AllowedOrigins []string
+	DocumentsDir   string
 }
 
 func main() {
@@ -93,6 +95,11 @@ func main() {
 	tenantService := tenant.NewService(pool)
 	accountingService := accounting.NewService(pool)
 	contactsService := contacts.NewService(pool)
+	documentStore, err := documents.NewLocalStore(cfg.DocumentsDir)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize document storage")
+	}
+	documentsService := documents.NewService(documents.NewRepository(pool), documentStore)
 	invoicingService := invoicing.NewService(pool, accountingService)
 	paymentsService := payments.NewService(pool, invoicingService)
 	pdfService := pdf.NewService()
@@ -140,6 +147,7 @@ func main() {
 		tenantService:            tenantService,
 		accountingService:        accountingService,
 		contactsService:          contactsService,
+		documentsService:         documentsService,
 		invoicingService:         invoicingService,
 		paymentsService:          paymentsService,
 		pdfService:               pdfService,
@@ -232,6 +240,11 @@ func loadConfig() *Config {
 	}
 	log.Info().Strs("allowed_origins", allowedOrigins).Msg("CORS configuration")
 
+	documentsDir := os.Getenv("DOCUMENTS_DIR")
+	if documentsDir == "" {
+		documentsDir = "./data/documents"
+	}
+
 	return &Config{
 		Port:           port,
 		DatabaseURL:    dbURL,
@@ -239,6 +252,7 @@ func loadConfig() *Config {
 		AccessExpiry:   15 * time.Minute,
 		RefreshExpiry:  7 * 24 * time.Hour,
 		AllowedOrigins: allowedOrigins,
+		DocumentsDir:   documentsDir,
 	}
 }
 
@@ -341,6 +355,14 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/period-close-events", h.ListPeriodCloseEvents)
 				r.Post("/period-close", h.ClosePeriod)
 				r.Post("/period-reopen", h.ReopenPeriod)
+				r.Get("/year-end-close-status", h.GetYearEndCloseStatus)
+				r.Post("/year-end-carry-forward", h.CreateYearEndCarryForward)
+				r.Get("/documents", h.ListDocuments)
+				r.Post("/documents/review-summary", h.ListDocumentReviewSummaries)
+				r.Post("/documents", h.UploadDocument)
+				r.Get("/documents/{documentID}/download", h.DownloadDocument)
+				r.Post("/documents/{documentID}/mark-reviewed", h.MarkDocumentReviewed)
+				r.Delete("/documents/{documentID}", h.DeleteDocument)
 				r.Get("/api-tokens", h.ListAPITokens)
 				r.Post("/api-tokens", h.CreateAPIToken)
 				r.Delete("/api-tokens/{tokenID}", h.RevokeAPIToken)
@@ -353,6 +375,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 
 				// Journal entries
 				r.Post("/journal-entries/import-opening-balances", h.ImportOpeningBalances)
+				r.Get("/journal-entries", h.ListJournalEntries)
 				r.Get("/journal-entries/{entryID}", h.GetJournalEntry)
 				r.Post("/journal-entries", h.CreateJournalEntry)
 				r.Post("/journal-entries/{entryID}/post", h.PostJournalEntry)
@@ -530,6 +553,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/bank-transactions/{transactionID}/suggestions", h.GetMatchSuggestions)
 				r.Post("/bank-transactions/{transactionID}/match", h.MatchBankTransaction)
 				r.Post("/bank-transactions/{transactionID}/unmatch", h.UnmatchBankTransaction)
+				r.Post("/bank-transactions/{transactionID}/review", h.ReviewBankTransaction)
 				r.Post("/bank-transactions/{transactionID}/create-payment", h.CreatePaymentFromTransaction)
 
 				// Bank Reconciliation
@@ -547,6 +571,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				// Payroll - Employees
 				r.Get("/employees", h.ListEmployees)
 				r.Post("/employees", h.CreateEmployee)
+				r.Post("/employees/import", h.ImportEmployees)
 				r.Get("/employees/{employeeID}", h.GetEmployee)
 				r.Put("/employees/{employeeID}", h.UpdateEmployee)
 				r.Post("/employees/{employeeID}/salary", h.SetBaseSalary)

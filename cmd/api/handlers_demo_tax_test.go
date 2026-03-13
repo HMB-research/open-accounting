@@ -285,12 +285,22 @@ func TestDemoHandlersResetAndStatus(t *testing.T) {
 
 	cleanupDemoUsers := func(users ...int) {
 		t.Helper()
+		conn, err := pool.Acquire(ctx)
+		require.NoError(t, err)
+		defer conn.Release()
+
+		_, err = conn.Exec(ctx, "SELECT pg_advisory_lock($1)", demoResetAdvisoryLockKey)
+		require.NoError(t, err)
+		defer func() {
+			_, _ = conn.Exec(context.Background(), "SELECT pg_advisory_unlock($1)", demoResetAdvisoryLockKey)
+		}()
+
 		for _, userNum := range users {
 			schema := fmt.Sprintf("tenant_demo%d", userNum)
-			_, _ = pool.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schema))
-			_, _ = pool.Exec(ctx, "DELETE FROM tenant_users WHERE tenant_id IN (SELECT id FROM tenants WHERE slug = $1)", fmt.Sprintf("demo%d", userNum))
-			_, _ = pool.Exec(ctx, "DELETE FROM tenants WHERE slug = $1", fmt.Sprintf("demo%d", userNum))
-			_, _ = pool.Exec(ctx, "DELETE FROM users WHERE email = $1", fmt.Sprintf("demo%d@example.com", userNum))
+			_, _ = conn.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schema))
+			_, _ = conn.Exec(ctx, "DELETE FROM tenant_users WHERE tenant_id IN (SELECT id FROM tenants WHERE slug = $1)", fmt.Sprintf("demo%d", userNum))
+			_, _ = conn.Exec(ctx, "DELETE FROM tenants WHERE slug = $1", fmt.Sprintf("demo%d", userNum))
+			_, _ = conn.Exec(ctx, "DELETE FROM users WHERE email = $1", fmt.Sprintf("demo%d@example.com", userNum))
 		}
 	}
 

@@ -107,10 +107,39 @@ go run ./cmd/oa contacts create --name "New Customer" --type CUSTOMER --email cu
 go run ./cmd/oa contacts import --file ./contacts.csv
 ```
 
+## Employees
+
+```bash
+go run ./cmd/oa employees list
+go run ./cmd/oa employees list --active-only
+go run ./cmd/oa employees create \
+  --employee-number EMP-001 \
+  --first-name Mari \
+  --last-name Maasikas \
+  --start-date 2026-01-15 \
+  --employment-type FULL_TIME
+go run ./cmd/oa employees import --file ./employees.csv
+```
+
 ## Invoices
 
 ```bash
 go run ./cmd/oa invoices import --file ./invoices.csv
+```
+
+## Documents
+
+```bash
+go run ./cmd/oa documents list --entity-type payment --entity-id <payment-id>
+go run ./cmd/oa documents upload \
+  --entity-type bank_transaction \
+  --entity-id <transaction-id> \
+  --file ./statement-line.pdf \
+  --document-type reconciliation_evidence \
+  --notes "Matched against March bank statement" \
+  --retention-until 2027-03-31
+go run ./cmd/oa documents mark-reviewed --id <document-id>
+go run ./cmd/oa documents delete --id <document-id>
 ```
 
 ## Opening balances
@@ -151,6 +180,14 @@ INV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,SENT,0,PO-12345,Imported migrat
 INV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,SENT,0,PO-12345,Imported migration invoice,Support retainer,1,month,50.00,0,22
 ```
 
+### Employees
+
+```csv
+employee_number,first_name,last_name,personal_code,email,start_date,employment_type,apply_basic_exemption,basic_exemption_amount,funded_pension_rate,base_salary,salary_effective_from
+EMP-001,Mari,Maasikas,49001010001,mari@example.com,2026-01-15,FULL_TIME,true,700.00,0.02,3200.00,2026-01-15
+EMP-002,Juhan,Tamm,49001010002,juhan@example.com,2026-02-01,PART_TIME,true,700.00,0.02,,
+```
+
 ### Opening balances
 
 ```csv
@@ -168,6 +205,8 @@ export OA_API_TOKEN=oa_your_token_here
 
 go run ./cmd/oa accounts list --json
 go run ./cmd/oa contacts create --name "Scripted Contact" --type CUSTOMER
+go run ./cmd/oa employees import --file ./employees.csv
+go run ./cmd/oa documents upload --entity-type asset --entity-id <asset-id> --file ./warranty.pdf --document-type asset_record
 ```
 
 ## Notes
