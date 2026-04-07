@@ -57,6 +57,14 @@ function createMembership(
 	};
 }
 
+function getPreviousMonthEndIso(today: Date = new Date()): string {
+	const previousMonthEnd = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 0));
+	const year = previousMonthEnd.getUTCFullYear();
+	const month = String(previousMonthEnd.getUTCMonth() + 1).padStart(2, '0');
+	const day = String(previousMonthEnd.getUTCDate()).padStart(2, '0');
+	return `${year}-${month}-${day}`;
+}
+
 describe('AccountantPortfolioPanel', () => {
 	afterEach(() => {
 		cleanup();
@@ -192,12 +200,13 @@ describe('AccountantPortfolioPanel', () => {
 	});
 
 	it('shows an empty state when no tenant needs review attention', async () => {
+		const lockedThrough = getPreviousMonthEndIso();
 		const acme = createMembership('tenant-1', 'Acme Corp', {
 			tenant: {
 				...createMembership('tenant-1', 'Acme Corp').tenant,
 				settings: {
 					...createMembership('tenant-1', 'Acme Corp').tenant.settings,
-					period_lock_date: '2026-02-28'
+					period_lock_date: lockedThrough
 				}
 			}
 		});
@@ -206,7 +215,7 @@ describe('AccountantPortfolioPanel', () => {
 				...createMembership('tenant-2', 'Beta Ltd').tenant,
 				settings: {
 					...createMembership('tenant-2', 'Beta Ltd').tenant.settings,
-					period_lock_date: '2026-02-28'
+					period_lock_date: lockedThrough
 				}
 			}
 		});
@@ -227,8 +236,8 @@ describe('AccountantPortfolioPanel', () => {
 				tenant_id: 'tenant-1',
 				action: 'close',
 				close_kind: 'month_end',
-				period_end_date: '2026-02-28',
-				lock_date_after: '2026-02-28',
+				period_end_date: lockedThrough,
+				lock_date_after: lockedThrough,
 				performed_by: 'user-1',
 				created_at: '2026-03-01T00:00:00Z'
 			}
