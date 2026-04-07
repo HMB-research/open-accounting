@@ -24,11 +24,23 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 	return &GORMRepository{db: db}
 }
 
+func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
+	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+}
+
 // Create inserts a new invoice with its lines
 func (r *GORMRepository) Create(ctx context.Context, schemaName string, invoice *Invoice) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	invoicesDB, err := r.tenantTable(ctx, schemaName, "invoices")
+	if err != nil {
+		return err
+	}
 
-	return db.Transaction(func(tx *gorm.DB) error {
+	return invoicesDB.Transaction(func(tx *gorm.DB) error {
+		linesDB, err := database.TenantTable(tx, schemaName, "invoice_lines")
+		if err != nil {
+			return err
+		}
+
 		// Insert invoice
 		invModel := invoiceToModel(invoice)
 		if err := tx.Create(invModel).Error; err != nil {
@@ -41,7 +53,7 @@ func (r *GORMRepository) Create(ctx context.Context, schemaName string, invoice 
 			line.InvoiceID = invoice.ID
 
 			lineModel := invoiceLineToModel(line)
-			if err := tx.Create(lineModel).Error; err != nil {
+			if err := linesDB.Create(lineModel).Error; err != nil {
 				return fmt.Errorf("insert invoice line: %w", err)
 			}
 		}
@@ -52,10 +64,13 @@ func (r *GORMRepository) Create(ctx context.Context, schemaName string, invoice 
 
 // GetByID retrieves an invoice by ID with its lines
 func (r *GORMRepository) GetByID(ctx context.Context, schemaName, tenantID, invoiceID string) (*Invoice, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "invoices")
+	if err != nil {
+		return nil, err
+	}
 
 	var invModel models.Invoice
-	err := db.Where("id = ? AND tenant_id = ?", invoiceID, tenantID).First(&invModel).Error
+	err = db.Where("id = ? AND tenant_id = ?", invoiceID, tenantID).First(&invModel).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrInvoiceNotFound
 	}
@@ -64,8 +79,12 @@ func (r *GORMRepository) GetByID(ctx context.Context, schemaName, tenantID, invo
 	}
 
 	// Load lines
+	linesDB, err := r.tenantTable(ctx, schemaName, "invoice_lines")
+	if err != nil {
+		return nil, err
+	}
 	var lineModels []models.InvoiceLine
-	if err := db.Where("invoice_id = ? AND tenant_id = ?", invoiceID, tenantID).
+	if err := linesDB.Where("invoice_id = ? AND tenant_id = ?", invoiceID, tenantID).
 		Order("line_number").
 		Find(&lineModels).Error; err != nil {
 		return nil, fmt.Errorf("get invoice lines: %w", err)
@@ -82,7 +101,10 @@ func (r *GORMRepository) GetByID(ctx context.Context, schemaName, tenantID, invo
 
 // List retrieves invoices with optional filtering
 func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, filter *InvoiceFilter) ([]Invoice, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "invoices")
+	if err != nil {
+		return nil, err
+	}
 
 	query := db.Where("tenant_id = ?", tenantID)
 
@@ -125,10 +147,12 @@ func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, 
 
 // UpdateStatus updates the status of an invoice
 func (r *GORMRepository) UpdateStatus(ctx context.Context, schemaName, tenantID, invoiceID string, status InvoiceStatus) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "invoices")
+	if err != nil {
+		return err
+	}
 
-	result := db.Model(&models.Invoice{}).
-		Where("id = ? AND tenant_id = ?", invoiceID, tenantID).
+	result := db.Where("id = ? AND tenant_id = ?", invoiceID, tenantID).
 		Updates(map[string]interface{}{
 			"status":     status,
 			"updated_at": time.Now(),
@@ -144,10 +168,12 @@ func (r *GORMRepository) UpdateStatus(ctx context.Context, schemaName, tenantID,
 
 // UpdatePayment updates the amount paid and status of an invoice
 func (r *GORMRepository) UpdatePayment(ctx context.Context, schemaName, tenantID, invoiceID string, amountPaid decimal.Decimal, status InvoiceStatus) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "invoices")
+	if err != nil {
+		return err
+	}
 
-	result := db.Model(&models.Invoice{}).
-		Where("id = ? AND tenant_id = ?", invoiceID, tenantID).
+	result := db.Where("id = ? AND tenant_id = ?", invoiceID, tenantID).
 		Updates(map[string]interface{}{
 			"amount_paid": amountPaid.String(),
 			"status":      status,
@@ -164,7 +190,10 @@ func (r *GORMRepository) UpdatePayment(ctx context.Context, schemaName, tenantID
 
 // GenerateNumber generates a new invoice number
 func (r *GORMRepository) GenerateNumber(ctx context.Context, schemaName, tenantID string, invoiceType InvoiceType) (string, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	invoicesTable, err := database.QualifiedTable(schemaName, "invoices")
+	if err != nil {
+		return "", err
+	}
 
 	prefix := "INV"
 	if invoiceType == InvoiceTypePurchase {
@@ -174,10 +203,10 @@ func (r *GORMRepository) GenerateNumber(ctx context.Context, schemaName, tenantI
 	}
 
 	var seq int
-	err := db.Raw(fmt.Sprintf(`
+	err = r.db.WithContext(ctx).Raw(fmt.Sprintf(`
 		SELECT COALESCE(MAX(CAST(SUBSTRING(invoice_number FROM '%s-([0-9]+)') AS INTEGER)), 0) + 1
-		FROM invoices WHERE tenant_id = ? AND invoice_type = ?
-	`, prefix), tenantID, invoiceType).Scan(&seq).Error
+		FROM %s WHERE tenant_id = ? AND invoice_type = ?
+	`, prefix, invoicesTable), tenantID, invoiceType).Scan(&seq).Error
 	if err != nil {
 		return "", fmt.Errorf("generate invoice number: %w", err)
 	}
@@ -187,10 +216,12 @@ func (r *GORMRepository) GenerateNumber(ctx context.Context, schemaName, tenantI
 
 // UpdateOverdueStatus updates the status of overdue invoices
 func (r *GORMRepository) UpdateOverdueStatus(ctx context.Context, schemaName, tenantID string) (int, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "invoices")
+	if err != nil {
+		return 0, err
+	}
 
-	result := db.Model(&models.Invoice{}).
-		Where("tenant_id = ?", tenantID).
+	result := db.Where("tenant_id = ?", tenantID).
 		Where("status IN ?", []string{string(StatusSent), string(StatusPartiallyPaid)}).
 		Where("due_date < ?", time.Now()).
 		Where("amount_paid < total").

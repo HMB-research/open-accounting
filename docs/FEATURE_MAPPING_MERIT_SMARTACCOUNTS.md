@@ -2,19 +2,21 @@
 
 This document maps features from [Merit Aktiva](https://www.merit.ee/en/) and [SmartAccounts](https://www.smartaccounts.eu/en/) to Open Accounting, identifying implementation status, gaps, and blockers.
 
+This is a competitive-gap document, not the authoritative current-state status page. For the verified repository baseline as of 2026-03-12, use [DEVELOPMENT_STATUS.md](./DEVELOPMENT_STATUS.md). Statuses here evaluate parity depth, not just whether some feature exists in code.
+
 ## Executive Summary
 
 | Category | Merit Features | SmartAccounts Features | Open Accounting Status |
 |----------|---------------|----------------------|----------------------|
-| Core Accounting | 12 | 10 | 8 implemented |
-| Invoicing | 8 | 9 | 6 implemented |
-| Banking | 6 | 5 | 4 implemented |
-| Payroll | 7 | 6 | 5 implemented |
-| Reporting | 8 | 7 | 5 implemented |
-| Tax & Compliance | 5 | 6 | 3 implemented |
-| Integrations | 4 | 5 | 2 implemented |
+| Core Accounting | 12 | 10 | Broad coverage, mixed depth |
+| Invoicing | 8 | 9 | Broad coverage, some parity gaps |
+| Banking | 6 | 5 | Manual-import workflow present, direct integrations missing |
+| Payroll | 7 | 6 | Strong local coverage, some compliance depth still missing |
+| Reporting | 8 | 7 | Core reports present, accountant-grade depth incomplete |
+| Tax & Compliance | 5 | 6 | Export-centric today, direct submissions missing |
+| Integrations | 4 | 5 | Plugin foundation exists, partner integrations missing |
 
-**Overall Coverage: ~65% of combined feature set**
+**Overall breadth:** roughly 60-70% of the combined feature surface exists in some form, but production depth and accountant workflow completeness are materially lower than that headline number.
 
 ---
 
@@ -70,7 +72,7 @@ This document maps features from [Merit Aktiva](https://www.merit.ee/en/) and [S
 | Invoice reminders | ✅ | ✅ | ✅ | Implemented |
 | Recurring invoices | ✅ | ✅ | ✅ | Implemented |
 | E-invoice (Estonian e-arve) | ✅ | ✅ | ❌ | **Blocker** |
-| Offers/Quotes | ✅ | ✅ | ❌ | **Gap** |
+| Offers/Quotes | ✅ | ✅ | ⚠️ | Partial |
 
 ### 2.2 Purchase Invoices
 
@@ -152,7 +154,7 @@ This document maps features from [Merit Aktiva](https://www.merit.ee/en/) and [S
 | Trial Balance | ✅ | ✅ | ✅ | Implemented |
 | Balance Sheet | ✅ | ✅ | ✅ | Implemented |
 | Income Statement | ✅ | ✅ | ✅ | Implemented |
-| Cash Flow Statement | ✅ | ✅ | ❌ | **Gap** |
+| Cash Flow Statement | ✅ | ✅ | ⚠️ | Partial |
 | Aging reports | ✅ | ✅ | ⚠️ | Partial |
 | Custom date ranges | ✅ | ✅ | ✅ | Implemented |
 
@@ -208,7 +210,7 @@ This document maps features from [Merit Aktiva](https://www.merit.ee/en/) and [S
 | Feature | Merit | SmartAccounts | Open Accounting | Status |
 |---------|-------|---------------|-----------------|--------|
 | CSV export | ✅ | ✅ | ✅ | Implemented |
-| Excel export | ✅ | ✅ | ❌ | **Gap** |
+| Excel export | ✅ | ✅ | ⚠️ | Partial |
 | Data migration tools | ✅ | ✅ | ❌ | **Gap** |
 
 ---
@@ -262,66 +264,21 @@ These features cannot be implemented without external dependencies or significan
 
 ---
 
-## Implementation Priority Matrix
+## Priority Themes
 
-### Phase 1: High Priority (Q1 2025)
-1. Cash Flow Statement report
-2. Bulk payroll processing
-3. Excel export functionality
-4. Quote/Offer module
+This document's older quarter-based priorities have been superseded by the 2026 roadmap. The current priority order is:
 
-### Phase 2: Medium Priority (Q2 2025)
-1. Consolidated reporting (multi-company)
-2. Budget vs Actual reporting
-3. SEPA payment file generation
-4. Recurring journal entries
-
-### Phase 3: Lower Priority (Q3 2025)
-1. E-commerce integrations (WooCommerce, Shopify)
-2. Customer profitability analysis
-3. Advanced aging reports
-4. INF form generation
-
-### Deferred (Requires External Partnerships)
-1. E-invoice integration
-2. Bank feeds
-3. e-MTA direct submission
-4. e-äriregister submission
-5. OCR scanning
+1. Reliability and truthful status reporting
+2. Imports, close controls, and attachments
+3. Server-side reporting depth and accountant workflow improvements
+4. Security and operational hardening
+5. Partner-dependent integrations such as e-invoice, bank feeds, and automatic tax submission
 
 ---
 
-## Testing Requirements for 95% Coverage
+## Verification Note
 
-### Backend (Go) - Current: ~15% average
-Target areas needing tests:
-- `internal/contacts` - 0% → 95%
-- `internal/database` - 0% → 90%
-- `internal/analytics` - 0.9% → 95%
-- `internal/payments` - 4.1% → 95%
-- `internal/tenant` - 4.2% → 95%
-- `internal/email` - 7.2% → 95%
-- `internal/pdf` - 8.1% → 95%
-- `internal/payroll` - 9.4% → 95%
-- `internal/accounting` - 10.7% → 95%
-
-### Frontend (Svelte) - Current: ~34%
-Target areas needing tests:
-- Component unit tests for all routes
-- API client coverage
-- State management coverage
-- Form validation coverage
-- Error handling coverage
-
-### E2E Tests - Current: 7 test files
-Additional E2E tests needed:
-- Accounts management flow
-- Journal entry workflow
-- Payroll calculation flow
-- Tax reporting flow
-- Settings configuration flow
-- Plugin management flow
-- Banking import flow
+Testing and coverage status changed materially after this comparison was first drafted. For the current verified baseline, see [DEVELOPMENT_STATUS.md](./DEVELOPMENT_STATUS.md) and the CI workflow rather than relying on historical coverage percentages in this file.
 
 ---
 

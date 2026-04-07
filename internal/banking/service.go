@@ -3,6 +3,7 @@ package banking
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -76,11 +77,35 @@ func (s *Service) EnsureSchema(ctx context.Context, schemaName string) error {
 			END IF;
 		END $$;
 
+		ALTER TABLE %s.bank_transactions
+		ADD COLUMN IF NOT EXISTS follow_up_status VARCHAR(30) NOT NULL DEFAULT 'NONE';
+
+		ALTER TABLE %s.bank_transactions
+		ADD COLUMN IF NOT EXISTS review_note TEXT;
+
+		ALTER TABLE %s.bank_transactions
+		ADD COLUMN IF NOT EXISTS reviewed_by UUID;
+
+		ALTER TABLE %s.bank_transactions
+		ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
+
+		UPDATE %s.bank_transactions
+		SET follow_up_status = 'NONE'
+		WHERE follow_up_status IS NULL OR btrim(follow_up_status) = '';
+
+		ALTER TABLE %s.bank_transactions
+		DROP CONSTRAINT IF EXISTS bank_transactions_follow_up_status_check;
+
+		ALTER TABLE %s.bank_transactions
+		ADD CONSTRAINT bank_transactions_follow_up_status_check
+		CHECK (follow_up_status IN ('NONE', 'EVIDENCE_REQUIRED', 'READY_TO_MATCH'));
+
 		-- Create indexes if not exists
 		CREATE INDEX IF NOT EXISTS idx_bank_reconciliations_account ON %s.bank_reconciliations(bank_account_id);
 		CREATE INDEX IF NOT EXISTS idx_bank_reconciliations_status ON %s.bank_reconciliations(status);
 		CREATE INDEX IF NOT EXISTS idx_bank_imports_account ON %s.bank_statement_imports(bank_account_id);
-	`, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName)
+		CREATE INDEX IF NOT EXISTS idx_bank_transactions_follow_up_status ON %s.bank_transactions(follow_up_status);
+	`, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName)
 
 	_, err := s.db.Exec(ctx, query)
 	return err
@@ -219,12 +244,22 @@ func (s *Service) DeleteBankAccount(ctx context.Context, schemaName, tenantID, a
 
 // ListTransactions lists bank transactions with filters
 func (s *Service) ListTransactions(ctx context.Context, schemaName, tenantID string, filter *TransactionFilter) ([]BankTransaction, error) {
-	return s.repo.ListTransactions(ctx, schemaName, tenantID, filter)
+	transactions, err := s.repo.ListTransactions(ctx, schemaName, tenantID, filter)
+	if err != nil {
+		return nil, err
+	}
+	normalizeTransactionSlice(transactions)
+	return transactions, nil
 }
 
 // GetTransaction retrieves a single bank transaction
 func (s *Service) GetTransaction(ctx context.Context, schemaName, tenantID, transactionID string) (*BankTransaction, error) {
-	return s.repo.GetTransaction(ctx, schemaName, tenantID, transactionID)
+	transaction, err := s.repo.GetTransaction(ctx, schemaName, tenantID, transactionID)
+	if err != nil {
+		return nil, err
+	}
+	normalizeTransactionReviewFields(transaction)
+	return transaction, nil
 }
 
 // MatchTransaction matches a bank transaction to a payment
@@ -235,6 +270,42 @@ func (s *Service) MatchTransaction(ctx context.Context, schemaName, tenantID, tr
 // UnmatchTransaction removes the match from a bank transaction
 func (s *Service) UnmatchTransaction(ctx context.Context, schemaName, tenantID, transactionID string) error {
 	return s.repo.UnmatchTransaction(ctx, schemaName, tenantID, transactionID)
+}
+
+// UpdateTransactionReview updates accountant follow-up metadata for a bank transaction.
+func (s *Service) UpdateTransactionReview(ctx context.Context, schemaName, tenantID, transactionID, reviewerID string, req *UpdateTransactionReviewRequest) (*BankTransaction, error) {
+	if req == nil || (req.FollowUpStatus == nil && req.ReviewNote == nil) {
+		return nil, fmt.Errorf("at least one review field is required")
+	}
+
+	update := TransactionReviewUpdate{
+		ReviewedBy: reviewerID,
+		ReviewedAt: time.Now().UTC(),
+	}
+
+	if req.FollowUpStatus != nil {
+		normalized, err := NormalizeFollowUpStatus(string(*req.FollowUpStatus))
+		if err != nil {
+			return nil, err
+		}
+		update.FollowUpStatus = &normalized
+	}
+
+	if req.ReviewNote != nil {
+		trimmed := strings.TrimSpace(*req.ReviewNote)
+		if len(trimmed) > 2000 {
+			return nil, fmt.Errorf("review note must be 2000 characters or less")
+		}
+		update.ReviewNote = &trimmed
+	}
+
+	transaction, err := s.repo.UpdateTransactionReview(ctx, schemaName, tenantID, transactionID, update)
+	if err != nil {
+		return nil, err
+	}
+
+	normalizeTransactionReviewFields(transaction)
+	return transaction, nil
 }
 
 // =============================================================================
@@ -294,4 +365,17 @@ func (s *Service) AddTransactionToReconciliation(ctx context.Context, schemaName
 // GetImportHistory retrieves import history for a bank account
 func (s *Service) GetImportHistory(ctx context.Context, schemaName, tenantID, bankAccountID string) ([]BankStatementImport, error) {
 	return s.repo.GetImportHistory(ctx, schemaName, tenantID, bankAccountID)
+}
+
+func normalizeTransactionSlice(transactions []BankTransaction) {
+	for i := range transactions {
+		normalizeTransactionReviewFields(&transactions[i])
+	}
+}
+
+func normalizeTransactionReviewFields(transaction *BankTransaction) {
+	if transaction == nil || transaction.FollowUpStatus != "" {
+		return
+	}
+	transaction.FollowUpStatus = FollowUpNone
 }

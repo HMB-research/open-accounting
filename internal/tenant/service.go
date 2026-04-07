@@ -109,6 +109,18 @@ func (s *Service) UpdateTenant(ctx context.Context, tenantID string, req *Update
 
 	// Update settings if provided
 	if req.Settings != nil {
+		if req.Settings.PeriodLockDate != nil {
+			requestedLockDate := strings.TrimSpace(*req.Settings.PeriodLockDate)
+			currentLockDate := ""
+			if current.Settings.PeriodLockDate != nil {
+				currentLockDate = strings.TrimSpace(*current.Settings.PeriodLockDate)
+			}
+
+			if requestedLockDate != currentLockDate {
+				return nil, fmt.Errorf("period lock must be managed through close or reopen actions")
+			}
+		}
+
 		// Merge settings - keep existing values for fields not provided
 		if req.Settings.VATNumber != "" {
 			current.Settings.VATNumber = req.Settings.VATNumber

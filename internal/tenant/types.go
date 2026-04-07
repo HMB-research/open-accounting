@@ -20,19 +20,20 @@ type Tenant struct {
 
 // TenantSettings contains configurable settings for a tenant
 type TenantSettings struct {
-	DefaultCurrency string `json:"default_currency"`
-	CountryCode     string `json:"country_code"`
-	Timezone        string `json:"timezone"`
-	DateFormat      string `json:"date_format"`
-	DecimalSep      string `json:"decimal_sep"`
-	ThousandsSep    string `json:"thousands_sep"`
-	FiscalYearStart int    `json:"fiscal_year_start_month"` // 1-12
-	VATNumber       string `json:"vat_number,omitempty"`
-	RegCode         string `json:"reg_code,omitempty"`
-	Address         string `json:"address,omitempty"`
-	Email           string `json:"email,omitempty"`
-	Phone           string `json:"phone,omitempty"`
-	Logo            string `json:"logo,omitempty"`
+	DefaultCurrency string  `json:"default_currency"`
+	CountryCode     string  `json:"country_code"`
+	Timezone        string  `json:"timezone"`
+	DateFormat      string  `json:"date_format"`
+	DecimalSep      string  `json:"decimal_sep"`
+	ThousandsSep    string  `json:"thousands_sep"`
+	FiscalYearStart int     `json:"fiscal_year_start_month"` // 1-12
+	PeriodLockDate  *string `json:"period_lock_date,omitempty"`
+	VATNumber       string  `json:"vat_number,omitempty"`
+	RegCode         string  `json:"reg_code,omitempty"`
+	Address         string  `json:"address,omitempty"`
+	Email           string  `json:"email,omitempty"`
+	Phone           string  `json:"phone,omitempty"`
+	Logo            string  `json:"logo,omitempty"`
 
 	// PDF/Invoice settings
 	PDFPrimaryColor string `json:"pdf_primary_color,omitempty"`
@@ -43,6 +44,40 @@ type TenantSettings struct {
 	// Late payment interest settings
 	// Rate is expressed as daily rate (e.g., 0.0005 = 0.05% per day ≈ 18% annually)
 	LatePaymentInterestRate float64 `json:"late_payment_interest_rate,omitempty"`
+}
+
+const (
+	PeriodCloseActionClose  = "close"
+	PeriodCloseActionReopen = "reopen"
+
+	PeriodCloseKindMonthEnd = "month_end"
+	PeriodCloseKindYearEnd  = "year_end"
+)
+
+// PeriodCloseEvent records a close or reopen action for a tenant.
+type PeriodCloseEvent struct {
+	ID             string    `json:"id"`
+	TenantID       string    `json:"tenant_id"`
+	Action         string    `json:"action"`
+	CloseKind      string    `json:"close_kind"`
+	PeriodEndDate  string    `json:"period_end_date"`
+	LockDateBefore *string   `json:"lock_date_before,omitempty"`
+	LockDateAfter  *string   `json:"lock_date_after,omitempty"`
+	Note           string    `json:"note,omitempty"`
+	PerformedBy    string    `json:"performed_by"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+// ClosePeriodRequest closes a month-end or year-end period.
+type ClosePeriodRequest struct {
+	PeriodEndDate string `json:"period_end_date"`
+	Note          string `json:"note,omitempty"`
+}
+
+// ReopenPeriodRequest reopens a previously closed period.
+type ReopenPeriodRequest struct {
+	PeriodEndDate string `json:"period_end_date"`
+	Note          string `json:"note,omitempty"`
 }
 
 // DefaultSettings returns default tenant settings for Estonia
@@ -102,6 +137,7 @@ const (
 type RolePermissions struct {
 	CanManageUsers    bool
 	CanManageSettings bool
+	CanManageClose    bool
 	CanManageAccounts bool
 	CanCreateEntries  bool
 	CanApproveEntries bool
@@ -120,6 +156,7 @@ func GetRolePermissions(role string) RolePermissions {
 		return RolePermissions{
 			CanManageUsers:    true,
 			CanManageSettings: true,
+			CanManageClose:    true,
 			CanManageAccounts: true,
 			CanCreateEntries:  true,
 			CanApproveEntries: true,
@@ -134,6 +171,7 @@ func GetRolePermissions(role string) RolePermissions {
 		return RolePermissions{
 			CanManageUsers:    false,
 			CanManageSettings: false,
+			CanManageClose:    true,
 			CanManageAccounts: true,
 			CanCreateEntries:  true,
 			CanApproveEntries: true,
@@ -148,6 +186,7 @@ func GetRolePermissions(role string) RolePermissions {
 		return RolePermissions{
 			CanManageUsers:    false,
 			CanManageSettings: false,
+			CanManageClose:    false,
 			CanManageAccounts: false,
 			CanCreateEntries:  false,
 			CanApproveEntries: false,

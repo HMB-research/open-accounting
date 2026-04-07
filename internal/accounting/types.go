@@ -47,6 +47,49 @@ type Account struct {
 	CreatedAt   time.Time   `json:"created_at"`
 }
 
+// ImportAccountsRequest contains CSV payload for bulk account import.
+type ImportAccountsRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+}
+
+// ImportAccountsResult summarizes a bulk account import.
+type ImportAccountsResult struct {
+	FileName        string                   `json:"file_name,omitempty"`
+	RowsProcessed   int                      `json:"rows_processed"`
+	AccountsCreated int                      `json:"accounts_created"`
+	RowsSkipped     int                      `json:"rows_skipped"`
+	Errors          []ImportAccountsRowError `json:"errors,omitempty"`
+}
+
+// ImportAccountsRowError describes a row-level import failure.
+type ImportAccountsRowError struct {
+	Row     int    `json:"row"`
+	Code    string `json:"code,omitempty"`
+	Name    string `json:"name,omitempty"`
+	Message string `json:"message"`
+}
+
+// ImportOpeningBalancesRequest contains CSV payload for opening-balance import.
+type ImportOpeningBalancesRequest struct {
+	EntryDate   string `json:"entry_date"`
+	CSVContent  string `json:"csv_content"`
+	FileName    string `json:"file_name,omitempty"`
+	Description string `json:"description,omitempty"`
+	Reference   string `json:"reference,omitempty"`
+	UserID      string `json:"-"`
+}
+
+// ImportOpeningBalancesResult summarizes a successful opening-balance import.
+type ImportOpeningBalancesResult struct {
+	FileName      string          `json:"file_name,omitempty"`
+	RowsProcessed int             `json:"rows_processed"`
+	LinesImported int             `json:"lines_imported"`
+	TotalDebit    decimal.Decimal `json:"total_debit"`
+	TotalCredit   decimal.Decimal `json:"total_credit"`
+	JournalEntry  *JournalEntry   `json:"journal_entry"`
+}
+
 // JournalEntry represents an immutable accounting transaction
 type JournalEntry struct {
 	ID          string             `json:"id"`

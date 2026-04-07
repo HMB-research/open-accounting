@@ -1,5 +1,3 @@
-//go:build integration
-
 package accounting
 
 import (
@@ -644,6 +642,79 @@ func TestCreateJournalEntry_LineAutoGeneration(t *testing.T) {
 		if line.JournalEntryID != entry.ID {
 			t.Errorf("line %d should have journal entry ID %s, got %s", i, entry.ID, line.JournalEntryID)
 		}
+	}
+}
+
+func TestCreateJournalEntry_HandlesMixedEntryNumberFormats(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	userID := testutil.CreateTestUser(t, pool, "entryformats-"+uuid.New().String()[:8]+"@example.com")
+	testutil.AddUserToTenant(t, pool, tenant.ID, userID, "admin")
+	repo := NewRepository(pool)
+	ctx := context.Background()
+
+	var cashAccountID, equityAccountID string
+	err := pool.QueryRow(ctx, `
+		SELECT id FROM `+tenant.SchemaName+`.accounts WHERE code = '1000' LIMIT 1
+	`).Scan(&cashAccountID)
+	if err != nil {
+		t.Fatalf("failed to get cash account: %v", err)
+	}
+
+	err = pool.QueryRow(ctx, `
+		SELECT id FROM `+tenant.SchemaName+`.accounts WHERE code = '3000' LIMIT 1
+	`).Scan(&equityAccountID)
+	if err != nil {
+		t.Fatalf("failed to get equity account: %v", err)
+	}
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.journal_entries
+			(id, tenant_id, entry_number, entry_date, description, status, created_by, created_at)
+		VALUES
+			($1, $2, 'JE-2024-001', $3, 'Year-based numbering', 'POSTED', $4, NOW()),
+			($5, $2, 'JE-DYN-012', $3, 'Dynamic numbering', 'POSTED', $4, NOW())
+	`, uuid.New().String(), tenant.ID, time.Now(), userID, uuid.New().String())
+	if err != nil {
+		t.Fatalf("failed to seed journal entries: %v", err)
+	}
+
+	amount := decimal.NewFromInt(250)
+	entry := &JournalEntry{
+		TenantID:    tenant.ID,
+		EntryDate:   time.Now(),
+		Description: "Sequence regression test",
+		Status:      StatusDraft,
+		CreatedBy:   userID,
+		Lines: []JournalEntryLine{
+			{
+				AccountID:    cashAccountID,
+				DebitAmount:  amount,
+				CreditAmount: decimal.Zero,
+				Currency:     "EUR",
+				ExchangeRate: decimal.NewFromInt(1),
+				BaseDebit:    amount,
+				BaseCredit:   decimal.Zero,
+			},
+			{
+				AccountID:    equityAccountID,
+				DebitAmount:  decimal.Zero,
+				CreditAmount: amount,
+				Currency:     "EUR",
+				ExchangeRate: decimal.NewFromInt(1),
+				BaseDebit:    decimal.Zero,
+				BaseCredit:   amount,
+			},
+		},
+	}
+
+	err = repo.CreateJournalEntry(ctx, tenant.SchemaName, entry)
+	if err != nil {
+		t.Fatalf("CreateJournalEntry failed: %v", err)
+	}
+
+	if entry.EntryNumber != "JE-00013" {
+		t.Fatalf("expected entry number JE-00013, got %s", entry.EntryNumber)
 	}
 }
 

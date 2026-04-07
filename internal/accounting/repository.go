@@ -16,7 +16,9 @@ type RepositoryInterface interface {
 	GetAccountByID(ctx context.Context, schemaName, tenantID, accountID string) (*Account, error)
 	ListAccounts(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]Account, error)
 	CreateAccount(ctx context.Context, schemaName string, a *Account) error
+	ListJournalEntries(ctx context.Context, schemaName, tenantID string, limit int) ([]JournalEntry, error)
 	GetJournalEntryByID(ctx context.Context, schemaName, tenantID, entryID string) (*JournalEntry, error)
+	GetJournalEntryBySource(ctx context.Context, schemaName, tenantID, sourceType, sourceID string) (*JournalEntry, error)
 	CreateJournalEntry(ctx context.Context, schemaName string, je *JournalEntry) error
 	CreateJournalEntryTx(ctx context.Context, schemaName string, tx pgx.Tx, je *JournalEntry) error
 	UpdateJournalEntryStatus(ctx context.Context, schemaName, tenantID, entryID string, status JournalEntryStatus, userID string) error
@@ -107,6 +109,87 @@ func (r *Repository) CreateAccount(ctx context.Context, schemaName string, a *Ac
 	return nil
 }
 
+// ListJournalEntries retrieves the most recent journal entries with their lines.
+func (r *Repository) ListJournalEntries(ctx context.Context, schemaName, tenantID string, limit int) ([]JournalEntry, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	rows, err := r.db.Query(ctx, fmt.Sprintf(`
+		SELECT id, tenant_id, entry_number, entry_date, description, COALESCE(reference, ''), COALESCE(source_type, ''), source_id,
+		       status, posted_at, posted_by, voided_at, voided_by, COALESCE(void_reason, ''), created_at, created_by
+		FROM %s.journal_entries
+		WHERE tenant_id = $1
+		ORDER BY entry_date DESC, created_at DESC
+		LIMIT $2
+	`, schemaName), tenantID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list journal entries: %w", err)
+	}
+	defer rows.Close()
+
+	entries := make([]JournalEntry, 0, limit)
+	entryIDs := make([]string, 0, limit)
+	entryIndex := make(map[string]int, limit)
+
+	for rows.Next() {
+		var je JournalEntry
+		if err := rows.Scan(
+			&je.ID, &je.TenantID, &je.EntryNumber, &je.EntryDate, &je.Description, &je.Reference,
+			&je.SourceType, &je.SourceID, &je.Status, &je.PostedAt, &je.PostedBy,
+			&je.VoidedAt, &je.VoidedBy, &je.VoidReason, &je.CreatedAt, &je.CreatedBy,
+		); err != nil {
+			return nil, fmt.Errorf("scan journal entry: %w", err)
+		}
+
+		entryIndex[je.ID] = len(entries)
+		entryIDs = append(entryIDs, je.ID)
+		entries = append(entries, je)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate journal entries: %w", err)
+	}
+	if len(entryIDs) == 0 {
+		return entries, nil
+	}
+
+	lineRows, err := r.db.Query(ctx, fmt.Sprintf(`
+		SELECT id, tenant_id, journal_entry_id, account_id, COALESCE(description, ''),
+		       debit_amount, credit_amount, currency, exchange_rate, base_debit, base_credit
+		FROM %s.journal_entry_lines
+		WHERE tenant_id = $1 AND journal_entry_id = ANY($2::uuid[])
+		ORDER BY journal_entry_id, id
+	`, schemaName), tenantID, entryIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list journal entry lines: %w", err)
+	}
+	defer lineRows.Close()
+
+	for lineRows.Next() {
+		var line JournalEntryLine
+		if err := lineRows.Scan(
+			&line.ID, &line.TenantID, &line.JournalEntryID, &line.AccountID, &line.Description,
+			&line.DebitAmount, &line.CreditAmount, &line.Currency, &line.ExchangeRate,
+			&line.BaseDebit, &line.BaseCredit,
+		); err != nil {
+			return nil, fmt.Errorf("scan journal entry line: %w", err)
+		}
+
+		idx, ok := entryIndex[line.JournalEntryID]
+		if !ok {
+			continue
+		}
+		entries[idx].Lines = append(entries[idx].Lines, line)
+	}
+
+	if err := lineRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate journal entry lines: %w", err)
+	}
+
+	return entries, nil
+}
+
 // GetJournalEntryByID retrieves a journal entry with its lines
 func (r *Repository) GetJournalEntryByID(ctx context.Context, schemaName, tenantID, entryID string) (*JournalEntry, error) {
 	var je JournalEntry
@@ -155,6 +238,29 @@ func (r *Repository) GetJournalEntryByID(ctx context.Context, schemaName, tenant
 	return &je, nil
 }
 
+// GetJournalEntryBySource retrieves the most recent non-voided journal entry for a source pair.
+func (r *Repository) GetJournalEntryBySource(ctx context.Context, schemaName, tenantID, sourceType, sourceID string) (*JournalEntry, error) {
+	var entryID string
+	err := r.db.QueryRow(ctx, fmt.Sprintf(`
+		SELECT id
+		FROM %s.journal_entries
+		WHERE tenant_id = $1
+			AND source_type = $2
+			AND source_id = $3
+			AND status != $4
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, schemaName), tenantID, sourceType, sourceID, StatusVoided).Scan(&entryID)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get journal entry by source: %w", err)
+	}
+
+	return r.GetJournalEntryByID(ctx, schemaName, tenantID, entryID)
+}
+
 // CreateJournalEntry creates a new journal entry with lines
 func (r *Repository) CreateJournalEntry(ctx context.Context, schemaName string, je *JournalEntry) error {
 	tx, err := r.db.Begin(ctx)
@@ -179,10 +285,15 @@ func (r *Repository) CreateJournalEntryTx(ctx context.Context, schemaName string
 		je.CreatedAt = time.Now()
 	}
 
-	// Generate entry number
+	// Generate the next sequence from any trailing digits in existing entry numbers.
 	var seq int
 	err := tx.QueryRow(ctx, fmt.Sprintf(`
-		SELECT COALESCE(MAX(CAST(SUBSTRING(entry_number FROM 4) AS INTEGER)), 0) + 1
+		SELECT COALESCE(MAX(
+			CASE
+				WHEN entry_number ~ '[0-9]+$' THEN CAST(SUBSTRING(entry_number FROM '([0-9]+)$') AS INTEGER)
+				ELSE 0
+			END
+		), 0) + 1
 		FROM %s.journal_entries WHERE tenant_id = $1
 	`, schemaName), je.TenantID).Scan(&seq)
 	if err != nil {
@@ -348,7 +459,7 @@ func (r *Repository) GetPeriodBalances(ctx context.Context, schemaName, tenantID
 			LEFT JOIN %s.journal_entry_lines jel ON jel.account_id = a.id AND jel.tenant_id = a.tenant_id
 			LEFT JOIN %s.journal_entries je ON je.id = jel.journal_entry_id
 			WHERE a.tenant_id = $1
-			  AND (je.id IS NULL OR (je.entry_date >= $2 AND je.entry_date <= $3 AND je.status = 'POSTED'))
+			  AND (je.id IS NULL OR (je.entry_date >= $2 AND je.entry_date <= $3 AND je.status = 'POSTED' AND COALESCE(je.source_type, '') != $4))
 			  AND a.account_type IN ('REVENUE', 'EXPENSE')
 			GROUP BY a.id, a.code, a.name, a.account_type
 		)
@@ -366,7 +477,7 @@ func (r *Repository) GetPeriodBalances(ctx context.Context, schemaName, tenantID
 		FROM period_totals
 		WHERE total_debits != 0 OR total_credits != 0
 		ORDER BY account_type DESC, account_code
-	`, schemaName, schemaName, schemaName), tenantID, startDate, endDate)
+	`, schemaName, schemaName, schemaName), tenantID, startDate, endDate, SourceTypeYearEndCarryForward)
 	if err != nil {
 		return nil, fmt.Errorf("get period balances: %w", err)
 	}

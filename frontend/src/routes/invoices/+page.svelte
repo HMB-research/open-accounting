@@ -1,12 +1,23 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import { page } from '$app/stores';
-	import { api, type Invoice, type InvoiceType, type InvoiceStatus, type Contact } from '$lib/api';
+	import {
+		api,
+		type Contact,
+		type ImportInvoicesResult,
+		type Invoice,
+		type InvoiceStatus,
+		type InvoiceType,
+		type Tenant
+	} from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
 	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
 	import ContactFormModal from '$lib/components/ContactFormModal.svelte';
+	import DocumentManager from '$lib/components/DocumentManager.svelte';
 	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
 	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
+	import WorkflowHero, { type WorkflowHeroAction, type WorkflowHeroAside, type WorkflowHeroStat } from '$lib/components/WorkflowHero.svelte';
 	import { requireTenantId, parseApiError } from '$lib/utils/tenant';
 	import {
 		formatCurrency,
@@ -17,18 +28,27 @@
 		type LineItem
 	} from '$lib/utils/formatting';
 
+	let tenantId = $derived($page.url.searchParams.get('tenant') || '');
 	let invoices = $state<Invoice[]>([]);
 	let contacts = $state<Contact[]>([]);
+	let tenant = $state<Tenant | null>(null);
 	let isLoading = $state(true);
 	let error = $state('');
 	let success = $state('');
 	let actionLoading = $state(false);
 	let showCreateInvoice = $state(false);
+	let showImportInvoices = $state(false);
 	let filterType = $state<InvoiceType | ''>('');
 	let filterStatus = $state<InvoiceStatus | ''>('');
 	let filterFromDate = $state('');
 	let filterToDate = $state('');
 	let showContactModal = $state(false);
+	let showDocumentManager = $state(false);
+	let importError = $state('');
+	let importFileName = $state('');
+	let importCSVContent = $state('');
+	let isImporting = $state(false);
+	let importResult = $state<ImportInvoicesResult | null>(null);
 
 	// New invoice form
 	let newType = $state<InvoiceType>('SALES');
@@ -38,9 +58,98 @@
 	let newReference = $state('');
 	let newNotes = $state('');
 	let newLines = $state<LineItem[]>([createEmptyLine()]);
+	let selectedInvoiceForDocuments = $state<Invoice | null>(null);
+
+	function decimalValue(value: Decimal | number | string | undefined | null): Decimal {
+		if (value instanceof Decimal) return value;
+		return new Decimal(value || 0);
+	}
+
+	let draftCount = $derived(invoices.filter((invoice) => invoice.status === 'DRAFT').length);
+	let overdueCount = $derived(invoices.filter((invoice) => invoice.status === 'OVERDUE').length);
+	let openBalance = $derived.by(() =>
+		invoices.reduce((sum, invoice) => {
+			if (invoice.status === 'PAID' || invoice.status === 'VOIDED') {
+				return sum;
+			}
+
+			return sum.plus(decimalValue(invoice.total).minus(decimalValue(invoice.amount_paid)));
+		}, new Decimal(0))
+	);
+	let currentPeriodLockDate = $derived(tenant?.settings?.period_lock_date || '');
+
+	let heroStats = $derived.by<WorkflowHeroStat[]>(() => [
+		{
+			label: m.common_total(),
+			value: String(invoices.length),
+			detail: m.invoices_totalInvoicesHint()
+		},
+		{
+			label: m.invoices_openBalance(),
+			value: formatCurrency(openBalance),
+			tone: openBalance.greaterThan(0) ? 'warning' : 'default'
+		},
+		{
+			label: m.invoices_overdue(),
+			value: String(overdueCount),
+			tone: overdueCount > 0 ? 'danger' : 'success'
+		},
+		{
+			label: m.settings_periodLockDate(),
+			value: currentPeriodLockDate ? formatDate(currentPeriodLockDate) : m.settings_periodOpenStatus(),
+			tone: currentPeriodLockDate ? 'warning' : 'success',
+			href: tenantId ? `/settings/company?tenant=${tenantId}` : undefined
+		}
+	]);
+
+	let heroActions = $derived.by<WorkflowHeroAction[]>(() => [
+		{
+			label: m.invoices_importInvoices(),
+			variant: 'secondary',
+			onclick: openImportModal,
+			disabled: !tenantId
+		},
+		{
+			label: m.invoices_newInvoice(),
+			onclick: () => (showCreateInvoice = true),
+			disabled: !tenantId
+		}
+	]);
+
+	let heroAside = $derived.by<WorkflowHeroAside>(() => {
+		if (contacts.length === 0) {
+			return {
+				kicker: m.contacts_title(),
+				title: m.invoices_contactsFirstTitle(),
+				body: m.invoices_contactsFirstDesc(),
+				linkLabel: m.contacts_newContact(),
+				href: tenantId ? `/contacts?tenant=${tenantId}` : '/contacts',
+				items: [m.invoices_contactsFirstItemOne(), m.invoices_contactsFirstItemTwo()]
+			};
+		}
+
+		if (currentPeriodLockDate) {
+			return {
+				kicker: m.settings_accountingControls(),
+				title: m.invoices_closeStatusTitle(),
+				body: m.invoices_closeStatusDesc({ date: formatDate(currentPeriodLockDate) }),
+				linkLabel: m.invoices_manageCloseControls(),
+				href: tenantId ? `/settings/company?tenant=${tenantId}` : '/settings/company',
+				items: [m.invoices_closeStatusItemOne(), m.invoices_closeStatusItemTwo()]
+			};
+		}
+
+		return {
+			kicker: m.dashboard_setupCenter(),
+			title: m.invoices_importLegacyTitle(),
+			body: m.invoices_importLegacyDesc(),
+			linkLabel: m.invoices_importInvoices(),
+			href: tenantId ? `/invoices?tenant=${tenantId}` : '/invoices',
+			items: [m.invoices_importLegacyItemOne(), m.invoices_importLegacyItemTwo()]
+		};
+	});
 
 	$effect(() => {
-		const tenantId = $page.url.searchParams.get('tenant');
 		if (tenantId) {
 			loadData(tenantId);
 		}
@@ -50,18 +159,20 @@
 		isLoading = true;
 		error = '';
 
-		try {
-			const [invoiceData, contactData] = await Promise.all([
+	try {
+			const [invoiceData, contactData, tenantData] = await Promise.all([
 				api.listInvoices(tenantId, {
 					type: filterType || undefined,
 					status: filterStatus || undefined,
 					from_date: filterFromDate || undefined,
 					to_date: filterToDate || undefined
 				}),
-				api.listContacts(tenantId, { active_only: true })
+				api.listContacts(tenantId, { active_only: true }),
+				api.getTenant(tenantId)
 			]);
 			invoices = invoiceData;
 			contacts = contactData;
+			tenant = tenantData;
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load data';
 		} finally {
@@ -77,6 +188,99 @@
 		if (newLines.length > 1) {
 			newLines = newLines.filter((_, i) => i !== index);
 		}
+	}
+
+	function openImportModal() {
+		showImportInvoices = true;
+		importError = '';
+		importFileName = '';
+		importCSVContent = '';
+		importResult = null;
+	}
+
+	function closeImportModal() {
+		showImportInvoices = false;
+		importError = '';
+		importFileName = '';
+		importCSVContent = '';
+		importResult = null;
+	}
+
+	function openDocumentManager(invoice: Invoice) {
+		selectedInvoiceForDocuments = invoice;
+		showDocumentManager = true;
+	}
+
+	function closeDocumentManager() {
+		showDocumentManager = false;
+		selectedInvoiceForDocuments = null;
+	}
+
+	async function handleImportFileChange(event: Event) {
+		const input = event.currentTarget as HTMLInputElement | null;
+		const file = input?.files?.[0];
+
+		importResult = null;
+
+		if (!file) {
+			importFileName = '';
+			importCSVContent = '';
+			return;
+		}
+
+		importFileName = file.name;
+		importCSVContent = await file.text();
+		importError = '';
+	}
+
+	async function submitImport(event: Event) {
+		event.preventDefault();
+
+		const tenantId = $page.url.searchParams.get('tenant');
+		if (!tenantId) return;
+
+		if (!importCSVContent.trim()) {
+			importError = m.invoices_importFileRequired();
+			return;
+		}
+
+		isImporting = true;
+		importError = '';
+
+		try {
+			importResult = await api.importInvoices(tenantId, {
+				file_name: importFileName || undefined,
+				csv_content: importCSVContent
+			});
+
+			if (importResult.invoices_created > 0) {
+				await loadData(tenantId);
+			}
+		} catch (err) {
+			importError = err instanceof Error ? err.message : 'Failed to import invoices';
+		} finally {
+			isImporting = false;
+		}
+	}
+
+	function downloadImportTemplate() {
+		if (!browser) return;
+
+		const template = [
+			'invoice_number,invoice_type,contact_code,contact_name,issue_date,due_date,status,amount_paid,reference,notes,line_description,quantity,unit,unit_price,discount_percent,vat_rate',
+			'INV-EXT-001,SALES,CUST-001,Example Customer,2026-02-01,2026-02-15,SENT,0,PO-12345,Imported migration invoice,Implementation work,1,hour,100.00,0,22',
+			'INV-EXT-001,SALES,CUST-001,Example Customer,2026-02-01,2026-02-15,SENT,0,PO-12345,Imported migration invoice,Support retainer,1,month,50.00,0,22'
+		].join('\n');
+
+		const blob = new Blob([template], { type: 'text/csv;charset=utf-8' });
+		const url = window.URL.createObjectURL(blob);
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = 'invoices-import-template.csv';
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+		window.URL.revokeObjectURL(url);
 	}
 
 	// Use imported calcLineTotal for line calculations
@@ -213,14 +417,16 @@
 </svelte:head>
 
 <div class="container">
-	<div class="page-header">
-		<h1>{m.invoices_title()}</h1>
-		<div class="page-actions">
-			<button class="btn btn-primary" onclick={() => (showCreateInvoice = true)}>
-				+ {m.invoices_newInvoice()}
-			</button>
-		</div>
-	</div>
+	<WorkflowHero
+		eyebrow={m.dashboard_invoiceStatus()}
+		title={m.invoices_title()}
+		description={m.invoices_heroDesc()}
+		badgeLabel={draftCount > 0 ? m.invoices_draftBadge({ count: String(draftCount) }) : m.invoices_readyToSend()}
+		badgeTone={draftCount > 0 ? 'warning' : 'success'}
+		actions={heroActions}
+		stats={heroStats}
+		aside={heroAside}
+	/>
 
 	<div class="filters card">
 		<div class="filter-row">
@@ -258,7 +464,16 @@
 		<p>{m.common_loading()}</p>
 	{:else if invoices.length === 0}
 		<div class="empty-state card">
-			<p>{m.invoices_noInvoices()} {m.invoices_createFirst()}</p>
+			<h2>{m.invoices_noInvoices()}</h2>
+			<p>{m.invoices_createFirst()}</p>
+			<div class="empty-actions">
+				<button class="btn btn-secondary" onclick={openImportModal}>
+					{m.invoices_importInvoices()}
+				</button>
+				<button class="btn btn-primary" onclick={() => (showCreateInvoice = true)}>
+					{m.invoices_newInvoice()}
+				</button>
+			</div>
 		</div>
 	{:else}
 		<div class="card">
@@ -291,6 +506,12 @@
 								<td class="actions actions-cell">
 									<button
 										class="btn btn-small btn-secondary"
+										onclick={() => openDocumentManager(invoice)}
+									>
+										{m.documents_manageAction()}
+									</button>
+									<button
+										class="btn btn-small btn-secondary"
 										onclick={() => downloadPDF(invoice.id, invoice.invoice_number)}
 										title="Download PDF"
 									>
@@ -317,6 +538,105 @@
 	onSave={handleNewContactSaved}
 	onClose={() => (showContactModal = false)}
 />
+
+<DocumentManager
+	open={showDocumentManager}
+	tenantId={tenantId}
+	entityType="invoice"
+	entityId={selectedInvoiceForDocuments?.id || ''}
+	title={
+		selectedInvoiceForDocuments
+			? m.documents_invoiceTitle({ number: selectedInvoiceForDocuments.invoice_number })
+			: m.documents_manageAction()
+	}
+	onClose={closeDocumentManager}
+/>
+
+{#if showImportInvoices}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<div class="modal-backdrop" onclick={closeImportModal} role="presentation">
+		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="import-invoices-title" tabindex="-1">
+			<h2 id="import-invoices-title">{m.invoices_importInvoices()}</h2>
+			<p class="modal-description">{m.invoices_importDescription()}</p>
+
+			<form onsubmit={submitImport}>
+				<div class="form-group">
+					<label class="label" for="invoice-import-file">{m.invoices_importChooseFile()}</label>
+					<input
+						class="input"
+						id="invoice-import-file"
+						type="file"
+						accept=".csv,text/csv"
+						onchange={handleImportFileChange}
+					/>
+					<div class="help-text">{m.invoices_importTemplateHint()}</div>
+				</div>
+
+				<div class="modal-actions import-actions">
+					<button type="button" class="btn btn-secondary" onclick={downloadImportTemplate}>
+						{m.invoices_importTemplate()}
+					</button>
+					<button type="button" class="btn btn-secondary" onclick={closeImportModal}>
+						{m.common_cancel()}
+					</button>
+					<button type="submit" class="btn btn-primary" disabled={isImporting}>
+						{isImporting ? m.invoices_importing() : m.invoices_importInvoices()}
+					</button>
+				</div>
+			</form>
+
+			{#if importFileName}
+				<p class="selected-file">{m.invoices_importSelectedFile()}: <strong>{importFileName}</strong></p>
+			{/if}
+
+			{#if importError}
+				<div class="alert alert-error">{importError}</div>
+			{/if}
+
+			{#if importResult}
+				<div class="import-summary">
+					<h3>{m.invoices_importSummary()}</h3>
+					<div class="import-stats">
+						<div class="import-stat">
+							<span class="summary-label">{m.invoices_importRowsProcessed()}</span>
+							<strong>{importResult.rows_processed}</strong>
+						</div>
+						<div class="import-stat">
+							<span class="summary-label">{m.invoices_importInvoicesCreated()}</span>
+							<strong>{importResult.invoices_created}</strong>
+						</div>
+						<div class="import-stat">
+							<span class="summary-label">{m.invoices_importLinesImported()}</span>
+							<strong>{importResult.lines_imported}</strong>
+						</div>
+						<div class="import-stat">
+							<span class="summary-label">{m.invoices_importRowsSkipped()}</span>
+							<strong>{importResult.rows_skipped}</strong>
+						</div>
+					</div>
+
+					{#if importResult.errors?.length}
+						<div class="import-errors">
+							<h4>{m.invoices_importErrors()}</h4>
+							<ul>
+								{#each importResult.errors as rowError}
+									<li>
+										<strong>{m.invoices_importRow()} {rowError.row}</strong>
+										{#if rowError.invoice_number}
+											<span> · {rowError.invoice_number}</span>
+										{/if}
+										<div>{m.invoices_importMessage()}: {rowError.message}</div>
+									</li>
+								{/each}
+							</ul>
+						</div>
+					{/if}
+				</div>
+			{/if}
+		</div>
+	</div>
+{/if}
 
 {#if showCreateInvoice}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -488,10 +808,6 @@
 {/if}
 
 <style>
-	h1 {
-		font-size: 1.75rem;
-	}
-
 	.filters {
 		margin-bottom: 1.5rem;
 		padding: 1rem;
@@ -548,6 +864,19 @@
 		color: var(--color-text-muted);
 	}
 
+	.empty-state h2 {
+		color: var(--color-text);
+		margin-bottom: 0.5rem;
+	}
+
+	.empty-actions {
+		display: flex;
+		justify-content: center;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+		margin-top: 1.25rem;
+	}
+
 	.modal-backdrop {
 		position: fixed;
 		inset: 0;
@@ -572,6 +901,11 @@
 
 	.modal h2 {
 		margin-bottom: 1.5rem;
+	}
+
+	.modal-description {
+		margin-bottom: 1rem;
+		color: var(--color-text-muted);
 	}
 
 	.form-row {
@@ -638,21 +972,64 @@
 		margin-top: 1.5rem;
 	}
 
+	.import-actions {
+		justify-content: flex-start;
+		flex-wrap: wrap;
+	}
+
+	.selected-file {
+		margin-top: 1rem;
+		color: var(--color-text-muted);
+	}
+
+	.import-summary {
+		margin-top: 1.5rem;
+		border-top: 1px solid var(--color-border);
+		padding-top: 1.5rem;
+	}
+
+	.import-stats {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+		gap: 0.75rem;
+		margin-top: 1rem;
+	}
+
+	.import-stat {
+		border: 1px solid var(--color-border);
+		border-radius: 0.75rem;
+		padding: 0.75rem;
+		background: var(--color-surface, rgba(255, 255, 255, 0.02));
+	}
+
+	.summary-label {
+		display: block;
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+		margin-bottom: 0.25rem;
+	}
+
+	.import-errors {
+		margin-top: 1rem;
+	}
+
+	.import-errors ul {
+		display: grid;
+		gap: 0.75rem;
+		padding-left: 1rem;
+	}
+
+	.import-errors li {
+		color: var(--color-text-muted);
+	}
+
 	/* Mobile responsive styles */
 	@media (max-width: 768px) {
-		h1 {
-			font-size: 1.5rem;
-		}
-
 		.filter-row {
 			flex-direction: column;
 		}
 
 		.filter-row select {
-			min-height: 44px;
-		}
-
-		.page-actions .btn {
 			min-height: 44px;
 		}
 
@@ -701,6 +1078,14 @@
 		.btn-new-contact {
 			min-height: 44px;
 			padding: 0.5rem 1rem;
+		}
+
+		.empty-actions {
+			flex-direction: column;
+		}
+
+		.empty-actions .btn {
+			width: 100%;
 		}
 	}
 </style>

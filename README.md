@@ -17,37 +17,54 @@
 
 > **⚠️ Development Status**
 > This project is under active development and not yet production-ready. APIs may change, and features may be incomplete. Contributions and feedback welcome!
+>
+> Verified locally on 2026-03-13:
+> `go test ./...`, `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)`, `cd frontend && bun run test`, and `cd frontend && bun run test:e2e:smoke` pass.
+> Production hardening, historical payroll migration, deeper accountant exception actions, and broader document retention/reconciliation workflows are still in progress.
+
+CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API token once and then uses that token for subsequent reads and mutations.
 
 ---
 
-## 🎮 Live Demo
+## 🎮 Demo
 
-Try Open Accounting without installing anything:
+The previous hosted Railway demo is currently offline.
 
-**[open-accounting.up.railway.app](https://open-accounting.up.railway.app)**
+For a resettable local demo instead:
+
+```bash
+docker-compose up -d db
+export DATABASE_URL="postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable"
+go run ./cmd/migrate -db "$DATABASE_URL" -path migrations -direction up
+DEMO_MODE=true DEMO_RESET_SECRET=test-demo-secret go run ./cmd/api
+curl -X POST http://localhost:8080/api/demo/reset -H 'X-Demo-Secret: test-demo-secret'
+```
 
 | Credential | Value |
 |------------|-------|
 | **Email** | `demo1@example.com` |
 | **Password** | `demo12345` |
 
-> Demo data can be reset via API. Feel free to create invoices, contacts, and explore all features!
-
 ---
 
 ## What is Open Accounting?
 
-Open Accounting is a **self-hosted, multi-tenant accounting platform** designed for small to medium businesses, accountants managing multiple clients, and SaaS builders who need embedded accounting. Built with modern technologies and focused on **Estonian/EU compliance**, it provides:
+Open Accounting is a **self-hosted, multi-tenant accounting platform** focused today on **Estonian SMB and accountant workflows**. The current wedge is accounting, invoicing, payroll, bank import/reconciliation, and KMD/TSD export for self-hosted teams that want source access and tenant isolation.
+
+It is not yet a full SmartAccounts/Merit replacement or a production-hardened embedded accounting platform. Built with modern technologies and focused on **Estonian/EU compliance**, it provides:
 
 - **True Double-Entry Bookkeeping** — Immutable journal entries with full audit trail
 - **Multi-Company Support** — One installation serves multiple businesses with complete data isolation
 - **Role-Based Access** — Owner, Admin, Accountant, and Viewer roles with granular permissions
+- **Accountant Review Queue** — Dashboard review surface for overdue invoices, unmatched bank transactions, close status, and recent journal activity, with a cross-tenant portfolio rollup for accountant users
 - **Estonian Tax Compliance** — KMD (VAT) declarations with e-MTA XML export
 - **Modern Stack** — Go backend, SvelteKit frontend, PostgreSQL database
 
 ---
 
 ## ✨ Features
+
+> Status note: features listed below exist in the repository. That does not mean each one is production-hardened, accountant-grade, or at full parity with proprietary incumbents.
 
 ### Core Accounting
 | Feature | Description |
@@ -94,7 +111,7 @@ Open Accounting is a **self-hosted, multi-tenant accounting platform** designed 
 |---------|-------------|
 | **Tenant Isolation** | Schema-per-tenant for complete data separation |
 | **User Management** | Invite users, assign roles, manage permissions |
-| **JWT Authentication** | Secure token-based authentication |
+| **JWT and API token auth** | JWT access/refresh tokens plus tenant-scoped API tokens for automation |
 | **RBAC** | Role-based access control with permission checks |
 | **API Rate Limiting** | Token bucket rate limiting with configurable thresholds |
 
@@ -111,9 +128,9 @@ Open Accounting is a **self-hosted, multi-tenant accounting platform** designed 
 ### Estonian Compliance
 | Feature | Description |
 |---------|-------------|
-| **KMD Declaration** | Automated VAT declaration generation |
-| **TSD Declaration** | Payroll tax declaration with e-MTA XML export |
-| **e-MTA Export** | XML format compatible with Estonian Tax Board |
+| **KMD Declaration** | VAT declaration generation with export for manual filing |
+| **TSD Declaration** | Payroll tax declaration with XML/CSV export |
+| **e-MTA Export** | XML export for manual upload to the Estonian Tax Board |
 | **Estonian Defaults** | Pre-configured for Estonian accounting standards |
 
 ### Plugin Marketplace
@@ -133,13 +150,13 @@ Open Accounting is a **self-hosted, multi-tenant accounting platform** designed 
 
 | Layer | Technology |
 |-------|------------|
-| **Backend** | Go 1.24+, Chi router, pgx/v5 |
+| **Backend** | Go 1.24+, Chi router, pgx/v5, sqlc (shared tables) |
 | **Frontend** | SvelteKit 2, Svelte 5, Vite 7, TypeScript |
 | **i18n** | Paraglide-JS (compile-time translations) |
 | **Database** | PostgreSQL 16+ |
-| **Auth** | JWT with access/refresh tokens |
+| **Auth** | JWT access/refresh tokens plus tenant-scoped API tokens |
 | **API Docs** | Swagger/OpenAPI |
-| **Testing** | Go test (90%+ coverage), Vitest (frontend) |
+| **Testing** | Go unit tests, backend integration tests, Vitest, Playwright demo suite |
 | **CI/CD** | GitHub Actions, Codecov |
 | **Container** | Docker, Docker Compose |
 
@@ -185,6 +202,23 @@ go run ./cmd/api
 cd frontend && bun install && bun run dev
 ```
 
+### CLI bootstrap
+
+```bash
+go run ./cmd/oa auth init \
+  --base-url http://localhost:8080 \
+  --email you@example.com \
+  --password 'your-password'
+
+go run ./cmd/oa accounts list
+go run ./cmd/oa contacts import --file ./contacts.csv
+go run ./cmd/oa employees import --file ./employees.csv
+go run ./cmd/oa documents upload --entity-type bank_transaction --entity-id <transaction-id> --file ./evidence.pdf --document-type reconciliation_evidence
+go run ./cmd/oa journal import-opening-balances --file ./opening-balances.csv --entry-date 2026-01-01
+```
+
+More examples are in [docs/CLI.md](docs/CLI.md).
+
 ---
 
 ## 📁 Project Structure
@@ -193,7 +227,8 @@ cd frontend && bun install && bun run dev
 open-accounting/
 ├── cmd/
 │   ├── api/              # HTTP API server (main application)
-│   └── migrate/          # Database migration CLI tool
+│   ├── migrate/          # Database migration CLI tool
+│   └── oa/               # Operator CLI using tenant-scoped API tokens
 │
 ├── internal/
 │   ├── accounting/       # Core: accounts, journal entries, reports
@@ -225,6 +260,7 @@ open-accounting/
 |----------|-------------|
 | [API Reference](docs/API.md) | Complete REST API documentation with examples |
 | [Architecture](docs/ARCHITECTURE.md) | System design, multi-tenancy, authentication flow |
+| [CLI Guide](docs/CLI.md) | API-token bootstrap, token management, and import examples for the `oa` CLI |
 | [Deployment](docs/DEPLOYMENT.md) | Production deployment guide |
 | [EMTA Integration](docs/EMTA_INTEGRATION.md) | Estonian Tax Board integration guide |
 | [Plugins](docs/PLUGINS.md) | Plugin development and marketplace guide |
@@ -246,7 +282,9 @@ open-accounting/
 
 ## 🗺 Roadmap
 
-### Implemented ✅
+### Working in repo
+- Feature presence only; not a claim of production parity or operational maturity.
+
 - [x] Double-entry bookkeeping with journal entries
 - [x] Multi-tenant architecture with schema isolation
 - [x] User authentication and RBAC
@@ -268,10 +306,18 @@ open-accounting/
 - [x] Quotes with quote-to-order conversion
 - [x] Order management
 - [x] Fixed assets with depreciation tracking
+- [x] Tenant-scoped API token auth and Go CLI
+- [x] CSV import for chart of accounts, contacts, employees, invoices, and opening balances
+- [x] Tenant period lock on core write paths
+- [x] Close/reopen workflow with audit trail in API and company settings
+- [x] Fiscal-year close readiness and retained-earnings carry-forward workflow
+- [x] Document attachments for invoices, journal entries, payments, bank transactions, and fixed assets
 
-### Planned 📋
-- [ ] E-invoice support (Peppol) — *requires external Access Point*
-- [ ] Inventory management (stock tracking, warehouses)
+### Still missing for reliable production use
+- [ ] Historical payroll and broader external migration imports
+- [ ] Full document approval workflow, retention admin controls, and broader evidence policy enforcement
+- [ ] Backup/restore verification and stronger auth/session controls
+- [ ] E-invoice, direct bank feeds, SEPA initiation, and automatic e-MTA submission
 
 ---
 

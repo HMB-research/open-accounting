@@ -37,9 +37,9 @@ This document describes the high-level architecture of Open Accounting.
 │  │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘           ││
 │  │       └───────────┴──────────┬┴───────────┘                 ││
 │  │                              │                               ││
-│  │  ┌─────────┐ ┌─────────┐ ┌──▼──────┐ ┌─────────┐           ││
-│  │  │ Tenant  │ │  Auth   │ │Contacts │ │   Tax   │           ││
-│  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘           ││
+│  │  ┌─────────┐ ┌─────────┐ ┌──────────┐ ┌─────────┐          ││
+│  │  │ Tenant  │ │  Auth   │ │ API Token│ │Contacts │          ││
+│  │  └─────────┘ └─────────┘ └──────────┘ └─────────┘          ││
 │  └─────────────────────────────────────────────────────────────┘│
 └──────────────────────────────┬──────────────────────────────────┘
                                │
@@ -52,6 +52,7 @@ This document describes the high-level architecture of Open Accounting.
 │  │  • tenants      │  │  • entries     │  │  • entries     │    │
 │  │  • tenant_users │  │  • invoices    │  │  • invoices    │    │
 │  │  • invitations  │  │  • payments    │  │  • payments    │    │
+│  │  • api_tokens   │  │  • contacts    │  │  • contacts    │    │
 │  └────────────────┘  └────────────────┘  └────────────────┘    │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -66,6 +67,7 @@ Contains shared tables:
 - `tenants` - Organization registry
 - `tenant_users` - User-tenant memberships with roles
 - `user_invitations` - Pending invitations
+- `api_tokens` - Hashed tenant-scoped API tokens for CLI/automation usage
 
 ### Tenant Schemas
 Each tenant gets a dedicated PostgreSQL schema (e.g., `tenant_acme`) containing:
@@ -85,39 +87,53 @@ Each tenant gets a dedicated PostgreSQL schema (e.g., `tenant_acme`) containing:
 ## Authentication Flow
 
 ```
-┌──────────┐     ┌──────────┐     ┌──────────┐
-│  Client  │────▶│   API    │────▶│ Database │
-└──────────┘     └──────────┘     └──────────┘
-     │                │
-     │  1. Login      │
-     │  (email/pass)  │
-     │───────────────▶│
-     │                │  2. Validate credentials
-     │                │  3. Generate JWT tokens
-     │◀───────────────│
-     │  access_token  │
-     │  refresh_token │
-     │                │
-     │  4. API call   │
-     │  + Bearer token│
-     │───────────────▶│
-     │                │  5. Validate token
-     │                │  6. Extract claims
-     │                │  7. Check tenant access
-     │◀───────────────│
-     │   Response     │
+┌──────────────┐     ┌──────────┐     ┌──────────┐
+│ Web / CLI    │────▶│   API    │────▶│ Database │
+└──────────────┘     └──────────┘     └──────────┘
+      │                   │
+      │  1. Login         │
+      │  (email/pass)     │
+      │──────────────────▶│
+      │                   │  2. Validate credentials
+      │                   │  3. Generate JWT tokens
+      │◀──────────────────│
+      │ access_token      │
+      │ refresh_token     │
+      │                   │
+      │  4. Optional: create tenant-scoped API token
+      │──────────────────▶│
+      │                   │  5. Persist token hash + metadata
+      │◀──────────────────│
+      │ raw api token     │
+      │                   │
+      │  6. API call + Bearer token
+      │──────────────────▶│
+      │                   │  7. Validate JWT or API token
+      │                   │  8. Extract claims
+      │                   │  9. Check tenant access
+      │◀──────────────────│
+      │ Response          │
 ```
 
-### JWT Claims
+### Auth Claims
 ```json
 {
   "user_id": "uuid",
   "email": "user@example.com",
   "tenant_id": "uuid",    // Current tenant context
   "role": "accountant",   // Role in current tenant
+  "token_kind": "access_token",
   "exp": 1234567890
 }
 ```
+
+`token_kind` is `access_token` for JWT access tokens and `api_token` for tenant-scoped API tokens used by the CLI or automation.
+
+### API Token Notes
+
+- API tokens are stored hashed in `public.api_tokens`; the raw token is shown only once at creation time.
+- API tokens are tenant-scoped and rejected if used on a different tenant path.
+- The `cmd/oa` CLI uses email/password only during bootstrap; normal reads and writes use the stored API token.
 
 ## Role-Based Access Control
 
@@ -371,20 +387,28 @@ type PostgresRepository struct {
 }
 ```
 
+### Data Access Direction
+
+- `pgx` is the primary runtime path for tenant-domain repositories.
+- `sqlc` is used for shared/public schema tables where generation is straightforward.
+- `gorm` adapters exist behind build tags for legacy or optional paths, and tenant-scoped adapters now use explicit schema-qualified tables instead of relying on `search_path`.
+
 ### Multi-Tenant Schema Qualification
 
-All repository queries use schema-qualified table names for tenant isolation:
+Tenant repositories qualify tables explicitly instead of mutating connection-level `search_path` state:
 
 ```go
+accountsTable, _ := database.QualifiedTable(schemaName, "accounts")
+
 query := fmt.Sprintf(`
-    SELECT id, name FROM %s.accounts WHERE id = $1
-`, schemaName)
+    SELECT id, name FROM %s WHERE id = $1
+`, accountsTable)
 ```
 
 ### Benefits
 
 1. **Testability** - Interfaces enable mocking for unit tests
-2. **Flexibility** - Implementation can be swapped (e.g., to GORM)
+2. **Safer Tenant Isolation** - Explicit table qualification avoids pooled-connection schema drift
 3. **Separation of Concerns** - Business logic doesn't depend on database details
 4. **Multi-Tenancy** - Schema name passed explicitly to every operation
 
@@ -399,15 +423,16 @@ query := fmt.Sprintf(`
 
 ## Testing Strategy
 
-### Test Coverage Requirements
+### Current Verification Gates
 
-The project maintains high test coverage standards:
+Coverage is tracked in CI and Codecov, but the repository does not currently claim fixed 90%+/95% thresholds as a maintained standard.
 
-| Layer | Target Coverage |
-|-------|----------------|
-| Backend (unit + integration) | 90%+ average |
-| Frontend | 95%+ |
-| Critical paths (auth, payments) | 95%+ |
+| Layer | Current Gate |
+|-------|--------------|
+| Backend | `go test ./...` must pass |
+| Backend integration | `go test -tags=integration -race ...` must pass |
+| Frontend | `bun run check` and `bun run test` must pass |
+| E2E | Blocking smoke E2E plus informational demo shards |
 
 ### Backend Testing
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/recurring"
 )
 
@@ -42,6 +43,27 @@ func (m *MockRecurringService) GenerateDueInvoices(ctx context.Context, tenantID
 		return results, nil
 	}
 	return []recurring.GenerationResult{}, nil
+}
+
+type MockReminderService struct {
+	results map[string][]invoicing.AutomatedReminderResult
+	errors  map[string]error
+	calls   []string
+}
+
+func NewMockReminderService() *MockReminderService {
+	return &MockReminderService{
+		results: make(map[string][]invoicing.AutomatedReminderResult),
+		errors:  make(map[string]error),
+	}
+}
+
+func (m *MockReminderService) ProcessRemindersForTenant(ctx context.Context, tenantID, schemaName, companyName string) ([]invoicing.AutomatedReminderResult, error) {
+	m.calls = append(m.calls, tenantID)
+	if err, ok := m.errors[tenantID]; ok && err != nil {
+		return nil, err
+	}
+	return m.results[tenantID], nil
 }
 
 func TestDefaultConfig(t *testing.T) {
@@ -528,4 +550,58 @@ func TestScheduler_GenerateDueInvoices_MultipleInvoices(t *testing.T) {
 
 	// Should process all invoices
 	scheduler.RunNow()
+}
+
+func TestScheduler_RunRemindersNow_WithRepositoryError(t *testing.T) {
+	mockRepo := &MockRepository{listActiveTenantsErr: errors.New("database error")}
+	mockReminder := NewMockReminderService()
+	scheduler := NewSchedulerWithRepository(mockRepo, nil, mockReminder, DefaultConfig())
+
+	scheduler.RunRemindersNow()
+
+	if len(mockReminder.calls) != 0 {
+		t.Fatalf("expected no reminder calls on repository error, got %v", mockReminder.calls)
+	}
+}
+
+func TestScheduler_RunRemindersNow_WithTenantResults(t *testing.T) {
+	tenants := []TenantInfo{
+		{ID: "tenant-1", SchemaName: "tenant_1", CompanyName: "Tenant One"},
+		{ID: "tenant-2", SchemaName: "tenant_2", CompanyName: "Tenant Two"},
+	}
+	mockRepo := &MockRepository{tenants: tenants}
+	mockReminder := NewMockReminderService()
+	mockReminder.results["tenant-1"] = []invoicing.AutomatedReminderResult{
+		{RuleName: "7 days overdue", RemindersSent: 2, Failed: 1, Errors: []string{"smtp timeout"}},
+	}
+	mockReminder.results["tenant-2"] = []invoicing.AutomatedReminderResult{
+		{RuleName: "due today", RemindersSent: 1, Skipped: 1},
+	}
+
+	scheduler := NewSchedulerWithRepository(mockRepo, nil, mockReminder, DefaultConfig())
+	scheduler.RunRemindersNow()
+
+	if len(mockReminder.calls) != 2 {
+		t.Fatalf("expected reminders for 2 tenants, got %d", len(mockReminder.calls))
+	}
+}
+
+func TestScheduler_RunRemindersNow_ContinuesOnTenantError(t *testing.T) {
+	tenants := []TenantInfo{
+		{ID: "tenant-1", SchemaName: "tenant_1", CompanyName: "Tenant One"},
+		{ID: "tenant-2", SchemaName: "tenant_2", CompanyName: "Tenant Two"},
+	}
+	mockRepo := &MockRepository{tenants: tenants}
+	mockReminder := NewMockReminderService()
+	mockReminder.errors["tenant-1"] = errors.New("smtp unavailable")
+	mockReminder.results["tenant-2"] = []invoicing.AutomatedReminderResult{
+		{RuleName: "final reminder", RemindersSent: 3},
+	}
+
+	scheduler := NewSchedulerWithRepository(mockRepo, nil, mockReminder, DefaultConfig())
+	scheduler.RunRemindersNow()
+
+	if len(mockReminder.calls) != 2 {
+		t.Fatalf("expected both tenants to be processed, got %d calls", len(mockReminder.calls))
+	}
 }

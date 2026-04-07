@@ -32,9 +32,18 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 	return &GORMRepository{db: db}
 }
 
+func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
+	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+}
+
 // EnsureSchema creates email tables if they don't exist
 // Note: This uses raw SQL as GORM AutoMigrate is not suitable for dynamic schema names
 func (r *GORMRepository) EnsureSchema(ctx context.Context, schemaName string) error {
+	quotedSchema, err := database.QuoteIdentifier(schemaName)
+	if err != nil {
+		return err
+	}
+
 	query := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s.email_templates (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -65,15 +74,20 @@ func (r *GORMRepository) EnsureSchema(ctx context.Context, schemaName string) er
 
 		CREATE INDEX IF NOT EXISTS idx_email_log_tenant ON %s.email_log(tenant_id);
 		CREATE INDEX IF NOT EXISTS idx_email_log_status ON %s.email_log(status);
-	`, schemaName, schemaName, schemaName, schemaName)
+	`, quotedSchema, quotedSchema, quotedSchema, quotedSchema)
 
 	return r.db.WithContext(ctx).Exec(query).Error
 }
 
 // GetTenantSettings retrieves tenant settings JSON from public schema
 func (r *GORMRepository) GetTenantSettings(ctx context.Context, tenantID string) ([]byte, error) {
+	db, err := database.TenantTable(r.db.WithContext(ctx), "public", "tenants")
+	if err != nil {
+		return nil, err
+	}
+
 	var tenant tenantSettings
-	err := r.db.WithContext(ctx).
+	err = db.
 		Select("id", "settings").
 		Where("id = ?", tenantID).
 		First(&tenant).Error
@@ -90,8 +104,12 @@ func (r *GORMRepository) GetTenantSettings(ctx context.Context, tenantID string)
 
 // UpdateTenantSettings updates tenant settings in public schema
 func (r *GORMRepository) UpdateTenantSettings(ctx context.Context, tenantID string, settingsJSON []byte) error {
-	return r.db.WithContext(ctx).
-		Model(&tenantSettings{}).
+	db, err := database.TenantTable(r.db.WithContext(ctx), "public", "tenants")
+	if err != nil {
+		return err
+	}
+
+	return db.
 		Where("id = ?", tenantID).
 		Updates(map[string]interface{}{
 			"settings":   settingsJSON,
@@ -101,10 +119,13 @@ func (r *GORMRepository) UpdateTenantSettings(ctx context.Context, tenantID stri
 
 // GetTemplate retrieves an email template
 func (r *GORMRepository) GetTemplate(ctx context.Context, schemaName, tenantID string, templateType TemplateType) (*EmailTemplate, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "email_templates")
+	if err != nil {
+		return nil, err
+	}
 
 	var tmpl EmailTemplate
-	err := db.Where("tenant_id = ? AND template_type = ?", tenantID, templateType).
+	err = db.Where("tenant_id = ? AND template_type = ?", tenantID, templateType).
 		First(&tmpl).Error
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -119,10 +140,13 @@ func (r *GORMRepository) GetTemplate(ctx context.Context, schemaName, tenantID s
 
 // ListTemplates lists all email templates for a tenant
 func (r *GORMRepository) ListTemplates(ctx context.Context, schemaName, tenantID string) ([]EmailTemplate, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "email_templates")
+	if err != nil {
+		return nil, err
+	}
 
 	var templates []EmailTemplate
-	err := db.Where("tenant_id = ?", tenantID).
+	err = db.Where("tenant_id = ?", tenantID).
 		Order("template_type").
 		Find(&templates).Error
 	if err != nil {
@@ -134,11 +158,18 @@ func (r *GORMRepository) ListTemplates(ctx context.Context, schemaName, tenantID
 
 // UpsertTemplate inserts or updates an email template
 func (r *GORMRepository) UpsertTemplate(ctx context.Context, schemaName string, template *EmailTemplate) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "email_templates")
+	if err != nil {
+		return err
+	}
+	templatesTable, err := database.QualifiedTable(schemaName, "email_templates")
+	if err != nil {
+		return err
+	}
 
 	// Use raw SQL for ON CONFLICT upsert since GORM's Clauses approach can be tricky with composite keys
-	err := db.Exec(`
-		INSERT INTO email_templates (id, tenant_id, template_type, subject, body_html, body_text, is_active)
+	err = db.Exec(fmt.Sprintf(`
+		INSERT INTO %s (id, tenant_id, template_type, subject, body_html, body_text, is_active)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (tenant_id, template_type) DO UPDATE SET
 			subject = EXCLUDED.subject,
@@ -146,7 +177,7 @@ func (r *GORMRepository) UpsertTemplate(ctx context.Context, schemaName string, 
 			body_text = EXCLUDED.body_text,
 			is_active = EXCLUDED.is_active,
 			updated_at = NOW()
-	`, template.ID, template.TenantID, template.TemplateType, template.Subject, template.BodyHTML, template.BodyText, template.IsActive).Error
+	`, templatesTable), template.ID, template.TenantID, template.TemplateType, template.Subject, template.BodyHTML, template.BodyText, template.IsActive).Error
 
 	if err != nil {
 		return err
@@ -159,16 +190,21 @@ func (r *GORMRepository) UpsertTemplate(ctx context.Context, schemaName string, 
 
 // CreateEmailLog creates a new email log entry
 func (r *GORMRepository) CreateEmailLog(ctx context.Context, schemaName string, log *EmailLog) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "email_log")
+	if err != nil {
+		return err
+	}
 	return db.Create(log).Error
 }
 
 // UpdateEmailLogStatus updates email log status
 func (r *GORMRepository) UpdateEmailLogStatus(ctx context.Context, schemaName, logID string, status EmailStatus, sentAt *time.Time, errorMessage string) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "email_log")
+	if err != nil {
+		return err
+	}
 
-	return db.Model(&EmailLog{}).
-		Where("id = ?", logID).
+	return db.Where("id = ?", logID).
 		Updates(map[string]interface{}{
 			"status":        status,
 			"sent_at":       sentAt,
@@ -182,10 +218,13 @@ func (r *GORMRepository) GetEmailLog(ctx context.Context, schemaName, tenantID s
 		limit = 50
 	}
 
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "email_log")
+	if err != nil {
+		return nil, err
+	}
 
 	var logs []EmailLog
-	err := db.Where("tenant_id = ?", tenantID).
+	err = db.Where("tenant_id = ?", tenantID).
 		Order("created_at DESC").
 		Limit(limit).
 		Find(&logs).Error

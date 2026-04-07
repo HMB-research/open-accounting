@@ -7,9 +7,8 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Use environment variables for local testing, fall back to Railway for remote demo testing
-export const DEMO_URL = process.env.BASE_URL || 'https://open-accounting.up.railway.app';
-export const DEMO_API_URL = process.env.PUBLIC_API_URL || 'https://open-accounting-api.up.railway.app';
+export const DEMO_URL = process.env.BASE_URL || 'http://localhost:5173';
+export const DEMO_API_URL = process.env.PUBLIC_API_URL || 'http://localhost:8080';
 
 // Auth state directory - matches playwright.demo.config.ts
 const AUTH_DIR = path.join(__dirname, '..', '..', '.auth');

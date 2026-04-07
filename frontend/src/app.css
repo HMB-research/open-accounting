@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600;700&display=swap');
+
 :root {
 	/* Colors */
 	--color-primary: #2563eb;
@@ -6,14 +8,16 @@
 	--color-success: #22c55e;
 	--color-warning: #f59e0b;
 	--color-error: #ef4444;
-	--color-bg: #f8fafc;
-	--color-surface: #ffffff;
-	--color-text: #1e293b;
+	--color-bg: #f6f3ec;
+	--color-surface: #fffdf8;
+	--color-card: rgba(255, 252, 245, 0.94);
+	--color-text: #1f2937;
 	--color-text-muted: #64748b;
-	--color-border: #e2e8f0;
+	--color-border: rgba(30, 41, 59, 0.12);
 
 	/* Typography */
-	--font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+	--font-sans: 'Instrument Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+	--font-display: 'Cormorant Garamond', Georgia, serif;
 	--font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
 
 	/* Breakpoints (for reference in JS, actual media queries use px values) */
@@ -28,6 +32,13 @@
 	--spacing-md: 1rem;
 	--spacing-lg: 1.5rem;
 	--spacing-xl: 2rem;
+
+	/* Shape & depth */
+	--radius-sm: 0.75rem;
+	--radius-md: 1rem;
+	--radius-lg: 1.5rem;
+	--shadow-soft: 0 24px 60px rgba(15, 23, 42, 0.08);
+	--shadow-card: 0 12px 30px rgba(15, 23, 42, 0.06);
 
 	/* Mobile nav */
 	--nav-height: 60px;
@@ -45,7 +56,11 @@ body {
 	font-size: 14px;
 	line-height: 1.5;
 	color: var(--color-text);
-	background-color: var(--color-bg);
+	background:
+		radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), transparent 28rem),
+		radial-gradient(circle at bottom right, rgba(15, 23, 42, 0.06), transparent 30rem),
+		var(--color-bg);
+	background-attachment: fixed;
 }
 
 a {
@@ -80,45 +95,52 @@ textarea {
 	display: inline-flex;
 	align-items: center;
 	gap: 0.5rem;
-	padding: 0.5rem 1rem;
+	padding: 0.65rem 1rem;
 	border: 1px solid transparent;
-	border-radius: 0.375rem;
-	font-weight: 500;
+	border-radius: 999px;
+	font-weight: 600;
 	transition: all 0.15s ease;
 }
 
 .btn-primary {
 	background-color: var(--color-primary);
 	color: white;
+	box-shadow: 0 14px 30px rgba(37, 99, 235, 0.2);
 }
 
 .btn-primary:hover {
 	background-color: var(--color-primary-dark);
+	text-decoration: none;
+	transform: translateY(-1px);
 }
 
 .btn-secondary {
-	background-color: var(--color-surface);
+	background-color: rgba(255, 255, 255, 0.65);
 	color: var(--color-text);
 	border-color: var(--color-border);
+	backdrop-filter: blur(14px);
 }
 
 .btn-secondary:hover {
-	background-color: var(--color-bg);
+	background-color: rgba(255, 255, 255, 0.9);
+	text-decoration: none;
 }
 
 .card {
-	background: var(--color-surface);
+	background: var(--color-card);
 	border: 1px solid var(--color-border);
-	border-radius: 0.5rem;
+	border-radius: var(--radius-md);
 	padding: 1.5rem;
+	box-shadow: var(--shadow-card);
+	backdrop-filter: blur(16px);
 }
 
 .input {
 	width: 100%;
 	padding: 0.5rem 0.75rem;
 	border: 1px solid var(--color-border);
-	border-radius: 0.375rem;
-	background: var(--color-surface);
+	border-radius: var(--radius-sm);
+	background: rgba(255, 255, 255, 0.78);
 }
 
 .input:focus {

@@ -6,9 +6,17 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Use environment variables for local testing, fall back to Railway for remote demo testing
-const baseURL = process.env.BASE_URL || 'https://open-accounting.up.railway.app';
-const isLocalTesting = baseURL.includes('localhost');
+const isRemoteDemoTesting = process.env.TEST_DEMO === 'true';
+const baseURL = process.env.BASE_URL || 'http://localhost:5173';
+const localBaseURL = new URL(baseURL);
+const localWebServerHost = localBaseURL.hostname;
+const localWebServerPort = localBaseURL.port || (localBaseURL.protocol === 'https:' ? '443' : '80');
+
+if (isRemoteDemoTesting && !process.env.BASE_URL) {
+	throw new Error('BASE_URL is required when TEST_DEMO=true');
+}
+
+const isLocalTesting = !isRemoteDemoTesting && (baseURL.includes('localhost') || baseURL.includes('127.0.0.1'));
 
 // Auth state directory - each worker creates its own file
 export const AUTH_DIR = path.join(__dirname, '.auth');
@@ -67,13 +75,24 @@ export default defineConfig({
 				// Start with clean state - ensureAuthenticated will load auth file
 				storageState: { cookies: [], origins: [] }
 			}
+		},
+		// Blocking smoke suite for core accountant flow.
+		// Keep this intentionally small and stable so it can gate CI.
+		{
+			name: 'smoke-chromium',
+			testMatch: ['**/smoke/*.spec.ts'],
+			dependencies: ['auth-setup'],
+			use: {
+				...devices['Desktop Chrome'],
+				storageState: { cookies: [], origins: [] }
+			}
 		}
 	],
 
 	// Start dev server when testing locally
 	...(isLocalTesting && {
 		webServer: {
-			command: 'bun run dev',
+			command: `bun run paraglide && bunx vite dev --host ${localWebServerHost} --port ${localWebServerPort}`,
 			url: baseURL,
 			reuseExistingServer: !process.env.CI,
 			timeout: 120000

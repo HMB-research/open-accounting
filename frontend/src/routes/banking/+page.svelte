@@ -1,8 +1,16 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { api, type BankAccount, type BankTransaction, type MatchSuggestion, type TransactionStatus } from '$lib/api';
+	import {
+		api,
+		type BankAccount,
+		type BankTransaction,
+		type FollowUpStatus,
+		type MatchSuggestion,
+		type TransactionStatus
+	} from '$lib/api';
 	import { goto } from '$app/navigation';
 	import * as m from '$lib/paraglide/messages.js';
+	import DocumentManager from '$lib/components/DocumentManager.svelte';
 	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
 	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
 	import { formatDate } from '$lib/utils/formatting';
@@ -17,7 +25,9 @@
 	// Modal states
 	let showAddAccountModal = $state(false);
 	let showMatchModal = $state(false);
+	let showDocumentManager = $state(false);
 	let selectedTransaction = $state<BankTransaction | null>(null);
+	let selectedTransactionForDocuments = $state<BankTransaction | null>(null);
 	let matchSuggestions = $state<MatchSuggestion[]>([]);
 	let matchLoading = $state(false);
 
@@ -172,11 +182,46 @@
 		}
 	}
 
+	function openDocumentManager(transaction: BankTransaction) {
+		selectedTransactionForDocuments = transaction;
+		showDocumentManager = true;
+	}
+
+	function closeDocumentManager() {
+		showDocumentManager = false;
+		selectedTransactionForDocuments = null;
+	}
+
 	function formatAmount(amount: any): string {
 		if (amount === null || amount === undefined) return '0.00';
 		const num = typeof amount === 'object' && amount.toNumber ? amount.toNumber() : Number(amount);
 		if (isNaN(num)) return '0.00';
 		return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+	}
+
+	function getTransactionDocumentTitle(transaction: BankTransaction): string {
+		if (transaction.reference) {
+			return m.documents_bankTransactionTitle({ reference: transaction.reference });
+		}
+		return m.documents_bankTransactionDateTitle({ date: formatDate(transaction.transaction_date) });
+	}
+
+	function normalizeFollowUpStatus(value: FollowUpStatus | string | undefined): FollowUpStatus {
+		if (value === 'EVIDENCE_REQUIRED' || value === 'READY_TO_MATCH') {
+			return value;
+		}
+		return 'NONE';
+	}
+
+	function getFollowUpLabel(value: FollowUpStatus | string | undefined): string {
+		switch (normalizeFollowUpStatus(value)) {
+			case 'EVIDENCE_REQUIRED':
+				return m.dashboard_reviewFollowUpEvidenceRequired();
+			case 'READY_TO_MATCH':
+				return m.dashboard_reviewFollowUpReadyToMatch();
+			default:
+				return m.dashboard_reviewFollowUpNone();
+		}
 	}
 
 	const statusConfig: Record<TransactionStatus, StatusConfig> = {
@@ -299,6 +344,9 @@
 									{#if transaction.reference}
 										<div class="text-xs text-gray-500">{m.banking_ref()} {transaction.reference}</div>
 									{/if}
+									{#if transaction.review_note}
+										<div class="text-xs text-slate-500">{transaction.review_note}</div>
+									{/if}
 								</td>
 								<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
 									{transaction.counterparty_name || '-'}
@@ -308,6 +356,7 @@
 								</td>
 								<td class="px-6 py-4 whitespace-nowrap text-center">
 									<StatusBadge status={transaction.status} config={statusConfig} />
+									<div class="mt-2 text-xs text-slate-500">{getFollowUpLabel(transaction.follow_up_status)}</div>
 								</td>
 								<td class="px-6 py-4 whitespace-nowrap text-right text-sm">
 									{#if transaction.status === 'UNMATCHED'}
@@ -322,6 +371,9 @@
 											{m.banking_unmatch()}
 										</button>
 									{/if}
+									<button onclick={() => openDocumentManager(transaction)} class="text-slate-600 hover:text-slate-800 ml-2">
+										{m.documents_manageAction()}
+									</button>
 								</td>
 							</tr>
 						{:else}
@@ -387,6 +439,15 @@
 		</div>
 	</div>
 {/if}
+
+<DocumentManager
+	open={showDocumentManager && !!selectedTransactionForDocuments}
+	tenantId={tenantId}
+	entityType="bank_transaction"
+	entityId={selectedTransactionForDocuments?.id || ''}
+	title={selectedTransactionForDocuments ? getTransactionDocumentTitle(selectedTransactionForDocuments) : m.documents_manageAction()}
+	onClose={closeDocumentManager}
+/>
 
 <!-- Match Modal -->
 {#if showMatchModal && selectedTransaction}

@@ -34,6 +34,7 @@ type mockBankingRepository struct {
 	getTxErr         error
 	matchErr         error
 	unmatchErr       error
+	reviewErr        error
 	createTxErr      error
 	createRecErr     error
 	getRecErr        error
@@ -172,6 +173,7 @@ func (m *mockBankingRepository) MatchTransaction(ctx context.Context, schemaName
 	}
 	tx.MatchedPaymentID = &paymentID
 	tx.Status = banking.StatusMatched
+	tx.FollowUpStatus = banking.FollowUpNone
 	return nil
 }
 
@@ -186,6 +188,25 @@ func (m *mockBankingRepository) UnmatchTransaction(ctx context.Context, schemaNa
 	tx.MatchedPaymentID = nil
 	tx.Status = banking.StatusUnmatched
 	return nil
+}
+
+func (m *mockBankingRepository) UpdateTransactionReview(ctx context.Context, schemaName, tenantID, transactionID string, update banking.TransactionReviewUpdate) (*banking.BankTransaction, error) {
+	if m.reviewErr != nil {
+		return nil, m.reviewErr
+	}
+	tx, ok := m.transactions[transactionID]
+	if !ok || tx.TenantID != tenantID {
+		return nil, banking.ErrTransactionNotFound
+	}
+	if update.FollowUpStatus != nil {
+		tx.FollowUpStatus = *update.FollowUpStatus
+	}
+	if update.ReviewNote != nil {
+		tx.ReviewNote = *update.ReviewNote
+	}
+	tx.ReviewedBy = &update.ReviewedBy
+	tx.ReviewedAt = &update.ReviewedAt
+	return tx, nil
 }
 
 func (m *mockBankingRepository) CreateTransaction(ctx context.Context, schemaName string, t *banking.BankTransaction) error {
@@ -855,6 +876,113 @@ func TestUnmatchBankTransaction(t *testing.T) {
 			h.UnmatchBankTransaction(rr, req)
 
 			assert.Equal(t, tt.wantStatus, rr.Code)
+		})
+	}
+}
+
+func TestReviewBankTransaction(t *testing.T) {
+	tests := []struct {
+		name           string
+		body           map[string]interface{}
+		setupRepo      func(*mockBankingRepository)
+		wantStatus     int
+		wantErr        string
+		wantFollowUp   banking.FollowUpStatus
+		wantReviewNote string
+	}{
+		{
+			name: "updates follow-up and note",
+			body: map[string]interface{}{
+				"follow_up_status": "EVIDENCE_REQUIRED",
+				"review_note":      "Request bank slip from client",
+			},
+			setupRepo: func(repo *mockBankingRepository) {
+				repo.transactions["tx-1"] = &banking.BankTransaction{
+					ID:             "tx-1",
+					TenantID:       "tenant-1",
+					Status:         banking.StatusUnmatched,
+					FollowUpStatus: banking.FollowUpNone,
+				}
+			},
+			wantStatus:     http.StatusOK,
+			wantFollowUp:   banking.FollowUpEvidenceRequired,
+			wantReviewNote: "Request bank slip from client",
+		},
+		{
+			name: "rejects empty payload",
+			body: map[string]interface{}{},
+			setupRepo: func(repo *mockBankingRepository) {
+				repo.transactions["tx-1"] = &banking.BankTransaction{
+					ID:       "tx-1",
+					TenantID: "tenant-1",
+					Status:   banking.StatusUnmatched,
+				}
+			},
+			wantStatus: http.StatusBadRequest,
+			wantErr:    "at least one review field is required",
+		},
+		{
+			name: "rejects invalid follow-up status",
+			body: map[string]interface{}{
+				"follow_up_status": "UNKNOWN",
+			},
+			setupRepo: func(repo *mockBankingRepository) {
+				repo.transactions["tx-1"] = &banking.BankTransaction{
+					ID:       "tx-1",
+					TenantID: "tenant-1",
+					Status:   banking.StatusUnmatched,
+				}
+			},
+			wantStatus: http.StatusBadRequest,
+			wantErr:    "invalid follow-up status",
+		},
+		{
+			name: "missing transaction returns not found",
+			body: map[string]interface{}{
+				"follow_up_status": "READY_TO_MATCH",
+			},
+			wantStatus: http.StatusNotFound,
+			wantErr:    "transaction not found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, repo, tenantRepo := setupBankingTestHandlers()
+
+			tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+				ID:         "tenant-1",
+				SchemaName: "tenant_test",
+			}
+
+			if tt.setupRepo != nil {
+				tt.setupRepo(repo)
+			}
+
+			body, _ := json.Marshal(tt.body)
+			req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/bank-transactions/tx-1/review", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "transactionID": "tx-1"})
+			req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+			rr := httptest.NewRecorder()
+			h.ReviewBankTransaction(rr, req)
+
+			assert.Equal(t, tt.wantStatus, rr.Code)
+
+			if tt.wantErr != "" {
+				assert.Contains(t, rr.Body.String(), tt.wantErr)
+				return
+			}
+
+			var result banking.BankTransaction
+			err := json.Unmarshal(rr.Body.Bytes(), &result)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantFollowUp, result.FollowUpStatus)
+			assert.Equal(t, tt.wantReviewNote, result.ReviewNote)
+			require.NotNil(t, result.ReviewedBy)
+			assert.Equal(t, "user-1", *result.ReviewedBy)
+			require.NotNil(t, result.ReviewedAt)
 		})
 	}
 }
