@@ -2,6 +2,7 @@ package tenant
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -16,43 +17,48 @@ import (
 // =============================================================================
 
 type MockRepository struct {
-	tenants     map[string]*Tenant
-	users       map[string]*User
-	tenantUsers map[string][]TenantUser
-	invitations map[string]*UserInvitation
+	tenants           map[string]*Tenant
+	users             map[string]*User
+	tenantUsers       map[string][]TenantUser
+	invitations       map[string]*UserInvitation
+	periodCloseEvents map[string][]PeriodCloseEvent
 
 	// Error injection
-	createTenantErr         error
-	getTenantErr            error
-	getTenantBySlugErr      error
-	updateTenantErr         error
-	deleteTenantErr         error
-	completeOnboardingErr   error
-	addUserToTenantErr      error
-	removeUserFromTenantErr error
-	getUserRoleErr          error
-	listUserTenantsErr      error
-	listTenantUsersErr      error
-	updateTenantUserRoleErr error
-	removeTenantUserErr     error
-	createUserErr           error
-	getUserByEmailErr       error
-	getUserByIDErr          error
-	createInvitationErr     error
-	getInvitationByTokenErr error
-	acceptInvitationErr     error
-	listInvitationsErr      error
-	revokeInvitationErr     error
-	checkUserIsMemberErr    error
-	userIsMember            bool
+	createTenantErr          error
+	getTenantErr             error
+	getTenantBySlugErr       error
+	updateTenantErr          error
+	updateTenantWithEventErr error
+	deleteTenantErr          error
+	completeOnboardingErr    error
+	addUserToTenantErr       error
+	removeUserFromTenantErr  error
+	getUserRoleErr           error
+	listUserTenantsErr       error
+	listTenantUsersErr       error
+	updateTenantUserRoleErr  error
+	removeTenantUserErr      error
+	createUserErr            error
+	getUserByEmailErr        error
+	getUserByIDErr           error
+	createInvitationErr      error
+	getInvitationByTokenErr  error
+	acceptInvitationErr      error
+	listInvitationsErr       error
+	listPeriodCloseEventsErr error
+	getLatestCloseEventErr   error
+	revokeInvitationErr      error
+	checkUserIsMemberErr     error
+	userIsMember             bool
 }
 
 func NewMockRepository() *MockRepository {
 	return &MockRepository{
-		tenants:     make(map[string]*Tenant),
-		users:       make(map[string]*User),
-		tenantUsers: make(map[string][]TenantUser),
-		invitations: make(map[string]*UserInvitation),
+		tenants:           make(map[string]*Tenant),
+		users:             make(map[string]*User),
+		tenantUsers:       make(map[string][]TenantUser),
+		invitations:       make(map[string]*UserInvitation),
+		periodCloseEvents: make(map[string][]PeriodCloseEvent),
 	}
 }
 
@@ -104,6 +110,26 @@ func (m *MockRepository) UpdateTenant(ctx context.Context, tenantID, name string
 	if ok {
 		t.Name = name
 		t.UpdatedAt = updatedAt
+		if len(settingsJSON) > 0 {
+			var settings TenantSettings
+			if err := json.Unmarshal(settingsJSON, &settings); err != nil {
+				return err
+			}
+			t.Settings = settings
+		}
+	}
+	return nil
+}
+
+func (m *MockRepository) UpdateTenantWithPeriodCloseEvent(ctx context.Context, tenantID, name string, settingsJSON []byte, updatedAt time.Time, event *PeriodCloseEvent) error {
+	if m.updateTenantWithEventErr != nil {
+		return m.updateTenantWithEventErr
+	}
+	if err := m.UpdateTenant(ctx, tenantID, name, settingsJSON, updatedAt); err != nil {
+		return err
+	}
+	if event != nil {
+		m.periodCloseEvents[tenantID] = append([]PeriodCloseEvent{*event}, m.periodCloseEvents[tenantID]...)
 	}
 	return nil
 }
@@ -125,6 +151,30 @@ func (m *MockRepository) CompleteOnboarding(ctx context.Context, tenantID string
 		t.OnboardingCompleted = true
 	}
 	return nil
+}
+
+func (m *MockRepository) ListPeriodCloseEvents(ctx context.Context, tenantID string, limit int) ([]PeriodCloseEvent, error) {
+	if m.listPeriodCloseEventsErr != nil {
+		return nil, m.listPeriodCloseEventsErr
+	}
+	events := append([]PeriodCloseEvent(nil), m.periodCloseEvents[tenantID]...)
+	if limit > 0 && len(events) > limit {
+		events = events[:limit]
+	}
+	return events, nil
+}
+
+func (m *MockRepository) GetLatestCloseEventForPeriod(ctx context.Context, tenantID, periodEndDate string) (*PeriodCloseEvent, error) {
+	if m.getLatestCloseEventErr != nil {
+		return nil, m.getLatestCloseEventErr
+	}
+	for _, event := range m.periodCloseEvents[tenantID] {
+		if event.Action == PeriodCloseActionClose && event.PeriodEndDate == periodEndDate {
+			eventCopy := event
+			return &eventCopy, nil
+		}
+	}
+	return nil, nil
 }
 
 func (m *MockRepository) AddUserToTenant(ctx context.Context, tenantID, userID, role string) error {
@@ -679,6 +729,241 @@ func TestService_UpdateTenant(t *testing.T) {
 			require.NotNil(t, tenant)
 		})
 	}
+}
+
+func TestService_UpdateTenantRejectsPeriodLockMutation(t *testing.T) {
+	repo := NewMockRepository()
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: DefaultSettings(),
+	})
+	svc := NewServiceWithRepository(repo)
+
+	_, err := svc.UpdateTenant(context.Background(), "tenant-123", &UpdateTenantRequest{
+		Settings: &TenantSettings{
+			PeriodLockDate: strPtr("2026-01-31"),
+		},
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "close or reopen actions")
+}
+
+func TestService_UpdateTenantAllowsUnchangedPeriodLockDate(t *testing.T) {
+	repo := NewMockRepository()
+	initialSettings := DefaultSettings()
+	initialSettings.PeriodLockDate = strPtr("2026-01-31")
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: initialSettings,
+	})
+	svc := NewServiceWithRepository(repo)
+
+	updatedTenant, err := svc.UpdateTenant(context.Background(), "tenant-123", &UpdateTenantRequest{
+		Settings: &TenantSettings{
+			PeriodLockDate: strPtr("2026-01-31"),
+			Email:          "updated@example.com",
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, updatedTenant.Settings.PeriodLockDate)
+	assert.Equal(t, "2026-01-31", *updatedTenant.Settings.PeriodLockDate)
+	assert.Equal(t, "updated@example.com", updatedTenant.Settings.Email)
+}
+
+func TestService_ClosePeriod(t *testing.T) {
+	repo := NewMockRepository()
+	initialSettings := DefaultSettings()
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: initialSettings,
+	})
+	svc := NewServiceWithRepository(repo)
+
+	updatedTenant, event, err := svc.ClosePeriod(context.Background(), "tenant-123", "user-123", &ClosePeriodRequest{
+		PeriodEndDate: "2026-01-31",
+		Note:          "Month-end review complete",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, updatedTenant.Settings.PeriodLockDate)
+	require.NotNil(t, event)
+	assert.Equal(t, "2026-01-31", *updatedTenant.Settings.PeriodLockDate)
+	assert.Equal(t, PeriodCloseActionClose, event.Action)
+	assert.Equal(t, PeriodCloseKindMonthEnd, event.CloseKind)
+	assert.Equal(t, "2026-01-31", event.PeriodEndDate)
+	assert.Nil(t, event.LockDateBefore)
+	require.NotNil(t, event.LockDateAfter)
+	assert.Equal(t, "2026-01-31", *event.LockDateAfter)
+	require.Len(t, repo.periodCloseEvents["tenant-123"], 1)
+}
+
+func TestService_ClosePeriodRejectsInvalidDate(t *testing.T) {
+	repo := NewMockRepository()
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: DefaultSettings(),
+	})
+	svc := NewServiceWithRepository(repo)
+
+	_, _, err := svc.ClosePeriod(context.Background(), "tenant-123", "user-123", &ClosePeriodRequest{
+		PeriodEndDate: "2026-01-30",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "last day of a month")
+}
+
+func TestService_ClosePeriodRejectsAlreadyClosedDate(t *testing.T) {
+	repo := NewMockRepository()
+	initialSettings := DefaultSettings()
+	initialSettings.PeriodLockDate = strPtr("2026-01-31")
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: initialSettings,
+	})
+	svc := NewServiceWithRepository(repo)
+
+	_, _, err := svc.ClosePeriod(context.Background(), "tenant-123", "user-123", &ClosePeriodRequest{
+		PeriodEndDate: "2026-01-31",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already closed")
+}
+
+func TestService_ReopenPeriodRestoresPreviousLockDate(t *testing.T) {
+	repo := NewMockRepository()
+	initialSettings := DefaultSettings()
+	initialSettings.PeriodLockDate = strPtr("2026-02-28")
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: initialSettings,
+	})
+	repo.periodCloseEvents["tenant-123"] = []PeriodCloseEvent{
+		{
+			ID:             "close-2",
+			TenantID:       "tenant-123",
+			Action:         PeriodCloseActionClose,
+			CloseKind:      PeriodCloseKindMonthEnd,
+			PeriodEndDate:  "2026-02-28",
+			LockDateBefore: strPtr("2026-01-31"),
+			LockDateAfter:  strPtr("2026-02-28"),
+			PerformedBy:    "user-123",
+			CreatedAt:      time.Now(),
+		},
+		{
+			ID:            "close-1",
+			TenantID:      "tenant-123",
+			Action:        PeriodCloseActionClose,
+			CloseKind:     PeriodCloseKindYearEnd,
+			PeriodEndDate: "2026-01-31",
+			LockDateAfter: strPtr("2026-01-31"),
+			PerformedBy:   "user-123",
+			CreatedAt:     time.Now().Add(-time.Hour),
+		},
+	}
+	svc := NewServiceWithRepository(repo)
+
+	updatedTenant, event, err := svc.ReopenPeriod(context.Background(), "tenant-123", "user-123", &ReopenPeriodRequest{
+		PeriodEndDate: "2026-02-28",
+		Note:          "Need to adjust accrual",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, updatedTenant.Settings.PeriodLockDate)
+	assert.Equal(t, "2026-01-31", *updatedTenant.Settings.PeriodLockDate)
+	assert.Equal(t, PeriodCloseActionReopen, event.Action)
+	require.NotNil(t, event.LockDateAfter)
+	assert.Equal(t, "2026-01-31", *event.LockDateAfter)
+}
+
+func TestService_ReopenPeriodClearsInitialLockDate(t *testing.T) {
+	repo := NewMockRepository()
+	initialSettings := DefaultSettings()
+	initialSettings.PeriodLockDate = strPtr("2026-01-31")
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: initialSettings,
+	})
+	repo.periodCloseEvents["tenant-123"] = []PeriodCloseEvent{
+		{
+			ID:            "close-1",
+			TenantID:      "tenant-123",
+			Action:        PeriodCloseActionClose,
+			CloseKind:     PeriodCloseKindYearEnd,
+			PeriodEndDate: "2026-01-31",
+			LockDateAfter: strPtr("2026-01-31"),
+			PerformedBy:   "user-123",
+			CreatedAt:     time.Now(),
+		},
+	}
+	svc := NewServiceWithRepository(repo)
+
+	updatedTenant, event, err := svc.ReopenPeriod(context.Background(), "tenant-123", "user-123", &ReopenPeriodRequest{
+		PeriodEndDate: "2026-01-31",
+		Note:          "Undo the first close",
+	})
+
+	require.NoError(t, err)
+	assert.Nil(t, updatedTenant.Settings.PeriodLockDate)
+	assert.Nil(t, event.LockDateAfter)
+}
+
+func TestService_ReopenPeriodRequiresNote(t *testing.T) {
+	repo := NewMockRepository()
+	initialSettings := DefaultSettings()
+	initialSettings.PeriodLockDate = strPtr("2026-01-31")
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: initialSettings,
+	})
+	svc := NewServiceWithRepository(repo)
+
+	_, _, err := svc.ReopenPeriod(context.Background(), "tenant-123", "user-123", &ReopenPeriodRequest{
+		PeriodEndDate: "2026-01-31",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "note is required")
+}
+
+func TestService_ReopenPeriodRequiresExistingCloseEvent(t *testing.T) {
+	repo := NewMockRepository()
+	initialSettings := DefaultSettings()
+	initialSettings.PeriodLockDate = strPtr("2026-01-31")
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: initialSettings,
+	})
+	svc := NewServiceWithRepository(repo)
+
+	_, _, err := svc.ReopenPeriod(context.Background(), "tenant-123", "user-123", &ReopenPeriodRequest{
+		PeriodEndDate: "2026-01-31",
+		Note:          "Undo close",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "has not been closed yet")
 }
 
 func TestService_DeleteTenant(t *testing.T) {

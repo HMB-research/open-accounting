@@ -1,6 +1,8 @@
 package banking
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -13,6 +15,15 @@ const (
 	StatusUnmatched  TransactionStatus = "UNMATCHED"
 	StatusMatched    TransactionStatus = "MATCHED"
 	StatusReconciled TransactionStatus = "RECONCILED"
+)
+
+// FollowUpStatus represents accountant follow-up guidance on a bank transaction.
+type FollowUpStatus string
+
+const (
+	FollowUpNone             FollowUpStatus = "NONE"
+	FollowUpEvidenceRequired FollowUpStatus = "EVIDENCE_REQUIRED"
+	FollowUpReadyToMatch     FollowUpStatus = "READY_TO_MATCH"
 )
 
 // ReconciliationStatus represents the status of a reconciliation session
@@ -53,6 +64,10 @@ type BankTransaction struct {
 	CounterpartyName    string            `json:"counterparty_name,omitempty"`
 	CounterpartyAccount string            `json:"counterparty_account,omitempty"`
 	Status              TransactionStatus `json:"status"`
+	FollowUpStatus      FollowUpStatus    `json:"follow_up_status"`
+	ReviewNote          string            `json:"review_note,omitempty"`
+	ReviewedBy          *string           `json:"reviewed_by,omitempty"`
+	ReviewedAt          *time.Time        `json:"reviewed_at,omitempty"`
 	MatchedPaymentID    *string           `json:"matched_payment_id,omitempty"`
 	JournalEntryID      *string           `json:"journal_entry_id,omitempty"`
 	ReconciliationID    *string           `json:"reconciliation_id,omitempty"`
@@ -159,6 +174,20 @@ type MatchTransactionRequest struct {
 	PaymentID string `json:"payment_id"`
 }
 
+// UpdateTransactionReviewRequest captures accountant follow-up updates for a bank transaction.
+type UpdateTransactionReviewRequest struct {
+	FollowUpStatus *FollowUpStatus `json:"follow_up_status,omitempty"`
+	ReviewNote     *string         `json:"review_note,omitempty"`
+}
+
+// TransactionReviewUpdate is the internal mutation payload for bank transaction review metadata.
+type TransactionReviewUpdate struct {
+	FollowUpStatus *FollowUpStatus
+	ReviewNote     *string
+	ReviewedBy     string
+	ReviewedAt     time.Time
+}
+
 // TransactionFilter provides filtering options for bank transactions
 type TransactionFilter struct {
 	BankAccountID string
@@ -173,4 +202,15 @@ type TransactionFilter struct {
 type BankAccountFilter struct {
 	IsActive *bool
 	Currency string
+}
+
+// NormalizeFollowUpStatus validates and normalizes a follow-up status value.
+func NormalizeFollowUpStatus(value string) (FollowUpStatus, error) {
+	normalized := FollowUpStatus(strings.ToUpper(strings.TrimSpace(value)))
+	switch normalized {
+	case FollowUpNone, FollowUpEvidenceRequired, FollowUpReadyToMatch:
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("invalid follow-up status")
+	}
 }

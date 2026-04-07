@@ -443,6 +443,140 @@ func TestCreateContactInvalidJSON(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+func TestImportContacts(t *testing.T) {
+	tests := []struct {
+		name           string
+		tenantID       string
+		claims         *auth.Claims
+		body           map[string]interface{}
+		setupMock      func(*mockTenantRepository, *mockContactsRepository)
+		wantStatus     int
+		wantErrContain string
+		checkResponse  func(*testing.T, contacts.ImportContactsResult)
+	}{
+		{
+			name:     "imports valid contacts and returns summary",
+			tenantID: "tenant-1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			body: map[string]interface{}{
+				"file_name": "contacts.csv",
+				"csv_content": "name,contact_type,email\n" +
+					"Northwind OU,CUSTOMER,northwind@example.com\n" +
+					"Supply Partner,SUPPLIER,supplier@example.com\n",
+			},
+			setupMock: func(tr *mockTenantRepository, cr *mockContactsRepository) {
+				tr.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+			},
+			wantStatus: http.StatusOK,
+			checkResponse: func(t *testing.T, resp contacts.ImportContactsResult) {
+				assert.Equal(t, "contacts.csv", resp.FileName)
+				assert.Equal(t, 2, resp.RowsProcessed)
+				assert.Equal(t, 2, resp.ContactsCreated)
+				assert.Equal(t, 0, resp.RowsSkipped)
+				assert.Empty(t, resp.Errors)
+			},
+		},
+		{
+			name:     "defaults file name and reports row errors",
+			tenantID: "tenant-1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			body: map[string]interface{}{
+				"csv_content": "name,email\n" +
+					"Existing Customer,existing@example.com\n" +
+					"Existing Customer,duplicate@example.com\n",
+			},
+			setupMock: func(tr *mockTenantRepository, cr *mockContactsRepository) {
+				tr.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				existing := cr.addTestContact("contact-1", "tenant-1", "Existing Customer", contacts.ContactTypeCustomer, true)
+				existing.Email = "existing@example.com"
+			},
+			wantStatus: http.StatusOK,
+			checkResponse: func(t *testing.T, resp contacts.ImportContactsResult) {
+				assert.Equal(t, "contacts_import.csv", resp.FileName)
+				assert.Equal(t, 2, resp.RowsProcessed)
+				assert.Equal(t, 0, resp.ContactsCreated)
+				assert.Equal(t, 2, resp.RowsSkipped)
+				require.Len(t, resp.Errors, 2)
+				assert.Contains(t, resp.Errors[0].Message, "duplicate")
+			},
+		},
+		{
+			name:     "rejects missing csv content",
+			tenantID: "tenant-1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			body: map[string]interface{}{
+				"file_name": "contacts.csv",
+			},
+			setupMock: func(tr *mockTenantRepository, cr *mockContactsRepository) {
+				tr.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+			},
+			wantStatus:     http.StatusBadRequest,
+			wantErrContain: "csv_content is required",
+		},
+		{
+			name:     "rejects invalid csv headers",
+			tenantID: "tenant-1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			body: map[string]interface{}{
+				"csv_content": "email,code\nhello@example.com,CUST-001\n",
+			},
+			setupMock: func(tr *mockTenantRepository, cr *mockContactsRepository) {
+				tr.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+			},
+			wantStatus:     http.StatusBadRequest,
+			wantErrContain: "missing required name column",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, tenantRepo, contactsRepo := setupContactsTestHandlers()
+
+			if tt.setupMock != nil {
+				tt.setupMock(tenantRepo, contactsRepo)
+			}
+
+			req := makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tt.tenantID+"/contacts/import", tt.body, tt.claims)
+			req = withURLParams(req, map[string]string{"tenantID": tt.tenantID})
+			w := httptest.NewRecorder()
+
+			h.ImportContacts(w, req)
+
+			assert.Equal(t, tt.wantStatus, w.Code, "response body: %s", w.Body.String())
+
+			if tt.wantErrContain != "" {
+				var resp map[string]string
+				err := json.NewDecoder(w.Body).Decode(&resp)
+				require.NoError(t, err)
+				assert.Contains(t, resp["error"], tt.wantErrContain)
+			}
+
+			if tt.checkResponse != nil {
+				var resp contacts.ImportContactsResult
+				err := json.NewDecoder(w.Body).Decode(&resp)
+				require.NoError(t, err)
+				tt.checkResponse(t, resp)
+			}
+		})
+	}
+}
+
 // =============================================================================
 // GetContact Handler Tests
 // =============================================================================

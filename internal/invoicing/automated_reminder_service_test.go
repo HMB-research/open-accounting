@@ -4,6 +4,9 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/HMB-research/open-accounting/internal/email"
+	"github.com/shopspring/decimal"
 )
 
 type mockReminderRuleRepo struct {
@@ -382,6 +385,51 @@ func TestProcessRemindersForTenant_SkipsAlreadySent(t *testing.T) {
 	}
 	if results[0].Skipped != 1 {
 		t.Errorf("Expected 1 skipped (already sent), got %d", results[0].Skipped)
+	}
+}
+
+func TestNewAutomatedReminderService(t *testing.T) {
+	service := NewAutomatedReminderService(nil, nil)
+	if service == nil || service.ruleRepo == nil {
+		t.Fatal("expected automated reminder service with repository")
+	}
+}
+
+func TestProcessRemindersForTenant_SendsAndRecordsReminder(t *testing.T) {
+	repo := &mockReminderRuleRepo{
+		rules: []ReminderRule{{
+			ID:                "rule-1",
+			Name:              "Overdue",
+			TenantID:          "tenant-1",
+			TriggerType:       TriggerAfterDue,
+			DaysOffset:        7,
+			EmailTemplateType: string(email.TemplateOverdueReminder),
+			IsActive:          true,
+		}},
+		invoices: []InvoiceForReminder{{
+			ID:                "inv-1",
+			InvoiceNumber:     "INV-001",
+			ContactID:         "contact-1",
+			ContactName:       "Example Customer",
+			ContactEmail:      "billing@example.com",
+			OutstandingAmount: decimal.NewFromInt(125).String(),
+			Currency:          "EUR",
+			DueDate:           "2026-01-15",
+			DaysOverdue:       10,
+		}},
+	}
+	emailSvc := email.NewServiceWithRepository(&reminderEmailRepo{}, &reminderMailSender{})
+	service := NewAutomatedReminderServiceWithRepository(repo, emailSvc)
+
+	results, err := service.ProcessRemindersForTenant(context.Background(), "tenant-1", "tenant_test", "Test Company")
+	if err != nil {
+		t.Fatalf("ProcessRemindersForTenant failed: %v", err)
+	}
+	if len(results) != 1 || results[0].RemindersSent != 1 || results[0].Failed != 0 {
+		t.Fatalf("unexpected results: %+v", results)
+	}
+	if repo.recordedReminder == nil || repo.recordedReminder.Status != ReminderStatusSent {
+		t.Fatalf("expected sent reminder to be recorded, got %+v", repo.recordedReminder)
 	}
 }
 

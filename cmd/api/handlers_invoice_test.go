@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/HMB-research/open-accounting/internal/auth"
+	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -197,6 +198,13 @@ func setupInvoiceTestHandlers() (*Handlers, *mockTenantRepository, *mockInvoicin
 	}
 
 	return h, tenantRepo, invoiceRepo
+}
+
+func setupInvoiceImportTestHandlers() (*Handlers, *mockTenantRepository, *mockInvoicingRepository, *mockContactsRepository) {
+	h, tenantRepo, invoiceRepo := setupInvoiceTestHandlers()
+	contactsRepo := newMockContactsRepository()
+	h.contactsService = contacts.NewServiceWithRepository(contactsRepo)
+	return h, tenantRepo, invoiceRepo, contactsRepo
 }
 
 // =============================================================================
@@ -420,6 +428,37 @@ func TestCreateInvoice(t *testing.T) {
 			wantStatus:     http.StatusBadRequest,
 			wantErrContain: "Contact",
 		},
+		{
+			name:     "create invoice blocked by period lock",
+			tenantID: "tenant-1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			body: map[string]interface{}{
+				"invoice_type": "SALES",
+				"contact_id":   "contact-1",
+				"issue_date":   "2026-01-15T00:00:00Z",
+				"due_date":     "2026-01-29T00:00:00Z",
+				"currency":     "EUR",
+				"lines": []map[string]interface{}{
+					{
+						"description": "Service Fee",
+						"quantity":    "1",
+						"unit_price":  "100.00",
+						"vat_rate":    "20",
+					},
+				},
+			},
+			setupMock: func(tr *mockTenantRepository, ir *mockInvoicingRepository) {
+				lockedTenant := tr.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				lockDate := "2026-01-31"
+				lockedTenant.Settings.PeriodLockDate = &lockDate
+			},
+			wantStatus:     http.StatusConflict,
+			wantErrContain: "period locked through 2026-01-31",
+		},
 	}
 
 	for _, tt := range tests {
@@ -468,6 +507,131 @@ func TestCreateInvoiceInvalidJSON(t *testing.T) {
 	h.CreateInvoice(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestImportInvoices(t *testing.T) {
+	tests := []struct {
+		name           string
+		tenantID       string
+		claims         *auth.Claims
+		body           map[string]interface{}
+		setupMock      func(*mockTenantRepository, *mockInvoicingRepository, *mockContactsRepository)
+		wantStatus     int
+		wantErrContain string
+		checkResponse  func(*testing.T, invoicing.ImportInvoicesResult, *mockInvoicingRepository)
+	}{
+		{
+			name:     "imports grouped invoice rows",
+			tenantID: "tenant-1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			body: map[string]interface{}{
+				"file_name": "invoices.csv",
+				"csv_content": "invoice_number,invoice_type,contact_code,issue_date,due_date,status,line_description,quantity,unit_price,vat_rate,amount_paid\n" +
+					"INV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,PAID,Implementation work,1,100.00,22,183.00\n" +
+					"INV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,PAID,Support retainer,1,50.00,22,183.00\n",
+			},
+			setupMock: func(tr *mockTenantRepository, ir *mockInvoicingRepository, cr *mockContactsRepository) {
+				tr.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				contact := cr.addTestContact("contact-1", "tenant-1", "Acme Corp", contacts.ContactTypeCustomer, true)
+				contact.Code = "CUST-001"
+			},
+			wantStatus: http.StatusOK,
+			checkResponse: func(t *testing.T, resp invoicing.ImportInvoicesResult, invoiceRepo *mockInvoicingRepository) {
+				assert.Equal(t, "invoices.csv", resp.FileName)
+				assert.Equal(t, 2, resp.RowsProcessed)
+				assert.Equal(t, 1, resp.InvoicesCreated)
+				assert.Equal(t, 2, resp.LinesImported)
+				assert.Zero(t, resp.RowsSkipped)
+				assert.Empty(t, resp.Errors)
+				require.Len(t, invoiceRepo.invoices, 1)
+				for _, invoice := range invoiceRepo.invoices {
+					assert.Equal(t, "INV-EXT-001", invoice.InvoiceNumber)
+					assert.Equal(t, invoicing.StatusPaid, invoice.Status)
+				}
+			},
+		},
+		{
+			name:     "skips locked invoice rows and returns summary",
+			tenantID: "tenant-1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			body: map[string]interface{}{
+				"csv_content": "invoice_number,invoice_type,contact_name,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" +
+					"INV-LOCK-001,SALES,Locked Customer,2026-01-10,2026-01-24,Implementation work,1,100.00,22\n",
+			},
+			setupMock: func(tr *mockTenantRepository, ir *mockInvoicingRepository, cr *mockContactsRepository) {
+				lockDate := "2026-01-31"
+				lockedTenant := tr.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				lockedTenant.Settings.PeriodLockDate = &lockDate
+				cr.addTestContact("contact-1", "tenant-1", "Locked Customer", contacts.ContactTypeCustomer, true)
+			},
+			wantStatus: http.StatusOK,
+			checkResponse: func(t *testing.T, resp invoicing.ImportInvoicesResult, invoiceRepo *mockInvoicingRepository) {
+				assert.Equal(t, "invoices_import.csv", resp.FileName)
+				assert.Equal(t, 1, resp.RowsProcessed)
+				assert.Zero(t, resp.InvoicesCreated)
+				assert.Zero(t, resp.LinesImported)
+				assert.Equal(t, 1, resp.RowsSkipped)
+				require.Len(t, resp.Errors, 1)
+				assert.Contains(t, resp.Errors[0].Message, "period locked through 2026-01-31")
+				assert.Empty(t, invoiceRepo.invoices)
+			},
+		},
+		{
+			name:     "rejects missing csv content",
+			tenantID: "tenant-1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			body: map[string]interface{}{"file_name": "invoices.csv"},
+			setupMock: func(tr *mockTenantRepository, ir *mockInvoicingRepository, cr *mockContactsRepository) {
+				tr.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+			},
+			wantStatus:     http.StatusBadRequest,
+			wantErrContain: "csv_content is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, tenantRepo, invoiceRepo, contactsRepo := setupInvoiceImportTestHandlers()
+			if tt.setupMock != nil {
+				tt.setupMock(tenantRepo, invoiceRepo, contactsRepo)
+			}
+
+			req := makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tt.tenantID+"/invoices/import", tt.body, tt.claims)
+			req = withURLParams(req, map[string]string{"tenantID": tt.tenantID})
+			w := httptest.NewRecorder()
+
+			h.ImportInvoices(w, req)
+
+			assert.Equal(t, tt.wantStatus, w.Code, "response body: %s", w.Body.String())
+
+			if tt.wantErrContain != "" {
+				var resp map[string]string
+				err := json.NewDecoder(w.Body).Decode(&resp)
+				require.NoError(t, err)
+				assert.Contains(t, resp["error"], tt.wantErrContain)
+				return
+			}
+
+			if tt.checkResponse != nil {
+				var resp invoicing.ImportInvoicesResult
+				err := json.NewDecoder(w.Body).Decode(&resp)
+				require.NoError(t, err)
+				tt.checkResponse(t, resp, invoiceRepo)
+			}
+		})
+	}
 }
 
 // =============================================================================
@@ -732,6 +896,25 @@ func TestVoidInvoice(t *testing.T) {
 			},
 			wantStatus:     http.StatusBadRequest,
 			wantErrContain: "not found",
+		},
+		{
+			name:      "void invoice blocked by period lock",
+			tenantID:  "tenant-1",
+			invoiceID: "inv-1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			setupMock: func(tr *mockTenantRepository, ir *mockInvoicingRepository) {
+				lockedTenant := tr.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				lockDate := "2026-01-31"
+				lockedTenant.Settings.PeriodLockDate = &lockDate
+				invoice := ir.addTestInvoice("inv-1", "tenant-1", "contact-1", invoicing.InvoiceTypeSales, invoicing.StatusDraft)
+				invoice.IssueDate = time.Date(2026, time.January, 15, 0, 0, 0, 0, time.UTC)
+			},
+			wantStatus:     http.StatusConflict,
+			wantErrContain: "period locked through 2026-01-31",
 		},
 	}
 

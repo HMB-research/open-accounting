@@ -225,10 +225,11 @@ func TestListPayments(t *testing.T) {
 
 func TestCreatePayment(t *testing.T) {
 	tests := []struct {
-		name       string
-		body       map[string]interface{}
-		wantStatus int
-		wantErr    string
+		name        string
+		body        map[string]interface{}
+		setupTenant func(*mockTenantRepository)
+		wantStatus  int
+		wantErr     string
 	}{
 		{
 			name: "valid received payment",
@@ -282,6 +283,21 @@ func TestCreatePayment(t *testing.T) {
 			wantErr:    "positive",
 		},
 		{
+			name: "payment blocked by period lock",
+			body: map[string]interface{}{
+				"payment_type": "RECEIVED",
+				"amount":       "100.00",
+				"payment_date": "2026-01-15T00:00:00Z",
+				"currency":     "EUR",
+			},
+			setupTenant: func(repo *mockTenantRepository) {
+				lockDate := "2026-01-31"
+				repo.tenants["tenant-1"].Settings.PeriodLockDate = &lockDate
+			},
+			wantStatus: http.StatusConflict,
+			wantErr:    "period locked through 2026-01-31",
+		},
+		{
 			name:       "invalid JSON",
 			body:       nil,
 			wantStatus: http.StatusBadRequest,
@@ -296,6 +312,9 @@ func TestCreatePayment(t *testing.T) {
 			tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
 				ID:         "tenant-1",
 				SchemaName: "tenant_test",
+			}
+			if tt.setupTenant != nil {
+				tt.setupTenant(tenantRepo)
 			}
 
 			var body []byte

@@ -4,8 +4,8 @@ import { test, expect } from '@playwright/test';
  * Live Demo Environment E2E Tests
  *
  * These tests run against:
- * - Local environment (CI): Uses BASE_URL and PUBLIC_API_URL environment variables
- * - Production demo: Falls back to Railway URLs
+ * - Local environment (default): Uses local BASE_URL and PUBLIC_API_URL defaults
+ * - Hosted demo (optional): Requires explicit BASE_URL, PUBLIC_API_URL, and TEST_DEMO=true
  *
  * Run with: bun run test:e2e:demo
  *
@@ -14,9 +14,8 @@ import { test, expect } from '@playwright/test';
  * - Demo users (demo1@example.com / demo12345) must exist
  */
 
-// Use environment variables for local testing, fall back to Railway for remote demo testing
-const DEMO_URL = process.env.BASE_URL || 'https://open-accounting.up.railway.app';
-const DEMO_API = process.env.PUBLIC_API_URL || 'https://open-accounting-api.up.railway.app';
+const DEMO_URL = process.env.BASE_URL || 'http://localhost:5173';
+const DEMO_API = process.env.PUBLIC_API_URL || 'http://localhost:8080';
 
 // Demo credentials for multi-user testing - use demo1 as the default
 const DEMO_EMAIL = 'demo1@example.com';
@@ -151,20 +150,23 @@ test.describe('Demo Environment - Dashboard', () => {
 	});
 
 	test('Navigation sidebar is present', async ({ page }) => {
-		const nav = page.locator('nav, .sidebar, [class*="nav"]').first();
-		await expect(nav).toBeVisible();
-
-		// Should have key navigation items
 		const navItems = ['dashboard', 'invoice', 'contact', 'report'];
-		for (const item of navItems) {
-			const link = page.getByRole('link', { name: new RegExp(item, 'i') });
-			const exists = await link.count();
-			// At least some nav items should exist
-			if (exists > 0) {
-				expect(exists).toBeGreaterThan(0);
-				break;
-			}
-		}
+		const visibleItems = await Promise.all(
+			navItems.map((item) =>
+				page
+					.getByRole('link', { name: new RegExp(item, 'i') })
+					.first()
+					.isVisible()
+					.catch(() => false)
+			)
+		);
+		const hasMenuShell = await page
+			.locator('nav.navbar, .mobile-nav, .mobile-menu-btn, [aria-label*="menu"]')
+			.first()
+			.isVisible()
+			.catch(() => false);
+
+		expect(hasMenuShell || visibleItems.some(Boolean)).toBeTruthy();
 	});
 });
 
@@ -195,10 +197,13 @@ test.describe('Demo Environment - Invoices', () => {
 		const content = page.locator('main, [class*="content"], .container').first();
 		await expect(content).toBeVisible();
 
-		// Look for invoices, empty state, or page heading
-		const hasInvoices = await page.locator('table, .invoice-list, [class*="invoice"], .list').first().isVisible().catch(() => false);
+		const hasInvoices = await page
+			.locator('table tbody tr, .invoice-list, .workflow-hero, [class*="invoice"]')
+			.first()
+			.isVisible()
+			.catch(() => false);
 		const hasEmptyState = await page.getByText(/no invoice|create.*first|get started|no data/i).isVisible().catch(() => false);
-		const hasHeading = await page.getByRole('heading', { name: /invoice/i }).isVisible().catch(() => false);
+		const hasHeading = await page.getByRole('heading', { level: 1, name: /^invoices$/i }).isVisible().catch(() => false);
 
 		expect(hasInvoices || hasEmptyState || hasHeading).toBeTruthy();
 	});

@@ -22,9 +22,18 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 	return &GORMRepository{db: db}
 }
 
+func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
+	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+}
+
 // EnsureSchema creates the recurring invoice tables if they don't exist
 // Note: Uses raw SQL as GORM AutoMigrate is not suitable for dynamic schema names
 func (r *GORMRepository) EnsureSchema(ctx context.Context, schemaName string) error {
+	quotedSchema, err := database.QuoteIdentifier(schemaName)
+	if err != nil {
+		return err
+	}
+
 	query := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s.recurring_invoices (
 			id UUID PRIMARY KEY,
@@ -71,14 +80,17 @@ func (r *GORMRepository) EnsureSchema(ctx context.Context, schemaName string) er
 		CREATE INDEX IF NOT EXISTS idx_recurring_invoices_tenant ON %s.recurring_invoices(tenant_id);
 		CREATE INDEX IF NOT EXISTS idx_recurring_invoices_next_gen ON %s.recurring_invoices(next_generation_date) WHERE is_active = true;
 		CREATE INDEX IF NOT EXISTS idx_recurring_invoice_lines_recurring ON %s.recurring_invoice_lines(recurring_invoice_id);
-	`, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName)
+	`, quotedSchema, quotedSchema, quotedSchema, quotedSchema, quotedSchema, quotedSchema)
 
 	return r.db.WithContext(ctx).Exec(query).Error
 }
 
 // Create inserts a new recurring invoice
 func (r *GORMRepository) Create(ctx context.Context, schemaName string, ri *RecurringInvoice) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "recurring_invoices")
+	if err != nil {
+		return err
+	}
 
 	riModel := recurringInvoiceToModel(ri)
 	if err := db.Create(riModel).Error; err != nil {
@@ -89,7 +101,10 @@ func (r *GORMRepository) Create(ctx context.Context, schemaName string, ri *Recu
 
 // CreateLine inserts a recurring invoice line
 func (r *GORMRepository) CreateLine(ctx context.Context, schemaName string, line *RecurringInvoiceLine) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "recurring_invoice_lines")
+	if err != nil {
+		return err
+	}
 
 	lineModel := recurringInvoiceLineToModel(line)
 	if err := db.Create(lineModel).Error; err != nil {
@@ -100,7 +115,14 @@ func (r *GORMRepository) CreateLine(ctx context.Context, schemaName string, line
 
 // GetByID retrieves a recurring invoice by ID (without lines)
 func (r *GORMRepository) GetByID(ctx context.Context, schemaName, tenantID, id string) (*RecurringInvoice, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	recurringTable, err := database.QualifiedTable(schemaName, "recurring_invoices")
+	if err != nil {
+		return nil, err
+	}
+	contactsTable, err := database.QualifiedTable(schemaName, "contacts")
+	if err != nil {
+		return nil, err
+	}
 
 	// Use raw query to join with contacts for contact_name
 	var result struct {
@@ -108,12 +130,12 @@ func (r *GORMRepository) GetByID(ctx context.Context, schemaName, tenantID, id s
 		ContactName string
 	}
 
-	err := db.Raw(`
+	err = r.db.WithContext(ctx).Raw(fmt.Sprintf(`
 		SELECT r.*, COALESCE(c.name, '') as contact_name
-		FROM recurring_invoices r
-		LEFT JOIN contacts c ON r.contact_id = c.id
+		FROM %s r
+		LEFT JOIN %s c ON r.contact_id = c.id
 		WHERE r.id = ? AND r.tenant_id = ?
-	`, id, tenantID).Scan(&result).Error
+	`, recurringTable, contactsTable), id, tenantID).Scan(&result).Error
 
 	if err != nil {
 		return nil, fmt.Errorf("get recurring invoice: %w", err)
@@ -129,7 +151,10 @@ func (r *GORMRepository) GetByID(ctx context.Context, schemaName, tenantID, id s
 
 // GetLines retrieves lines for a recurring invoice
 func (r *GORMRepository) GetLines(ctx context.Context, schemaName, recurringInvoiceID string) ([]RecurringInvoiceLine, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "recurring_invoice_lines")
+	if err != nil {
+		return nil, err
+	}
 
 	var lineModels []models.RecurringInvoiceLine
 	if err := db.Where("recurring_invoice_id = ?", recurringInvoiceID).
@@ -148,15 +173,22 @@ func (r *GORMRepository) GetLines(ctx context.Context, schemaName, recurringInvo
 
 // List retrieves all recurring invoices for a tenant
 func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]RecurringInvoice, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	recurringTable, err := database.QualifiedTable(schemaName, "recurring_invoices")
+	if err != nil {
+		return nil, err
+	}
+	contactsTable, err := database.QualifiedTable(schemaName, "contacts")
+	if err != nil {
+		return nil, err
+	}
 
 	// Use raw query to join with contacts for contact_name
-	query := `
+	query := fmt.Sprintf(`
 		SELECT r.*, COALESCE(c.name, '') as contact_name
-		FROM recurring_invoices r
-		LEFT JOIN contacts c ON r.contact_id = c.id
+		FROM %s r
+		LEFT JOIN %s c ON r.contact_id = c.id
 		WHERE r.tenant_id = ?
-	`
+	`, recurringTable, contactsTable)
 	if activeOnly {
 		query += " AND r.is_active = true"
 	}
@@ -167,7 +199,7 @@ func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, 
 		ContactName string
 	}
 
-	if err := db.Raw(query, tenantID).Scan(&results).Error; err != nil {
+	if err := r.db.WithContext(ctx).Raw(query, tenantID).Scan(&results).Error; err != nil {
 		return nil, fmt.Errorf("list recurring invoices: %w", err)
 	}
 
@@ -182,10 +214,12 @@ func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, 
 
 // Update updates a recurring invoice
 func (r *GORMRepository) Update(ctx context.Context, schemaName string, ri *RecurringInvoice) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "recurring_invoices")
+	if err != nil {
+		return err
+	}
 
-	result := db.Model(&models.RecurringInvoice{}).
-		Where("id = ? AND tenant_id = ?", ri.ID, ri.TenantID).
+	result := db.Where("id = ? AND tenant_id = ?", ri.ID, ri.TenantID).
 		Updates(map[string]interface{}{
 			"name":                     ri.Name,
 			"contact_id":               ri.ContactID,
@@ -210,7 +244,10 @@ func (r *GORMRepository) Update(ctx context.Context, schemaName string, ri *Recu
 
 // DeleteLines deletes all lines for a recurring invoice
 func (r *GORMRepository) DeleteLines(ctx context.Context, schemaName, recurringInvoiceID string) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "recurring_invoice_lines")
+	if err != nil {
+		return err
+	}
 
 	if err := db.Where("recurring_invoice_id = ?", recurringInvoiceID).
 		Delete(&models.RecurringInvoiceLine{}).Error; err != nil {
@@ -221,7 +258,10 @@ func (r *GORMRepository) DeleteLines(ctx context.Context, schemaName, recurringI
 
 // Delete deletes a recurring invoice
 func (r *GORMRepository) Delete(ctx context.Context, schemaName, tenantID, id string) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "recurring_invoices")
+	if err != nil {
+		return err
+	}
 
 	result := db.Where("id = ? AND tenant_id = ?", id, tenantID).
 		Delete(&models.RecurringInvoice{})
@@ -236,10 +276,12 @@ func (r *GORMRepository) Delete(ctx context.Context, schemaName, tenantID, id st
 
 // SetActive sets the active status of a recurring invoice
 func (r *GORMRepository) SetActive(ctx context.Context, schemaName, tenantID, id string, active bool) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "recurring_invoices")
+	if err != nil {
+		return err
+	}
 
-	result := db.Model(&models.RecurringInvoice{}).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
+	result := db.Where("id = ? AND tenant_id = ?", id, tenantID).
 		Updates(map[string]interface{}{
 			"is_active":  active,
 			"updated_at": time.Now(),
@@ -255,11 +297,13 @@ func (r *GORMRepository) SetActive(ctx context.Context, schemaName, tenantID, id
 
 // GetDueRecurringInvoiceIDs returns IDs of recurring invoices due for generation
 func (r *GORMRepository) GetDueRecurringInvoiceIDs(ctx context.Context, schemaName, tenantID string, asOfDate time.Time) ([]string, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "recurring_invoices")
+	if err != nil {
+		return nil, err
+	}
 
 	var ids []string
-	err := db.Model(&models.RecurringInvoice{}).
-		Select("id").
+	err = db.Select("id").
 		Where("tenant_id = ?", tenantID).
 		Where("is_active = ?", true).
 		Where("next_generation_date <= ?", asOfDate).
@@ -274,9 +318,12 @@ func (r *GORMRepository) GetDueRecurringInvoiceIDs(ctx context.Context, schemaNa
 
 // UpdateAfterGeneration updates generation tracking fields
 func (r *GORMRepository) UpdateAfterGeneration(ctx context.Context, schemaName, tenantID, id string, nextDate time.Time, generatedAt time.Time) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "recurring_invoices")
+	if err != nil {
+		return err
+	}
 
-	err := db.Model(&models.RecurringInvoice{}).
+	err = db.
 		Where("id = ? AND tenant_id = ?", id, tenantID).
 		Updates(map[string]interface{}{
 			"next_generation_date": nextDate,
@@ -292,11 +339,13 @@ func (r *GORMRepository) UpdateAfterGeneration(ctx context.Context, schemaName, 
 
 // UpdateInvoiceEmailStatus updates the invoice with email delivery status
 func (r *GORMRepository) UpdateInvoiceEmailStatus(ctx context.Context, schemaName, invoiceID string, sentAt *time.Time, status, logID string) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "invoices")
+	if err != nil {
+		return err
+	}
 
 	// Update the invoices table directly
-	err := db.Table("invoices").
-		Where("id = ?", invoiceID).
+	err = db.Where("id = ?", invoiceID).
 		Updates(map[string]interface{}{
 			"last_email_sent_at": sentAt,
 			"last_email_status":  status,

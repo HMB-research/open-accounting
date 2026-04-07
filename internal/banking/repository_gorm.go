@@ -24,9 +24,16 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 	return &GORMRepository{db: db}
 }
 
+func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
+	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+}
+
 // CreateBankAccount inserts a new bank account
 func (r *GORMRepository) CreateBankAccount(ctx context.Context, schemaName string, account *BankAccount) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "bank_accounts")
+	if err != nil {
+		return err
+	}
 
 	accountModel := bankAccountToModel(account)
 	if err := db.Create(accountModel).Error; err != nil {
@@ -37,10 +44,13 @@ func (r *GORMRepository) CreateBankAccount(ctx context.Context, schemaName strin
 
 // GetBankAccount retrieves a bank account by ID
 func (r *GORMRepository) GetBankAccount(ctx context.Context, schemaName, tenantID, accountID string) (*BankAccount, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "bank_accounts")
+	if err != nil {
+		return nil, err
+	}
 
 	var accountModel models.BankAccount
-	err := db.Where("id = ? AND tenant_id = ?", accountID, tenantID).First(&accountModel).Error
+	err = db.Where("id = ? AND tenant_id = ?", accountID, tenantID).First(&accountModel).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrBankAccountNotFound
 	}
@@ -53,7 +63,10 @@ func (r *GORMRepository) GetBankAccount(ctx context.Context, schemaName, tenantI
 
 // ListBankAccounts lists all bank accounts for a tenant
 func (r *GORMRepository) ListBankAccounts(ctx context.Context, schemaName, tenantID string, filter *BankAccountFilter) ([]BankAccount, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "bank_accounts")
+	if err != nil {
+		return nil, err
+	}
 
 	query := db.Where("tenant_id = ?", tenantID)
 
@@ -83,10 +96,12 @@ func (r *GORMRepository) ListBankAccounts(ctx context.Context, schemaName, tenan
 
 // UpdateBankAccount updates a bank account
 func (r *GORMRepository) UpdateBankAccount(ctx context.Context, schemaName string, account *BankAccount) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "bank_accounts")
+	if err != nil {
+		return err
+	}
 
-	result := db.Model(&models.BankAccount{}).
-		Where("id = ? AND tenant_id = ?", account.ID, account.TenantID).
+	result := db.Where("id = ? AND tenant_id = ?", account.ID, account.TenantID).
 		Updates(map[string]interface{}{
 			"name":          account.Name,
 			"bank_name":     account.BankName,
@@ -103,7 +118,10 @@ func (r *GORMRepository) UpdateBankAccount(ctx context.Context, schemaName strin
 
 // DeleteBankAccount deletes a bank account
 func (r *GORMRepository) DeleteBankAccount(ctx context.Context, schemaName, tenantID, accountID string) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "bank_accounts")
+	if err != nil {
+		return err
+	}
 
 	result := db.Where("id = ? AND tenant_id = ?", accountID, tenantID).Delete(&models.BankAccount{})
 	if result.Error != nil {
@@ -117,10 +135,12 @@ func (r *GORMRepository) DeleteBankAccount(ctx context.Context, schemaName, tena
 
 // UnsetDefaultAccounts unsets all default accounts for a tenant
 func (r *GORMRepository) UnsetDefaultAccounts(ctx context.Context, schemaName, tenantID string) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "bank_accounts")
+	if err != nil {
+		return err
+	}
 
-	if err := db.Model(&models.BankAccount{}).
-		Where("tenant_id = ?", tenantID).
+	if err := db.Where("tenant_id = ?", tenantID).
 		Update("is_default", false).Error; err != nil {
 		return fmt.Errorf("unset default: %w", err)
 	}
@@ -129,11 +149,13 @@ func (r *GORMRepository) UnsetDefaultAccounts(ctx context.Context, schemaName, t
 
 // CountTransactionsForAccount counts transactions for an account
 func (r *GORMRepository) CountTransactionsForAccount(ctx context.Context, schemaName, accountID string) (int, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "bank_transactions")
+	if err != nil {
+		return 0, err
+	}
 
 	var count int64
-	if err := db.Model(&models.BankTransaction{}).
-		Where("bank_account_id = ?", accountID).
+	if err := db.Where("bank_account_id = ?", accountID).
 		Count(&count).Error; err != nil {
 		return 0, fmt.Errorf("count transactions: %w", err)
 	}
@@ -142,13 +164,15 @@ func (r *GORMRepository) CountTransactionsForAccount(ctx context.Context, schema
 
 // CalculateAccountBalance calculates the balance of an account
 func (r *GORMRepository) CalculateAccountBalance(ctx context.Context, schemaName, accountID string) (decimal.Decimal, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "bank_transactions")
+	if err != nil {
+		return decimal.Zero, err
+	}
 
 	var result struct {
 		Balance models.Decimal
 	}
-	err := db.Model(&models.BankTransaction{}).
-		Select("COALESCE(SUM(amount), 0) as balance").
+	err = db.Select("COALESCE(SUM(amount), 0) as balance").
 		Where("bank_account_id = ?", accountID).
 		Scan(&result).Error
 	if err != nil {
@@ -159,7 +183,10 @@ func (r *GORMRepository) CalculateAccountBalance(ctx context.Context, schemaName
 
 // ListTransactions lists bank transactions with filters
 func (r *GORMRepository) ListTransactions(ctx context.Context, schemaName, tenantID string, filter *TransactionFilter) ([]BankTransaction, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "bank_transactions")
+	if err != nil {
+		return nil, err
+	}
 
 	query := db.Where("tenant_id = ?", tenantID)
 
@@ -201,10 +228,13 @@ func (r *GORMRepository) ListTransactions(ctx context.Context, schemaName, tenan
 
 // GetTransaction retrieves a single bank transaction
 func (r *GORMRepository) GetTransaction(ctx context.Context, schemaName, tenantID, transactionID string) (*BankTransaction, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "bank_transactions")
+	if err != nil {
+		return nil, err
+	}
 
 	var transactionModel models.BankTransaction
-	err := db.Where("id = ? AND tenant_id = ?", transactionID, tenantID).First(&transactionModel).Error
+	err = db.Where("id = ? AND tenant_id = ?", transactionID, tenantID).First(&transactionModel).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrTransactionNotFound
 	}
@@ -217,13 +247,16 @@ func (r *GORMRepository) GetTransaction(ctx context.Context, schemaName, tenantI
 
 // MatchTransaction matches a bank transaction to a payment
 func (r *GORMRepository) MatchTransaction(ctx context.Context, schemaName, tenantID, transactionID, paymentID string) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "bank_transactions")
+	if err != nil {
+		return err
+	}
 
-	result := db.Model(&models.BankTransaction{}).
-		Where("id = ? AND tenant_id = ? AND status = ?", transactionID, tenantID, StatusUnmatched).
+	result := db.Where("id = ? AND tenant_id = ? AND status = ?", transactionID, tenantID, StatusUnmatched).
 		Updates(map[string]interface{}{
 			"matched_payment_id": paymentID,
 			"status":             StatusMatched,
+			"follow_up_status":   FollowUpNone,
 		})
 	if result.Error != nil {
 		return fmt.Errorf("match transaction: %w", result.Error)
@@ -236,10 +269,12 @@ func (r *GORMRepository) MatchTransaction(ctx context.Context, schemaName, tenan
 
 // UnmatchTransaction removes the match from a bank transaction
 func (r *GORMRepository) UnmatchTransaction(ctx context.Context, schemaName, tenantID, transactionID string) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "bank_transactions")
+	if err != nil {
+		return err
+	}
 
-	result := db.Model(&models.BankTransaction{}).
-		Where("id = ? AND tenant_id = ? AND status = ?", transactionID, tenantID, StatusMatched).
+	result := db.Where("id = ? AND tenant_id = ? AND status = ?", transactionID, tenantID, StatusMatched).
 		Updates(map[string]interface{}{
 			"matched_payment_id": nil,
 			"status":             StatusUnmatched,
@@ -253,9 +288,43 @@ func (r *GORMRepository) UnmatchTransaction(ctx context.Context, schemaName, ten
 	return nil
 }
 
+// UpdateTransactionReview updates accountant follow-up guidance for a bank transaction.
+func (r *GORMRepository) UpdateTransactionReview(ctx context.Context, schemaName, tenantID, transactionID string, update TransactionReviewUpdate) (*BankTransaction, error) {
+	db, err := r.tenantTable(ctx, schemaName, "bank_transactions")
+	if err != nil {
+		return nil, err
+	}
+
+	updates := map[string]interface{}{
+		"reviewed_by": update.ReviewedBy,
+		"reviewed_at": update.ReviewedAt,
+	}
+	if update.FollowUpStatus != nil {
+		updates["follow_up_status"] = *update.FollowUpStatus
+	}
+	if update.ReviewNote != nil {
+		updates["review_note"] = *update.ReviewNote
+	}
+
+	result := db.Model(&models.BankTransaction{}).
+		Where("id = ? AND tenant_id = ?", transactionID, tenantID).
+		Updates(updates)
+	if result.Error != nil {
+		return nil, fmt.Errorf("update transaction review: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return nil, ErrTransactionNotFound
+	}
+
+	return r.GetTransaction(ctx, schemaName, tenantID, transactionID)
+}
+
 // CreateTransaction inserts a new bank transaction
 func (r *GORMRepository) CreateTransaction(ctx context.Context, schemaName string, t *BankTransaction) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "bank_transactions")
+	if err != nil {
+		return err
+	}
 
 	transactionModel := bankTransactionToModel(t)
 	if err := db.Create(transactionModel).Error; err != nil {
@@ -266,13 +335,15 @@ func (r *GORMRepository) CreateTransaction(ctx context.Context, schemaName strin
 
 // IsTransactionDuplicate checks if a transaction is a duplicate
 func (r *GORMRepository) IsTransactionDuplicate(ctx context.Context, schemaName, tenantID, bankAccountID string, date time.Time, amount decimal.Decimal, externalID string) (bool, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "bank_transactions")
+	if err != nil {
+		return false, err
+	}
 
 	// First check by external ID if provided
 	if externalID != "" {
 		var count int64
-		err := db.Model(&models.BankTransaction{}).
-			Where("tenant_id = ? AND bank_account_id = ? AND external_id = ?", tenantID, bankAccountID, externalID).
+		err := db.Where("tenant_id = ? AND bank_account_id = ? AND external_id = ?", tenantID, bankAccountID, externalID).
 			Count(&count).Error
 		if err != nil {
 			return false, fmt.Errorf("check duplicate: %w", err)
@@ -284,9 +355,8 @@ func (r *GORMRepository) IsTransactionDuplicate(ctx context.Context, schemaName,
 
 	// Check by date and amount
 	var count int64
-	err := db.Model(&models.BankTransaction{}).
-		Where("tenant_id = ? AND bank_account_id = ? AND transaction_date = ? AND amount = ?",
-			tenantID, bankAccountID, date, amount.String()).
+	err = db.Where("tenant_id = ? AND bank_account_id = ? AND transaction_date = ? AND amount = ?",
+		tenantID, bankAccountID, date, amount.String()).
 		Count(&count).Error
 	if err != nil {
 		return false, fmt.Errorf("check duplicate: %w", err)
@@ -296,7 +366,10 @@ func (r *GORMRepository) IsTransactionDuplicate(ctx context.Context, schemaName,
 
 // CreateReconciliation inserts a new reconciliation
 func (r *GORMRepository) CreateReconciliation(ctx context.Context, schemaName string, rec *BankReconciliation) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "bank_reconciliations")
+	if err != nil {
+		return err
+	}
 
 	recModel := bankReconciliationToModel(rec)
 	if err := db.Create(recModel).Error; err != nil {
@@ -307,10 +380,13 @@ func (r *GORMRepository) CreateReconciliation(ctx context.Context, schemaName st
 
 // GetReconciliation retrieves a reconciliation by ID
 func (r *GORMRepository) GetReconciliation(ctx context.Context, schemaName, tenantID, reconciliationID string) (*BankReconciliation, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "bank_reconciliations")
+	if err != nil {
+		return nil, err
+	}
 
 	var recModel models.BankReconciliation
-	err := db.Where("id = ? AND tenant_id = ?", reconciliationID, tenantID).First(&recModel).Error
+	err = db.Where("id = ? AND tenant_id = ?", reconciliationID, tenantID).First(&recModel).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrReconciliationNotFound
 	}
@@ -323,7 +399,10 @@ func (r *GORMRepository) GetReconciliation(ctx context.Context, schemaName, tena
 
 // ListReconciliations lists reconciliations for a bank account
 func (r *GORMRepository) ListReconciliations(ctx context.Context, schemaName, tenantID, bankAccountID string) ([]BankReconciliation, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "bank_reconciliations")
+	if err != nil {
+		return nil, err
+	}
 
 	var recModels []models.BankReconciliation
 	if err := db.Where("tenant_id = ? AND bank_account_id = ?", tenantID, bankAccountID).
@@ -342,14 +421,24 @@ func (r *GORMRepository) ListReconciliations(ctx context.Context, schemaName, te
 
 // CompleteReconciliation marks a reconciliation as complete
 func (r *GORMRepository) CompleteReconciliation(ctx context.Context, schemaName, tenantID, reconciliationID string) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "bank_reconciliations")
+	if err != nil {
+		return err
+	}
 
 	return db.Transaction(func(tx *gorm.DB) error {
 		now := time.Now()
+		reconciliationsDB, err := database.TenantTable(tx, schemaName, "bank_reconciliations")
+		if err != nil {
+			return err
+		}
+		transactionsDB, err := database.TenantTable(tx, schemaName, "bank_transactions")
+		if err != nil {
+			return err
+		}
 
 		// Update reconciliation status
-		result := tx.Model(&models.BankReconciliation{}).
-			Where("id = ? AND tenant_id = ? AND status = ?", reconciliationID, tenantID, ReconciliationInProgress).
+		result := reconciliationsDB.Where("id = ? AND tenant_id = ? AND status = ?", reconciliationID, tenantID, ReconciliationInProgress).
 			Updates(map[string]interface{}{
 				"status":       ReconciliationCompleted,
 				"completed_at": now,
@@ -362,8 +451,7 @@ func (r *GORMRepository) CompleteReconciliation(ctx context.Context, schemaName,
 		}
 
 		// Mark all matched transactions in this reconciliation as reconciled
-		if err := tx.Model(&models.BankTransaction{}).
-			Where("tenant_id = ? AND reconciliation_id = ? AND status = ?", tenantID, reconciliationID, StatusMatched).
+		if err := transactionsDB.Where("tenant_id = ? AND reconciliation_id = ? AND status = ?", tenantID, reconciliationID, StatusMatched).
 			Updates(map[string]interface{}{
 				"status": StatusReconciled,
 			}).Error; err != nil {
@@ -376,10 +464,12 @@ func (r *GORMRepository) CompleteReconciliation(ctx context.Context, schemaName,
 
 // AddTransactionToReconciliation adds a transaction to a reconciliation session
 func (r *GORMRepository) AddTransactionToReconciliation(ctx context.Context, schemaName, tenantID, transactionID, reconciliationID string) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "bank_transactions")
+	if err != nil {
+		return err
+	}
 
-	result := db.Model(&models.BankTransaction{}).
-		Where("id = ? AND tenant_id = ?", transactionID, tenantID).
+	result := db.Where("id = ? AND tenant_id = ?", transactionID, tenantID).
 		Update("reconciliation_id", reconciliationID)
 	if result.Error != nil {
 		return fmt.Errorf("add to reconciliation: %w", result.Error)
@@ -392,7 +482,10 @@ func (r *GORMRepository) AddTransactionToReconciliation(ctx context.Context, sch
 
 // CreateImportRecord creates an import record
 func (r *GORMRepository) CreateImportRecord(ctx context.Context, schemaName string, imp *BankStatementImport) error {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "bank_statement_imports")
+	if err != nil {
+		return err
+	}
 
 	impModel := bankStatementImportToModel(imp)
 	if err := db.Create(impModel).Error; err != nil {
@@ -403,7 +496,10 @@ func (r *GORMRepository) CreateImportRecord(ctx context.Context, schemaName stri
 
 // GetImportHistory retrieves import history for a bank account
 func (r *GORMRepository) GetImportHistory(ctx context.Context, schemaName, tenantID, bankAccountID string) ([]BankStatementImport, error) {
-	db := database.TenantDB(r.db, schemaName).WithContext(ctx)
+	db, err := r.tenantTable(ctx, schemaName, "bank_statement_imports")
+	if err != nil {
+		return nil, err
+	}
 
 	var impModels []models.BankStatementImport
 	if err := db.Where("tenant_id = ? AND bank_account_id = ?", tenantID, bankAccountID).
@@ -456,6 +552,10 @@ func bankAccountToModel(a *BankAccount) *models.BankAccount {
 }
 
 func modelToBankTransaction(m *models.BankTransaction) *BankTransaction {
+	followUpStatus := FollowUpStatus(m.FollowUpStatus)
+	if followUpStatus == "" {
+		followUpStatus = FollowUpNone
+	}
 	return &BankTransaction{
 		ID:                  m.ID,
 		TenantID:            m.TenantID,
@@ -469,6 +569,10 @@ func modelToBankTransaction(m *models.BankTransaction) *BankTransaction {
 		CounterpartyName:    m.CounterpartyName,
 		CounterpartyAccount: m.CounterpartyAccount,
 		Status:              TransactionStatus(m.Status),
+		FollowUpStatus:      followUpStatus,
+		ReviewNote:          m.ReviewNote,
+		ReviewedBy:          m.ReviewedBy,
+		ReviewedAt:          m.ReviewedAt,
 		MatchedPaymentID:    m.MatchedPaymentID,
 		JournalEntryID:      m.JournalEntryID,
 		ReconciliationID:    m.ReconciliationID,
@@ -478,6 +582,10 @@ func modelToBankTransaction(m *models.BankTransaction) *BankTransaction {
 }
 
 func bankTransactionToModel(t *BankTransaction) *models.BankTransaction {
+	followUpStatus := models.TransactionFollowUpStatus(t.FollowUpStatus)
+	if followUpStatus == "" {
+		followUpStatus = models.TransactionFollowUpNone
+	}
 	return &models.BankTransaction{
 		ID:                  t.ID,
 		TenantID:            t.TenantID,
@@ -491,6 +599,10 @@ func bankTransactionToModel(t *BankTransaction) *models.BankTransaction {
 		CounterpartyName:    t.CounterpartyName,
 		CounterpartyAccount: t.CounterpartyAccount,
 		Status:              models.TransactionStatus(t.Status),
+		FollowUpStatus:      followUpStatus,
+		ReviewNote:          t.ReviewNote,
+		ReviewedBy:          t.ReviewedBy,
+		ReviewedAt:          t.ReviewedAt,
 		MatchedPaymentID:    t.MatchedPaymentID,
 		JournalEntryID:      t.JournalEntryID,
 		ReconciliationID:    t.ReconciliationID,

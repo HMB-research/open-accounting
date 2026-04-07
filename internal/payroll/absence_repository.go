@@ -244,7 +244,7 @@ func (r *AbsencePostgresRepository) CreateLeaveRecord(ctx context.Context, schem
 		record.ID, record.TenantID, record.EmployeeID, record.AbsenceTypeID,
 		record.StartDate, record.EndDate, record.TotalDays, record.WorkingDays,
 		record.Status, record.DocumentNumber, record.DocumentDate, record.DocumentURL,
-		record.RequestedAt, record.RequestedBy, record.Notes, record.CreatedAt, record.UpdatedAt,
+		record.RequestedAt, nullableUUID(record.RequestedBy), record.Notes, record.CreatedAt, record.UpdatedAt,
 	)
 }
 
@@ -347,10 +347,17 @@ func (r *AbsencePostgresRepository) UpdateLeaveRecord(ctx context.Context, schem
 	`, schemaName)
 
 	return r.repo.exec(ctx, query,
-		record.Status, record.ApprovedAt, record.ApprovedBy,
-		record.RejectedAt, record.RejectedBy, record.RejectionReason,
+		record.Status, record.ApprovedAt, nullableUUID(record.ApprovedBy),
+		record.RejectedAt, nullableUUID(record.RejectedBy), record.RejectionReason,
 		record.UpdatedAt, record.ID,
 	)
+}
+
+func nullableUUID(value string) interface{} {
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 // MockAbsenceRepository implements AbsenceRepository for testing

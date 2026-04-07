@@ -3,10 +3,10 @@ import { test, expect } from '@playwright/test';
 /**
  * Demo Dashboard Integration Tests
  *
- * These tests verify the demo user experience on the live demo environment.
+ * These tests verify the demo user experience on an explicitly configured hosted demo environment.
  * They are SKIPPED by default because:
- * 1. The demo user (demo1@example.com) only exists in the Railway production database
- * 2. Local/CI environments don't have demo seed data
+ * 1. The demo user (demo1@example.com) is expected to exist only in the hosted demo database
+ * 2. Local/CI environments should use the seeded demo smoke/demo suites instead
  *
  * To run these tests against the live demo:
  *   bun run test:e2e:demo
@@ -14,9 +14,7 @@ import { test, expect } from '@playwright/test';
  *   bunx playwright test --config=playwright.demo.config.ts demo-dashboard
  */
 
-// Check if we're running against the demo environment
-const isDemoEnvironment = process.env.PUBLIC_API_URL?.includes('railway.app') ||
-	process.env.TEST_DEMO === 'true';
+const isDemoEnvironment = process.env.TEST_DEMO === 'true';
 
 // Skip these tests unless targeting the demo environment
 test.describe('Demo User - Dashboard Integration', () => {

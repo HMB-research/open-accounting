@@ -12,18 +12,30 @@ import (
 
 // Claims represents the JWT claims
 type Claims struct {
-	UserID   string `json:"user_id"`
-	Email    string `json:"email"`
-	TenantID string `json:"tenant_id,omitempty"`
-	Role     string `json:"role,omitempty"`
+	UserID    string `json:"user_id"`
+	Email     string `json:"email"`
+	TenantID  string `json:"tenant_id,omitempty"`
+	Role      string `json:"role,omitempty"`
+	TokenKind string `json:"token_kind,omitempty"`
 	jwt.RegisteredClaims
+}
+
+const (
+	TokenKindAccessToken = "access_token"
+	TokenKindAPIToken    = "api_token"
+)
+
+// APITokenValidator validates non-JWT API tokens and maps them to auth claims.
+type APITokenValidator interface {
+	ValidateAPIToken(ctx context.Context, token string) (*Claims, error)
 }
 
 // TokenService handles JWT token operations
 type TokenService struct {
-	secretKey     []byte
-	accessExpiry  time.Duration
-	refreshExpiry time.Duration
+	secretKey         []byte
+	accessExpiry      time.Duration
+	refreshExpiry     time.Duration
+	apiTokenValidator APITokenValidator
 }
 
 // NewTokenService creates a new token service
@@ -38,10 +50,11 @@ func NewTokenService(secretKey string, accessExpiry, refreshExpiry time.Duration
 // GenerateAccessToken generates a new access token
 func (s *TokenService) GenerateAccessToken(userID, email, tenantID, role string) (string, error) {
 	claims := &Claims{
-		UserID:   userID,
-		Email:    email,
-		TenantID: tenantID,
-		Role:     role,
+		UserID:    userID,
+		Email:     email,
+		TenantID:  tenantID,
+		Role:      role,
+		TokenKind: TokenKindAccessToken,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.accessExpiry)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -51,6 +64,11 @@ func (s *TokenService) GenerateAccessToken(userID, email, tenantID, role string)
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.secretKey)
+}
+
+// SetAPITokenValidator configures optional API token validation for bearer tokens.
+func (s *TokenService) SetAPITokenValidator(validator APITokenValidator) {
+	s.apiTokenValidator = validator
 }
 
 // GenerateRefreshToken generates a new refresh token
@@ -135,6 +153,9 @@ func (s *TokenService) Middleware(next http.Handler) http.Handler {
 		}
 
 		claims, err := s.ValidateAccessToken(parts[1])
+		if err != nil && s.apiTokenValidator != nil {
+			claims, err = s.apiTokenValidator.ValidateAPIToken(r.Context(), parts[1])
+		}
 		if err != nil {
 			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return

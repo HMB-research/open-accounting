@@ -1,5 +1,3 @@
-//go:build integration
-
 // Package testutil provides test utilities for integration tests.
 package testutil
 
@@ -19,13 +17,13 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// cleanupMutex serializes test tenant cleanup to prevent deadlocks
-// between DROP SCHEMA CASCADE and DELETE FROM tenants operations
-var cleanupMutex sync.Mutex
+// schemaLifecycleMutex serializes tenant/schema DDL within a test process.
+// Cross-process coordination is handled by the PostgreSQL advisory lock below.
+var schemaLifecycleMutex sync.Mutex
 
-// Advisory lock key for database-level cleanup serialization
-// Using a fixed hash to ensure all cleanup operations use the same lock
-const cleanupAdvisoryLockKey = 12345678
+// Advisory lock key for database-level tenant/schema lifecycle serialization.
+// Setup and cleanup use the same lock to avoid DDL deadlocks across test packages.
+const schemaLifecycleAdvisoryLockKey = 12345678
 
 // TestTenant contains the test tenant information
 type TestTenant struct {
@@ -61,10 +59,21 @@ func SetupTestSchema(t *testing.T, pool *pgxpool.Pool) string {
 	}
 	schemaName := fmt.Sprintf("test_%s_%d", testName, time.Now().UnixNano()%100000)
 
-	ctx := context.Background()
+	schemaLifecycleMutex.Lock()
+	defer schemaLifecycleMutex.Unlock()
 
-	// Create the schema using the existing create_tenant_schema function
-	_, err := pool.Exec(ctx, "SELECT create_tenant_schema($1)", schemaName)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	conn, err := acquireSchemaLifecycleConn(ctx, pool)
+	if err != nil {
+		t.Fatalf("failed to acquire lifecycle lock for test schema setup: %v", err)
+	}
+	defer releaseSchemaLifecycleConn(ctx, conn)
+
+	// SetupTestSchema is intended for isolated scratch schemas, not full tenant bootstraps.
+	// Newer tenant bootstrap migrations assume a backing tenant row, so use plain schema DDL here.
+	_, err = conn.Exec(ctx, fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", schemaName))
 	if err != nil {
 		t.Fatalf("failed to create test schema: %v", err)
 	}
@@ -81,8 +90,6 @@ func SetupTestSchema(t *testing.T, pool *pgxpool.Pool) string {
 func CreateTestTenant(t *testing.T, pool *pgxpool.Pool) *TestTenant {
 	t.Helper()
 
-	ctx := context.Background()
-
 	tenantID := uuid.New().String()
 	testName := strings.ToLower(t.Name())
 	testName = strings.ReplaceAll(testName, "/", "_")
@@ -98,14 +105,26 @@ func CreateTestTenant(t *testing.T, pool *pgxpool.Pool) *TestTenant {
 	now := time.Now()
 	settings := []byte(`{}`)
 
+	schemaLifecycleMutex.Lock()
+	defer schemaLifecycleMutex.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	conn, err := acquireSchemaLifecycleConn(ctx, pool)
+	if err != nil {
+		t.Fatalf("failed to acquire lifecycle lock for tenant setup: %v", err)
+	}
+	defer releaseSchemaLifecycleConn(ctx, conn)
+
 	// Reset search_path to ensure we're using public schema
-	_, err := pool.Exec(ctx, "SET search_path TO public")
+	_, err = conn.Exec(ctx, "SET search_path TO public")
 	if err != nil {
 		t.Fatalf("failed to reset search_path: %v", err)
 	}
 
 	// Insert tenant record (explicitly use public schema)
-	_, err = pool.Exec(ctx, `
+	_, err = conn.Exec(ctx, `
 		INSERT INTO public.tenants (id, name, slug, schema_name, settings, is_active, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, true, $6, $7)
 	`, tenantID, name, slug, schemaName, settings, now, now)
@@ -114,44 +133,44 @@ func CreateTestTenant(t *testing.T, pool *pgxpool.Pool) *TestTenant {
 	}
 
 	// Create tenant schema with all tables
-	_, err = pool.Exec(ctx, "SELECT create_tenant_schema($1)", schemaName)
+	_, err = conn.Exec(ctx, "SELECT create_tenant_schema($1)", schemaName)
 	if err != nil {
 		t.Fatalf("failed to create tenant schema: %v", err)
 	}
 
 	// Add quotes and orders tables (from migration 014)
-	_, err = pool.Exec(ctx, "SELECT add_quotes_and_orders_tables($1)", schemaName)
+	_, err = conn.Exec(ctx, "SELECT add_quotes_and_orders_tables($1)", schemaName)
 	if err != nil {
 		t.Fatalf("failed to add quotes and orders tables: %v", err)
 	}
 
 	// Add fixed assets tables (from migration 015)
-	_, err = pool.Exec(ctx, "SELECT add_fixed_assets_tables($1)", schemaName)
+	_, err = conn.Exec(ctx, "SELECT add_fixed_assets_tables($1)", schemaName)
 	if err != nil {
 		t.Fatalf("failed to add fixed assets tables: %v", err)
 	}
 
 	// Add inventory tables (from migration 016)
-	_, err = pool.Exec(ctx, "SELECT create_inventory_tables($1)", schemaName)
+	_, err = conn.Exec(ctx, "SELECT create_inventory_tables($1)", schemaName)
 	if err != nil {
 		t.Fatalf("failed to add inventory tables: %v", err)
 	}
 
 	// Add leave management tables (from migration 017)
-	_, err = pool.Exec(ctx, "SELECT add_leave_management_tables($1)", schemaName)
+	_, err = conn.Exec(ctx, "SELECT add_leave_management_tables($1)", schemaName)
 	if err != nil {
 		t.Fatalf("failed to add leave management tables: %v", err)
 	}
 
 	// Add VAT columns to journal_entry_lines (from migration 020)
-	_, err = pool.Exec(ctx, "SELECT add_vat_columns_to_journal_lines($1)", schemaName)
+	_, err = conn.Exec(ctx, "SELECT add_vat_columns_to_journal_lines($1)", schemaName)
 	if err != nil {
 		// This migration may not exist in all environments, log but don't fail
 		t.Logf("warning: VAT columns not added (migration may not exist): %v", err)
 	}
 
 	// Create default chart of accounts
-	_, err = pool.Exec(ctx, "SELECT create_default_chart_of_accounts($1, $2)", schemaName, tenantID)
+	_, err = conn.Exec(ctx, "SELECT create_default_chart_of_accounts($1, $2)", schemaName, tenantID)
 	if err != nil {
 		t.Fatalf("failed to create default chart of accounts: %v", err)
 	}
@@ -174,32 +193,19 @@ func CreateTestTenant(t *testing.T, pool *pgxpool.Pool) *TestTenant {
 func TeardownTestSchema(t *testing.T, pool *pgxpool.Pool, schemaName string) {
 	t.Helper()
 
-	// Serialize cleanup to prevent deadlocks between parallel test cleanups
-	cleanupMutex.Lock()
-	defer cleanupMutex.Unlock()
+	// Serialize cleanup to prevent deadlocks between parallel test cleanups.
+	schemaLifecycleMutex.Lock()
+	defer schemaLifecycleMutex.Unlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Acquire a dedicated connection from the pool to keep all operations on the same session.
-	// This is critical because pg_advisory_lock is session-level - it only protects operations
-	// on the same connection, not the entire pool.
-	conn, err := pool.Acquire(ctx)
+	conn, err := acquireSchemaLifecycleConn(ctx, pool)
 	if err != nil {
-		t.Logf("warning: failed to acquire connection for schema cleanup: %v", err)
+		t.Logf("warning: failed to acquire lifecycle lock for schema cleanup: %v", err)
 		return
 	}
-	defer conn.Release()
-
-	// Acquire PostgreSQL advisory lock to prevent database-level deadlocks
-	// This ensures only one cleanup operation runs at a time across all connections
-	_, err = conn.Exec(ctx, "SELECT pg_advisory_lock($1)", cleanupAdvisoryLockKey)
-	if err != nil {
-		t.Logf("warning: failed to acquire advisory lock for schema cleanup: %v", err)
-	}
-	defer func() {
-		_, _ = conn.Exec(ctx, "SELECT pg_advisory_unlock($1)", cleanupAdvisoryLockKey)
-	}()
+	defer releaseSchemaLifecycleConn(ctx, conn)
 
 	// Use CASCADE to drop all objects in the schema
 	_, err = conn.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schemaName))
@@ -212,32 +218,19 @@ func TeardownTestSchema(t *testing.T, pool *pgxpool.Pool, schemaName string) {
 func cleanupTestTenant(t *testing.T, pool *pgxpool.Pool, tenant *TestTenant) {
 	t.Helper()
 
-	// Serialize cleanup to prevent deadlocks between DROP SCHEMA and DELETE FROM tenants
-	cleanupMutex.Lock()
-	defer cleanupMutex.Unlock()
+	// Serialize cleanup to prevent deadlocks between DROP SCHEMA and DELETE FROM tenants.
+	schemaLifecycleMutex.Lock()
+	defer schemaLifecycleMutex.Unlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Acquire a dedicated connection from the pool to keep all operations on the same session.
-	// This is critical because pg_advisory_lock is session-level - it only protects operations
-	// on the same connection, not the entire pool.
-	conn, err := pool.Acquire(ctx)
+	conn, err := acquireSchemaLifecycleConn(ctx, pool)
 	if err != nil {
-		t.Logf("warning: failed to acquire connection for tenant cleanup: %v", err)
+		t.Logf("warning: failed to acquire lifecycle lock for tenant cleanup: %v", err)
 		return
 	}
-	defer conn.Release()
-
-	// Acquire PostgreSQL advisory lock to prevent database-level deadlocks
-	// This ensures only one cleanup operation runs at a time across all connections
-	_, err = conn.Exec(ctx, "SELECT pg_advisory_lock($1)", cleanupAdvisoryLockKey)
-	if err != nil {
-		t.Logf("warning: failed to acquire advisory lock for tenant cleanup: %v", err)
-	}
-	defer func() {
-		_, _ = conn.Exec(ctx, "SELECT pg_advisory_unlock($1)", cleanupAdvisoryLockKey)
-	}()
+	defer releaseSchemaLifecycleConn(ctx, conn)
 
 	// Reset search_path to ensure we're using public schema
 	_, _ = conn.Exec(ctx, "SET search_path TO public")
@@ -253,6 +246,25 @@ func cleanupTestTenant(t *testing.T, pool *pgxpool.Pool, tenant *TestTenant) {
 	if err != nil {
 		t.Logf("warning: failed to delete test tenant %s: %v", tenant.ID, err)
 	}
+}
+
+func acquireSchemaLifecycleConn(ctx context.Context, pool *pgxpool.Pool) (*pgxpool.Conn, error) {
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock($1)", schemaLifecycleAdvisoryLockKey); err != nil {
+		conn.Release()
+		return nil, err
+	}
+
+	return conn, nil
+}
+
+func releaseSchemaLifecycleConn(ctx context.Context, conn *pgxpool.Conn) {
+	_, _ = conn.Exec(ctx, "SELECT pg_advisory_unlock($1)", schemaLifecycleAdvisoryLockKey)
+	conn.Release()
 }
 
 // CreateTestUser creates a test user for integration tests.

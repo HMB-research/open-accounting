@@ -1,5 +1,11 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+
+const srcDir = fileURLToPath(new URL('./src', import.meta.url));
+const libDir = fileURLToPath(new URL('./src/lib', import.meta.url));
+const appMocksDir = fileURLToPath(new URL('./src/tests/mocks/app', import.meta.url));
+const envPublicMock = fileURLToPath(new URL('./src/tests/mocks/env/dynamic/public.ts', import.meta.url));
 
 export default defineConfig({
 	plugins: [svelte({ hot: !process.env.VITEST })],
@@ -22,10 +28,12 @@ export default defineConfig({
 		}
 	},
 	resolve: {
+		conditions: ['browser'],
 		alias: {
-			$lib: '/src/lib',
-			$app: '/src/tests/mocks/app',
-			'$env/dynamic/public': '/src/tests/mocks/env/dynamic/public'
+			$lib: libDir,
+			$app: appMocksDir,
+			'$env/dynamic/public': envPublicMock,
+			'/src': srcDir
 		}
 	}
 });

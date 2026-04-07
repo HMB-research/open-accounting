@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -18,10 +17,12 @@ import (
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/analytics"
 	"github.com/HMB-research/open-accounting/internal/apierror"
+	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
@@ -41,9 +42,11 @@ import (
 type Handlers struct {
 	pool                     *pgxpool.Pool
 	tokenService             *auth.TokenService
+	apiTokenService          *apitoken.Service
 	tenantService            *tenant.Service
 	accountingService        *accounting.Service
 	contactsService          *contacts.Service
+	documentsService         *documents.Service
 	invoicingService         *invoicing.Service
 	paymentsService          *payments.Service
 	pdfService               *pdf.Service
@@ -108,6 +111,11 @@ func (h *Handlers) TenantContext(next http.Handler) http.Handler {
 		tenantID := chi.URLParam(r, "tenantID")
 		if tenantID == "" {
 			respondError(w, http.StatusBadRequest, "Tenant ID required")
+			return
+		}
+
+		if claims.TokenKind == auth.TokenKindAPIToken && claims.TenantID != "" && claims.TenantID != tenantID {
+			respondError(w, http.StatusForbidden, "API token is scoped to a different tenant")
 			return
 		}
 
@@ -479,7 +487,14 @@ func (h *Handlers) UpdateTenant(w http.ResponseWriter, r *http.Request) {
 
 	t, err := h.tenantService.UpdateTenant(r.Context(), tenantID, &req)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		switch {
+		case strings.Contains(err.Error(), "tenant not found"):
+			respondError(w, http.StatusNotFound, "Tenant not found")
+		case strings.Contains(err.Error(), "period lock must be managed through close or reopen actions"):
+			respondError(w, http.StatusBadRequest, err.Error())
+		default:
+			respondError(w, http.StatusInternalServerError, err.Error())
+		}
 		return
 	}
 
@@ -585,6 +600,107 @@ func (h *Handlers) CreateAccount(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, account)
 }
 
+// ImportAccounts imports accounts from CSV data.
+// @Summary Import accounts
+// @Description Import chart of accounts rows from CSV data and skip duplicate or invalid rows
+// @Tags Accounts
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body accounting.ImportAccountsRequest true "CSV import payload"
+// @Success 200 {object} accounting.ImportAccountsResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/accounts/import [post]
+func (h *Handlers) ImportAccounts(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req accounting.ImportAccountsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+
+	if req.FileName == "" {
+		req.FileName = "accounts_import.csv"
+	}
+
+	result, err := h.accountingService.ImportAccountsCSV(r.Context(), schemaName, tenantID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// ImportOpeningBalances imports opening balances from CSV and posts them as a journal entry.
+// @Summary Import opening balances
+// @Description Import opening balances from CSV data, create a journal entry, and post it immediately
+// @Tags Journal Entries
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body accounting.ImportOpeningBalancesRequest true "Opening-balance CSV payload"
+// @Success 200 {object} accounting.ImportOpeningBalancesResult
+// @Failure 400 {object} object{error=string}
+// @Failure 401 {object} object{error=string}
+// @Router /tenants/{tenantID}/journal-entries/import-opening-balances [post]
+func (h *Handlers) ImportOpeningBalances(w http.ResponseWriter, r *http.Request) {
+	claims, ok := auth.GetClaims(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Not authenticated")
+		return
+	}
+
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req accounting.ImportOpeningBalancesRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+	if strings.TrimSpace(req.EntryDate) == "" {
+		respondError(w, http.StatusBadRequest, "entry_date is required")
+		return
+	}
+
+	entryDate, err := time.Parse("2006-01-02", req.EntryDate)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "entry_date must be in YYYY-MM-DD format")
+		return
+	}
+	if h.rejectLockedPeriod(w, r.Context(), tenantID, entryDate) {
+		return
+	}
+
+	req.UserID = claims.UserID
+	if req.FileName == "" {
+		req.FileName = "opening_balances.csv"
+	}
+
+	result, err := h.accountingService.ImportOpeningBalancesCSV(r.Context(), schemaName, tenantID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // GetAccount returns an account by ID
 // @Summary Get account
 // @Description Get account details by ID
@@ -608,6 +724,40 @@ func (h *Handlers) GetAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, account)
+}
+
+// ListJournalEntries returns recent journal entries.
+// @Summary List journal entries
+// @Description List recent journal entries for a tenant
+// @Tags Journal Entries
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param limit query int false "Max entries to return" default(50)
+// @Success 200 {array} accounting.JournalEntry
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/journal-entries [get]
+func (h *Handlers) ListJournalEntries(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	limit := 50
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed <= 0 || parsed > 200 {
+			respondError(w, http.StatusBadRequest, "Limit must be between 1 and 200")
+			return
+		}
+		limit = parsed
+	}
+
+	entries, err := h.accountingService.ListJournalEntries(r.Context(), schemaName, tenantID, limit)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, entries)
 }
 
 // GetJournalEntry returns a journal entry by ID
@@ -669,6 +819,10 @@ func (h *Handlers) CreateJournalEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.rejectLockedPeriod(w, r.Context(), tenantID, req.EntryDate) {
+		return
+	}
+
 	entry, err := h.accountingService.CreateJournalEntry(r.Context(), schemaName, tenantID, &req)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
@@ -695,7 +849,17 @@ func (h *Handlers) PostJournalEntry(w http.ResponseWriter, r *http.Request) {
 	entryID := chi.URLParam(r, "entryID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
 
-	err := h.accountingService.PostJournalEntry(r.Context(), schemaName, tenantID, entryID, claims.UserID)
+	entry, err := h.accountingService.GetJournalEntry(r.Context(), schemaName, tenantID, entryID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if h.rejectLockedPeriod(w, r.Context(), tenantID, entry.EntryDate) {
+		return
+	}
+
+	err = h.accountingService.PostJournalEntry(r.Context(), schemaName, tenantID, entryID, claims.UserID)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -733,6 +897,16 @@ func (h *Handlers) VoidJournalEntry(w http.ResponseWriter, r *http.Request) {
 
 	if req.Reason == "" {
 		respondError(w, http.StatusBadRequest, "Void reason is required")
+		return
+	}
+
+	entry, err := h.accountingService.GetJournalEntry(r.Context(), schemaName, tenantID, entryID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if h.rejectLockedPeriod(w, r.Context(), tenantID, entry.EntryDate) {
 		return
 	}
 
@@ -1230,401 +1404,6 @@ func (h *Handlers) GetInvoiceReminderHistory(w http.ResponseWriter, r *http.Requ
 func init() {
 	// Register decimal type for proper JSON encoding
 	decimal.MarshalJSONWithoutQuotes = true
-}
-
-// HandleGenerateKMD generates a KMD declaration for a period
-// @Summary Generate KMD declaration
-// @Description Generate an Estonian VAT declaration (KMD) for a specific period
-// @Tags Tax
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param tenantID path string true "Tenant ID"
-// @Param request body tax.CreateKMDRequest true "Period to generate"
-// @Success 200 {object} tax.KMDDeclaration
-// @Failure 400 {object} object{error=string}
-// @Failure 500 {object} object{error=string}
-// @Router /tenants/{tenantID}/tax/kmd [post]
-func (h *Handlers) HandleGenerateKMD(w http.ResponseWriter, r *http.Request) {
-	tenantID := chi.URLParam(r, "tenantID")
-
-	var req tax.CreateKMDRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "Invalid request body")
-		return
-	}
-
-	schemaName := h.getSchemaName(r.Context(), tenantID)
-
-	decl, err := h.taxService.GenerateKMD(r.Context(), tenantID, schemaName, &req)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	respondJSON(w, http.StatusOK, decl)
-}
-
-// HandleListKMD lists all KMD declarations for a tenant
-// @Summary List KMD declarations
-// @Description Get all KMD declarations for a tenant
-// @Tags Tax
-// @Produce json
-// @Security BearerAuth
-// @Param tenantID path string true "Tenant ID"
-// @Success 200 {array} tax.KMDDeclaration
-// @Failure 500 {object} object{error=string}
-// @Router /tenants/{tenantID}/tax/kmd [get]
-func (h *Handlers) HandleListKMD(w http.ResponseWriter, r *http.Request) {
-	tenantID := chi.URLParam(r, "tenantID")
-	schemaName := h.getSchemaName(r.Context(), tenantID)
-
-	declarations, err := h.taxService.ListKMD(r.Context(), tenantID, schemaName)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	respondJSON(w, http.StatusOK, declarations)
-}
-
-// HandleExportKMD exports a KMD declaration to XML
-// @Summary Export KMD to XML
-// @Description Export a KMD declaration to Estonian e-MTA XML format
-// @Tags Tax
-// @Produce application/xml
-// @Security BearerAuth
-// @Param tenantID path string true "Tenant ID"
-// @Param year path string true "Year"
-// @Param month path string true "Month"
-// @Success 200 {file} file "XML file"
-// @Failure 404 {object} object{error=string}
-// @Failure 500 {object} object{error=string}
-// @Router /tenants/{tenantID}/tax/kmd/{year}/{month}/xml [get]
-func (h *Handlers) HandleExportKMD(w http.ResponseWriter, r *http.Request) {
-	tenantID := chi.URLParam(r, "tenantID")
-	year := chi.URLParam(r, "year")
-	month := chi.URLParam(r, "month")
-
-	// Get tenant settings for registration number
-	t, err := h.tenantService.GetTenant(r.Context(), tenantID)
-	if err != nil {
-		respondError(w, http.StatusNotFound, "Tenant not found")
-		return
-	}
-
-	schemaName := h.getSchemaName(r.Context(), tenantID)
-
-	// Get declaration
-	decl, err := h.taxService.GetKMD(r.Context(), tenantID, schemaName, year, month)
-	if err != nil {
-		respondError(w, http.StatusNotFound, "Declaration not found")
-		return
-	}
-
-	// Get registration number from tenant settings
-	regNr := t.Settings.RegCode
-
-	xml, err := tax.ExportKMDToXML(decl, regNr)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/xml")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=KMD_%s_%s.xml", year, month))
-	_, _ = w.Write(xml)
-}
-
-// DemoReset resets the demo database to initial state
-// @Summary Reset demo database
-// @Description Reset the demo database to initial state (requires DEMO_RESET_SECRET)
-// @Tags Demo
-// @Accept json
-// @Produce json
-// @Param X-Demo-Secret header string true "Demo reset secret key"
-// @Success 200 {object} object{status=string,message=string}
-// @Failure 401 {object} object{error=string}
-// @Failure 403 {object} object{error=string}
-// @Failure 500 {object} object{error=string}
-// @Router /api/demo/reset [post]
-func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
-	log.Info().Msg("Demo reset requested")
-
-	// Check if demo mode is enabled
-	if os.Getenv("DEMO_MODE") != "true" {
-		log.Warn().Msg("Demo reset rejected: DEMO_MODE not enabled")
-		respondError(w, http.StatusForbidden, "Demo mode is not enabled")
-		return
-	}
-
-	// Validate secret key
-	secret := os.Getenv("DEMO_RESET_SECRET")
-	if secret == "" {
-		log.Warn().Msg("Demo reset rejected: DEMO_RESET_SECRET not configured")
-		respondError(w, http.StatusForbidden, "Demo reset not configured")
-		return
-	}
-
-	providedSecret := r.Header.Get("X-Demo-Secret")
-	if providedSecret == "" {
-		providedSecret = r.URL.Query().Get("secret")
-	}
-
-	if providedSecret != secret {
-		log.Warn().Msg("Demo reset rejected: invalid secret")
-		respondError(w, http.StatusUnauthorized, "Invalid or missing secret key")
-		return
-	}
-
-	ctx := r.Context()
-
-	// Demo identifiers for 4 demo users:
-	// - demo1: Reserved for end users (README documentation)
-	// - demo2, demo3, demo4: Used by E2E tests (3 parallel workers)
-	allDemoUsers := []struct {
-		email  string
-		slug   string
-		schema string
-	}{
-		{"demo1@example.com", "demo1", "tenant_demo1"},
-		{"demo2@example.com", "demo2", "tenant_demo2"},
-		{"demo3@example.com", "demo3", "tenant_demo3"},
-		{"demo4@example.com", "demo4", "tenant_demo4"},
-	}
-
-	// Parse optional user parameter for single-user reset
-	var demoUsers []struct {
-		email  string
-		slug   string
-		schema string
-	}
-	var userNums []int // Track which user numbers to seed
-
-	userParam := r.URL.Query().Get("user")
-	if userParam != "" {
-		userNum, err := strconv.Atoi(userParam)
-		if err != nil || userNum < 1 || userNum > len(allDemoUsers) {
-			log.Warn().Str("user", userParam).Msg("Demo reset rejected: invalid user parameter")
-			respondError(w, http.StatusBadRequest, "Invalid user parameter. Must be 1, 2, 3, or 4")
-			return
-		}
-		demoUsers = []struct {
-			email  string
-			slug   string
-			schema string
-		}{allDemoUsers[userNum-1]}
-		userNums = []int{userNum}
-		log.Info().Int("user", userNum).Msg("Demo reset: resetting single user")
-	} else {
-		demoUsers = allDemoUsers
-		userNums = []int{1, 2, 3, 4}
-		log.Info().Msg("Demo reset: resetting all users")
-	}
-
-	// Drop demo tenant schemas
-	for _, demo := range demoUsers {
-		log.Info().Str("schema", demo.schema).Msg("Demo reset: dropping tenant schema")
-		_, err := h.pool.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", demo.schema))
-		if err != nil {
-			log.Error().Err(err).Str("schema", demo.schema).Msg("Demo reset failed: drop schema")
-			respondError(w, http.StatusInternalServerError, "Failed to drop tenant schema: "+err.Error())
-			return
-		}
-	}
-
-	// Delete demo data from public tables
-	for _, demo := range demoUsers {
-		log.Info().Str("slug", demo.slug).Msg("Demo reset: cleaning tenant_users by slug")
-		_, err := h.pool.Exec(ctx, "DELETE FROM tenant_users WHERE tenant_id IN (SELECT id FROM tenants WHERE slug = $1)", demo.slug)
-		if err != nil {
-			log.Error().Err(err).Msg("Demo reset failed: clean tenant_users")
-			respondError(w, http.StatusInternalServerError, "Failed to clean tenant_users: "+err.Error())
-			return
-		}
-
-		log.Info().Str("slug", demo.slug).Msg("Demo reset: cleaning tenants by slug")
-		_, err = h.pool.Exec(ctx, "DELETE FROM tenants WHERE slug = $1", demo.slug)
-		if err != nil {
-			log.Error().Err(err).Msg("Demo reset failed: clean tenants")
-			respondError(w, http.StatusInternalServerError, "Failed to clean tenants: "+err.Error())
-			return
-		}
-
-		log.Info().Str("email", demo.email).Msg("Demo reset: cleaning users by email")
-		_, err = h.pool.Exec(ctx, "DELETE FROM users WHERE email = $1", demo.email)
-		if err != nil {
-			log.Error().Err(err).Msg("Demo reset failed: clean users")
-			respondError(w, http.StatusInternalServerError, "Failed to clean users: "+err.Error())
-			return
-		}
-	}
-
-	log.Info().Ints("users", userNums).Msg("Demo reset: seeding demo data")
-	// Re-seed demo data by executing the seed SQL only for the users being reset
-	// This prevents race conditions when single-user reset runs while other users are in use
-	seedSQL := getDemoSeedSQLForUsers(userNums)
-	_, err := h.pool.Exec(ctx, seedSQL)
-	if err != nil {
-		log.Error().Err(err).Str("sql_preview", seedSQL[:500]).Msg("Demo reset failed: seed data")
-		respondError(w, http.StatusInternalServerError, "Failed to seed demo data: "+err.Error())
-		return
-	}
-
-	log.Info().Msg("Demo reset completed successfully")
-	respondJSON(w, http.StatusOK, map[string]string{
-		"status":  "success",
-		"message": "Demo database reset successfully",
-	})
-}
-
-// DemoStatusResponse represents the demo data status
-type DemoStatusResponse struct {
-	User              int          `json:"user"`
-	Accounts          EntityStatus `json:"accounts"`
-	Contacts          EntityStatus `json:"contacts"`
-	Invoices          EntityStatus `json:"invoices"`
-	Employees         EntityStatus `json:"employees"`
-	Payments          EntityStatus `json:"payments"`
-	JournalEntries    EntityStatus `json:"journalEntries"`
-	BankAccounts      EntityStatus `json:"bankAccounts"`
-	RecurringInvoices EntityStatus `json:"recurringInvoices"`
-	PayrollRuns       EntityStatus `json:"payrollRuns"`
-	TsdDeclarations   EntityStatus `json:"tsdDeclarations"`
-}
-
-// EntityStatus represents count and key identifiers for an entity type
-type EntityStatus struct {
-	Count int      `json:"count"`
-	Keys  []string `json:"keys"`
-}
-
-// DemoStatus returns counts and key identifiers for demo data verification
-// @Summary Get demo data status
-// @Description Get counts and key identifiers for demo data verification
-// @Tags Demo
-// @Produce json
-// @Param user query int true "Demo user number (1-3)"
-// @Param X-Demo-Secret header string true "Demo secret key"
-// @Success 200 {object} DemoStatusResponse
-// @Failure 400 {object} object{error=string}
-// @Failure 401 {object} object{error=string}
-// @Failure 403 {object} object{error=string}
-// @Router /api/demo/status [get]
-func (h *Handlers) DemoStatus(w http.ResponseWriter, r *http.Request) {
-	// Check if demo mode is enabled
-	if os.Getenv("DEMO_MODE") != "true" {
-		respondError(w, http.StatusForbidden, "Demo mode is not enabled")
-		return
-	}
-
-	// Validate secret key
-	secret := os.Getenv("DEMO_RESET_SECRET")
-	if secret == "" {
-		respondError(w, http.StatusForbidden, "Demo status not configured")
-		return
-	}
-
-	providedSecret := r.Header.Get("X-Demo-Secret")
-	if providedSecret != secret {
-		respondError(w, http.StatusUnauthorized, "Invalid or missing secret key")
-		return
-	}
-
-	// Parse required user parameter
-	userParam := r.URL.Query().Get("user")
-	if userParam == "" {
-		respondError(w, http.StatusBadRequest, "User parameter is required")
-		return
-	}
-
-	userNum, err := strconv.Atoi(userParam)
-	if err != nil || userNum < 1 || userNum > 4 {
-		respondError(w, http.StatusBadRequest, "Invalid user parameter. Must be 1, 2, 3, or 4")
-		return
-	}
-
-	schema := fmt.Sprintf("tenant_demo%d", userNum)
-	ctx := r.Context()
-
-	response := DemoStatusResponse{User: userNum}
-
-	// Query each entity count and keys
-	response.Accounts = h.getEntityStatus(ctx, schema, "accounts", "name")
-	response.Contacts = h.getEntityStatus(ctx, schema, "contacts", "name")
-	response.Invoices = h.getEntityStatus(ctx, schema, "invoices", "invoice_number")
-	response.Employees = h.getEntityStatusConcat(ctx, schema, "employees", "first_name", "last_name")
-	response.Payments = h.getEntityStatus(ctx, schema, "payments", "payment_number")
-	response.JournalEntries = h.getEntityStatus(ctx, schema, "journal_entries", "entry_number")
-	response.BankAccounts = h.getEntityStatus(ctx, schema, "bank_accounts", "name")
-	response.RecurringInvoices = h.getEntityStatus(ctx, schema, "recurring_invoices", "name")
-	response.PayrollRuns = h.getEntityStatusPeriod(ctx, schema, "payroll_runs")
-	response.TsdDeclarations = h.getEntityStatusPeriod(ctx, schema, "tsd_declarations")
-
-	respondJSON(w, http.StatusOK, response)
-}
-
-func (h *Handlers) getEntityStatus(ctx context.Context, schema, table, keyColumn string) EntityStatus {
-	var count int
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", schema, table)
-	_ = h.pool.QueryRow(ctx, query).Scan(&count)
-
-	var keys []string
-	keysQuery := fmt.Sprintf("SELECT %s FROM %s.%s ORDER BY %s LIMIT 10", keyColumn, schema, table, keyColumn)
-	rows, _ := h.pool.Query(ctx, keysQuery)
-	if rows != nil {
-		defer rows.Close()
-		for rows.Next() {
-			var key string
-			if rows.Scan(&key) == nil {
-				keys = append(keys, key)
-			}
-		}
-	}
-
-	return EntityStatus{Count: count, Keys: keys}
-}
-
-func (h *Handlers) getEntityStatusConcat(ctx context.Context, schema, table, col1, col2 string) EntityStatus {
-	var count int
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", schema, table)
-	_ = h.pool.QueryRow(ctx, query).Scan(&count)
-
-	var keys []string
-	keysQuery := fmt.Sprintf("SELECT %s || ' ' || %s FROM %s.%s ORDER BY %s LIMIT 10", col1, col2, schema, table, col1)
-	rows, _ := h.pool.Query(ctx, keysQuery)
-	if rows != nil {
-		defer rows.Close()
-		for rows.Next() {
-			var key string
-			if rows.Scan(&key) == nil {
-				keys = append(keys, key)
-			}
-		}
-	}
-
-	return EntityStatus{Count: count, Keys: keys}
-}
-
-func (h *Handlers) getEntityStatusPeriod(ctx context.Context, schema, table string) EntityStatus {
-	var count int
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", schema, table)
-	_ = h.pool.QueryRow(ctx, query).Scan(&count)
-
-	var keys []string
-	keysQuery := fmt.Sprintf("SELECT period_year || '-' || LPAD(period_month::text, 2, '0') FROM %s.%s ORDER BY period_year, period_month LIMIT 10", schema, table)
-	rows, _ := h.pool.Query(ctx, keysQuery)
-	if rows != nil {
-		defer rows.Close()
-		for rows.Next() {
-			var key string
-			if rows.Scan(&key) == nil {
-				keys = append(keys, key)
-			}
-		}
-	}
-
-	return EntityStatus{Count: count, Keys: keys}
 }
 
 // getDemoSeedSQLForUsers returns the SQL to seed specific demo users
