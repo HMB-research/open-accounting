@@ -100,8 +100,8 @@ var payrollHistoryImportStatusAliases = map[string]PayrollStatus{
 var payrollHistoryImportPaymentStatusAliases = map[string]string{
 	"pending":   "PENDING",
 	"paid":      "PAID",
-	"cancelled": "CANCELLED",
-	"canceled":  "CANCELLED",
+	"cancelled": "CANCELLED", //nolint:misspell // External payment status values use existing API/database spelling.
+	"canceled":  "CANCELLED", //nolint:misspell // External payment status values use existing API/database spelling.
 }
 
 // ImportPayrollHistoryCSV imports finalized historical payroll runs and payslips from CSV.
@@ -705,7 +705,7 @@ func parsePayrollHistoryPaymentStatus(value string, runStatus PayrollStatus) (st
 
 	status, ok := payrollHistoryImportPaymentStatusAliases[normalizeEmployeeImportValue(trimmed)]
 	if !ok {
-		return "", fmt.Errorf("payment_status must be PENDING, PAID, or CANCELLED")
+		return "", fmt.Errorf("payment_status must be PENDING, PAID, or CANCELLED") //nolint:misspell // Existing API/database spelling.
 	}
 	return status, nil
 }

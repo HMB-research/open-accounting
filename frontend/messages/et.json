@@ -896,6 +896,7 @@
   "employees_noMatches": "Praeguse otsinguga ei leitud ühtegi töötajat.",
   "payroll_title": "Palgaarvestused",
   "payroll_newRun": "Uus palgaarvestus",
+  "payroll_createFirstRun": "Loo esimene palgaarvestus",
   "payroll_period": "Periood",
   "payroll_calculate": "Arvuta",
   "payroll_approve": "Kinnita",
