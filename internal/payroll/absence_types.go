@@ -145,3 +145,29 @@ type UpdateLeaveBalanceRequest struct {
 	CarryoverDays *decimal.Decimal `json:"carryover_days,omitempty"`
 	Notes         string           `json:"notes,omitempty"`
 }
+
+// ImportLeaveBalancesRequest contains CSV payload for leave balance migration.
+type ImportLeaveBalancesRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+}
+
+// ImportLeaveBalancesResult summarizes a leave balance import.
+type ImportLeaveBalancesResult struct {
+	FileName             string                       `json:"file_name,omitempty"`
+	RowsProcessed        int                          `json:"rows_processed"`
+	LeaveBalancesCreated int                          `json:"leave_balances_created"`
+	LeaveBalancesUpdated int                          `json:"leave_balances_updated"`
+	RowsSkipped          int                          `json:"rows_skipped"`
+	Errors               []ImportLeaveBalanceRowError `json:"errors,omitempty"`
+}
+
+// ImportLeaveBalanceRowError describes a row-level leave balance import failure.
+type ImportLeaveBalanceRowError struct {
+	Row             int    `json:"row"`
+	Year            int    `json:"year,omitempty"`
+	EmployeeName    string `json:"employee_name,omitempty"`
+	EmployeeNumber  string `json:"employee_number,omitempty"`
+	AbsenceTypeCode string `json:"absence_type_code,omitempty"`
+	Message         string `json:"message"`
+}

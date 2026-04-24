@@ -121,6 +121,18 @@ go run ./cmd/oa employees create \
 go run ./cmd/oa employees import --file ./employees.csv
 ```
 
+## Payroll migration imports
+
+```bash
+go run ./cmd/oa payroll import-history --file ./payroll-history.csv
+go run ./cmd/oa payroll import-history --file ./payroll-history.csv --json
+go run ./cmd/oa payroll import-leave-balances --file ./leave-balances.csv
+```
+
+Import employees first so payroll history rows can match existing employees by `employee_number`, `personal_code`, `email`, or `first_name` + `last_name`. Existing payroll periods are skipped rather than overwritten; use `--json` when you need row-level import errors for automation.
+
+Leave balance imports create or update balances by employee + absence type + year. Match absence types with `absence_type_code`, `absence_type`, or `absence_type_id`.
+
 ## Invoices
 
 ```bash
@@ -188,6 +200,22 @@ EMP-001,Mari,Maasikas,49001010001,mari@example.com,2026-01-15,FULL_TIME,true,700
 EMP-002,Juhan,Tamm,49001010002,juhan@example.com,2026-02-01,PART_TIME,true,700.00,0.02,,
 ```
 
+### Payroll history
+
+```csv
+period_year,period_month,status,payment_date,notes,employee_number,gross_salary,income_tax,unemployment_insurance_employee,funded_pension,other_deductions,net_salary,social_tax,unemployment_insurance_employer,total_employer_cost,basic_exemption_applied,payment_status,paid_at
+2025,12,PAID,2026-01-05,Imported December payroll,EMP-001,3200.00,550.00,51.20,64.00,0.00,2534.80,1056.00,25.60,4281.60,50.00,PAID,2026-01-05
+2025,12,PAID,2026-01-05,Imported December payroll,EMP-002,2800.00,420.00,44.80,56.00,10.00,2269.20,924.00,22.40,3746.40,40.00,PAID,2026-01-05
+```
+
+### Leave balances
+
+```csv
+year,employee_number,absence_type_code,entitled_days,carryover_days,used_days,pending_days,notes
+2025,EMP-001,ANNUAL_LEAVE,28,2,4,0,Imported leave balance
+2025,EMP-002,ANNUAL_LEAVE,28,0,10,1,Imported leave balance
+```
+
 ### Opening balances
 
 ```csv
@@ -206,6 +234,8 @@ export OA_API_TOKEN=oa_your_token_here
 go run ./cmd/oa accounts list --json
 go run ./cmd/oa contacts create --name "Scripted Contact" --type CUSTOMER
 go run ./cmd/oa employees import --file ./employees.csv
+go run ./cmd/oa payroll import-history --file ./payroll-history.csv
+go run ./cmd/oa payroll import-leave-balances --file ./leave-balances.csv
 go run ./cmd/oa documents upload --entity-type asset --entity-id <asset-id> --file ./warranty.pdf --document-type asset_record
 ```
 

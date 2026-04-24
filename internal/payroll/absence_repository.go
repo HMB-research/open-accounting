@@ -7,6 +7,9 @@ import (
 
 // AbsenceRepository defines the contract for absence/leave data access
 type AbsenceRepository interface {
+	// Employee lookup operations
+	ListEmployees(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]Employee, error)
+
 	// Absence type operations
 	ListAbsenceTypes(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]AbsenceType, error)
 	GetAbsenceType(ctx context.Context, schemaName, tenantID, typeID string) (*AbsenceType, error)
@@ -42,6 +45,11 @@ type AbsencePostgresRepository struct {
 // NewAbsencePostgresRepository creates a new PostgreSQL absence repository
 func NewAbsencePostgresRepository(repo *PostgresRepository) *AbsencePostgresRepository {
 	return &AbsencePostgresRepository{repo: repo}
+}
+
+// ListEmployees returns employees for a tenant.
+func (r *AbsencePostgresRepository) ListEmployees(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]Employee, error) {
+	return r.repo.ListEmployees(ctx, schemaName, tenantID, activeOnly)
 }
 
 // ListAbsenceTypes returns all absence types for a tenant
@@ -362,10 +370,12 @@ func nullableUUID(value string) interface{} {
 
 // MockAbsenceRepository implements AbsenceRepository for testing
 type MockAbsenceRepository struct {
+	Employees     map[string]*Employee
 	AbsenceTypes  map[string]*AbsenceType
 	LeaveBalances map[string]*LeaveBalance
 	LeaveRecords  map[string]*LeaveRecord
 
+	ListEmployeesErr        error
 	ListAbsenceTypesErr     error
 	GetAbsenceTypeErr       error
 	GetAbsenceTypeByCodeErr error
@@ -382,10 +392,26 @@ type MockAbsenceRepository struct {
 // NewMockAbsenceRepository creates a new mock absence repository
 func NewMockAbsenceRepository() *MockAbsenceRepository {
 	return &MockAbsenceRepository{
+		Employees:     make(map[string]*Employee),
 		AbsenceTypes:  make(map[string]*AbsenceType),
 		LeaveBalances: make(map[string]*LeaveBalance),
 		LeaveRecords:  make(map[string]*LeaveRecord),
 	}
+}
+
+func (m *MockAbsenceRepository) ListEmployees(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]Employee, error) {
+	if m.ListEmployeesErr != nil {
+		return nil, m.ListEmployeesErr
+	}
+	employees := []Employee{}
+	for _, emp := range m.Employees {
+		if emp.TenantID == tenantID {
+			if !activeOnly || emp.IsActive {
+				employees = append(employees, *emp)
+			}
+		}
+	}
+	return employees, nil
 }
 
 func (m *MockAbsenceRepository) ListAbsenceTypes(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]AbsenceType, error) {

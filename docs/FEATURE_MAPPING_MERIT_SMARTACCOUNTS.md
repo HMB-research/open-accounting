@@ -2,7 +2,7 @@
 
 This document maps features from [Merit Aktiva](https://www.merit.ee/en/) and [SmartAccounts](https://www.smartaccounts.eu/en/) to Open Accounting, identifying implementation status, gaps, and blockers.
 
-This is a competitive-gap document, not the authoritative current-state status page. For the verified repository baseline as of 2026-03-12, use [DEVELOPMENT_STATUS.md](./DEVELOPMENT_STATUS.md). Statuses here evaluate parity depth, not just whether some feature exists in code.
+This is a competitive-gap document, not the authoritative current-state status page. For the verified repository baseline as of 2026-04-24, use [DEVELOPMENT_STATUS.md](./DEVELOPMENT_STATUS.md). Statuses here evaluate parity depth, not just whether some feature exists in code.
 
 ## Executive Summary
 
@@ -133,6 +133,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Unemployment insurance | ✅ | ✅ | ✅ | Implemented |
 | Pension contributions | ✅ | ✅ | ✅ | Implemented |
 | Payslip generation | ✅ | ✅ | ⚠️ | Partial |
+| Historical payroll and leave-balance import | ✅ | ✅ | ⚠️ | API/UI/CLI import exists; broader cutover still partial |
 | Bulk payroll processing | ✅ | ✅ | ❌ | **Gap** |
 
 ### 4.3 Tax Declarations
@@ -211,7 +212,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 |---------|-------|---------------|-----------------|--------|
 | CSV export | ✅ | ✅ | ✅ | Implemented |
 | Excel export | ✅ | ✅ | ⚠️ | Partial |
-| Data migration tools | ✅ | ✅ | ❌ | **Gap** |
+| Data migration tools | ✅ | ✅ | ⚠️ | Partial: CSV imports cover setup data, invoices, opening balances, employees, finalized payroll history, and leave balances; full incumbent-system migration is still incomplete |
 
 ---
 

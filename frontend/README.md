@@ -46,7 +46,7 @@ bun run dev
 frontend/
 ├── src/
 │   ├── lib/
-│   │   ├── api.ts              # API client (191 methods, 177 types)
+│   │   ├── api.ts              # Typed API client and shared API types
 │   │   ├── components/         # Reusable UI components
 │   │   │   ├── StatusBadge.svelte      # Generic status badge
 │   │   │   ├── TenantSelector.svelte   # Multi-tenant selector
