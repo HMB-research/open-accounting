@@ -677,6 +677,88 @@ Supported header aliases include `employee_number` / `employee_no`, `personal_co
 
 The importer creates employee records first and, when `base_salary` is provided, also creates a recurring base salary component in the same request.
 
+### Import Historical Payroll
+
+```http
+POST /tenants/{tenantId}/payroll-runs/import-history
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "file_name": "payroll-history.csv",
+  "csv_content": "period_year,period_month,status,payment_date,notes,employee_number,gross_salary,income_tax,unemployment_insurance_employee,funded_pension,other_deductions,net_salary,social_tax,unemployment_insurance_employer,total_employer_cost,basic_exemption_applied,payment_status,paid_at\n2025,12,PAID,2026-01-05,Imported December payroll,EMP-001,3200.00,550.00,51.20,64.00,0.00,2534.80,1056.00,25.60,4281.60,50.00,PAID,2026-01-05\n"
+}
+```
+
+Each CSV row represents one employee payslip. Rows are grouped into a single payroll run by `period_year` + `period_month`.
+
+Required columns:
+- `period_year`
+- `period_month`
+- `gross_salary`
+- at least one employee identifier per row
+
+Employee matching supports:
+- `employee_number`
+- `personal_code`
+- `email`
+- `first_name` + `last_name`
+
+Supported statuses:
+- `APPROVED`
+- `PAID`
+- `DECLARED`
+
+`status` defaults to `PAID` when omitted. `payment_status` defaults to `PENDING` for `APPROVED` runs and `PAID` for `PAID`/`DECLARED` runs.
+
+If `taxable_income`, `net_salary`, or `total_employer_cost` is omitted, the importer derives it from the supplied gross salary and deduction/tax columns. Existing payroll periods are not overwritten; rows for periods that already have payroll runs are skipped and returned as row errors.
+
+This importer records historical payroll runs and payslips only. It does not import leave balances, tax declaration submission history, accounting journal entries, or incumbent-system audit logs.
+
+**Response (200 OK):**
+```json
+{
+  "file_name": "payroll-history.csv",
+  "rows_processed": 1,
+  "payroll_runs_created": 1,
+  "payslips_created": 1,
+  "rows_skipped": 0
+}
+```
+
+### Import Leave Balances
+
+```http
+POST /tenants/{tenantId}/leave-balances/import
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "file_name": "leave-balances.csv",
+  "csv_content": "year,employee_number,absence_type_code,entitled_days,carryover_days,used_days,pending_days,notes\n2025,EMP-001,ANNUAL_LEAVE,28,2,4,0,Imported leave balance\n"
+}
+```
+
+The importer creates or updates leave balances by employee + absence type + year.
+
+Required columns:
+- `year`
+- one absence type identifier: `absence_type_code`, `absence_type`, or `absence_type_id`
+- at least one employee identifier per row
+
+Employee matching supports the same identifiers as historical payroll import. Absence types can be matched by code, name, Estonian name, or id. If `entitled_days` is omitted, the absence type default is used. `carryover_days`, `used_days`, and `pending_days` default to zero.
+
+**Response (200 OK):**
+```json
+{
+  "file_name": "leave-balances.csv",
+  "rows_processed": 1,
+  "leave_balances_created": 1,
+  "leave_balances_updated": 0,
+  "rows_skipped": 0
+}
+```
+
 ---
 
 ## Invoices

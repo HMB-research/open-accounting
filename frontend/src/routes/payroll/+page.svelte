@@ -1,6 +1,13 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import { page } from '$app/stores';
-	import { api, type PayrollRun, type Payslip, type PayrollStatus } from '$lib/api';
+	import {
+		api,
+		type ImportPayrollHistoryResult,
+		type PayrollRun,
+		type Payslip,
+		type PayrollStatus
+	} from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
 	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
@@ -9,10 +16,16 @@
 	let isLoading = $state(true);
 	let error = $state('');
 	let showCreateRun = $state(false);
+	let showImportHistory = $state(false);
 	let showPayslips = $state(false);
 	let selectedRun = $state<PayrollRun | null>(null);
 	let payslips = $state<Payslip[]>([]);
 	let filterYear = $state(new Date().getFullYear());
+	let importError = $state('');
+	let importFileName = $state('');
+	let importCSVContent = $state('');
+	let isImporting = $state(false);
+	let importResult = $state<ImportPayrollHistoryResult | null>(null);
 
 	// New payroll run form
 	let newYear = $state(new Date().getFullYear());
@@ -82,11 +95,92 @@
 		}
 	}
 
+	function openImportHistory() {
+		showImportHistory = true;
+		importError = '';
+		importFileName = '';
+		importCSVContent = '';
+		importResult = null;
+	}
+
+	function closeImportHistory() {
+		showImportHistory = false;
+		importError = '';
+		importFileName = '';
+		importCSVContent = '';
+		importResult = null;
+	}
+
 	function resetForm() {
 		newYear = new Date().getFullYear();
 		newMonth = new Date().getMonth() + 1;
 		newPaymentDate = '';
 		newNotes = '';
+	}
+
+	async function handleImportFileChange(event: Event) {
+		const input = event.currentTarget as HTMLInputElement | null;
+		const file = input?.files?.[0];
+
+		importResult = null;
+
+		if (!file) {
+			importFileName = '';
+			importCSVContent = '';
+			return;
+		}
+
+		importFileName = file.name;
+		importCSVContent = await file.text();
+		importError = '';
+	}
+
+	async function submitImportHistory(event: Event) {
+		event.preventDefault();
+		const tenantId = $page.url.searchParams.get('tenant');
+		if (!tenantId) return;
+
+		if (!importCSVContent.trim()) {
+			importError = m.payroll_importFileRequired();
+			return;
+		}
+
+		isImporting = true;
+		importError = '';
+
+		try {
+			importResult = await api.importPayrollHistory(tenantId, {
+				file_name: importFileName || undefined,
+				csv_content: importCSVContent
+			});
+
+			if (importResult.payroll_runs_created > 0) {
+				await loadPayrollRuns(tenantId);
+			}
+		} catch (err) {
+			importError = err instanceof Error ? err.message : m.payroll_failedToImportHistory();
+		} finally {
+			isImporting = false;
+		}
+	}
+
+	function downloadHistoryTemplate() {
+		if (!browser) return;
+
+		const template = [
+			'period_year,period_month,status,payment_date,notes,employee_number,gross_salary,income_tax,unemployment_insurance_employee,funded_pension,other_deductions,net_salary,social_tax,unemployment_insurance_employer,total_employer_cost,basic_exemption_applied,payment_status,paid_at',
+			'2025,12,PAID,2026-01-05,Imported historical payroll,EMP-100,3200.00,550.00,51.20,64.00,0.00,2534.80,1056.00,25.60,4281.60,50.00,PAID,2026-01-05'
+		].join('\n');
+
+		const blob = new Blob([template], { type: 'text/csv;charset=utf-8' });
+		const url = window.URL.createObjectURL(blob);
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = 'payroll-history-import-template.csv';
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+		window.URL.revokeObjectURL(url);
 	}
 
 	async function calculatePayroll(run: PayrollRun) {
@@ -181,9 +275,14 @@
 <div class="container">
 	<div class="header">
 		<h1>{m.payroll_title()}</h1>
-		<button class="btn btn-primary" onclick={() => (showCreateRun = true)}>
-			+ {m.payroll_newRun()}
-		</button>
+		<div class="header-actions">
+			<button class="btn btn-secondary" onclick={openImportHistory}>
+				{m.payroll_importHistory()}
+			</button>
+			<button class="btn btn-primary" onclick={() => (showCreateRun = true)}>
+				+ {m.payroll_newRun()}
+			</button>
+		</div>
 	</div>
 
 	<div class="filters card">
@@ -208,6 +307,14 @@
 			<p>
 				{m.payroll_emptyState({ year: filterYear.toString() })}
 			</p>
+			<div class="empty-actions">
+				<button class="btn btn-secondary" onclick={openImportHistory}>
+					{m.payroll_importHistory()}
+				</button>
+				<button class="btn btn-primary" onclick={() => (showCreateRun = true)}>
+					+ {m.payroll_newRun()}
+				</button>
+			</div>
 		</div>
 	{:else}
 		<div class="card table-container">
@@ -345,6 +452,111 @@
 	</div>
 {/if}
 
+{#if showImportHistory}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<div class="modal-backdrop" onclick={closeImportHistory} role="presentation">
+		<div
+			class="modal card import-modal"
+			onclick={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="import-payroll-history-title"
+			tabindex="-1"
+		>
+			<h2 id="import-payroll-history-title">{m.payroll_importHistory()}</h2>
+			<p class="import-description">{m.payroll_importHistoryDescription()}</p>
+
+			{#if importError}
+				<div class="alert alert-error">{importError}</div>
+			{/if}
+
+			<form onsubmit={submitImportHistory}>
+				<div class="form-group">
+					<label class="label" for="payroll-history-file">{m.payroll_importChooseFile()}</label>
+					<input
+						class="input"
+						id="payroll-history-file"
+						type="file"
+						accept=".csv,text/csv"
+						onchange={handleImportFileChange}
+					/>
+					<p class="help-text">{m.payroll_importHistoryHint()}</p>
+					{#if importFileName}
+						<p class="selected-file">
+							{m.payroll_importSelectedFile()}: <span>{importFileName}</span>
+						</p>
+					{/if}
+				</div>
+
+				<div class="import-toolbar">
+					<button type="button" class="btn btn-secondary" onclick={downloadHistoryTemplate}>
+						{m.payroll_importTemplate()}
+					</button>
+				</div>
+
+				<div class="modal-actions">
+					<button type="button" class="btn btn-secondary" onclick={closeImportHistory}>
+						{m.common_cancel()}
+					</button>
+					<button type="submit" class="btn btn-primary" disabled={isImporting}>
+						{isImporting ? m.payroll_importingHistory() : m.payroll_importHistory()}
+					</button>
+				</div>
+			</form>
+
+			{#if importResult}
+				<div class="import-summary">
+					<h3>{m.payroll_importSummary()}</h3>
+					<div class="summary-grid">
+						<div class="summary-card">
+							<span class="summary-label">{m.payroll_importRowsProcessed()}</span>
+							<strong>{importResult.rows_processed}</strong>
+						</div>
+						<div class="summary-card">
+							<span class="summary-label">{m.payroll_importRunsCreated()}</span>
+							<strong>{importResult.payroll_runs_created}</strong>
+						</div>
+						<div class="summary-card">
+							<span class="summary-label">{m.payroll_importPayslipsCreated()}</span>
+							<strong>{importResult.payslips_created}</strong>
+						</div>
+						<div class="summary-card">
+							<span class="summary-label">{m.payroll_importRowsSkipped()}</span>
+							<strong>{importResult.rows_skipped}</strong>
+						</div>
+					</div>
+
+					{#if importResult.errors?.length}
+						<div class="import-errors">
+							<h4>{m.payroll_importRowErrors()}</h4>
+							<ul>
+								{#each importResult.errors as rowError}
+									<li>
+										<strong>{m.payroll_importRow({ row: rowError.row.toString() })}</strong>
+										{#if rowError.period_year && rowError.period_month}
+											<span>
+												{m.payroll_importPeriod({
+													year: rowError.period_year.toString(),
+													month: rowError.period_month.toString().padStart(2, '0')
+												})}
+											</span>
+										{/if}
+										{#if rowError.employee_name}
+											<span>{rowError.employee_name}</span>
+										{/if}
+										<span>{rowError.message}</span>
+									</li>
+								{/each}
+							</ul>
+						</div>
+					{/if}
+				</div>
+			{/if}
+		</div>
+	</div>
+{/if}
+
 {#if showPayslips && selectedRun}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -444,6 +656,11 @@
 		margin-bottom: 1.5rem;
 	}
 
+	.header-actions {
+		display: flex;
+		gap: 0.75rem;
+	}
+
 	h1 {
 		font-size: 1.75rem;
 	}
@@ -509,6 +726,13 @@
 		color: var(--color-text-muted);
 	}
 
+	.empty-actions {
+		display: flex;
+		justify-content: center;
+		gap: 0.75rem;
+		margin-top: 1rem;
+	}
+
 	.info-box {
 		margin-top: 2rem;
 		padding: 1.5rem;
@@ -564,6 +788,10 @@
 		max-width: 1000px;
 	}
 
+	.import-modal {
+		max-width: 760px;
+	}
+
 	.modal h2 {
 		margin-bottom: 1.5rem;
 	}
@@ -589,6 +817,73 @@
 		justify-content: flex-end;
 		gap: 0.5rem;
 		margin-top: 1.5rem;
+	}
+
+	.import-description {
+		color: var(--color-text-muted);
+		margin-bottom: 1rem;
+	}
+
+	.import-toolbar {
+		display: flex;
+		justify-content: flex-start;
+		margin-top: 0.75rem;
+	}
+
+	.selected-file {
+		margin-top: 0.5rem;
+		font-size: 0.875rem;
+		color: var(--color-text-muted);
+	}
+
+	.selected-file span {
+		color: var(--color-text);
+		font-weight: 600;
+	}
+
+	.import-summary {
+		margin-top: 1.5rem;
+	}
+
+	.summary-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+		gap: 0.75rem;
+		margin-top: 0.75rem;
+	}
+
+	.summary-card {
+		padding: 0.9rem;
+		border: 1px solid var(--color-border);
+		border-radius: 0.75rem;
+		background: var(--color-bg);
+	}
+
+	.summary-label {
+		display: block;
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+		margin-bottom: 0.35rem;
+	}
+
+	.import-errors {
+		margin-top: 1rem;
+	}
+
+	.import-errors ul {
+		margin: 0.75rem 0 0;
+		padding-left: 1rem;
+		display: grid;
+		gap: 0.5rem;
+	}
+
+	.import-errors li {
+		color: var(--color-text-muted);
+	}
+
+	.import-errors strong,
+	.import-errors span {
+		display: block;
 	}
 
 	.payslips-table-container {
@@ -642,6 +937,11 @@
 			gap: 1rem;
 		}
 
+		.header-actions {
+			width: 100%;
+			flex-direction: column;
+		}
+
 		.header .btn {
 			width: 100%;
 			min-height: 44px;
@@ -689,6 +989,10 @@
 
 		.empty-state {
 			padding: 2rem 1rem;
+		}
+
+		.empty-actions {
+			flex-direction: column;
 		}
 
 		.modal-backdrop {

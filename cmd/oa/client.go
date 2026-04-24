@@ -210,6 +210,22 @@ func (c *apiClient) importEmployees(ctx context.Context, tenantID string, req *p
 	return &resp, nil
 }
 
+func (c *apiClient) importPayrollHistory(ctx context.Context, tenantID string, req *payroll.ImportPayrollHistoryRequest) (*payroll.ImportPayrollHistoryResult, error) {
+	var resp payroll.ImportPayrollHistoryResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "payroll-runs", "import-history"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) importLeaveBalances(ctx context.Context, tenantID string, req *payroll.ImportLeaveBalancesRequest) (*payroll.ImportLeaveBalancesResult, error) {
+	var resp payroll.ImportLeaveBalancesResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "leave-balances", "import"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) listDocuments(ctx context.Context, tenantID, entityType, entityID string) ([]documents.Document, error) {
 	values := url.Values{}
 	values.Set("entity_type", entityType)

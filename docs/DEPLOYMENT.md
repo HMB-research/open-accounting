@@ -5,7 +5,7 @@ This guide covers deploying Open Accounting to production environments.
 ## Prerequisites
 
 - Docker and Docker Compose (recommended)
-- OR: Go 1.22+, Node.js 22+, PostgreSQL 16+
+- OR: Go 1.26+, Node.js 22+, PostgreSQL 16+
 - A domain name with SSL certificate
 - Minimum 2GB RAM, 10GB storage
 

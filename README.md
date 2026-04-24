@@ -6,7 +6,7 @@
 [![codecov](https://codecov.io/gh/HMB-research/open-accounting/branch/main/graph/badge.svg)](https://codecov.io/gh/HMB-research/open-accounting)
 [![Go Report Card](https://goreportcard.com/badge/github.com/HMB-research/open-accounting)](https://goreportcard.com/report/github.com/HMB-research/open-accounting)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go)](https://go.dev/)
 
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-4169E1?logo=postgresql&logoColor=white)](https://postgresql.org/)
 [![SvelteKit](https://img.shields.io/badge/SvelteKit-2-FF3E00?logo=svelte&logoColor=white)](https://kit.svelte.dev/)
@@ -18,9 +18,11 @@
 > **⚠️ Development Status**
 > This project is under active development and not yet production-ready. APIs may change, and features may be incomplete. Contributions and feedback welcome!
 >
-> Verified locally on 2026-03-13:
+> Full local baseline last verified on 2026-03-13:
 > `go test ./...`, `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)`, `cd frontend && bun run test`, and `cd frontend && bun run test:e2e:smoke` pass.
-> Production hardening, historical payroll migration, deeper accountant exception actions, and broader document retention/reconciliation workflows are still in progress.
+> Targeted Go 1.26.2, historical-payroll, and leave-balance import verification on 2026-04-24:
+> `go test ./...`, `cd frontend && bun run test -- api.test.ts`, and `cd frontend && bun run check` pass.
+> Production hardening, deeper historical cutover tooling beyond payroll runs, deeper accountant exception actions, and broader document retention/reconciliation workflows are still in progress.
 
 CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API token once and then uses that token for subsequent reads and mutations.
 
@@ -124,6 +126,8 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 | **Payroll Runs** | Monthly payroll with draft → approved → paid workflow |
 | **Payslips** | Detailed breakdown of earnings and deductions |
 | **TSD Declaration** | Annex 1 generation with XML/CSV export for e-MTA |
+| **Historical Payroll Import** | CSV import of finalized prior payroll runs and payslips through API, web UI, and CLI |
+| **Leave Balance Import** | CSV import of employee leave balances for migration cutovers through API, web UI, and CLI |
 
 ### Estonian Compliance
 | Feature | Description |
@@ -150,7 +154,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 
 | Layer | Technology |
 |-------|------------|
-| **Backend** | Go 1.24+, Chi router, pgx/v5, sqlc (shared tables) |
+| **Backend** | Go 1.26+, Chi router, pgx/v5, sqlc (shared tables) |
 | **Frontend** | SvelteKit 2, Svelte 5, Vite 7, TypeScript |
 | **i18n** | Paraglide-JS (compile-time translations) |
 | **Database** | PostgreSQL 16+ |
@@ -184,7 +188,7 @@ docker-compose run --rm migrate
 ### Local Development
 
 ```bash
-# Prerequisites: Go 1.24+, Node.js 22+, PostgreSQL 16+
+# Prerequisites: Go 1.26+, Node.js 22+, PostgreSQL 16+
 
 # Start database
 docker-compose up -d db
@@ -213,6 +217,8 @@ go run ./cmd/oa auth init \
 go run ./cmd/oa accounts list
 go run ./cmd/oa contacts import --file ./contacts.csv
 go run ./cmd/oa employees import --file ./employees.csv
+go run ./cmd/oa payroll import-history --file ./payroll-history.csv
+go run ./cmd/oa payroll import-leave-balances --file ./leave-balances.csv
 go run ./cmd/oa documents upload --entity-type bank_transaction --entity-id <transaction-id> --file ./evidence.pdf --document-type reconciliation_evidence
 go run ./cmd/oa journal import-opening-balances --file ./opening-balances.csv --entry-date 2026-01-01
 ```
