@@ -57,6 +57,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runContacts(ctx, args[1:])
 	case "employees":
 		return a.runEmployees(ctx, args[1:])
+	case "payroll":
+		return a.runPayroll(ctx, args[1:])
 	case "invoices":
 		return a.runInvoices(ctx, args[1:])
 	case "documents":
@@ -90,6 +92,8 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  employees list            List employees")
 	_, _ = fmt.Fprintln(a.stdout, "  employees create          Create an employee")
 	_, _ = fmt.Fprintln(a.stdout, "  employees import          Import employees from CSV")
+	_, _ = fmt.Fprintln(a.stdout, "  payroll import-history    Import historical payroll runs from CSV")
+	_, _ = fmt.Fprintln(a.stdout, "  payroll import-leave-balances  Import leave balances from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  invoices import           Import invoices from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  documents list            List documents for a record")
 	_, _ = fmt.Fprintln(a.stdout, "  documents upload          Upload a document to a record")
@@ -752,6 +756,92 @@ func (a *cliApp) runJournal(ctx context.Context, args []string) error {
 
 	default:
 		return fmt.Errorf("unknown journal subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runPayroll(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("payroll subcommand required")
+	}
+
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "import-history":
+		fs := flag.NewFlagSet("payroll import-history", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		filePath := fs.String("file", "", "CSV file path")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*filePath) == "" {
+			return errors.New("file is required")
+		}
+
+		content, fileName, err := readCSVInput(*filePath)
+		if err != nil {
+			return err
+		}
+		result, err := client.importPayrollHistory(ctx, cfg.TenantID, &payroll.ImportPayrollHistoryRequest{
+			FileName:   fileName,
+			CSVContent: content,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(
+			a.stdout,
+			"Processed %d rows, created %d payroll runs, created %d payslips, skipped %d rows\n",
+			result.RowsProcessed,
+			result.PayrollRunsCreated,
+			result.PayslipsCreated,
+			result.RowsSkipped,
+		)
+		return nil
+	case "import-leave-balances":
+		fs := flag.NewFlagSet("payroll import-leave-balances", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		filePath := fs.String("file", "", "CSV file path")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*filePath) == "" {
+			return errors.New("file is required")
+		}
+
+		content, fileName, err := readCSVInput(*filePath)
+		if err != nil {
+			return err
+		}
+		result, err := client.importLeaveBalances(ctx, cfg.TenantID, &payroll.ImportLeaveBalancesRequest{
+			FileName:   fileName,
+			CSVContent: content,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(
+			a.stdout,
+			"Processed %d rows, created %d leave balances, updated %d leave balances, skipped %d rows\n",
+			result.RowsProcessed,
+			result.LeaveBalancesCreated,
+			result.LeaveBalancesUpdated,
+			result.RowsSkipped,
+		)
+		return nil
+	default:
+		return fmt.Errorf("unknown payroll subcommand %q", args[0])
 	}
 }
 

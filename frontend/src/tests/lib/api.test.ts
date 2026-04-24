@@ -2276,6 +2276,66 @@ describe("API Client - Core Functionality", () => {
       expect(result.id).toBe("run-new");
     });
 
+    it("should import payroll history", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          payroll_runs_created: 1,
+          payslips_created: 2,
+          rows_processed: 2,
+          rows_skipped: 0,
+        }),
+      });
+
+      const result = await api.importPayrollHistory("tenant-123", {
+        file_name: "payroll-history.csv",
+        csv_content: "period_year,period_month\n2025,12\n",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/payroll-runs/import-history",
+        ),
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining("payroll-history.csv"),
+        }),
+      );
+      expect(result.payroll_runs_created).toBe(1);
+      expect(result.payslips_created).toBe(2);
+    });
+
+    it("should import leave balances", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          leave_balances_created: 1,
+          leave_balances_updated: 1,
+          rows_processed: 2,
+          rows_skipped: 0,
+        }),
+      });
+
+      const result = await api.importLeaveBalances("tenant-123", {
+        file_name: "leave-balances.csv",
+        csv_content: "year,employee_number,absence_type_code\n2025,EMP-100,ANNUAL_LEAVE\n",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/leave-balances/import",
+        ),
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining("leave-balances.csv"),
+        }),
+      );
+      expect(result.leave_balances_created).toBe(1);
+      expect(result.leave_balances_updated).toBe(1);
+    });
+
     it("should get payroll run", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

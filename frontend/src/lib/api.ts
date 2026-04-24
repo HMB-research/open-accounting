@@ -1958,6 +1958,28 @@ class ApiClient {
     );
   }
 
+  async importPayrollHistory(
+    tenantId: string,
+    data: ImportPayrollHistoryRequest,
+  ) {
+    return this.request<ImportPayrollHistoryResult>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/payroll-runs/import-history`,
+      data,
+    );
+  }
+
+  async importLeaveBalances(
+    tenantId: string,
+    data: ImportLeaveBalancesRequest,
+  ) {
+    return this.request<ImportLeaveBalancesResult>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/leave-balances/import`,
+      data,
+    );
+  }
+
   async getEmployee(tenantId: string, employeeId: string) {
     return this.request<Employee>(
       "GET",
@@ -4122,6 +4144,52 @@ export interface ImportEmployeesResult {
   salaries_created: number;
   rows_skipped: number;
   errors?: ImportEmployeesRowError[];
+}
+
+export interface ImportPayrollHistoryRequest {
+  csv_content: string;
+  file_name?: string;
+}
+
+export interface ImportPayrollHistoryRowError {
+  row: number;
+  period_year?: number;
+  period_month?: number;
+  employee_name?: string;
+  employee_number?: string;
+  message: string;
+}
+
+export interface ImportPayrollHistoryResult {
+  file_name?: string;
+  rows_processed: number;
+  payroll_runs_created: number;
+  payslips_created: number;
+  rows_skipped: number;
+  errors?: ImportPayrollHistoryRowError[];
+}
+
+export interface ImportLeaveBalancesRequest {
+  csv_content: string;
+  file_name?: string;
+}
+
+export interface ImportLeaveBalanceRowError {
+  row: number;
+  year?: number;
+  employee_name?: string;
+  employee_number?: string;
+  absence_type_code?: string;
+  message: string;
+}
+
+export interface ImportLeaveBalancesResult {
+  file_name?: string;
+  rows_processed: number;
+  leave_balances_created: number;
+  leave_balances_updated: number;
+  rows_skipped: number;
+  errors?: ImportLeaveBalanceRowError[];
 }
 
 export interface SalaryComponent {
