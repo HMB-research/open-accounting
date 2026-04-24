@@ -288,6 +288,33 @@ type ImportEmployeesRowError struct {
 	Message        string `json:"message"`
 }
 
+// ImportPayrollHistoryRequest contains CSV payload for finalized historical payroll imports.
+// Each CSV row represents one employee payslip inside a payroll period.
+type ImportPayrollHistoryRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+}
+
+// ImportPayrollHistoryResult summarizes a historical payroll import.
+type ImportPayrollHistoryResult struct {
+	FileName           string                         `json:"file_name,omitempty"`
+	RowsProcessed      int                            `json:"rows_processed"`
+	PayrollRunsCreated int                            `json:"payroll_runs_created"`
+	PayslipsCreated    int                            `json:"payslips_created"`
+	RowsSkipped        int                            `json:"rows_skipped"`
+	Errors             []ImportPayrollHistoryRowError `json:"errors,omitempty"`
+}
+
+// ImportPayrollHistoryRowError describes a row-level historical payroll import failure.
+type ImportPayrollHistoryRowError struct {
+	Row            int    `json:"row"`
+	PeriodYear     int    `json:"period_year,omitempty"`
+	PeriodMonth    int    `json:"period_month,omitempty"`
+	EmployeeName   string `json:"employee_name,omitempty"`
+	EmployeeNumber string `json:"employee_number,omitempty"`
+	Message        string `json:"message"`
+}
+
 // TaxCalculation holds the breakdown of taxes for a salary
 type TaxCalculation struct {
 	GrossSalary    decimal.Decimal `json:"gross_salary"`

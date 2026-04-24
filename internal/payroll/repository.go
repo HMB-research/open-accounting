@@ -232,13 +232,19 @@ func (r *PostgresRepository) GetCurrentSalary(ctx context.Context, schemaName, t
 // CreatePayrollRun inserts a new payroll run
 func (r *PostgresRepository) CreatePayrollRun(ctx context.Context, schemaName string, run *PayrollRun) error {
 	query := fmt.Sprintf(`
-		INSERT INTO %s.payroll_runs (id, tenant_id, period_year, period_month, status, payment_date, notes, created_by, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO %s.payroll_runs (
+			id, tenant_id, period_year, period_month, status, payment_date,
+			total_gross, total_net, total_employer_cost, notes,
+			created_by, approved_by, approved_at, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 	`, schemaName)
 
 	return r.exec(ctx, query,
 		run.ID, run.TenantID, run.PeriodYear, run.PeriodMonth, run.Status,
-		run.PaymentDate, run.Notes, run.CreatedBy, run.CreatedAt, run.UpdatedAt,
+		run.PaymentDate, run.TotalGross, run.TotalNet, run.TotalEmployerCost,
+		run.Notes, run.CreatedBy, nullIfBlank(run.ApprovedBy), run.ApprovedAt,
+		run.CreatedAt, run.UpdatedAt,
 	)
 }
 
@@ -373,18 +379,18 @@ func (r *PostgresRepository) CreatePayslip(ctx context.Context, schemaName strin
 	query := fmt.Sprintf(`
 		INSERT INTO %s.payslips (
 			id, tenant_id, payroll_run_id, employee_id, gross_salary, taxable_income,
-			income_tax, unemployment_insurance_employee, funded_pension, net_salary,
+			income_tax, unemployment_insurance_employee, funded_pension, other_deductions, net_salary,
 			social_tax, unemployment_insurance_employer, total_employer_cost,
-			basic_exemption_applied, payment_status, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+			basic_exemption_applied, payment_status, paid_at, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 	`, schemaName)
 
 	return r.exec(ctx, query,
 		payslip.ID, payslip.TenantID, payslip.PayrollRunID, payslip.EmployeeID,
 		payslip.GrossSalary, payslip.TaxableIncome, payslip.IncomeTax,
-		payslip.UnemploymentInsuranceEE, payslip.FundedPension, payslip.NetSalary,
+		payslip.UnemploymentInsuranceEE, payslip.FundedPension, payslip.OtherDeductions, payslip.NetSalary,
 		payslip.SocialTax, payslip.UnemploymentInsuranceER, payslip.TotalEmployerCost,
-		payslip.BasicExemptionApplied, payslip.PaymentStatus, payslip.CreatedAt,
+		payslip.BasicExemptionApplied, payslip.PaymentStatus, payslip.PaidAt, payslip.CreatedAt,
 	)
 }
 
@@ -404,4 +410,11 @@ type DefaultUUIDGenerator struct{}
 
 func (g *DefaultUUIDGenerator) New() string {
 	return uuid.New().String()
+}
+
+func nullIfBlank(value string) interface{} {
+	if value == "" {
+		return nil
+	}
+	return value
 }

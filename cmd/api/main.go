@@ -579,6 +579,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				// Payroll - Runs
 				r.Get("/payroll-runs", h.ListPayrollRuns)
 				r.Post("/payroll-runs", h.CreatePayrollRun)
+				r.Post("/payroll-runs/import-history", h.ImportPayrollHistory)
 				r.Get("/payroll-runs/{runID}", h.GetPayrollRun)
 				r.Post("/payroll-runs/{runID}/calculate", h.CalculatePayroll)
 				r.Post("/payroll-runs/{runID}/approve", h.ApprovePayroll)
@@ -595,6 +596,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/employees/{employeeID}/leave-balances/{year}", h.GetLeaveBalancesByYear)
 				r.Put("/employees/{employeeID}/leave-balances/{year}/{typeID}", h.UpdateLeaveBalance)
 				r.Post("/employees/{employeeID}/leave-balances/{year}/initialize", h.InitializeLeaveBalances)
+				r.Post("/leave-balances/import", h.ImportLeaveBalances)
 				r.Get("/leave-records", h.ListLeaveRecords)
 				r.Post("/leave-records", h.CreateLeaveRecord)
 				r.Get("/leave-records/{recordID}", h.GetLeaveRecord)

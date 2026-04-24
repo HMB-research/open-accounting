@@ -1,8 +1,10 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import { page } from '$app/stores';
 	import {
 		api,
 		type AbsenceType,
+		type ImportLeaveBalancesResult,
 		type LeaveBalance,
 		type LeaveRecord,
 		type LeaveStatus,
@@ -19,6 +21,11 @@
 	let employees = $state<Employee[]>([]);
 	let isLoading = $state(true);
 	let error = $state('');
+	let importError = $state('');
+	let importFileName = $state('');
+	let importCSVContent = $state('');
+	let isImporting = $state(false);
+	let importResult = $state<ImportLeaveBalancesResult | null>(null);
 
 	// Filters
 	let filterYear = $state(new Date().getFullYear());
@@ -40,6 +47,9 @@
 	let showRejectModal = $state(false);
 	let selectedRecordId = $state('');
 	let rejectionReason = $state('');
+
+	// Import balances modal
+	let showImportBalances = $state(false);
 
 	$effect(() => {
 		const tenantId = $page.url.searchParams.get('tenant');
@@ -80,6 +90,87 @@
 		if (tenantId) {
 			loadData(tenantId);
 		}
+	}
+
+	function openImportBalances() {
+		showImportBalances = true;
+		importError = '';
+		importFileName = '';
+		importCSVContent = '';
+		importResult = null;
+	}
+
+	function closeImportBalances() {
+		showImportBalances = false;
+		importError = '';
+		importFileName = '';
+		importCSVContent = '';
+		importResult = null;
+	}
+
+	async function handleImportFileChange(event: Event) {
+		const input = event.currentTarget as HTMLInputElement | null;
+		const file = input?.files?.[0];
+
+		importResult = null;
+
+		if (!file) {
+			importFileName = '';
+			importCSVContent = '';
+			return;
+		}
+
+		importFileName = file.name;
+		importCSVContent = await file.text();
+		importError = '';
+	}
+
+	async function submitImportBalances(event: Event) {
+		event.preventDefault();
+		const tenantId = $page.url.searchParams.get('tenant');
+		if (!tenantId) return;
+
+		if (!importCSVContent.trim()) {
+			importError = m.leave_importFileRequired();
+			return;
+		}
+
+		isImporting = true;
+		importError = '';
+
+		try {
+			importResult = await api.importLeaveBalances(tenantId, {
+				file_name: importFileName || undefined,
+				csv_content: importCSVContent
+			});
+
+			if (importResult.leave_balances_created > 0 || importResult.leave_balances_updated > 0) {
+				await loadData(tenantId);
+			}
+		} catch (err) {
+			importError = err instanceof Error ? err.message : m.leave_failedToImportBalances();
+		} finally {
+			isImporting = false;
+		}
+	}
+
+	function downloadLeaveBalanceTemplate() {
+		if (!browser) return;
+
+		const template = [
+			'year,employee_number,absence_type_code,entitled_days,carryover_days,used_days,pending_days,notes',
+			'2025,EMP-001,ANNUAL_LEAVE,28,2,4,0,Imported leave balance'
+		].join('\n');
+
+		const blob = new Blob([template], { type: 'text/csv;charset=utf-8' });
+		const url = window.URL.createObjectURL(blob);
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = 'leave-balances-import-template.csv';
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+		window.URL.revokeObjectURL(url);
 	}
 
 	async function createLeaveRequest(e: Event) {
@@ -240,9 +331,14 @@
 <div class="container">
 	<div class="header">
 		<h1>{m.leave_title()}</h1>
-		<button class="btn btn-primary" onclick={() => (showCreateRequest = true)}>
-			+ {m.leave_request()}
-		</button>
+		<div class="header-actions">
+			<button class="btn btn-secondary" onclick={openImportBalances}>
+				{m.leave_importBalances()}
+			</button>
+			<button class="btn btn-primary" onclick={() => (showCreateRequest = true)}>
+				+ {m.leave_request()}
+			</button>
+		</div>
 	</div>
 
 	<div class="filters card">
@@ -373,9 +469,14 @@
 		{:else if leaveBalances.length === 0}
 			<div class="empty-state card">
 				<p>{m.leave_no_balances()}</p>
-				<button class="btn btn-primary" onclick={() => initializeBalances(selectedEmployeeId)}>
-					{m.leave_initialize_balances()}
-				</button>
+				<div class="empty-actions">
+					<button class="btn btn-secondary" onclick={openImportBalances}>
+						{m.leave_importBalances()}
+					</button>
+					<button class="btn btn-primary" onclick={() => initializeBalances(selectedEmployeeId)}>
+						{m.leave_initialize_balances()}
+					</button>
+				</div>
 			</div>
 		{:else}
 			<div class="card table-container">
@@ -515,6 +616,111 @@
 	</div>
 {/if}
 
+{#if showImportBalances}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<div class="modal-backdrop" onclick={closeImportBalances} role="presentation">
+		<div
+			class="modal card import-modal"
+			onclick={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="import-leave-balances-title"
+			tabindex="-1"
+		>
+			<h2 id="import-leave-balances-title">{m.leave_importBalances()}</h2>
+			<p class="import-description">{m.leave_importDescription()}</p>
+
+			{#if importError}
+				<div class="alert alert-error">{importError}</div>
+			{/if}
+
+			<form onsubmit={submitImportBalances}>
+				<div class="form-group">
+					<label class="label" for="leave-balances-file">{m.leave_importChooseFile()}</label>
+					<input
+						class="input"
+						id="leave-balances-file"
+						type="file"
+						accept=".csv,text/csv"
+						onchange={handleImportFileChange}
+					/>
+					<p class="help-text">{m.leave_importHint()}</p>
+					{#if importFileName}
+						<p class="selected-file">
+							{m.leave_importSelectedFile()}: <span>{importFileName}</span>
+						</p>
+					{/if}
+				</div>
+
+				<div class="import-toolbar">
+					<button type="button" class="btn btn-secondary" onclick={downloadLeaveBalanceTemplate}>
+						{m.leave_importTemplate()}
+					</button>
+				</div>
+
+				<div class="modal-actions">
+					<button type="button" class="btn btn-secondary" onclick={closeImportBalances}>
+						{m.common_cancel()}
+					</button>
+					<button type="submit" class="btn btn-primary" disabled={isImporting}>
+						{isImporting ? m.leave_importing() : m.leave_importBalances()}
+					</button>
+				</div>
+			</form>
+
+			{#if importResult}
+				<div class="import-summary">
+					<h3>{m.leave_importSummary()}</h3>
+					<div class="summary-grid">
+						<div class="summary-tile">
+							<span class="summary-label">{m.leave_importRowsProcessed()}</span>
+							<strong>{importResult.rows_processed}</strong>
+						</div>
+						<div class="summary-tile">
+							<span class="summary-label">{m.leave_importBalancesCreated()}</span>
+							<strong>{importResult.leave_balances_created}</strong>
+						</div>
+						<div class="summary-tile">
+							<span class="summary-label">{m.leave_importBalancesUpdated()}</span>
+							<strong>{importResult.leave_balances_updated}</strong>
+						</div>
+						<div class="summary-tile">
+							<span class="summary-label">{m.leave_importRowsSkipped()}</span>
+							<strong>{importResult.rows_skipped}</strong>
+						</div>
+					</div>
+
+					{#if importResult.errors?.length}
+						<div class="import-errors">
+							<h4>{m.leave_importRowErrors()}</h4>
+							<ul>
+								{#each importResult.errors as rowError}
+									<li>
+										<strong>{m.leave_importRow({ row: rowError.row.toString() })}</strong>
+										{#if rowError.year}
+											<span>{m.leave_importYear({ year: rowError.year.toString() })}</span>
+										{/if}
+										{#if rowError.employee_name}
+											<span>{rowError.employee_name}</span>
+										{:else if rowError.employee_number}
+											<span>{rowError.employee_number}</span>
+										{/if}
+										{#if rowError.absence_type_code}
+											<span>{m.leave_importType({ code: rowError.absence_type_code })}</span>
+										{/if}
+										<span>{rowError.message}</span>
+									</li>
+								{/each}
+							</ul>
+						</div>
+					{/if}
+				</div>
+			{/if}
+		</div>
+	</div>
+{/if}
+
 {#if showRejectModal}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -561,6 +767,11 @@
 		justify-content: space-between;
 		align-items: center;
 		margin-bottom: 1.5rem;
+	}
+
+	.header-actions {
+		display: flex;
+		gap: 0.75rem;
 	}
 
 	h1 {
@@ -671,6 +882,17 @@
 		margin-top: 1rem;
 	}
 
+	.empty-actions {
+		display: flex;
+		justify-content: center;
+		gap: 0.75rem;
+		margin-top: 1rem;
+	}
+
+	.empty-actions .btn {
+		margin-top: 0;
+	}
+
 	.modal-backdrop {
 		position: fixed;
 		inset: 0;
@@ -689,6 +911,10 @@
 		overflow-y: auto;
 	}
 
+	.import-modal {
+		max-width: 760px;
+	}
+
 	.modal h2 {
 		margin-bottom: 1.5rem;
 	}
@@ -702,11 +928,87 @@
 		flex: 1;
 	}
 
+	.help-text {
+		display: block;
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+		margin-top: 0.25rem;
+	}
+
 	.modal-actions {
 		display: flex;
 		justify-content: flex-end;
 		gap: 0.5rem;
 		margin-top: 1.5rem;
+	}
+
+	.import-description {
+		color: var(--color-text-muted);
+		margin-bottom: 1rem;
+	}
+
+	.import-toolbar {
+		display: flex;
+		justify-content: flex-start;
+		margin-top: 0.75rem;
+	}
+
+	.selected-file {
+		margin-top: 0.5rem;
+		font-size: 0.875rem;
+		color: var(--color-text-muted);
+	}
+
+	.selected-file span {
+		color: var(--color-text);
+		font-weight: 600;
+	}
+
+	.import-summary {
+		margin-top: 1.5rem;
+	}
+
+	.summary-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+		gap: 0.75rem;
+		margin-top: 0.75rem;
+	}
+
+	.summary-tile {
+		background: var(--color-bg);
+		border: 1px solid var(--color-border);
+		border-radius: 6px;
+		padding: 0.75rem;
+	}
+
+	.summary-label {
+		display: block;
+		color: var(--color-text-muted);
+		font-size: 0.75rem;
+		margin-bottom: 0.25rem;
+	}
+
+	.import-errors {
+		margin-top: 1rem;
+	}
+
+	.import-errors ul {
+		list-style: none;
+		padding: 0;
+		margin: 0.5rem 0 0;
+	}
+
+	.import-errors li {
+		display: grid;
+		gap: 0.25rem;
+		padding: 0.75rem 0;
+		border-top: 1px solid var(--color-border);
+	}
+
+	.import-errors strong,
+	.import-errors span {
+		font-size: 0.875rem;
 	}
 
 	textarea.input {
@@ -726,7 +1028,12 @@
 			gap: 1rem;
 		}
 
-		.header .btn {
+		.header-actions {
+			flex-direction: column;
+			width: 100%;
+		}
+
+		.header-actions .btn {
 			width: 100%;
 			min-height: 44px;
 			justify-content: center;
@@ -771,6 +1078,15 @@
 
 		.empty-state {
 			padding: 2rem 1rem;
+		}
+
+		.empty-actions {
+			flex-direction: column;
+		}
+
+		.empty-actions .btn {
+			width: 100%;
+			min-height: 44px;
 		}
 
 		.modal-backdrop {
