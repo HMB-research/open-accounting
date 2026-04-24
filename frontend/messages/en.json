@@ -896,6 +896,7 @@
   "employees_noMatches": "No employees match the current search.",
   "payroll_title": "Payroll Runs",
   "payroll_newRun": "New Payroll Run",
+  "payroll_createFirstRun": "Create first payroll run",
   "payroll_period": "Period",
   "payroll_calculate": "Calculate",
   "payroll_approve": "Approve",

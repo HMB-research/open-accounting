@@ -311,7 +311,11 @@
 				<button class="btn btn-secondary" onclick={openImportHistory}>
 					{m.payroll_importHistory()}
 				</button>
-				<button class="btn btn-primary" onclick={() => (showCreateRun = true)}>
+				<button
+					class="btn btn-primary"
+					aria-label={m.payroll_createFirstRun()}
+					onclick={() => (showCreateRun = true)}
+				>
 					+ {m.payroll_newRun()}
 				</button>
 			</div>
