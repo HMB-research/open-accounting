@@ -73,6 +73,15 @@ definitions:
       net_balance:
         type: number
     type: object
+  github_com_HMB-research_open-accounting_internal_accounting.AccountSummary:
+    properties:
+      code:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_accounting.AccountType:
     enum:
     - ASSET
@@ -241,6 +250,11 @@ definitions:
       source_id:
         type: string
       source_type:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.CreateYearEndCarryForwardRequest:
+    properties:
+      period_end_date:
         type: string
     type: object
   github_com_HMB-research_open-accounting_internal_accounting.ImportAccountsRequest:
@@ -438,6 +452,28 @@ definitions:
     - StatusDraft
     - StatusPosted
     - StatusVoided
+  github_com_HMB-research_open-accounting_internal_accounting.JournalEntrySummary:
+    properties:
+      description:
+        type: string
+      entry_date:
+        type: string
+      entry_number:
+        type: string
+      id:
+        type: string
+      reference:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryStatus'
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.ReverseYearEndCarryForwardRequest:
+    properties:
+      period_end_date:
+        type: string
+      reason:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_accounting.TrialBalance:
     properties:
       accounts:
@@ -456,6 +492,53 @@ definitions:
         type: number
       total_debits:
         type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.YearEndCarryForwardResult:
+    properties:
+      journal_entry:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntry'
+      status:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndCloseStatus'
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.YearEndCarryForwardReversalResult:
+    properties:
+      reversal_journal_entry:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntry'
+      status:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndCloseStatus'
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.YearEndCloseStatus:
+    properties:
+      carry_forward_date:
+        type: string
+      carry_forward_needed:
+        type: boolean
+      carry_forward_ready:
+        type: boolean
+      existing_carry_forward:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntrySummary'
+      fiscal_year_end_date:
+        type: string
+      fiscal_year_label:
+        type: string
+      fiscal_year_start_date:
+        type: string
+      has_profit_and_loss_activity:
+        type: boolean
+      has_retained_earnings_account:
+        type: boolean
+      is_fiscal_year_end:
+        type: boolean
+      locked_through_date:
+        type: string
+      net_income:
+        type: number
+      period_closed:
+        type: boolean
+      period_end_date:
+        type: string
+      retained_earnings_account:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.AccountSummary'
     type: object
   github_com_HMB-research_open-accounting_internal_analytics.ActivityItem:
     properties:
@@ -11451,4 +11534,175 @@ paths:
       summary: Import warehouses
       tags:
       - Inventory
+  /tenants/{tenantID}/year-end-carry-forward:
+    post:
+      consumes:
+      - application/json
+      description: Create and post retained-earnings carry-forward journal entries
+        after the fiscal year has been closed
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Carry-forward request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CreateYearEndCarryForwardRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndCarryForwardResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create year-end carry-forward
+      tags:
+      - Period Close
+  /tenants/{tenantID}/year-end-carry-forward/reverse:
+    post:
+      consumes:
+      - application/json
+      description: Void an existing posted fiscal year-end carry-forward and create
+        a posted reversal journal for controlled corrections
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Carry-forward reversal request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ReverseYearEndCarryForwardRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndCarryForwardReversalResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Reverse year-end carry-forward
+      tags:
+      - Period Close
+  /tenants/{tenantID}/year-end-close-status:
+    get:
+      description: Get fiscal year close readiness, retained-earnings mapping, net
+        income, period-lock status, and existing carry-forward state
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Fiscal year-end date (YYYY-MM-DD)
+        in: query
+        name: period_end_date
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndCloseStatus'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get year-end close status
+      tags:
+      - Period Close
 swagger: "2.0"
