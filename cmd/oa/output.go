@@ -101,6 +101,74 @@ func printDocumentsTable(w io.Writer, docs []documents.Document) {
 	_ = tw.Flush()
 }
 
+func printPayrollRunsTable(w io.Writer, runs []payroll.PayrollRun) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tPERIOD\tSTATUS\tPAYMENT DATE\tGROSS\tNET\tEMPLOYER COST")
+	for _, run := range runs {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%04d-%02d\t%s\t%s\t%s\t%s\t%s\n",
+			run.ID,
+			run.PeriodYear,
+			run.PeriodMonth,
+			run.Status,
+			formatDatePtr(run.PaymentDate),
+			run.TotalGross.String(),
+			run.TotalNet.String(),
+			run.TotalEmployerCost.String(),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printPayrollRun(w io.Writer, run *payroll.PayrollRun) {
+	_, _ = fmt.Fprintf(w, "Payroll run %04d-%02d (%s)\n", run.PeriodYear, run.PeriodMonth, run.Status)
+	_, _ = fmt.Fprintf(w, "ID: %s\n", run.ID)
+	_, _ = fmt.Fprintf(w, "Payment date: %s\n", formatDatePtr(run.PaymentDate))
+	_, _ = fmt.Fprintf(w, "Total gross: %s\n", run.TotalGross.String())
+	_, _ = fmt.Fprintf(w, "Total net: %s\n", run.TotalNet.String())
+	_, _ = fmt.Fprintf(w, "Total employer cost: %s\n", run.TotalEmployerCost.String())
+	if strings.TrimSpace(run.Notes) != "" {
+		_, _ = fmt.Fprintf(w, "Notes: %s\n", run.Notes)
+	}
+	if len(run.Payslips) > 0 {
+		printPayslipsTable(w, run.Payslips)
+	}
+}
+
+func printPayslipsTable(w io.Writer, payslips []payroll.Payslip) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tEMPLOYEE\tGROSS\tNET\tINCOME TAX\tSOCIAL TAX\tSTATUS")
+	for _, payslip := range payslips {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			payslip.ID,
+			payslipEmployeeName(payslip),
+			payslip.GrossSalary.String(),
+			payslip.NetSalary.String(),
+			payslip.IncomeTax.String(),
+			payslip.SocialTax.String(),
+			payslip.PaymentStatus,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printTaxCalculation(w io.Writer, calc *payroll.TaxCalculation) {
+	_, _ = fmt.Fprintf(w, "Gross salary: %s\n", calc.GrossSalary.String())
+	_, _ = fmt.Fprintf(w, "Basic exemption: %s\n", calc.BasicExemption.String())
+	_, _ = fmt.Fprintf(w, "Taxable income: %s\n", calc.TaxableIncome.String())
+	_, _ = fmt.Fprintf(w, "Income tax: %s\n", calc.IncomeTax.String())
+	_, _ = fmt.Fprintf(w, "Unemployment employee: %s\n", calc.UnemploymentEE.String())
+	_, _ = fmt.Fprintf(w, "Funded pension: %s\n", calc.FundedPension.String())
+	_, _ = fmt.Fprintf(w, "Total deductions: %s\n", calc.TotalDeductions.String())
+	_, _ = fmt.Fprintf(w, "Net salary: %s\n", calc.NetSalary.String())
+	_, _ = fmt.Fprintf(w, "Social tax: %s\n", calc.SocialTax.String())
+	_, _ = fmt.Fprintf(w, "Unemployment employer: %s\n", calc.UnemploymentER.String())
+	_, _ = fmt.Fprintf(w, "Total employer cost: %s\n", calc.TotalEmployerCost.String())
+}
+
 func printTSDDeclarationsTable(w io.Writer, declarations []payroll.TSDDeclaration) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tPERIOD\tSTATUS\tPAYMENTS\tINCOME TAX\tSOCIAL TAX\tEMTA REF")
@@ -366,6 +434,20 @@ func formatDate(value time.Time) string {
 		return "-"
 	}
 	return value.Format("2006-01-02")
+}
+
+func formatDatePtr(value *time.Time) string {
+	if value == nil {
+		return "-"
+	}
+	return formatDate(*value)
+}
+
+func payslipEmployeeName(payslip payroll.Payslip) string {
+	if payslip.Employee == nil {
+		return payslip.EmployeeID
+	}
+	return strings.TrimSpace(payslip.Employee.FullName())
 }
 
 func titleLabel(value string) string {

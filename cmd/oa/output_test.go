@@ -92,6 +92,75 @@ func TestPrintTables(t *testing.T) {
 	assert.Contains(t, documentBuf.String(), "statement.pdf")
 }
 
+func TestPrintPayrollOutputs(t *testing.T) {
+	t.Parallel()
+
+	paymentDate := time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 3, 20, 12, 0, 0, 0, time.UTC)
+	payslip := payroll.Payslip{
+		ID:                "payslip-1",
+		EmployeeID:        "emp-1",
+		GrossSalary:       decimal.NewFromInt(3200),
+		NetSalary:         decimal.NewFromFloat(2534.8),
+		IncomeTax:         decimal.NewFromInt(550),
+		SocialTax:         decimal.NewFromInt(1056),
+		TotalEmployerCost: decimal.NewFromFloat(4281.6),
+		PaymentStatus:     "PENDING",
+		CreatedAt:         now,
+		Employee:          &payroll.Employee{FirstName: "Mari", LastName: "Maasikas"},
+	}
+	run := payroll.PayrollRun{
+		ID:                "run-1",
+		PeriodYear:        2026,
+		PeriodMonth:       3,
+		Status:            payroll.PayrollCalculated,
+		PaymentDate:       &paymentDate,
+		TotalGross:        decimal.NewFromInt(3200),
+		TotalNet:          decimal.NewFromFloat(2534.8),
+		TotalEmployerCost: decimal.NewFromFloat(4281.6),
+		Notes:             "March payroll",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+		Payslips:          []payroll.Payslip{payslip},
+	}
+
+	var runsBuf bytes.Buffer
+	printPayrollRunsTable(&runsBuf, []payroll.PayrollRun{run})
+	assert.Contains(t, runsBuf.String(), "2026-03")
+	assert.Contains(t, runsBuf.String(), "CALCULATED")
+
+	var runBuf bytes.Buffer
+	printPayrollRun(&runBuf, &run)
+	assert.Contains(t, runBuf.String(), "Payroll run 2026-03")
+	assert.Contains(t, runBuf.String(), "Mari Maasikas")
+
+	var payslipsBuf bytes.Buffer
+	printPayslipsTable(&payslipsBuf, []payroll.Payslip{payslip})
+	assert.Contains(t, payslipsBuf.String(), "Mari Maasikas")
+	assert.Contains(t, payslipsBuf.String(), "2534.8")
+
+	var taxBuf bytes.Buffer
+	printTaxCalculation(&taxBuf, &payroll.TaxCalculation{
+		GrossSalary:       decimal.NewFromInt(3200),
+		BasicExemption:    decimal.NewFromInt(700),
+		TaxableIncome:     decimal.NewFromInt(2500),
+		IncomeTax:         decimal.NewFromInt(550),
+		UnemploymentEE:    decimal.NewFromFloat(51.2),
+		FundedPension:     decimal.NewFromInt(64),
+		TotalDeductions:   decimal.NewFromFloat(665.2),
+		NetSalary:         decimal.NewFromFloat(2534.8),
+		SocialTax:         decimal.NewFromInt(1056),
+		UnemploymentER:    decimal.NewFromFloat(25.6),
+		TotalEmployerCost: decimal.NewFromFloat(4281.6),
+	})
+	assert.Contains(t, taxBuf.String(), "Net salary: 2534.8")
+	assert.Contains(t, taxBuf.String(), "Total employer cost: 4281.6")
+
+	assert.Equal(t, "emp-2", payslipEmployeeName(payroll.Payslip{EmployeeID: "emp-2"}))
+	assert.Equal(t, "2026-03-31", formatDatePtr(&paymentDate))
+	assert.Equal(t, "-", formatDatePtr(nil))
+}
+
 func TestPrintReports(t *testing.T) {
 	t.Parallel()
 

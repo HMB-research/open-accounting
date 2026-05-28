@@ -687,6 +687,188 @@ func TestCLIEmployeesCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 employees, set 1 salaries, skipped 0 rows")
 }
 
+func TestCLIPayrollRunCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	payrollRunPayload := func(id, status string, year, month int) map[string]any {
+		return map[string]any{
+			"id":                  id,
+			"tenant_id":           "tenant-1",
+			"period_year":         year,
+			"period_month":        month,
+			"status":              status,
+			"payment_date":        "2026-03-31T00:00:00Z",
+			"total_gross":         "3200.00",
+			"total_net":           "2534.80",
+			"total_employer_cost": "4281.60",
+			"notes":               "March payroll",
+			"created_at":          "2026-03-20T12:00:00Z",
+			"updated_at":          "2026-03-20T12:00:00Z",
+		}
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs":
+			require.Equal(t, "2026", r.URL.Query().Get("year"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{payrollRunPayload("run-1", "DRAFT", 2026, 3)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs":
+			var req payroll.CreatePayrollRunRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, 2026, req.PeriodYear)
+			assert.Equal(t, 3, req.PeriodMonth)
+			require.NotNil(t, req.PaymentDate)
+			assert.Equal(t, "March payroll", req.Notes)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(payrollRunPayload("run-1", "DRAFT", 2026, 3))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-1":
+			payload := payrollRunPayload("run-1", "DRAFT", 2026, 3)
+			payload["payslips"] = []map[string]any{{
+				"id":                              "payslip-1",
+				"tenant_id":                       "tenant-1",
+				"payroll_run_id":                  "run-1",
+				"employee_id":                     "emp-1",
+				"gross_salary":                    "3200.00",
+				"taxable_income":                  "2500.00",
+				"income_tax":                      "550.00",
+				"unemployment_insurance_employee": "51.20",
+				"funded_pension":                  "64.00",
+				"net_salary":                      "2534.80",
+				"social_tax":                      "1056.00",
+				"unemployment_insurance_employer": "25.60",
+				"total_employer_cost":             "4281.60",
+				"basic_exemption_applied":         "700.00",
+				"payment_status":                  "PENDING",
+				"created_at":                      "2026-03-20T12:00:00Z",
+				"employee": map[string]any{
+					"id":              "emp-1",
+					"tenant_id":       "tenant-1",
+					"employee_number": "EMP-001",
+					"first_name":      "Mari",
+					"last_name":       "Maasikas",
+					"start_date":      "2026-01-01T00:00:00Z",
+					"employment_type": "FULL_TIME",
+					"is_active":       true,
+					"created_at":      "2026-01-01T00:00:00Z",
+					"updated_at":      "2026-01-01T00:00:00Z",
+				},
+			}}
+			_ = json.NewEncoder(w).Encode(payload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-1/calculate":
+			_ = json.NewEncoder(w).Encode(payrollRunPayload("run-1", "CALCULATED", 2026, 3))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-1/approve":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "approved"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-1/payslips":
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"id":                              "payslip-1",
+				"tenant_id":                       "tenant-1",
+				"payroll_run_id":                  "run-1",
+				"employee_id":                     "emp-1",
+				"gross_salary":                    "3200.00",
+				"taxable_income":                  "2500.00",
+				"income_tax":                      "550.00",
+				"unemployment_insurance_employee": "51.20",
+				"funded_pension":                  "64.00",
+				"net_salary":                      "2534.80",
+				"social_tax":                      "1056.00",
+				"unemployment_insurance_employer": "25.60",
+				"total_employer_cost":             "4281.60",
+				"basic_exemption_applied":         "700.00",
+				"payment_status":                  "PENDING",
+				"created_at":                      "2026-03-20T12:00:00Z",
+				"employee": map[string]any{
+					"id":              "emp-1",
+					"tenant_id":       "tenant-1",
+					"employee_number": "EMP-001",
+					"first_name":      "Mari",
+					"last_name":       "Maasikas",
+					"start_date":      "2026-01-01T00:00:00Z",
+					"employment_type": "FULL_TIME",
+					"is_active":       true,
+					"created_at":      "2026-01-01T00:00:00Z",
+					"updated_at":      "2026-01-01T00:00:00Z",
+				},
+			}})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll/tax-preview":
+			var req map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Contains(t, req, "gross_salary")
+			assert.Equal(t, true, req["apply_basic_exemption"])
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"gross_salary":          "3200.00",
+				"basic_exemption":       "700.00",
+				"taxable_income":        "2500.00",
+				"income_tax":            "550.00",
+				"unemployment_employee": "51.20",
+				"funded_pension":        "64.00",
+				"total_deductions":      "665.20",
+				"net_salary":            "2534.80",
+				"social_tax":            "1056.00",
+				"unemployment_employer": "25.60",
+				"total_employer_cost":   "4281.60",
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"payroll", "runs", "list", "--year", "2026"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "2026-03")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"payroll", "runs", "create",
+		"--year", "2026",
+		"--month", "3",
+		"--payment-date", "2026-03-31",
+		"--notes", "March payroll",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created payroll run 2026-03 (run-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payroll", "runs", "get", "--id", "run-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Payroll run 2026-03")
+	assert.Contains(t, stdout.String(), "Mari Maasikas")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payroll", "runs", "calculate", "--id", "run-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "CALCULATED")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payroll", "runs", "approve", "--id", "run-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Approved payroll run run-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payroll", "runs", "payslips", "--id", "run-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Mari Maasikas")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payroll", "tax-preview", "--gross-salary", "3200.00"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Net salary: 2534.8")
+}
+
 func TestCLIPayrollImportHistoryCommand(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{

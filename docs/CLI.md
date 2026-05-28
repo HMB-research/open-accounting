@@ -121,6 +121,21 @@ go run ./cmd/oa employees create \
 go run ./cmd/oa employees import --file ./employees.csv
 ```
 
+## Payroll runs
+
+```bash
+go run ./cmd/oa payroll runs list
+go run ./cmd/oa payroll runs list --year 2026
+go run ./cmd/oa payroll runs create --year 2026 --month 3 --payment-date 2026-03-31
+go run ./cmd/oa payroll runs get --id <payroll-run-id>
+go run ./cmd/oa payroll runs calculate --id <payroll-run-id>
+go run ./cmd/oa payroll runs approve --id <payroll-run-id>
+go run ./cmd/oa payroll runs payslips --id <payroll-run-id>
+go run ./cmd/oa payroll tax-preview --gross-salary 3200.00
+```
+
+Use `payroll runs calculate` after employee salary setup, then `payroll runs approve` before TSD generation. Use `--json` on read and mutation commands when scripting.
+
 ## Payroll migration imports
 
 ```bash
@@ -278,6 +293,7 @@ go run ./cmd/oa contacts create --name "Scripted Contact" --type CUSTOMER
 go run ./cmd/oa reports trial-balance --as-of 2026-03-31 --json
 go run ./cmd/oa tax kmd list --json
 go run ./cmd/oa tsd export-csv --year 2026 --month 3 --output ./tsd.csv
+go run ./cmd/oa payroll runs list --year 2026 --json
 go run ./cmd/oa employees import --file ./employees.csv
 go run ./cmd/oa payroll import-history --file ./payroll-history.csv
 go run ./cmd/oa payroll import-leave-balances --file ./leave-balances.csv
