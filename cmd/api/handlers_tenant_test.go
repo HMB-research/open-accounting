@@ -1110,6 +1110,216 @@ func TestListTenantUsers(t *testing.T) {
 	}
 }
 
+func TestRemoveTenantUser(t *testing.T) {
+	tests := []struct {
+		name           string
+		tenantID       string
+		userID         string
+		claims         *auth.Claims
+		setupMock      func(*mockTenantRepository)
+		wantStatus     int
+		wantErrContain string
+	}{
+		{
+			name:     "owner can remove non-owner",
+			tenantID: "tenant-1",
+			userID:   "user-2",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			setupMock: func(m *mockTenantRepository) {
+				m.tenantUsers["tenant-1"] = []tenant.TenantUser{
+					{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner},
+					{TenantID: "tenant-1", UserID: "user-2", Role: tenant.RoleViewer},
+				}
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:     "viewer cannot remove users",
+			tenantID: "tenant-1",
+			userID:   "user-2",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleViewer,
+			},
+			wantStatus:     http.StatusForbidden,
+			wantErrContain: "Permission denied",
+		},
+		{
+			name:     "cannot remove yourself",
+			tenantID: "tenant-1",
+			userID:   "user-1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleAdmin,
+			},
+			wantStatus:     http.StatusBadRequest,
+			wantErrContain: "Cannot remove yourself",
+		},
+		{
+			name:     "cannot remove owner",
+			tenantID: "tenant-1",
+			userID:   "user-owner",
+			claims: &auth.Claims{
+				UserID:   "user-admin",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleAdmin,
+			},
+			setupMock: func(m *mockTenantRepository) {
+				m.tenantUsers["tenant-1"] = []tenant.TenantUser{
+					{TenantID: "tenant-1", UserID: "user-admin", Role: tenant.RoleAdmin},
+					{TenantID: "tenant-1", UserID: "user-owner", Role: tenant.RoleOwner},
+				}
+			},
+			wantStatus:     http.StatusBadRequest,
+			wantErrContain: "cannot remove owner",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, repo := setupTenantTestHandlers()
+			if tt.setupMock != nil {
+				tt.setupMock(repo)
+			}
+
+			req := makeAuthenticatedRequest(http.MethodDelete, "/tenants/"+tt.tenantID+"/users/"+tt.userID, nil, tt.claims)
+			req = withURLParams(req, map[string]string{"tenantID": tt.tenantID, "userID": tt.userID})
+			w := httptest.NewRecorder()
+
+			h.RemoveTenantUser(w, req)
+
+			assert.Equal(t, tt.wantStatus, w.Code, "response body: %s", w.Body.String())
+
+			if tt.wantErrContain != "" {
+				var resp map[string]string
+				err := json.NewDecoder(w.Body).Decode(&resp)
+				require.NoError(t, err)
+				assert.Contains(t, resp["error"], tt.wantErrContain)
+			}
+		})
+	}
+}
+
+func TestUpdateTenantUserRole(t *testing.T) {
+	tests := []struct {
+		name           string
+		tenantID       string
+		userID         string
+		claims         *auth.Claims
+		body           map[string]string
+		setupMock      func(*mockTenantRepository)
+		wantStatus     int
+		wantErrContain string
+	}{
+		{
+			name:     "owner can update non-owner role",
+			tenantID: "tenant-1",
+			userID:   "user-2",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			body: map[string]string{"role": tenant.RoleAccountant},
+			setupMock: func(m *mockTenantRepository) {
+				m.tenantUsers["tenant-1"] = []tenant.TenantUser{
+					{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner},
+					{TenantID: "tenant-1", UserID: "user-2", Role: tenant.RoleViewer},
+				}
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:     "viewer cannot update roles",
+			tenantID: "tenant-1",
+			userID:   "user-2",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleViewer,
+			},
+			body:           map[string]string{"role": tenant.RoleAccountant},
+			wantStatus:     http.StatusForbidden,
+			wantErrContain: "Permission denied",
+		},
+		{
+			name:     "cannot update own role",
+			tenantID: "tenant-1",
+			userID:   "user-1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleAdmin,
+			},
+			body:           map[string]string{"role": tenant.RoleViewer},
+			wantStatus:     http.StatusBadRequest,
+			wantErrContain: "Cannot update your own role",
+		},
+		{
+			name:     "owner role cannot be assigned",
+			tenantID: "tenant-1",
+			userID:   "user-2",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			body: map[string]string{"role": tenant.RoleOwner},
+			setupMock: func(m *mockTenantRepository) {
+				m.tenantUsers["tenant-1"] = []tenant.TenantUser{
+					{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner},
+					{TenantID: "tenant-1", UserID: "user-2", Role: tenant.RoleViewer},
+				}
+			},
+			wantStatus:     http.StatusBadRequest,
+			wantErrContain: "invalid role",
+		},
+		{
+			name:     "role is required",
+			tenantID: "tenant-1",
+			userID:   "user-2",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			body:           map[string]string{},
+			wantStatus:     http.StatusBadRequest,
+			wantErrContain: "Role is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, repo := setupTenantTestHandlers()
+			if tt.setupMock != nil {
+				tt.setupMock(repo)
+			}
+
+			req := makeAuthenticatedRequest(http.MethodPut, "/tenants/"+tt.tenantID+"/users/"+tt.userID+"/role", tt.body, tt.claims)
+			req = withURLParams(req, map[string]string{"tenantID": tt.tenantID, "userID": tt.userID})
+			w := httptest.NewRecorder()
+
+			h.UpdateTenantUserRole(w, req)
+
+			assert.Equal(t, tt.wantStatus, w.Code, "response body: %s", w.Body.String())
+
+			if tt.wantErrContain != "" {
+				var resp map[string]string
+				err := json.NewDecoder(w.Body).Decode(&resp)
+				require.NoError(t, err)
+				assert.Contains(t, resp["error"], tt.wantErrContain)
+			}
+		})
+	}
+}
+
 // =============================================================================
 // CreateInvitation Handler Tests
 // =============================================================================

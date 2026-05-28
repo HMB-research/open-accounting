@@ -1684,6 +1684,17 @@ func TestService_UpdateTenantUserRole(t *testing.T) {
 			errContain: "invalid role",
 		},
 		{
+			name:     "cannot assign owner role",
+			tenantID: "tenant-1",
+			userID:   "user-1",
+			newRole:  RoleOwner,
+			setupRepo: func(m *MockRepository) {
+				m.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-1", Role: RoleViewer})
+			},
+			wantErr:    true,
+			errContain: "invalid role",
+		},
+		{
 			name:     "cannot change owner role",
 			tenantID: "tenant-1",
 			userID:   "user-owner",

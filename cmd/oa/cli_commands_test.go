@@ -510,6 +510,11 @@ func TestCLIUsersCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Updated user user-2 role to accountant")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"users", "update-role", "--id", "user-2", "--role", "owner"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "role must be one of")
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"users", "remove", "--id", "user-2"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Removed user user-2")

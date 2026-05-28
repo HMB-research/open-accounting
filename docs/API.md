@@ -2384,6 +2384,8 @@ DELETE /tenants/{tenantId}/users/{userId}
 Authorization: Bearer <token>
 ```
 
+Requires an owner or admin role. Users cannot remove themselves, and owner memberships cannot be removed through this endpoint.
+
 ### Update User Role
 
 ```http
@@ -2395,6 +2397,8 @@ Content-Type: application/json
   "role": "admin"
 }
 ```
+
+Requires an owner or admin role. Assignable roles are `admin`, `accountant`, and `viewer`; `owner` is creation-only and cannot be granted with this endpoint. Users cannot update their own role.
 
 ---
 

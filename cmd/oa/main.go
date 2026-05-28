@@ -914,6 +914,9 @@ func (a *cliApp) runUsers(ctx context.Context, args []string) error {
 		if strings.TrimSpace(*userID) == "" || strings.TrimSpace(*role) == "" {
 			return errors.New("id and role are required")
 		}
+		if !tenant.IsValidRole(strings.TrimSpace(*role)) {
+			return errors.New("role must be one of: admin, accountant, viewer")
+		}
 
 		if err := client.updateTenantUserRole(ctx, cfg.TenantID, strings.TrimSpace(*userID), strings.TrimSpace(*role)); err != nil {
 			return err

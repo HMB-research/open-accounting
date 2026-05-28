@@ -143,7 +143,7 @@ go run ./cmd/oa invitations accept \
   --base-url http://localhost:8080
 ```
 
-Use `--password-stdin` on `invitations accept` to avoid placing a new-user password in shell history.
+`users update-role` accepts `admin`, `accountant`, or `viewer`. The `owner` role is assigned only at tenant creation and cannot be granted through the CLI role-update flow. Use `--password-stdin` on `invitations accept` to avoid placing a new-user password in shell history.
 
 ## Plugins
 
