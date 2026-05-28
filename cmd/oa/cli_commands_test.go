@@ -1819,6 +1819,7 @@ func TestCLIAssetCommands(t *testing.T) {
 		"created_at":          "2026-04-30T12:00:00Z",
 		"created_by":          "user-1",
 	}
+	importFile := writeTempCSV(t, "assets.csv", "asset_number,name,purchase_date,purchase_cost\nLEG-001,Laptop,2025-01-10,1200.00\n")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -1864,6 +1865,16 @@ func TestCLIAssetCommands(t *testing.T) {
 			assert.Equal(t, "supplier-1", *req.SupplierID)
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(assetPayload("DRAFT"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/assets/import":
+			var req assets.ImportAssetsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "assets.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "LEG-001")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed": 1,
+				"assets_created": 1,
+				"rows_skipped":   0,
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-1":
 			_ = json.NewEncoder(w).Encode(assetPayload("ACTIVE"))
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-1":
@@ -1951,6 +1962,11 @@ func TestCLIAssetCommands(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created asset FA-00001 (asset-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"assets", "import", "--file", importFile})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 assets, skipped 0 rows")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"assets", "get", "--id", "asset-1"})

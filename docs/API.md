@@ -1469,6 +1469,21 @@ Content-Type: application/json
 }
 ```
 
+### Import Assets
+
+```http
+POST /tenants/{tenantId}/assets/import
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "file_name": "assets.csv",
+  "csv_content": "asset_number,name,status,purchase_date,purchase_cost,accumulated_depreciation,book_value\nLEG-001,Laptop,ACTIVE,2025-01-10,1200.00,300.00,900.00\n"
+}
+```
+
+Required CSV columns are `name`, `purchase_date`, and `purchase_cost`. Optional columns include `asset_number`, `category_id`, `category_name`, `status`, `description`, supplier/invoice IDs, serial/location fields, depreciation settings, `accumulated_depreciation`, `book_value`, `last_depreciation_date`, disposal fields, and asset/depreciation account IDs. Omitted asset numbers are generated; supplied asset numbers are preserved and checked for duplicates.
+
 ### Get, Update, and Delete Asset
 
 ```http

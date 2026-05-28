@@ -688,6 +688,83 @@ func TestService_CreateAsset_Defaults(t *testing.T) {
 	assert.Equal(t, 60, asset.UsefulLifeMonths)
 }
 
+func TestService_ImportAssetsCSV(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Categories["cat-1"] = &AssetCategory{
+		ID:       "cat-1",
+		TenantID: "tenant-1",
+		Name:     "Equipment",
+	}
+
+	result, err := ts.svc.ImportAssetsCSV(ctx, "tenant-1", "test_schema", &ImportAssetsRequest{
+		FileName: "assets.csv",
+		UserID:   "user-1",
+		CSVContent: "asset_number,name,category_name,status,purchase_date,purchase_cost,accumulated_depreciation,book_value,useful_life_months\n" +
+			"LEG-001,Laptop,Equipment,ACTIVE,2025-01-10,1200.00,300.00,900.00,36\n" +
+			",Missing date,,ACTIVE,,500.00,,,60\n" +
+			",Generated desk,,DRAFT,2026-02-01,600.00,,,60\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "assets.csv", result.FileName)
+	assert.Equal(t, 3, result.RowsProcessed)
+	assert.Equal(t, 2, result.AssetsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, 3, result.Errors[0].Row)
+	assert.Contains(t, result.Errors[0].Message, "purchase_date is required")
+
+	var legacyAsset *FixedAsset
+	var generatedAsset *FixedAsset
+	for _, asset := range ts.repo.Assets {
+		switch asset.Name {
+		case "Laptop":
+			legacyAsset = asset
+		case "Generated desk":
+			generatedAsset = asset
+		}
+	}
+
+	require.NotNil(t, legacyAsset)
+	assert.Equal(t, "LEG-001", legacyAsset.AssetNumber)
+	assert.Equal(t, AssetStatusActive, legacyAsset.Status)
+	assert.True(t, legacyAsset.BookValue.Equal(decimal.RequireFromString("900.00")))
+	assert.True(t, legacyAsset.AccumulatedDepreciation.Equal(decimal.RequireFromString("300.00")))
+	require.NotNil(t, legacyAsset.CategoryID)
+	assert.Equal(t, "cat-1", *legacyAsset.CategoryID)
+	assert.Equal(t, "user-1", legacyAsset.CreatedBy)
+
+	require.NotNil(t, generatedAsset)
+	assert.Equal(t, "FA-00001", generatedAsset.AssetNumber)
+	assert.Equal(t, AssetStatusDraft, generatedAsset.Status)
+	assert.True(t, generatedAsset.BookValue.Equal(decimal.RequireFromString("600.00")))
+}
+
+func TestService_ImportAssetsCSV_DuplicateAssetNumber(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Assets["existing"] = &FixedAsset{
+		ID:          "existing",
+		TenantID:    "tenant-1",
+		AssetNumber: "LEG-001",
+		Name:        "Existing laptop",
+	}
+
+	result, err := ts.svc.ImportAssetsCSV(ctx, "tenant-1", "test_schema", &ImportAssetsRequest{
+		CSVContent: "asset_number,name,purchase_date,purchase_cost\nLEG-001,Laptop,2025-01-10,1200.00\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 0, result.AssetsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, "duplicate asset_number")
+}
+
 func TestService_CreateAsset_ValidationError(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()

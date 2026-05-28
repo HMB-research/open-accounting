@@ -491,6 +491,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Delete("/asset-categories/{categoryID}", h.DeleteAssetCategory)
 				r.Get("/assets", h.ListAssets)
 				r.Post("/assets", h.CreateAsset)
+				r.Post("/assets/import", h.ImportAssets)
 				r.Get("/assets/{assetID}", h.GetAsset)
 				r.Put("/assets/{assetID}", h.UpdateAsset)
 				r.Delete("/assets/{assetID}", h.DeleteAsset)

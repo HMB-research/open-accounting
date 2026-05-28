@@ -1341,6 +1341,14 @@ func (c *apiClient) createAsset(ctx context.Context, tenantID string, req *asset
 	return &resp, nil
 }
 
+func (c *apiClient) importAssets(ctx context.Context, tenantID string, req *assets.ImportAssetsRequest) (*assets.ImportAssetsResult, error) {
+	var resp assets.ImportAssetsResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "assets", "import"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) getAsset(ctx context.Context, tenantID, assetID string) (*assets.FixedAsset, error) {
 	var resp assets.FixedAsset
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "assets", assetID), nil, c.apiToken, &resp); err != nil {
