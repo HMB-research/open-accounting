@@ -834,6 +834,7 @@
 
 			<YearEndClosePanel
 				status={yearEndStatus}
+				tenantId={tenantId}
 				periodEndDate={yearEndPeriodEndDate}
 				currency={tenant?.settings?.default_currency || 'EUR'}
 				errorMessage={yearEndError}
