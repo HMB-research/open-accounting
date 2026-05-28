@@ -481,6 +481,79 @@ func (s *Service) TransferStock(ctx context.Context, tenantID, schemaName string
 	return nil
 }
 
+// ReserveStock reserves available stock in a warehouse without changing on-hand quantity.
+func (s *Service) ReserveStock(ctx context.Context, tenantID, schemaName string, req *StockReservationRequest) (*StockLevel, error) {
+	quantity, err := parsePositiveStockQuantity(req.Quantity)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.repo.GetProductByID(ctx, schemaName, tenantID, req.ProductID); err != nil {
+		return nil, fmt.Errorf("get product: %w", err)
+	}
+	if _, err := s.repo.GetWarehouseByID(ctx, schemaName, tenantID, req.WarehouseID); err != nil {
+		return nil, fmt.Errorf("get warehouse: %w", err)
+	}
+
+	level, err := s.stockLevelForWarehouse(ctx, tenantID, schemaName, req.ProductID, req.WarehouseID)
+	if err != nil {
+		return nil, fmt.Errorf("get stock level: %w", err)
+	}
+	if level.AvailableQty.LessThan(quantity) {
+		return nil, fmt.Errorf("insufficient available stock to reserve")
+	}
+
+	level.ReservedQty = level.ReservedQty.Add(quantity)
+	level.AvailableQty = level.AvailableQty.Sub(quantity)
+	level.LastUpdated = time.Now()
+	if err := s.repo.UpsertStockLevel(ctx, schemaName, level); err != nil {
+		return nil, fmt.Errorf("update stock level: %w", err)
+	}
+
+	return level, nil
+}
+
+// ReleaseStock releases previously reserved stock back to available quantity.
+func (s *Service) ReleaseStock(ctx context.Context, tenantID, schemaName string, req *StockReservationRequest) (*StockLevel, error) {
+	quantity, err := parsePositiveStockQuantity(req.Quantity)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.repo.GetProductByID(ctx, schemaName, tenantID, req.ProductID); err != nil {
+		return nil, fmt.Errorf("get product: %w", err)
+	}
+	if _, err := s.repo.GetWarehouseByID(ctx, schemaName, tenantID, req.WarehouseID); err != nil {
+		return nil, fmt.Errorf("get warehouse: %w", err)
+	}
+
+	level, err := s.stockLevelForWarehouse(ctx, tenantID, schemaName, req.ProductID, req.WarehouseID)
+	if err != nil {
+		return nil, fmt.Errorf("get stock level: %w", err)
+	}
+	if level.ReservedQty.LessThan(quantity) {
+		return nil, fmt.Errorf("cannot release more than reserved stock")
+	}
+
+	level.ReservedQty = level.ReservedQty.Sub(quantity)
+	level.AvailableQty = level.AvailableQty.Add(quantity)
+	level.LastUpdated = time.Now()
+	if err := s.repo.UpsertStockLevel(ctx, schemaName, level); err != nil {
+		return nil, fmt.Errorf("update stock level: %w", err)
+	}
+
+	return level, nil
+}
+
+func parsePositiveStockQuantity(value string) (decimal.Decimal, error) {
+	quantity, err := decimal.NewFromString(value)
+	if err != nil {
+		return decimal.Zero, fmt.Errorf("invalid quantity: %w", err)
+	}
+	if quantity.LessThanOrEqual(decimal.Zero) {
+		return decimal.Zero, fmt.Errorf("quantity must be positive")
+	}
+	return quantity, nil
+}
+
 func (s *Service) stockLevelForWarehouse(ctx context.Context, tenantID, schemaName, productID, warehouseID string) (*StockLevel, error) {
 	levels, err := s.repo.GetStockLevelsByProduct(ctx, schemaName, tenantID, productID)
 	if err != nil {

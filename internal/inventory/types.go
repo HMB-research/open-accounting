@@ -313,6 +313,15 @@ type TransferStockRequest struct {
 	UserID          string `json:"-"`
 }
 
+// StockReservationRequest represents a request to reserve or release warehouse stock.
+type StockReservationRequest struct {
+	ProductID   string `json:"product_id"`
+	WarehouseID string `json:"warehouse_id"`
+	Quantity    string `json:"quantity"`
+	Reason      string `json:"reason,omitempty"`
+	UserID      string `json:"-"`
+}
+
 // ProductFilter represents filters for listing products
 type ProductFilter struct {
 	ProductType ProductType   `json:"product_type,omitempty"`

@@ -1730,6 +1730,36 @@ Content-Type: application/json
 
 Transfers require a positive quantity and enough available stock in the source warehouse. Successful transfers create an outbound movement for the source warehouse, an inbound movement for the destination warehouse, and update both warehouse stock levels without changing total product stock.
 
+```http
+POST /tenants/{tenantId}/inventory/reserve
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "product_id": "uuid",
+  "warehouse_id": "uuid",
+  "quantity": "2",
+  "reason": "Sales order allocation"
+}
+```
+
+Reservations require a positive quantity and sufficient warehouse available stock. A successful reservation increases `reserved_qty` and decreases `available_qty` without changing on-hand quantity or product total stock.
+
+```http
+POST /tenants/{tenantId}/inventory/release
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "product_id": "uuid",
+  "warehouse_id": "uuid",
+  "quantity": "1",
+  "reason": "Order canceled"
+}
+```
+
+Releases require a positive quantity no greater than current reserved stock. A successful release decreases `reserved_qty` and increases `available_qty` without changing on-hand quantity or product total stock.
+
 ---
 
 ## Cost Centers
