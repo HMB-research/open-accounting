@@ -95,6 +95,7 @@ ALLOWED_ORIGINS=https://your-domain.com
 DB_USER=openaccounting
 DB_PASSWORD=SECURE_PASSWORD
 DB_NAME=openaccounting
+BACKUP_RETENTION_DAYS=30
 ```
 
 ### 3. Deploy
@@ -174,17 +175,31 @@ log_statement = 'mod'
 log_min_duration_statement = 1000
 ```
 
-### Backup Strategy
+### Backup and Restore Drills
+
+Use PostgreSQL custom-format backups so restore drills can use `pg_restore` with explicit ownership and privilege handling:
 
 ```bash
-# Daily backup script
-#!/bin/bash
-DATE=$(date +%Y%m%d)
-pg_dump $DATABASE_URL | gzip > /backups/openaccounting_$DATE.sql.gz
-
-# Keep last 30 days
-find /backups -name "*.sql.gz" -mtime +30 -delete
+DATABASE_URL="postgres://user:pass@host:5432/openaccounting?sslmode=require" \
+  scripts/db-backup.sh --backup-dir /backups --retention-days 30
 ```
+
+The script writes `openaccounting_<utc>.dump` plus a `.sha256` checksum file. The production Docker Compose file also runs the same pattern daily and keeps generated backups for `BACKUP_RETENTION_DAYS` days, defaulting to 30.
+Run backup and restore commands with PostgreSQL client tools from the same major version as the server, or use the production Compose backup service image.
+
+Run a restore drill into a disposable database, never the source database:
+
+```bash
+createdb openaccounting_restore_drill
+
+RESTORE_DATABASE_URL="postgres://user:pass@localhost:5432/openaccounting_restore_drill?sslmode=disable" \
+  DATABASE_URL="postgres://user:pass@host:5432/openaccounting?sslmode=require" \
+  scripts/db-restore-drill.sh --backup /backups/openaccounting_20260528T120000Z.dump
+
+dropdb openaccounting_restore_drill
+```
+
+`db-restore-drill.sh` refuses to run when the restore URL matches `DATABASE_URL`, checks the checksum when present, requires an empty target database unless `--allow-non-empty` is passed, restores with `pg_restore`, and verifies core Open Accounting tables plus applied migrations.
 
 ### Connection Pooling
 
@@ -392,7 +407,7 @@ curl -X OPTIONS https://api.example.com/api/v1/auth/login \
 - [ ] Use `sslmode=require` for database connections
 - [ ] Configure firewall rules (only expose ports 80/443)
 - [ ] Enable database connection encryption
-- [ ] Set up automated backups
+- [ ] Set up automated backups and scheduled restore drills
 - [ ] Configure log rotation
 - [ ] Use secrets management (Vault, AWS Secrets Manager, etc.)
 - [ ] Enable rate limiting at reverse proxy level

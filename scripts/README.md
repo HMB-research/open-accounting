@@ -148,9 +148,10 @@ CMD ["crond", "-f", "-l", "2"]
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `APP_ENV` | Yes | Set to `production` for production deployments |
 | `JWT_SECRET` | Yes | Secret for JWT signing (min 32 chars) |
 | `PORT` | No | Server port (default: 8080) |
-| `ALLOWED_ORIGINS` | No | CORS origins (comma-separated) |
+| `ALLOWED_ORIGINS` | Yes | CORS origins (comma-separated) |
 | `DEMO_MODE` | No | Enable demo features (default: false) |
 
 ### Startup Sequence
@@ -166,6 +167,31 @@ CMD ["crond", "-f", "-l", "2"]
 curl http://localhost:8080/health
 # Returns: OK
 ```
+
+### Backup and Restore Drill
+
+Create custom-format backups with a checksum:
+
+```bash
+DATABASE_URL="postgres://user:pass@host:5432/openaccounting?sslmode=require" \
+  scripts/db-backup.sh --backup-dir ./backups --retention-days 30
+```
+
+Use PostgreSQL client tools from the same major version as the server. For self-hosted Docker deployments, the production backup service runs the script from a matching PostgreSQL image.
+
+Verify a backup by restoring it into a separate disposable database:
+
+```bash
+createdb openaccounting_restore_drill
+
+RESTORE_DATABASE_URL="postgres://user:pass@localhost:5432/openaccounting_restore_drill?sslmode=disable" \
+  DATABASE_URL="postgres://user:pass@host:5432/openaccounting?sslmode=require" \
+  scripts/db-restore-drill.sh --backup ./backups/openaccounting_20260528T120000Z.dump
+
+dropdb openaccounting_restore_drill
+```
+
+The restore drill refuses to use the same URL as `DATABASE_URL`, checks the `.sha256` file when present, and verifies that core Open Accounting tables and migrations were restored.
 
 ---
 
