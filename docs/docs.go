@@ -8548,6 +8548,63 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/products/import": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Import product master data from CSV, preserving optional product codes and resolving category names",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Inventory"
+                ],
+                "summary": "Import products",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "CSV import payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_inventory.ImportProductsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_inventory.ImportProductsResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/quotes": {
             "get": {
                 "security": [
@@ -13338,6 +13395,57 @@ const docTemplate = `{
                 },
                 "subject": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_inventory.ImportProductsRequest": {
+            "type": "object",
+            "properties": {
+                "csv_content": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_inventory.ImportProductsResult": {
+            "type": "object",
+            "properties": {
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_inventory.ImportProductsRowError"
+                    }
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "products_created": {
+                    "type": "integer"
+                },
+                "rows_processed": {
+                    "type": "integer"
+                },
+                "rows_skipped": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_inventory.ImportProductsRowError": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "row": {
+                    "type": "integer"
                 }
             }
         },

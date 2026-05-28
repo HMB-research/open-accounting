@@ -156,6 +156,29 @@ type CreateProductRequest struct {
 	LeadTimeDays       int    `json:"lead_time_days,omitempty"`
 }
 
+// ImportProductsRequest contains CSV payload for product master migration.
+type ImportProductsRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+}
+
+// ImportProductsResult summarizes a product CSV import.
+type ImportProductsResult struct {
+	FileName        string                   `json:"file_name,omitempty"`
+	RowsProcessed   int                      `json:"rows_processed"`
+	ProductsCreated int                      `json:"products_created"`
+	RowsSkipped     int                      `json:"rows_skipped"`
+	Errors          []ImportProductsRowError `json:"errors,omitempty"`
+}
+
+// ImportProductsRowError describes a row-level product import failure.
+type ImportProductsRowError struct {
+	Row     int    `json:"row"`
+	Code    string `json:"code,omitempty"`
+	Name    string `json:"name,omitempty"`
+	Message string `json:"message"`
+}
+
 // UpdateProductRequest represents a request to update a product
 type UpdateProductRequest struct {
 	Name               string `json:"name"`

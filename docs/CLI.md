@@ -462,6 +462,7 @@ go run ./cmd/oa inventory products create \
   --vat-rate 22.00 \
   --min-stock-level 5 \
   --reorder-point 7
+go run ./cmd/oa inventory products import --file ./products.csv
 go run ./cmd/oa inventory products get --id <product-id>
 go run ./cmd/oa inventory products update --id <product-id> --name Widget --sales-price 16.00
 go run ./cmd/oa inventory products stock-levels --id <product-id>
@@ -478,7 +479,7 @@ go run ./cmd/oa inventory adjust --product-id <product-id> --warehouse-id <wareh
 go run ./cmd/oa inventory transfer --product-id <product-id> --from-warehouse-id <warehouse-id> --to-warehouse-id <warehouse-id> --quantity 3
 ```
 
-Product types are `GOODS` and `SERVICE`; product statuses are `ACTIVE` and `INACTIVE`. Use `--json` on inventory read and mutation commands for automation. `inventory adjust` accepts signed quantities; positive quantities add stock and negative quantities remove stock.
+Product types are `GOODS` and `SERVICE`; product statuses are `ACTIVE` and `INACTIVE`. Product CSV imports require `name` and `sales_price`; optional columns include `code`, `product_type`, `category_id`, `category_name`, prices, VAT, reorder settings, account IDs, inventory tracking, status, barcode, supplier, and lead time. Use `--json` on inventory read and mutation commands for automation. `inventory adjust` accepts signed quantities; positive quantities add stock and negative quantities remove stock.
 
 ## Cost centers
 

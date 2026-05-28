@@ -1466,6 +1466,14 @@ func (c *apiClient) createProduct(ctx context.Context, tenantID string, req *inv
 	return &resp, nil
 }
 
+func (c *apiClient) importProducts(ctx context.Context, tenantID string, req *inventory.ImportProductsRequest) (*inventory.ImportProductsResult, error) {
+	var resp inventory.ImportProductsResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "products", "import"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) getProduct(ctx context.Context, tenantID, productID string) (*inventory.Product, error) {
 	var resp inventory.Product
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "products", productID), nil, c.apiToken, &resp); err != nil {

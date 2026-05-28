@@ -2103,6 +2103,7 @@ func TestCLIInventoryCommands(t *testing.T) {
 		"created_at":    "2026-03-15T12:00:00Z",
 		"created_by":    "user-1",
 	}
+	importFile := writeTempCSV(t, "products.csv", "code,name,sales_price\nSKU-001,Widget,15.00\n")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -2149,6 +2150,16 @@ func TestCLIInventoryCommands(t *testing.T) {
 			assert.Equal(t, 4, req.LeadTimeDays)
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(productPayload("Widget", true))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/products/import":
+			var req inventory.ImportProductsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "products.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "SKU-001")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed":   1,
+				"products_created": 1,
+				"rows_skipped":     0,
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-1":
 			_ = json.NewEncoder(w).Encode(productPayload("Widget", true))
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-1":
@@ -2272,6 +2283,11 @@ func TestCLIInventoryCommands(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created product PRD-001 Widget (prod-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "products", "import", "--file", importFile})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 products, skipped 0 rows")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"inventory", "products", "get", "--id", "prod-1"})

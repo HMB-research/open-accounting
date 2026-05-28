@@ -671,6 +671,82 @@ func TestService_CreateProduct_Defaults(t *testing.T) {
 	assert.True(t, product.VATRate.Equal(decimal.NewFromInt(22))) // Default Estonian VAT
 }
 
+func TestService_ImportProductsCSV(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Categories["cat-1"] = &ProductCategory{
+		ID:       "cat-1",
+		TenantID: "tenant-1",
+		Name:     "Parts",
+	}
+
+	result, err := ts.svc.ImportProductsCSV(ctx, "tenant-1", "test_schema", &ImportProductsRequest{
+		FileName: "products.csv",
+		CSVContent: "code,name,product_type,category_name,sales_price,purchase_price,vat_rate,track_inventory,status\n" +
+			"SKU-001,Widget,GOODS,Parts,15.00,10.50,22,true,ACTIVE\n" +
+			",Missing price,GOODS,Parts,,10.50,22,true,ACTIVE\n" +
+			",Consulting,SERVICE,,120.00,0,22,,INACTIVE\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "products.csv", result.FileName)
+	assert.Equal(t, 3, result.RowsProcessed)
+	assert.Equal(t, 2, result.ProductsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, 3, result.Errors[0].Row)
+	assert.Contains(t, result.Errors[0].Message, "sales_price is required")
+
+	var widget *Product
+	var consulting *Product
+	for _, product := range ts.repo.Products {
+		switch product.Name {
+		case "Widget":
+			widget = product
+		case "Consulting":
+			consulting = product
+		}
+	}
+
+	require.NotNil(t, widget)
+	assert.Equal(t, "SKU-001", widget.Code)
+	assert.Equal(t, ProductTypeGoods, widget.ProductType)
+	assert.Equal(t, "cat-1", widget.CategoryID)
+	assert.True(t, widget.TrackInventory)
+	assert.True(t, widget.IsActive)
+	assert.True(t, widget.SalesPrice.Equal(decimal.RequireFromString("15.00")))
+
+	require.NotNil(t, consulting)
+	assert.Equal(t, "PRD-00001", consulting.Code)
+	assert.Equal(t, ProductTypeService, consulting.ProductType)
+	assert.False(t, consulting.TrackInventory)
+	assert.False(t, consulting.IsActive)
+}
+
+func TestService_ImportProductsCSV_DuplicateCode(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products["prod-1"] = &Product{
+		ID:       "prod-1",
+		TenantID: "tenant-1",
+		Code:     "SKU-001",
+		Name:     "Existing widget",
+	}
+
+	result, err := ts.svc.ImportProductsCSV(ctx, "tenant-1", "test_schema", &ImportProductsRequest{
+		CSVContent: "code,name,sales_price\nSKU-001,Widget,15.00\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 0, result.ProductsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, "duplicate code")
+}
+
 func TestService_CreateProduct_InvalidSalesPrice(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
