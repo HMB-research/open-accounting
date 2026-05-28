@@ -2151,7 +2151,7 @@ Authorization: Bearer <token>
 
 **Query Parameters:**
 - `as_of_date` (string): Date in YYYY-MM-DD format
-- `format` (string): `json` (default), `csv`, or `xlsx`
+- `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
 
 ### Account Balance
 
@@ -2172,7 +2172,7 @@ Authorization: Bearer <token>
 
 **Query Parameters:**
 - `as_of` (string): Date in YYYY-MM-DD format
-- `format` (string): `json` (default), `csv`, or `xlsx`
+- `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
 
 ### Income Statement
 
@@ -2184,7 +2184,7 @@ Authorization: Bearer <token>
 **Query Parameters:**
 - `start` (string, required): Start date in YYYY-MM-DD format
 - `end` (string, required): End date in YYYY-MM-DD format
-- `format` (string): `json` (default), `csv`, or `xlsx`
+- `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
 
 ### Cash Flow Statement
 
@@ -2196,7 +2196,7 @@ Authorization: Bearer <token>
 **Query Parameters:**
 - `start_date` (string, required): Start date in YYYY-MM-DD format
 - `end_date` (string, required): End date in YYYY-MM-DD format
-- `format` (string): `json` (default), `csv`, or `xlsx`
+- `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
 
 ### Receivables Aging
 
@@ -2206,7 +2206,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
-- `format` (string): `json` (default), `csv`, or `xlsx`
+- `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
 
 ### Payables Aging
 
@@ -2216,7 +2216,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
-- `format` (string): `json` (default), `csv`, or `xlsx`
+- `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
 
 ### Balance Confirmation Summary
 
@@ -2228,7 +2228,7 @@ Authorization: Bearer <token>
 **Query Parameters:**
 - `type` (string, required): `RECEIVABLE` or `PAYABLE`
 - `as_of_date` (string, required): Date in YYYY-MM-DD format
-- `format` (string): `json` (default), `csv`, or `xlsx`
+- `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
 
 ### Contact Balance Confirmation
 
@@ -2240,7 +2240,7 @@ Authorization: Bearer <token>
 **Query Parameters:**
 - `type` (string, required): `RECEIVABLE` or `PAYABLE`
 - `as_of_date` (string, required): Date in YYYY-MM-DD format
-- `format` (string): `json` (default), `csv`, or `xlsx`
+- `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
 
 ---
 

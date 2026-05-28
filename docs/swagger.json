@@ -9560,7 +9560,8 @@
                 "produces": [
                     "application/json",
                     "text/csv",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/pdf"
                 ],
                 "tags": [
                     "Reports"
@@ -9576,7 +9577,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "Response format: json, csv, or xlsx",
+                        "description": "Response format: json, csv, xlsx, or pdf",
                         "name": "format",
                         "in": "query"
                     }
@@ -9613,7 +9614,8 @@
                 "produces": [
                     "application/json",
                     "text/csv",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/pdf"
                 ],
                 "tags": [
                     "Reports"
@@ -9629,7 +9631,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "Response format: json, csv, or xlsx",
+                        "description": "Response format: json, csv, xlsx, or pdf",
                         "name": "format",
                         "in": "query"
                     }
@@ -9666,7 +9668,8 @@
                 "produces": [
                     "application/json",
                     "text/csv",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/pdf"
                 ],
                 "tags": [
                     "Reports"
@@ -9696,7 +9699,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "Response format: json, csv, or xlsx",
+                        "description": "Response format: json, csv, xlsx, or pdf",
                         "name": "format",
                         "in": "query"
                     }
@@ -9744,7 +9747,8 @@
                 "produces": [
                     "application/json",
                     "text/csv",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/pdf"
                 ],
                 "tags": [
                     "Reports"
@@ -9781,7 +9785,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "Response format: json, csv, or xlsx",
+                        "description": "Response format: json, csv, xlsx, or pdf",
                         "name": "format",
                         "in": "query"
                     }
@@ -9829,7 +9833,8 @@
                 "produces": [
                     "application/json",
                     "text/csv",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/pdf"
                 ],
                 "tags": [
                     "Reports"
@@ -9851,7 +9856,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "Response format: json, csv, or xlsx",
+                        "description": "Response format: json, csv, xlsx, or pdf",
                         "name": "format",
                         "in": "query"
                     }
@@ -9899,7 +9904,8 @@
                 "produces": [
                     "application/json",
                     "text/csv",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/pdf"
                 ],
                 "tags": [
                     "Reports"
@@ -9929,7 +9935,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "Response format: json, csv, or xlsx",
+                        "description": "Response format: json, csv, xlsx, or pdf",
                         "name": "format",
                         "in": "query"
                     }
@@ -9977,7 +9983,8 @@
                 "produces": [
                     "application/json",
                     "text/csv",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/pdf"
                 ],
                 "tags": [
                     "Reports"
@@ -10007,7 +10014,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "Response format: json, csv, or xlsx",
+                        "description": "Response format: json, csv, xlsx, or pdf",
                         "name": "format",
                         "in": "query"
                     }
@@ -10055,7 +10062,8 @@
                 "produces": [
                     "application/json",
                     "text/csv",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/pdf"
                 ],
                 "tags": [
                     "Reports"
@@ -10077,7 +10085,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "Response format: json, csv, or xlsx",
+                        "description": "Response format: json, csv, xlsx, or pdf",
                         "name": "format",
                         "in": "query"
                     }

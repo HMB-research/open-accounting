@@ -234,6 +234,14 @@ func TestReportHandlers(t *testing.T) {
 	assert.Contains(t, rr.Header().Get("Content-Disposition"), "trial-balance-2026-02-28.xlsx")
 	requireXLSXContains(t, rr.Body.Bytes(), "account_code", "Cash", "1000")
 
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/trial-balance?as_of_date=2026-02-28&format=pdf", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetTrialBalance(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	assert.Contains(t, rr.Header().Get("Content-Disposition"), "trial-balance-2026-02-28.pdf")
+	requirePDF(t, rr.Body.Bytes())
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/trial-balance?as_of_date=bad-date", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.GetTrialBalance(rr, req)
@@ -273,6 +281,13 @@ func TestReportHandlers(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 	requireXLSXContains(t, rr.Body.Bytes(), "total_assets")
 
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-sheet?as_of=2026-02-28&format=pdf", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetBalanceSheet(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	requirePDF(t, rr.Body.Bytes())
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-sheet?as_of=not-a-date", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.GetBalanceSheet(rr, req)
@@ -295,6 +310,13 @@ func TestReportHandlers(t *testing.T) {
 	h.GetIncomeStatement(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 	requireXLSXContains(t, rr.Body.Bytes(), "net_income")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/income-statement?start=2026-01-01&end=2026-01-31&format=pdf", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetIncomeStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	requirePDF(t, rr.Body.Bytes())
 
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/income-statement", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
@@ -330,4 +352,11 @@ func requireXLSXContains(t *testing.T, content []byte, expected ...string) {
 	for _, value := range expected {
 		assert.Contains(t, sheetContent, value)
 	}
+}
+
+func requirePDF(t *testing.T, content []byte) {
+	t.Helper()
+
+	require.GreaterOrEqual(t, len(content), 4)
+	assert.Equal(t, "%PDF", string(content[:4]))
 }

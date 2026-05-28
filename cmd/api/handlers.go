@@ -923,11 +923,11 @@ func (h *Handlers) VoidJournalEntry(w http.ResponseWriter, r *http.Request) {
 // @Summary Get trial balance
 // @Description Get trial balance report as of a specific date
 // @Tags Reports
-// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param as_of_date query string false "As of date (YYYY-MM-DD)"
-// @Param format query string false "Response format: json, csv, or xlsx"
+// @Param format query string false "Response format: json, csv, xlsx, or pdf"
 // @Success 200 {object} accounting.TrialBalance
 // @Failure 400 {object} object{error=string}
 // @Failure 500 {object} object{error=string}
@@ -975,6 +975,15 @@ func (h *Handlers) GetTrialBalance(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		respondReportXLSX(w, fmt.Sprintf("trial-balance-%s.xlsx", asOfDate.Format("2006-01-02")), content)
+		return
+	}
+	if format == "pdf" {
+		content, err := trialBalancePDF(tb, asOfDate)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export trial balance PDF")
+			return
+		}
+		respondReportPDF(w, fmt.Sprintf("trial-balance-%s.pdf", asOfDate.Format("2006-01-02")), content)
 		return
 	}
 
@@ -1027,11 +1036,11 @@ func (h *Handlers) GetAccountBalance(w http.ResponseWriter, r *http.Request) {
 // @Summary Get balance sheet
 // @Description Get balance sheet report as of a specific date
 // @Tags Reports
-// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param as_of query string false "As of date (YYYY-MM-DD)"
-// @Param format query string false "Response format: json, csv, or xlsx"
+// @Param format query string false "Response format: json, csv, xlsx, or pdf"
 // @Success 200 {object} accounting.BalanceSheet
 // @Failure 400 {object} object{error=string}
 // @Failure 500 {object} object{error=string}
@@ -1081,6 +1090,15 @@ func (h *Handlers) GetBalanceSheet(w http.ResponseWriter, r *http.Request) {
 		respondReportXLSX(w, fmt.Sprintf("balance-sheet-%s.xlsx", asOfDate.Format("2006-01-02")), content)
 		return
 	}
+	if format == "pdf" {
+		content, err := balanceSheetPDF(bs, asOfDate)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export balance sheet PDF")
+			return
+		}
+		respondReportPDF(w, fmt.Sprintf("balance-sheet-%s.pdf", asOfDate.Format("2006-01-02")), content)
+		return
+	}
 
 	respondJSON(w, http.StatusOK, bs)
 }
@@ -1089,12 +1107,12 @@ func (h *Handlers) GetBalanceSheet(w http.ResponseWriter, r *http.Request) {
 // @Summary Get income statement
 // @Description Get income statement (P&L) report for a specific period
 // @Tags Reports
-// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param start query string true "Start date (YYYY-MM-DD)"
 // @Param end query string true "End date (YYYY-MM-DD)"
-// @Param format query string false "Response format: json, csv, or xlsx"
+// @Param format query string false "Response format: json, csv, xlsx, or pdf"
 // @Success 200 {object} accounting.IncomeStatement
 // @Failure 400 {object} object{error=string}
 // @Failure 500 {object} object{error=string}
@@ -1158,6 +1176,15 @@ func (h *Handlers) GetIncomeStatement(w http.ResponseWriter, r *http.Request) {
 		respondReportXLSX(w, fmt.Sprintf("income-statement-%s-%s.xlsx", startDate.Format("2006-01-02"), endDate.Format("2006-01-02")), content)
 		return
 	}
+	if format == "pdf" {
+		content, err := incomeStatementPDF(is, startDate, endDate)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export income statement PDF")
+			return
+		}
+		respondReportPDF(w, fmt.Sprintf("income-statement-%s-%s.pdf", startDate.Format("2006-01-02"), endDate.Format("2006-01-02")), content)
+		return
+	}
 
 	respondJSON(w, http.StatusOK, is)
 }
@@ -1166,12 +1193,12 @@ func (h *Handlers) GetIncomeStatement(w http.ResponseWriter, r *http.Request) {
 // @Summary Get cash flow statement
 // @Description Get cash flow statement report for a specific period (Estonian standard)
 // @Tags Reports
-// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param start_date query string true "Start date (YYYY-MM-DD)"
 // @Param end_date query string true "End date (YYYY-MM-DD)"
-// @Param format query string false "Response format: json, csv, or xlsx"
+// @Param format query string false "Response format: json, csv, xlsx, or pdf"
 // @Success 200 {object} reports.CashFlowStatement
 // @Failure 400 {object} object{error=string}
 // @Failure 500 {object} object{error=string}
@@ -1240,6 +1267,15 @@ func (h *Handlers) GetCashFlowStatement(w http.ResponseWriter, r *http.Request) 
 		respondReportXLSX(w, fmt.Sprintf("cash-flow-%s-%s.xlsx", startDateStr, endDateStr), content)
 		return
 	}
+	if format == "pdf" {
+		content, err := cashFlowStatementPDF(result)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export cash flow PDF")
+			return
+		}
+		respondReportPDF(w, fmt.Sprintf("cash-flow-%s-%s.pdf", startDateStr, endDateStr), content)
+		return
+	}
 
 	respondJSON(w, http.StatusOK, result)
 }
@@ -1248,12 +1284,12 @@ func (h *Handlers) GetCashFlowStatement(w http.ResponseWriter, r *http.Request) 
 // @Summary Get balance confirmation summary
 // @Description Get a summary of all receivables or payables grouped by contact
 // @Tags Reports
-// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param type query string true "Balance type (RECEIVABLE or PAYABLE)"
 // @Param as_of_date query string true "As of date (YYYY-MM-DD)"
-// @Param format query string false "Response format: json, csv, or xlsx"
+// @Param format query string false "Response format: json, csv, xlsx, or pdf"
 // @Success 200 {object} reports.BalanceConfirmationSummary
 // @Failure 400 {object} object{error=string}
 // @Failure 500 {object} object{error=string}
@@ -1323,6 +1359,15 @@ func (h *Handlers) GetBalanceConfirmationSummary(w http.ResponseWriter, r *http.
 		respondReportXLSX(w, fmt.Sprintf("balance-confirmations-%s-%s.xlsx", strings.ToLower(balanceType), asOfDate), content)
 		return
 	}
+	if format == "pdf" {
+		content, err := balanceConfirmationSummaryPDF(result)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export balance confirmations PDF")
+			return
+		}
+		respondReportPDF(w, fmt.Sprintf("balance-confirmations-%s-%s.pdf", strings.ToLower(balanceType), asOfDate), content)
+		return
+	}
 
 	respondJSON(w, http.StatusOK, result)
 }
@@ -1331,13 +1376,13 @@ func (h *Handlers) GetBalanceConfirmationSummary(w http.ResponseWriter, r *http.
 // @Summary Get balance confirmation for contact
 // @Description Get detailed balance confirmation with invoices for a specific contact
 // @Tags Reports
-// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param contactID path string true "Contact ID"
 // @Param type query string true "Balance type (RECEIVABLE or PAYABLE)"
 // @Param as_of_date query string true "As of date (YYYY-MM-DD)"
-// @Param format query string false "Response format: json, csv, or xlsx"
+// @Param format query string false "Response format: json, csv, xlsx, or pdf"
 // @Success 200 {object} reports.BalanceConfirmation
 // @Failure 400 {object} object{error=string}
 // @Failure 500 {object} object{error=string}
@@ -1407,6 +1452,15 @@ func (h *Handlers) GetBalanceConfirmation(w http.ResponseWriter, r *http.Request
 			return
 		}
 		respondReportXLSX(w, fmt.Sprintf("balance-confirmation-%s-%s.xlsx", contactID, asOfDate), content)
+		return
+	}
+	if format == "pdf" {
+		content, err := balanceConfirmationPDF(result)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export balance confirmation PDF")
+			return
+		}
+		respondReportPDF(w, fmt.Sprintf("balance-confirmation-%s-%s.pdf", contactID, asOfDate), content)
 		return
 	}
 

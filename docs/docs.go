@@ -9571,7 +9571,8 @@ const docTemplate = `{
                 "produces": [
                     "application/json",
                     "text/csv",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/pdf"
                 ],
                 "tags": [
                     "Reports"
@@ -9587,7 +9588,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Response format: json, csv, or xlsx",
+                        "description": "Response format: json, csv, xlsx, or pdf",
                         "name": "format",
                         "in": "query"
                     }
@@ -9624,7 +9625,8 @@ const docTemplate = `{
                 "produces": [
                     "application/json",
                     "text/csv",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/pdf"
                 ],
                 "tags": [
                     "Reports"
@@ -9640,7 +9642,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Response format: json, csv, or xlsx",
+                        "description": "Response format: json, csv, xlsx, or pdf",
                         "name": "format",
                         "in": "query"
                     }
@@ -9677,7 +9679,8 @@ const docTemplate = `{
                 "produces": [
                     "application/json",
                     "text/csv",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/pdf"
                 ],
                 "tags": [
                     "Reports"
@@ -9707,7 +9710,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Response format: json, csv, or xlsx",
+                        "description": "Response format: json, csv, xlsx, or pdf",
                         "name": "format",
                         "in": "query"
                     }
@@ -9755,7 +9758,8 @@ const docTemplate = `{
                 "produces": [
                     "application/json",
                     "text/csv",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/pdf"
                 ],
                 "tags": [
                     "Reports"
@@ -9792,7 +9796,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Response format: json, csv, or xlsx",
+                        "description": "Response format: json, csv, xlsx, or pdf",
                         "name": "format",
                         "in": "query"
                     }
@@ -9840,7 +9844,8 @@ const docTemplate = `{
                 "produces": [
                     "application/json",
                     "text/csv",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/pdf"
                 ],
                 "tags": [
                     "Reports"
@@ -9862,7 +9867,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Response format: json, csv, or xlsx",
+                        "description": "Response format: json, csv, xlsx, or pdf",
                         "name": "format",
                         "in": "query"
                     }
@@ -9910,7 +9915,8 @@ const docTemplate = `{
                 "produces": [
                     "application/json",
                     "text/csv",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/pdf"
                 ],
                 "tags": [
                     "Reports"
@@ -9940,7 +9946,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Response format: json, csv, or xlsx",
+                        "description": "Response format: json, csv, xlsx, or pdf",
                         "name": "format",
                         "in": "query"
                     }
@@ -9988,7 +9994,8 @@ const docTemplate = `{
                 "produces": [
                     "application/json",
                     "text/csv",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/pdf"
                 ],
                 "tags": [
                     "Reports"
@@ -10018,7 +10025,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Response format: json, csv, or xlsx",
+                        "description": "Response format: json, csv, xlsx, or pdf",
                         "name": "format",
                         "in": "query"
                     }
@@ -10066,7 +10073,8 @@ const docTemplate = `{
                 "produces": [
                     "application/json",
                     "text/csv",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/pdf"
                 ],
                 "tags": [
                     "Reports"
@@ -10088,7 +10096,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Response format: json, csv, or xlsx",
+                        "description": "Response format: json, csv, xlsx, or pdf",
                         "name": "format",
                         "in": "query"
                     }

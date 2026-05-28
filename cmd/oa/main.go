@@ -7496,11 +7496,12 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		asJSON := fs.Bool("json", false, "Output JSON")
 		asCSV := fs.Bool("csv", false, "Output CSV")
 		asXLSX := fs.Bool("xlsx", false, "Output XLSX")
-		outputPath := fs.String("output", "", "Optional CSV/XLSX output file path")
+		asPDF := fs.Bool("pdf", false, "Output PDF")
+		outputPath := fs.String("output", "", "Optional CSV/XLSX/PDF output file path")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *outputPath); err != nil {
+		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *asPDF, *outputPath); err != nil {
 			return err
 		}
 		if *asCSV {
@@ -7516,6 +7517,13 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 				return err
 			}
 			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "trial balance XLSX")
+		}
+		if *asPDF {
+			content, err := client.exportTrialBalancePDF(ctx, cfg.TenantID, strings.TrimSpace(*asOf))
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "trial balance PDF")
 		}
 
 		report, err := client.getTrialBalance(ctx, cfg.TenantID, strings.TrimSpace(*asOf))
@@ -7558,11 +7566,12 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		asJSON := fs.Bool("json", false, "Output JSON")
 		asCSV := fs.Bool("csv", false, "Output CSV")
 		asXLSX := fs.Bool("xlsx", false, "Output XLSX")
-		outputPath := fs.String("output", "", "Optional CSV/XLSX output file path")
+		asPDF := fs.Bool("pdf", false, "Output PDF")
+		outputPath := fs.String("output", "", "Optional CSV/XLSX/PDF output file path")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *outputPath); err != nil {
+		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *asPDF, *outputPath); err != nil {
 			return err
 		}
 		if *asCSV {
@@ -7578,6 +7587,13 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 				return err
 			}
 			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "balance sheet XLSX")
+		}
+		if *asPDF {
+			content, err := client.exportBalanceSheetPDF(ctx, cfg.TenantID, strings.TrimSpace(*asOf))
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "balance sheet PDF")
 		}
 
 		report, err := client.getBalanceSheet(ctx, cfg.TenantID, strings.TrimSpace(*asOf))
@@ -7598,11 +7614,12 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		asJSON := fs.Bool("json", false, "Output JSON")
 		asCSV := fs.Bool("csv", false, "Output CSV")
 		asXLSX := fs.Bool("xlsx", false, "Output XLSX")
-		outputPath := fs.String("output", "", "Optional CSV/XLSX output file path")
+		asPDF := fs.Bool("pdf", false, "Output PDF")
+		outputPath := fs.String("output", "", "Optional CSV/XLSX/PDF output file path")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *outputPath); err != nil {
+		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *asPDF, *outputPath); err != nil {
 			return err
 		}
 		if strings.TrimSpace(*startDate) == "" || strings.TrimSpace(*endDate) == "" {
@@ -7621,6 +7638,13 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 				return err
 			}
 			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "income statement XLSX")
+		}
+		if *asPDF {
+			content, err := client.exportIncomeStatementPDF(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate))
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "income statement PDF")
 		}
 
 		report, err := client.getIncomeStatement(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate))
@@ -7641,11 +7665,12 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		asJSON := fs.Bool("json", false, "Output JSON")
 		asCSV := fs.Bool("csv", false, "Output CSV")
 		asXLSX := fs.Bool("xlsx", false, "Output XLSX")
-		outputPath := fs.String("output", "", "Optional CSV/XLSX output file path")
+		asPDF := fs.Bool("pdf", false, "Output PDF")
+		outputPath := fs.String("output", "", "Optional CSV/XLSX/PDF output file path")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *outputPath); err != nil {
+		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *asPDF, *outputPath); err != nil {
 			return err
 		}
 		if strings.TrimSpace(*startDate) == "" || strings.TrimSpace(*endDate) == "" {
@@ -7665,6 +7690,13 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 			}
 			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "cash flow XLSX")
 		}
+		if *asPDF {
+			content, err := client.exportCashFlowStatementPDF(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate))
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "cash flow PDF")
+		}
 
 		report, err := client.getCashFlowStatement(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate))
 		if err != nil {
@@ -7683,11 +7715,12 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		asJSON := fs.Bool("json", false, "Output JSON")
 		asCSV := fs.Bool("csv", false, "Output CSV")
 		asXLSX := fs.Bool("xlsx", false, "Output XLSX")
-		outputPath := fs.String("output", "", "Optional CSV/XLSX output file path")
+		asPDF := fs.Bool("pdf", false, "Output PDF")
+		outputPath := fs.String("output", "", "Optional CSV/XLSX/PDF output file path")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *outputPath); err != nil {
+		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *asPDF, *outputPath); err != nil {
 			return err
 		}
 		normalizedType := strings.ToLower(strings.TrimSpace(*reportType))
@@ -7709,6 +7742,13 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 			}
 			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, normalizedType+" aging XLSX")
 		}
+		if *asPDF {
+			content, err := client.exportAgingReport(ctx, cfg.TenantID, normalizedType, "pdf")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, normalizedType+" aging PDF")
+		}
 
 		report, err := client.getAgingReport(ctx, cfg.TenantID, normalizedType)
 		if err != nil {
@@ -7728,11 +7768,12 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		asJSON := fs.Bool("json", false, "Output JSON")
 		asCSV := fs.Bool("csv", false, "Output CSV")
 		asXLSX := fs.Bool("xlsx", false, "Output XLSX")
-		outputPath := fs.String("output", "", "Optional CSV/XLSX output file path")
+		asPDF := fs.Bool("pdf", false, "Output PDF")
+		outputPath := fs.String("output", "", "Optional CSV/XLSX/PDF output file path")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *outputPath); err != nil {
+		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *asPDF, *outputPath); err != nil {
 			return err
 		}
 		normalizedType := strings.ToUpper(strings.TrimSpace(*balanceType))
@@ -7757,6 +7798,13 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 			}
 			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "balance confirmations XLSX")
 		}
+		if *asPDF {
+			content, err := client.exportBalanceConfirmationSummary(ctx, cfg.TenantID, normalizedType, strings.TrimSpace(*asOf), "pdf")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "balance confirmations PDF")
+		}
 
 		report, err := client.getBalanceConfirmationSummary(ctx, cfg.TenantID, normalizedType, strings.TrimSpace(*asOf))
 		if err != nil {
@@ -7777,11 +7825,12 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		asJSON := fs.Bool("json", false, "Output JSON")
 		asCSV := fs.Bool("csv", false, "Output CSV")
 		asXLSX := fs.Bool("xlsx", false, "Output XLSX")
-		outputPath := fs.String("output", "", "Optional CSV/XLSX output file path")
+		asPDF := fs.Bool("pdf", false, "Output PDF")
+		outputPath := fs.String("output", "", "Optional CSV/XLSX/PDF output file path")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *outputPath); err != nil {
+		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *asPDF, *outputPath); err != nil {
 			return err
 		}
 		if strings.TrimSpace(*contactID) == "" {
@@ -7809,6 +7858,13 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 			}
 			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "balance confirmation XLSX")
 		}
+		if *asPDF {
+			content, err := client.exportBalanceConfirmation(ctx, cfg.TenantID, strings.TrimSpace(*contactID), normalizedType, strings.TrimSpace(*asOf), "pdf")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "balance confirmation PDF")
+		}
 
 		report, err := client.getBalanceConfirmation(ctx, cfg.TenantID, strings.TrimSpace(*contactID), normalizedType, strings.TrimSpace(*asOf))
 		if err != nil {
@@ -7825,18 +7881,18 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 	}
 }
 
-func validateReportOutputFlags(asJSON, asCSV, asXLSX bool, outputPath string) error {
+func validateReportOutputFlags(asJSON, asCSV, asXLSX, asPDF bool, outputPath string) error {
 	selected := 0
-	for _, value := range []bool{asJSON, asCSV, asXLSX} {
+	for _, value := range []bool{asJSON, asCSV, asXLSX, asPDF} {
 		if value {
 			selected++
 		}
 	}
 	if selected > 1 {
-		return errors.New("json, csv, and xlsx cannot be combined")
+		return errors.New("json, csv, xlsx, and pdf cannot be combined")
 	}
-	if strings.TrimSpace(outputPath) != "" && !asCSV && !asXLSX {
-		return errors.New("output requires csv or xlsx")
+	if strings.TrimSpace(outputPath) != "" && !asCSV && !asXLSX && !asPDF {
+		return errors.New("output requires csv, xlsx, or pdf")
 	}
 	return nil
 }
