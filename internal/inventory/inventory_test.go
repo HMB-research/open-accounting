@@ -1597,6 +1597,82 @@ func TestService_GetMovements(t *testing.T) {
 	assert.Len(t, movements, 2)
 }
 
+func TestService_GetInventoryValuation(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products["p1"] = &Product{
+		ID:             "p1",
+		TenantID:       "tenant-1",
+		Code:           "SKU-001",
+		Name:           "Widget",
+		ProductType:    ProductTypeGoods,
+		PurchasePrice:  decimal.RequireFromString("10.50"),
+		TrackInventory: true,
+		IsActive:       true,
+	}
+	ts.repo.Products["p2"] = &Product{
+		ID:             "p2",
+		TenantID:       "tenant-1",
+		Code:           "SRV-001",
+		Name:           "Consulting",
+		ProductType:    ProductTypeService,
+		PurchasePrice:  decimal.RequireFromString("99.00"),
+		TrackInventory: true,
+		IsActive:       true,
+	}
+	ts.repo.Products["p3"] = &Product{
+		ID:             "p3",
+		TenantID:       "tenant-1",
+		Code:           "SKU-002",
+		Name:           "Untracked part",
+		ProductType:    ProductTypeGoods,
+		PurchasePrice:  decimal.RequireFromString("2.00"),
+		TrackInventory: false,
+		IsActive:       true,
+	}
+	ts.repo.Warehouses["wh-1"] = &Warehouse{ID: "wh-1", TenantID: "tenant-1", Code: "MAIN", Name: "Main warehouse", IsActive: true}
+	ts.repo.Warehouses["wh-2"] = &Warehouse{ID: "wh-2", TenantID: "tenant-1", Code: "BRANCH", Name: "Branch warehouse", IsActive: true}
+	ts.repo.StockLevels["p1-wh-1"] = &StockLevel{
+		ID:           "stock-1",
+		TenantID:     "tenant-1",
+		ProductID:    "p1",
+		WarehouseID:  "wh-1",
+		Quantity:     decimal.RequireFromString("12.00"),
+		ReservedQty:  decimal.RequireFromString("2.00"),
+		AvailableQty: decimal.RequireFromString("10.00"),
+	}
+	ts.repo.StockLevels["p1-wh-2"] = &StockLevel{
+		ID:           "stock-2",
+		TenantID:     "tenant-1",
+		ProductID:    "p1",
+		WarehouseID:  "wh-2",
+		Quantity:     decimal.RequireFromString("3.00"),
+		ReservedQty:  decimal.Zero,
+		AvailableQty: decimal.RequireFromString("3.00"),
+	}
+
+	report, err := ts.svc.GetInventoryValuation(ctx, "tenant-1", "test_schema", "")
+	require.NoError(t, err)
+	require.Len(t, report.Lines, 2)
+	assert.Equal(t, InventoryValuationMethodStandardCost, report.ValuationMethod)
+	assert.True(t, report.TotalQuantity.Equal(decimal.RequireFromString("15.00")))
+	assert.True(t, report.TotalReserved.Equal(decimal.RequireFromString("2.00")))
+	assert.True(t, report.TotalAvailable.Equal(decimal.RequireFromString("13.00")))
+	assert.True(t, report.TotalValue.Equal(decimal.RequireFromString("157.5000")))
+	assert.Equal(t, "SKU-001", report.Lines[0].ProductCode)
+	assert.Equal(t, "BRANCH", report.Lines[0].WarehouseCode)
+	assert.True(t, report.Lines[0].InventoryValue.Equal(decimal.RequireFromString("31.5000")))
+
+	filtered, err := ts.svc.GetInventoryValuation(ctx, "tenant-1", "test_schema", "wh-1")
+	require.NoError(t, err)
+	require.Len(t, filtered.Lines, 1)
+	assert.Equal(t, "wh-1", filtered.WarehouseID)
+	assert.Equal(t, "MAIN", filtered.Lines[0].WarehouseCode)
+	assert.True(t, filtered.TotalQuantity.Equal(decimal.RequireFromString("12.00")))
+	assert.True(t, filtered.TotalValue.Equal(decimal.RequireFromString("126.0000")))
+}
+
 func TestNewService(t *testing.T) {
 	svc := NewService(nil)
 	assert.NotNil(t, svc)

@@ -4258,6 +4258,36 @@ func (h *Handlers) GetInventoryMovements(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, http.StatusOK, movements)
 }
 
+// GetInventoryValuation returns standard-cost inventory valuation by warehouse.
+// @Summary Get inventory valuation
+// @Description Return valued on-hand stock for tracked goods using product purchase price as standard cost
+// @Tags Inventory
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param warehouse_id query string false "Warehouse ID"
+// @Success 200 {object} inventory.InventoryValuationReport
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/inventory/valuation [get]
+func (h *Handlers) GetInventoryValuation(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+	warehouseID := strings.TrimSpace(r.URL.Query().Get("warehouse_id"))
+
+	report, err := h.inventoryService.GetInventoryValuation(r.Context(), tenantID, schemaName, warehouseID)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if warehouseID != "" && strings.Contains(err.Error(), "warehouse") {
+			status = http.StatusBadRequest
+		}
+		respondError(w, status, fmt.Sprintf("Failed to get inventory valuation: %v", err))
+		return
+	}
+
+	respondJSON(w, http.StatusOK, report)
+}
+
 // ListWarehouses lists all warehouses
 func (h *Handlers) ListWarehouses(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")

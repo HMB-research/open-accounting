@@ -5359,6 +5359,68 @@
                 }
             }
         },
+        "/tenants/{tenantID}/inventory/valuation": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Return valued on-hand stock for tracked goods using product purchase price as standard cost",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Inventory"
+                ],
+                "summary": "Get inventory valuation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Warehouse ID",
+                        "name": "warehouse_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventoryValuationReport"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/invitations": {
             "get": {
                 "security": [
@@ -14901,6 +14963,79 @@
                 },
                 "row": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_inventory.InventoryValuationLine": {
+            "type": "object",
+            "properties": {
+                "available_qty": {
+                    "type": "number"
+                },
+                "inventory_value": {
+                    "type": "number"
+                },
+                "product_code": {
+                    "type": "string"
+                },
+                "product_id": {
+                    "type": "string"
+                },
+                "product_name": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "number"
+                },
+                "reserved_qty": {
+                    "type": "number"
+                },
+                "unit_cost": {
+                    "type": "number"
+                },
+                "warehouse_code": {
+                    "type": "string"
+                },
+                "warehouse_id": {
+                    "type": "string"
+                },
+                "warehouse_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_inventory.InventoryValuationReport": {
+            "type": "object",
+            "properties": {
+                "generated_at": {
+                    "type": "string"
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventoryValuationLine"
+                    }
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "total_available": {
+                    "type": "number"
+                },
+                "total_quantity": {
+                    "type": "number"
+                },
+                "total_reserved": {
+                    "type": "number"
+                },
+                "total_value": {
+                    "type": "number"
+                },
+                "valuation_method": {
+                    "type": "string"
+                },
+                "warehouse_id": {
+                    "type": "string"
                 }
             }
         },

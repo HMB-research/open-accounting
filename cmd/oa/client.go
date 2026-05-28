@@ -1564,6 +1564,19 @@ func (c *apiClient) listInventoryMovements(ctx context.Context, tenantID, produc
 	return resp, nil
 }
 
+func (c *apiClient) getInventoryValuation(ctx context.Context, tenantID, warehouseID string) (*inventory.InventoryValuationReport, error) {
+	values := url.Values{}
+	if strings.TrimSpace(warehouseID) != "" {
+		values.Set("warehouse_id", strings.TrimSpace(warehouseID))
+	}
+
+	var resp inventory.InventoryValuationReport
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "inventory", "valuation"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) listWarehouses(ctx context.Context, tenantID string, activeOnly bool) ([]inventory.Warehouse, error) {
 	values := url.Values{}
 	if activeOnly {

@@ -1660,6 +1660,16 @@ GET /tenants/{tenantId}/products/{productId}/movements
 Authorization: Bearer <token>
 ```
 
+### Inventory Valuation
+
+```http
+GET /tenants/{tenantId}/inventory/valuation
+GET /tenants/{tenantId}/inventory/valuation?warehouse_id={warehouseId}
+Authorization: Bearer <token>
+```
+
+Returns tracked `GOODS` stock valued with the standard-cost method, using each product `purchase_price` as unit cost. The response includes product and warehouse labels, on-hand/reserved/available quantities, line value, and report totals.
+
 ### Warehouses
 
 ```http

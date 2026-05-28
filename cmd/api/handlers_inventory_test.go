@@ -894,6 +894,70 @@ func TestReleaseStockRejectsOverRelease(t *testing.T) {
 	assert.Contains(t, rr.Body.String(), "cannot release more than reserved stock")
 }
 
+func TestGetInventoryValuation(t *testing.T) {
+	h, repo, tenantRepo := setupInventoryTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	repo.products["prod-1"] = &inventory.Product{
+		ID:             "prod-1",
+		TenantID:       "tenant-1",
+		Code:           "SKU-001",
+		Name:           "Widget",
+		ProductType:    inventory.ProductTypeGoods,
+		PurchasePrice:  decimal.RequireFromString("10.50"),
+		TrackInventory: true,
+		IsActive:       true,
+	}
+	repo.products["prod-2"] = &inventory.Product{
+		ID:             "prod-2",
+		TenantID:       "tenant-1",
+		Code:           "SRV-001",
+		Name:           "Consulting",
+		ProductType:    inventory.ProductTypeService,
+		PurchasePrice:  decimal.RequireFromString("100.00"),
+		TrackInventory: true,
+		IsActive:       true,
+	}
+	repo.warehouses["wh-1"] = &inventory.Warehouse{
+		ID:       "wh-1",
+		TenantID: "tenant-1",
+		Code:     "MAIN",
+		Name:     "Main Warehouse",
+	}
+	repo.stockLevels["prod-1-wh-1"] = &inventory.StockLevel{
+		ID:           "stock-1",
+		TenantID:     "tenant-1",
+		ProductID:    "prod-1",
+		WarehouseID:  "wh-1",
+		Quantity:     decimal.RequireFromString("12.00"),
+		ReservedQty:  decimal.RequireFromString("2.00"),
+		AvailableQty: decimal.RequireFromString("10.00"),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/inventory/valuation?warehouse_id=wh-1", nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.GetInventoryValuation(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var result inventory.InventoryValuationReport
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &result))
+	require.Len(t, result.Lines, 1)
+	assert.Equal(t, inventory.InventoryValuationMethodStandardCost, result.ValuationMethod)
+	assert.Equal(t, "wh-1", result.WarehouseID)
+	assert.Equal(t, "SKU-001", result.Lines[0].ProductCode)
+	assert.Equal(t, "MAIN", result.Lines[0].WarehouseCode)
+	assert.True(t, result.TotalQuantity.Equal(decimal.RequireFromString("12.00")))
+	assert.True(t, result.TotalValue.Equal(decimal.RequireFromString("126.0000")))
+}
+
 func TestListProductCategories(t *testing.T) {
 	h, repo, tenantRepo := setupInventoryTestHandlers()
 

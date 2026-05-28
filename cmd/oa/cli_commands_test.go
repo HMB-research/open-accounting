@@ -2180,6 +2180,31 @@ func TestCLIInventoryCommands(t *testing.T) {
 		"created_at":    "2026-03-15T12:00:00Z",
 		"created_by":    "user-1",
 	}
+	valuationPayload := map[string]any{
+		"tenant_id":        "tenant-1",
+		"warehouse_id":     "wh-1",
+		"valuation_method": "STANDARD_COST",
+		"lines": []map[string]any{
+			{
+				"product_id":      "prod-1",
+				"product_code":    "PRD-001",
+				"product_name":    "Widget",
+				"warehouse_id":    "wh-1",
+				"warehouse_code":  "MAIN",
+				"warehouse_name":  "Main warehouse",
+				"quantity":        "12.00",
+				"reserved_qty":    "2.00",
+				"available_qty":   "10.00",
+				"unit_cost":       "10.50",
+				"inventory_value": "126.00",
+			},
+		},
+		"total_quantity":  "12.00",
+		"total_reserved":  "2.00",
+		"total_available": "10.00",
+		"total_value":     "126.00",
+		"generated_at":    "2026-03-15T12:00:00Z",
+	}
 	categoryImportFile := writeTempCSV(t, "categories.csv", "name,description\nParts,Spare parts\n")
 	importFile := writeTempCSV(t, "products.csv", "code,name,sales_price\nSKU-001,Widget,15.00\n")
 	warehouseImportFile := writeTempCSV(t, "warehouses.csv", "code,name,address,is_default\nMAIN,Main warehouse,Tallinn,true\n")
@@ -2264,6 +2289,9 @@ func TestCLIInventoryCommands(t *testing.T) {
 			_ = json.NewEncoder(w).Encode([]map[string]any{stockLevelPayload})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-1/movements":
 			_ = json.NewEncoder(w).Encode([]map[string]any{movementPayload})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/valuation":
+			require.Equal(t, "wh-1", r.URL.Query().Get("warehouse_id"))
+			_ = json.NewEncoder(w).Encode(valuationPayload)
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-1":
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses":
@@ -2450,6 +2478,13 @@ func TestCLIInventoryCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "ADJUSTMENT")
 	assert.Contains(t, stdout.String(), "Cycle count")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "valuation", "--warehouse-id", "wh-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Inventory valuation (STANDARD_COST)")
+	assert.Contains(t, stdout.String(), "PRD-001 Widget")
+	assert.Contains(t, stdout.String(), "126")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"inventory", "products", "delete", "--id", "prod-1"})
