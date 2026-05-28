@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
@@ -35,21 +36,23 @@ type JournalEntrySummary struct {
 
 // YearEndCloseStatus summarizes readiness for fiscal-year carry-forward.
 type YearEndCloseStatus struct {
-	PeriodEndDate              string               `json:"period_end_date"`
-	FiscalYearLabel            string               `json:"fiscal_year_label"`
-	FiscalYearStartDate        string               `json:"fiscal_year_start_date"`
-	FiscalYearEndDate          string               `json:"fiscal_year_end_date"`
-	CarryForwardDate           string               `json:"carry_forward_date"`
-	LockedThroughDate          *string              `json:"locked_through_date,omitempty"`
-	IsFiscalYearEnd            bool                 `json:"is_fiscal_year_end"`
-	PeriodClosed               bool                 `json:"period_closed"`
-	HasProfitAndLossActivity   bool                 `json:"has_profit_and_loss_activity"`
-	CarryForwardNeeded         bool                 `json:"carry_forward_needed"`
-	CarryForwardReady          bool                 `json:"carry_forward_ready"`
-	HasRetainedEarningsAccount bool                 `json:"has_retained_earnings_account"`
-	RetainedEarningsAccount    *AccountSummary      `json:"retained_earnings_account,omitempty"`
-	NetIncome                  decimal.Decimal      `json:"net_income"`
-	ExistingCarryForward       *JournalEntrySummary `json:"existing_carry_forward,omitempty"`
+	PeriodEndDate              string                          `json:"period_end_date"`
+	FiscalYearLabel            string                          `json:"fiscal_year_label"`
+	FiscalYearStartDate        string                          `json:"fiscal_year_start_date"`
+	FiscalYearEndDate          string                          `json:"fiscal_year_end_date"`
+	CarryForwardDate           string                          `json:"carry_forward_date"`
+	LockedThroughDate          *string                         `json:"locked_through_date,omitempty"`
+	IsFiscalYearEnd            bool                            `json:"is_fiscal_year_end"`
+	PeriodClosed               bool                            `json:"period_closed"`
+	HasProfitAndLossActivity   bool                            `json:"has_profit_and_loss_activity"`
+	CarryForwardNeeded         bool                            `json:"carry_forward_needed"`
+	CarryForwardReady          bool                            `json:"carry_forward_ready"`
+	HasRetainedEarningsAccount bool                            `json:"has_retained_earnings_account"`
+	RetainedEarningsAccount    *AccountSummary                 `json:"retained_earnings_account,omitempty"`
+	NetIncome                  decimal.Decimal                 `json:"net_income"`
+	ExistingCarryForward       *JournalEntrySummary            `json:"existing_carry_forward,omitempty"`
+	ClosePackEvidenceEntityID  string                          `json:"close_pack_evidence_entity_id,omitempty"`
+	ClosePackEvidence          *documents.EvidencePolicyResult `json:"close_pack_evidence,omitempty"`
 }
 
 // YearEndClosePack bundles close readiness with core year-end financial reports.
@@ -121,17 +124,18 @@ func (s *Service) GetYearEndCloseStatus(ctx context.Context, schemaName, tenantI
 	}
 
 	status := &YearEndCloseStatus{
-		PeriodEndDate:            periodEndDate.Format(yearEndDateLayout),
-		FiscalYearLabel:          fiscalYearLabel(fiscalYearStartDate, fiscalYearEndDate),
-		FiscalYearStartDate:      fiscalYearStartDate.Format(yearEndDateLayout),
-		FiscalYearEndDate:        fiscalYearEndDate.Format(yearEndDateLayout),
-		CarryForwardDate:         fiscalYearEndDate.AddDate(0, 0, 1).Format(yearEndDateLayout),
-		LockedThroughDate:        normalizedLockDate,
-		IsFiscalYearEnd:          periodEndDate.Equal(fiscalYearEndDate),
-		PeriodClosed:             periodClosed,
-		HasProfitAndLossActivity: len(periodBalances) > 0,
-		CarryForwardNeeded:       len(periodBalances) > 0 && existingEntry == nil,
-		NetIncome:                incomeStatement.NetIncome,
+		PeriodEndDate:             periodEndDate.Format(yearEndDateLayout),
+		FiscalYearLabel:           fiscalYearLabel(fiscalYearStartDate, fiscalYearEndDate),
+		FiscalYearStartDate:       fiscalYearStartDate.Format(yearEndDateLayout),
+		FiscalYearEndDate:         fiscalYearEndDate.Format(yearEndDateLayout),
+		CarryForwardDate:          fiscalYearEndDate.AddDate(0, 0, 1).Format(yearEndDateLayout),
+		LockedThroughDate:         normalizedLockDate,
+		IsFiscalYearEnd:           periodEndDate.Equal(fiscalYearEndDate),
+		PeriodClosed:              periodClosed,
+		HasProfitAndLossActivity:  len(periodBalances) > 0,
+		CarryForwardNeeded:        len(periodBalances) > 0 && existingEntry == nil,
+		NetIncome:                 incomeStatement.NetIncome,
+		ClosePackEvidenceEntityID: yearEndCloseEvidenceEntityID(tenantID, fiscalYearEndDate),
 	}
 
 	if retainedEarningsAccount != nil {
@@ -538,9 +542,32 @@ func yearEndCarryForwardSourceID(tenantID string, fiscalYearEndDate time.Time) s
 	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(fmt.Sprintf("year-end-carry-forward:%s:%s", tenantID, fiscalYearEndDate.Format(yearEndDateLayout)))).String()
 }
 
+func yearEndCloseEvidenceEntityID(tenantID string, fiscalYearEndDate time.Time) string {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(fmt.Sprintf("year-end-close:%s:%s", tenantID, fiscalYearEndDate.Format(yearEndDateLayout)))).String()
+}
+
 // YearEndCarryForwardSourceID returns the deterministic source UUID used for a fiscal year.
 func YearEndCarryForwardSourceID(tenantID string, fiscalYearEndDate time.Time) string {
 	return yearEndCarryForwardSourceID(tenantID, fiscalYearEndDate)
+}
+
+// YearEndCloseEvidenceEntityID returns the deterministic document entity UUID used for close-pack evidence.
+func YearEndCloseEvidenceEntityID(tenantID, rawPeriodEndDate string) (string, error) {
+	periodEndDate, err := parseYearEndDate(rawPeriodEndDate)
+	if err != nil {
+		return "", err
+	}
+	return yearEndCloseEvidenceEntityID(tenantID, periodEndDate), nil
+}
+
+// IsFiscalYearEndPeriod reports whether a period end date matches the tenant fiscal year end.
+func IsFiscalYearEndPeriod(rawPeriodEndDate string, fiscalYearStartMonth int) (bool, error) {
+	periodEndDate, err := parseYearEndDate(rawPeriodEndDate)
+	if err != nil {
+		return false, err
+	}
+	_, fiscalYearEndDate := fiscalYearBounds(periodEndDate, fiscalYearStartMonth)
+	return periodEndDate.Equal(fiscalYearEndDate), nil
 }
 
 func normalizeYearEndDate(value time.Time) time.Time {

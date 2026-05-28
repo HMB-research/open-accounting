@@ -341,8 +341,12 @@ Returns the fiscal-year readiness summary for the selected date, including:
 - whether revenue/expense activity exists for the year
 - retained-earnings account mapping
 - whether a carry-forward journal already exists
+- the `close_pack_evidence_entity_id` used for required close-pack evidence
+- approved close-pack evidence compliance when document evidence is configured
 
 The close pack endpoint adds the year-end trial balance, balance sheet, and income statement to the readiness summary.
+
+Before a fiscal-year close with reviewer sign-off, upload and approve at least one `close_pack` document against the returned `year_end_close` evidence entity. The same approved close-pack evidence is also required before posting year-end carry-forward.
 
 ### Post Year-End Carry-Forward
 
@@ -2124,7 +2128,7 @@ Close or reopen request:
 }
 ```
 
-Fiscal-year close requests require `reviewer_sign_off=true`. Reopen requests require a note. The API rejects fiscal-year reopen requests after year-end carry-forward has been posted.
+Fiscal-year close requests require `reviewer_sign_off=true` and approved `close_pack` evidence attached to the `year_end_close` entity ID returned by year-end status or pack. Reopen requests require a note. The API rejects fiscal-year reopen requests after year-end carry-forward has been posted.
 
 ### Year-End Carry-Forward
 
@@ -2136,7 +2140,7 @@ POST /tenants/{tenantId}/year-end-carry-forward/reverse
 Authorization: Bearer <token>
 ```
 
-The close pack returns the readiness status plus year-end trial balance, balance sheet, and income statement for the selected fiscal year.
+The close pack returns the readiness status plus year-end trial balance, balance sheet, and income statement for the selected fiscal year. Year-end carry-forward requires the fiscal year to be closed and the same approved close-pack evidence to be present.
 
 Create carry-forward:
 

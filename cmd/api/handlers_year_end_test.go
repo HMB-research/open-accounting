@@ -16,6 +16,7 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/auth"
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -218,6 +219,57 @@ func TestGetYearEndCloseStatus(t *testing.T) {
 	assert.Equal(t, "2026-01-01", resp.CarryForwardDate)
 }
 
+func TestGetYearEndCloseStatusIncludesClosePackEvidence(t *testing.T) {
+	h, repo, accountingRepo := setupTenantAccountingHandlers()
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+
+	settings := tenant.DefaultSettings()
+	settings.PeriodLockDate = stringPtr("2025-12-31")
+	repo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		Name:       "Tenant",
+		Slug:       "tenant",
+		SchemaName: "tenant_tenant",
+		Settings:   settings,
+	}
+	accountingRepo.accounts["retained"] = &accounting.Account{
+		ID:          "retained",
+		TenantID:    "tenant-1",
+		Code:        "3200",
+		Name:        "Retained Earnings",
+		AccountType: accounting.AccountTypeEquity,
+		IsActive:    true,
+	}
+	accountingRepo.periodBalances = []accounting.AccountBalance{
+		{
+			AccountID:     "revenue-1",
+			AccountCode:   "4100",
+			AccountName:   "Sales Revenue",
+			AccountType:   accounting.AccountTypeRevenue,
+			CreditBalance: decimal.NewFromInt(1000),
+			NetBalance:    decimal.NewFromInt(1000),
+		},
+	}
+
+	req := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/year-end-close-status?period_end_date=2025-12-31", nil, &auth.Claims{
+		UserID: "user-1",
+		Email:  "user@example.com",
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	w := httptest.NewRecorder()
+
+	h.GetYearEndCloseStatus(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	var resp accounting.YearEndCloseStatus
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	require.NotEmpty(t, resp.ClosePackEvidenceEntityID)
+	require.NotNil(t, resp.ClosePackEvidence)
+	assert.False(t, resp.ClosePackEvidence.Compliant)
+	assert.False(t, resp.CarryForwardReady)
+}
+
 func TestGetYearEndClosePack(t *testing.T) {
 	h, repo, accountingRepo := setupTenantAccountingHandlers()
 	settings := tenant.DefaultSettings()
@@ -341,6 +393,39 @@ func TestCreateYearEndCarryForward(t *testing.T) {
 	require.NotNil(t, resp.Status)
 	require.NotNil(t, resp.Status.ExistingCarryForward)
 	assert.Equal(t, resp.JournalEntry.ID, resp.Status.ExistingCarryForward.ID)
+}
+
+func TestCreateYearEndCarryForwardRequiresApprovedClosePackEvidence(t *testing.T) {
+	h, repo, _ := setupTenantAccountingHandlers()
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+
+	settings := tenant.DefaultSettings()
+	settings.PeriodLockDate = stringPtr("2025-12-31")
+	repo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		Name:       "Tenant",
+		Slug:       "tenant",
+		SchemaName: "tenant_tenant",
+		Settings:   settings,
+	}
+	repo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+		{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner},
+	}
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/year-end-carry-forward", map[string]interface{}{
+		"period_end_date": "2025-12-31",
+	}, &auth.Claims{
+		UserID: "user-1",
+		Email:  "user@example.com",
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	w := httptest.NewRecorder()
+
+	h.CreateYearEndCarryForward(w, req)
+
+	require.Equal(t, http.StatusConflict, w.Code, "response body: %s", w.Body.String())
+	assert.Contains(t, w.Body.String(), "approved close-pack evidence is required")
 }
 
 func TestCreateYearEndCarryForwardRequiresClosedYear(t *testing.T) {

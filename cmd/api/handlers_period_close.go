@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
+
+var errApprovedClosePackEvidenceRequired = errors.New("approved close-pack evidence is required")
 
 type periodCloseResponse struct {
 	Tenant *tenant.Tenant           `json:"tenant"`
@@ -47,6 +50,18 @@ func (h *Handlers) ClosePeriod(w http.ResponseWriter, r *http.Request) {
 	var req tenant.ClosePeriodRequest
 	if !decodeJSONRequest(w, r, &req) {
 		return
+	}
+
+	tenantRecord, err := h.tenantService.GetTenant(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Tenant not found")
+		return
+	}
+	if req.ReviewerSignOff {
+		if err := h.requireApprovedYearEndClosePackEvidence(r.Context(), tenantRecord, req.PeriodEndDate); err != nil {
+			respondPeriodCloseError(w, err)
+			return
+		}
 	}
 
 	updatedTenant, event, err := h.tenantService.ClosePeriod(r.Context(), tenantID, userID, &req)
@@ -124,6 +139,8 @@ func (h *Handlers) authorizePeriodCloseMutation(w http.ResponseWriter, r *http.R
 
 func respondPeriodCloseError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, errApprovedClosePackEvidenceRequired):
+		respondError(w, http.StatusConflict, err.Error())
 	case strings.Contains(err.Error(), "tenant not found"):
 		respondError(w, http.StatusNotFound, "Tenant not found")
 	case strings.Contains(err.Error(), "period end date"):

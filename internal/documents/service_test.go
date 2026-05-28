@@ -304,6 +304,33 @@ func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 		t.Fatalf("expected pay-3 policy to fail as missing evidence: %#v", policyResults[2])
 	}
 
+	repo.docs["doc-close-pack"] = &Document{
+		ID:           "doc-close-pack",
+		TenantID:     "tenant-1",
+		EntityType:   EntityTypeYearEndClose,
+		EntityID:     "8a369f1a-f0c4-5a50-9b41-cb0fda4a09ee",
+		DocumentType: DocumentTypeClosePack,
+		FileName:     "close-pack.pdf",
+		ReviewStatus: ReviewStatusApproved,
+		UploadedBy:   "user-1",
+		CreatedAt:    time.Now().UTC(),
+	}
+	closePackResults, err := svc.EvaluateEvidencePolicy(context.Background(), "tenant_demo", "tenant-1", &EvidencePolicyRequest{
+		EntityType: EntityTypeYearEndClose,
+		EntityIDs:  []string{"8a369f1a-f0c4-5a50-9b41-cb0fda4a09ee"},
+		Rules: []EvidencePolicyRule{{
+			DocumentTypes:   []string{DocumentTypeClosePack},
+			MinCount:        1,
+			RequireApproved: true,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("EvaluateEvidencePolicy close pack failed: %v", err)
+	}
+	if len(closePackResults) != 1 || !closePackResults[0].Compliant || closePackResults[0].ApprovedDocumentTypeCounts[DocumentTypeClosePack] != 1 {
+		t.Fatalf("expected close-pack policy to pass with approved close pack: %#v", closePackResults)
+	}
+
 	if err := svc.DeleteDocument(context.Background(), "tenant_demo", "tenant-1", doc.ID); err != nil {
 		t.Fatalf("DeleteDocument failed: %v", err)
 	}
