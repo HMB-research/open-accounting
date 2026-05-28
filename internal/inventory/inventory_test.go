@@ -747,6 +747,53 @@ func TestService_ImportProductsCSV_DuplicateCode(t *testing.T) {
 	assert.Contains(t, result.Errors[0].Message, "duplicate code")
 }
 
+func TestService_ImportProductCategoriesCSV(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Categories["cat-existing"] = &ProductCategory{
+		ID:       "cat-existing",
+		TenantID: "tenant-1",
+		Name:     "Existing",
+	}
+
+	result, err := ts.svc.ImportProductCategoriesCSV(ctx, "tenant-1", "test_schema", &ImportProductCategoriesRequest{
+		FileName: "categories.csv",
+		CSVContent: "category_name,description,parent_name\n" +
+			"Parts,Spare parts,\n" +
+			"Fasteners,Bolts and screws,Parts\n" +
+			"Existing,Duplicate,\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "categories.csv", result.FileName)
+	assert.Equal(t, 3, result.RowsProcessed)
+	assert.Equal(t, 2, result.CategoriesCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, 4, result.Errors[0].Row)
+	assert.Contains(t, result.Errors[0].Message, "duplicate name")
+
+	var parts *ProductCategory
+	var fasteners *ProductCategory
+	for _, category := range ts.repo.Categories {
+		switch category.Name {
+		case "Parts":
+			parts = category
+		case "Fasteners":
+			fasteners = category
+		}
+	}
+
+	require.NotNil(t, parts)
+	assert.Equal(t, "Spare parts", parts.Description)
+	assert.Empty(t, parts.ParentID)
+
+	require.NotNil(t, fasteners)
+	assert.Equal(t, "Bolts and screws", fasteners.Description)
+	assert.Equal(t, parts.ID, fasteners.ParentID)
+}
+
 func TestService_ImportWarehousesCSV(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()

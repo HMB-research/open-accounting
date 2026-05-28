@@ -446,6 +446,7 @@ Asset statuses are `DRAFT`, `ACTIVE`, `DISPOSED`, and `SOLD`. Depreciation metho
 ```bash
 go run ./cmd/oa inventory categories list
 go run ./cmd/oa inventory categories create --name Parts --description "Spare parts"
+go run ./cmd/oa inventory categories import --file ./categories.csv
 go run ./cmd/oa inventory categories get --id <category-id>
 go run ./cmd/oa inventory categories delete --id <category-id>
 
@@ -481,7 +482,7 @@ go run ./cmd/oa inventory stock import --file ./stock.csv
 go run ./cmd/oa inventory transfer --product-id <product-id> --from-warehouse-id <warehouse-id> --to-warehouse-id <warehouse-id> --quantity 3
 ```
 
-Product types are `GOODS` and `SERVICE`; product statuses are `ACTIVE` and `INACTIVE`. Product CSV imports require `name` and `sales_price`; optional columns include `code`, `product_type`, `category_id`, `category_name`, prices, VAT, reorder settings, account IDs, inventory tracking, status, barcode, supplier, and lead time. Warehouse CSV imports require `code` and `name`; optional columns include `address`, `is_default`, `status`, and `is_active`. Use `--json` on inventory read and mutation commands for automation. `inventory adjust` accepts signed quantities; positive quantities add stock and negative quantities remove stock. `inventory stock import` accepts `product_id` or `product_code`, `warehouse_id` or `warehouse_code`, signed `quantity`, optional `unit_cost`, and optional `reason`.
+Product types are `GOODS` and `SERVICE`; product statuses are `ACTIVE` and `INACTIVE`. Product category CSV imports require `name` and can resolve `parent_name` from existing categories or earlier rows. Product CSV imports require `name` and `sales_price`; optional columns include `code`, `product_type`, `category_id`, `category_name`, prices, VAT, reorder settings, account IDs, inventory tracking, status, barcode, supplier, and lead time. Warehouse CSV imports require `code` and `name`; optional columns include `address`, `is_default`, `status`, and `is_active`. Use `--json` on inventory read and mutation commands for automation. `inventory adjust` accepts signed quantities; positive quantities add stock and negative quantities remove stock. `inventory stock import` accepts `product_id` or `product_code`, `warehouse_id` or `warehouse_code`, signed `quantity`, optional `unit_cost`, and optional `reason`.
 
 ## Cost centers
 
