@@ -528,6 +528,28 @@ class ApiClient {
     );
   }
 
+  async getDocumentReviewQueue(
+    tenantId: string,
+    filter: DocumentReviewQueueFilter = {},
+  ) {
+    const query = buildQuery(filter);
+    return this.request<DocumentReviewQueue>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/documents/review-queue${query}`,
+    );
+  }
+
+  async getDocumentRetentionReview(
+    tenantId: string,
+    filter: DocumentRetentionReviewFilter = {},
+  ) {
+    const query = buildQuery(filter);
+    return this.request<DocumentRetentionReview>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/documents/retention${query}`,
+    );
+  }
+
   async uploadDocument(
     tenantId: string,
     entityType: DocumentAttachment["entity_type"],
@@ -2705,6 +2727,46 @@ export interface DocumentReviewSummary {
   missing_evidence: boolean;
   has_pending_review: boolean;
   has_rejected: boolean;
+}
+
+export type DocumentReviewStatusFilter = DocumentAttachment["review_status"] | "ALL";
+
+export interface DocumentReviewQueueFilter {
+  entity_type?: DocumentAttachment["entity_type"] | "";
+  document_type?: DocumentAttachment["document_type"] | "";
+  review_status?: DocumentReviewStatusFilter;
+  limit?: number;
+}
+
+export interface DocumentReviewQueue {
+  entity_type?: DocumentAttachment["entity_type"];
+  document_type?: DocumentAttachment["document_type"];
+  review_status: DocumentReviewStatusFilter;
+  limit: number;
+  total_count: number;
+  pending_review_count: number;
+  reviewed_count: number;
+  approved_count: number;
+  rejected_count: number;
+  documents: DocumentAttachment[];
+}
+
+export interface DocumentRetentionReviewFilter {
+  as_of?: string;
+  horizon_days?: number;
+  include_missing?: boolean;
+}
+
+export interface DocumentRetentionReview {
+  as_of_date: string;
+  cutoff_date: string;
+  total_count: number;
+  expired_count: number;
+  due_soon_count: number;
+  missing_retention_count: number;
+  pending_review_count: number;
+  rejected_count: number;
+  documents: DocumentAttachment[];
 }
 
 export interface EvidencePolicyRuleResult {

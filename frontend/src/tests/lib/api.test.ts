@@ -641,6 +641,70 @@ describe("API Client - Core Functionality", () => {
       expect(result[0].entity_id).toBe("tx-1");
     });
 
+    it("should get a tenant-wide document review queue", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          review_status: "PENDING",
+          limit: 25,
+          total_count: 1,
+          pending_review_count: 1,
+          reviewed_count: 0,
+          approved_count: 0,
+          rejected_count: 0,
+          documents: [{ id: "doc-1", file_name: "close-pack.pdf" }],
+        }),
+      });
+
+      const result = await api.getDocumentReviewQueue("tenant-123", {
+        entity_type: "year_end_close",
+        document_type: "close_pack",
+        review_status: "PENDING",
+        limit: 25,
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/documents/review-queue?entity_type=year_end_close&document_type=close_pack&review_status=PENDING&limit=25",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result.documents[0].file_name).toBe("close-pack.pdf");
+    });
+
+    it("should get a tenant-wide document retention review", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          as_of_date: "2027-03-01",
+          cutoff_date: "2027-04-15",
+          total_count: 1,
+          expired_count: 0,
+          due_soon_count: 1,
+          missing_retention_count: 0,
+          pending_review_count: 0,
+          rejected_count: 0,
+          documents: [{ id: "doc-1", file_name: "receipt.pdf" }],
+        }),
+      });
+
+      const result = await api.getDocumentRetentionReview("tenant-123", {
+        as_of: "2027-03-01",
+        horizon_days: 45,
+        include_missing: true,
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/documents/retention?as_of=2027-03-01&horizon_days=45&include_missing=true",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result.due_soon_count).toBe(1);
+    });
+
     it("should upload documents with multipart form data", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

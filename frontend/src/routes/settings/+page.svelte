@@ -134,6 +134,30 @@
 			</div>
 		</a>
 
+		<a href="/documents?tenant={tenantId}" class="settings-card card">
+			<div class="card-icon">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					width="24"
+					height="24"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+					<path d="M14 2v6h6" />
+					<path d="M9 15l2 2 4-4" />
+				</svg>
+			</div>
+			<div class="card-content">
+				<h3>{m.settings_documentsReview()}</h3>
+				<p>{m.settings_documentsReviewDesc()}</p>
+			</div>
+		</a>
+
 		<a href="/settings/users?tenant={tenantId}" class="settings-card card">
 			<div class="card-icon">
 				<svg
