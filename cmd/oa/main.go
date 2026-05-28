@@ -19,6 +19,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/assets"
+	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/inventory"
@@ -76,6 +77,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runInvoices(ctx, args[1:])
 	case "payments":
 		return a.runPayments(ctx, args[1:])
+	case "banking":
+		return a.runBanking(ctx, args[1:])
 	case "quotes":
 		return a.runQuotes(ctx, args[1:])
 	case "orders":
@@ -158,6 +161,9 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  payments get              Show one payment")
 	_, _ = fmt.Fprintln(a.stdout, "  payments allocate         Allocate a payment to an invoice")
 	_, _ = fmt.Fprintln(a.stdout, "  payments unallocated      List unallocated payments")
+	_, _ = fmt.Fprintln(a.stdout, "  banking accounts list     List bank accounts")
+	_, _ = fmt.Fprintln(a.stdout, "  banking transactions list List bank transactions")
+	_, _ = fmt.Fprintln(a.stdout, "  banking reconciliations list  List bank reconciliations")
 	_, _ = fmt.Fprintln(a.stdout, "  quotes list               List quotes")
 	_, _ = fmt.Fprintln(a.stdout, "  quotes create             Create a quote")
 	_, _ = fmt.Fprintln(a.stdout, "  quotes get                Show one quote")
@@ -1217,6 +1223,592 @@ func (a *cliApp) runPayments(ctx context.Context, args []string) error {
 
 	default:
 		return fmt.Errorf("unknown payments subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runBanking(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("banking subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "accounts":
+		return a.runBankAccounts(ctx, cfg, client, args[1:])
+	case "transactions":
+		return a.runBankTransactions(ctx, cfg, client, args[1:])
+	case "reconciliations":
+		return a.runBankReconciliations(ctx, cfg, client, args[1:])
+	default:
+		return fmt.Errorf("unknown banking subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runBankAccounts(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("banking accounts subcommand required")
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("banking accounts list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		activeOnly := fs.Bool("active-only", false, "List only active bank accounts")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		accounts, err := client.listBankAccounts(ctx, cfg.TenantID, *activeOnly)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, accounts)
+		}
+		printBankAccountsTable(a.stdout, accounts)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("banking accounts create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		name := fs.String("name", "", "Bank account name")
+		accountNumber := fs.String("account-number", "", "Account number or IBAN")
+		bankName := fs.String("bank-name", "", "Bank name")
+		swiftCode := fs.String("swift-code", "", "SWIFT/BIC code")
+		currency := fs.String("currency", "EUR", "Currency code")
+		glAccountID := fs.String("gl-account-id", "", "Linked GL account id")
+		isDefault := fs.Bool("default", false, "Set as default bank account")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*name) == "" {
+			return errors.New("name is required")
+		}
+		if strings.TrimSpace(*accountNumber) == "" {
+			return errors.New("account-number is required")
+		}
+
+		account, err := client.createBankAccount(ctx, cfg.TenantID, &banking.CreateBankAccountRequest{
+			Name:          strings.TrimSpace(*name),
+			AccountNumber: strings.TrimSpace(*accountNumber),
+			BankName:      strings.TrimSpace(*bankName),
+			SwiftCode:     strings.TrimSpace(*swiftCode),
+			Currency:      strings.ToUpper(strings.TrimSpace(*currency)),
+			GLAccountID:   optionalStringPtr(*glAccountID),
+			IsDefault:     *isDefault,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, account)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created bank account %s (%s)\n", account.Name, account.ID)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("banking accounts get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		accountID := fs.String("id", "", "Bank account id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*accountID) == "" {
+			return errors.New("id is required")
+		}
+
+		account, err := client.getBankAccount(ctx, cfg.TenantID, strings.TrimSpace(*accountID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, account)
+		}
+		printBankAccount(a.stdout, account)
+		return nil
+
+	case "update":
+		fs := flag.NewFlagSet("banking accounts update", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		accountID := fs.String("id", "", "Bank account id")
+		name := fs.String("name", "", "Bank account name")
+		bankName := fs.String("bank-name", "", "Bank name")
+		swiftCode := fs.String("swift-code", "", "SWIFT/BIC code")
+		glAccountID := fs.String("gl-account-id", "", "Linked GL account id")
+		activeFlag := fs.String("active", "", "Set active state: true or false")
+		defaultFlag := fs.String("default", "", "Set default state: true or false")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*accountID) == "" {
+			return errors.New("id is required")
+		}
+		active, err := parseOptionalBoolPtr("active", *activeFlag)
+		if err != nil {
+			return err
+		}
+		isDefault, err := parseOptionalBoolPtr("default", *defaultFlag)
+		if err != nil {
+			return err
+		}
+
+		account, err := client.updateBankAccount(ctx, cfg.TenantID, strings.TrimSpace(*accountID), &banking.UpdateBankAccountRequest{
+			Name:        strings.TrimSpace(*name),
+			BankName:    strings.TrimSpace(*bankName),
+			SwiftCode:   strings.TrimSpace(*swiftCode),
+			GLAccountID: optionalStringPtr(*glAccountID),
+			IsActive:    active,
+			IsDefault:   isDefault,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, account)
+		}
+		printBankAccount(a.stdout, account)
+		return nil
+
+	case "delete":
+		fs := flag.NewFlagSet("banking accounts delete", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		accountID := fs.String("id", "", "Bank account id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*accountID) == "" {
+			return errors.New("id is required")
+		}
+
+		if err := client.deleteBankAccount(ctx, cfg.TenantID, strings.TrimSpace(*accountID)); err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, map[string]string{"status": "deleted"})
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Deleted bank account %s\n", strings.TrimSpace(*accountID))
+		return nil
+
+	default:
+		return fmt.Errorf("unknown banking accounts subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runBankTransactions(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("banking transactions subcommand required")
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("banking transactions list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		accountID := fs.String("account-id", "", "Bank account id")
+		statusFlag := fs.String("status", "", "Transaction status")
+		fromDate := fs.String("from", "", "From transaction date in YYYY-MM-DD")
+		toDate := fs.String("to", "", "To transaction date in YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*accountID) == "" {
+			return errors.New("account-id is required")
+		}
+		status, err := parseOptionalBankTransactionStatus(*statusFlag)
+		if err != nil {
+			return err
+		}
+		fromDateValue, err := parseOptionalDate("from", *fromDate)
+		if err != nil {
+			return err
+		}
+		toDateValue, err := parseOptionalDate("to", *toDate)
+		if err != nil {
+			return err
+		}
+
+		transactions, err := client.listBankTransactions(ctx, cfg.TenantID, strings.TrimSpace(*accountID), banking.TransactionFilter{
+			Status:   status,
+			FromDate: fromDateValue,
+			ToDate:   toDateValue,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, transactions)
+		}
+		printBankTransactionsTable(a.stdout, transactions)
+		return nil
+
+	case "import":
+		fs := flag.NewFlagSet("banking transactions import", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		accountID := fs.String("account-id", "", "Bank account id")
+		filePath := fs.String("file", "", "CSV file path, or - for stdin")
+		skipDuplicates := fs.Bool("skip-duplicates", true, "Skip duplicate transactions")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*accountID) == "" {
+			return errors.New("account-id is required")
+		}
+		content, fileName, err := readCSVInput(*filePath)
+		if err != nil {
+			return err
+		}
+		rows, err := parseBankTransactionCSVRows(content)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.importBankTransactions(ctx, cfg.TenantID, strings.TrimSpace(*accountID), &banking.ImportCSVRequest{
+			FileName:       fileName,
+			Transactions:   rows,
+			SkipDuplicates: *skipDuplicates,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		printBankImportResult(a.stdout, result)
+		return nil
+
+	case "import-history":
+		fs := flag.NewFlagSet("banking transactions import-history", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		accountID := fs.String("account-id", "", "Bank account id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*accountID) == "" {
+			return errors.New("account-id is required")
+		}
+
+		imports, err := client.listBankImportHistory(ctx, cfg.TenantID, strings.TrimSpace(*accountID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, imports)
+		}
+		printBankImportsTable(a.stdout, imports)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("banking transactions get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		transactionID := fs.String("id", "", "Transaction id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*transactionID) == "" {
+			return errors.New("id is required")
+		}
+
+		transaction, err := client.getBankTransaction(ctx, cfg.TenantID, strings.TrimSpace(*transactionID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, transaction)
+		}
+		printBankTransaction(a.stdout, transaction)
+		return nil
+
+	case "suggestions":
+		fs := flag.NewFlagSet("banking transactions suggestions", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		transactionID := fs.String("id", "", "Transaction id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*transactionID) == "" {
+			return errors.New("id is required")
+		}
+
+		suggestions, err := client.listBankMatchSuggestions(ctx, cfg.TenantID, strings.TrimSpace(*transactionID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, suggestions)
+		}
+		printMatchSuggestionsTable(a.stdout, suggestions)
+		return nil
+
+	case "match":
+		fs := flag.NewFlagSet("banking transactions match", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		transactionID := fs.String("id", "", "Transaction id")
+		paymentID := fs.String("payment-id", "", "Payment id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*transactionID) == "" {
+			return errors.New("id is required")
+		}
+		if strings.TrimSpace(*paymentID) == "" {
+			return errors.New("payment-id is required")
+		}
+
+		result, err := client.matchBankTransaction(ctx, cfg.TenantID, strings.TrimSpace(*transactionID), &banking.MatchTransactionRequest{PaymentID: strings.TrimSpace(*paymentID)})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Matched bank transaction %s to payment %s\n", strings.TrimSpace(*transactionID), strings.TrimSpace(*paymentID))
+		return nil
+
+	case "unmatch":
+		fs := flag.NewFlagSet("banking transactions unmatch", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		transactionID := fs.String("id", "", "Transaction id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*transactionID) == "" {
+			return errors.New("id is required")
+		}
+
+		result, err := client.unmatchBankTransaction(ctx, cfg.TenantID, strings.TrimSpace(*transactionID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Unmatched bank transaction %s\n", strings.TrimSpace(*transactionID))
+		return nil
+
+	case "review":
+		fs := flag.NewFlagSet("banking transactions review", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		transactionID := fs.String("id", "", "Transaction id")
+		followUpStatus := fs.String("follow-up-status", "", "Follow-up status")
+		reviewNote := fs.String("review-note", "", "Review note")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*transactionID) == "" {
+			return errors.New("id is required")
+		}
+		req := &banking.UpdateTransactionReviewRequest{}
+		if strings.TrimSpace(*followUpStatus) != "" {
+			status, err := parseRequiredBankFollowUpStatus(*followUpStatus)
+			if err != nil {
+				return err
+			}
+			req.FollowUpStatus = &status
+		}
+		if trimmed := strings.TrimSpace(*reviewNote); trimmed != "" {
+			req.ReviewNote = &trimmed
+		}
+		if req.FollowUpStatus == nil && req.ReviewNote == nil {
+			return errors.New("follow-up-status or review-note is required")
+		}
+
+		transaction, err := client.reviewBankTransaction(ctx, cfg.TenantID, strings.TrimSpace(*transactionID), req)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, transaction)
+		}
+		printBankTransaction(a.stdout, transaction)
+		return nil
+
+	case "create-payment":
+		fs := flag.NewFlagSet("banking transactions create-payment", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		transactionID := fs.String("id", "", "Transaction id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*transactionID) == "" {
+			return errors.New("id is required")
+		}
+
+		result, err := client.createPaymentFromBankTransaction(ctx, cfg.TenantID, strings.TrimSpace(*transactionID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created payment %s from bank transaction %s\n", result["payment_id"], strings.TrimSpace(*transactionID))
+		return nil
+
+	case "auto-match":
+		fs := flag.NewFlagSet("banking transactions auto-match", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		accountID := fs.String("account-id", "", "Bank account id")
+		minConfidenceFlag := fs.String("min-confidence", "0.7", "Minimum match confidence")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*accountID) == "" {
+			return errors.New("account-id is required")
+		}
+		minConfidence, err := strconv.ParseFloat(strings.TrimSpace(*minConfidenceFlag), 64)
+		if err != nil {
+			return fmt.Errorf("parse min-confidence: %w", err)
+		}
+		if minConfidence < 0 || minConfidence > 1 {
+			return errors.New("min-confidence must be between 0 and 1")
+		}
+
+		result, err := client.autoMatchBankTransactions(ctx, cfg.TenantID, strings.TrimSpace(*accountID), minConfidence)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Matched %d bank transactions\n", result["matched"])
+		return nil
+
+	default:
+		return fmt.Errorf("unknown banking transactions subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runBankReconciliations(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("banking reconciliations subcommand required")
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("banking reconciliations list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		accountID := fs.String("account-id", "", "Bank account id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*accountID) == "" {
+			return errors.New("account-id is required")
+		}
+
+		reconciliations, err := client.listBankReconciliations(ctx, cfg.TenantID, strings.TrimSpace(*accountID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, reconciliations)
+		}
+		printBankReconciliationsTable(a.stdout, reconciliations)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("banking reconciliations create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		accountID := fs.String("account-id", "", "Bank account id")
+		statementDate := fs.String("statement-date", "", "Statement date in YYYY-MM-DD")
+		openingBalanceFlag := fs.String("opening-balance", "", "Opening balance")
+		closingBalanceFlag := fs.String("closing-balance", "", "Closing balance")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*accountID) == "" {
+			return errors.New("account-id is required")
+		}
+		statementDateValue, err := parseRequiredDate("statement-date", *statementDate)
+		if err != nil {
+			return err
+		}
+		openingBalance, err := parseRequiredDecimal("opening-balance", *openingBalanceFlag)
+		if err != nil {
+			return err
+		}
+		closingBalance, err := parseRequiredDecimal("closing-balance", *closingBalanceFlag)
+		if err != nil {
+			return err
+		}
+
+		reconciliation, err := client.createBankReconciliation(ctx, cfg.TenantID, strings.TrimSpace(*accountID), &banking.CreateReconciliationRequest{
+			StatementDate:  statementDateValue.Format("2006-01-02"),
+			OpeningBalance: openingBalance,
+			ClosingBalance: closingBalance,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, reconciliation)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created bank reconciliation %s\n", reconciliation.ID)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("banking reconciliations get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		reconciliationID := fs.String("id", "", "Reconciliation id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*reconciliationID) == "" {
+			return errors.New("id is required")
+		}
+
+		reconciliation, err := client.getBankReconciliation(ctx, cfg.TenantID, strings.TrimSpace(*reconciliationID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, reconciliation)
+		}
+		printBankReconciliation(a.stdout, reconciliation)
+		return nil
+
+	case "complete":
+		fs := flag.NewFlagSet("banking reconciliations complete", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		reconciliationID := fs.String("id", "", "Reconciliation id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*reconciliationID) == "" {
+			return errors.New("id is required")
+		}
+
+		result, err := client.completeBankReconciliation(ctx, cfg.TenantID, strings.TrimSpace(*reconciliationID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Completed bank reconciliation %s\n", strings.TrimSpace(*reconciliationID))
+		return nil
+
+	default:
+		return fmt.Errorf("unknown banking reconciliations subcommand %q", args[0])
 	}
 }
 
@@ -5027,6 +5619,30 @@ func parseOptionalOrderStatus(value string) (orders.OrderStatus, error) {
 	}
 }
 
+func parseOptionalBankTransactionStatus(value string) (banking.TransactionStatus, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	switch banking.TransactionStatus(normalized) {
+	case banking.StatusUnmatched, banking.StatusMatched, banking.StatusReconciled:
+		return banking.TransactionStatus(normalized), nil
+	default:
+		return "", fmt.Errorf("invalid bank transaction status %q", value)
+	}
+}
+
+func parseRequiredBankFollowUpStatus(value string) (banking.FollowUpStatus, error) {
+	status, err := banking.NormalizeFollowUpStatus(value)
+	if err != nil {
+		if strings.TrimSpace(value) == "" {
+			return "", errors.New("follow-up-status is required")
+		}
+		return "", fmt.Errorf("invalid bank follow-up status %q", value)
+	}
+	return status, nil
+}
+
 func parseOptionalAssetStatus(value string) (assets.AssetStatus, error) {
 	if strings.TrimSpace(value) == "" {
 		return "", nil
@@ -5636,6 +6252,98 @@ func readCSVInput(filePath string) (content string, fileName string, err error) 
 		return "", "", err
 	}
 	return string(data), fileName, nil
+}
+
+func parseBankTransactionCSVRows(content string) ([]banking.CSVTransactionRow, error) {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return nil, errors.New("bank transaction CSV is empty")
+	}
+
+	reader := csv.NewReader(strings.NewReader(trimmed))
+	reader.Comma = detectCLICSVDelimiter(trimmed)
+	reader.TrimLeadingSpace = true
+	reader.FieldsPerRecord = -1
+
+	headers, err := reader.Read()
+	if err != nil {
+		return nil, fmt.Errorf("read bank transaction CSV header: %w", err)
+	}
+
+	index := make(map[string]int, len(headers))
+	for i, header := range headers {
+		key := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(header)), "-", "_")
+		key = strings.ReplaceAll(key, " ", "_")
+		index[key] = i
+	}
+
+	get := func(record []string, names ...string) string {
+		for _, name := range names {
+			if i, ok := index[name]; ok && i < len(record) {
+				return strings.TrimSpace(record[i])
+			}
+		}
+		return ""
+	}
+
+	var rows []banking.CSVTransactionRow
+	for rowNum := 2; ; rowNum++ {
+		record, err := reader.Read()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read bank transaction CSV row %d: %w", rowNum, err)
+		}
+		empty := true
+		for _, field := range record {
+			if strings.TrimSpace(field) != "" {
+				empty = false
+				break
+			}
+		}
+		if empty {
+			continue
+		}
+
+		row := banking.CSVTransactionRow{
+			Date:                get(record, "date", "transaction_date"),
+			ValueDate:           get(record, "value_date"),
+			Amount:              get(record, "amount", "sum"),
+			Description:         get(record, "description", "details", "selgitus"),
+			Reference:           get(record, "reference", "payment_reference"),
+			CounterpartyName:    get(record, "counterparty_name", "counterparty", "name"),
+			CounterpartyAccount: get(record, "counterparty_account", "counterparty_iban", "iban"),
+			ExternalID:          get(record, "external_id", "id"),
+		}
+		if row.Date == "" || row.Amount == "" || row.Description == "" {
+			return nil, fmt.Errorf("bank transaction CSV row %d requires date, amount, and description", rowNum)
+		}
+		rows = append(rows, row)
+	}
+
+	if len(rows) == 0 {
+		return nil, errors.New("bank transaction CSV contains no transactions")
+	}
+	return rows, nil
+}
+
+func detectCLICSVDelimiter(content string) rune {
+	firstLine := content
+	if idx := strings.IndexAny(content, "\r\n"); idx >= 0 {
+		firstLine = content[:idx]
+	}
+	delimiters := []rune{',', ';', '\t'}
+	bestDelimiter := ','
+	bestCount := -1
+	for _, delimiter := range delimiters {
+		count := strings.Count(firstLine, string(delimiter))
+		if count > bestCount {
+			bestCount = count
+			bestDelimiter = delimiter
+		}
+	}
+	return bestDelimiter
 }
 
 func readFileInput(filePath string, stdinFileName string) (content []byte, fileName string, err error) {

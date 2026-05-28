@@ -20,6 +20,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/analytics"
 	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/assets"
+	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/inventory"
@@ -343,6 +344,175 @@ func (c *apiClient) listUnallocatedPayments(ctx context.Context, tenantID string
 
 	var resp []payments.Payment
 	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "payments", "unallocated"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) listBankAccounts(ctx context.Context, tenantID string, activeOnly bool) ([]banking.BankAccount, error) {
+	values := url.Values{}
+	if activeOnly {
+		values.Set("active_only", "true")
+	}
+
+	var resp []banking.BankAccount
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "bank-accounts"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createBankAccount(ctx context.Context, tenantID string, req *banking.CreateBankAccountRequest) (*banking.BankAccount, error) {
+	var resp banking.BankAccount
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "bank-accounts"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getBankAccount(ctx context.Context, tenantID, accountID string) (*banking.BankAccount, error) {
+	var resp banking.BankAccount
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "bank-accounts", accountID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) updateBankAccount(ctx context.Context, tenantID, accountID string, req *banking.UpdateBankAccountRequest) (*banking.BankAccount, error) {
+	var resp banking.BankAccount
+	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "bank-accounts", accountID), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) deleteBankAccount(ctx context.Context, tenantID, accountID string) error {
+	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "bank-accounts", accountID), nil, c.apiToken, nil)
+}
+
+func (c *apiClient) listBankTransactions(ctx context.Context, tenantID, accountID string, filter banking.TransactionFilter) ([]banking.BankTransaction, error) {
+	values := url.Values{}
+	if filter.Status != "" {
+		values.Set("status", string(filter.Status))
+	}
+	if filter.FromDate != nil {
+		values.Set("from_date", filter.FromDate.Format("2006-01-02"))
+	}
+	if filter.ToDate != nil {
+		values.Set("to_date", filter.ToDate.Format("2006-01-02"))
+	}
+
+	var resp []banking.BankTransaction
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "bank-accounts", accountID, "transactions"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) importBankTransactions(ctx context.Context, tenantID, accountID string, req *banking.ImportCSVRequest) (*banking.ImportResult, error) {
+	var resp banking.ImportResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "bank-accounts", accountID, "import"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) listBankImportHistory(ctx context.Context, tenantID, accountID string) ([]banking.BankStatementImport, error) {
+	var resp []banking.BankStatementImport
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "bank-accounts", accountID, "import-history"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) getBankTransaction(ctx context.Context, tenantID, transactionID string) (*banking.BankTransaction, error) {
+	var resp banking.BankTransaction
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "bank-transactions", transactionID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) listBankMatchSuggestions(ctx context.Context, tenantID, transactionID string) ([]banking.MatchSuggestion, error) {
+	var resp []banking.MatchSuggestion
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "bank-transactions", transactionID, "suggestions"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) matchBankTransaction(ctx context.Context, tenantID, transactionID string, req *banking.MatchTransactionRequest) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "bank-transactions", transactionID, "match"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) unmatchBankTransaction(ctx context.Context, tenantID, transactionID string) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "bank-transactions", transactionID, "unmatch"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) reviewBankTransaction(ctx context.Context, tenantID, transactionID string, req *banking.UpdateTransactionReviewRequest) (*banking.BankTransaction, error) {
+	var resp banking.BankTransaction
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "bank-transactions", transactionID, "review"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) createPaymentFromBankTransaction(ctx context.Context, tenantID, transactionID string) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "bank-transactions", transactionID, "create-payment"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) listBankReconciliations(ctx context.Context, tenantID, accountID string) ([]banking.BankReconciliation, error) {
+	var resp []banking.BankReconciliation
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "bank-accounts", accountID, "reconciliations"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createBankReconciliation(ctx context.Context, tenantID, accountID string, req *banking.CreateReconciliationRequest) (*banking.BankReconciliation, error) {
+	var resp banking.BankReconciliation
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "bank-accounts", accountID, "reconciliation"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getBankReconciliation(ctx context.Context, tenantID, reconciliationID string) (*banking.BankReconciliation, error) {
+	var resp banking.BankReconciliation
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "reconciliations", reconciliationID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) completeBankReconciliation(ctx context.Context, tenantID, reconciliationID string) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "reconciliations", reconciliationID, "complete"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) autoMatchBankTransactions(ctx context.Context, tenantID, accountID string, minConfidence float64) (map[string]int, error) {
+	values := url.Values{}
+	if minConfidence > 0 {
+		values.Set("min_confidence", strconv.FormatFloat(minConfidence, 'f', -1, 64))
+	}
+
+	var resp map[string]int
+	if err := c.request(ctx, http.MethodPost, withQuery(path.Join("/api/v1/tenants", tenantID, "bank-accounts", accountID, "auto-match"), values), nil, c.apiToken, &resp); err != nil {
 		return nil, err
 	}
 	return resp, nil

@@ -14,6 +14,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/analytics"
 	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/assets"
+	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/inventory"
@@ -910,6 +911,169 @@ func printPaymentAllocationsTable(w io.Writer, allocations []payments.PaymentAll
 		)
 	}
 	_ = tw.Flush()
+}
+
+func printBankAccountsTable(w io.Writer, accounts []banking.BankAccount) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNAME\tACCOUNT\tBANK\tCURRENCY\tDEFAULT\tACTIVE\tBALANCE")
+	for _, account := range accounts {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%t\t%t\t%s\n",
+			account.ID,
+			account.Name,
+			account.AccountNumber,
+			account.BankName,
+			account.Currency,
+			account.IsDefault,
+			account.IsActive,
+			account.Balance.String(),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printBankAccount(w io.Writer, account *banking.BankAccount) {
+	_, _ = fmt.Fprintf(w, "Bank account %s (%s)\n", account.Name, account.AccountNumber)
+	_, _ = fmt.Fprintf(w, "ID: %s\n", account.ID)
+	if strings.TrimSpace(account.BankName) != "" {
+		_, _ = fmt.Fprintf(w, "Bank: %s\n", account.BankName)
+	}
+	if strings.TrimSpace(account.SwiftCode) != "" {
+		_, _ = fmt.Fprintf(w, "SWIFT: %s\n", account.SwiftCode)
+	}
+	_, _ = fmt.Fprintf(w, "Currency: %s\n", account.Currency)
+	_, _ = fmt.Fprintf(w, "Default: %t\n", account.IsDefault)
+	_, _ = fmt.Fprintf(w, "Active: %t\n", account.IsActive)
+	_, _ = fmt.Fprintf(w, "Balance: %s\n", account.Balance.String())
+	if account.GLAccountID != nil && strings.TrimSpace(*account.GLAccountID) != "" {
+		_, _ = fmt.Fprintf(w, "GL account: %s\n", *account.GLAccountID)
+	}
+}
+
+func printBankTransactionsTable(w io.Writer, transactions []banking.BankTransaction) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tDATE\tAMOUNT\tCURRENCY\tSTATUS\tFOLLOW-UP\tCOUNTERPARTY\tREFERENCE\tDESCRIPTION")
+	for _, transaction := range transactions {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			transaction.ID,
+			formatDate(transaction.TransactionDate),
+			transaction.Amount.String(),
+			transaction.Currency,
+			transaction.Status,
+			transaction.FollowUpStatus,
+			transaction.CounterpartyName,
+			transaction.Reference,
+			transaction.Description,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printBankTransaction(w io.Writer, transaction *banking.BankTransaction) {
+	_, _ = fmt.Fprintf(w, "Bank transaction %s (%s)\n", transaction.ID, transaction.Status)
+	_, _ = fmt.Fprintf(w, "Bank account: %s\n", transaction.BankAccountID)
+	_, _ = fmt.Fprintf(w, "Transaction date: %s\n", formatDate(transaction.TransactionDate))
+	_, _ = fmt.Fprintf(w, "Value date: %s\n", formatDatePtr(transaction.ValueDate))
+	_, _ = fmt.Fprintf(w, "Amount: %s %s\n", transaction.Amount.String(), transaction.Currency)
+	if strings.TrimSpace(transaction.Description) != "" {
+		_, _ = fmt.Fprintf(w, "Description: %s\n", transaction.Description)
+	}
+	if strings.TrimSpace(transaction.Reference) != "" {
+		_, _ = fmt.Fprintf(w, "Reference: %s\n", transaction.Reference)
+	}
+	if strings.TrimSpace(transaction.CounterpartyName) != "" {
+		_, _ = fmt.Fprintf(w, "Counterparty: %s\n", transaction.CounterpartyName)
+	}
+	if strings.TrimSpace(transaction.CounterpartyAccount) != "" {
+		_, _ = fmt.Fprintf(w, "Counterparty account: %s\n", transaction.CounterpartyAccount)
+	}
+	_, _ = fmt.Fprintf(w, "Follow-up: %s\n", transaction.FollowUpStatus)
+	if strings.TrimSpace(transaction.ReviewNote) != "" {
+		_, _ = fmt.Fprintf(w, "Review note: %s\n", transaction.ReviewNote)
+	}
+	if transaction.MatchedPaymentID != nil && strings.TrimSpace(*transaction.MatchedPaymentID) != "" {
+		_, _ = fmt.Fprintf(w, "Matched payment: %s\n", *transaction.MatchedPaymentID)
+	}
+	if transaction.ReconciliationID != nil && strings.TrimSpace(*transaction.ReconciliationID) != "" {
+		_, _ = fmt.Fprintf(w, "Reconciliation: %s\n", *transaction.ReconciliationID)
+	}
+}
+
+func printBankImportResult(w io.Writer, result *banking.ImportResult) {
+	_, _ = fmt.Fprintf(w, "Import %s\n", result.ImportID)
+	_, _ = fmt.Fprintf(w, "Imported: %d\n", result.TransactionsImported)
+	_, _ = fmt.Fprintf(w, "Matched: %d\n", result.TransactionsMatched)
+	_, _ = fmt.Fprintf(w, "Duplicates skipped: %d\n", result.DuplicatesSkipped)
+	for _, rowErr := range result.Errors {
+		_, _ = fmt.Fprintf(w, "Error: %s\n", rowErr)
+	}
+}
+
+func printBankImportsTable(w io.Writer, imports []banking.BankStatementImport) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tFILE\tIMPORTED\tMATCHED\tDUPLICATES\tCREATED")
+	for _, entry := range imports {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%d\t%d\t%d\t%s\n",
+			entry.ID,
+			entry.FileName,
+			entry.TransactionsImported,
+			entry.TransactionsMatched,
+			entry.DuplicatesSkipped,
+			entry.CreatedAt.Format(time.RFC3339),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printMatchSuggestionsTable(w io.Writer, suggestions []banking.MatchSuggestion) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "PAYMENT\tNUMBER\tDATE\tAMOUNT\tCONFIDENCE\tCONTACT\tREASON")
+	for _, suggestion := range suggestions {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%.2f\t%s\t%s\n",
+			suggestion.PaymentID,
+			suggestion.PaymentNumber,
+			formatDate(suggestion.PaymentDate),
+			suggestion.Amount.String(),
+			suggestion.Confidence,
+			suggestion.ContactName,
+			suggestion.MatchReason,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printBankReconciliationsTable(w io.Writer, reconciliations []banking.BankReconciliation) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tSTATEMENT\tSTATUS\tOPENING\tCLOSING\tCOMPLETED")
+	for _, reconciliation := range reconciliations {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			reconciliation.ID,
+			formatDate(reconciliation.StatementDate),
+			reconciliation.Status,
+			reconciliation.OpeningBalance.String(),
+			reconciliation.ClosingBalance.String(),
+			formatTimePtr(reconciliation.CompletedAt),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printBankReconciliation(w io.Writer, reconciliation *banking.BankReconciliation) {
+	_, _ = fmt.Fprintf(w, "Bank reconciliation %s (%s)\n", reconciliation.ID, reconciliation.Status)
+	_, _ = fmt.Fprintf(w, "Bank account: %s\n", reconciliation.BankAccountID)
+	_, _ = fmt.Fprintf(w, "Statement date: %s\n", formatDate(reconciliation.StatementDate))
+	_, _ = fmt.Fprintf(w, "Opening balance: %s\n", reconciliation.OpeningBalance.String())
+	_, _ = fmt.Fprintf(w, "Closing balance: %s\n", reconciliation.ClosingBalance.String())
+	_, _ = fmt.Fprintf(w, "Completed: %s\n", formatTimePtr(reconciliation.CompletedAt))
 }
 
 func printPayrollRunsTable(w io.Writer, runs []payroll.PayrollRun) {

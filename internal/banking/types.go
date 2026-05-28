@@ -136,7 +136,7 @@ type UpdateBankAccountRequest struct {
 
 // ImportCSVRequest is the request to import transactions from CSV
 type ImportCSVRequest struct {
-	FileName       string              `json:"-"`
+	FileName       string              `json:"file_name,omitempty"`
 	Transactions   []CSVTransactionRow `json:"transactions"`
 	SkipDuplicates bool                `json:"skip_duplicates"`
 }

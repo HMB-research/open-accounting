@@ -13,6 +13,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/analytics"
 	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/assets"
+	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/inventory"
@@ -167,6 +168,132 @@ func TestPrintPaymentOutputs(t *testing.T) {
 	assert.Contains(t, paymentBuf.String(), "Payment PMT-00001")
 	assert.Contains(t, paymentBuf.String(), "Unallocated: 40")
 	assert.Contains(t, paymentBuf.String(), "inv-1")
+}
+
+func TestPrintBankingOutputs(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	completedAt := now.Add(2 * time.Hour)
+	glAccountID := "acc-bank"
+	paymentID := "pay-1"
+	reconciliationID := "rec-1"
+	account := banking.BankAccount{
+		ID:            "bank-1",
+		TenantID:      "tenant-1",
+		Name:          "Main bank",
+		AccountNumber: "EE471000001020145685",
+		BankName:      "LHV",
+		SwiftCode:     "LHVBEE22",
+		Currency:      "EUR",
+		GLAccountID:   &glAccountID,
+		IsDefault:     true,
+		IsActive:      true,
+		CreatedAt:     now,
+		Balance:       decimal.NewFromInt(100),
+	}
+	transaction := banking.BankTransaction{
+		ID:                  "tx-1",
+		TenantID:            "tenant-1",
+		BankAccountID:       "bank-1",
+		TransactionDate:     now,
+		ValueDate:           &now,
+		Amount:              decimal.NewFromInt(100),
+		Currency:            "EUR",
+		Description:         "Client payment",
+		Reference:           "REF-1",
+		CounterpartyName:    "Acme",
+		CounterpartyAccount: "EE111",
+		Status:              banking.StatusMatched,
+		FollowUpStatus:      banking.FollowUpReadyToMatch,
+		ReviewNote:          "Ready",
+		MatchedPaymentID:    &paymentID,
+		ReconciliationID:    &reconciliationID,
+		ImportedAt:          now,
+	}
+	result := banking.ImportResult{
+		ImportID:             "import-1",
+		TransactionsImported: 1,
+		TransactionsMatched:  0,
+		DuplicatesSkipped:    0,
+	}
+	statementImport := banking.BankStatementImport{
+		ID:                   "import-1",
+		TenantID:             "tenant-1",
+		BankAccountID:        "bank-1",
+		FileName:             "bank.csv",
+		TransactionsImported: 1,
+		TransactionsMatched:  0,
+		DuplicatesSkipped:    0,
+		CreatedAt:            now,
+	}
+	suggestion := banking.MatchSuggestion{
+		PaymentID:     "pay-1",
+		PaymentNumber: "PMT-00001",
+		PaymentDate:   now,
+		Amount:        decimal.NewFromInt(100),
+		ContactName:   "Acme",
+		Confidence:    0.95,
+		MatchReason:   "Amount and reference match",
+	}
+	reconciliation := banking.BankReconciliation{
+		ID:             "rec-1",
+		TenantID:       "tenant-1",
+		BankAccountID:  "bank-1",
+		StatementDate:  now,
+		OpeningBalance: decimal.Zero,
+		ClosingBalance: decimal.NewFromInt(100),
+		Status:         banking.ReconciliationInProgress,
+		CompletedAt:    &completedAt,
+		CreatedAt:      now,
+		CreatedBy:      "user-1",
+	}
+
+	var accountsBuf bytes.Buffer
+	printBankAccountsTable(&accountsBuf, []banking.BankAccount{account})
+	assert.Contains(t, accountsBuf.String(), "Main bank")
+	assert.Contains(t, accountsBuf.String(), "EE471000001020145685")
+
+	var accountBuf bytes.Buffer
+	printBankAccount(&accountBuf, &account)
+	assert.Contains(t, accountBuf.String(), "Bank account Main bank")
+	assert.Contains(t, accountBuf.String(), "GL account: acc-bank")
+
+	var transactionsBuf bytes.Buffer
+	printBankTransactionsTable(&transactionsBuf, []banking.BankTransaction{transaction})
+	assert.Contains(t, transactionsBuf.String(), "Client payment")
+	assert.Contains(t, transactionsBuf.String(), "READY_TO_MATCH")
+
+	var transactionBuf bytes.Buffer
+	printBankTransaction(&transactionBuf, &transaction)
+	assert.Contains(t, transactionBuf.String(), "Bank transaction tx-1")
+	assert.Contains(t, transactionBuf.String(), "Matched payment: pay-1")
+	assert.Contains(t, transactionBuf.String(), "Review note: Ready")
+
+	var resultBuf bytes.Buffer
+	printBankImportResult(&resultBuf, &result)
+	assert.Contains(t, resultBuf.String(), "Import import-1")
+	assert.Contains(t, resultBuf.String(), "Imported: 1")
+
+	var importsBuf bytes.Buffer
+	printBankImportsTable(&importsBuf, []banking.BankStatementImport{statementImport})
+	assert.Contains(t, importsBuf.String(), "bank.csv")
+	assert.Contains(t, importsBuf.String(), "import-1")
+
+	var suggestionsBuf bytes.Buffer
+	printMatchSuggestionsTable(&suggestionsBuf, []banking.MatchSuggestion{suggestion})
+	assert.Contains(t, suggestionsBuf.String(), "PMT-00001")
+	assert.Contains(t, suggestionsBuf.String(), "0.95")
+
+	var reconciliationsBuf bytes.Buffer
+	printBankReconciliationsTable(&reconciliationsBuf, []banking.BankReconciliation{reconciliation})
+	assert.Contains(t, reconciliationsBuf.String(), "rec-1")
+	assert.Contains(t, reconciliationsBuf.String(), "IN_PROGRESS")
+
+	var reconciliationBuf bytes.Buffer
+	printBankReconciliation(&reconciliationBuf, &reconciliation)
+	assert.Contains(t, reconciliationBuf.String(), "Bank reconciliation rec-1")
+	assert.Contains(t, reconciliationBuf.String(), "Closing balance: 100")
 }
 
 func TestPrintInvoiceOutputs(t *testing.T) {

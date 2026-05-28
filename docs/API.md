@@ -318,24 +318,6 @@ This currently applies to:
 
 Invoice import also enforces the lock, but because it is a bulk operation, locked invoice rows are returned as row errors in the import summary instead of failing the whole request with `409 Conflict`.
 
-### Review Bank Transaction
-
-```http
-POST /tenants/{tenantId}/bank-transactions/{transactionId}/review
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "follow_up_status": "EVIDENCE_REQUIRED",
-  "review_note": "Request signed receipt from the client"
-}
-```
-
-- at least one of `follow_up_status` or `review_note` is required
-- `follow_up_status` supports `NONE`, `EVIDENCE_REQUIRED`, and `READY_TO_MATCH`
-- successful updates stamp `reviewed_by` and `reviewed_at` on the transaction
-- the same fields are returned by bank-transaction reads and list endpoints
-
 ### List Recent Journal Entries
 
 ```http
@@ -1561,6 +1543,120 @@ Content-Type: application/json
 GET /tenants/{tenantId}/payments/unallocated?type=RECEIVED
 Authorization: Bearer <token>
 ```
+
+---
+
+## Banking
+
+### Bank Accounts
+
+```http
+GET /tenants/{tenantId}/bank-accounts?active_only=true
+POST /tenants/{tenantId}/bank-accounts
+GET /tenants/{tenantId}/bank-accounts/{accountId}
+PUT /tenants/{tenantId}/bank-accounts/{accountId}
+DELETE /tenants/{tenantId}/bank-accounts/{accountId}
+Authorization: Bearer <token>
+```
+
+Create a bank account:
+
+```json
+{
+  "name": "Main bank",
+  "account_number": "EE471000001020145685",
+  "bank_name": "LHV",
+  "swift_code": "LHVBEE22",
+  "currency": "EUR",
+  "gl_account_id": "uuid",
+  "is_default": true
+}
+```
+
+Update supports `name`, `bank_name`, `swift_code`, `gl_account_id`, `is_active`, and `is_default`.
+
+### Bank Transactions
+
+```http
+GET /tenants/{tenantId}/bank-accounts/{accountId}/transactions?status=UNMATCHED&from_date=2026-03-01&to_date=2026-03-31
+POST /tenants/{tenantId}/bank-accounts/{accountId}/import
+GET /tenants/{tenantId}/bank-accounts/{accountId}/import-history
+GET /tenants/{tenantId}/bank-transactions/{transactionId}
+GET /tenants/{tenantId}/bank-transactions/{transactionId}/suggestions
+POST /tenants/{tenantId}/bank-transactions/{transactionId}/match
+POST /tenants/{tenantId}/bank-transactions/{transactionId}/unmatch
+POST /tenants/{tenantId}/bank-transactions/{transactionId}/review
+POST /tenants/{tenantId}/bank-transactions/{transactionId}/create-payment
+POST /tenants/{tenantId}/bank-accounts/{accountId}/auto-match?min_confidence=0.70
+Authorization: Bearer <token>
+```
+
+Transaction statuses are `UNMATCHED`, `MATCHED`, and `RECONCILED`.
+
+Import pre-parsed transactions:
+
+```json
+{
+  "file_name": "bank.csv",
+  "transactions": [
+    {
+      "date": "2026-03-15",
+      "value_date": "2026-03-16",
+      "amount": "100.00",
+      "description": "Client payment",
+      "reference": "REF-1",
+      "counterparty_name": "Acme",
+      "counterparty_account": "EE111",
+      "external_id": "bank-ext-1"
+    }
+  ],
+  "skip_duplicates": true
+}
+```
+
+Match a transaction to a payment:
+
+```json
+{
+  "payment_id": "uuid"
+}
+```
+
+Review an unmatched transaction:
+
+```json
+{
+  "follow_up_status": "EVIDENCE_REQUIRED",
+  "review_note": "Request signed receipt from the client"
+}
+```
+
+- at least one of `follow_up_status` or `review_note` is required
+- `follow_up_status` supports `NONE`, `EVIDENCE_REQUIRED`, and `READY_TO_MATCH`
+- successful updates stamp `reviewed_by` and `reviewed_at` on the transaction
+- transaction reads and lists return review metadata alongside match and reconciliation ids
+
+### Bank Reconciliations
+
+```http
+GET /tenants/{tenantId}/bank-accounts/{accountId}/reconciliations
+POST /tenants/{tenantId}/bank-accounts/{accountId}/reconciliation
+GET /tenants/{tenantId}/reconciliations/{reconciliationId}
+POST /tenants/{tenantId}/reconciliations/{reconciliationId}/complete
+Authorization: Bearer <token>
+```
+
+Create a reconciliation:
+
+```json
+{
+  "statement_date": "2026-03-31",
+  "opening_balance": "0.00",
+  "closing_balance": "100.00"
+}
+```
+
+Reconciliation statuses are `IN_PROGRESS` and `COMPLETED`.
 
 ---
 
