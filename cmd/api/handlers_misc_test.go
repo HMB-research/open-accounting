@@ -155,6 +155,13 @@ func TestExtendedReportHandlers(t *testing.T) {
 	assert.Contains(t, rr.Body.String(), "section,code,description")
 	assert.Contains(t, rr.Body.String(), "closing_cash")
 
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=2026-01-31&format=xlsx", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCashFlowStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", rr.Header().Get("Content-Type"))
+	requireXLSXContains(t, rr.Body.Bytes(), "closing_cash")
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow?start_date=bad&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.GetCashFlowStatement(rr, req)

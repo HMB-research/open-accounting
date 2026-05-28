@@ -1,7 +1,10 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -223,6 +226,14 @@ func TestReportHandlers(t *testing.T) {
 	assert.Contains(t, rr.Body.String(), "account_code,account_name,account_type")
 	assert.Contains(t, rr.Body.String(), "1000,Cash,ASSET")
 
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/trial-balance?as_of_date=2026-02-28&format=xlsx", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetTrialBalance(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", rr.Header().Get("Content-Type"))
+	assert.Contains(t, rr.Header().Get("Content-Disposition"), "trial-balance-2026-02-28.xlsx")
+	requireXLSXContains(t, rr.Body.Bytes(), "account_code", "Cash", "1000")
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/trial-balance?as_of_date=bad-date", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.GetTrialBalance(rr, req)
@@ -256,6 +267,12 @@ func TestReportHandlers(t *testing.T) {
 	assert.Contains(t, rr.Body.String(), "section,account_code,account_name")
 	assert.Contains(t, rr.Body.String(), "total_assets")
 
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-sheet?as_of=2026-02-28&format=xlsx", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetBalanceSheet(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	requireXLSXContains(t, rr.Body.Bytes(), "total_assets")
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-sheet?as_of=not-a-date", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.GetBalanceSheet(rr, req)
@@ -273,6 +290,12 @@ func TestReportHandlers(t *testing.T) {
 	assert.Contains(t, rr.Body.String(), "section,account_code,account_name")
 	assert.Contains(t, rr.Body.String(), "net_income")
 
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/income-statement?start=2026-01-01&end=2026-01-31&format=xlsx", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetIncomeStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	requireXLSXContains(t, rr.Body.Bytes(), "net_income")
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/income-statement", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.GetIncomeStatement(rr, req)
@@ -282,4 +305,29 @@ func TestReportHandlers(t *testing.T) {
 	rr = httptest.NewRecorder()
 	h.GetIncomeStatement(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func requireXLSXContains(t *testing.T, content []byte, expected ...string) {
+	t.Helper()
+
+	reader, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
+	require.NoError(t, err)
+
+	var sheetContent string
+	for _, file := range reader.File {
+		if file.Name != "xl/worksheets/sheet1.xml" {
+			continue
+		}
+		rc, err := file.Open()
+		require.NoError(t, err)
+		data, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		require.NoError(t, rc.Close())
+		sheetContent = string(data)
+		break
+	}
+	require.NotEmpty(t, sheetContent, "sheet1.xml missing from xlsx")
+	for _, value := range expected {
+		assert.Contains(t, sheetContent, value)
+	}
 }
