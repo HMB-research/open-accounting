@@ -475,6 +475,134 @@ func TestCLIInvoiceLifecycleCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Voided invoice inv-1")
 }
 
+func TestCLIJournalEntryCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	journalPayload := func(id, number string, status accounting.JournalEntryStatus) map[string]any {
+		return map[string]any{
+			"id":           id,
+			"tenant_id":    "tenant-1",
+			"entry_number": number,
+			"entry_date":   "2026-03-31T00:00:00Z",
+			"description":  "Manual accrual",
+			"reference":    "ACC-1",
+			"source_type":  "MANUAL",
+			"status":       status,
+			"created_at":   "2026-03-31T12:00:00Z",
+			"created_by":   "user-1",
+			"lines": []map[string]any{
+				{
+					"id":               "line-1",
+					"tenant_id":        "tenant-1",
+					"journal_entry_id": id,
+					"account_id":       "acc-1",
+					"description":      "Expense",
+					"debit_amount":     "100.00",
+					"credit_amount":    "0.00",
+					"currency":         "EUR",
+					"exchange_rate":    "1.00",
+					"base_debit":       "100.00",
+					"base_credit":      "0.00",
+				},
+				{
+					"id":               "line-2",
+					"tenant_id":        "tenant-1",
+					"journal_entry_id": id,
+					"account_id":       "acc-2",
+					"description":      "Accrual",
+					"debit_amount":     "0.00",
+					"credit_amount":    "100.00",
+					"currency":         "EUR",
+					"exchange_rate":    "1.00",
+					"base_debit":       "0.00",
+					"base_credit":      "100.00",
+				},
+			},
+		}
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries":
+			require.Equal(t, "25", r.URL.Query().Get("limit"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{journalPayload("je-1", "JE-2026-001", accounting.StatusDraft)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries":
+			var req accounting.CreateJournalEntryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-03-31", req.EntryDate.Format("2006-01-02"))
+			assert.Equal(t, "Manual accrual", req.Description)
+			assert.Equal(t, "ACC-1", req.Reference)
+			require.Len(t, req.Lines, 2)
+			assert.Equal(t, "acc-1", req.Lines[0].AccountID)
+			assert.True(t, req.Lines[0].DebitAmount.Equal(decimal.RequireFromString("100.00")))
+			assert.True(t, req.Lines[1].CreditAmount.Equal(decimal.RequireFromString("100.00")))
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(journalPayload("je-1", "JE-2026-001", accounting.StatusDraft))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-1":
+			_ = json.NewEncoder(w).Encode(journalPayload("je-1", "JE-2026-001", accounting.StatusDraft))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-1/post":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "posted"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-1/void":
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Duplicate entry", req["reason"])
+			payload := journalPayload("je-rev-1", "JE-2026-002", accounting.StatusPosted)
+			payload["void_reason"] = "Duplicate entry"
+			_ = json.NewEncoder(w).Encode(payload)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"journal", "list", "--limit", "25", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"entry_number": "JE-2026-001"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"journal", "create",
+		"--entry-date", "2026-03-31",
+		"--description", "Manual accrual",
+		"--reference", "ACC-1",
+		"--source-type", "MANUAL",
+		"--line", "account_id=acc-1,description=Expense,debit=100.00",
+		"--line", "account_id=acc-2,description=Accrual,credit=100.00",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created journal entry JE-2026-001 (je-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"journal", "get", "--id", "je-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Journal entry JE-2026-001")
+	assert.Contains(t, stdout.String(), "Balanced: true")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"journal", "post", "--id", "je-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Posted journal entry je-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"journal", "void", "--id", "je-1", "--reason", "Duplicate entry"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Voided journal entry je-1 with reversal JE-2026-002")
+}
+
 func TestCLIContactsInvoicesAndJournalCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
@@ -1780,6 +1908,15 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	err = invoiceLines.Set("description=Missing price,quantity=1,vat_rate=22")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unit_price is required")
+
+	var journalLines journalLineFlags
+	require.NoError(t, journalLines.Set("account_id=acc-1,debit=100,description=Debit line"))
+	require.NoError(t, journalLines.Set("account_id=acc-2,credit=100,description=Credit line"))
+	assert.Equal(t, "acc-1,acc-2", journalLines.String())
+
+	err = journalLines.Set("account_id=acc-3,debit=10,credit=10")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exactly one")
 
 	paymentType, err := parseRequiredPaymentType("made")
 	require.NoError(t, err)

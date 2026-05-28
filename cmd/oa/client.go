@@ -351,6 +351,52 @@ func (c *apiClient) importOpeningBalances(ctx context.Context, tenantID string, 
 	return &resp, nil
 }
 
+func (c *apiClient) listJournalEntries(ctx context.Context, tenantID string, limit int) ([]accounting.JournalEntry, error) {
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+
+	var resp []accounting.JournalEntry
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "journal-entries"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) getJournalEntry(ctx context.Context, tenantID, entryID string) (*accounting.JournalEntry, error) {
+	var resp accounting.JournalEntry
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "journal-entries", entryID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) createJournalEntry(ctx context.Context, tenantID string, req *accounting.CreateJournalEntryRequest) (*accounting.JournalEntry, error) {
+	var resp accounting.JournalEntry
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "journal-entries"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) postJournalEntry(ctx context.Context, tenantID, entryID string) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "journal-entries", entryID, "post"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) voidJournalEntry(ctx context.Context, tenantID, entryID, reason string) (*accounting.JournalEntry, error) {
+	var resp accounting.JournalEntry
+	body := map[string]string{"reason": strings.TrimSpace(reason)}
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "journal-entries", entryID, "void"), body, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) listEmployees(ctx context.Context, tenantID string, activeOnly bool) ([]payroll.Employee, error) {
 	urlPath := path.Join("/api/v1/tenants", tenantID, "employees")
 	if activeOnly {
