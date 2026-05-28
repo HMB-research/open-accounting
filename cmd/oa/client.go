@@ -45,7 +45,11 @@ type apiClient struct {
 }
 
 type loginResponse struct {
-	AccessToken string `json:"access_token"`
+	AccessToken  string       `json:"access_token"`
+	RefreshToken string       `json:"refresh_token,omitempty"`
+	TokenType    string       `json:"token_type,omitempty"`
+	ExpiresIn    int          `json:"expires_in,omitempty"`
+	User         *currentUser `json:"user,omitempty"`
 }
 
 type currentUser struct {
@@ -93,6 +97,31 @@ func (c *apiClient) login(ctx context.Context, email, password string) (*loginRe
 		"password": password,
 	}, "", &resp)
 	if err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) register(ctx context.Context, email, password, name string) (*currentUser, error) {
+	var resp currentUser
+	err := c.request(ctx, http.MethodPost, "/api/v1/auth/register", map[string]string{
+		"email":    email,
+		"password": password,
+		"name":     name,
+	}, "", &resp)
+	if err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) refreshAccessToken(ctx context.Context, refreshToken, tenantID string) (*loginResponse, error) {
+	req := map[string]string{"refresh_token": refreshToken}
+	if strings.TrimSpace(tenantID) != "" {
+		req["tenant_id"] = strings.TrimSpace(tenantID)
+	}
+	var resp loginResponse
+	if err := c.request(ctx, http.MethodPost, "/api/v1/auth/refresh", req, "", &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil

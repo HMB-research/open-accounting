@@ -128,6 +128,23 @@ func printTenantMembership(w io.Writer, membership *tenant.TenantMembership) {
 	_, _ = fmt.Fprintf(w, "Default: %t\n", membership.IsDefault)
 }
 
+func printTenantMembershipsTable(w io.Writer, memberships []tenant.TenantMembership) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNAME\tSLUG\tROLE\tDEFAULT")
+	for _, membership := range memberships {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%t\n",
+			membership.Tenant.ID,
+			membership.Tenant.Name,
+			membership.Tenant.Slug,
+			membership.Role,
+			membership.IsDefault,
+		)
+	}
+	_ = tw.Flush()
+}
+
 func printPluginRegistriesTable(w io.Writer, registries []plugin.Registry) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tNAME\tURL\tOFFICIAL\tACTIVE\tLAST SYNC")

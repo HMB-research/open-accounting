@@ -86,10 +86,11 @@ func TestCLIAuthInitStatusAndLogoutFlow(t *testing.T) {
 			require.Equal(t, "application/json", r.Header.Get("Content-Type"))
 			_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "jwt-123"})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/me/tenants":
-			require.Equal(t, "Bearer jwt-123", r.Header.Get("Authorization"))
+			assert.Contains(t, []string{"Bearer jwt-123", "Bearer oa_raw_token_123456789"}, r.Header.Get("Authorization"))
 			_ = json.NewEncoder(w).Encode([]tenant.TenantMembership{
 				{
 					Tenant: tenant.Tenant{ID: "tenant-1", Name: "Alpha", Slug: "alpha"},
+					Role:   tenant.RoleAdmin,
 				},
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/api-tokens":
@@ -141,6 +142,12 @@ func TestCLIAuthInitStatusAndLogoutFlow(t *testing.T) {
 	assert.Equal(t, "oa_raw_token_123456789", cfg.APIToken)
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"auth", "tenants"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Alpha")
+	assert.Contains(t, stdout.String(), "admin")
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"auth", "status"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "CLI User <cli@example.com>")
@@ -154,6 +161,53 @@ func TestCLIAuthInitStatusAndLogoutFlow(t *testing.T) {
 	_, err = loadStoredConfig()
 	require.Error(t, err)
 	assert.True(t, os.IsNotExist(err))
+}
+
+func TestCLIAuthPublicCommands(t *testing.T) {
+	configureCLIEnv(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/register":
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "new@example.com", req["email"])
+			assert.Equal(t, "New User", req["name"])
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"id":    "user-2",
+				"email": "new@example.com",
+				"name":  "New User",
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/refresh":
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "refresh-123", req["refresh_token"])
+			assert.Equal(t, "tenant-1", req["tenant_id"])
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"access_token": "jwt-refreshed",
+				"token_type":   "Bearer",
+				"expires_in":   900,
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"auth", "register", "--base-url", server.URL, "--email", "new@example.com", "--password", "secret123", "--name", "New User"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Registered New User")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"auth", "refresh", "--base-url", server.URL, "--refresh-token", "refresh-123", "--tenant-id", "tenant-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "jwt-refreshed")
+	assert.Contains(t, stdout.String(), "900 seconds")
 }
 
 func TestCLITokenCommands(t *testing.T) {

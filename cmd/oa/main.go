@@ -134,7 +134,10 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "Open Accounting CLI")
 	_, _ = fmt.Fprintln(a.stdout, "")
 	_, _ = fmt.Fprintln(a.stdout, "Commands:")
+	_, _ = fmt.Fprintln(a.stdout, "  auth register             Register a user")
 	_, _ = fmt.Fprintln(a.stdout, "  auth init                 Bootstrap and store a tenant-scoped API token")
+	_, _ = fmt.Fprintln(a.stdout, "  auth refresh              Exchange a refresh token for an access token")
+	_, _ = fmt.Fprintln(a.stdout, "  auth tenants              List tenants for the current token")
 	_, _ = fmt.Fprintln(a.stdout, "  auth status               Show current CLI auth status")
 	_, _ = fmt.Fprintln(a.stdout, "  auth logout               Remove local CLI config")
 	_, _ = fmt.Fprintln(a.stdout, "  tenant get                Show tenant details")
@@ -291,6 +294,36 @@ func (a *cliApp) runAuth(ctx context.Context, args []string) error {
 	}
 
 	switch args[0] {
+	case "register":
+		fs := flag.NewFlagSet("auth register", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		baseURL := fs.String("base-url", defaultBaseURL(), "API base URL")
+		email := fs.String("email", "", "User email")
+		password := fs.String("password", "", "User password")
+		passwordStdin := fs.Bool("password-stdin", false, "Read password from stdin")
+		name := fs.String("name", "", "User display name")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*email) == "" || strings.TrimSpace(*name) == "" {
+			return errors.New("email and name are required")
+		}
+		passwordValue, err := resolvePassword(*password, *passwordStdin)
+		if err != nil {
+			return err
+		}
+		client := newAPIClient(*baseURL, "")
+		user, err := client.register(ctx, strings.TrimSpace(*email), passwordValue, strings.TrimSpace(*name))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, user)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Registered %s <%s> (%s)\n", user.Name, user.Email, user.ID)
+		return nil
+
 	case "init":
 		fs := flag.NewFlagSet("auth init", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
@@ -351,6 +384,55 @@ func (a *cliApp) runAuth(ctx context.Context, args []string) error {
 		_, _ = fmt.Fprintf(a.stdout, "Stored API token for tenant %s (%s)\n", membership.Tenant.Name, membership.Tenant.ID)
 		_, _ = fmt.Fprintf(a.stdout, "Token id: %s\n", createResp.APIToken.ID)
 		_, _ = fmt.Fprintf(a.stdout, "Token preview: %s\n", tokenPreview(createResp.Token))
+		return nil
+
+	case "refresh":
+		fs := flag.NewFlagSet("auth refresh", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		baseURL := fs.String("base-url", defaultBaseURL(), "API base URL")
+		refreshToken := fs.String("refresh-token", "", "Refresh token")
+		tenantID := fs.String("tenant-id", "", "Optional tenant id for access-token context")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*refreshToken) == "" {
+			return errors.New("refresh-token is required")
+		}
+		client := newAPIClient(*baseURL, "")
+		resp, err := client.refreshAccessToken(ctx, strings.TrimSpace(*refreshToken), strings.TrimSpace(*tenantID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, resp)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Access token: %s\n", resp.AccessToken)
+		if resp.ExpiresIn > 0 {
+			_, _ = fmt.Fprintf(a.stdout, "Expires in: %d seconds\n", resp.ExpiresIn)
+		}
+		return nil
+
+	case "tenants":
+		cfg, client, err := a.loadTokenClient()
+		if err != nil {
+			return err
+		}
+
+		fs := flag.NewFlagSet("auth tenants", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		memberships, err := client.listMyTenants(ctx, cfg.APIToken)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, memberships)
+		}
+		printTenantMembershipsTable(a.stdout, memberships)
 		return nil
 
 	case "status":
