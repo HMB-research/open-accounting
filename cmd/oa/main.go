@@ -61,6 +61,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runPayroll(ctx, args[1:])
 	case "invoices":
 		return a.runInvoices(ctx, args[1:])
+	case "reports":
+		return a.runReports(ctx, args[1:])
 	case "documents":
 		return a.runDocuments(ctx, args[1:])
 	case "journal":
@@ -95,6 +97,13 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  payroll import-history    Import historical payroll runs from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll import-leave-balances  Import leave balances from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  invoices import           Import invoices from CSV")
+	_, _ = fmt.Fprintln(a.stdout, "  reports trial-balance     Show trial balance")
+	_, _ = fmt.Fprintln(a.stdout, "  reports account-balance   Show one account balance")
+	_, _ = fmt.Fprintln(a.stdout, "  reports balance-sheet     Show balance sheet")
+	_, _ = fmt.Fprintln(a.stdout, "  reports income-statement  Show income statement")
+	_, _ = fmt.Fprintln(a.stdout, "  reports cash-flow         Show cash flow statement")
+	_, _ = fmt.Fprintln(a.stdout, "  reports aging             Show receivables or payables aging")
+	_, _ = fmt.Fprintln(a.stdout, "  reports balance-confirmations  Show balance confirmations")
 	_, _ = fmt.Fprintln(a.stdout, "  documents list            List documents for a record")
 	_, _ = fmt.Fprintln(a.stdout, "  documents upload          Upload a document to a record")
 	_, _ = fmt.Fprintln(a.stdout, "  documents mark-reviewed   Mark a document as reviewed")
@@ -842,6 +851,210 @@ func (a *cliApp) runPayroll(ctx context.Context, args []string) error {
 		return nil
 	default:
 		return fmt.Errorf("unknown payroll subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runReports(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("reports subcommand required")
+	}
+
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "trial-balance":
+		fs := flag.NewFlagSet("reports trial-balance", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asOf := fs.String("as-of", "", "As-of date in YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		report, err := client.getTrialBalance(ctx, cfg.TenantID, strings.TrimSpace(*asOf))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, report)
+		}
+		printTrialBalance(a.stdout, report)
+		return nil
+
+	case "account-balance":
+		fs := flag.NewFlagSet("reports account-balance", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		accountID := fs.String("account-id", "", "Account id")
+		asOf := fs.String("as-of", "", "As-of date in YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*accountID) == "" {
+			return errors.New("account-id is required")
+		}
+
+		report, err := client.getAccountBalanceReport(ctx, cfg.TenantID, strings.TrimSpace(*accountID), strings.TrimSpace(*asOf))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, report)
+		}
+		printAccountBalance(a.stdout, report)
+		return nil
+
+	case "balance-sheet":
+		fs := flag.NewFlagSet("reports balance-sheet", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asOf := fs.String("as-of", "", "As-of date in YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		report, err := client.getBalanceSheet(ctx, cfg.TenantID, strings.TrimSpace(*asOf))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, report)
+		}
+		printBalanceSheet(a.stdout, report)
+		return nil
+
+	case "income-statement":
+		fs := flag.NewFlagSet("reports income-statement", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		startDate := fs.String("start", "", "Start date in YYYY-MM-DD")
+		endDate := fs.String("end", "", "End date in YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*startDate) == "" || strings.TrimSpace(*endDate) == "" {
+			return errors.New("start and end are required")
+		}
+
+		report, err := client.getIncomeStatement(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, report)
+		}
+		printIncomeStatement(a.stdout, report)
+		return nil
+
+	case "cash-flow":
+		fs := flag.NewFlagSet("reports cash-flow", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		startDate := fs.String("start", "", "Start date in YYYY-MM-DD")
+		endDate := fs.String("end", "", "End date in YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*startDate) == "" || strings.TrimSpace(*endDate) == "" {
+			return errors.New("start and end are required")
+		}
+
+		report, err := client.getCashFlowStatement(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, report)
+		}
+		printCashFlowStatement(a.stdout, report)
+		return nil
+
+	case "aging":
+		fs := flag.NewFlagSet("reports aging", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		reportType := fs.String("type", "receivables", "Aging report type: receivables or payables")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		normalizedType := strings.ToLower(strings.TrimSpace(*reportType))
+		if normalizedType != "receivables" && normalizedType != "payables" {
+			return errors.New("type must be receivables or payables")
+		}
+
+		report, err := client.getAgingReport(ctx, cfg.TenantID, normalizedType)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, report)
+		}
+		printAgingReport(a.stdout, report)
+		return nil
+
+	case "balance-confirmations":
+		fs := flag.NewFlagSet("reports balance-confirmations", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		balanceType := fs.String("type", "", "Balance type: RECEIVABLE or PAYABLE")
+		asOf := fs.String("as-of", "", "As-of date in YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		normalizedType := strings.ToUpper(strings.TrimSpace(*balanceType))
+		if normalizedType != "RECEIVABLE" && normalizedType != "PAYABLE" {
+			return errors.New("type must be RECEIVABLE or PAYABLE")
+		}
+		if strings.TrimSpace(*asOf) == "" {
+			return errors.New("as-of is required")
+		}
+
+		report, err := client.getBalanceConfirmationSummary(ctx, cfg.TenantID, normalizedType, strings.TrimSpace(*asOf))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, report)
+		}
+		printBalanceConfirmationSummary(a.stdout, report)
+		return nil
+
+	case "balance-confirmation":
+		fs := flag.NewFlagSet("reports balance-confirmation", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		contactID := fs.String("contact-id", "", "Contact id")
+		balanceType := fs.String("type", "", "Balance type: RECEIVABLE or PAYABLE")
+		asOf := fs.String("as-of", "", "As-of date in YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*contactID) == "" {
+			return errors.New("contact-id is required")
+		}
+		normalizedType := strings.ToUpper(strings.TrimSpace(*balanceType))
+		if normalizedType != "RECEIVABLE" && normalizedType != "PAYABLE" {
+			return errors.New("type must be RECEIVABLE or PAYABLE")
+		}
+		if strings.TrimSpace(*asOf) == "" {
+			return errors.New("as-of is required")
+		}
+
+		report, err := client.getBalanceConfirmation(ctx, cfg.TenantID, strings.TrimSpace(*contactID), normalizedType, strings.TrimSpace(*asOf))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, report)
+		}
+		printBalanceConfirmation(a.stdout, report)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown reports subcommand %q", args[0])
 	}
 }
 

@@ -139,6 +139,25 @@ Leave balance imports create or update balances by employee + absence type + yea
 go run ./cmd/oa invoices import --file ./invoices.csv
 ```
 
+## Reports
+
+```bash
+go run ./cmd/oa reports trial-balance --as-of 2026-03-31
+go run ./cmd/oa reports account-balance --account-id <account-id> --as-of 2026-03-31
+go run ./cmd/oa reports balance-sheet --as-of 2026-03-31
+go run ./cmd/oa reports income-statement --start 2026-01-01 --end 2026-03-31
+go run ./cmd/oa reports cash-flow --start 2026-01-01 --end 2026-03-31
+go run ./cmd/oa reports aging --type receivables
+go run ./cmd/oa reports aging --type payables --json
+go run ./cmd/oa reports balance-confirmations --type RECEIVABLE --as-of 2026-03-31
+go run ./cmd/oa reports balance-confirmation \
+  --contact-id <contact-id> \
+  --type RECEIVABLE \
+  --as-of 2026-03-31
+```
+
+Every report command supports `--json` for automation. The table output is intended for quick terminal review, while JSON preserves the API response shape for scripts.
+
 ## Documents
 
 ```bash
@@ -233,6 +252,7 @@ export OA_API_TOKEN=oa_your_token_here
 
 go run ./cmd/oa accounts list --json
 go run ./cmd/oa contacts create --name "Scripted Contact" --type CUSTOMER
+go run ./cmd/oa reports trial-balance --as-of 2026-03-31 --json
 go run ./cmd/oa employees import --file ./employees.csv
 go run ./cmd/oa payroll import-history --file ./payroll-history.csv
 go run ./cmd/oa payroll import-leave-balances --file ./leave-balances.csv

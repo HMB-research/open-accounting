@@ -407,6 +407,200 @@ func TestCLIContactsInvoicesAndJournalCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "debit 500")
 }
 
+func TestCLIReportsCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/trial-balance":
+			require.Equal(t, "2026-03-31", r.URL.Query().Get("as_of_date"))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tenant_id":     "tenant-1",
+				"as_of_date":    "2026-03-31T00:00:00Z",
+				"generated_at":  "2026-03-31T12:00:00Z",
+				"total_debits":  "500.00",
+				"total_credits": "500.00",
+				"is_balanced":   true,
+				"accounts": []map[string]any{{
+					"account_id":     "acc-1",
+					"account_code":   "1000",
+					"account_name":   "Cash",
+					"account_type":   "ASSET",
+					"debit_balance":  "500.00",
+					"credit_balance": "0.00",
+					"net_balance":    "500.00",
+				}},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/account-balance/acc-1":
+			require.Equal(t, "2026-03-31", r.URL.Query().Get("as_of_date"))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"account_id": "acc-1",
+				"as_of_date": "2026-03-31",
+				"balance":    "500.00",
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/balance-sheet":
+			require.Equal(t, "2026-03-31", r.URL.Query().Get("as_of"))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tenant_id":         "tenant-1",
+				"as_of_date":        "2026-03-31T00:00:00Z",
+				"generated_at":      "2026-03-31T12:00:00Z",
+				"assets":            []map[string]any{},
+				"liabilities":       []map[string]any{},
+				"equity":            []map[string]any{},
+				"total_assets":      "500.00",
+				"total_liabilities": "200.00",
+				"total_equity":      "300.00",
+				"retained_earnings": "100.00",
+				"is_balanced":       true,
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/income-statement":
+			require.Equal(t, "2026-01-01", r.URL.Query().Get("start"))
+			require.Equal(t, "2026-03-31", r.URL.Query().Get("end"))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tenant_id":      "tenant-1",
+				"start_date":     "2026-01-01T00:00:00Z",
+				"end_date":       "2026-03-31T00:00:00Z",
+				"generated_at":   "2026-03-31T12:00:00Z",
+				"revenue":        []map[string]any{},
+				"expenses":       []map[string]any{},
+				"total_revenue":  "1200.00",
+				"total_expenses": "700.00",
+				"net_income":     "500.00",
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/cash-flow":
+			require.Equal(t, "2026-01-01", r.URL.Query().Get("start_date"))
+			require.Equal(t, "2026-03-31", r.URL.Query().Get("end_date"))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tenant_id":            "tenant-1",
+				"start_date":           "2026-01-01",
+				"end_date":             "2026-03-31",
+				"operating_activities": []map[string]any{{"code": "CF_OPER_TOTAL", "description": "Operating total", "amount": "500.00"}},
+				"investing_activities": []map[string]any{},
+				"financing_activities": []map[string]any{},
+				"total_operating":      "500.00",
+				"total_investing":      "0.00",
+				"total_financing":      "0.00",
+				"net_cash_change":      "500.00",
+				"opening_cash":         "0.00",
+				"closing_cash":         "500.00",
+				"generated_at":         "2026-03-31T12:00:00Z",
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/aging/receivables":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"report_type": "receivables",
+				"as_of_date":  "2026-03-31T00:00:00Z",
+				"total":       "900.00",
+				"buckets": []map[string]any{{
+					"label":  "Current",
+					"amount": "700.00",
+					"count":  3,
+				}},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/balance-confirmations":
+			require.Equal(t, "RECEIVABLE", r.URL.Query().Get("type"))
+			require.Equal(t, "2026-03-31", r.URL.Query().Get("as_of_date"))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"type":          "RECEIVABLE",
+				"as_of_date":    "2026-03-31",
+				"total_balance": "900.00",
+				"contact_count": 1,
+				"invoice_count": 2,
+				"contacts": []map[string]any{{
+					"contact_id":    "contact-1",
+					"contact_name":  "Acme",
+					"contact_code":  "CUST-1",
+					"contact_email": "billing@example.com",
+					"balance":       "900.00",
+					"invoice_count": 2,
+				}},
+				"generated_at": "2026-03-31T12:00:00Z",
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/balance-confirmations/contact-1":
+			require.Equal(t, "RECEIVABLE", r.URL.Query().Get("type"))
+			require.Equal(t, "2026-03-31", r.URL.Query().Get("as_of_date"))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":            "confirmation-1",
+				"tenant_id":     "tenant-1",
+				"contact_id":    "contact-1",
+				"contact_name":  "Acme",
+				"contact_code":  "CUST-1",
+				"type":          "RECEIVABLE",
+				"as_of_date":    "2026-03-31",
+				"total_balance": "900.00",
+				"invoices": []map[string]any{{
+					"invoice_id":         "invoice-1",
+					"invoice_number":     "INV-1",
+					"invoice_date":       "2026-03-01",
+					"due_date":           "2026-03-15",
+					"total_amount":       "1000.00",
+					"amount_paid":        "100.00",
+					"outstanding_amount": "900.00",
+					"currency":           "EUR",
+					"days_overdue":       16,
+				}},
+				"generated_at": "2026-03-31T12:00:00Z",
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"reports", "trial-balance", "--as-of", "2026-03-31"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Trial balance as of 2026-03-31")
+	assert.Contains(t, stdout.String(), "1000")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "account-balance", "--account-id", "acc-1", "--as-of", "2026-03-31"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "500.00")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "balance-sheet", "--as-of", "2026-03-31"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Balance sheet as of 2026-03-31")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "income-statement", "--start", "2026-01-01", "--end", "2026-03-31"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Net income: 500")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "cash-flow", "--start", "2026-01-01", "--end", "2026-03-31"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Closing cash: 500")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "aging", "--type", "receivables", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"report_type": "receivables"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "balance-confirmations", "--type", "receivable", "--as-of", "2026-03-31"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Total balance: 900")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "balance-confirmation", "--contact-id", "contact-1", "--type", "RECEIVABLE", "--as-of", "2026-03-31"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "INV-1")
+}
+
 func TestCLIEmployeesCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
@@ -722,6 +916,10 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	err = app.runInvoices(context.Background(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invoices subcommand required")
+
+	err = app.runReports(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reports subcommand required")
 
 	err = app.runDocuments(context.Background(), nil)
 	require.Error(t, err)
