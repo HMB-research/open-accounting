@@ -252,6 +252,30 @@ func TestUploadListDownloadAndDeleteDocument(t *testing.T) {
 	require.Equal(t, documents.ReviewStatusApproved, approved.ReviewStatus)
 	require.Equal(t, "Evidence matches bank statement", approved.ReviewNote)
 
+	policyReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/documents/evidence-policy", map[string]any{
+		"entity_type": "bank_transaction",
+		"entity_ids":  []string{"txn-1", "txn-2"},
+		"rules": []map[string]any{{
+			"document_types":   []string{"reconciliation_evidence"},
+			"min_count":        1,
+			"require_approved": true,
+		}},
+	}, claims)
+	policyReq = withURLParams(policyReq, map[string]string{"tenantID": "tenant-1"})
+	policyResp := httptest.NewRecorder()
+	h.EvaluateDocumentEvidencePolicy(policyResp, policyReq)
+	require.Equal(t, http.StatusOK, policyResp.Code)
+
+	var policyResults []documents.EvidencePolicyResult
+	require.NoError(t, json.NewDecoder(policyResp.Body).Decode(&policyResults))
+	require.Len(t, policyResults, 2)
+	require.Equal(t, "txn-1", policyResults[0].EntityID)
+	require.True(t, policyResults[0].Compliant)
+	require.Equal(t, 1, policyResults[0].ApprovedDocumentTypeCounts[documents.DocumentTypeReconciliation])
+	require.Equal(t, "txn-2", policyResults[1].EntityID)
+	require.False(t, policyResults[1].Compliant)
+	require.True(t, policyResults[1].MissingEvidence)
+
 	rejectReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/documents/"+uploaded.ID+"/review", map[string]any{
 		"review_status": "REJECTED",
 	}, claims)

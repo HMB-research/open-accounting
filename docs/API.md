@@ -449,6 +449,28 @@ Content-Type: application/json
 }
 ```
 
+#### Evidence Policy
+
+```http
+POST /tenants/{tenantId}/documents/evidence-policy
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "entity_type": "payment",
+  "entity_ids": ["<uuid>", "<uuid>"],
+  "rules": [
+    {
+      "document_types": ["receipt"],
+      "min_count": 1,
+      "require_approved": true
+    }
+  ]
+}
+```
+
+Returns one result per requested entity ID with `compliant`, document-status counts, document-type counts, rule-level accepted counts, and `violations` for missing or unapproved evidence. Omit `document_types` in a rule to allow any supported document type; `min_count` defaults to `1`.
+
 #### Retention Review
 
 ```http

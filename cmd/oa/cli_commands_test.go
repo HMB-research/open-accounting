@@ -5171,6 +5171,73 @@ func TestCLIDocumentCommands(t *testing.T) {
 				"has_pending_review":   true,
 				"has_rejected":         false,
 			}})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents/evidence-policy":
+			var req documents.EvidencePolicyRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, documents.EntityTypePayment, req.EntityType)
+			assert.Equal(t, []string{"pay-1", "pay-2"}, req.EntityIDs)
+			require.Len(t, req.Rules, 1)
+			assert.Equal(t, []string{documents.DocumentTypeReceipt}, req.Rules[0].DocumentTypes)
+			assert.Equal(t, 1, req.Rules[0].MinCount)
+			assert.True(t, req.Rules[0].RequireApproved)
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"entity_type":                   "payment",
+				"entity_id":                     "pay-1",
+				"compliant":                     true,
+				"total_count":                   1,
+				"pending_review_count":          0,
+				"reviewed_count":                1,
+				"approved_count":                1,
+				"rejected_count":                0,
+				"missing_evidence":              false,
+				"document_type_counts":          map[string]int{"receipt": 1},
+				"approved_document_type_counts": map[string]int{"receipt": 1},
+				"rule_results": []map[string]any{{
+					"rule_index":              1,
+					"document_types":          []string{"receipt"},
+					"required_count":          1,
+					"matching_count":          1,
+					"approved_matching_count": 1,
+					"accepted_count":          1,
+					"require_approved":        true,
+					"compliant":               true,
+				}},
+				"violations": []map[string]any{},
+			}, {
+				"entity_type":                   "payment",
+				"entity_id":                     "pay-2",
+				"compliant":                     false,
+				"total_count":                   0,
+				"pending_review_count":          0,
+				"reviewed_count":                0,
+				"approved_count":                0,
+				"rejected_count":                0,
+				"missing_evidence":              true,
+				"document_type_counts":          map[string]int{},
+				"approved_document_type_counts": map[string]int{},
+				"rule_results": []map[string]any{{
+					"rule_index":              1,
+					"document_types":          []string{"receipt"},
+					"required_count":          1,
+					"matching_count":          0,
+					"approved_matching_count": 0,
+					"accepted_count":          0,
+					"require_approved":        true,
+					"compliant":               false,
+					"message":                 "requires at least 1 approved documents for receipt; found 0",
+				}},
+				"violations": []map[string]any{{
+					"rule_index":              1,
+					"document_types":          []string{"receipt"},
+					"required_count":          1,
+					"matching_count":          0,
+					"approved_matching_count": 0,
+					"accepted_count":          0,
+					"require_approved":        true,
+					"compliant":               false,
+					"message":                 "requires at least 1 approved documents for receipt; found 0",
+				}},
+			}})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/documents/retention":
 			assert.Equal(t, "2027-03-01", r.URL.Query().Get("as_of"))
 			assert.Equal(t, "45", r.URL.Query().Get("horizon_days"))
@@ -5284,6 +5351,13 @@ func TestCLIDocumentCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "pay-1")
 	assert.Contains(t, stdout.String(), "true")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"documents", "evidence-policy", "--entity-type", "payment", "--entity-id", "pay-1", "--entity-id", "pay-2", "--document-type", "receipt", "--require-approved"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "pay-1")
+	assert.Contains(t, stdout.String(), "pay-2")
+	assert.Contains(t, stdout.String(), "requires at least 1 approved documents for receipt")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"documents", "retention", "--as-of", "2027-03-01", "--horizon-days", "45", "--include-missing"})

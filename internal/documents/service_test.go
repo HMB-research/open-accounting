@@ -257,6 +257,53 @@ func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 		t.Fatalf("unexpected missing-evidence summary: %#v", summaries[1])
 	}
 
+	repo.docs["doc-approved-receipt"] = &Document{
+		ID:           "doc-approved-receipt",
+		TenantID:     "tenant-1",
+		EntityType:   EntityTypePayment,
+		EntityID:     "pay-1",
+		DocumentType: DocumentTypeReceipt,
+		FileName:     "receipt.pdf",
+		ReviewStatus: ReviewStatusApproved,
+		UploadedBy:   "user-1",
+		CreatedAt:    time.Now().UTC(),
+	}
+	repo.docs["doc-pending-receipt"] = &Document{
+		ID:           "doc-pending-receipt",
+		TenantID:     "tenant-1",
+		EntityType:   EntityTypePayment,
+		EntityID:     "pay-2",
+		DocumentType: DocumentTypeReceipt,
+		FileName:     "receipt-draft.pdf",
+		ReviewStatus: ReviewStatusPending,
+		UploadedBy:   "user-1",
+		CreatedAt:    time.Now().UTC(),
+	}
+	policyResults, err := svc.EvaluateEvidencePolicy(context.Background(), "tenant_demo", "tenant-1", &EvidencePolicyRequest{
+		EntityType: EntityTypePayment,
+		EntityIDs:  []string{"pay-1", "pay-2", "pay-3", "pay-1"},
+		Rules: []EvidencePolicyRule{{
+			DocumentTypes:   []string{DocumentTypeReceipt},
+			MinCount:        1,
+			RequireApproved: true,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("EvaluateEvidencePolicy failed: %v", err)
+	}
+	if len(policyResults) != 3 {
+		t.Fatalf("expected deduped 3 policy results, got %d", len(policyResults))
+	}
+	if !policyResults[0].Compliant || policyResults[0].ApprovedDocumentTypeCounts[DocumentTypeReceipt] != 1 {
+		t.Fatalf("expected pay-1 policy to pass with approved receipt: %#v", policyResults[0])
+	}
+	if policyResults[1].Compliant || len(policyResults[1].Violations) != 1 || policyResults[1].RuleResults[0].AcceptedCount != 0 {
+		t.Fatalf("expected pay-2 policy to fail without an approved receipt: %#v", policyResults[1])
+	}
+	if policyResults[2].Compliant || !policyResults[2].MissingEvidence {
+		t.Fatalf("expected pay-3 policy to fail as missing evidence: %#v", policyResults[2])
+	}
+
 	if err := svc.DeleteDocument(context.Background(), "tenant_demo", "tenant-1", doc.ID); err != nil {
 		t.Fatalf("DeleteDocument failed: %v", err)
 	}

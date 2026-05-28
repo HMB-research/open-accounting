@@ -20,7 +20,7 @@
 >
 > Full local baseline last verified on 2026-05-28:
 > `go test ./...`, `golangci-lint run`, `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)`, `cd frontend && bun run lint`, `cd frontend && bun run check`, `cd frontend && bun run test`, `cd frontend && bun run build`, `cd frontend && bun run test:e2e:smoke`, and the full local `demo-chromium` Playwright project pass against fresh PostgreSQL-backed demo environments.
-> Production hardening, deeper historical cutover tooling beyond payroll runs, deeper accountant exception actions, and broader document retention/reconciliation workflows are still in progress.
+> Production hardening, deeper historical cutover tooling beyond payroll runs, deeper accountant exception actions, and automated document retention/reconciliation policy enforcement are still in progress.
 
 CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API token once and then uses that token for subsequent reads and mutations.
 
@@ -218,6 +218,7 @@ go run ./cmd/oa employees import --file ./employees.csv
 go run ./cmd/oa payroll import-history --file ./payroll-history.csv
 go run ./cmd/oa payroll import-leave-balances --file ./leave-balances.csv
 go run ./cmd/oa documents upload --entity-type bank_transaction --entity-id <transaction-id> --file ./evidence.pdf --document-type reconciliation_evidence
+go run ./cmd/oa documents evidence-policy --entity-type bank_transaction --entity-id <transaction-id> --document-type reconciliation_evidence --require-approved
 go run ./cmd/oa journal import-opening-balances --file ./opening-balances.csv --entry-date 2026-01-01
 ```
 
@@ -320,11 +321,12 @@ open-accounting/
 - [x] Close/reopen workflow with audit trail in API and company settings
 - [x] Fiscal-year close readiness and retained-earnings carry-forward workflow
 - [x] Document attachments for invoices, journal entries, payments, bank transactions, and fixed assets
+- [x] Document evidence policy evaluation through API and CLI
 - [x] Backup creation and restore-drill scripts for self-hosted operations
 
 ### Still missing for reliable production use
 - [ ] Historical payroll and broader external migration imports
-- [ ] Broader document evidence policy enforcement
+- [ ] Automated document policy enforcement in close packs and workflow blockers
 - [ ] Broader auth administration controls
 - [ ] E-invoice, direct bank feeds, SEPA initiation, and automatic e-MTA submission
 

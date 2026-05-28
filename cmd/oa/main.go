@@ -370,6 +370,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  reports balance-confirmation  Show one balance confirmation")
 	_, _ = fmt.Fprintln(a.stdout, "  documents list            List documents for a record")
 	_, _ = fmt.Fprintln(a.stdout, "  documents review-summary  Summarize document review state")
+	_, _ = fmt.Fprintln(a.stdout, "  documents evidence-policy Evaluate required evidence policy")
 	_, _ = fmt.Fprintln(a.stdout, "  documents retention       List retention-due documents")
 	_, _ = fmt.Fprintln(a.stdout, "  documents upload          Upload a document to a record")
 	_, _ = fmt.Fprintln(a.stdout, "  documents download        Download a document")
@@ -8020,6 +8021,49 @@ func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, summaries)
 		}
 		printDocumentReviewSummariesTable(a.stdout, summaries)
+		return nil
+
+	case "evidence-policy":
+		fs := flag.NewFlagSet("documents evidence-policy", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		entityType := fs.String("entity-type", "", "Entity type: invoice, journal_entry, payment, bank_transaction, asset")
+		entityIDs := stringListFlags{}
+		documentTypes := stringListFlags{}
+		fs.Var(&entityIDs, "entity-id", "Entity id; repeatable")
+		fs.Var(&documentTypes, "document-type", "Document type that satisfies the policy; repeatable")
+		fs.Var(&documentTypes, "required-document-type", "Document type that satisfies the policy; repeatable")
+		minCount := fs.Int("min-count", 1, "Minimum number of matching documents")
+		requireApproved := fs.Bool("require-approved", false, "Only count approved matching documents")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*entityType) == "" {
+			return errors.New("entity-type is required")
+		}
+		if len(entityIDs) == 0 {
+			return errors.New("at least one entity-id is required")
+		}
+		if *minCount <= 0 {
+			return errors.New("min-count must be one or greater")
+		}
+
+		results, err := client.evaluateDocumentEvidencePolicy(ctx, cfg.TenantID, &documents.EvidencePolicyRequest{
+			EntityType: strings.TrimSpace(*entityType),
+			EntityIDs:  []string(entityIDs),
+			Rules: []documents.EvidencePolicyRule{{
+				DocumentTypes:   []string(documentTypes),
+				MinCount:        *minCount,
+				RequireApproved: *requireApproved,
+			}},
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, results)
+		}
+		printDocumentEvidencePolicy(a.stdout, results)
 		return nil
 
 	case "retention":

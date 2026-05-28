@@ -157,6 +157,37 @@ func (s *Service) ListReviewSummaries(ctx context.Context, schemaName, tenantID,
 	return result, nil
 }
 
+func (s *Service) EvaluateEvidencePolicy(ctx context.Context, schemaName, tenantID string, req *EvidencePolicyRequest) ([]EvidencePolicyResult, error) {
+	if req == nil {
+		return nil, fmt.Errorf("evidence policy request is required")
+	}
+
+	normalizedType, err := normalizeEntityType(req.EntityType)
+	if err != nil {
+		return nil, err
+	}
+	normalizedIDs := normalizeEntityIDs(req.EntityIDs)
+	if len(normalizedIDs) == 0 {
+		return nil, fmt.Errorf("at least one entity ID is required")
+	}
+	rules, err := normalizeEvidencePolicyRules(req.Rules)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]EvidencePolicyResult, 0, len(normalizedIDs))
+	for _, entityID := range normalizedIDs {
+		docs, err := s.repo.ListDocuments(ctx, schemaName, tenantID, normalizedType, entityID)
+		if err != nil {
+			return nil, err
+		}
+		result := evaluateEvidencePolicyForDocuments(normalizedType, entityID, docs, rules)
+		results = append(results, result)
+	}
+
+	return results, nil
+}
+
 func (s *Service) GetRetentionReview(ctx context.Context, schemaName, tenantID string, asOfDate time.Time, horizonDays int, includeMissing bool) (*RetentionReview, error) {
 	if horizonDays < 0 {
 		return nil, fmt.Errorf("horizon days must be zero or greater")
@@ -358,4 +389,162 @@ func buildStorageKey(tenantID string, createdAt time.Time, documentID, fileName 
 		createdAt.Format("01"),
 		fmt.Sprintf("%s_%s%s", documentID, name, ext),
 	)
+}
+
+func normalizeEntityIDs(entityIDs []string) []string {
+	normalizedIDs := make([]string, 0, len(entityIDs))
+	seen := make(map[string]struct{}, len(entityIDs))
+	for _, entityID := range entityIDs {
+		trimmed := strings.TrimSpace(entityID)
+		if trimmed == "" {
+			continue
+		}
+		if _, exists := seen[trimmed]; exists {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalizedIDs = append(normalizedIDs, trimmed)
+	}
+	return normalizedIDs
+}
+
+func normalizeEvidencePolicyRules(rules []EvidencePolicyRule) ([]EvidencePolicyRule, error) {
+	if len(rules) == 0 {
+		return nil, fmt.Errorf("at least one evidence policy rule is required")
+	}
+
+	normalizedRules := make([]EvidencePolicyRule, 0, len(rules))
+	for idx, rule := range rules {
+		minCount := rule.MinCount
+		if minCount == 0 {
+			minCount = 1
+		}
+		if minCount < 0 {
+			return nil, fmt.Errorf("rule %d min_count must be one or greater", idx+1)
+		}
+
+		documentTypes := make([]string, 0, len(rule.DocumentTypes))
+		seenTypes := make(map[string]struct{}, len(rule.DocumentTypes))
+		for _, rawType := range rule.DocumentTypes {
+			if strings.TrimSpace(rawType) == "" {
+				continue
+			}
+			documentType, err := normalizeDocumentType(rawType)
+			if err != nil {
+				return nil, fmt.Errorf("rule %d: %w", idx+1, err)
+			}
+			if _, exists := seenTypes[documentType]; exists {
+				continue
+			}
+			seenTypes[documentType] = struct{}{}
+			documentTypes = append(documentTypes, documentType)
+		}
+
+		normalizedRules = append(normalizedRules, EvidencePolicyRule{
+			DocumentTypes:   documentTypes,
+			MinCount:        minCount,
+			RequireApproved: rule.RequireApproved,
+		})
+	}
+
+	return normalizedRules, nil
+}
+
+func evaluateEvidencePolicyForDocuments(entityType, entityID string, docs []Document, rules []EvidencePolicyRule) EvidencePolicyResult {
+	result := EvidencePolicyResult{
+		EntityType:                 entityType,
+		EntityID:                   entityID,
+		Compliant:                  true,
+		MissingEvidence:            len(docs) == 0,
+		DocumentTypeCounts:         make(map[string]int),
+		ApprovedDocumentTypeCounts: make(map[string]int),
+		RuleResults:                make([]EvidencePolicyRuleResult, 0, len(rules)),
+		Violations:                 make([]EvidencePolicyRuleResult, 0),
+	}
+
+	for _, doc := range docs {
+		result.TotalCount++
+		result.DocumentTypeCounts[doc.DocumentType]++
+		switch doc.ReviewStatus {
+		case ReviewStatusApproved:
+			result.ReviewedCount++
+			result.ApprovedCount++
+			result.ApprovedDocumentTypeCounts[doc.DocumentType]++
+		case ReviewStatusRejected:
+			result.ReviewedCount++
+			result.RejectedCount++
+		case ReviewStatusReviewed:
+			result.ReviewedCount++
+		default:
+			result.PendingReviewCount++
+		}
+	}
+
+	for idx, rule := range rules {
+		ruleResult := evaluateEvidencePolicyRule(idx+1, docs, rule)
+		result.RuleResults = append(result.RuleResults, ruleResult)
+		if !ruleResult.Compliant {
+			result.Compliant = false
+			result.Violations = append(result.Violations, ruleResult)
+		}
+	}
+
+	return result
+}
+
+func evaluateEvidencePolicyRule(ruleIndex int, docs []Document, rule EvidencePolicyRule) EvidencePolicyRuleResult {
+	matchingCount := 0
+	approvedMatchingCount := 0
+	for _, doc := range docs {
+		if !evidencePolicyRuleMatchesDocumentType(rule, doc.DocumentType) {
+			continue
+		}
+		matchingCount++
+		if doc.ReviewStatus == ReviewStatusApproved {
+			approvedMatchingCount++
+		}
+	}
+
+	acceptedCount := matchingCount
+	if rule.RequireApproved {
+		acceptedCount = approvedMatchingCount
+	}
+	result := EvidencePolicyRuleResult{
+		RuleIndex:             ruleIndex,
+		DocumentTypes:         append([]string(nil), rule.DocumentTypes...),
+		RequiredCount:         rule.MinCount,
+		MatchingCount:         matchingCount,
+		ApprovedMatchingCount: approvedMatchingCount,
+		AcceptedCount:         acceptedCount,
+		RequireApproved:       rule.RequireApproved,
+		Compliant:             acceptedCount >= rule.MinCount,
+	}
+	if !result.Compliant {
+		result.Message = buildEvidencePolicyViolationMessage(rule, acceptedCount)
+	}
+	return result
+}
+
+func evidencePolicyRuleMatchesDocumentType(rule EvidencePolicyRule, documentType string) bool {
+	if len(rule.DocumentTypes) == 0 {
+		return true
+	}
+	for _, allowedType := range rule.DocumentTypes {
+		if allowedType == documentType {
+			return true
+		}
+	}
+	return false
+}
+
+func buildEvidencePolicyViolationMessage(rule EvidencePolicyRule, acceptedCount int) string {
+	scope := "any document type"
+	if len(rule.DocumentTypes) > 0 {
+		scope = strings.Join(rule.DocumentTypes, ", ")
+	}
+	qualifier := "documents"
+	if rule.RequireApproved {
+		qualifier = "approved documents"
+	}
+	return fmt.Sprintf("requires at least %d %s for %s; found %d", rule.MinCount, qualifier, scope, acceptedCount)
 }

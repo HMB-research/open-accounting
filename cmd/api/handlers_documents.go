@@ -60,6 +60,25 @@ func (h *Handlers) ListDocumentReviewSummaries(w http.ResponseWriter, r *http.Re
 	respondJSON(w, http.StatusOK, result)
 }
 
+func (h *Handlers) EvaluateDocumentEvidencePolicy(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req documents.EvidencePolicyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	result, err := h.documentsService.EvaluateEvidencePolicy(r.Context(), schemaName, tenantID, &req)
+	if err != nil {
+		respondDocumentError(w, err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 func (h *Handlers) GetDocumentRetentionReview(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)

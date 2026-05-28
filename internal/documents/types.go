@@ -75,6 +75,46 @@ type ReviewSummary struct {
 	HasRejected        bool   `json:"has_rejected"`
 }
 
+type EvidencePolicyRequest struct {
+	EntityType string               `json:"entity_type"`
+	EntityIDs  []string             `json:"entity_ids"`
+	Rules      []EvidencePolicyRule `json:"rules"`
+}
+
+type EvidencePolicyRule struct {
+	DocumentTypes   []string `json:"document_types,omitempty"`
+	MinCount        int      `json:"min_count"`
+	RequireApproved bool     `json:"require_approved"`
+}
+
+type EvidencePolicyRuleResult struct {
+	RuleIndex             int      `json:"rule_index"`
+	DocumentTypes         []string `json:"document_types,omitempty"`
+	RequiredCount         int      `json:"required_count"`
+	MatchingCount         int      `json:"matching_count"`
+	ApprovedMatchingCount int      `json:"approved_matching_count"`
+	AcceptedCount         int      `json:"accepted_count"`
+	RequireApproved       bool     `json:"require_approved"`
+	Compliant             bool     `json:"compliant"`
+	Message               string   `json:"message,omitempty"`
+}
+
+type EvidencePolicyResult struct {
+	EntityType                 string                     `json:"entity_type"`
+	EntityID                   string                     `json:"entity_id"`
+	Compliant                  bool                       `json:"compliant"`
+	TotalCount                 int                        `json:"total_count"`
+	PendingReviewCount         int                        `json:"pending_review_count"`
+	ReviewedCount              int                        `json:"reviewed_count"`
+	ApprovedCount              int                        `json:"approved_count"`
+	RejectedCount              int                        `json:"rejected_count"`
+	MissingEvidence            bool                       `json:"missing_evidence"`
+	DocumentTypeCounts         map[string]int             `json:"document_type_counts"`
+	ApprovedDocumentTypeCounts map[string]int             `json:"approved_document_type_counts"`
+	RuleResults                []EvidencePolicyRuleResult `json:"rule_results"`
+	Violations                 []EvidencePolicyRuleResult `json:"violations"`
+}
+
 type RetentionReview struct {
 	AsOfDate              string     `json:"as_of_date"`
 	CutoffDate            string     `json:"cutoff_date"`
