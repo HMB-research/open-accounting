@@ -993,6 +993,84 @@ Authorization: Bearer <token>
 
 ---
 
+## Quotes
+
+### List Quotes
+
+```http
+GET /tenants/{tenantId}/quotes
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `status` (string): `DRAFT`, `SENT`, `ACCEPTED`, `REJECTED`, `EXPIRED`, or `CONVERTED`
+- `contact_id` (uuid): Filter by contact
+- `from_date` (date): Filter from quote date, `YYYY-MM-DD`
+- `to_date` (date): Filter to quote date, `YYYY-MM-DD`
+- `search` (string): Search quote numbers and related text
+
+### Create Quote
+
+```http
+POST /tenants/{tenantId}/quotes
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "contact_id": "uuid",
+  "quote_date": "2026-03-15T00:00:00Z",
+  "valid_until": "2026-04-15T00:00:00Z",
+  "currency": "EUR",
+  "exchange_rate": "1",
+  "notes": "March offer",
+  "lines": [
+    {
+      "description": "Consulting services",
+      "quantity": "2",
+      "unit": "hour",
+      "unit_price": "100.00",
+      "discount_percent": "0",
+      "vat_rate": "22.00"
+    }
+  ]
+}
+```
+
+### Get Quote
+
+```http
+GET /tenants/{tenantId}/quotes/{quoteId}
+Authorization: Bearer <token>
+```
+
+### Update Quote
+
+```http
+PUT /tenants/{tenantId}/quotes/{quoteId}
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+Draft quotes can be updated with the same editable fields used by `Create Quote`.
+
+### Delete Quote
+
+```http
+DELETE /tenants/{tenantId}/quotes/{quoteId}
+Authorization: Bearer <token>
+```
+
+### Quote Lifecycle
+
+```http
+POST /tenants/{tenantId}/quotes/{quoteId}/send
+POST /tenants/{tenantId}/quotes/{quoteId}/accept
+POST /tenants/{tenantId}/quotes/{quoteId}/reject
+Authorization: Bearer <token>
+```
+
+---
+
 ## Payments
 
 ### List Payments

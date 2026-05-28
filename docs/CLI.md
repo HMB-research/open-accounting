@@ -199,6 +199,31 @@ go run ./cmd/oa invoices import --file ./invoices.csv
 
 Use `--line` repeatedly on `invoices create` for multi-line invoices. Each line is comma-separated `key=value` pairs with `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, `account_id`, and `product_id`.
 
+## Quotes
+
+```bash
+go run ./cmd/oa quotes list
+go run ./cmd/oa quotes list --status DRAFT --contact-id <contact-id> --from 2026-03-01 --to 2026-03-31
+go run ./cmd/oa quotes create \
+  --contact-id <contact-id> \
+  --quote-date 2026-03-15 \
+  --valid-until 2026-04-15 \
+  --notes "March offer" \
+  --line "description=Consulting,quantity=2,unit=hour,unit_price=100.00,vat_rate=22.00"
+go run ./cmd/oa quotes get --id <quote-id>
+go run ./cmd/oa quotes update \
+  --id <quote-id> \
+  --contact-id <contact-id> \
+  --quote-date 2026-03-16 \
+  --line "description=Updated consulting,quantity=3,unit=hour,unit_price=100.00,vat_rate=22.00"
+go run ./cmd/oa quotes send --id <quote-id>
+go run ./cmd/oa quotes accept --id <quote-id>
+go run ./cmd/oa quotes reject --id <quote-id>
+go run ./cmd/oa quotes delete --id <quote-id>
+```
+
+Use `--line` repeatedly on `quotes create` and `quotes update` for multi-line offers. Each line accepts `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, and `product_id`. Quote statuses are `DRAFT`, `SENT`, `ACCEPTED`, `REJECTED`, `EXPIRED`, and `CONVERTED`.
+
 ## Payments
 
 ```bash

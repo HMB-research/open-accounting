@@ -17,6 +17,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
+	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tax"
 )
@@ -215,6 +216,54 @@ func TestPrintInvoiceOutputs(t *testing.T) {
 	assert.Contains(t, invoiceBuf.String(), "Invoice INV-00001")
 	assert.Contains(t, invoiceBuf.String(), "Due amount: 199.6")
 	assert.Contains(t, invoiceBuf.String(), "Consulting")
+}
+
+func TestPrintQuoteOutputs(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	validUntil := now.AddDate(0, 0, 30)
+	quote := quotes.Quote{
+		ID:           "quote-1",
+		TenantID:     "tenant-1",
+		QuoteNumber:  "QUO-00001",
+		ContactID:    "contact-1",
+		Contact:      &contacts.Contact{Name: "Acme"},
+		QuoteDate:    now,
+		ValidUntil:   &validUntil,
+		Status:       quotes.QuoteStatusDraft,
+		Currency:     "EUR",
+		ExchangeRate: decimal.NewFromInt(1),
+		Subtotal:     decimal.NewFromInt(180),
+		VATAmount:    decimal.NewFromFloat(39.6),
+		Total:        decimal.NewFromFloat(219.6),
+		Notes:        "March offer",
+		CreatedAt:    now,
+		CreatedBy:    "user-1",
+		UpdatedAt:    now,
+		Lines: []quotes.QuoteLine{{
+			LineNumber:   1,
+			Description:  "Consulting",
+			Quantity:     decimal.NewFromInt(2),
+			Unit:         "hour",
+			UnitPrice:    decimal.NewFromInt(100),
+			VATRate:      decimal.NewFromInt(22),
+			LineSubtotal: decimal.NewFromInt(180),
+			LineVAT:      decimal.NewFromFloat(39.6),
+			LineTotal:    decimal.NewFromFloat(219.6),
+		}},
+	}
+
+	var quotesBuf bytes.Buffer
+	printQuotesTable(&quotesBuf, []quotes.Quote{quote})
+	assert.Contains(t, quotesBuf.String(), "QUO-00001")
+	assert.Contains(t, quotesBuf.String(), "Acme")
+
+	var quoteBuf bytes.Buffer
+	printQuote(&quoteBuf, &quote)
+	assert.Contains(t, quoteBuf.String(), "Quote QUO-00001")
+	assert.Contains(t, quoteBuf.String(), "Valid until: 2026-04-14")
+	assert.Contains(t, quoteBuf.String(), "Consulting")
 }
 
 func TestPrintPayrollOutputs(t *testing.T) {

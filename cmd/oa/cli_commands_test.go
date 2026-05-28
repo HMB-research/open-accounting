@@ -22,6 +22,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
+	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -473,6 +474,185 @@ func TestCLIInvoiceLifecycleCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"invoices", "void", "--id", "inv-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Voided invoice inv-1")
+}
+
+func TestCLIQuoteCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	quotePayload := func(id, number, status string) map[string]any {
+		return map[string]any{
+			"id":           id,
+			"tenant_id":    "tenant-1",
+			"quote_number": number,
+			"contact_id":   "contact-1",
+			"contact": map[string]any{
+				"id":           "contact-1",
+				"name":         "Acme",
+				"contact_type": "CUSTOMER",
+				"is_active":    true,
+			},
+			"quote_date":    "2026-03-15T00:00:00Z",
+			"valid_until":   "2026-04-15T00:00:00Z",
+			"status":        status,
+			"currency":      "EUR",
+			"exchange_rate": "1.00",
+			"subtotal":      "180.00",
+			"vat_amount":    "39.60",
+			"total":         "219.60",
+			"notes":         "March offer",
+			"created_at":    "2026-03-15T12:00:00Z",
+			"created_by":    "user-1",
+			"updated_at":    "2026-03-15T12:00:00Z",
+			"lines": []map[string]any{{
+				"id":               "line-1",
+				"tenant_id":        "tenant-1",
+				"quote_id":         id,
+				"line_number":      1,
+				"description":      "Consulting",
+				"quantity":         "2.00",
+				"unit":             "hour",
+				"unit_price":       "100.00",
+				"discount_percent": "10.00",
+				"vat_rate":         "22.00",
+				"line_subtotal":    "180.00",
+				"line_vat":         "39.60",
+				"line_total":       "219.60",
+				"product_id":       "prod-1",
+			}},
+		}
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/quotes":
+			require.Equal(t, "DRAFT", r.URL.Query().Get("status"))
+			require.Equal(t, "contact-1", r.URL.Query().Get("contact_id"))
+			require.Equal(t, "2026-03-01", r.URL.Query().Get("from_date"))
+			require.Equal(t, "2026-03-31", r.URL.Query().Get("to_date"))
+			require.Equal(t, "QUO", r.URL.Query().Get("search"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{quotePayload("quote-1", "QUO-00001", "DRAFT")})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes":
+			var req quotes.CreateQuoteRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "contact-1", req.ContactID)
+			assert.Equal(t, "2026-03-15", req.QuoteDate.Format("2006-01-02"))
+			require.NotNil(t, req.ValidUntil)
+			assert.Equal(t, "2026-04-15", req.ValidUntil.Format("2006-01-02"))
+			assert.Equal(t, "EUR", req.Currency)
+			assert.Equal(t, "March offer", req.Notes)
+			require.Len(t, req.Lines, 1)
+			line := req.Lines[0]
+			assert.Equal(t, "Consulting", line.Description)
+			assert.True(t, line.Quantity.Equal(decimal.RequireFromString("2.00")))
+			assert.True(t, line.UnitPrice.Equal(decimal.RequireFromString("100.00")))
+			assert.True(t, line.DiscountPercent.Equal(decimal.RequireFromString("10.00")))
+			assert.True(t, line.VATRate.Equal(decimal.RequireFromString("22.00")))
+			require.NotNil(t, line.ProductID)
+			assert.Equal(t, "prod-1", *line.ProductID)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(quotePayload("quote-1", "QUO-00001", "DRAFT"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-1":
+			_ = json.NewEncoder(w).Encode(quotePayload("quote-1", "QUO-00001", "DRAFT"))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-1":
+			var req quotes.UpdateQuoteRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "contact-1", req.ContactID)
+			assert.Equal(t, "2026-03-16", req.QuoteDate.Format("2006-01-02"))
+			assert.Equal(t, "Updated offer", req.Notes)
+			require.Len(t, req.Lines, 1)
+			assert.Equal(t, "Updated consulting", req.Lines[0].Description)
+			_ = json.NewEncoder(w).Encode(quotePayload("quote-1", "QUO-00002", "DRAFT"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-1/send":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "sent"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-1/accept":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-1/reject":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "rejected"})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-1":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{
+		"quotes", "list",
+		"--status", "draft",
+		"--contact-id", "contact-1",
+		"--from", "2026-03-01",
+		"--to", "2026-03-31",
+		"--search", "QUO",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"quote_number": "QUO-00001"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"quotes", "create",
+		"--contact-id", "contact-1",
+		"--quote-date", "2026-03-15",
+		"--valid-until", "2026-04-15",
+		"--currency", "eur",
+		"--notes", "March offer",
+		"--line", "description=Consulting,quantity=2,unit=hour,unit_price=100.00,discount_percent=10.00,vat_rate=22.00,product_id=prod-1",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created quote QUO-00001 (quote-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"quotes", "get", "--id", "quote-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Quote QUO-00001")
+	assert.Contains(t, stdout.String(), "Consulting")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"quotes", "update",
+		"--id", "quote-1",
+		"--contact-id", "contact-1",
+		"--quote-date", "2026-03-16",
+		"--currency", "eur",
+		"--notes", "Updated offer",
+		"--line", "description=Updated consulting,quantity=3,unit=hour,unit_price=100.00,vat_rate=22.00",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Quote QUO-00002")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"quotes", "send", "--id", "quote-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Sent quote quote-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"quotes", "accept", "--id", "quote-1", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "accepted"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"quotes", "reject", "--id", "quote-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Rejected quote quote-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"quotes", "delete", "--id", "quote-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Deleted quote quote-1")
 }
 
 func TestCLIJournalEntryCommands(t *testing.T) {
@@ -1952,6 +2132,14 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, invoicing.StatusPartiallyPaid, invoiceStatus)
 
+	quoteStatus, err := parseOptionalQuoteStatus("converted")
+	require.NoError(t, err)
+	assert.Equal(t, quotes.QuoteStatusConverted, quoteStatus)
+
+	_, err = parseOptionalQuoteStatus("bad")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid quote status")
+
 	var invoiceLines invoiceLineFlags
 	require.NoError(t, invoiceLines.Set("description=Service,quantity=1,unit_price=100,vat_rate=22"))
 	assert.Equal(t, "Service", invoiceLines.String())
@@ -1959,6 +2147,16 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	err = invoiceLines.Set("description=Missing price,quantity=1,vat_rate=22")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unit_price is required")
+
+	var quoteLines quoteLineFlags
+	require.NoError(t, quoteLines.Set("description=Offer,qty=2,price=50,vat=22,product=prod-1"))
+	assert.Equal(t, "Offer", quoteLines.String())
+	require.NotNil(t, quoteLines[0].ProductID)
+	assert.Equal(t, "prod-1", *quoteLines[0].ProductID)
+
+	err = quoteLines.Set("description=Missing vat,quantity=1,unit_price=100")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "vat_rate is required")
 
 	var journalLines journalLineFlags
 	require.NoError(t, journalLines.Set("account_id=acc-1,debit=100,description=Debit line"))
