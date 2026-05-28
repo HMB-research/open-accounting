@@ -291,6 +291,82 @@ func TestCashFlowFinancingSubcategories(t *testing.T) {
 	assert.Empty(t, result.OperatingActivities[:len(result.OperatingActivities)-1], "financing entries should not appear as operating lines")
 }
 
+func TestCashFlowCustomChartNameClassifications(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	mockRepo.JournalEntries = []JournalEntryWithLines{
+		{
+			ID:          "customer-receipt",
+			EntryDate:   time.Date(2024, 1, 10, 0, 0, 0, 0, time.UTC),
+			Description: "Customer receipt on custom chart",
+			Lines: []JournalLine{
+				{AccountCode: "BANK-MAIN", AccountType: "ASSET", AccountName: "Main bank account", Debit: decimal.NewFromInt(1000), Credit: decimal.Zero},
+				{AccountCode: "AR-CUST", AccountType: "ASSET", AccountName: "Trade receivables", Debit: decimal.Zero, Credit: decimal.NewFromInt(1000)},
+			},
+		},
+		{
+			ID:          "asset-purchase",
+			EntryDate:   time.Date(2024, 1, 11, 0, 0, 0, 0, time.UTC),
+			Description: "Equipment purchase on custom chart",
+			Lines: []JournalLine{
+				{AccountCode: "EQUIP", AccountType: "ASSET", AccountName: "Production equipment", Debit: decimal.NewFromInt(300), Credit: decimal.Zero},
+				{AccountCode: "BANK-MAIN", AccountType: "ASSET", AccountName: "Main bank account", Debit: decimal.Zero, Credit: decimal.NewFromInt(300)},
+			},
+		},
+		{
+			ID:          "loan-received",
+			EntryDate:   time.Date(2024, 1, 12, 0, 0, 0, 0, time.UTC),
+			Description: "Owner loan on custom chart",
+			Lines: []JournalLine{
+				{AccountCode: "BANK-MAIN", AccountType: "ASSET", AccountName: "Main bank account", Debit: decimal.NewFromInt(500), Credit: decimal.Zero},
+				{AccountCode: "OWNER-LOAN", AccountType: "LIABILITY", AccountName: "Owner loan liability", Debit: decimal.Zero, Credit: decimal.NewFromInt(500)},
+			},
+		},
+		{
+			ID:          "share-capital",
+			EntryDate:   time.Date(2024, 1, 13, 0, 0, 0, 0, time.UTC),
+			Description: "Share capital on custom chart",
+			Lines: []JournalLine{
+				{AccountCode: "BANK-MAIN", AccountType: "ASSET", AccountName: "Main bank account", Debit: decimal.NewFromInt(200), Credit: decimal.Zero},
+				{AccountCode: "EQUITY-SHARE", AccountType: "EQUITY", AccountName: "Osakapital", Debit: decimal.Zero, Credit: decimal.NewFromInt(200)},
+			},
+		},
+		{
+			ID:          "vat-payment",
+			EntryDate:   time.Date(2024, 1, 14, 0, 0, 0, 0, time.UTC),
+			Description: "VAT payment on custom chart",
+			Lines: []JournalLine{
+				{AccountCode: "VAT-PAY", AccountType: "LIABILITY", AccountName: "VAT payable", Debit: decimal.NewFromInt(100), Credit: decimal.Zero},
+				{AccountCode: "BANK-MAIN", AccountType: "ASSET", AccountName: "Main bank account", Debit: decimal.Zero, Credit: decimal.NewFromInt(100)},
+			},
+		},
+		{
+			ID:          "dividends-paid",
+			EntryDate:   time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
+			Description: "Dividends on custom chart",
+			Lines: []JournalLine{
+				{AccountCode: "DIV-PAY", AccountType: "EQUITY", AccountName: "Dividends payable", Debit: decimal.NewFromInt(80), Credit: decimal.Zero},
+				{AccountCode: "BANK-MAIN", AccountType: "ASSET", AccountName: "Main bank account", Debit: decimal.Zero, Credit: decimal.NewFromInt(80)},
+			},
+		},
+	}
+
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", &CashFlowRequest{StartDate: "2024-01-01", EndDate: "2024-01-31"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "1000", cashFlowAmount(result.OperatingActivities, CFOperReceipts).String())
+	assert.Equal(t, "-100", cashFlowAmount(result.OperatingActivities, CFOperTaxes).String())
+	assert.Equal(t, "-300", cashFlowAmount(result.InvestingActivities, CFInvFixedAssets).String())
+	assert.Equal(t, "500", cashFlowAmount(result.FinancingActivities, CFFinLoansRcvd).String())
+	assert.Equal(t, "200", cashFlowAmount(result.FinancingActivities, CFFinShares).String())
+	assert.Equal(t, "-80", cashFlowAmount(result.FinancingActivities, CFFinDividendsPd).String())
+	assert.Equal(t, "900", result.TotalOperating.String())
+	assert.Equal(t, "-300", result.TotalInvesting.String())
+	assert.Equal(t, "620", result.TotalFinancing.String())
+}
+
 func TestCashFlowOpeningClosingBalance(t *testing.T) {
 	ctx := context.Background()
 	mockRepo := NewMockRepository()
