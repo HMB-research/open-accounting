@@ -433,7 +433,7 @@ func TestPostgresRepository_GetMonthlyRevenueExpenses_WithData(t *testing.T) {
 		SELECT id FROM `+tenant.SchemaName+`.accounts WHERE code LIKE '4%' AND account_type = 'REVENUE' LIMIT 1
 	`).Scan(&revenueAccountID)
 	if err != nil {
-		t.Skipf("No revenue account found (4xxx REVENUE type): %v - skipping test", err)
+		t.Fatalf("expected default revenue account (4xxx REVENUE type): %v", err)
 	}
 
 	// Get expense account (5000 range)
@@ -442,7 +442,7 @@ func TestPostgresRepository_GetMonthlyRevenueExpenses_WithData(t *testing.T) {
 		SELECT id FROM `+tenant.SchemaName+`.accounts WHERE code LIKE '5%' AND account_type = 'EXPENSE' LIMIT 1
 	`).Scan(&expenseAccountID)
 	if err != nil {
-		t.Skipf("No expense account found (5xxx EXPENSE type): %v - skipping test", err)
+		t.Fatalf("expected default expense account (5xxx EXPENSE type): %v", err)
 	}
 
 	// Get cash account (1000 range) for the other side of entries
@@ -451,7 +451,7 @@ func TestPostgresRepository_GetMonthlyRevenueExpenses_WithData(t *testing.T) {
 		SELECT id FROM `+tenant.SchemaName+`.accounts WHERE code = '1000' LIMIT 1
 	`).Scan(&cashAccountID)
 	if err != nil {
-		t.Skipf("No cash account found: %v - skipping test", err)
+		t.Fatalf("expected default cash account (1000): %v", err)
 	}
 
 	// Create a POSTED journal entry for revenue this month
@@ -612,7 +612,7 @@ func TestPostgresRepository_GetRevenueExpenses_WithData(t *testing.T) {
 		SELECT id FROM `+tenant.SchemaName+`.accounts WHERE code LIKE '4%' AND account_type = 'REVENUE' LIMIT 1
 	`).Scan(&revenueAccountID)
 	if err != nil {
-		t.Skipf("No revenue account found (4xxx REVENUE type): %v - skipping test", err)
+		t.Fatalf("expected default revenue account (4xxx REVENUE type): %v", err)
 	}
 
 	// Get expense account (5000 range)
@@ -621,7 +621,7 @@ func TestPostgresRepository_GetRevenueExpenses_WithData(t *testing.T) {
 		SELECT id FROM `+tenant.SchemaName+`.accounts WHERE code LIKE '5%' AND account_type = 'EXPENSE' LIMIT 1
 	`).Scan(&expenseAccountID)
 	if err != nil {
-		t.Skipf("No expense account found (5xxx EXPENSE type): %v - skipping test", err)
+		t.Fatalf("expected default expense account (5xxx EXPENSE type): %v", err)
 	}
 
 	// Get cash account for the other side of entries
@@ -630,7 +630,7 @@ func TestPostgresRepository_GetRevenueExpenses_WithData(t *testing.T) {
 		SELECT id FROM `+tenant.SchemaName+`.accounts WHERE code = '1000' LIMIT 1
 	`).Scan(&cashAccountID)
 	if err != nil {
-		t.Skipf("No cash account found: %v - skipping test", err)
+		t.Fatalf("expected default cash account (1000): %v", err)
 	}
 
 	now := time.Now()
@@ -723,7 +723,7 @@ func TestPostgresRepository_GetRevenueExpenses_DraftNotIncluded(t *testing.T) {
 		SELECT id FROM `+tenant.SchemaName+`.accounts WHERE code LIKE '4%' AND account_type = 'REVENUE' LIMIT 1
 	`).Scan(&revenueAccountID)
 	if err != nil {
-		t.Skipf("No revenue account found: %v - skipping test", err)
+		t.Fatalf("expected default revenue account (4xxx REVENUE type): %v", err)
 	}
 
 	// Get cash account
@@ -732,7 +732,7 @@ func TestPostgresRepository_GetRevenueExpenses_DraftNotIncluded(t *testing.T) {
 		SELECT id FROM `+tenant.SchemaName+`.accounts WHERE code = '1000' LIMIT 1
 	`).Scan(&cashAccountID)
 	if err != nil {
-		t.Skipf("No cash account found: %v - skipping test", err)
+		t.Fatalf("expected default cash account (1000): %v", err)
 	}
 
 	now := time.Now()
