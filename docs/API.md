@@ -883,6 +883,20 @@ Returns `application/pdf` file.
 
 ## Payments
 
+### List Payments
+
+```http
+GET /tenants/{tenantId}/payments
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `type` (string): `RECEIVED` or `MADE`
+- `method` (string): Filter by payment method
+- `contact_id` (uuid): Filter by contact
+- `from_date` (date): Filter from payment date, `YYYY-MM-DD`
+- `to_date` (date): Filter to payment date, `YYYY-MM-DD`
+
 ### Create Payment
 
 ```http
@@ -893,14 +907,26 @@ Content-Type: application/json
 {
   "payment_type": "RECEIVED",
   "contact_id": "uuid",
-  "account_id": "uuid",
+  "payment_date": "2025-01-20T00:00:00Z",
   "amount": "1220.00",
-  "payment_date": "2025-01-20",
+  "currency": "EUR",
+  "exchange_rate": "1",
+  "payment_method": "BANK_TRANSFER",
+  "bank_account": "EE471000001020145685",
   "reference": "BANK-001"
 }
 ```
 
 **Payment Types:** `RECEIVED`, `MADE`
+
+The request may include `allocations` with `invoice_id` and `amount` entries to allocate the payment while creating it.
+
+### Get Payment
+
+```http
+GET /tenants/{tenantId}/payments/{paymentId}
+Authorization: Bearer <token>
+```
 
 ### Allocate Payment to Invoice
 
@@ -913,6 +939,13 @@ Content-Type: application/json
   "invoice_id": "uuid",
   "amount": "1220.00"
 }
+```
+
+### Get Unallocated Payments
+
+```http
+GET /tenants/{tenantId}/payments/unallocated?type=RECEIVED
+Authorization: Bearer <token>
 ```
 
 ---

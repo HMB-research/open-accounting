@@ -177,6 +177,26 @@ KMD export writes e-MTA XML. Omit `--output` to stream the XML to stdout.
 go run ./cmd/oa invoices import --file ./invoices.csv
 ```
 
+## Payments
+
+```bash
+go run ./cmd/oa payments list
+go run ./cmd/oa payments list --type RECEIVED --method BANK_TRANSFER --from 2026-03-01 --to 2026-03-31
+go run ./cmd/oa payments create \
+  --type RECEIVED \
+  --amount 1220.00 \
+  --date 2026-03-15 \
+  --contact-id <contact-id> \
+  --method BANK_TRANSFER \
+  --reference BANK-001 \
+  --allocate <invoice-id>:1220.00
+go run ./cmd/oa payments get --id <payment-id>
+go run ./cmd/oa payments allocate --id <payment-id> --invoice-id <invoice-id> --amount 250.00
+go run ./cmd/oa payments unallocated --type RECEIVED
+```
+
+Use `--allocate invoice-id:amount` repeatedly on `payments create` to allocate a new payment to multiple invoices. Payment types are `RECEIVED` and `MADE`; `--json` is available on list, create, get, allocate, and unallocated commands.
+
 ## Reports
 
 ```bash

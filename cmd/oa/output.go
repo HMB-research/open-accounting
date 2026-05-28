@@ -13,6 +13,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tax"
@@ -96,6 +97,71 @@ func printDocumentsTable(w io.Writer, docs []documents.Document) {
 			doc.ReviewStatus,
 			formatTimePtr(doc.RetentionUntil),
 			doc.CreatedAt.Format(time.RFC3339),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printPaymentsTable(w io.Writer, paymentsList []payments.Payment) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNUMBER\tTYPE\tDATE\tAMOUNT\tALLOCATED\tUNALLOCATED\tMETHOD\tREFERENCE")
+	for _, payment := range paymentsList {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			payment.ID,
+			payment.PaymentNumber,
+			payment.PaymentType,
+			formatDate(payment.PaymentDate),
+			payment.Amount.String(),
+			payment.TotalAllocated().String(),
+			payment.UnallocatedAmount().String(),
+			payment.PaymentMethod,
+			payment.Reference,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printPayment(w io.Writer, payment *payments.Payment) {
+	_, _ = fmt.Fprintf(w, "Payment %s (%s)\n", payment.PaymentNumber, payment.PaymentType)
+	_, _ = fmt.Fprintf(w, "ID: %s\n", payment.ID)
+	_, _ = fmt.Fprintf(w, "Date: %s\n", formatDate(payment.PaymentDate))
+	_, _ = fmt.Fprintf(w, "Amount: %s %s\n", payment.Amount.String(), payment.Currency)
+	_, _ = fmt.Fprintf(w, "Base amount: %s\n", payment.BaseAmount.String())
+	_, _ = fmt.Fprintf(w, "Allocated: %s\n", payment.TotalAllocated().String())
+	_, _ = fmt.Fprintf(w, "Unallocated: %s\n", payment.UnallocatedAmount().String())
+	if payment.ContactID != nil && strings.TrimSpace(*payment.ContactID) != "" {
+		_, _ = fmt.Fprintf(w, "Contact: %s\n", *payment.ContactID)
+	}
+	if strings.TrimSpace(payment.PaymentMethod) != "" {
+		_, _ = fmt.Fprintf(w, "Method: %s\n", payment.PaymentMethod)
+	}
+	if strings.TrimSpace(payment.BankAccount) != "" {
+		_, _ = fmt.Fprintf(w, "Bank account: %s\n", payment.BankAccount)
+	}
+	if strings.TrimSpace(payment.Reference) != "" {
+		_, _ = fmt.Fprintf(w, "Reference: %s\n", payment.Reference)
+	}
+	if strings.TrimSpace(payment.Notes) != "" {
+		_, _ = fmt.Fprintf(w, "Notes: %s\n", payment.Notes)
+	}
+	if len(payment.Allocations) > 0 {
+		printPaymentAllocationsTable(w, payment.Allocations)
+	}
+}
+
+func printPaymentAllocationsTable(w io.Writer, allocations []payments.PaymentAllocation) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tINVOICE\tAMOUNT\tCREATED")
+	for _, allocation := range allocations {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\n",
+			allocation.ID,
+			allocation.InvoiceID,
+			allocation.Amount.String(),
+			allocation.CreatedAt.Format(time.RFC3339),
 		)
 	}
 	_ = tw.Flush()

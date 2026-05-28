@@ -19,6 +19,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -405,6 +406,142 @@ func TestCLIContactsInvoicesAndJournalCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created posted journal entry JE-2026-001")
 	assert.Contains(t, stdout.String(), "debit 500")
+}
+
+func TestCLIPaymentCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	paymentPayload := func(id, number string) map[string]any {
+		return map[string]any{
+			"id":             id,
+			"tenant_id":      "tenant-1",
+			"payment_number": number,
+			"payment_type":   "RECEIVED",
+			"contact_id":     "contact-1",
+			"payment_date":   "2026-03-15T00:00:00Z",
+			"amount":         "100.00",
+			"currency":       "EUR",
+			"exchange_rate":  "1.00",
+			"base_amount":    "100.00",
+			"payment_method": "BANK_TRANSFER",
+			"bank_account":   "EE471000001020145685",
+			"reference":      "REF-1",
+			"notes":          "March receipt",
+			"created_at":     "2026-03-15T12:00:00Z",
+			"created_by":     "user-1",
+			"allocations": []map[string]any{{
+				"id":         "alloc-1",
+				"tenant_id":  "tenant-1",
+				"payment_id": id,
+				"invoice_id": "inv-1",
+				"amount":     "60.00",
+				"created_at": "2026-03-15T12:05:00Z",
+			}},
+		}
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payments":
+			require.Equal(t, "RECEIVED", r.URL.Query().Get("type"))
+			require.Equal(t, "BANK_TRANSFER", r.URL.Query().Get("method"))
+			require.Equal(t, "contact-1", r.URL.Query().Get("contact_id"))
+			require.Equal(t, "2026-03-01", r.URL.Query().Get("from_date"))
+			require.Equal(t, "2026-03-31", r.URL.Query().Get("to_date"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{paymentPayload("pay-1", "PMT-00001")})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments":
+			var req payments.CreatePaymentRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, payments.PaymentTypeReceived, req.PaymentType)
+			require.NotNil(t, req.ContactID)
+			assert.Equal(t, "contact-1", *req.ContactID)
+			assert.Equal(t, "2026-03-15", req.PaymentDate.Format("2006-01-02"))
+			assert.True(t, req.Amount.Equal(decimal.RequireFromString("100.00")))
+			assert.Equal(t, "EUR", req.Currency)
+			assert.Equal(t, "BANK_TRANSFER", req.PaymentMethod)
+			assert.Equal(t, "REF-1", req.Reference)
+			require.Len(t, req.Allocations, 1)
+			assert.Equal(t, "inv-1", req.Allocations[0].InvoiceID)
+			assert.True(t, req.Allocations[0].Amount.Equal(decimal.RequireFromString("60.00")))
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(paymentPayload("pay-1", "PMT-00001"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payments/pay-1":
+			_ = json.NewEncoder(w).Encode(paymentPayload("pay-1", "PMT-00001"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments/pay-1/allocate":
+			var req payments.AllocationRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "inv-2", req.InvoiceID)
+			assert.True(t, req.Amount.Equal(decimal.RequireFromString("40.00")))
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "allocated"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payments/unallocated":
+			require.Equal(t, "RECEIVED", r.URL.Query().Get("type"))
+			payload := paymentPayload("pay-2", "PMT-00002")
+			payload["allocations"] = []map[string]any{}
+			_ = json.NewEncoder(w).Encode([]map[string]any{payload})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{
+		"payments", "list",
+		"--type", "received",
+		"--method", "BANK_TRANSFER",
+		"--contact-id", "contact-1",
+		"--from", "2026-03-01",
+		"--to", "2026-03-31",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"payment_number": "PMT-00001"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"payments", "create",
+		"--type", "received",
+		"--amount", "100.00",
+		"--date", "2026-03-15",
+		"--currency", "eur",
+		"--method", "BANK_TRANSFER",
+		"--contact-id", "contact-1",
+		"--bank-account", "EE471000001020145685",
+		"--reference", "REF-1",
+		"--notes", "March receipt",
+		"--allocate", "inv-1:60.00",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created payment PMT-00001 (pay-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payments", "get", "--id", "pay-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Payment PMT-00001")
+	assert.Contains(t, stdout.String(), "inv-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payments", "allocate", "--id", "pay-1", "--invoice-id", "inv-2", "--amount", "40.00"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Allocated 40 to invoice inv-2 for payment pay-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payments", "unallocated", "--type", "received"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "PMT-00002")
 }
 
 func TestCLIReportsCommands(t *testing.T) {
@@ -1292,6 +1429,10 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invoices subcommand required")
 
+	err = app.runPayments(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "payments subcommand required")
+
 	err = app.runTSD(context.Background(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "tsd subcommand required")
@@ -1376,6 +1517,22 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	_, _, err = parseYearMonthFlags("2026", "13")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "month must be between 1 and 12")
+
+	paymentType, err := parseRequiredPaymentType("made")
+	require.NoError(t, err)
+	assert.Equal(t, payments.PaymentTypeMade, paymentType)
+
+	_, err = parseRequiredPaymentType("unknown")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid payment type")
+
+	var allocations allocationFlags
+	require.NoError(t, allocations.Set("inv-1:12.50"))
+	assert.Equal(t, "inv-1:12.5", allocations.String())
+
+	err = allocations.Set("bad")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invoice-id:amount")
 
 	var exportBuf strings.Builder
 	err = writeExportOutput(&exportBuf, "", []byte("raw export"), "Raw")
