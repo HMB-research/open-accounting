@@ -7465,8 +7465,20 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		fs.SetOutput(a.stderr)
 		asOf := fs.String("as-of", "", "As-of date in YYYY-MM-DD")
 		asJSON := fs.Bool("json", false, "Output JSON")
+		asCSV := fs.Bool("csv", false, "Output CSV")
+		outputPath := fs.String("output", "", "Optional CSV output file path")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
+		}
+		if err := validateReportOutputFlags(*asJSON, *asCSV, *outputPath); err != nil {
+			return err
+		}
+		if *asCSV {
+			content, err := client.exportTrialBalanceCSV(ctx, cfg.TenantID, strings.TrimSpace(*asOf))
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "trial balance CSV")
 		}
 
 		report, err := client.getTrialBalance(ctx, cfg.TenantID, strings.TrimSpace(*asOf))
@@ -7507,8 +7519,20 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		fs.SetOutput(a.stderr)
 		asOf := fs.String("as-of", "", "As-of date in YYYY-MM-DD")
 		asJSON := fs.Bool("json", false, "Output JSON")
+		asCSV := fs.Bool("csv", false, "Output CSV")
+		outputPath := fs.String("output", "", "Optional CSV output file path")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
+		}
+		if err := validateReportOutputFlags(*asJSON, *asCSV, *outputPath); err != nil {
+			return err
+		}
+		if *asCSV {
+			content, err := client.exportBalanceSheetCSV(ctx, cfg.TenantID, strings.TrimSpace(*asOf))
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "balance sheet CSV")
 		}
 
 		report, err := client.getBalanceSheet(ctx, cfg.TenantID, strings.TrimSpace(*asOf))
@@ -7527,11 +7551,23 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		startDate := fs.String("start", "", "Start date in YYYY-MM-DD")
 		endDate := fs.String("end", "", "End date in YYYY-MM-DD")
 		asJSON := fs.Bool("json", false, "Output JSON")
+		asCSV := fs.Bool("csv", false, "Output CSV")
+		outputPath := fs.String("output", "", "Optional CSV output file path")
 		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if err := validateReportOutputFlags(*asJSON, *asCSV, *outputPath); err != nil {
 			return err
 		}
 		if strings.TrimSpace(*startDate) == "" || strings.TrimSpace(*endDate) == "" {
 			return errors.New("start and end are required")
+		}
+		if *asCSV {
+			content, err := client.exportIncomeStatementCSV(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate))
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "income statement CSV")
 		}
 
 		report, err := client.getIncomeStatement(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate))
@@ -7550,11 +7586,23 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		startDate := fs.String("start", "", "Start date in YYYY-MM-DD")
 		endDate := fs.String("end", "", "End date in YYYY-MM-DD")
 		asJSON := fs.Bool("json", false, "Output JSON")
+		asCSV := fs.Bool("csv", false, "Output CSV")
+		outputPath := fs.String("output", "", "Optional CSV output file path")
 		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if err := validateReportOutputFlags(*asJSON, *asCSV, *outputPath); err != nil {
 			return err
 		}
 		if strings.TrimSpace(*startDate) == "" || strings.TrimSpace(*endDate) == "" {
 			return errors.New("start and end are required")
+		}
+		if *asCSV {
+			content, err := client.exportCashFlowStatementCSV(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate))
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "cash flow CSV")
 		}
 
 		report, err := client.getCashFlowStatement(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate))
@@ -7651,6 +7699,16 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 	default:
 		return fmt.Errorf("unknown reports subcommand %q", args[0])
 	}
+}
+
+func validateReportOutputFlags(asJSON, asCSV bool, outputPath string) error {
+	if asJSON && asCSV {
+		return errors.New("json and csv cannot both be set")
+	}
+	if strings.TrimSpace(outputPath) != "" && !asCSV {
+		return errors.New("output requires csv")
+	}
+	return nil
 }
 
 func (a *cliApp) runDocuments(ctx context.Context, args []string) error {

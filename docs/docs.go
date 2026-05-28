@@ -9806,7 +9806,8 @@ const docTemplate = `{
                 ],
                 "description": "Get balance sheet report as of a specific date",
                 "produces": [
-                    "application/json"
+                    "application/json",
+                    "text/csv"
                 ],
                 "tags": [
                     "Reports"
@@ -9824,6 +9825,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "As of date (YYYY-MM-DD)",
                         "name": "as_of",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Response format: json or csv",
+                        "name": "format",
                         "in": "query"
                     }
                 ],
@@ -9868,7 +9875,8 @@ const docTemplate = `{
                 ],
                 "description": "Get cash flow statement report for a specific period (Estonian standard)",
                 "produces": [
-                    "application/json"
+                    "application/json",
+                    "text/csv"
                 ],
                 "tags": [
                     "Reports"
@@ -9895,6 +9903,12 @@ const docTemplate = `{
                         "name": "end_date",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Response format: json or csv",
+                        "name": "format",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -9938,7 +9952,8 @@ const docTemplate = `{
                 ],
                 "description": "Get income statement (P\u0026L) report for a specific period",
                 "produces": [
-                    "application/json"
+                    "application/json",
+                    "text/csv"
                 ],
                 "tags": [
                     "Reports"
@@ -9965,6 +9980,12 @@ const docTemplate = `{
                         "name": "end",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Response format: json or csv",
+                        "name": "format",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -10008,7 +10029,8 @@ const docTemplate = `{
                 ],
                 "description": "Get trial balance report as of a specific date",
                 "produces": [
-                    "application/json"
+                    "application/json",
+                    "text/csv"
                 ],
                 "tags": [
                     "Reports"
@@ -10026,6 +10048,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "As of date (YYYY-MM-DD)",
                         "name": "as_of_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Response format: json or csv",
+                        "name": "format",
                         "in": "query"
                     }
                 ],

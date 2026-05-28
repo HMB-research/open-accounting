@@ -923,10 +923,11 @@ func (h *Handlers) VoidJournalEntry(w http.ResponseWriter, r *http.Request) {
 // @Summary Get trial balance
 // @Description Get trial balance report as of a specific date
 // @Tags Reports
-// @Produce json
+// @Produce json,text/csv
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param as_of_date query string false "As of date (YYYY-MM-DD)"
+// @Param format query string false "Response format: json or csv"
 // @Success 200 {object} accounting.TrialBalance
 // @Failure 400 {object} object{error=string}
 // @Failure 500 {object} object{error=string}
@@ -934,6 +935,12 @@ func (h *Handlers) VoidJournalEntry(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetTrialBalance(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	format, err := reportResponseFormat(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	asOfDateStr := r.URL.Query().Get("as_of_date")
 	asOfDate := time.Now()
@@ -949,6 +956,16 @@ func (h *Handlers) GetTrialBalance(w http.ResponseWriter, r *http.Request) {
 	tb, err := h.accountingService.GetTrialBalance(r.Context(), schemaName, tenantID, asOfDate)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to generate trial balance")
+		return
+	}
+
+	if format == "csv" {
+		content, err := trialBalanceCSV(tb)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export trial balance CSV")
+			return
+		}
+		respondReportCSV(w, fmt.Sprintf("trial-balance-%s.csv", asOfDate.Format("2006-01-02")), content)
 		return
 	}
 
@@ -1001,10 +1018,11 @@ func (h *Handlers) GetAccountBalance(w http.ResponseWriter, r *http.Request) {
 // @Summary Get balance sheet
 // @Description Get balance sheet report as of a specific date
 // @Tags Reports
-// @Produce json
+// @Produce json,text/csv
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param as_of query string false "As of date (YYYY-MM-DD)"
+// @Param format query string false "Response format: json or csv"
 // @Success 200 {object} accounting.BalanceSheet
 // @Failure 400 {object} object{error=string}
 // @Failure 500 {object} object{error=string}
@@ -1012,6 +1030,12 @@ func (h *Handlers) GetAccountBalance(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetBalanceSheet(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	format, err := reportResponseFormat(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	asOfDateStr := r.URL.Query().Get("as_of")
 	asOfDate := time.Now()
@@ -1030,6 +1054,16 @@ func (h *Handlers) GetBalanceSheet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if format == "csv" {
+		content, err := balanceSheetCSV(bs)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export balance sheet CSV")
+			return
+		}
+		respondReportCSV(w, fmt.Sprintf("balance-sheet-%s.csv", asOfDate.Format("2006-01-02")), content)
+		return
+	}
+
 	respondJSON(w, http.StatusOK, bs)
 }
 
@@ -1037,17 +1071,24 @@ func (h *Handlers) GetBalanceSheet(w http.ResponseWriter, r *http.Request) {
 // @Summary Get income statement
 // @Description Get income statement (P&L) report for a specific period
 // @Tags Reports
-// @Produce json
+// @Produce json,text/csv
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param start query string true "Start date (YYYY-MM-DD)"
 // @Param end query string true "End date (YYYY-MM-DD)"
+// @Param format query string false "Response format: json or csv"
 // @Success 200 {object} accounting.IncomeStatement
 // @Failure 400 {object} object{error=string}
 // @Failure 500 {object} object{error=string}
 // @Router /tenants/{tenantID}/reports/income-statement [get]
 func (h *Handlers) GetIncomeStatement(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
+
+	format, err := reportResponseFormat(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	startDateStr := r.URL.Query().Get("start")
 	endDateStr := r.URL.Query().Get("end")
@@ -1081,6 +1122,16 @@ func (h *Handlers) GetIncomeStatement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if format == "csv" {
+		content, err := incomeStatementCSV(is)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export income statement CSV")
+			return
+		}
+		respondReportCSV(w, fmt.Sprintf("income-statement-%s-%s.csv", startDate.Format("2006-01-02"), endDate.Format("2006-01-02")), content)
+		return
+	}
+
 	respondJSON(w, http.StatusOK, is)
 }
 
@@ -1088,17 +1139,24 @@ func (h *Handlers) GetIncomeStatement(w http.ResponseWriter, r *http.Request) {
 // @Summary Get cash flow statement
 // @Description Get cash flow statement report for a specific period (Estonian standard)
 // @Tags Reports
-// @Produce json
+// @Produce json,text/csv
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param start_date query string true "Start date (YYYY-MM-DD)"
 // @Param end_date query string true "End date (YYYY-MM-DD)"
+// @Param format query string false "Response format: json or csv"
 // @Success 200 {object} reports.CashFlowStatement
 // @Failure 400 {object} object{error=string}
 // @Failure 500 {object} object{error=string}
 // @Router /tenants/{tenantID}/reports/cash-flow [get]
 func (h *Handlers) GetCashFlowStatement(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
+
+	format, err := reportResponseFormat(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	startDateStr := r.URL.Query().Get("start_date")
 	endDateStr := r.URL.Query().Get("end_date")
@@ -1109,7 +1167,7 @@ func (h *Handlers) GetCashFlowStatement(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Validate date formats
-	_, err := time.Parse("2006-01-02", startDateStr)
+	_, err = time.Parse("2006-01-02", startDateStr)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "Invalid start_date format. Use YYYY-MM-DD")
 		return
@@ -1131,6 +1189,16 @@ func (h *Handlers) GetCashFlowStatement(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		log.Error().Err(err).Str("tenant", tenantID).Msg("Failed to generate cash flow statement")
 		respondError(w, http.StatusInternalServerError, "Failed to generate cash flow statement")
+		return
+	}
+
+	if format == "csv" {
+		content, err := cashFlowStatementCSV(result)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export cash flow CSV")
+			return
+		}
+		respondReportCSV(w, fmt.Sprintf("cash-flow-%s-%s.csv", startDateStr, endDateStr), content)
 		return
 	}
 

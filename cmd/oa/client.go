@@ -1958,6 +1958,14 @@ func (c *apiClient) getTrialBalance(ctx context.Context, tenantID, asOfDate stri
 	return &resp, nil
 }
 
+func (c *apiClient) exportTrialBalanceCSV(ctx context.Context, tenantID, asOfDate string) ([]byte, error) {
+	values := url.Values{"format": []string{"csv"}}
+	if strings.TrimSpace(asOfDate) != "" {
+		values.Set("as_of_date", strings.TrimSpace(asOfDate))
+	}
+	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "trial-balance"), values), nil, c.apiToken)
+}
+
 func (c *apiClient) getAccountBalanceReport(ctx context.Context, tenantID, accountID, asOfDate string) (*accountBalanceReport, error) {
 	values := url.Values{}
 	if strings.TrimSpace(asOfDate) != "" {
@@ -1984,6 +1992,14 @@ func (c *apiClient) getBalanceSheet(ctx context.Context, tenantID, asOfDate stri
 	return &resp, nil
 }
 
+func (c *apiClient) exportBalanceSheetCSV(ctx context.Context, tenantID, asOfDate string) ([]byte, error) {
+	values := url.Values{"format": []string{"csv"}}
+	if strings.TrimSpace(asOfDate) != "" {
+		values.Set("as_of", strings.TrimSpace(asOfDate))
+	}
+	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "balance-sheet"), values), nil, c.apiToken)
+}
+
 func (c *apiClient) getIncomeStatement(ctx context.Context, tenantID, startDate, endDate string) (*accounting.IncomeStatement, error) {
 	values := url.Values{}
 	values.Set("start", strings.TrimSpace(startDate))
@@ -1996,6 +2012,13 @@ func (c *apiClient) getIncomeStatement(ctx context.Context, tenantID, startDate,
 	return &resp, nil
 }
 
+func (c *apiClient) exportIncomeStatementCSV(ctx context.Context, tenantID, startDate, endDate string) ([]byte, error) {
+	values := url.Values{"format": []string{"csv"}}
+	values.Set("start", strings.TrimSpace(startDate))
+	values.Set("end", strings.TrimSpace(endDate))
+	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "income-statement"), values), nil, c.apiToken)
+}
+
 func (c *apiClient) getCashFlowStatement(ctx context.Context, tenantID, startDate, endDate string) (*reports.CashFlowStatement, error) {
 	values := url.Values{}
 	values.Set("start_date", strings.TrimSpace(startDate))
@@ -2006,6 +2029,13 @@ func (c *apiClient) getCashFlowStatement(ctx context.Context, tenantID, startDat
 		return nil, err
 	}
 	return &resp, nil
+}
+
+func (c *apiClient) exportCashFlowStatementCSV(ctx context.Context, tenantID, startDate, endDate string) ([]byte, error) {
+	values := url.Values{"format": []string{"csv"}}
+	values.Set("start_date", strings.TrimSpace(startDate))
+	values.Set("end_date", strings.TrimSpace(endDate))
+	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "cash-flow"), values), nil, c.apiToken)
 }
 
 func (c *apiClient) getBalanceConfirmationSummary(ctx context.Context, tenantID, balanceType, asOfDate string) (*reports.BalanceConfirmationSummary, error) {

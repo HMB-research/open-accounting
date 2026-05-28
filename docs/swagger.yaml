@@ -9893,8 +9893,13 @@ paths:
         in: query
         name: as_of
         type: string
+      - description: 'Response format: json or csv'
+        in: query
+        name: format
+        type: string
       produces:
       - application/json
+      - text/csv
       responses:
         "200":
           description: OK
@@ -9939,8 +9944,13 @@ paths:
         name: end_date
         required: true
         type: string
+      - description: 'Response format: json or csv'
+        in: query
+        name: format
+        type: string
       produces:
       - application/json
+      - text/csv
       responses:
         "200":
           description: OK
@@ -9984,8 +9994,13 @@ paths:
         name: end
         required: true
         type: string
+      - description: 'Response format: json or csv'
+        in: query
+        name: format
+        type: string
       produces:
       - application/json
+      - text/csv
       responses:
         "200":
           description: OK
@@ -10023,8 +10038,13 @@ paths:
         in: query
         name: as_of_date
         type: string
+      - description: 'Response format: json or csv'
+        in: query
+        name: format
+        type: string
       produces:
       - application/json
+      - text/csv
       responses:
         "200":
           description: OK

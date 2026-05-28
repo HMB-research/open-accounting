@@ -2122,6 +2122,7 @@ Authorization: Bearer <token>
 
 **Query Parameters:**
 - `as_of_date` (string): Date in YYYY-MM-DD format
+- `format` (string): `json` (default) or `csv`
 
 ### Account Balance
 
@@ -2142,6 +2143,7 @@ Authorization: Bearer <token>
 
 **Query Parameters:**
 - `as_of` (string): Date in YYYY-MM-DD format
+- `format` (string): `json` (default) or `csv`
 
 ### Income Statement
 
@@ -2153,6 +2155,7 @@ Authorization: Bearer <token>
 **Query Parameters:**
 - `start` (string, required): Start date in YYYY-MM-DD format
 - `end` (string, required): End date in YYYY-MM-DD format
+- `format` (string): `json` (default) or `csv`
 
 ### Cash Flow Statement
 
@@ -2164,6 +2167,7 @@ Authorization: Bearer <token>
 **Query Parameters:**
 - `start_date` (string, required): Start date in YYYY-MM-DD format
 - `end_date` (string, required): End date in YYYY-MM-DD format
+- `format` (string): `json` (default) or `csv`
 
 ### Receivables Aging
 
