@@ -1231,6 +1231,127 @@ Recording depreciation uses the current month according to the server-side servi
 
 ---
 
+## Inventory
+
+### Product Categories
+
+```http
+GET /tenants/{tenantId}/product-categories
+POST /tenants/{tenantId}/product-categories
+GET /tenants/{tenantId}/product-categories/{categoryId}
+DELETE /tenants/{tenantId}/product-categories/{categoryId}
+Authorization: Bearer <token>
+```
+
+Create category payloads accept `name`, optional `description`, and optional `parent_id`.
+
+### List Products
+
+```http
+GET /tenants/{tenantId}/products
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `product_type` (string): `GOODS` or `SERVICE`
+- `status` (string): `ACTIVE` or `INACTIVE`
+- `category_id` (uuid): Filter by product category
+- `search` (string): Search product code or name
+- `low_stock` (boolean): Return products below reorder threshold
+
+### Create Product
+
+```http
+POST /tenants/{tenantId}/products
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "code": "PRD-001",
+  "name": "Widget",
+  "description": "Inventory item",
+  "product_type": "GOODS",
+  "category_id": "uuid",
+  "unit": "pcs",
+  "purchase_price": "10.50",
+  "sales_price": "15.00",
+  "vat_rate": "22.00",
+  "min_stock_level": "5",
+  "reorder_point": "7",
+  "track_inventory": true
+}
+```
+
+`sales_price` is required. If `code` is omitted, the service generates one.
+
+### Get, Update, and Delete Product
+
+```http
+GET /tenants/{tenantId}/products/{productId}
+PUT /tenants/{tenantId}/products/{productId}
+DELETE /tenants/{tenantId}/products/{productId}
+Authorization: Bearer <token>
+```
+
+Update product payloads accept the editable product fields plus `is_active`.
+
+### Product Stock Levels and Movements
+
+```http
+GET /tenants/{tenantId}/products/{productId}/stock-levels
+GET /tenants/{tenantId}/products/{productId}/movements
+Authorization: Bearer <token>
+```
+
+### Warehouses
+
+```http
+GET /tenants/{tenantId}/warehouses?active_only=true
+POST /tenants/{tenantId}/warehouses
+GET /tenants/{tenantId}/warehouses/{warehouseId}
+PUT /tenants/{tenantId}/warehouses/{warehouseId}
+DELETE /tenants/{tenantId}/warehouses/{warehouseId}
+Authorization: Bearer <token>
+```
+
+Create warehouse payloads accept `code`, `name`, optional `address`, and `is_default`. Update payloads accept `name`, optional `address`, `is_default`, and `is_active`.
+
+### Stock Operations
+
+```http
+POST /tenants/{tenantId}/inventory/adjust
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "product_id": "uuid",
+  "warehouse_id": "uuid",
+  "quantity": "-2",
+  "unit_cost": "10.50",
+  "reason": "Cycle count"
+}
+```
+
+`quantity` is signed: positive quantities add stock and negative quantities remove stock.
+
+```http
+POST /tenants/{tenantId}/inventory/transfer
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "product_id": "uuid",
+  "from_warehouse_id": "uuid",
+  "to_warehouse_id": "uuid",
+  "quantity": "3",
+  "notes": "Move to branch"
+}
+```
+
+Transfers require a positive quantity.
+
+---
+
 ## Cost Centers
 
 ### List Cost Centers

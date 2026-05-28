@@ -22,6 +22,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
@@ -570,6 +571,172 @@ func (c *apiClient) recordAssetDepreciation(ctx context.Context, tenantID, asset
 func (c *apiClient) listAssetDepreciation(ctx context.Context, tenantID, assetID string) ([]assets.DepreciationEntry, error) {
 	var resp []assets.DepreciationEntry
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "assets", assetID, "depreciation"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) listProductCategories(ctx context.Context, tenantID string) ([]inventory.ProductCategory, error) {
+	var resp []inventory.ProductCategory
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "product-categories"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createProductCategory(ctx context.Context, tenantID string, req *inventory.CreateCategoryRequest) (*inventory.ProductCategory, error) {
+	var resp inventory.ProductCategory
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "product-categories"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getProductCategory(ctx context.Context, tenantID, categoryID string) (*inventory.ProductCategory, error) {
+	var resp inventory.ProductCategory
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "product-categories", categoryID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) deleteProductCategory(ctx context.Context, tenantID, categoryID string) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "product-categories", categoryID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) listProducts(ctx context.Context, tenantID string, filter inventory.ProductFilter) ([]inventory.Product, error) {
+	values := url.Values{}
+	if filter.ProductType != "" {
+		values.Set("product_type", string(filter.ProductType))
+	}
+	if filter.Status != "" {
+		values.Set("status", string(filter.Status))
+	}
+	if strings.TrimSpace(filter.CategoryID) != "" {
+		values.Set("category_id", strings.TrimSpace(filter.CategoryID))
+	}
+	if strings.TrimSpace(filter.Search) != "" {
+		values.Set("search", strings.TrimSpace(filter.Search))
+	}
+	if filter.LowStock {
+		values.Set("low_stock", "true")
+	}
+
+	var resp []inventory.Product
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "products"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createProduct(ctx context.Context, tenantID string, req *inventory.CreateProductRequest) (*inventory.Product, error) {
+	var resp inventory.Product
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "products"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getProduct(ctx context.Context, tenantID, productID string) (*inventory.Product, error) {
+	var resp inventory.Product
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "products", productID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) updateProduct(ctx context.Context, tenantID, productID string, req *inventory.UpdateProductRequest) (*inventory.Product, error) {
+	var resp inventory.Product
+	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "products", productID), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) deleteProduct(ctx context.Context, tenantID, productID string) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "products", productID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) listStockLevels(ctx context.Context, tenantID, productID string) ([]inventory.StockLevel, error) {
+	var resp []inventory.StockLevel
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "products", productID, "stock-levels"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) listInventoryMovements(ctx context.Context, tenantID, productID string) ([]inventory.InventoryMovement, error) {
+	var resp []inventory.InventoryMovement
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "products", productID, "movements"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) listWarehouses(ctx context.Context, tenantID string, activeOnly bool) ([]inventory.Warehouse, error) {
+	values := url.Values{}
+	if activeOnly {
+		values.Set("active_only", "true")
+	}
+
+	var resp []inventory.Warehouse
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "warehouses"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createWarehouse(ctx context.Context, tenantID string, req *inventory.CreateWarehouseRequest) (*inventory.Warehouse, error) {
+	var resp inventory.Warehouse
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "warehouses"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getWarehouse(ctx context.Context, tenantID, warehouseID string) (*inventory.Warehouse, error) {
+	var resp inventory.Warehouse
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "warehouses", warehouseID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) updateWarehouse(ctx context.Context, tenantID, warehouseID string, req *inventory.UpdateWarehouseRequest) (*inventory.Warehouse, error) {
+	var resp inventory.Warehouse
+	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "warehouses", warehouseID), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) deleteWarehouse(ctx context.Context, tenantID, warehouseID string) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "warehouses", warehouseID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) adjustStock(ctx context.Context, tenantID string, req *inventory.AdjustStockRequest) (*inventory.InventoryMovement, error) {
+	var resp inventory.InventoryMovement
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "inventory", "adjust"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) transferStock(ctx context.Context, tenantID string, req *inventory.TransferStockRequest) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "inventory", "transfer"), req, c.apiToken, &resp); err != nil {
 		return nil, err
 	}
 	return resp, nil

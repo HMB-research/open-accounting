@@ -16,6 +16,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
@@ -413,6 +414,159 @@ func printDepreciationEntriesTable(w io.Writer, entries []assets.DepreciationEnt
 			entry.DepreciationAmount.String(),
 			entry.AccumulatedTotal.String(),
 			entry.BookValueAfter.String(),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printProductCategoriesTable(w io.Writer, categories []inventory.ProductCategory) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNAME\tPARENT\tDESCRIPTION")
+	for _, category := range categories {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\n",
+			category.ID,
+			category.Name,
+			category.ParentID,
+			category.Description,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printProductCategory(w io.Writer, category *inventory.ProductCategory) {
+	_, _ = fmt.Fprintf(w, "Product category %s\n", category.Name)
+	_, _ = fmt.Fprintf(w, "ID: %s\n", category.ID)
+	if strings.TrimSpace(category.ParentID) != "" {
+		_, _ = fmt.Fprintf(w, "Parent: %s\n", category.ParentID)
+	}
+	if strings.TrimSpace(category.Description) != "" {
+		_, _ = fmt.Fprintf(w, "Description: %s\n", category.Description)
+	}
+}
+
+func printProductsTable(w io.Writer, products []inventory.Product) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tCODE\tNAME\tTYPE\tACTIVE\tPRICE\tSTOCK\tUNIT")
+	for _, product := range products {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%t\t%s\t%s\t%s\n",
+			product.ID,
+			product.Code,
+			product.Name,
+			product.ProductType,
+			product.IsActive,
+			product.SalesPrice.String(),
+			product.CurrentStock.String(),
+			product.Unit,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printProduct(w io.Writer, product *inventory.Product) {
+	_, _ = fmt.Fprintf(w, "Product %s %s (%s)\n", product.Code, product.Name, product.ProductType)
+	_, _ = fmt.Fprintf(w, "ID: %s\n", product.ID)
+	if strings.TrimSpace(product.Description) != "" {
+		_, _ = fmt.Fprintf(w, "Description: %s\n", product.Description)
+	}
+	if strings.TrimSpace(product.CategoryID) != "" {
+		_, _ = fmt.Fprintf(w, "Category: %s\n", product.CategoryID)
+	}
+	_, _ = fmt.Fprintf(w, "Unit: %s\n", product.Unit)
+	_, _ = fmt.Fprintf(w, "Sales price: %s\n", product.SalesPrice.String())
+	_, _ = fmt.Fprintf(w, "Purchase price: %s\n", product.PurchasePrice.String())
+	_, _ = fmt.Fprintf(w, "VAT rate: %s\n", product.VATRate.String())
+	_, _ = fmt.Fprintf(w, "Current stock: %s\n", product.CurrentStock.String())
+	_, _ = fmt.Fprintf(w, "Minimum stock: %s\n", product.MinStockLevel.String())
+	_, _ = fmt.Fprintf(w, "Reorder point: %s\n", product.ReorderPoint.String())
+	_, _ = fmt.Fprintf(w, "Track inventory: %t\n", product.TrackInventory)
+	_, _ = fmt.Fprintf(w, "Active: %t\n", product.IsActive)
+	if strings.TrimSpace(product.Barcode) != "" {
+		_, _ = fmt.Fprintf(w, "Barcode: %s\n", product.Barcode)
+	}
+	if strings.TrimSpace(product.SupplierID) != "" {
+		_, _ = fmt.Fprintf(w, "Supplier: %s\n", product.SupplierID)
+	}
+	if product.LeadTimeDays > 0 {
+		_, _ = fmt.Fprintf(w, "Lead time days: %d\n", product.LeadTimeDays)
+	}
+	if strings.TrimSpace(product.SaleAccountID) != "" {
+		_, _ = fmt.Fprintf(w, "Sale account: %s\n", product.SaleAccountID)
+	}
+	if strings.TrimSpace(product.PurchaseAccountID) != "" {
+		_, _ = fmt.Fprintf(w, "Purchase account: %s\n", product.PurchaseAccountID)
+	}
+	if strings.TrimSpace(product.InventoryAccountID) != "" {
+		_, _ = fmt.Fprintf(w, "Inventory account: %s\n", product.InventoryAccountID)
+	}
+}
+
+func printWarehousesTable(w io.Writer, warehouses []inventory.Warehouse) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tCODE\tNAME\tDEFAULT\tACTIVE\tADDRESS")
+	for _, warehouse := range warehouses {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%t\t%t\t%s\n",
+			warehouse.ID,
+			warehouse.Code,
+			warehouse.Name,
+			warehouse.IsDefault,
+			warehouse.IsActive,
+			warehouse.Address,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printWarehouse(w io.Writer, warehouse *inventory.Warehouse) {
+	_, _ = fmt.Fprintf(w, "Warehouse %s %s\n", warehouse.Code, warehouse.Name)
+	_, _ = fmt.Fprintf(w, "ID: %s\n", warehouse.ID)
+	if strings.TrimSpace(warehouse.Address) != "" {
+		_, _ = fmt.Fprintf(w, "Address: %s\n", warehouse.Address)
+	}
+	_, _ = fmt.Fprintf(w, "Default: %t\n", warehouse.IsDefault)
+	_, _ = fmt.Fprintf(w, "Active: %t\n", warehouse.IsActive)
+}
+
+func printStockLevelsTable(w io.Writer, levels []inventory.StockLevel) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tPRODUCT\tWAREHOUSE\tQUANTITY\tRESERVED\tAVAILABLE\tUPDATED")
+	for _, level := range levels {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			level.ID,
+			level.ProductID,
+			level.WarehouseID,
+			level.Quantity.String(),
+			level.ReservedQty.String(),
+			level.AvailableQty.String(),
+			formatTime(level.LastUpdated),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printInventoryMovementsTable(w io.Writer, movements []inventory.InventoryMovement) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tDATE\tTYPE\tPRODUCT\tWAREHOUSE\tQTY\tUNIT COST\tREFERENCE\tNOTES")
+	for _, movement := range movements {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			movement.ID,
+			formatDate(movement.MovementDate),
+			movement.MovementType,
+			movement.ProductID,
+			movement.WarehouseID,
+			movement.Quantity.String(),
+			movement.UnitCost.String(),
+			movement.Reference,
+			movement.Notes,
 		)
 	}
 	_ = tw.Flush()
@@ -1042,6 +1196,13 @@ func printCashFlowItems(w io.Writer, title string, items []reports.CashFlowItem)
 
 func formatTimePtr(value *time.Time) string {
 	if value == nil {
+		return "-"
+	}
+	return value.Format(time.RFC3339)
+}
+
+func formatTime(value time.Time) string {
+	if value.IsZero() {
 		return "-"
 	}
 	return value.Format(time.RFC3339)

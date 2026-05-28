@@ -282,6 +282,45 @@ go run ./cmd/oa assets delete --id <asset-id>
 
 Asset statuses are `DRAFT`, `ACTIVE`, `DISPOSED`, and `SOLD`. Depreciation methods are `STRAIGHT_LINE`, `DECLINING_BALANCE`, and `UNITS_OF_PRODUCTION`; disposal methods are `SOLD`, `SCRAPPED`, `DONATED`, and `LOST`.
 
+## Inventory
+
+```bash
+go run ./cmd/oa inventory categories list
+go run ./cmd/oa inventory categories create --name Parts --description "Spare parts"
+go run ./cmd/oa inventory categories get --id <category-id>
+go run ./cmd/oa inventory categories delete --id <category-id>
+
+go run ./cmd/oa inventory products list --type GOODS --status ACTIVE
+go run ./cmd/oa inventory products list --category-id <category-id> --low-stock
+go run ./cmd/oa inventory products create \
+  --code PRD-001 \
+  --name Widget \
+  --type GOODS \
+  --category-id <category-id> \
+  --unit pcs \
+  --purchase-price 10.50 \
+  --sales-price 15.00 \
+  --vat-rate 22.00 \
+  --min-stock-level 5 \
+  --reorder-point 7
+go run ./cmd/oa inventory products get --id <product-id>
+go run ./cmd/oa inventory products update --id <product-id> --name Widget --sales-price 16.00
+go run ./cmd/oa inventory products stock-levels --id <product-id>
+go run ./cmd/oa inventory products movements --id <product-id>
+go run ./cmd/oa inventory products delete --id <product-id>
+
+go run ./cmd/oa inventory warehouses list --active-only
+go run ./cmd/oa inventory warehouses create --code MAIN --name "Main warehouse" --address Tallinn --default
+go run ./cmd/oa inventory warehouses get --id <warehouse-id>
+go run ./cmd/oa inventory warehouses update --id <warehouse-id> --name "Main warehouse" --active true
+go run ./cmd/oa inventory warehouses delete --id <warehouse-id>
+
+go run ./cmd/oa inventory adjust --product-id <product-id> --warehouse-id <warehouse-id> --quantity -2 --unit-cost 10.50 --reason "Cycle count"
+go run ./cmd/oa inventory transfer --product-id <product-id> --from-warehouse-id <warehouse-id> --to-warehouse-id <warehouse-id> --quantity 3
+```
+
+Product types are `GOODS` and `SERVICE`; product statuses are `ACTIVE` and `INACTIVE`. Use `--json` on inventory read and mutation commands for automation. `inventory adjust` accepts signed quantities; positive quantities add stock and negative quantities remove stock.
+
 ## Cost centers
 
 ```bash
