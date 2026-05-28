@@ -22,6 +22,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/reports"
+	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -232,6 +233,67 @@ func (c *apiClient) importLeaveBalances(ctx context.Context, tenantID string, re
 		return nil, err
 	}
 	return &resp, nil
+}
+
+func (c *apiClient) listTSD(ctx context.Context, tenantID string) ([]payroll.TSDDeclaration, error) {
+	var resp []payroll.TSDDeclaration
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "tsd"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) getTSD(ctx context.Context, tenantID string, year, month int) (*payroll.TSDDeclaration, error) {
+	var resp payroll.TSDDeclaration
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "tsd", strconv.Itoa(year), strconv.Itoa(month)), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) generateTSD(ctx context.Context, tenantID, runID string) (*payroll.TSDDeclaration, error) {
+	var resp payroll.TSDDeclaration
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "payroll-runs", runID, "tsd"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) exportTSDXML(ctx context.Context, tenantID string, year, month int) ([]byte, error) {
+	return c.requestRaw(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "tsd", strconv.Itoa(year), strconv.Itoa(month), "xml"), nil, c.apiToken)
+}
+
+func (c *apiClient) exportTSDCSV(ctx context.Context, tenantID string, year, month int) ([]byte, error) {
+	return c.requestRaw(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "tsd", strconv.Itoa(year), strconv.Itoa(month), "csv"), nil, c.apiToken)
+}
+
+func (c *apiClient) markTSDSubmitted(ctx context.Context, tenantID string, year, month int, emtaReference string) (map[string]string, error) {
+	var resp map[string]string
+	body := map[string]string{"emta_reference": emtaReference}
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "tsd", strconv.Itoa(year), strconv.Itoa(month), "submit"), body, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) listKMD(ctx context.Context, tenantID string) ([]tax.KMDDeclaration, error) {
+	var resp []tax.KMDDeclaration
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "tax", "kmd"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) generateKMD(ctx context.Context, tenantID string, req *tax.CreateKMDRequest) (*tax.KMDDeclaration, error) {
+	var resp tax.KMDDeclaration
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "tax", "kmd"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) exportKMDXML(ctx context.Context, tenantID string, year, month int) ([]byte, error) {
+	return c.requestRaw(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "tax", "kmd", strconv.Itoa(year), strconv.Itoa(month), "xml"), nil, c.apiToken)
 }
 
 func (c *apiClient) getTrialBalance(ctx context.Context, tenantID, asOfDate string) (*accounting.TrialBalance, error) {
@@ -467,6 +529,50 @@ func (c *apiClient) request(ctx context.Context, method, apiPath string, body an
 		return fmt.Errorf("decode response: %w", err)
 	}
 	return nil
+}
+
+func (c *apiClient) requestRaw(ctx context.Context, method, apiPath string, body any, bearerToken string) ([]byte, error) {
+	fullURL := c.baseURL + apiPath
+
+	var bodyReader io.Reader
+	if body != nil {
+		payload, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("encode request body: %w", err)
+		}
+		bodyReader = bytes.NewReader(payload)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, fullURL, bodyReader)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Accept", "*/*")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if strings.TrimSpace(bearerToken) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(bearerToken))
+	}
+
+	//nolint:gosec // The CLI intentionally talks to a user-configured Open Accounting base URL.
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request %s %s: %w", method, apiPath, err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, decodeAPIError(resp)
+	}
+
+	content, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+	return content, nil
 }
 
 func decodeAPIError(resp *http.Response) error {

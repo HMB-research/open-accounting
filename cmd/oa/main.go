@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/payroll"
+	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -59,6 +61,10 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runEmployees(ctx, args[1:])
 	case "payroll":
 		return a.runPayroll(ctx, args[1:])
+	case "tsd":
+		return a.runTSD(ctx, args[1:])
+	case "tax":
+		return a.runTax(ctx, args[1:])
 	case "invoices":
 		return a.runInvoices(ctx, args[1:])
 	case "reports":
@@ -96,6 +102,14 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  employees import          Import employees from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll import-history    Import historical payroll runs from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll import-leave-balances  Import leave balances from CSV")
+	_, _ = fmt.Fprintln(a.stdout, "  tsd list                  List TSD declarations")
+	_, _ = fmt.Fprintln(a.stdout, "  tsd get                   Show one TSD declaration")
+	_, _ = fmt.Fprintln(a.stdout, "  tsd generate              Generate TSD from a payroll run")
+	_, _ = fmt.Fprintln(a.stdout, "  tsd export-xml            Export TSD XML")
+	_, _ = fmt.Fprintln(a.stdout, "  tsd export-csv            Export TSD CSV")
+	_, _ = fmt.Fprintln(a.stdout, "  tax kmd list              List KMD declarations")
+	_, _ = fmt.Fprintln(a.stdout, "  tax kmd generate          Generate KMD declaration")
+	_, _ = fmt.Fprintln(a.stdout, "  tax kmd export-xml        Export KMD XML")
 	_, _ = fmt.Fprintln(a.stdout, "  invoices import           Import invoices from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  reports trial-balance     Show trial balance")
 	_, _ = fmt.Fprintln(a.stdout, "  reports account-balance   Show one account balance")
@@ -854,6 +868,238 @@ func (a *cliApp) runPayroll(ctx context.Context, args []string) error {
 	}
 }
 
+func (a *cliApp) runTSD(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("tsd subcommand required")
+	}
+
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("tsd list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		declarations, err := client.listTSD(ctx, cfg.TenantID)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, declarations)
+		}
+		printTSDDeclarationsTable(a.stdout, declarations)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("tsd get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		yearFlag := fs.String("year", "", "Declaration year")
+		monthFlag := fs.String("month", "", "Declaration month")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		year, month, err := parseYearMonthFlags(*yearFlag, *monthFlag)
+		if err != nil {
+			return err
+		}
+
+		declaration, err := client.getTSD(ctx, cfg.TenantID, year, month)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, declaration)
+		}
+		printTSDDeclaration(a.stdout, declaration)
+		return nil
+
+	case "generate":
+		fs := flag.NewFlagSet("tsd generate", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		runID := fs.String("run-id", "", "Payroll run id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*runID) == "" {
+			return errors.New("run-id is required")
+		}
+
+		declaration, err := client.generateTSD(ctx, cfg.TenantID, strings.TrimSpace(*runID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, declaration)
+		}
+		printTSDDeclaration(a.stdout, declaration)
+		return nil
+
+	case "export-xml":
+		fs := flag.NewFlagSet("tsd export-xml", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		yearFlag := fs.String("year", "", "Declaration year")
+		monthFlag := fs.String("month", "", "Declaration month")
+		outputPath := fs.String("output", "", "Optional output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		year, month, err := parseYearMonthFlags(*yearFlag, *monthFlag)
+		if err != nil {
+			return err
+		}
+
+		content, err := client.exportTSDXML(ctx, cfg.TenantID, year, month)
+		if err != nil {
+			return err
+		}
+		return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "TSD XML")
+
+	case "export-csv":
+		fs := flag.NewFlagSet("tsd export-csv", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		yearFlag := fs.String("year", "", "Declaration year")
+		monthFlag := fs.String("month", "", "Declaration month")
+		outputPath := fs.String("output", "", "Optional output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		year, month, err := parseYearMonthFlags(*yearFlag, *monthFlag)
+		if err != nil {
+			return err
+		}
+
+		content, err := client.exportTSDCSV(ctx, cfg.TenantID, year, month)
+		if err != nil {
+			return err
+		}
+		return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "TSD CSV")
+
+	case "mark-submitted":
+		fs := flag.NewFlagSet("tsd mark-submitted", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		yearFlag := fs.String("year", "", "Declaration year")
+		monthFlag := fs.String("month", "", "Declaration month")
+		emtaReference := fs.String("emta-reference", "", "e-MTA submission reference")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		year, month, err := parseYearMonthFlags(*yearFlag, *monthFlag)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.markTSDSubmitted(ctx, cfg.TenantID, year, month, strings.TrimSpace(*emtaReference))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Marked TSD %04d-%02d as submitted\n", year, month)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown tsd subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runTax(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("tax subcommand required")
+	}
+	if args[0] != "kmd" {
+		return fmt.Errorf("unknown tax subcommand %q", args[0])
+	}
+	if len(args) == 1 {
+		return errors.New("tax kmd subcommand required")
+	}
+
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[1] {
+	case "list":
+		fs := flag.NewFlagSet("tax kmd list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+
+		declarations, err := client.listKMD(ctx, cfg.TenantID)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, declarations)
+		}
+		printKMDDeclarationsTable(a.stdout, declarations)
+		return nil
+
+	case "generate":
+		fs := flag.NewFlagSet("tax kmd generate", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		yearFlag := fs.String("year", "", "Declaration year")
+		monthFlag := fs.String("month", "", "Declaration month")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		year, month, err := parseYearMonthFlags(*yearFlag, *monthFlag)
+		if err != nil {
+			return err
+		}
+
+		declaration, err := client.generateKMD(ctx, cfg.TenantID, &tax.CreateKMDRequest{
+			Year:  year,
+			Month: month,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, declaration)
+		}
+		printKMDDeclaration(a.stdout, declaration)
+		return nil
+
+	case "export-xml":
+		fs := flag.NewFlagSet("tax kmd export-xml", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		yearFlag := fs.String("year", "", "Declaration year")
+		monthFlag := fs.String("month", "", "Declaration month")
+		outputPath := fs.String("output", "", "Optional output file path")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		year, month, err := parseYearMonthFlags(*yearFlag, *monthFlag)
+		if err != nil {
+			return err
+		}
+
+		content, err := client.exportKMDXML(ctx, cfg.TenantID, year, month)
+		if err != nil {
+			return err
+		}
+		return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "KMD XML")
+
+	default:
+		return fmt.Errorf("unknown tax kmd subcommand %q", args[1])
+	}
+}
+
 func (a *cliApp) runReports(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New("reports subcommand required")
@@ -1215,6 +1461,48 @@ func resolvePassword(password string, passwordStdin bool) (string, error) {
 		return "", errors.New("password from stdin is empty")
 	}
 	return value, nil
+}
+
+func parseYearMonthFlags(yearValue, monthValue string) (int, int, error) {
+	year, err := parseRequiredPositiveInt("year", yearValue)
+	if err != nil {
+		return 0, 0, err
+	}
+	month, err := parseRequiredPositiveInt("month", monthValue)
+	if err != nil {
+		return 0, 0, err
+	}
+	if month < 1 || month > 12 {
+		return 0, 0, errors.New("month must be between 1 and 12")
+	}
+	return year, month, nil
+}
+
+func parseRequiredPositiveInt(name, value string) (int, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return 0, fmt.Errorf("%s is required", name)
+	}
+	parsed, err := strconv.Atoi(trimmed)
+	if err != nil {
+		return 0, fmt.Errorf("parse %s: %w", name, err)
+	}
+	if parsed <= 0 {
+		return 0, fmt.Errorf("%s must be positive", name)
+	}
+	return parsed, nil
+}
+
+func writeExportOutput(w io.Writer, outputPath string, content []byte, description string) error {
+	if strings.TrimSpace(outputPath) == "" {
+		_, err := w.Write(content)
+		return err
+	}
+	if err := os.WriteFile(outputPath, content, 0o600); err != nil {
+		return fmt.Errorf("write %s: %w", outputPath, err)
+	}
+	_, _ = fmt.Fprintf(w, "Wrote %s to %s\n", description, outputPath)
+	return nil
 }
 
 func resolveTenantMembership(memberships []tenant.TenantMembership, selector string) (*tenant.TenantMembership, error) {

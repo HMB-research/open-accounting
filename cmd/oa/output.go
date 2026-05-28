@@ -15,6 +15,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/reports"
+	"github.com/HMB-research/open-accounting/internal/tax"
 )
 
 func printJSON(w io.Writer, value any) error {
@@ -96,6 +97,94 @@ func printDocumentsTable(w io.Writer, docs []documents.Document) {
 			formatTimePtr(doc.RetentionUntil),
 			doc.CreatedAt.Format(time.RFC3339),
 		)
+	}
+	_ = tw.Flush()
+}
+
+func printTSDDeclarationsTable(w io.Writer, declarations []payroll.TSDDeclaration) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tPERIOD\tSTATUS\tPAYMENTS\tINCOME TAX\tSOCIAL TAX\tEMTA REF")
+	for _, declaration := range declarations {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%04d-%02d\t%s\t%s\t%s\t%s\t%s\n",
+			declaration.ID,
+			declaration.PeriodYear,
+			declaration.PeriodMonth,
+			declaration.Status,
+			declaration.TotalPayments.String(),
+			declaration.TotalIncomeTax.String(),
+			declaration.TotalSocialTax.String(),
+			declaration.EMTAReference,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printTSDDeclaration(w io.Writer, declaration *payroll.TSDDeclaration) {
+	_, _ = fmt.Fprintf(w, "TSD %04d-%02d (%s)\n", declaration.PeriodYear, declaration.PeriodMonth, declaration.Status)
+	_, _ = fmt.Fprintf(w, "Total payments: %s\n", declaration.TotalPayments.String())
+	_, _ = fmt.Fprintf(w, "Income tax: %s\n", declaration.TotalIncomeTax.String())
+	_, _ = fmt.Fprintf(w, "Social tax: %s\n", declaration.TotalSocialTax.String())
+	_, _ = fmt.Fprintf(w, "Unemployment employer: %s\n", declaration.TotalUnemploymentER.String())
+	_, _ = fmt.Fprintf(w, "Unemployment employee: %s\n", declaration.TotalUnemploymentEE.String())
+	_, _ = fmt.Fprintf(w, "Funded pension: %s\n", declaration.TotalFundedPension.String())
+	if declaration.EMTAReference != "" {
+		_, _ = fmt.Fprintf(w, "e-MTA reference: %s\n", declaration.EMTAReference)
+	}
+	if len(declaration.Rows) == 0 {
+		return
+	}
+
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "EMPLOYEE\tPAYMENT TYPE\tGROSS\tTAXABLE\tINCOME TAX\tSOCIAL TAX")
+	for _, row := range declaration.Rows {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s %s\t%s\t%s\t%s\t%s\t%s\n",
+			row.FirstName,
+			row.LastName,
+			row.PaymentType,
+			row.GrossPayment.String(),
+			row.TaxableAmount.String(),
+			row.IncomeTax.String(),
+			row.SocialTax.String(),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printKMDDeclarationsTable(w io.Writer, declarations []tax.KMDDeclaration) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tPERIOD\tSTATUS\tOUTPUT VAT\tINPUT VAT\tPAYABLE")
+	for _, declaration := range declarations {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			declaration.ID,
+			declaration.Period(),
+			declaration.Status,
+			declaration.TotalOutputVAT.String(),
+			declaration.TotalInputVAT.String(),
+			declaration.CalculatePayable().String(),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printKMDDeclaration(w io.Writer, declaration *tax.KMDDeclaration) {
+	_, _ = fmt.Fprintf(w, "KMD %s (%s)\n", declaration.Period(), declaration.Status)
+	_, _ = fmt.Fprintf(w, "Output VAT: %s\n", declaration.TotalOutputVAT.String())
+	_, _ = fmt.Fprintf(w, "Input VAT: %s\n", declaration.TotalInputVAT.String())
+	_, _ = fmt.Fprintf(w, "Payable: %s\n", declaration.CalculatePayable().String())
+	if len(declaration.Rows) == 0 {
+		return
+	}
+
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ROW\tDESCRIPTION\tTAX BASE\tTAX AMOUNT")
+	for _, row := range declaration.Rows {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", row.Code, row.Description, row.TaxBase.String(), row.TaxAmount.String())
 	}
 	_ = tw.Flush()
 }

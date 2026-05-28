@@ -773,6 +773,199 @@ func TestCLIPayrollImportLeaveBalancesCommand(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 leave balances, updated 0 leave balances, skipped 0 rows")
 }
 
+func TestCLITaxAndTSDCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tsd":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"id":                          "tsd-1",
+				"tenant_id":                   "tenant-1",
+				"period_year":                 2026,
+				"period_month":                3,
+				"total_payments":              "3200.00",
+				"total_income_tax":            "500.00",
+				"total_social_tax":            "1056.00",
+				"total_unemployment_employer": "25.60",
+				"total_unemployment_employee": "51.20",
+				"total_funded_pension":        "64.00",
+				"status":                      "DRAFT",
+				"created_at":                  "2026-03-31T12:00:00Z",
+				"updated_at":                  "2026-03-31T12:00:00Z",
+			}})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":                          "tsd-1",
+				"tenant_id":                   "tenant-1",
+				"period_year":                 2026,
+				"period_month":                3,
+				"total_payments":              "3200.00",
+				"total_income_tax":            "500.00",
+				"total_social_tax":            "1056.00",
+				"total_unemployment_employer": "25.60",
+				"total_unemployment_employee": "51.20",
+				"total_funded_pension":        "64.00",
+				"status":                      "DRAFT",
+				"created_at":                  "2026-03-31T12:00:00Z",
+				"updated_at":                  "2026-03-31T12:00:00Z",
+				"rows": []map[string]any{{
+					"id":                              "row-1",
+					"tenant_id":                       "tenant-1",
+					"declaration_id":                  "tsd-1",
+					"employee_id":                     "emp-1",
+					"personal_code":                   "49001010001",
+					"first_name":                      "Mari",
+					"last_name":                       "Maasikas",
+					"payment_type":                    "10",
+					"gross_payment":                   "3200.00",
+					"basic_exemption":                 "700.00",
+					"taxable_amount":                  "2500.00",
+					"income_tax":                      "500.00",
+					"social_tax":                      "1056.00",
+					"unemployment_insurance_employer": "25.60",
+					"unemployment_insurance_employee": "51.20",
+					"funded_pension":                  "64.00",
+					"created_at":                      "2026-03-31T12:00:00Z",
+				}},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-1/tsd":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":               "tsd-2",
+				"tenant_id":        "tenant-1",
+				"period_year":      2026,
+				"period_month":     4,
+				"total_payments":   "4000.00",
+				"total_income_tax": "650.00",
+				"total_social_tax": "1320.00",
+				"status":           "DRAFT",
+				"created_at":       "2026-04-30T12:00:00Z",
+				"updated_at":       "2026-04-30T12:00:00Z",
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/xml":
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = w.Write([]byte("<TSD>ok</TSD>"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/csv":
+			w.Header().Set("Content-Type", "text/csv")
+			_, _ = w.Write([]byte("period,total\n2026-03,3200.00\n"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/submit":
+			w.Header().Set("Content-Type", "application/json")
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "EMTA-123", req["emta_reference"])
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "submitted"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"id":               "kmd-1",
+				"tenant_id":        "tenant-1",
+				"year":             2026,
+				"month":            3,
+				"status":           "DRAFT",
+				"total_output_vat": "220.00",
+				"total_input_vat":  "80.00",
+				"rows":             []map[string]any{},
+				"created_at":       "2026-03-31T12:00:00Z",
+				"updated_at":       "2026-03-31T12:00:00Z",
+			}})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd":
+			w.Header().Set("Content-Type", "application/json")
+			var req map[string]int
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, 2026, req["year"])
+			assert.Equal(t, 3, req["month"])
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":               "kmd-1",
+				"tenant_id":        "tenant-1",
+				"year":             2026,
+				"month":            3,
+				"status":           "DRAFT",
+				"total_output_vat": "220.00",
+				"total_input_vat":  "80.00",
+				"rows": []map[string]any{{
+					"code":        "1",
+					"description": "Taxable sales",
+					"tax_base":    "1000.00",
+					"tax_amount":  "220.00",
+				}},
+				"created_at": "2026-03-31T12:00:00Z",
+				"updated_at": "2026-03-31T12:00:00Z",
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd/2026/3/xml":
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = w.Write([]byte("<KMD>ok</KMD>"))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"tsd", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "2026-03")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tsd", "get", "--year", "2026", "--month", "3"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Mari Maasikas")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tsd", "generate", "--run-id", "run-1", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "tsd-2"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tsd", "export-xml", "--year", "2026", "--month", "3"})
+	require.NoError(t, err)
+	assert.Equal(t, "<TSD>ok</TSD>", stdout.String())
+
+	stdout.Reset()
+	outputPath := filepath.Join(t.TempDir(), "tsd.csv")
+	err = app.run(context.Background(), []string{"tsd", "export-csv", "--year", "2026", "--month", "3", "--output", outputPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote TSD CSV")
+	exported, err := os.ReadFile(outputPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(exported), "2026-03")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tsd", "mark-submitted", "--year", "2026", "--month", "3", "--emta-reference", "EMTA-123"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Marked TSD 2026-03 as submitted")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tax", "kmd", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "2026-03")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tax", "kmd", "generate", "--year", "2026", "--month", "3"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "KMD 2026-03")
+	assert.Contains(t, stdout.String(), "Payable: 140")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tax", "kmd", "export-xml", "--year", "2026", "--month", "3"})
+	require.NoError(t, err)
+	assert.Equal(t, "<KMD>ok</KMD>", stdout.String())
+}
+
 func TestCLIDocumentCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
@@ -917,6 +1110,14 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invoices subcommand required")
 
+	err = app.runTSD(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "tsd subcommand required")
+
+	err = app.runTax(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "tax subcommand required")
+
 	err = app.runReports(context.Background(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "reports subcommand required")
@@ -984,6 +1185,20 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 
 	assert.True(t, isValidAccountType(accounting.AccountTypeRevenue))
 	assert.False(t, isValidAccountType("INVALID"))
+
+	year, month, err := parseYearMonthFlags("2026", "3")
+	require.NoError(t, err)
+	assert.Equal(t, 2026, year)
+	assert.Equal(t, 3, month)
+
+	_, _, err = parseYearMonthFlags("2026", "13")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "month must be between 1 and 12")
+
+	var exportBuf strings.Builder
+	err = writeExportOutput(&exportBuf, "", []byte("raw export"), "Raw")
+	require.NoError(t, err)
+	assert.Equal(t, "raw export", exportBuf.String())
 
 	require.NoError(t, saveConfig(&cliConfig{BaseURL: "https://api.example.com"}))
 	_, _, err = app.loadAuthenticatedClient()

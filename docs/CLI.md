@@ -133,6 +133,29 @@ Import employees first so payroll history rows can match existing employees by `
 
 Leave balance imports create or update balances by employee + absence type + year. Match absence types with `absence_type_code`, `absence_type`, or `absence_type_id`.
 
+## TSD declarations
+
+```bash
+go run ./cmd/oa tsd list
+go run ./cmd/oa tsd get --year 2026 --month 3
+go run ./cmd/oa tsd generate --run-id <payroll-run-id>
+go run ./cmd/oa tsd export-xml --year 2026 --month 3 --output ./tsd-2026-03.xml
+go run ./cmd/oa tsd export-csv --year 2026 --month 3 --output ./tsd-2026-03.csv
+go run ./cmd/oa tsd mark-submitted --year 2026 --month 3 --emta-reference EMTA-123
+```
+
+Omit `--output` on export commands to write the raw XML or CSV to stdout. Use `--json` on list/get/generate/mark-submitted for automation.
+
+## KMD declarations
+
+```bash
+go run ./cmd/oa tax kmd list
+go run ./cmd/oa tax kmd generate --year 2026 --month 3
+go run ./cmd/oa tax kmd export-xml --year 2026 --month 3 --output ./kmd-2026-03.xml
+```
+
+KMD export writes e-MTA XML. Omit `--output` to stream the XML to stdout.
+
 ## Invoices
 
 ```bash
@@ -253,6 +276,8 @@ export OA_API_TOKEN=oa_your_token_here
 go run ./cmd/oa accounts list --json
 go run ./cmd/oa contacts create --name "Scripted Contact" --type CUSTOMER
 go run ./cmd/oa reports trial-balance --as-of 2026-03-31 --json
+go run ./cmd/oa tax kmd list --json
+go run ./cmd/oa tsd export-csv --year 2026 --month 3 --output ./tsd.csv
 go run ./cmd/oa employees import --file ./employees.csv
 go run ./cmd/oa payroll import-history --file ./payroll-history.csv
 go run ./cmd/oa payroll import-leave-balances --file ./leave-balances.csv
