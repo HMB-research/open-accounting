@@ -1152,6 +1152,85 @@ Authorization: Bearer <token>
 
 ---
 
+## Fixed Assets
+
+### Asset Categories
+
+```http
+GET /tenants/{tenantId}/asset-categories
+POST /tenants/{tenantId}/asset-categories
+GET /tenants/{tenantId}/asset-categories/{categoryId}
+DELETE /tenants/{tenantId}/asset-categories/{categoryId}
+Authorization: Bearer <token>
+```
+
+Create category payloads accept `name`, `description`, `depreciation_method`, `default_useful_life_months`, `default_residual_value_percent`, and optional account IDs.
+
+### List Assets
+
+```http
+GET /tenants/{tenantId}/assets
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `status` (string): `DRAFT`, `ACTIVE`, `DISPOSED`, or `SOLD`
+- `category_id` (uuid): Filter by asset category
+- `search` (string): Search asset name or asset number
+
+### Create Asset
+
+```http
+POST /tenants/{tenantId}/assets
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "Laptop",
+  "category_id": "uuid",
+  "purchase_date": "2026-03-15T00:00:00Z",
+  "purchase_cost": "1200.00",
+  "supplier_id": "uuid",
+  "serial_number": "SN-1",
+  "location": "Tallinn",
+  "depreciation_method": "STRAIGHT_LINE",
+  "useful_life_months": 36,
+  "residual_value": "100.00",
+  "depreciation_start_date": "2026-04-01T00:00:00Z"
+}
+```
+
+### Get, Update, and Delete Asset
+
+```http
+GET /tenants/{tenantId}/assets/{assetId}
+PUT /tenants/{tenantId}/assets/{assetId}
+DELETE /tenants/{tenantId}/assets/{assetId}
+Authorization: Bearer <token>
+```
+
+### Asset Lifecycle
+
+```http
+POST /tenants/{tenantId}/assets/{assetId}/activate
+POST /tenants/{tenantId}/assets/{assetId}/dispose
+Authorization: Bearer <token>
+```
+
+Dispose payloads include `disposal_date`, `disposal_method`, optional `disposal_proceeds`, and optional `disposal_notes`.
+
+### Depreciation
+
+```http
+POST /tenants/{tenantId}/assets/{assetId}/depreciation
+GET /tenants/{tenantId}/assets/{assetId}/depreciation
+Authorization: Bearer <token>
+```
+
+Recording depreciation uses the current month according to the server-side service.
+
+---
+
 ## Payments
 
 ### List Payments

@@ -11,6 +11,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/analytics"
 	"github.com/HMB-research/open-accounting/internal/apitoken"
+	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
@@ -296,6 +297,120 @@ func printOrderLinesTable(w io.Writer, lines []orders.OrderLine) {
 			line.UnitPrice.String(),
 			line.VATRate.String(),
 			line.LineTotal.String(),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printAssetCategoriesTable(w io.Writer, categories []assets.AssetCategory) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNAME\tMETHOD\tLIFE MONTHS\tRESIDUAL %")
+	for _, category := range categories {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%d\t%s\n",
+			category.ID,
+			category.Name,
+			category.DepreciationMethod,
+			category.DefaultUsefulLifeMonths,
+			category.DefaultResidualValuePercent.String(),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printAssetCategory(w io.Writer, category *assets.AssetCategory) {
+	_, _ = fmt.Fprintf(w, "Asset category %s\n", category.Name)
+	_, _ = fmt.Fprintf(w, "ID: %s\n", category.ID)
+	if strings.TrimSpace(category.Description) != "" {
+		_, _ = fmt.Fprintf(w, "Description: %s\n", category.Description)
+	}
+	_, _ = fmt.Fprintf(w, "Depreciation method: %s\n", category.DepreciationMethod)
+	_, _ = fmt.Fprintf(w, "Useful life months: %d\n", category.DefaultUsefulLifeMonths)
+	_, _ = fmt.Fprintf(w, "Residual percent: %s\n", category.DefaultResidualValuePercent.String())
+	if category.AssetAccountID != nil && strings.TrimSpace(*category.AssetAccountID) != "" {
+		_, _ = fmt.Fprintf(w, "Asset account: %s\n", *category.AssetAccountID)
+	}
+	if category.DepreciationExpenseAccountID != nil && strings.TrimSpace(*category.DepreciationExpenseAccountID) != "" {
+		_, _ = fmt.Fprintf(w, "Depreciation expense account: %s\n", *category.DepreciationExpenseAccountID)
+	}
+	if category.AccumulatedDepreciationAcctID != nil && strings.TrimSpace(*category.AccumulatedDepreciationAcctID) != "" {
+		_, _ = fmt.Fprintf(w, "Accumulated depreciation account: %s\n", *category.AccumulatedDepreciationAcctID)
+	}
+}
+
+func printAssetsTable(w io.Writer, assetList []assets.FixedAsset) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNUMBER\tNAME\tSTATUS\tPURCHASE DATE\tCOST\tBOOK VALUE\tLOCATION")
+	for _, asset := range assetList {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			asset.ID,
+			asset.AssetNumber,
+			asset.Name,
+			asset.Status,
+			formatDate(asset.PurchaseDate),
+			asset.PurchaseCost.String(),
+			asset.BookValue.String(),
+			asset.Location,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printAsset(w io.Writer, asset *assets.FixedAsset) {
+	_, _ = fmt.Fprintf(w, "Asset %s %s (%s)\n", asset.AssetNumber, asset.Name, asset.Status)
+	_, _ = fmt.Fprintf(w, "ID: %s\n", asset.ID)
+	if strings.TrimSpace(asset.Description) != "" {
+		_, _ = fmt.Fprintf(w, "Description: %s\n", asset.Description)
+	}
+	if asset.CategoryID != nil && strings.TrimSpace(*asset.CategoryID) != "" {
+		_, _ = fmt.Fprintf(w, "Category: %s\n", *asset.CategoryID)
+	}
+	_, _ = fmt.Fprintf(w, "Purchase date: %s\n", formatDate(asset.PurchaseDate))
+	_, _ = fmt.Fprintf(w, "Purchase cost: %s\n", asset.PurchaseCost.String())
+	_, _ = fmt.Fprintf(w, "Book value: %s\n", asset.BookValue.String())
+	_, _ = fmt.Fprintf(w, "Accumulated depreciation: %s\n", asset.AccumulatedDepreciation.String())
+	_, _ = fmt.Fprintf(w, "Depreciation method: %s\n", asset.DepreciationMethod)
+	_, _ = fmt.Fprintf(w, "Useful life months: %d\n", asset.UsefulLifeMonths)
+	_, _ = fmt.Fprintf(w, "Residual value: %s\n", asset.ResidualValue.String())
+	_, _ = fmt.Fprintf(w, "Depreciation start: %s\n", formatDatePtr(asset.DepreciationStartDate))
+	_, _ = fmt.Fprintf(w, "Last depreciation: %s\n", formatDatePtr(asset.LastDepreciationDate))
+	if asset.SupplierID != nil && strings.TrimSpace(*asset.SupplierID) != "" {
+		_, _ = fmt.Fprintf(w, "Supplier: %s\n", *asset.SupplierID)
+	}
+	if strings.TrimSpace(asset.SerialNumber) != "" {
+		_, _ = fmt.Fprintf(w, "Serial number: %s\n", asset.SerialNumber)
+	}
+	if strings.TrimSpace(asset.Location) != "" {
+		_, _ = fmt.Fprintf(w, "Location: %s\n", asset.Location)
+	}
+	if asset.DisposalDate != nil {
+		_, _ = fmt.Fprintf(w, "Disposal date: %s\n", formatDatePtr(asset.DisposalDate))
+	}
+	if asset.DisposalMethod != nil {
+		_, _ = fmt.Fprintf(w, "Disposal method: %s\n", *asset.DisposalMethod)
+	}
+	if strings.TrimSpace(asset.DisposalNotes) != "" {
+		_, _ = fmt.Fprintf(w, "Disposal notes: %s\n", asset.DisposalNotes)
+	}
+}
+
+func printDepreciationEntriesTable(w io.Writer, entries []assets.DepreciationEntry) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tDATE\tPERIOD\tAMOUNT\tACCUMULATED\tBOOK VALUE")
+	for _, entry := range entries {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s..%s\t%s\t%s\t%s\n",
+			entry.ID,
+			formatDate(entry.DepreciationDate),
+			formatDate(entry.PeriodStart),
+			formatDate(entry.PeriodEnd),
+			entry.DepreciationAmount.String(),
+			entry.AccumulatedTotal.String(),
+			entry.BookValueAfter.String(),
 		)
 	}
 	_ = tw.Flush()

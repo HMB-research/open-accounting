@@ -251,6 +251,37 @@ go run ./cmd/oa orders delete --id <order-id>
 
 Use `--line` repeatedly on `orders create` and `orders update`. Each line accepts `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, and `product_id`. Order statuses are `PENDING`, `CONFIRMED`, `PROCESSING`, `SHIPPED`, `DELIVERED`, and `CANCELED`.
 
+## Fixed assets
+
+```bash
+go run ./cmd/oa assets categories list
+go run ./cmd/oa assets categories create \
+  --name Equipment \
+  --depreciation-method STRAIGHT_LINE \
+  --useful-life-months 60
+go run ./cmd/oa assets categories get --id <category-id>
+go run ./cmd/oa assets categories delete --id <category-id>
+
+go run ./cmd/oa assets list --status ACTIVE --category-id <category-id>
+go run ./cmd/oa assets create \
+  --name Laptop \
+  --category-id <category-id> \
+  --purchase-date 2026-03-15 \
+  --purchase-cost 1200.00 \
+  --useful-life-months 36 \
+  --residual-value 100.00 \
+  --depreciation-start-date 2026-04-01
+go run ./cmd/oa assets get --id <asset-id>
+go run ./cmd/oa assets update --id <asset-id> --name Laptop --useful-life-months 48
+go run ./cmd/oa assets activate --id <asset-id>
+go run ./cmd/oa assets dispose --id <asset-id> --disposal-date 2026-05-01 --method SOLD --proceeds 900.00
+go run ./cmd/oa assets depreciate --id <asset-id>
+go run ./cmd/oa assets depreciation --id <asset-id>
+go run ./cmd/oa assets delete --id <asset-id>
+```
+
+Asset statuses are `DRAFT`, `ACTIVE`, `DISPOSED`, and `SOLD`. Depreciation methods are `STRAIGHT_LINE`, `DECLINING_BALANCE`, and `UNITS_OF_PRODUCTION`; disposal methods are `SOLD`, `SCRAPPED`, `DONATED`, and `LOST`.
+
 ## Payments
 
 ```bash
