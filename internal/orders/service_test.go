@@ -3,12 +3,15 @@ package orders
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/HMB-research/open-accounting/internal/contacts"
 )
 
 // MockRepository implements Repository for testing
@@ -251,6 +254,87 @@ func TestService_Create(t *testing.T) {
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "create order")
+	})
+}
+
+func TestService_ImportCSV(t *testing.T) {
+	t.Run("imports grouped orders and preserves status", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+
+		csvContent := `order_number,contact_code,order_date,expected_delivery,status,currency,exchange_rate,notes,quote_id,line_description,quantity,unit,unit_price,discount_percent,vat_rate,product_id
+ORD-LEGACY-1,CUST-1,2026-03-15,2026-03-22,confirmed,EUR,1,March order,quote-1,Consulting,2,hour,100,10,22,prod-1
+ORD-LEGACY-1,CUST-1,2026-03-15,2026-03-22,confirmed,EUR,1,March order,quote-1,Support,1,hour,50,0,22,
+`
+
+		result, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
+			ID:       "contact-1",
+			TenantID: "tenant-1",
+			Code:     "CUST-1",
+			Name:     "Acme",
+		}}, &ImportOrdersRequest{
+			CSVContent: csvContent,
+			FileName:   "orders.csv",
+			UserID:     "user-1",
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, "orders.csv", result.FileName)
+		assert.Equal(t, 2, result.RowsProcessed)
+		assert.Equal(t, 1, result.OrdersCreated)
+		assert.Equal(t, 2, result.LinesImported)
+		assert.Zero(t, result.RowsSkipped)
+		assert.Nil(t, result.Errors)
+
+		require.Len(t, repo.Orders, 1)
+		for _, order := range repo.Orders {
+			assert.Equal(t, "ORD-LEGACY-1", order.OrderNumber)
+			assert.Equal(t, "contact-1", order.ContactID)
+			assert.Equal(t, OrderStatusConfirmed, order.Status)
+			require.NotNil(t, order.QuoteID)
+			assert.Equal(t, "quote-1", *order.QuoteID)
+			assert.True(t, order.Subtotal.Equal(decimal.RequireFromString("230.00")))
+			assert.True(t, order.VATAmount.Equal(decimal.RequireFromString("50.60")))
+			require.Len(t, order.Lines, 2)
+			require.NotNil(t, order.Lines[0].ProductID)
+			assert.Equal(t, "prod-1", *order.Lines[0].ProductID)
+		}
+	})
+
+	t.Run("skips duplicate and invalid groups", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.Orders["existing"] = &Order{
+			ID:          "existing",
+			TenantID:    "tenant-1",
+			OrderNumber: "ORD-EXISTING",
+		}
+		svc := NewServiceWithRepository(repo)
+
+		csvContent := `order_number,contact_id,order_date,line_description,quantity,unit_price,vat_rate
+ORD-EXISTING,contact-1,2026-03-15,Duplicate,1,10,22
+ORD-MISSING,missing-contact,2026-03-15,Unknown contact,1,10,22
+ORD-BAD,contact-1,2026-03-15,Bad quantity,0,10,22
+`
+
+		result, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
+			ID:       "contact-1",
+			TenantID: "tenant-1",
+			Name:     "Acme",
+		}}, &ImportOrdersRequest{CSVContent: csvContent})
+
+		require.NoError(t, err)
+		assert.Equal(t, 3, result.RowsProcessed)
+		assert.Zero(t, result.OrdersCreated)
+		assert.Equal(t, 3, result.RowsSkipped)
+		require.Len(t, result.Errors, 3)
+		messages := make([]string, 0, len(result.Errors))
+		for _, rowErr := range result.Errors {
+			messages = append(messages, rowErr.Message)
+		}
+		joinedMessages := strings.Join(messages, "\n")
+		assert.Contains(t, joinedMessages, "already exists")
+		assert.Contains(t, joinedMessages, "contact_id")
+		assert.Contains(t, joinedMessages, "quantity must be greater than zero")
 	})
 }
 

@@ -477,6 +477,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				// Orders
 				r.Get("/orders", h.ListOrders)
 				r.Post("/orders", h.CreateOrder)
+				r.Post("/orders/import", h.ImportOrders)
 				r.Get("/orders/{orderID}", h.GetOrder)
 				r.Put("/orders/{orderID}", h.UpdateOrder)
 				r.Delete("/orders/{orderID}", h.DeleteOrder)

@@ -1420,6 +1420,17 @@ func TestCLIOrderCommands(t *testing.T) {
 			assert.Equal(t, "prod-1", *line.ProductID)
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(orderPayload("order-1", "ORD-00001", "PENDING"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/import":
+			var req orders.ImportOrdersRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "orders.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "ORD-LEGACY-1")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed": 1,
+				"orders_created": 1,
+				"lines_imported": 1,
+				"rows_skipped":   0,
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1":
 			_ = json.NewEncoder(w).Encode(orderPayload("order-1", "ORD-00001", "CONFIRMED"))
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1":
@@ -1478,6 +1489,12 @@ func TestCLIOrderCommands(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created order ORD-00001 (order-1)")
+
+	orderImportFile := writeTempCSV(t, "orders.csv", "order_number,contact_id,order_date,line_description,quantity,unit_price,vat_rate\nORD-LEGACY-1,contact-1,2026-03-15,Consulting,1,100,22\n")
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"orders", "import", "--file", orderImportFile})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 orders, imported 1 lines, skipped 0 rows")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"orders", "get", "--id", "order-1"})
