@@ -140,7 +140,7 @@ Each tenant gets a dedicated PostgreSQL schema (e.g., `tenant_acme`) containing:
 
 | Role | Description | Permissions |
 |------|-------------|-------------|
-| **Owner** | Organization creator | Full access, cannot be removed |
+| **Owner** | Organization creator | Full access, cannot be removed or assigned by invitation/role update |
 | **Admin** | Administrator | Manage users, settings, full accounting |
 | **Accountant** | Accounting staff | Full accounting, no user management |
 | **Viewer** | Read-only access | View reports only |

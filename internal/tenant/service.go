@@ -423,7 +423,7 @@ func (s *Service) RemoveTenantUser(ctx context.Context, tenantID, userID string)
 
 // UpdateTenantUserRole updates a user's role in a tenant
 func (s *Service) UpdateTenantUserRole(ctx context.Context, tenantID, userID, newRole string) error {
-	if !IsValidRole(newRole) && newRole != RoleOwner {
+	if !IsValidRole(newRole) {
 		return fmt.Errorf("invalid role: %s", newRole)
 	}
 

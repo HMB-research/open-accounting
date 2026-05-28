@@ -2135,6 +2135,11 @@ func (h *Handlers) UpdateTenantUserRole(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if userID == claims.UserID {
+		respondError(w, http.StatusBadRequest, "Cannot update your own role")
+		return
+	}
+
 	var req struct {
 		Role string `json:"role"`
 	}
