@@ -234,7 +234,7 @@ run_e2e_test() {
     local name=$(echo "$route" | sed 's/\///g' | sed 's/-/_/g')
 
     cd frontend
-    if bun run test:e2e:demo -- --grep "$name" 2>/dev/null; then
+    if bun run test:e2e -- --project=demo-chromium --grep "$name" 2>/dev/null; then
         cd ..
         return 0
     fi
@@ -468,7 +468,7 @@ test.describe('[View Name] View', () => {
 ### 3. Run and Verify
 ```bash
 cd frontend
-bun run test:e2e:demo -- --grep "[view-name]"
+bun run test:e2e -- --project=demo-chromium --grep "[view-name]"
 ```
 
 ## Completion Signal
@@ -517,7 +517,7 @@ while [[ $ITERATION -lt $MAX_ITERATIONS ]]; do
     cat /tmp/ralph-prompt.md | claude --print
 
     # Run tests to verify
-    cd frontend && bun run test:e2e:demo && cd ..
+    cd frontend && bun run test:e2e && cd ..
 
     # Reset demo data if tests failed
     if [[ $? -ne 0 ]]; then
@@ -568,7 +568,7 @@ When adding a new route to the application:
 ### Tests fail after demo reset
 ```bash
 # Wait longer for data propagation
-sleep 10 && cd frontend && bun run test:e2e:demo
+sleep 10 && cd frontend && bun run test:e2e
 ```
 
 ### Demo data not appearing
