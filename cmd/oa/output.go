@@ -8,6 +8,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/analytics"
 	"github.com/HMB-research/open-accounting/internal/apitoken"
@@ -411,6 +413,71 @@ func printDepreciationEntriesTable(w io.Writer, entries []assets.DepreciationEnt
 			entry.DepreciationAmount.String(),
 			entry.AccumulatedTotal.String(),
 			entry.BookValueAfter.String(),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printCostCentersTable(w io.Writer, costCenters []accounting.CostCenter) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tCODE\tNAME\tACTIVE\tBUDGET\tPERIOD")
+	for _, costCenter := range costCenters {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%t\t%s\t%s\n",
+			costCenter.ID,
+			costCenter.Code,
+			costCenter.Name,
+			costCenter.IsActive,
+			formatDecimalPtr(costCenter.BudgetAmount),
+			costCenter.BudgetPeriod,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printCostCenter(w io.Writer, costCenter *accounting.CostCenter) {
+	_, _ = fmt.Fprintf(w, "Cost center %s %s\n", costCenter.Code, costCenter.Name)
+	_, _ = fmt.Fprintf(w, "ID: %s\n", costCenter.ID)
+	if strings.TrimSpace(costCenter.Description) != "" {
+		_, _ = fmt.Fprintf(w, "Description: %s\n", costCenter.Description)
+	}
+	if costCenter.ParentID != nil && strings.TrimSpace(*costCenter.ParentID) != "" {
+		_, _ = fmt.Fprintf(w, "Parent: %s\n", *costCenter.ParentID)
+	}
+	_, _ = fmt.Fprintf(w, "Active: %t\n", costCenter.IsActive)
+	_, _ = fmt.Fprintf(w, "Budget: %s\n", formatDecimalPtr(costCenter.BudgetAmount))
+	if costCenter.BudgetPeriod != "" {
+		_, _ = fmt.Fprintf(w, "Budget period: %s\n", costCenter.BudgetPeriod)
+	}
+	if costCenter.TotalSpent != nil {
+		_, _ = fmt.Fprintf(w, "Total spent: %s\n", costCenter.TotalSpent.String())
+	}
+	if costCenter.BudgetUsed != nil {
+		_, _ = fmt.Fprintf(w, "Budget used: %s%%\n", costCenter.BudgetUsed.String())
+	}
+}
+
+func printCostCenterReport(w io.Writer, report *accounting.CostCenterReport) {
+	_, _ = fmt.Fprintf(w, "Cost center report %s..%s\n", formatDate(report.PeriodStart), formatDate(report.PeriodEnd))
+	_, _ = fmt.Fprintf(w, "Total expenses: %s\n", report.TotalExpenses.String())
+	_, _ = fmt.Fprintf(w, "Total budget: %s\n", report.TotalBudget.String())
+	if len(report.CostCenters) == 0 {
+		return
+	}
+
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "CODE\tNAME\tEXPENSES\tBUDGET\tUSED %\tOVER")
+	for _, summary := range report.CostCenters {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%t\n",
+			summary.CostCenter.Code,
+			summary.CostCenter.Name,
+			summary.TotalExpenses.String(),
+			summary.BudgetAmount.String(),
+			summary.BudgetUsed.String(),
+			summary.IsOverBudget,
 		)
 	}
 	_ = tw.Flush()
@@ -946,6 +1013,13 @@ func formatDatePtr(value *time.Time) string {
 		return "-"
 	}
 	return formatDate(*value)
+}
+
+func formatDecimalPtr(value *decimal.Decimal) string {
+	if value == nil {
+		return "-"
+	}
+	return value.String()
 }
 
 func payslipEmployeeName(payslip payroll.Payslip) string {

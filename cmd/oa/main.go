@@ -80,6 +80,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runOrders(ctx, args[1:])
 	case "assets":
 		return a.runAssets(ctx, args[1:])
+	case "cost-centers":
+		return a.runCostCenters(ctx, args[1:])
 	case "reports":
 		return a.runReports(ctx, args[1:])
 	case "documents":
@@ -179,6 +181,12 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  assets dispose            Dispose or sell a fixed asset")
 	_, _ = fmt.Fprintln(a.stdout, "  assets depreciate         Record monthly depreciation")
 	_, _ = fmt.Fprintln(a.stdout, "  assets depreciation       List depreciation history")
+	_, _ = fmt.Fprintln(a.stdout, "  cost-centers list         List cost centers")
+	_, _ = fmt.Fprintln(a.stdout, "  cost-centers create       Create a cost center")
+	_, _ = fmt.Fprintln(a.stdout, "  cost-centers get          Show one cost center")
+	_, _ = fmt.Fprintln(a.stdout, "  cost-centers update       Update a cost center")
+	_, _ = fmt.Fprintln(a.stdout, "  cost-centers delete       Delete a cost center")
+	_, _ = fmt.Fprintln(a.stdout, "  cost-centers report       Show cost center budget report")
 	_, _ = fmt.Fprintln(a.stdout, "  reports trial-balance     Show trial balance")
 	_, _ = fmt.Fprintln(a.stdout, "  reports account-balance   Show one account balance")
 	_, _ = fmt.Fprintln(a.stdout, "  reports balance-sheet     Show balance sheet")
@@ -2111,6 +2119,209 @@ func (a *cliApp) runAssetCategories(ctx context.Context, cfg *cliConfig, client 
 	}
 }
 
+func (a *cliApp) runCostCenters(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("cost-centers subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("cost-centers list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		activeOnly := fs.Bool("active-only", false, "List only active cost centers")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		costCenters, err := client.listCostCenters(ctx, cfg.TenantID, *activeOnly)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, costCenters)
+		}
+		printCostCentersTable(a.stdout, costCenters)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("cost-centers create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		code := fs.String("code", "", "Cost center code")
+		name := fs.String("name", "", "Cost center name")
+		description := fs.String("description", "", "Description")
+		parentID := fs.String("parent-id", "", "Parent cost center id")
+		active := fs.Bool("active", true, "Create as active")
+		budgetAmountFlag := fs.String("budget-amount", "", "Budget amount")
+		budgetPeriodFlag := fs.String("budget-period", "ANNUAL", "Budget period")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*code) == "" {
+			return errors.New("code is required")
+		}
+		if strings.TrimSpace(*name) == "" {
+			return errors.New("name is required")
+		}
+		budgetAmount, err := parseOptionalNonNegativeDecimalPtr("budget-amount", *budgetAmountFlag)
+		if err != nil {
+			return err
+		}
+		budgetPeriod, err := parseOptionalBudgetPeriod(*budgetPeriodFlag)
+		if err != nil {
+			return err
+		}
+
+		costCenter, err := client.createCostCenter(ctx, cfg.TenantID, &accounting.CreateCostCenterRequest{
+			Code:         strings.TrimSpace(*code),
+			Name:         strings.TrimSpace(*name),
+			Description:  strings.TrimSpace(*description),
+			ParentID:     optionalStringPtr(*parentID),
+			IsActive:     *active,
+			BudgetAmount: budgetAmount,
+			BudgetPeriod: budgetPeriod,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, costCenter)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created cost center %s %s (%s)\n", costCenter.Code, costCenter.Name, costCenter.ID)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("cost-centers get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		costCenterID := fs.String("id", "", "Cost center id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*costCenterID) == "" {
+			return errors.New("id is required")
+		}
+
+		costCenter, err := client.getCostCenter(ctx, cfg.TenantID, strings.TrimSpace(*costCenterID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, costCenter)
+		}
+		printCostCenter(a.stdout, costCenter)
+		return nil
+
+	case "update":
+		fs := flag.NewFlagSet("cost-centers update", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		costCenterID := fs.String("id", "", "Cost center id")
+		code := fs.String("code", "", "Cost center code")
+		name := fs.String("name", "", "Cost center name")
+		description := fs.String("description", "", "Description")
+		parentID := fs.String("parent-id", "", "Parent cost center id")
+		active := fs.Bool("active", true, "Set active")
+		budgetAmountFlag := fs.String("budget-amount", "", "Budget amount")
+		budgetPeriodFlag := fs.String("budget-period", "ANNUAL", "Budget period")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*costCenterID) == "" {
+			return errors.New("id is required")
+		}
+		if strings.TrimSpace(*code) == "" {
+			return errors.New("code is required")
+		}
+		if strings.TrimSpace(*name) == "" {
+			return errors.New("name is required")
+		}
+		budgetAmount, err := parseOptionalNonNegativeDecimalPtr("budget-amount", *budgetAmountFlag)
+		if err != nil {
+			return err
+		}
+		budgetPeriod, err := parseOptionalBudgetPeriod(*budgetPeriodFlag)
+		if err != nil {
+			return err
+		}
+
+		costCenter, err := client.updateCostCenter(ctx, cfg.TenantID, strings.TrimSpace(*costCenterID), &accounting.UpdateCostCenterRequest{
+			Code:         strings.TrimSpace(*code),
+			Name:         strings.TrimSpace(*name),
+			Description:  strings.TrimSpace(*description),
+			ParentID:     optionalStringPtr(*parentID),
+			IsActive:     *active,
+			BudgetAmount: budgetAmount,
+			BudgetPeriod: budgetPeriod,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, costCenter)
+		}
+		printCostCenter(a.stdout, costCenter)
+		return nil
+
+	case "delete":
+		fs := flag.NewFlagSet("cost-centers delete", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		costCenterID := fs.String("id", "", "Cost center id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*costCenterID) == "" {
+			return errors.New("id is required")
+		}
+
+		if err := client.deleteCostCenter(ctx, cfg.TenantID, strings.TrimSpace(*costCenterID)); err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, map[string]string{"status": "deleted"})
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Deleted cost center %s\n", strings.TrimSpace(*costCenterID))
+		return nil
+
+	case "report":
+		fs := flag.NewFlagSet("cost-centers report", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		startDate := fs.String("start", "", "Start date in YYYY-MM-DD")
+		endDate := fs.String("end", "", "End date in YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		startDateValue, err := parseOptionalDate("start", *startDate)
+		if err != nil {
+			return err
+		}
+		endDateValue, err := parseOptionalDate("end", *endDate)
+		if err != nil {
+			return err
+		}
+
+		report, err := client.getCostCenterReport(ctx, cfg.TenantID, startDateValue, endDateValue)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, report)
+		}
+		printCostCenterReport(a.stdout, report)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown cost-centers subcommand %q", args[0])
+	}
+}
+
 func (a *cliApp) runEmployees(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New("employees subcommand required")
@@ -3571,6 +3782,17 @@ func parseRequiredNonNegativeDecimal(name, value string) (decimal.Decimal, error
 	return parsed, nil
 }
 
+func parseOptionalNonNegativeDecimalPtr(name, value string) (*decimal.Decimal, error) {
+	if strings.TrimSpace(value) == "" {
+		return nil, nil
+	}
+	parsed, err := parseRequiredNonNegativeDecimal(name, value)
+	if err != nil {
+		return nil, err
+	}
+	return &parsed, nil
+}
+
 func parseOptionalInvoiceType(value string) (invoicing.InvoiceType, error) {
 	if strings.TrimSpace(value) == "" {
 		return "", nil
@@ -3666,6 +3888,19 @@ func parseRequiredDisposalMethod(value string) (assets.DisposalMethod, error) {
 			return "", errors.New("method is required")
 		}
 		return "", fmt.Errorf("invalid disposal method %q", value)
+	}
+}
+
+func parseOptionalBudgetPeriod(value string) (accounting.BudgetPeriod, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	switch accounting.BudgetPeriod(normalized) {
+	case accounting.BudgetPeriodMonthly, accounting.BudgetPeriodQuarterly, accounting.BudgetPeriodAnnual:
+		return accounting.BudgetPeriod(normalized), nil
+	default:
+		return "", fmt.Errorf("invalid budget period %q", value)
 	}
 }
 

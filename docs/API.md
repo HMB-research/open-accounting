@@ -1231,6 +1231,52 @@ Recording depreciation uses the current month according to the server-side servi
 
 ---
 
+## Cost Centers
+
+### List Cost Centers
+
+```http
+GET /tenants/{tenantId}/cost-centers?active_only=true
+Authorization: Bearer <token>
+```
+
+### Create Cost Center
+
+```http
+POST /tenants/{tenantId}/cost-centers
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "code": "CC001",
+  "name": "Sales",
+  "description": "Sales team",
+  "is_active": true,
+  "budget_amount": "1000.00",
+  "budget_period": "MONTHLY"
+}
+```
+
+### Get, Update, and Delete Cost Center
+
+```http
+GET /tenants/{tenantId}/cost-centers/{costCenterId}
+PUT /tenants/{tenantId}/cost-centers/{costCenterId}
+DELETE /tenants/{tenantId}/cost-centers/{costCenterId}
+Authorization: Bearer <token>
+```
+
+### Cost Center Report
+
+```http
+GET /tenants/{tenantId}/cost-centers/report?start_date=2026-03-01&end_date=2026-03-31
+Authorization: Bearer <token>
+```
+
+Budget periods are `MONTHLY`, `QUARTERLY`, and `ANNUAL`.
+
+---
+
 ## Payments
 
 ### List Payments

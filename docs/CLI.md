@@ -282,6 +282,27 @@ go run ./cmd/oa assets delete --id <asset-id>
 
 Asset statuses are `DRAFT`, `ACTIVE`, `DISPOSED`, and `SOLD`. Depreciation methods are `STRAIGHT_LINE`, `DECLINING_BALANCE`, and `UNITS_OF_PRODUCTION`; disposal methods are `SOLD`, `SCRAPPED`, `DONATED`, and `LOST`.
 
+## Cost centers
+
+```bash
+go run ./cmd/oa cost-centers list --active-only
+go run ./cmd/oa cost-centers create \
+  --code CC001 \
+  --name Sales \
+  --budget-amount 1000.00 \
+  --budget-period MONTHLY
+go run ./cmd/oa cost-centers get --id <cost-center-id>
+go run ./cmd/oa cost-centers update \
+  --id <cost-center-id> \
+  --code CC001 \
+  --name Sales \
+  --budget-amount 1200.00
+go run ./cmd/oa cost-centers report --start 2026-03-01 --end 2026-03-31
+go run ./cmd/oa cost-centers delete --id <cost-center-id>
+```
+
+Budget periods are `MONTHLY`, `QUARTERLY`, and `ANNUAL`. Use `--json` on cost-center read and mutation commands for automation.
+
 ## Payments
 
 ```bash

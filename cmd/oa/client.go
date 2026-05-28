@@ -575,6 +575,63 @@ func (c *apiClient) listAssetDepreciation(ctx context.Context, tenantID, assetID
 	return resp, nil
 }
 
+func (c *apiClient) listCostCenters(ctx context.Context, tenantID string, activeOnly bool) ([]accounting.CostCenter, error) {
+	values := url.Values{}
+	if activeOnly {
+		values.Set("active_only", "true")
+	}
+
+	var resp []accounting.CostCenter
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "cost-centers"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createCostCenter(ctx context.Context, tenantID string, req *accounting.CreateCostCenterRequest) (*accounting.CostCenter, error) {
+	var resp accounting.CostCenter
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "cost-centers"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getCostCenter(ctx context.Context, tenantID, costCenterID string) (*accounting.CostCenter, error) {
+	var resp accounting.CostCenter
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "cost-centers", costCenterID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) updateCostCenter(ctx context.Context, tenantID, costCenterID string, req *accounting.UpdateCostCenterRequest) (*accounting.CostCenter, error) {
+	var resp accounting.CostCenter
+	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "cost-centers", costCenterID), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) deleteCostCenter(ctx context.Context, tenantID, costCenterID string) error {
+	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "cost-centers", costCenterID), nil, c.apiToken, nil)
+}
+
+func (c *apiClient) getCostCenterReport(ctx context.Context, tenantID string, startDate, endDate *time.Time) (*accounting.CostCenterReport, error) {
+	values := url.Values{}
+	if startDate != nil {
+		values.Set("start_date", startDate.Format("2006-01-02"))
+	}
+	if endDate != nil {
+		values.Set("end_date", endDate.Format("2006-01-02"))
+	}
+
+	var resp accounting.CostCenterReport
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "cost-centers", "report"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) importOpeningBalances(ctx context.Context, tenantID string, req *accounting.ImportOpeningBalancesRequest) (*accounting.ImportOpeningBalancesResult, error) {
 	var resp accounting.ImportOpeningBalancesResult
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "journal-entries", "import-opening-balances"), req, c.apiToken, &resp); err != nil {
