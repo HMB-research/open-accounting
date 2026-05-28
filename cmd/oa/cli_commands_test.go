@@ -2717,6 +2717,146 @@ func TestCLIInterestCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "interest-1")
 }
 
+func TestCLICloseCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	now := "2026-03-31T12:00:00Z"
+	lockAfter := "2026-03-31"
+	tenantPayload := map[string]any{
+		"id":          "tenant-1",
+		"name":        "Alpha",
+		"slug":        "alpha",
+		"schema_name": "tenant_alpha",
+		"is_active":   true,
+		"settings": map[string]any{
+			"default_currency":        "EUR",
+			"country_code":            "EE",
+			"timezone":                "Europe/Tallinn",
+			"date_format":             "DD.MM.YYYY",
+			"decimal_sep":             ",",
+			"thousands_sep":           " ",
+			"fiscal_year_start_month": 1,
+			"period_lock_date":        lockAfter,
+		},
+		"created_at": now,
+		"updated_at": now,
+	}
+	closeEventPayload := func(action, note string) map[string]any {
+		return map[string]any{
+			"id":              "close-1",
+			"tenant_id":       "tenant-1",
+			"action":          action,
+			"close_kind":      "month_end",
+			"period_end_date": "2026-03-31",
+			"lock_date_after": lockAfter,
+			"note":            note,
+			"performed_by":    "user-1",
+			"created_at":      now,
+		}
+	}
+	statusPayload := map[string]any{
+		"period_end_date":               "2025-12-31",
+		"fiscal_year_label":             "2025",
+		"fiscal_year_start_date":        "2025-01-01",
+		"fiscal_year_end_date":          "2025-12-31",
+		"carry_forward_date":            "2026-01-01",
+		"locked_through_date":           "2025-12-31",
+		"is_fiscal_year_end":            true,
+		"period_closed":                 true,
+		"has_profit_and_loss_activity":  true,
+		"carry_forward_needed":          true,
+		"carry_forward_ready":           true,
+		"has_retained_earnings_account": true,
+		"retained_earnings_account":     map[string]any{"id": "acc-retained", "code": "2999", "name": "Retained earnings"},
+		"net_income":                    "1200.00",
+	}
+	carryForwardPayload := map[string]any{
+		"journal_entry": map[string]any{
+			"id":           "je-1",
+			"tenant_id":    "tenant-1",
+			"entry_number": "JE-2026-001",
+			"entry_date":   "2026-01-01T00:00:00Z",
+			"description":  "Year-end carry-forward",
+			"source_type":  "YEAR_END_CARRY_FORWARD",
+			"status":       "POSTED",
+			"created_at":   now,
+			"created_by":   "user-1",
+			"lines":        []map[string]any{},
+		},
+		"status": statusPayload,
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/period-close-events":
+			require.Equal(t, "10", r.URL.Query().Get("limit"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{closeEventPayload("close", "March close")})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/period-close":
+			var req tenant.ClosePeriodRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-03-31", req.PeriodEndDate)
+			assert.Equal(t, "March close", req.Note)
+			_ = json.NewEncoder(w).Encode(map[string]any{"tenant": tenantPayload, "event": closeEventPayload("close", "March close")})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/period-reopen":
+			var req tenant.ReopenPeriodRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-03-31", req.PeriodEndDate)
+			assert.Equal(t, "Adjustments", req.Note)
+			_ = json.NewEncoder(w).Encode(map[string]any{"tenant": tenantPayload, "event": closeEventPayload("reopen", "Adjustments")})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/year-end-close-status":
+			require.Equal(t, "2025-12-31", r.URL.Query().Get("period_end_date"))
+			_ = json.NewEncoder(w).Encode(statusPayload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/year-end-carry-forward":
+			var req accounting.CreateYearEndCarryForwardRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2025-12-31", req.PeriodEndDate)
+			_ = json.NewEncoder(w).Encode(carryForwardPayload)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"close", "events", "--limit", "10", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"action": "close"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"close", "period", "--period-end", "2026-03-31", "--note", "March close"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Closed period")
+	assert.Contains(t, stdout.String(), "Period end: 2026-03-31")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"close", "reopen", "--period-end", "2026-03-31", "--note", "Adjustments"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Reopened period")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"close", "year-end-status", "--period-end", "2025-12-31"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Carry-forward ready: true")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"close", "carry-forward", "--period-end", "2025-12-31"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created year-end carry-forward JE-2026-001")
+}
+
 func TestCLIBankingCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
@@ -4296,6 +4436,10 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "interest settings subcommand required")
 
+	err = app.runClose(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "close subcommand required")
+
 	err = app.runBanking(context.Background(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "banking subcommand required")
@@ -4396,6 +4540,14 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	_, _, err = parseYearMonthFlags("2026", "13")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "month must be between 1 and 12")
+
+	bounded, err := parseRequiredBoundedInt("limit", "20", 1, 100)
+	require.NoError(t, err)
+	assert.Equal(t, 20, bounded)
+
+	_, err = parseRequiredBoundedInt("limit", "101", 1, 100)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "limit must be between 1 and 100")
 
 	invoiceType, err := parseRequiredInvoiceType("credit_note")
 	require.NoError(t, err)

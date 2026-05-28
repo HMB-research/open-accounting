@@ -27,6 +27,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tax"
+	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
 func printJSON(w io.Writer, value any) error {
@@ -1160,6 +1161,82 @@ func printInvoiceInterestHistoryTable(w io.Writer, history []invoicing.InvoiceIn
 		)
 	}
 	_ = tw.Flush()
+}
+
+func printPeriodCloseEventsTable(w io.Writer, events []tenant.PeriodCloseEvent) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tACTION\tKIND\tPERIOD END\tLOCK BEFORE\tLOCK AFTER\tNOTE\tCREATED")
+	for _, event := range events {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			event.ID,
+			event.Action,
+			event.CloseKind,
+			event.PeriodEndDate,
+			stringValue(event.LockDateBefore),
+			stringValue(event.LockDateAfter),
+			event.Note,
+			formatTime(event.CreatedAt),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printPeriodCloseMutationResponse(w io.Writer, title string, resp *periodCloseMutationResponse) {
+	_, _ = fmt.Fprintf(w, "%s\n", title)
+	if resp.Event != nil {
+		_, _ = fmt.Fprintf(w, "Period end: %s\n", resp.Event.PeriodEndDate)
+		_, _ = fmt.Fprintf(w, "Action: %s\n", resp.Event.Action)
+		_, _ = fmt.Fprintf(w, "Kind: %s\n", resp.Event.CloseKind)
+		_, _ = fmt.Fprintf(w, "Lock before: %s\n", stringValue(resp.Event.LockDateBefore))
+		_, _ = fmt.Fprintf(w, "Lock after: %s\n", stringValue(resp.Event.LockDateAfter))
+		if strings.TrimSpace(resp.Event.Note) != "" {
+			_, _ = fmt.Fprintf(w, "Note: %s\n", resp.Event.Note)
+		}
+	}
+	if resp.Tenant != nil && resp.Tenant.Settings.PeriodLockDate != nil {
+		_, _ = fmt.Fprintf(w, "Tenant lock date: %s\n", *resp.Tenant.Settings.PeriodLockDate)
+	}
+}
+
+func printYearEndCloseStatus(w io.Writer, status *accounting.YearEndCloseStatus) {
+	_, _ = fmt.Fprintf(w, "Year-end close status %s\n", status.FiscalYearLabel)
+	_, _ = fmt.Fprintf(w, "Period end: %s\n", status.PeriodEndDate)
+	_, _ = fmt.Fprintf(w, "Fiscal year end: %s\n", status.FiscalYearEndDate)
+	_, _ = fmt.Fprintf(w, "Carry-forward date: %s\n", status.CarryForwardDate)
+	_, _ = fmt.Fprintf(w, "Fiscal year end period: %t\n", status.IsFiscalYearEnd)
+	_, _ = fmt.Fprintf(w, "Period closed: %t\n", status.PeriodClosed)
+	_, _ = fmt.Fprintf(w, "Carry-forward needed: %t\n", status.CarryForwardNeeded)
+	_, _ = fmt.Fprintf(w, "Carry-forward ready: %t\n", status.CarryForwardReady)
+	_, _ = fmt.Fprintf(w, "Retained earnings account: %t\n", status.HasRetainedEarningsAccount)
+	_, _ = fmt.Fprintf(w, "Net income: %s\n", status.NetIncome.String())
+	if status.RetainedEarningsAccount != nil {
+		_, _ = fmt.Fprintf(w, "Retained earnings: %s %s\n", status.RetainedEarningsAccount.Code, status.RetainedEarningsAccount.Name)
+	}
+	if status.ExistingCarryForward != nil {
+		_, _ = fmt.Fprintf(w, "Existing carry-forward: %s (%s)\n", status.ExistingCarryForward.EntryNumber, status.ExistingCarryForward.ID)
+	}
+}
+
+func printYearEndCarryForwardResult(w io.Writer, result *accounting.YearEndCarryForwardResult) {
+	if result.JournalEntry != nil {
+		_, _ = fmt.Fprintf(w, "Created year-end carry-forward %s (%s)\n", result.JournalEntry.EntryNumber, result.JournalEntry.ID)
+		_, _ = fmt.Fprintf(w, "Status: %s\n", result.JournalEntry.Status)
+	}
+	if result.Status != nil {
+		_, _ = fmt.Fprintf(w, "Carry-forward ready: %t\n", result.Status.CarryForwardReady)
+		if result.Status.ExistingCarryForward != nil {
+			_, _ = fmt.Fprintf(w, "Existing carry-forward: %s (%s)\n", result.Status.ExistingCarryForward.EntryNumber, result.Status.ExistingCarryForward.ID)
+		}
+	}
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func printBankAccountsTable(w io.Writer, accounts []banking.BankAccount) {

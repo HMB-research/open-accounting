@@ -86,6 +86,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runEmail(ctx, args[1:])
 	case "interest":
 		return a.runInterest(ctx, args[1:])
+	case "close":
+		return a.runClose(ctx, args[1:])
 	case "banking":
 		return a.runBanking(ctx, args[1:])
 	case "quotes":
@@ -179,6 +181,8 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  email templates list      List email templates")
 	_, _ = fmt.Fprintln(a.stdout, "  interest settings get     Show late-payment interest settings")
 	_, _ = fmt.Fprintln(a.stdout, "  interest overdue          List overdue invoices with interest")
+	_, _ = fmt.Fprintln(a.stdout, "  close events              List period close events")
+	_, _ = fmt.Fprintln(a.stdout, "  close year-end-status     Show year-end close readiness")
 	_, _ = fmt.Fprintln(a.stdout, "  banking accounts list     List bank accounts")
 	_, _ = fmt.Fprintln(a.stdout, "  banking transactions list List bank transactions")
 	_, _ = fmt.Fprintln(a.stdout, "  banking reconciliations list  List bank reconciliations")
@@ -1929,6 +1933,140 @@ func (a *cliApp) runInterestSettings(ctx context.Context, cfg *cliConfig, client
 		return nil
 	default:
 		return fmt.Errorf("unknown interest settings subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runClose(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("close subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "events":
+		fs := flag.NewFlagSet("close events", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		limitFlag := fs.String("limit", "20", "Number of period close events")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		limit, err := parseRequiredBoundedInt("limit", *limitFlag, 1, 100)
+		if err != nil {
+			return err
+		}
+
+		events, err := client.listPeriodCloseEvents(ctx, cfg.TenantID, limit)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, events)
+		}
+		printPeriodCloseEventsTable(a.stdout, events)
+		return nil
+	case "period":
+		fs := flag.NewFlagSet("close period", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		periodEnd := fs.String("period-end", "", "Period end date, YYYY-MM-DD")
+		note := fs.String("note", "", "Close note")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*periodEnd) == "" {
+			return errors.New("period-end is required")
+		}
+
+		resp, err := client.closePeriod(ctx, cfg.TenantID, &tenant.ClosePeriodRequest{
+			PeriodEndDate: strings.TrimSpace(*periodEnd),
+			Note:          strings.TrimSpace(*note),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, resp)
+		}
+		printPeriodCloseMutationResponse(a.stdout, "Closed period", resp)
+		return nil
+	case "reopen":
+		fs := flag.NewFlagSet("close reopen", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		periodEnd := fs.String("period-end", "", "Period end date, YYYY-MM-DD")
+		note := fs.String("note", "", "Reopen note")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*periodEnd) == "" {
+			return errors.New("period-end is required")
+		}
+		if strings.TrimSpace(*note) == "" {
+			return errors.New("note is required")
+		}
+
+		resp, err := client.reopenPeriod(ctx, cfg.TenantID, &tenant.ReopenPeriodRequest{
+			PeriodEndDate: strings.TrimSpace(*periodEnd),
+			Note:          strings.TrimSpace(*note),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, resp)
+		}
+		printPeriodCloseMutationResponse(a.stdout, "Reopened period", resp)
+		return nil
+	case "year-end-status":
+		fs := flag.NewFlagSet("close year-end-status", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		periodEnd := fs.String("period-end", "", "Period end date, YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*periodEnd) == "" {
+			return errors.New("period-end is required")
+		}
+
+		status, err := client.getYearEndCloseStatus(ctx, cfg.TenantID, strings.TrimSpace(*periodEnd))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, status)
+		}
+		printYearEndCloseStatus(a.stdout, status)
+		return nil
+	case "carry-forward":
+		fs := flag.NewFlagSet("close carry-forward", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		periodEnd := fs.String("period-end", "", "Period end date, YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*periodEnd) == "" {
+			return errors.New("period-end is required")
+		}
+
+		result, err := client.createYearEndCarryForward(ctx, cfg.TenantID, &accounting.CreateYearEndCarryForwardRequest{
+			PeriodEndDate: strings.TrimSpace(*periodEnd),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		printYearEndCarryForwardResult(a.stdout, result)
+		return nil
+	default:
+		return fmt.Errorf("unknown close subcommand %q", args[0])
 	}
 }
 
@@ -6623,6 +6761,17 @@ func parseRequiredPositiveInt(name, value string) (int, error) {
 	}
 	if parsed <= 0 {
 		return 0, fmt.Errorf("%s must be positive", name)
+	}
+	return parsed, nil
+}
+
+func parseRequiredBoundedInt(name, value string, min, max int) (int, error) {
+	parsed, err := parseRequiredPositiveInt(name, value)
+	if err != nil {
+		return 0, err
+	}
+	if parsed < min || parsed > max {
+		return 0, fmt.Errorf("%s must be between %d and %d", name, min, max)
 	}
 	return parsed, nil
 }
