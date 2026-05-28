@@ -110,7 +110,7 @@ func xlsxWorksheetXML(rows [][]string) string {
 	}
 	for rowIndex, row := range rows {
 		excelRow := rowIndex + 1
-		builder.WriteString(fmt.Sprintf(`<row r="%d">`, excelRow))
+		fmt.Fprintf(&builder, `<row r="%d">`, excelRow)
 		for colIndex, value := range row {
 			header := ""
 			if colIndex < len(headers) {

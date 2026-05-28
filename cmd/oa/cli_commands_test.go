@@ -3909,6 +3909,11 @@ func TestCLIReportsCommands(t *testing.T) {
 				_, _ = w.Write([]byte("xlsx-trial-balance"))
 				return
 			}
+			if r.URL.Query().Get("format") == "pdf" {
+				w.Header().Set("Content-Type", "application/pdf")
+				_, _ = w.Write([]byte("%PDF trial balance"))
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"tenant_id":     "tenant-1",
 				"as_of_date":    "2026-03-31T00:00:00Z",
@@ -3935,6 +3940,11 @@ func TestCLIReportsCommands(t *testing.T) {
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/balance-sheet":
 			require.Equal(t, "2026-03-31", r.URL.Query().Get("as_of"))
+			if r.URL.Query().Get("format") == "pdf" {
+				w.Header().Set("Content-Type", "application/pdf")
+				_, _ = w.Write([]byte("%PDF balance sheet"))
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"tenant_id":         "tenant-1",
 				"as_of_date":        "2026-03-31T00:00:00Z",
@@ -3951,6 +3961,11 @@ func TestCLIReportsCommands(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/income-statement":
 			require.Equal(t, "2026-01-01", r.URL.Query().Get("start"))
 			require.Equal(t, "2026-03-31", r.URL.Query().Get("end"))
+			if r.URL.Query().Get("format") == "pdf" {
+				w.Header().Set("Content-Type", "application/pdf")
+				_, _ = w.Write([]byte("%PDF income statement"))
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"tenant_id":      "tenant-1",
 				"start_date":     "2026-01-01T00:00:00Z",
@@ -3968,6 +3983,11 @@ func TestCLIReportsCommands(t *testing.T) {
 			if r.URL.Query().Get("format") == "csv" {
 				w.Header().Set("Content-Type", "text/csv")
 				_, _ = w.Write([]byte("section,code,description,description_et,amount,is_subtotal\nsummary,closing_cash,Closing cash,,500.00,true\n"))
+				return
+			}
+			if r.URL.Query().Get("format") == "pdf" {
+				w.Header().Set("Content-Type", "application/pdf")
+				_, _ = w.Write([]byte("%PDF cash flow"))
 				return
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -3991,6 +4011,11 @@ func TestCLIReportsCommands(t *testing.T) {
 				_, _ = w.Write([]byte("row_type,report_type,contact_name,total\ncontact,receivables,Acme,900.00\n"))
 				return
 			}
+			if r.URL.Query().Get("format") == "pdf" {
+				w.Header().Set("Content-Type", "application/pdf")
+				_, _ = w.Write([]byte("%PDF receivables aging"))
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"report_type": "receivables",
 				"as_of_date":  "2026-03-31T00:00:00Z",
@@ -4007,6 +4032,11 @@ func TestCLIReportsCommands(t *testing.T) {
 			if r.URL.Query().Get("format") == "xlsx" {
 				w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 				_, _ = w.Write([]byte("xlsx-balance-confirmations"))
+				return
+			}
+			if r.URL.Query().Get("format") == "pdf" {
+				w.Header().Set("Content-Type", "application/pdf")
+				_, _ = w.Write([]byte("%PDF balance confirmations"))
 				return
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -4031,6 +4061,11 @@ func TestCLIReportsCommands(t *testing.T) {
 			if r.URL.Query().Get("format") == "csv" {
 				w.Header().Set("Content-Type", "text/csv")
 				_, _ = w.Write([]byte("invoice_id,invoice_number,outstanding_amount\ninvoice-1,INV-1,900.00\n"))
+				return
+			}
+			if r.URL.Query().Get("format") == "pdf" {
+				w.Header().Set("Content-Type", "application/pdf")
+				_, _ = w.Write([]byte("%PDF balance confirmation"))
 				return
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -4085,6 +4120,15 @@ func TestCLIReportsCommands(t *testing.T) {
 	assert.Equal(t, []byte("xlsx-trial-balance"), trialBalanceXLSX)
 
 	stdout.Reset()
+	trialBalancePDFPath := filepath.Join(t.TempDir(), "trial-balance.pdf")
+	err = app.run(context.Background(), []string{"reports", "trial-balance", "--as-of", "2026-03-31", "--pdf", "--output", trialBalancePDFPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote trial balance PDF")
+	trialBalancePDF, err := os.ReadFile(trialBalancePDFPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("%PDF trial balance"), trialBalancePDF)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"reports", "account-balance", "--account-id", "acc-1", "--as-of", "2026-03-31"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "500.00")
@@ -4095,9 +4139,27 @@ func TestCLIReportsCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Balance sheet as of 2026-03-31")
 
 	stdout.Reset()
+	balanceSheetPDFPath := filepath.Join(t.TempDir(), "balance-sheet.pdf")
+	err = app.run(context.Background(), []string{"reports", "balance-sheet", "--as-of", "2026-03-31", "--pdf", "--output", balanceSheetPDFPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote balance sheet PDF")
+	balanceSheetPDF, err := os.ReadFile(balanceSheetPDFPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("%PDF balance sheet"), balanceSheetPDF)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"reports", "income-statement", "--start", "2026-01-01", "--end", "2026-03-31"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Net income: 500")
+
+	stdout.Reset()
+	incomeStatementPDFPath := filepath.Join(t.TempDir(), "income-statement.pdf")
+	err = app.run(context.Background(), []string{"reports", "income-statement", "--start", "2026-01-01", "--end", "2026-03-31", "--pdf", "--output", incomeStatementPDFPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote income statement PDF")
+	incomeStatementPDF, err := os.ReadFile(incomeStatementPDFPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("%PDF income statement"), incomeStatementPDF)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"reports", "cash-flow", "--start", "2026-01-01", "--end", "2026-03-31"})
@@ -4114,6 +4176,15 @@ func TestCLIReportsCommands(t *testing.T) {
 	assert.Contains(t, string(cashFlowCSV), "closing_cash")
 
 	stdout.Reset()
+	cashFlowPDFPath := filepath.Join(t.TempDir(), "cash-flow.pdf")
+	err = app.run(context.Background(), []string{"reports", "cash-flow", "--start", "2026-01-01", "--end", "2026-03-31", "--pdf", "--output", cashFlowPDFPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote cash flow PDF")
+	cashFlowPDF, err := os.ReadFile(cashFlowPDFPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("%PDF cash flow"), cashFlowPDF)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"reports", "aging", "--type", "receivables", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"report_type": "receivables"`)
@@ -4126,6 +4197,15 @@ func TestCLIReportsCommands(t *testing.T) {
 	agingCSV, err := os.ReadFile(agingCSVPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(agingCSV), "Acme")
+
+	stdout.Reset()
+	agingPDFPath := filepath.Join(t.TempDir(), "aging.pdf")
+	err = app.run(context.Background(), []string{"reports", "aging", "--type", "receivables", "--pdf", "--output", agingPDFPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote receivables aging PDF")
+	agingPDF, err := os.ReadFile(agingPDFPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("%PDF receivables aging"), agingPDF)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"reports", "balance-confirmations", "--type", "receivable", "--as-of", "2026-03-31"})
@@ -4142,6 +4222,15 @@ func TestCLIReportsCommands(t *testing.T) {
 	assert.Equal(t, []byte("xlsx-balance-confirmations"), confirmationSummaryXLSX)
 
 	stdout.Reset()
+	confirmationSummaryPDFPath := filepath.Join(t.TempDir(), "balance-confirmations.pdf")
+	err = app.run(context.Background(), []string{"reports", "balance-confirmations", "--type", "receivable", "--as-of", "2026-03-31", "--pdf", "--output", confirmationSummaryPDFPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote balance confirmations PDF")
+	confirmationSummaryPDF, err := os.ReadFile(confirmationSummaryPDFPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("%PDF balance confirmations"), confirmationSummaryPDF)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"reports", "balance-confirmation", "--contact-id", "contact-1", "--type", "RECEIVABLE", "--as-of", "2026-03-31"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "INV-1")
@@ -4154,6 +4243,15 @@ func TestCLIReportsCommands(t *testing.T) {
 	confirmationCSV, err := os.ReadFile(confirmationCSVPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(confirmationCSV), "INV-1")
+
+	stdout.Reset()
+	confirmationPDFPath := filepath.Join(t.TempDir(), "balance-confirmation.pdf")
+	err = app.run(context.Background(), []string{"reports", "balance-confirmation", "--contact-id", "contact-1", "--type", "RECEIVABLE", "--as-of", "2026-03-31", "--pdf", "--output", confirmationPDFPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote balance confirmation PDF")
+	confirmationPDF, err := os.ReadFile(confirmationPDFPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("%PDF balance confirmation"), confirmationPDF)
 }
 
 func TestCLIEmployeesCommands(t *testing.T) {

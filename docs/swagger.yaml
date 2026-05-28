@@ -9737,7 +9737,7 @@ paths:
         name: tenantID
         required: true
         type: string
-      - description: 'Response format: json, csv, or xlsx'
+      - description: 'Response format: json, csv, xlsx, or pdf'
         in: query
         name: format
         type: string
@@ -9745,6 +9745,7 @@ paths:
       - application/json
       - text/csv
       - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - application/pdf
       responses:
         "200":
           description: OK
@@ -9771,7 +9772,7 @@ paths:
         name: tenantID
         required: true
         type: string
-      - description: 'Response format: json, csv, or xlsx'
+      - description: 'Response format: json, csv, xlsx, or pdf'
         in: query
         name: format
         type: string
@@ -9779,6 +9780,7 @@ paths:
       - application/json
       - text/csv
       - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - application/pdf
       responses:
         "200":
           description: OK
@@ -9815,7 +9817,7 @@ paths:
         name: as_of_date
         required: true
         type: string
-      - description: 'Response format: json, csv, or xlsx'
+      - description: 'Response format: json, csv, xlsx, or pdf'
         in: query
         name: format
         type: string
@@ -9823,6 +9825,7 @@ paths:
       - application/json
       - text/csv
       - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - application/pdf
       responses:
         "200":
           description: OK
@@ -9872,7 +9875,7 @@ paths:
         name: as_of_date
         required: true
         type: string
-      - description: 'Response format: json, csv, or xlsx'
+      - description: 'Response format: json, csv, xlsx, or pdf'
         in: query
         name: format
         type: string
@@ -9880,6 +9883,7 @@ paths:
       - application/json
       - text/csv
       - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - application/pdf
       responses:
         "200":
           description: OK
@@ -9917,7 +9921,7 @@ paths:
         in: query
         name: as_of
         type: string
-      - description: 'Response format: json, csv, or xlsx'
+      - description: 'Response format: json, csv, xlsx, or pdf'
         in: query
         name: format
         type: string
@@ -9925,6 +9929,7 @@ paths:
       - application/json
       - text/csv
       - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - application/pdf
       responses:
         "200":
           description: OK
@@ -9969,7 +9974,7 @@ paths:
         name: end_date
         required: true
         type: string
-      - description: 'Response format: json, csv, or xlsx'
+      - description: 'Response format: json, csv, xlsx, or pdf'
         in: query
         name: format
         type: string
@@ -9977,6 +9982,7 @@ paths:
       - application/json
       - text/csv
       - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - application/pdf
       responses:
         "200":
           description: OK
@@ -10020,7 +10026,7 @@ paths:
         name: end
         required: true
         type: string
-      - description: 'Response format: json, csv, or xlsx'
+      - description: 'Response format: json, csv, xlsx, or pdf'
         in: query
         name: format
         type: string
@@ -10028,6 +10034,7 @@ paths:
       - application/json
       - text/csv
       - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - application/pdf
       responses:
         "200":
           description: OK
@@ -10065,7 +10072,7 @@ paths:
         in: query
         name: as_of_date
         type: string
-      - description: 'Response format: json, csv, or xlsx'
+      - description: 'Response format: json, csv, xlsx, or pdf'
         in: query
         name: format
         type: string
@@ -10073,6 +10080,7 @@ paths:
       - application/json
       - text/csv
       - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - application/pdf
       responses:
         "200":
           description: OK

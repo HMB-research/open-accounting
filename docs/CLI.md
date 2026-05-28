@@ -657,22 +657,28 @@ Bank transaction statuses are `UNMATCHED`, `MATCHED`, and `RECONCILED`. Follow-u
 go run ./cmd/oa reports trial-balance --as-of 2026-03-31
 go run ./cmd/oa reports trial-balance --as-of 2026-03-31 --csv --output ./trial-balance.csv
 go run ./cmd/oa reports trial-balance --as-of 2026-03-31 --xlsx --output ./trial-balance.xlsx
+go run ./cmd/oa reports trial-balance --as-of 2026-03-31 --pdf --output ./trial-balance.pdf
 go run ./cmd/oa reports account-balance --account-id <account-id> --as-of 2026-03-31
 go run ./cmd/oa reports balance-sheet --as-of 2026-03-31
 go run ./cmd/oa reports balance-sheet --as-of 2026-03-31 --csv --output ./balance-sheet.csv
 go run ./cmd/oa reports balance-sheet --as-of 2026-03-31 --xlsx --output ./balance-sheet.xlsx
+go run ./cmd/oa reports balance-sheet --as-of 2026-03-31 --pdf --output ./balance-sheet.pdf
 go run ./cmd/oa reports income-statement --start 2026-01-01 --end 2026-03-31
 go run ./cmd/oa reports income-statement --start 2026-01-01 --end 2026-03-31 --csv --output ./income-statement.csv
 go run ./cmd/oa reports income-statement --start 2026-01-01 --end 2026-03-31 --xlsx --output ./income-statement.xlsx
+go run ./cmd/oa reports income-statement --start 2026-01-01 --end 2026-03-31 --pdf --output ./income-statement.pdf
 go run ./cmd/oa reports cash-flow --start 2026-01-01 --end 2026-03-31
 go run ./cmd/oa reports cash-flow --start 2026-01-01 --end 2026-03-31 --csv --output ./cash-flow.csv
 go run ./cmd/oa reports cash-flow --start 2026-01-01 --end 2026-03-31 --xlsx --output ./cash-flow.xlsx
+go run ./cmd/oa reports cash-flow --start 2026-01-01 --end 2026-03-31 --pdf --output ./cash-flow.pdf
 go run ./cmd/oa reports aging --type receivables
 go run ./cmd/oa reports aging --type receivables --csv --output ./receivables-aging.csv
 go run ./cmd/oa reports aging --type payables --xlsx --output ./payables-aging.xlsx
+go run ./cmd/oa reports aging --type receivables --pdf --output ./receivables-aging.pdf
 go run ./cmd/oa reports aging --type payables --json
 go run ./cmd/oa reports balance-confirmations --type RECEIVABLE --as-of 2026-03-31
 go run ./cmd/oa reports balance-confirmations --type RECEIVABLE --as-of 2026-03-31 --xlsx --output ./balance-confirmations.xlsx
+go run ./cmd/oa reports balance-confirmations --type RECEIVABLE --as-of 2026-03-31 --pdf --output ./balance-confirmations.pdf
 go run ./cmd/oa reports balance-confirmation \
   --contact-id <contact-id> \
   --type RECEIVABLE \
@@ -683,9 +689,15 @@ go run ./cmd/oa reports balance-confirmation \
   --as-of 2026-03-31 \
   --csv \
   --output ./balance-confirmation.csv
+go run ./cmd/oa reports balance-confirmation \
+  --contact-id <contact-id> \
+  --type RECEIVABLE \
+  --as-of 2026-03-31 \
+  --pdf \
+  --output ./balance-confirmation.pdf
 ```
 
-Every report command supports `--json` for automation. Core statement, aging, and balance-confirmation commands also support backend CSV export with `--csv` and XLSX export with `--xlsx`; omit `--output` to stream the export bytes to stdout.
+Every report command supports `--json` for automation. Core statement, aging, and balance-confirmation commands also support backend CSV export with `--csv`, XLSX export with `--xlsx`, and PDF export with `--pdf`; omit `--output` to stream the export bytes to stdout.
 
 ## Documents
 

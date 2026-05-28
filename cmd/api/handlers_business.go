@@ -124,10 +124,10 @@ func (h *Handlers) GetCashFlowChart(w http.ResponseWriter, r *http.Request) {
 // @Summary Get receivables aging report
 // @Description Get aging breakdown for accounts receivable
 // @Tags Reports
-// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
-// @Param format query string false "Response format: json, csv, or xlsx"
+// @Param format query string false "Response format: json, csv, xlsx, or pdf"
 // @Success 200 {object} analytics.AgingReport
 // @Failure 500 {object} object{error=string}
 // @Router /tenants/{tenantID}/reports/aging/receivables [get]
@@ -165,6 +165,15 @@ func (h *Handlers) GetReceivablesAging(w http.ResponseWriter, r *http.Request) {
 		respondReportXLSX(w, fmt.Sprintf("receivables-aging-%s.xlsx", reportExportDate(report.AsOfDate)), content)
 		return
 	}
+	if format == "pdf" {
+		content, err := agingReportPDF(report)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export aging PDF")
+			return
+		}
+		respondReportPDF(w, fmt.Sprintf("receivables-aging-%s.pdf", reportExportDate(report.AsOfDate)), content)
+		return
+	}
 
 	respondJSON(w, http.StatusOK, report)
 }
@@ -173,10 +182,10 @@ func (h *Handlers) GetReceivablesAging(w http.ResponseWriter, r *http.Request) {
 // @Summary Get payables aging report
 // @Description Get aging breakdown for accounts payable
 // @Tags Reports
-// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
-// @Param format query string false "Response format: json, csv, or xlsx"
+// @Param format query string false "Response format: json, csv, xlsx, or pdf"
 // @Success 200 {object} analytics.AgingReport
 // @Failure 500 {object} object{error=string}
 // @Router /tenants/{tenantID}/reports/aging/payables [get]
@@ -212,6 +221,15 @@ func (h *Handlers) GetPayablesAging(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		respondReportXLSX(w, fmt.Sprintf("payables-aging-%s.xlsx", reportExportDate(report.AsOfDate)), content)
+		return
+	}
+	if format == "pdf" {
+		content, err := agingReportPDF(report)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export aging PDF")
+			return
+		}
+		respondReportPDF(w, fmt.Sprintf("payables-aging-%s.pdf", reportExportDate(report.AsOfDate)), content)
 		return
 	}
 

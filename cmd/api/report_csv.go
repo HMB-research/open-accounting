@@ -17,10 +17,10 @@ func reportResponseFormat(r *http.Request) (string, error) {
 		return "json", nil
 	}
 	switch format {
-	case "json", "csv", "xlsx":
+	case "json", "csv", "xlsx", "pdf":
 		return format, nil
 	default:
-		return "", fmt.Errorf("format must be json, csv, or xlsx")
+		return "", fmt.Errorf("format must be json, csv, xlsx, or pdf")
 	}
 }
 
@@ -33,6 +33,13 @@ func respondReportCSV(w http.ResponseWriter, fileName string, content []byte) {
 
 func respondReportXLSX(w http.ResponseWriter, fileName string, content []byte) {
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileName))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(content)
+}
+
+func respondReportPDF(w http.ResponseWriter, fileName string, content []byte) {
+	w.Header().Set("Content-Type", "application/pdf")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileName))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(content)
