@@ -400,6 +400,52 @@ go run ./cmd/oa payments unallocated --type RECEIVED
 
 Use `--allocate invoice-id:amount` repeatedly on `payments create` to allocate a new payment to multiple invoices. Payment types are `RECEIVED` and `MADE`; `--json` is available on list, create, get, allocate, and unallocated commands.
 
+## Banking
+
+```bash
+go run ./cmd/oa banking accounts list --active-only
+go run ./cmd/oa banking accounts create \
+  --name "Main bank" \
+  --account-number EE471000001020145685 \
+  --bank-name LHV \
+  --swift-code LHVBEE22 \
+  --currency EUR \
+  --gl-account-id <asset-account-id> \
+  --default
+go run ./cmd/oa banking accounts get --id <bank-account-id>
+go run ./cmd/oa banking accounts update --id <bank-account-id> --bank-name SEB --active true
+go run ./cmd/oa banking accounts delete --id <bank-account-id>
+
+go run ./cmd/oa banking transactions list \
+  --account-id <bank-account-id> \
+  --status UNMATCHED \
+  --from 2026-03-01 \
+  --to 2026-03-31
+go run ./cmd/oa banking transactions import --account-id <bank-account-id> --file ./bank.csv
+go run ./cmd/oa banking transactions import-history --account-id <bank-account-id>
+go run ./cmd/oa banking transactions get --id <transaction-id>
+go run ./cmd/oa banking transactions suggestions --id <transaction-id>
+go run ./cmd/oa banking transactions match --id <transaction-id> --payment-id <payment-id>
+go run ./cmd/oa banking transactions unmatch --id <transaction-id>
+go run ./cmd/oa banking transactions review \
+  --id <transaction-id> \
+  --follow-up-status EVIDENCE_REQUIRED \
+  --review-note "Request receipt"
+go run ./cmd/oa banking transactions create-payment --id <transaction-id>
+go run ./cmd/oa banking transactions auto-match --account-id <bank-account-id> --min-confidence 0.80
+
+go run ./cmd/oa banking reconciliations list --account-id <bank-account-id>
+go run ./cmd/oa banking reconciliations create \
+  --account-id <bank-account-id> \
+  --statement-date 2026-03-31 \
+  --opening-balance 0.00 \
+  --closing-balance 100.00
+go run ./cmd/oa banking reconciliations get --id <reconciliation-id>
+go run ./cmd/oa banking reconciliations complete --id <reconciliation-id>
+```
+
+Bank transaction statuses are `UNMATCHED`, `MATCHED`, and `RECONCILED`. Follow-up statuses are `NONE`, `EVIDENCE_REQUIRED`, and `READY_TO_MATCH`. Bank CSV imports accept comma, semicolon, or tab delimiters with headers such as `date`, `amount`, `description`, `reference`, `counterparty_name`, `counterparty_account`, `value_date`, and `external_id`. Use `--json` on banking read and mutation commands for automation.
+
 ## Reports
 
 ```bash
@@ -519,6 +565,14 @@ year,employee_number,absence_type_code,entitled_days,carryover_days,used_days,pe
 account_code,debit,credit,description
 1000,1500.00,0,Cash opening balance
 3000,0,1500.00,Owner equity opening balance
+```
+
+### Bank transactions
+
+```csv
+date,amount,description,reference,counterparty_name,counterparty_account,value_date,external_id
+2026-03-15,100.00,Client payment,REF-1,Acme,EE111,2026-03-16,bank-ext-1
+2026-03-16,-25.50,Bank fee,FEE-1,LHV,EE222,2026-03-16,bank-ext-2
 ```
 
 ## Automation without stored config
