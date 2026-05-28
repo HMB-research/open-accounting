@@ -3,10 +3,10 @@ package database
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/testutil"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
@@ -17,10 +17,8 @@ import (
 func setupTestPool(t *testing.T) *Pool {
 	t.Helper()
 
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("DATABASE_URL not set, skipping integration test")
-	}
+	basePool := testutil.SetupTestDB(t)
+	dbURL := basePool.Config().ConnString()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

@@ -4,10 +4,10 @@ package database
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -15,11 +15,7 @@ import (
 
 func getTestDatabaseURL(t *testing.T) string {
 	t.Helper()
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("DATABASE_URL not set, skipping integration test")
-	}
-	return dbURL
+	return testutil.SetupTestDB(t).Config().ConnString()
 }
 
 func TestGormDB_New(t *testing.T) {
