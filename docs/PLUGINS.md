@@ -22,7 +22,7 @@ Open Accounting supports a plugin marketplace that allows extending functionalit
 2. **Git-Based Distribution**: Plugins are cloned from repositories, no package registry
 3. **Two-Level Enablement**: Installed instance-wide by admins, enabled per-tenant by users
 4. **Permission-Based Security**: Plugins declare required permissions, users approve them
-5. **Full-Stack Support**: Plugins can include backend, frontend, and database components
+5. **Full-Stack Manifest Support**: Plugins can declare backend, frontend, and database components; backend hook/route execution is not yet available in the runtime.
 
 ### Plugin Lifecycle
 
@@ -34,7 +34,7 @@ Not Installed → Installed → Enabled ↔ Disabled → Uninstalled
 
 - **Not Installed**: Plugin exists in registry but not on this instance
 - **Installed**: Plugin code downloaded, awaiting enablement
-- **Enabled**: Plugin active, hooks registered, routes available
+- **Enabled**: Plugin active for supported capabilities. Plugins declaring backend hooks or routes are rejected until a backend plugin runtime exists.
 - **Disabled**: Plugin present but inactive
 - **Failed**: Plugin encountered an error during loading
 
@@ -218,7 +218,9 @@ settings:
 
 ## Event Hooks
 
-Plugins can subscribe to system events to react to changes:
+Backend event hooks are currently manifest-level only. The manifest parser and permission checks validate hook declarations, but the application does not yet load or execute plugin backend code. Enabling a plugin that declares backend hooks or routes fails explicitly so operators do not mistake a no-op plugin for a running integration.
+
+Future backend runtimes are expected to support subscriptions to these system events:
 
 ### Available Events
 

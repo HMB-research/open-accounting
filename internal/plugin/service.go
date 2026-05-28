@@ -360,6 +360,10 @@ func (s *Service) IsPluginEnabledForTenant(ctx context.Context, tenantID, plugin
 // Internal methods
 
 func (s *Service) loadPlugin(plugin *Plugin, manifest *Manifest) error {
+	if err := validateSupportedPluginRuntime(manifest); err != nil {
+		return err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -377,6 +381,25 @@ func (s *Service) loadPlugin(plugin *Plugin, manifest *Manifest) error {
 	}
 
 	return nil
+}
+
+func validateSupportedPluginRuntime(manifest *Manifest) error {
+	if manifest.Backend == nil {
+		return nil
+	}
+
+	hasHooks := len(manifest.Backend.Hooks) > 0
+	hasRoutes := len(manifest.Backend.Routes) > 0
+	switch {
+	case hasHooks && hasRoutes:
+		return fmt.Errorf("backend hooks and routes are declared but plugin backend runtime execution is not implemented")
+	case hasHooks:
+		return fmt.Errorf("backend hooks are declared but plugin backend runtime execution is not implemented")
+	case hasRoutes:
+		return fmt.Errorf("backend routes are declared but plugin backend runtime execution is not implemented")
+	default:
+		return nil
+	}
 }
 
 func (s *Service) unloadPlugin(name string) {
