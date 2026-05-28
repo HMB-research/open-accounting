@@ -22,6 +22,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tax"
@@ -182,6 +183,68 @@ func (c *apiClient) importInvoices(ctx context.Context, tenantID string, req *in
 		return nil, err
 	}
 	return &resp, nil
+}
+
+func (c *apiClient) listPayments(ctx context.Context, tenantID string, filter payments.PaymentFilter) ([]payments.Payment, error) {
+	values := url.Values{}
+	if filter.PaymentType != "" {
+		values.Set("type", string(filter.PaymentType))
+	}
+	if strings.TrimSpace(filter.PaymentMethod) != "" {
+		values.Set("method", strings.TrimSpace(filter.PaymentMethod))
+	}
+	if strings.TrimSpace(filter.ContactID) != "" {
+		values.Set("contact_id", strings.TrimSpace(filter.ContactID))
+	}
+	if filter.FromDate != nil {
+		values.Set("from_date", filter.FromDate.Format("2006-01-02"))
+	}
+	if filter.ToDate != nil {
+		values.Set("to_date", filter.ToDate.Format("2006-01-02"))
+	}
+
+	var resp []payments.Payment
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "payments"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createPayment(ctx context.Context, tenantID string, req *payments.CreatePaymentRequest) (*payments.Payment, error) {
+	var resp payments.Payment
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "payments"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getPayment(ctx context.Context, tenantID, paymentID string) (*payments.Payment, error) {
+	var resp payments.Payment
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "payments", paymentID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) allocatePayment(ctx context.Context, tenantID, paymentID string, req *payments.AllocationRequest) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "payments", paymentID, "allocate"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) listUnallocatedPayments(ctx context.Context, tenantID string, paymentType payments.PaymentType) ([]payments.Payment, error) {
+	values := url.Values{}
+	if paymentType != "" {
+		values.Set("type", string(paymentType))
+	}
+
+	var resp []payments.Payment
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "payments", "unallocated"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
 }
 
 func (c *apiClient) importOpeningBalances(ctx context.Context, tenantID string, req *accounting.ImportOpeningBalancesRequest) (*accounting.ImportOpeningBalancesResult, error) {

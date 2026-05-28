@@ -20,6 +20,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
@@ -67,6 +68,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runTax(ctx, args[1:])
 	case "invoices":
 		return a.runInvoices(ctx, args[1:])
+	case "payments":
+		return a.runPayments(ctx, args[1:])
 	case "reports":
 		return a.runReports(ctx, args[1:])
 	case "documents":
@@ -117,6 +120,11 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  tax kmd generate          Generate KMD declaration")
 	_, _ = fmt.Fprintln(a.stdout, "  tax kmd export-xml        Export KMD XML")
 	_, _ = fmt.Fprintln(a.stdout, "  invoices import           Import invoices from CSV")
+	_, _ = fmt.Fprintln(a.stdout, "  payments list             List payments")
+	_, _ = fmt.Fprintln(a.stdout, "  payments create           Create a payment")
+	_, _ = fmt.Fprintln(a.stdout, "  payments get              Show one payment")
+	_, _ = fmt.Fprintln(a.stdout, "  payments allocate         Allocate a payment to an invoice")
+	_, _ = fmt.Fprintln(a.stdout, "  payments unallocated      List unallocated payments")
 	_, _ = fmt.Fprintln(a.stdout, "  reports trial-balance     Show trial balance")
 	_, _ = fmt.Fprintln(a.stdout, "  reports account-balance   Show one account balance")
 	_, _ = fmt.Fprintln(a.stdout, "  reports balance-sheet     Show balance sheet")
@@ -581,6 +589,205 @@ func (a *cliApp) runInvoices(ctx context.Context, args []string) error {
 
 	default:
 		return fmt.Errorf("unknown invoices subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runPayments(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("payments subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("payments list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		paymentTypeFlag := fs.String("type", "", "Payment type: RECEIVED or MADE")
+		method := fs.String("method", "", "Payment method")
+		contactID := fs.String("contact-id", "", "Contact id")
+		fromDate := fs.String("from", "", "From date in YYYY-MM-DD")
+		toDate := fs.String("to", "", "To date in YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		paymentType, err := parseOptionalPaymentType(*paymentTypeFlag)
+		if err != nil {
+			return err
+		}
+		fromDateValue, err := parseOptionalDate("from", *fromDate)
+		if err != nil {
+			return err
+		}
+		toDateValue, err := parseOptionalDate("to", *toDate)
+		if err != nil {
+			return err
+		}
+
+		paymentsList, err := client.listPayments(ctx, cfg.TenantID, payments.PaymentFilter{
+			PaymentType:   paymentType,
+			PaymentMethod: strings.TrimSpace(*method),
+			ContactID:     strings.TrimSpace(*contactID),
+			FromDate:      fromDateValue,
+			ToDate:        toDateValue,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, paymentsList)
+		}
+		printPaymentsTable(a.stdout, paymentsList)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("payments create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		paymentTypeFlag := fs.String("type", "", "Payment type: RECEIVED or MADE")
+		contactID := fs.String("contact-id", "", "Contact id")
+		paymentDate := fs.String("date", "", "Payment date in YYYY-MM-DD")
+		amountFlag := fs.String("amount", "", "Payment amount")
+		currency := fs.String("currency", "EUR", "Currency code")
+		exchangeRateFlag := fs.String("exchange-rate", "1", "Exchange rate to base currency")
+		method := fs.String("method", "", "Payment method")
+		bankAccount := fs.String("bank-account", "", "Bank account")
+		reference := fs.String("reference", "", "Reference")
+		notes := fs.String("notes", "", "Notes")
+		allocations := allocationFlags{}
+		fs.Var(&allocations, "allocate", "Allocation in invoice-id:amount form; repeatable")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		paymentType, err := parseRequiredPaymentType(*paymentTypeFlag)
+		if err != nil {
+			return err
+		}
+		amount, err := parseRequiredPositiveDecimal("amount", *amountFlag)
+		if err != nil {
+			return err
+		}
+		paymentDateValue := time.Time{}
+		if strings.TrimSpace(*paymentDate) != "" {
+			parsed, err := time.Parse("2006-01-02", strings.TrimSpace(*paymentDate))
+			if err != nil {
+				return fmt.Errorf("parse date: %w", err)
+			}
+			paymentDateValue = parsed
+		}
+		exchangeRate, err := parseRequiredPositiveDecimal("exchange-rate", *exchangeRateFlag)
+		if err != nil {
+			return err
+		}
+
+		payment, err := client.createPayment(ctx, cfg.TenantID, &payments.CreatePaymentRequest{
+			PaymentType:   paymentType,
+			ContactID:     optionalStringPtr(*contactID),
+			PaymentDate:   paymentDateValue,
+			Amount:        amount,
+			Currency:      strings.ToUpper(strings.TrimSpace(*currency)),
+			ExchangeRate:  exchangeRate,
+			PaymentMethod: strings.TrimSpace(*method),
+			BankAccount:   strings.TrimSpace(*bankAccount),
+			Reference:     strings.TrimSpace(*reference),
+			Notes:         strings.TrimSpace(*notes),
+			Allocations:   []payments.AllocationRequest(allocations),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, payment)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created payment %s (%s)\n", payment.PaymentNumber, payment.ID)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("payments get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		paymentID := fs.String("id", "", "Payment id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*paymentID) == "" {
+			return errors.New("id is required")
+		}
+
+		payment, err := client.getPayment(ctx, cfg.TenantID, strings.TrimSpace(*paymentID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, payment)
+		}
+		printPayment(a.stdout, payment)
+		return nil
+
+	case "allocate":
+		fs := flag.NewFlagSet("payments allocate", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		paymentID := fs.String("id", "", "Payment id")
+		invoiceID := fs.String("invoice-id", "", "Invoice id")
+		amountFlag := fs.String("amount", "", "Allocation amount")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*paymentID) == "" {
+			return errors.New("id is required")
+		}
+		if strings.TrimSpace(*invoiceID) == "" {
+			return errors.New("invoice-id is required")
+		}
+		amount, err := parseRequiredPositiveDecimal("amount", *amountFlag)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.allocatePayment(ctx, cfg.TenantID, strings.TrimSpace(*paymentID), &payments.AllocationRequest{
+			InvoiceID: strings.TrimSpace(*invoiceID),
+			Amount:    amount,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Allocated %s to invoice %s for payment %s\n", amount.String(), strings.TrimSpace(*invoiceID), strings.TrimSpace(*paymentID))
+		return nil
+
+	case "unallocated":
+		fs := flag.NewFlagSet("payments unallocated", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		paymentTypeFlag := fs.String("type", "RECEIVED", "Payment type: RECEIVED or MADE")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		paymentType, err := parseRequiredPaymentType(*paymentTypeFlag)
+		if err != nil {
+			return err
+		}
+
+		paymentsList, err := client.listUnallocatedPayments(ctx, cfg.TenantID, paymentType)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, paymentsList)
+		}
+		printPaymentsTable(a.stdout, paymentsList)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown payments subcommand %q", args[0])
 	}
 }
 
@@ -1681,6 +1888,17 @@ func parseYearMonthFlags(yearValue, monthValue string) (int, int, error) {
 	return year, month, nil
 }
 
+func parseOptionalDate(name, value string) (*time.Time, error) {
+	if strings.TrimSpace(value) == "" {
+		return nil, nil
+	}
+	parsed, err := time.Parse("2006-01-02", strings.TrimSpace(value))
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", name, err)
+	}
+	return &parsed, nil
+}
+
 func parseRequiredPositiveInt(name, value string) (int, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
@@ -1694,6 +1912,78 @@ func parseRequiredPositiveInt(name, value string) (int, error) {
 		return 0, fmt.Errorf("%s must be positive", name)
 	}
 	return parsed, nil
+}
+
+func parseRequiredPositiveDecimal(name, value string) (decimal.Decimal, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return decimal.Zero, fmt.Errorf("%s is required", name)
+	}
+	parsed, err := decimal.NewFromString(trimmed)
+	if err != nil {
+		return decimal.Zero, fmt.Errorf("parse %s: %w", name, err)
+	}
+	if parsed.LessThanOrEqual(decimal.Zero) {
+		return decimal.Zero, fmt.Errorf("%s must be positive", name)
+	}
+	return parsed, nil
+}
+
+func parseOptionalPaymentType(value string) (payments.PaymentType, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+	return parseRequiredPaymentType(value)
+}
+
+func parseRequiredPaymentType(value string) (payments.PaymentType, error) {
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	switch payments.PaymentType(normalized) {
+	case payments.PaymentTypeReceived, payments.PaymentTypeMade:
+		return payments.PaymentType(normalized), nil
+	default:
+		if normalized == "" {
+			return "", errors.New("type is required")
+		}
+		return "", fmt.Errorf("invalid payment type %q", value)
+	}
+}
+
+func optionalStringPtr(value string) *string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+type allocationFlags []payments.AllocationRequest
+
+func (a *allocationFlags) Set(value string) error {
+	parts := strings.SplitN(strings.TrimSpace(value), ":", 2)
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return errors.New("allocate must be in invoice-id:amount form")
+	}
+	amount, err := parseRequiredPositiveDecimal("allocation amount", parts[1])
+	if err != nil {
+		return err
+	}
+	*a = append(*a, payments.AllocationRequest{
+		InvoiceID: strings.TrimSpace(parts[0]),
+		Amount:    amount,
+	})
+	return nil
+}
+
+func (a *allocationFlags) String() string {
+	if a == nil {
+		return ""
+	}
+	values := make([]string, 0, len(*a))
+	for _, allocation := range *a {
+		values = append(values, allocation.InvoiceID+":"+allocation.Amount.String())
+	}
+	return strings.Join(values, ",")
 }
 
 func writeExportOutput(w io.Writer, outputPath string, content []byte, description string) error {

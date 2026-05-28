@@ -14,6 +14,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tax"
@@ -90,6 +91,51 @@ func TestPrintTables(t *testing.T) {
 	}})
 	assert.Contains(t, documentBuf.String(), "ENTITY")
 	assert.Contains(t, documentBuf.String(), "statement.pdf")
+}
+
+func TestPrintPaymentOutputs(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	contactID := "contact-1"
+	payment := payments.Payment{
+		ID:             "pay-1",
+		TenantID:       "tenant-1",
+		PaymentNumber:  "PMT-00001",
+		PaymentType:    payments.PaymentTypeReceived,
+		ContactID:      &contactID,
+		PaymentDate:    now,
+		Amount:         decimal.NewFromInt(100),
+		Currency:       "EUR",
+		ExchangeRate:   decimal.NewFromInt(1),
+		BaseAmount:     decimal.NewFromInt(100),
+		PaymentMethod:  "BANK_TRANSFER",
+		BankAccount:    "EE471000001020145685",
+		Reference:      "REF-1",
+		Notes:          "March receipt",
+		JournalEntryID: nil,
+		CreatedAt:      now,
+		CreatedBy:      "user-1",
+		Allocations: []payments.PaymentAllocation{{
+			ID:        "alloc-1",
+			TenantID:  "tenant-1",
+			PaymentID: "pay-1",
+			InvoiceID: "inv-1",
+			Amount:    decimal.NewFromInt(60),
+			CreatedAt: now,
+		}},
+	}
+
+	var paymentsBuf bytes.Buffer
+	printPaymentsTable(&paymentsBuf, []payments.Payment{payment})
+	assert.Contains(t, paymentsBuf.String(), "PMT-00001")
+	assert.Contains(t, paymentsBuf.String(), "40")
+
+	var paymentBuf bytes.Buffer
+	printPayment(&paymentBuf, &payment)
+	assert.Contains(t, paymentBuf.String(), "Payment PMT-00001")
+	assert.Contains(t, paymentBuf.String(), "Unallocated: 40")
+	assert.Contains(t, paymentBuf.String(), "inv-1")
 }
 
 func TestPrintPayrollOutputs(t *testing.T) {
