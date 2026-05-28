@@ -329,6 +329,15 @@ func TestReminderAndCostCenterHandlers(t *testing.T) {
 	h.CreateCostCenter(rr, req)
 	assert.Equal(t, http.StatusCreated, rr.Code)
 
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/cost-centers/import", map[string]interface{}{
+		"file_name":   "cost-centers.csv",
+		"csv_content": "code,name,budget_amount,budget_period\nOPS-2,Operations 2,500.00,MONTHLY\n",
+	}, nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.ImportCostCenters(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+
 	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1/cost-centers/cc-1", map[string]interface{}{
 		"code": "ADMIN",
 		"name": "Admin Updated",

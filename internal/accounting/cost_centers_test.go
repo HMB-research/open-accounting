@@ -235,6 +235,62 @@ func TestCostCenterService_CreateCostCenter(t *testing.T) {
 	assert.Equal(t, BudgetPeriodAnnual, cc2.BudgetPeriod)
 }
 
+func TestCostCenterService_ImportCostCentersCSV(t *testing.T) {
+	ts := newTestCostCenterService()
+	ctx := context.Background()
+
+	ts.repo.CostCenters["cc-existing"] = &CostCenter{
+		ID:       "cc-existing",
+		TenantID: "tenant-1",
+		Code:     "CC999",
+		Name:     "Existing",
+		IsActive: true,
+	}
+
+	result, err := ts.svc.ImportCostCentersCSV(ctx, "test_schema", "tenant-1", &ImportCostCentersRequest{
+		FileName: "cost-centers.csv",
+		CSVContent: "code,name,description,parent_code,budget_amount,budget_period,status\n" +
+			"CC-CHILD,Child,Child team,CC-PARENT,500.00,MONTHLY,ACTIVE\n" +
+			"CC-PARENT,Parent,Parent team,,1000.00,ANNUAL,ACTIVE\n" +
+			"CC999,Duplicate,Duplicate team,,100.00,MONTHLY,ACTIVE\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "cost-centers.csv", result.FileName)
+	assert.Equal(t, 3, result.RowsProcessed)
+	assert.Equal(t, 2, result.CostCentersCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, 4, result.Errors[0].Row)
+	assert.Contains(t, result.Errors[0].Message, "duplicate code")
+
+	var parent *CostCenter
+	var child *CostCenter
+	for _, costCenter := range ts.repo.CostCenters {
+		switch costCenter.Code {
+		case "CC-PARENT":
+			parent = costCenter
+		case "CC-CHILD":
+			child = costCenter
+		}
+	}
+
+	require.NotNil(t, parent)
+	assert.Equal(t, "Parent", parent.Name)
+	require.NotNil(t, parent.BudgetAmount)
+	assert.True(t, parent.BudgetAmount.Equal(decimal.RequireFromString("1000.00")))
+	assert.Equal(t, BudgetPeriodAnnual, parent.BudgetPeriod)
+
+	require.NotNil(t, child)
+	assert.Equal(t, "Child", child.Name)
+	require.NotNil(t, child.ParentID)
+	assert.Equal(t, parent.ID, *child.ParentID)
+	require.NotNil(t, child.BudgetAmount)
+	assert.True(t, child.BudgetAmount.Equal(decimal.RequireFromString("500.00")))
+	assert.Equal(t, BudgetPeriodMonthly, child.BudgetPeriod)
+	assert.True(t, child.IsActive)
+}
+
 func TestCostCenterService_GetCostCenter(t *testing.T) {
 	ts := newTestCostCenterService()
 	ctx := context.Background()

@@ -4443,6 +4443,63 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/cost-centers/import": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Import cost center master data from CSV and resolve parent cost centers by code",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Cost Centers"
+                ],
+                "summary": "Import cost centers",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "CSV import payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ImportCostCentersRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ImportCostCentersResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/email-log": {
             "get": {
                 "security": [
@@ -11818,6 +11875,57 @@ const docTemplate = `{
             }
         },
         "github_com_HMB-research_open-accounting_internal_accounting.ImportAccountsRowError": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "row": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.ImportCostCentersRequest": {
+            "type": "object",
+            "properties": {
+                "csv_content": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.ImportCostCentersResult": {
+            "type": "object",
+            "properties": {
+                "cost_centers_created": {
+                    "type": "integer"
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ImportCostCentersRowError"
+                    }
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "rows_processed": {
+                    "type": "integer"
+                },
+                "rows_skipped": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.ImportCostCentersRowError": {
             "type": "object",
             "properties": {
                 "code": {

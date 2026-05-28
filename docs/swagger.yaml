@@ -196,6 +196,39 @@ definitions:
       row:
         type: integer
     type: object
+  github_com_HMB-research_open-accounting_internal_accounting.ImportCostCentersRequest:
+    properties:
+      csv_content:
+        type: string
+      file_name:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.ImportCostCentersResult:
+    properties:
+      cost_centers_created:
+        type: integer
+      errors:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ImportCostCentersRowError'
+        type: array
+      file_name:
+        type: string
+      rows_processed:
+        type: integer
+      rows_skipped:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.ImportCostCentersRowError:
+    properties:
+      code:
+        type: string
+      message:
+        type: string
+      name:
+        type: string
+      row:
+        type: integer
+    type: object
   github_com_HMB-research_open-accounting_internal_accounting.ImportOpeningBalancesRequest:
     properties:
       csv_content:
@@ -6650,6 +6683,43 @@ paths:
       summary: Import contacts
       tags:
       - Contacts
+  /tenants/{tenantID}/cost-centers/import:
+    post:
+      consumes:
+      - application/json
+      description: Import cost center master data from CSV and resolve parent cost
+        centers by code
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: CSV import payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ImportCostCentersRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ImportCostCentersResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Import cost centers
+      tags:
+      - Cost Centers
   /tenants/{tenantID}/email-log:
     get:
       description: Get the email sending history for a tenant

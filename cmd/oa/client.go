@@ -1620,6 +1620,14 @@ func (c *apiClient) createCostCenter(ctx context.Context, tenantID string, req *
 	return &resp, nil
 }
 
+func (c *apiClient) importCostCenters(ctx context.Context, tenantID string, req *accounting.ImportCostCentersRequest) (*accounting.ImportCostCentersResult, error) {
+	var resp accounting.ImportCostCentersResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "cost-centers", "import"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) getCostCenter(ctx context.Context, tenantID, costCenterID string) (*accounting.CostCenter, error) {
 	var resp accounting.CostCenter
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "cost-centers", costCenterID), nil, c.apiToken, &resp); err != nil {

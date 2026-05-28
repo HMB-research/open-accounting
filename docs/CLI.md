@@ -493,6 +493,7 @@ go run ./cmd/oa cost-centers create \
   --name Sales \
   --budget-amount 1000.00 \
   --budget-period MONTHLY
+go run ./cmd/oa cost-centers import --file ./cost-centers.csv
 go run ./cmd/oa cost-centers get --id <cost-center-id>
 go run ./cmd/oa cost-centers update \
   --id <cost-center-id> \
@@ -503,7 +504,7 @@ go run ./cmd/oa cost-centers report --start 2026-03-01 --end 2026-03-31
 go run ./cmd/oa cost-centers delete --id <cost-center-id>
 ```
 
-Budget periods are `MONTHLY`, `QUARTERLY`, and `ANNUAL`. Use `--json` on cost-center read and mutation commands for automation.
+Budget periods are `MONTHLY`, `QUARTERLY`, and `ANNUAL`. Cost center CSV imports require `code` and `name`, with optional `parent_code`, `budget_amount`, `budget_period`, `status`, and `is_active`. Use `--json` on cost-center read and mutation commands for automation.
 
 ## Analytics
 
