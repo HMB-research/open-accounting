@@ -279,8 +279,9 @@ open-accounting/
 |----------|-------------|---------|
 | `DATABASE_URL` | PostgreSQL connection string | *Required* |
 | `PORT` | API server port | `8080` |
-| `JWT_SECRET` | JWT signing key | *Required in production* |
-| `ALLOWED_ORIGINS` | CORS allowed origins | `localhost:5173,localhost:3000` |
+| `APP_ENV` | Set to `production` to enable production config validation | unset |
+| `JWT_SECRET` | JWT signing key, min 32 chars when `APP_ENV=production` | development-only fallback outside production |
+| `ALLOWED_ORIGINS` | CORS allowed origins; required in production | local dev origins outside production |
 
 ---
 
@@ -320,7 +321,7 @@ open-accounting/
 ### Still missing for reliable production use
 - [ ] Historical payroll and broader external migration imports
 - [ ] Broader document evidence policy enforcement
-- [ ] Backup/restore verification and stronger auth/session controls
+- [ ] Backup/restore verification and stronger session controls
 - [ ] E-invoice, direct bank feeds, SEPA initiation, and automatic e-MTA submission
 
 ---

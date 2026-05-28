@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"os/signal"
@@ -53,6 +54,10 @@ type Config struct {
 	AllowedOrigins []string
 	DocumentsDir   string
 }
+
+var defaultDevelopmentOrigins = []string{"http://localhost:5173", "http://localhost:3000"}
+
+const developmentJWTSecret = "development-only-insecure-jwt-secret" //nolint:gosec // Explicitly development-only fallback rejected in production mode.
 
 func main() {
 	// Configure logging
@@ -220,23 +225,21 @@ func loadConfig() *Config {
 	}
 
 	jwtSecret := os.Getenv("JWT_SECRET")
-	if jwtSecret == "" {
-		jwtSecret = "change-me-in-production"
-		log.Warn().Msg("Using default JWT_SECRET - change this in production!")
+	production := isProductionEnvironment()
+	resolvedJWTSecret, err := resolveJWTSecret(jwtSecret, production)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Invalid JWT_SECRET configuration")
+	}
+	if strings.TrimSpace(jwtSecret) == "" {
+		log.Warn().Msg("Using development-only JWT_SECRET; set JWT_SECRET for shared or production deployments")
 	}
 
 	// ALLOWED_ORIGINS supports comma-separated list of origins
 	// Example: "https://app.example.com,https://admin.example.com"
 	origins := os.Getenv("ALLOWED_ORIGINS")
-	allowedOrigins := []string{"http://localhost:5173", "http://localhost:3000"}
-	if origins != "" {
-		// Split by comma and trim whitespace
-		for _, origin := range strings.Split(origins, ",") {
-			origin = strings.TrimSpace(origin)
-			if origin != "" {
-				allowedOrigins = append(allowedOrigins, origin)
-			}
-		}
+	allowedOrigins, err := resolveAllowedOrigins(origins, production)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Invalid ALLOWED_ORIGINS configuration")
 	}
 	log.Info().Strs("allowed_origins", allowedOrigins).Msg("CORS configuration")
 
@@ -248,12 +251,58 @@ func loadConfig() *Config {
 	return &Config{
 		Port:           port,
 		DatabaseURL:    dbURL,
-		JWTSecret:      jwtSecret,
+		JWTSecret:      resolvedJWTSecret,
 		AccessExpiry:   15 * time.Minute,
 		RefreshExpiry:  7 * 24 * time.Hour,
 		AllowedOrigins: allowedOrigins,
 		DocumentsDir:   documentsDir,
 	}
+}
+
+func isProductionEnvironment() bool {
+	for _, key := range []string{"APP_ENV", "ENV", "GO_ENV"} {
+		if strings.EqualFold(strings.TrimSpace(os.Getenv(key)), "production") {
+			return true
+		}
+	}
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("RAILWAY_ENVIRONMENT")), "production")
+}
+
+func resolveJWTSecret(raw string, production bool) (string, error) {
+	secret := strings.TrimSpace(raw)
+	if secret == "" {
+		if production {
+			return "", errors.New("JWT_SECRET is required in production")
+		}
+		return developmentJWTSecret, nil
+	}
+	if production && len(secret) < 32 {
+		return "", errors.New("JWT_SECRET must be at least 32 characters in production")
+	}
+	return secret, nil
+}
+
+func resolveAllowedOrigins(raw string, production bool) ([]string, error) {
+	var origins []string
+	for _, origin := range strings.Split(raw, ",") {
+		origin = strings.TrimSpace(origin)
+		if origin != "" {
+			origins = append(origins, origin)
+		}
+	}
+	if len(origins) == 0 {
+		if production {
+			return nil, errors.New("ALLOWED_ORIGINS is required in production")
+		}
+		return append([]string(nil), defaultDevelopmentOrigins...), nil
+	}
+	if production {
+		return origins, nil
+	}
+
+	merged := append([]string(nil), defaultDevelopmentOrigins...)
+	merged = append(merged, origins...)
+	return merged, nil
 }
 
 func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi.Mux {

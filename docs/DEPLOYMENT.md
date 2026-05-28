@@ -16,14 +16,15 @@ This guide covers deploying Open Accounting to production environments.
 | Variable | Required | Description | Example |
 |----------|----------|-------------|---------|
 | `DATABASE_URL` | Yes | PostgreSQL connection string | `postgres://user:pass@host:5432/db?sslmode=require` |
+| `APP_ENV` | Yes | Set to `production` to reject insecure defaults | `production` |
 | `JWT_SECRET` | Yes | Secret key for JWT signing (min 32 chars) | `your-super-secret-key-min-32-chars` |
 | `PORT` | No | API server port | `8080` |
-| `ALLOWED_ORIGINS` | Yes* | CORS allowed origins (comma-separated) | `https://app.example.com,https://admin.example.com` |
+| `ALLOWED_ORIGINS` | Yes | CORS allowed origins (comma-separated) | `https://app.example.com,https://admin.example.com` |
 | `CORS_DEBUG` | No | Enable verbose CORS logging | `true` |
 | `LOG_LEVEL` | No | Log verbosity (trace, debug, info, warn, error) | `debug` |
 | `DEMO_RESET_SECRET` | No | Secret key for demo reset endpoint | `your-reset-secret` |
 
-*Required for production deployments where frontend and API are on different domains.
+When `APP_ENV=production`, startup fails if `JWT_SECRET` is missing or shorter than 32 characters, or if `ALLOWED_ORIGINS` is empty. Production mode also uses only the configured origins instead of appending localhost development origins.
 
 ### Frontend
 
@@ -47,6 +48,7 @@ services:
     image: ghcr.io/hmb-research/open-accounting:latest
     environment:
       - DATABASE_URL=${DATABASE_URL}
+      - APP_ENV=production
       - JWT_SECRET=${JWT_SECRET}
       - PORT=8080
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
@@ -86,6 +88,7 @@ volumes:
 ```bash
 # .env.prod
 DATABASE_URL=postgres://openaccounting:SECURE_PASSWORD@db:5432/openaccounting?sslmode=disable
+APP_ENV=production
 JWT_SECRET=your-production-jwt-secret-minimum-32-characters
 ALLOWED_ORIGINS=https://your-domain.com
 
@@ -232,6 +235,8 @@ spec:
             secretKeyRef:
               name: open-accounting-secrets
               key: database-url
+        - name: APP_ENV
+          value: production
         - name: JWT_SECRET
           valueFrom:
             secretKeyRef:
@@ -283,6 +288,7 @@ Deploy two separate services:
    - Environment variables:
      ```
      DATABASE_URL=<from Railway PostgreSQL>
+     APP_ENV=production
      JWT_SECRET=<generate secure 32+ char secret>
      ALLOWED_ORIGINS=https://your-frontend.up.railway.app
      ```
@@ -381,6 +387,7 @@ curl -X OPTIONS https://api.example.com/api/v1/auth/login \
 ## Security Checklist
 
 - [ ] Use strong, unique `JWT_SECRET` (min 32 characters)
+- [ ] Set `APP_ENV=production` so startup rejects insecure API defaults
 - [ ] Enable SSL/TLS for all connections
 - [ ] Use `sslmode=require` for database connections
 - [ ] Configure firewall rules (only expose ports 80/443)

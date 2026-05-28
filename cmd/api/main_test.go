@@ -18,12 +18,16 @@ func TestLoadConfigUsesDefaultsAndEnvOverrides(t *testing.T) {
 	t.Setenv("PORT", "")
 	t.Setenv("JWT_SECRET", "")
 	t.Setenv("ALLOWED_ORIGINS", "https://app.example.com, https://admin.example.com")
+	t.Setenv("APP_ENV", "")
+	t.Setenv("ENV", "")
+	t.Setenv("GO_ENV", "")
+	t.Setenv("RAILWAY_ENVIRONMENT", "")
 
 	cfg := loadConfig()
 
 	assert.Equal(t, "8080", cfg.Port)
 	assert.Equal(t, "postgres://db", cfg.DatabaseURL)
-	assert.Equal(t, "change-me-in-production", cfg.JWTSecret)
+	assert.Equal(t, developmentJWTSecret, cfg.JWTSecret)
 	assert.Equal(t, 15*time.Minute, cfg.AccessExpiry)
 	assert.Equal(t, 7*24*time.Hour, cfg.RefreshExpiry)
 	assert.Contains(t, cfg.AllowedOrigins, "http://localhost:5173")
@@ -38,6 +42,29 @@ func TestLoadConfigUsesDefaultsAndEnvOverrides(t *testing.T) {
 	assert.Equal(t, "9090", cfg.Port)
 	assert.Equal(t, "secret", cfg.JWTSecret)
 	assert.Equal(t, []string{"http://localhost:5173", "http://localhost:3000"}, cfg.AllowedOrigins)
+}
+
+func TestProductionConfigValidation(t *testing.T) {
+	secret, err := resolveJWTSecret("", true)
+	require.Error(t, err)
+	assert.Empty(t, secret)
+
+	secret, err = resolveJWTSecret("short", true)
+	require.Error(t, err)
+	assert.Empty(t, secret)
+
+	secret, err = resolveJWTSecret("01234567890123456789012345678901", true)
+	require.NoError(t, err)
+	assert.Equal(t, "01234567890123456789012345678901", secret)
+
+	origins, err := resolveAllowedOrigins("", true)
+	require.Error(t, err)
+	assert.Empty(t, origins)
+
+	origins, err = resolveAllowedOrigins("https://app.example.com, https://admin.example.com", true)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"https://app.example.com", "https://admin.example.com"}, origins)
+	assert.NotContains(t, origins, "http://localhost:5173")
 }
 
 func TestSetupRouterRegistersCoreRoutes(t *testing.T) {
