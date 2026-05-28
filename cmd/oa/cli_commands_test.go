@@ -75,6 +75,49 @@ func TestCLIAppRunHelpAndUnknownCommand(t *testing.T) {
 	assert.Contains(t, err.Error(), `unknown command "nope"`)
 }
 
+func TestCLIOperationalCommands(t *testing.T) {
+	configureCLIEnv(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/health":
+			_, _ = w.Write([]byte("OK"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/demo/status":
+			w.Header().Set("Content-Type", "application/json")
+			require.Equal(t, "demo-secret", r.Header.Get("X-Demo-Secret"))
+			assert.Equal(t, "1", r.URL.Query().Get("user"))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"user":     1,
+				"accounts": map[string]any{"count": 3, "keys": []string{"Cash"}},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/demo/reset":
+			w.Header().Set("Content-Type", "application/json")
+			require.Equal(t, "demo-secret", r.Header.Get("X-Demo-Secret"))
+			assert.Equal(t, "2", r.URL.Query().Get("user"))
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "reset"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"health", "--base-url", server.URL})
+	require.NoError(t, err)
+	assert.Equal(t, "OK\n", stdout.String())
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"demo", "status", "--base-url", server.URL, "--secret", "demo-secret", "--user", "1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "\"user\": 1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"demo", "reset", "--base-url", server.URL, "--secret", "demo-secret", "--user", "2"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "\"message\": \"reset\"")
+}
+
 func TestCLIAuthInitStatusAndLogoutFlow(t *testing.T) {
 	configureCLIEnv(t)
 

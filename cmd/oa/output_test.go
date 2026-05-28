@@ -37,6 +37,11 @@ func TestPrintJSON(t *testing.T) {
 	err := printJSON(&buf, map[string]string{"status": "ok"})
 	require.NoError(t, err)
 	assert.Contains(t, buf.String(), "\"status\": \"ok\"")
+
+	buf.Reset()
+	err = printRawJSON(&buf, []byte(`{"status":"ok"}`))
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "\"status\": \"ok\"")
 }
 
 func TestPrintTables(t *testing.T) {

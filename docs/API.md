@@ -8,6 +8,17 @@ Complete API reference for Open Accounting. Interactive documentation available 
 http://localhost:8080/api/v1
 ```
 
+Operational endpoints are mounted outside the versioned `/api/v1` prefix:
+
+```http
+GET /health
+GET /api/demo/status?user=1
+POST /api/demo/reset
+POST /api/demo/reset?user=1
+```
+
+`/health` returns plain text `OK`. The demo endpoints are available only when demo mode is enabled and require the `X-Demo-Secret` header. `GET /api/demo/status` requires a `user` query parameter. `POST /api/demo/reset` resets all demo users unless `user` is set to a specific demo user number.
+
 ## Authentication
 
 All endpoints (except `/auth/*`, `/invitations/*`, and demo reset/status endpoints when enabled) require a Bearer token:
