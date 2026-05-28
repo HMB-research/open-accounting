@@ -215,6 +215,14 @@ func TestReportHandlers(t *testing.T) {
 	h.GetTrialBalance(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/trial-balance?as_of_date=2026-02-28&format=csv", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetTrialBalance(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Header().Get("Content-Type"), "text/csv")
+	assert.Contains(t, rr.Body.String(), "account_code,account_name,account_type")
+	assert.Contains(t, rr.Body.String(), "1000,Cash,ASSET")
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/trial-balance?as_of_date=bad-date", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.GetTrialBalance(rr, req)
@@ -241,6 +249,13 @@ func TestReportHandlers(t *testing.T) {
 	h.GetBalanceSheet(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-sheet?as_of=2026-02-28&format=csv", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetBalanceSheet(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "section,account_code,account_name")
+	assert.Contains(t, rr.Body.String(), "total_assets")
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-sheet?as_of=not-a-date", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.GetBalanceSheet(rr, req)
@@ -250,6 +265,13 @@ func TestReportHandlers(t *testing.T) {
 	rr = httptest.NewRecorder()
 	h.GetIncomeStatement(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/income-statement?start=2026-01-01&end=2026-01-31&format=csv", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetIncomeStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "section,account_code,account_name")
+	assert.Contains(t, rr.Body.String(), "net_income")
 
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/income-statement", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()

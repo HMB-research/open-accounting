@@ -654,10 +654,14 @@ Bank transaction statuses are `UNMATCHED`, `MATCHED`, and `RECONCILED`. Follow-u
 
 ```bash
 go run ./cmd/oa reports trial-balance --as-of 2026-03-31
+go run ./cmd/oa reports trial-balance --as-of 2026-03-31 --csv --output ./trial-balance.csv
 go run ./cmd/oa reports account-balance --account-id <account-id> --as-of 2026-03-31
 go run ./cmd/oa reports balance-sheet --as-of 2026-03-31
+go run ./cmd/oa reports balance-sheet --as-of 2026-03-31 --csv --output ./balance-sheet.csv
 go run ./cmd/oa reports income-statement --start 2026-01-01 --end 2026-03-31
+go run ./cmd/oa reports income-statement --start 2026-01-01 --end 2026-03-31 --csv --output ./income-statement.csv
 go run ./cmd/oa reports cash-flow --start 2026-01-01 --end 2026-03-31
+go run ./cmd/oa reports cash-flow --start 2026-01-01 --end 2026-03-31 --csv --output ./cash-flow.csv
 go run ./cmd/oa reports aging --type receivables
 go run ./cmd/oa reports aging --type payables --json
 go run ./cmd/oa reports balance-confirmations --type RECEIVABLE --as-of 2026-03-31
@@ -667,7 +671,7 @@ go run ./cmd/oa reports balance-confirmation \
   --as-of 2026-03-31
 ```
 
-Every report command supports `--json` for automation. The table output is intended for quick terminal review, while JSON preserves the API response shape for scripts.
+Every report command supports `--json` for automation. Core statement commands also support backend CSV export with `--csv`; omit `--output` to stream CSV to stdout.
 
 ## Documents
 

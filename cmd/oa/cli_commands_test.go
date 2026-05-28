@@ -3873,6 +3873,11 @@ func TestCLIReportsCommands(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/trial-balance":
 			require.Equal(t, "2026-03-31", r.URL.Query().Get("as_of_date"))
+			if r.URL.Query().Get("format") == "csv" {
+				w.Header().Set("Content-Type", "text/csv")
+				_, _ = w.Write([]byte("account_code,account_name,account_type,debit_balance,credit_balance,net_balance\n1000,Cash,ASSET,500.00,0.00,500.00\n"))
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"tenant_id":     "tenant-1",
 				"as_of_date":    "2026-03-31T00:00:00Z",
@@ -3929,6 +3934,11 @@ func TestCLIReportsCommands(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/cash-flow":
 			require.Equal(t, "2026-01-01", r.URL.Query().Get("start_date"))
 			require.Equal(t, "2026-03-31", r.URL.Query().Get("end_date"))
+			if r.URL.Query().Get("format") == "csv" {
+				w.Header().Set("Content-Type", "text/csv")
+				_, _ = w.Write([]byte("section,code,description,description_et,amount,is_subtotal\nsummary,closing_cash,Closing cash,,500.00,true\n"))
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"tenant_id":            "tenant-1",
 				"start_date":           "2026-01-01",
@@ -4015,6 +4025,11 @@ func TestCLIReportsCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "1000")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "trial-balance", "--as-of", "2026-03-31", "--csv"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "account_code,account_name")
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"reports", "account-balance", "--account-id", "acc-1", "--as-of", "2026-03-31"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "500.00")
@@ -4033,6 +4048,15 @@ func TestCLIReportsCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"reports", "cash-flow", "--start", "2026-01-01", "--end", "2026-03-31"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Closing cash: 500")
+
+	stdout.Reset()
+	cashFlowCSVPath := filepath.Join(t.TempDir(), "cash-flow.csv")
+	err = app.run(context.Background(), []string{"reports", "cash-flow", "--start", "2026-01-01", "--end", "2026-03-31", "--csv", "--output", cashFlowCSVPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote cash flow CSV")
+	cashFlowCSV, err := os.ReadFile(cashFlowCSVPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(cashFlowCSV), "closing_cash")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"reports", "aging", "--type", "receivables", "--json"})
