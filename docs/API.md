@@ -2198,11 +2198,6 @@ Authorization: Bearer <token>
 - `end_date` (string, required): End date in YYYY-MM-DD format
 - `format` (string): `json` (default), `csv`, or `xlsx`
 
-**Query Parameters:**
-- `start_date` (string, required): Start date in YYYY-MM-DD format
-- `end_date` (string, required): End date in YYYY-MM-DD format
-- `format` (string): `json` (default) or `csv`
-
 ### Receivables Aging
 
 ```http
@@ -2210,12 +2205,18 @@ GET /tenants/{tenantId}/reports/aging/receivables
 Authorization: Bearer <token>
 ```
 
+**Query Parameters:**
+- `format` (string): `json` (default), `csv`, or `xlsx`
+
 ### Payables Aging
 
 ```http
 GET /tenants/{tenantId}/reports/aging/payables
 Authorization: Bearer <token>
 ```
+
+**Query Parameters:**
+- `format` (string): `json` (default), `csv`, or `xlsx`
 
 ### Balance Confirmation Summary
 
@@ -2227,6 +2228,7 @@ Authorization: Bearer <token>
 **Query Parameters:**
 - `type` (string, required): `RECEIVABLE` or `PAYABLE`
 - `as_of_date` (string, required): Date in YYYY-MM-DD format
+- `format` (string): `json` (default), `csv`, or `xlsx`
 
 ### Contact Balance Confirmation
 
@@ -2238,6 +2240,7 @@ Authorization: Bearer <token>
 **Query Parameters:**
 - `type` (string, required): `RECEIVABLE` or `PAYABLE`
 - `as_of_date` (string, required): Date in YYYY-MM-DD format
+- `format` (string): `json` (default), `csv`, or `xlsx`
 
 ---
 

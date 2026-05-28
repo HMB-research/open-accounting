@@ -278,6 +278,24 @@ func TestGetReceivablesAging(t *testing.T) {
 	err := json.Unmarshal(rr.Body.Bytes(), &result)
 	require.NoError(t, err)
 	assert.Equal(t, "receivables", result.ReportType)
+
+	req = httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/aging/receivables?format=csv", nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+	rr = httptest.NewRecorder()
+	h.GetReceivablesAging(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Header().Get("Content-Type"), "text/csv")
+	assert.Contains(t, rr.Body.String(), "row_type,report_type,as_of_date")
+	assert.Contains(t, rr.Body.String(), "Customer A")
+
+	req = httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/aging/receivables?format=xlsx", nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+	rr = httptest.NewRecorder()
+	h.GetReceivablesAging(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	requireXLSXContains(t, rr.Body.Bytes(), "Customer A")
 }
 
 func TestGetPayablesAging(t *testing.T) {

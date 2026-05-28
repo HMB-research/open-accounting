@@ -1248,11 +1248,12 @@ func (h *Handlers) GetCashFlowStatement(w http.ResponseWriter, r *http.Request) 
 // @Summary Get balance confirmation summary
 // @Description Get a summary of all receivables or payables grouped by contact
 // @Tags Reports
-// @Produce json
+// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param type query string true "Balance type (RECEIVABLE or PAYABLE)"
 // @Param as_of_date query string true "As of date (YYYY-MM-DD)"
+// @Param format query string false "Response format: json, csv, or xlsx"
 // @Success 200 {object} reports.BalanceConfirmationSummary
 // @Failure 400 {object} object{error=string}
 // @Failure 500 {object} object{error=string}
@@ -1262,6 +1263,12 @@ func (h *Handlers) GetBalanceConfirmationSummary(w http.ResponseWriter, r *http.
 
 	balanceType := r.URL.Query().Get("type")
 	asOfDate := r.URL.Query().Get("as_of_date")
+
+	format, err := reportResponseFormat(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	if balanceType == "" {
 		respondError(w, http.StatusBadRequest, "type parameter is required (RECEIVABLE or PAYABLE)")
@@ -1279,7 +1286,7 @@ func (h *Handlers) GetBalanceConfirmationSummary(w http.ResponseWriter, r *http.
 	}
 
 	// Validate date format
-	_, err := time.Parse("2006-01-02", asOfDate)
+	_, err = time.Parse("2006-01-02", asOfDate)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "Invalid as_of_date format. Use YYYY-MM-DD")
 		return
@@ -1298,6 +1305,25 @@ func (h *Handlers) GetBalanceConfirmationSummary(w http.ResponseWriter, r *http.
 		return
 	}
 
+	if format == "csv" {
+		content, err := balanceConfirmationSummaryCSV(result)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export balance confirmations CSV")
+			return
+		}
+		respondReportCSV(w, fmt.Sprintf("balance-confirmations-%s-%s.csv", strings.ToLower(balanceType), asOfDate), content)
+		return
+	}
+	if format == "xlsx" {
+		content, err := balanceConfirmationSummaryXLSX(result)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export balance confirmations XLSX")
+			return
+		}
+		respondReportXLSX(w, fmt.Sprintf("balance-confirmations-%s-%s.xlsx", strings.ToLower(balanceType), asOfDate), content)
+		return
+	}
+
 	respondJSON(w, http.StatusOK, result)
 }
 
@@ -1305,12 +1331,13 @@ func (h *Handlers) GetBalanceConfirmationSummary(w http.ResponseWriter, r *http.
 // @Summary Get balance confirmation for contact
 // @Description Get detailed balance confirmation with invoices for a specific contact
 // @Tags Reports
-// @Produce json
+// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param contactID path string true "Contact ID"
 // @Param type query string true "Balance type (RECEIVABLE or PAYABLE)"
 // @Param as_of_date query string true "As of date (YYYY-MM-DD)"
+// @Param format query string false "Response format: json, csv, or xlsx"
 // @Success 200 {object} reports.BalanceConfirmation
 // @Failure 400 {object} object{error=string}
 // @Failure 500 {object} object{error=string}
@@ -1321,6 +1348,12 @@ func (h *Handlers) GetBalanceConfirmation(w http.ResponseWriter, r *http.Request
 
 	balanceType := r.URL.Query().Get("type")
 	asOfDate := r.URL.Query().Get("as_of_date")
+
+	format, err := reportResponseFormat(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	if balanceType == "" {
 		respondError(w, http.StatusBadRequest, "type parameter is required (RECEIVABLE or PAYABLE)")
@@ -1338,7 +1371,7 @@ func (h *Handlers) GetBalanceConfirmation(w http.ResponseWriter, r *http.Request
 	}
 
 	// Validate date format
-	_, err := time.Parse("2006-01-02", asOfDate)
+	_, err = time.Parse("2006-01-02", asOfDate)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "Invalid as_of_date format. Use YYYY-MM-DD")
 		return
@@ -1355,6 +1388,25 @@ func (h *Handlers) GetBalanceConfirmation(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		log.Error().Err(err).Str("tenant", tenantID).Str("contact", contactID).Msg("Failed to get balance confirmation")
 		respondError(w, http.StatusInternalServerError, "Failed to get balance confirmation")
+		return
+	}
+
+	if format == "csv" {
+		content, err := balanceConfirmationCSV(result)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export balance confirmation CSV")
+			return
+		}
+		respondReportCSV(w, fmt.Sprintf("balance-confirmation-%s-%s.csv", contactID, asOfDate), content)
+		return
+	}
+	if format == "xlsx" {
+		content, err := balanceConfirmationXLSX(result)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export balance confirmation XLSX")
+			return
+		}
+		respondReportXLSX(w, fmt.Sprintf("balance-confirmation-%s-%s.xlsx", contactID, asOfDate), content)
 		return
 	}
 

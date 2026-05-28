@@ -9569,7 +9569,9 @@ const docTemplate = `{
                 ],
                 "description": "Get aging breakdown for accounts payable",
                 "produces": [
-                    "application/json"
+                    "application/json",
+                    "text/csv",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 ],
                 "tags": [
                     "Reports"
@@ -9582,6 +9584,12 @@ const docTemplate = `{
                         "name": "tenantID",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Response format: json, csv, or xlsx",
+                        "name": "format",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -9614,7 +9622,9 @@ const docTemplate = `{
                 ],
                 "description": "Get aging breakdown for accounts receivable",
                 "produces": [
-                    "application/json"
+                    "application/json",
+                    "text/csv",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 ],
                 "tags": [
                     "Reports"
@@ -9627,6 +9637,12 @@ const docTemplate = `{
                         "name": "tenantID",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Response format: json, csv, or xlsx",
+                        "name": "format",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -9659,7 +9675,9 @@ const docTemplate = `{
                 ],
                 "description": "Get a summary of all receivables or payables grouped by contact",
                 "produces": [
-                    "application/json"
+                    "application/json",
+                    "text/csv",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 ],
                 "tags": [
                     "Reports"
@@ -9686,6 +9704,12 @@ const docTemplate = `{
                         "name": "as_of_date",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Response format: json, csv, or xlsx",
+                        "name": "format",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -9729,7 +9753,9 @@ const docTemplate = `{
                 ],
                 "description": "Get detailed balance confirmation with invoices for a specific contact",
                 "produces": [
-                    "application/json"
+                    "application/json",
+                    "text/csv",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 ],
                 "tags": [
                     "Reports"
@@ -9763,6 +9789,12 @@ const docTemplate = `{
                         "name": "as_of_date",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Response format: json, csv, or xlsx",
+                        "name": "format",
+                        "in": "query"
                     }
                 ],
                 "responses": {

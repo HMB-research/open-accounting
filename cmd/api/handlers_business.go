@@ -124,9 +124,10 @@ func (h *Handlers) GetCashFlowChart(w http.ResponseWriter, r *http.Request) {
 // @Summary Get receivables aging report
 // @Description Get aging breakdown for accounts receivable
 // @Tags Reports
-// @Produce json
+// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
+// @Param format query string false "Response format: json, csv, or xlsx"
 // @Success 200 {object} analytics.AgingReport
 // @Failure 500 {object} object{error=string}
 // @Router /tenants/{tenantID}/reports/aging/receivables [get]
@@ -134,9 +135,34 @@ func (h *Handlers) GetReceivablesAging(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
 
+	format, err := reportResponseFormat(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	report, err := h.analyticsService.GetReceivablesAging(r.Context(), tenantID, schemaName)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to get aging report")
+		return
+	}
+
+	if format == "csv" {
+		content, err := agingReportCSV(report)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export aging CSV")
+			return
+		}
+		respondReportCSV(w, fmt.Sprintf("receivables-aging-%s.csv", reportExportDate(report.AsOfDate)), content)
+		return
+	}
+	if format == "xlsx" {
+		content, err := agingReportXLSX(report)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export aging XLSX")
+			return
+		}
+		respondReportXLSX(w, fmt.Sprintf("receivables-aging-%s.xlsx", reportExportDate(report.AsOfDate)), content)
 		return
 	}
 
@@ -147,9 +173,10 @@ func (h *Handlers) GetReceivablesAging(w http.ResponseWriter, r *http.Request) {
 // @Summary Get payables aging report
 // @Description Get aging breakdown for accounts payable
 // @Tags Reports
-// @Produce json
+// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
+// @Param format query string false "Response format: json, csv, or xlsx"
 // @Success 200 {object} analytics.AgingReport
 // @Failure 500 {object} object{error=string}
 // @Router /tenants/{tenantID}/reports/aging/payables [get]
@@ -157,9 +184,34 @@ func (h *Handlers) GetPayablesAging(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
 
+	format, err := reportResponseFormat(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	report, err := h.analyticsService.GetPayablesAging(r.Context(), tenantID, schemaName)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to get aging report")
+		return
+	}
+
+	if format == "csv" {
+		content, err := agingReportCSV(report)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export aging CSV")
+			return
+		}
+		respondReportCSV(w, fmt.Sprintf("payables-aging-%s.csv", reportExportDate(report.AsOfDate)), content)
+		return
+	}
+	if format == "xlsx" {
+		content, err := agingReportXLSX(report)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export aging XLSX")
+			return
+		}
+		respondReportXLSX(w, fmt.Sprintf("payables-aging-%s.xlsx", reportExportDate(report.AsOfDate)), content)
 		return
 	}
 

@@ -668,15 +668,24 @@ go run ./cmd/oa reports cash-flow --start 2026-01-01 --end 2026-03-31
 go run ./cmd/oa reports cash-flow --start 2026-01-01 --end 2026-03-31 --csv --output ./cash-flow.csv
 go run ./cmd/oa reports cash-flow --start 2026-01-01 --end 2026-03-31 --xlsx --output ./cash-flow.xlsx
 go run ./cmd/oa reports aging --type receivables
+go run ./cmd/oa reports aging --type receivables --csv --output ./receivables-aging.csv
+go run ./cmd/oa reports aging --type payables --xlsx --output ./payables-aging.xlsx
 go run ./cmd/oa reports aging --type payables --json
 go run ./cmd/oa reports balance-confirmations --type RECEIVABLE --as-of 2026-03-31
+go run ./cmd/oa reports balance-confirmations --type RECEIVABLE --as-of 2026-03-31 --xlsx --output ./balance-confirmations.xlsx
 go run ./cmd/oa reports balance-confirmation \
   --contact-id <contact-id> \
   --type RECEIVABLE \
   --as-of 2026-03-31
+go run ./cmd/oa reports balance-confirmation \
+  --contact-id <contact-id> \
+  --type RECEIVABLE \
+  --as-of 2026-03-31 \
+  --csv \
+  --output ./balance-confirmation.csv
 ```
 
-Every report command supports `--json` for automation. Core statement commands also support backend CSV export with `--csv` and XLSX export with `--xlsx`; omit `--output` to stream the export bytes to stdout.
+Every report command supports `--json` for automation. Core statement, aging, and balance-confirmation commands also support backend CSV export with `--csv` and XLSX export with `--xlsx`; omit `--output` to stream the export bytes to stdout.
 
 ## Documents
 
