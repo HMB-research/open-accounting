@@ -588,9 +588,13 @@ go run ./cmd/oa documents upload \
   --document-type reconciliation_evidence \
   --notes "Matched against March bank statement" \
   --retention-until 2027-03-31
+go run ./cmd/oa documents review-summary --entity-type payment --entity-id <payment-id> --entity-id <payment-id>
+go run ./cmd/oa documents download --id <document-id> --output ./document.pdf
 go run ./cmd/oa documents mark-reviewed --id <document-id>
 go run ./cmd/oa documents delete --id <document-id>
 ```
+
+`documents download` uses the server-provided filename when `--output` is omitted. Use `--output -` to stream the document content to stdout.
 
 ## Journal entries
 

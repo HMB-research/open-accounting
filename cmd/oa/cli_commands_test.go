@@ -4277,6 +4277,20 @@ func TestCLIDocumentCommands(t *testing.T) {
 				"uploaded_by":   "user-1",
 				"created_at":    "2026-03-12T00:00:00Z",
 			}})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents/review-summary":
+			var req documentReviewSummaryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, documents.EntityTypePayment, req.EntityType)
+			assert.Equal(t, []string{"pay-1", "pay-2"}, req.EntityIDs)
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"entity_type":          "payment",
+				"entity_id":            "pay-1",
+				"total_count":          2,
+				"pending_review_count": 1,
+				"reviewed_count":       1,
+				"missing_evidence":     false,
+				"has_pending_review":   true,
+			}})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents":
 			require.NoError(t, r.ParseMultipartForm(2<<20))
 			assert.Equal(t, "bank_transaction", r.FormValue("entity_type"))
@@ -4304,6 +4318,10 @@ func TestCLIDocumentCommands(t *testing.T) {
 				"uploaded_by":   "user-1",
 				"created_at":    "2026-03-12T00:00:00Z",
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-2/download":
+			w.Header().Set("Content-Type", "text/plain")
+			w.Header().Set("Content-Disposition", `attachment; filename="evidence.txt"`)
+			_, _ = w.Write([]byte("statement line"))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-2/mark-reviewed":
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"id":            "doc-2",
@@ -4335,6 +4353,12 @@ func TestCLIDocumentCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"file_name": "receipt.pdf"`)
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"documents", "review-summary", "--entity-type", "payment", "--entity-id", "pay-1", "--entity-id", "pay-2"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "pay-1")
+	assert.Contains(t, stdout.String(), "true")
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{
 		"documents",
 		"upload",
@@ -4347,6 +4371,15 @@ func TestCLIDocumentCommands(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Uploaded evidence.txt (doc-2)")
+
+	stdout.Reset()
+	downloadPath := filepath.Join(t.TempDir(), "downloaded-evidence.txt")
+	err = app.run(context.Background(), []string{"documents", "download", "--id", "doc-2", "--output", downloadPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Downloaded doc-2")
+	downloaded, err := os.ReadFile(downloadPath)
+	require.NoError(t, err)
+	assert.Equal(t, "statement line", string(downloaded))
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"documents", "mark-reviewed", "--id", "doc-2"})
