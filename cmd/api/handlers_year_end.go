@@ -8,6 +8,20 @@ import (
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
+// GetYearEndCloseStatus returns fiscal year-end close readiness.
+// @Summary Get year-end close status
+// @Description Get fiscal year close readiness, retained-earnings mapping, net income, period-lock status, and existing carry-forward state
+// @Tags Period Close
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param period_end_date query string true "Fiscal year-end date (YYYY-MM-DD)"
+// @Success 200 {object} accounting.YearEndCloseStatus
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/year-end-close-status [get]
 func (h *Handlers) GetYearEndCloseStatus(w http.ResponseWriter, r *http.Request) {
 	routeCtx := h.tenantContextFromRequest(r)
 	periodEndDate := strings.TrimSpace(r.URL.Query().Get("period_end_date"))
@@ -38,6 +52,21 @@ func (h *Handlers) GetYearEndCloseStatus(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, http.StatusOK, status)
 }
 
+// CreateYearEndCarryForward creates and posts a fiscal year-end carry-forward journal.
+// @Summary Create year-end carry-forward
+// @Description Create and post retained-earnings carry-forward journal entries after the fiscal year has been closed
+// @Tags Period Close
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body accounting.CreateYearEndCarryForwardRequest true "Carry-forward request"
+// @Success 200 {object} accounting.YearEndCarryForwardResult
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/year-end-carry-forward [post]
 func (h *Handlers) CreateYearEndCarryForward(w http.ResponseWriter, r *http.Request) {
 	tenantID, userID, ok := h.authorizePeriodCloseMutation(w, r)
 	if !ok {
@@ -72,6 +101,21 @@ func (h *Handlers) CreateYearEndCarryForward(w http.ResponseWriter, r *http.Requ
 	respondJSON(w, http.StatusOK, result)
 }
 
+// ReverseYearEndCarryForward voids a posted carry-forward and creates a reversal journal.
+// @Summary Reverse year-end carry-forward
+// @Description Void an existing posted fiscal year-end carry-forward and create a posted reversal journal for controlled corrections
+// @Tags Period Close
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body accounting.ReverseYearEndCarryForwardRequest true "Carry-forward reversal request"
+// @Success 200 {object} accounting.YearEndCarryForwardReversalResult
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/year-end-carry-forward/reverse [post]
 func (h *Handlers) ReverseYearEndCarryForward(w http.ResponseWriter, r *http.Request) {
 	tenantID, userID, ok := h.authorizePeriodCloseMutation(w, r)
 	if !ok {

@@ -11714,6 +11714,271 @@
                     }
                 }
             }
+        },
+        "/tenants/{tenantID}/year-end-carry-forward": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create and post retained-earnings carry-forward journal entries after the fiscal year has been closed",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Period Close"
+                ],
+                "summary": "Create year-end carry-forward",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Carry-forward request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CreateYearEndCarryForwardRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndCarryForwardResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/year-end-carry-forward/reverse": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Void an existing posted fiscal year-end carry-forward and create a posted reversal journal for controlled corrections",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Period Close"
+                ],
+                "summary": "Reverse year-end carry-forward",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Carry-forward reversal request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ReverseYearEndCarryForwardRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndCarryForwardReversalResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/year-end-close-status": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get fiscal year close readiness, retained-earnings mapping, net income, period-lock status, and existing carry-forward state",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Period Close"
+                ],
+                "summary": "Get year-end close status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Fiscal year-end date (YYYY-MM-DD)",
+                        "name": "period_end_date",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndCloseStatus"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -11827,6 +12092,20 @@
                 },
                 "net_balance": {
                     "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.AccountSummary": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },
@@ -12078,6 +12357,14 @@
                     "type": "string"
                 },
                 "source_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.CreateYearEndCarryForwardRequest": {
+            "type": "object",
+            "properties": {
+                "period_end_date": {
                     "type": "string"
                 }
             }
@@ -12378,6 +12665,40 @@
                 "StatusVoided"
             ]
         },
+        "github_com_HMB-research_open-accounting_internal_accounting.JournalEntrySummary": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "entry_date": {
+                    "type": "string"
+                },
+                "entry_number": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "reference": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryStatus"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.ReverseYearEndCarryForwardRequest": {
+            "type": "object",
+            "properties": {
+                "period_end_date": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_accounting.TrialBalance": {
             "type": "object",
             "properties": {
@@ -12404,6 +12725,78 @@
                 },
                 "total_debits": {
                     "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.YearEndCarryForwardResult": {
+            "type": "object",
+            "properties": {
+                "journal_entry": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntry"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndCloseStatus"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.YearEndCarryForwardReversalResult": {
+            "type": "object",
+            "properties": {
+                "reversal_journal_entry": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntry"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndCloseStatus"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.YearEndCloseStatus": {
+            "type": "object",
+            "properties": {
+                "carry_forward_date": {
+                    "type": "string"
+                },
+                "carry_forward_needed": {
+                    "type": "boolean"
+                },
+                "carry_forward_ready": {
+                    "type": "boolean"
+                },
+                "existing_carry_forward": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntrySummary"
+                },
+                "fiscal_year_end_date": {
+                    "type": "string"
+                },
+                "fiscal_year_label": {
+                    "type": "string"
+                },
+                "fiscal_year_start_date": {
+                    "type": "string"
+                },
+                "has_profit_and_loss_activity": {
+                    "type": "boolean"
+                },
+                "has_retained_earnings_account": {
+                    "type": "boolean"
+                },
+                "is_fiscal_year_end": {
+                    "type": "boolean"
+                },
+                "locked_through_date": {
+                    "type": "string"
+                },
+                "net_income": {
+                    "type": "number"
+                },
+                "period_closed": {
+                    "type": "boolean"
+                },
+                "period_end_date": {
+                    "type": "string"
+                },
+                "retained_earnings_account": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.AccountSummary"
                 }
             }
         },
