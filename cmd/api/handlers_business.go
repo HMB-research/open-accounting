@@ -3025,6 +3025,52 @@ func (h *Handlers) CreateQuote(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, quote)
 }
 
+// ImportQuotes imports quotes from CSV data.
+// @Summary Import quotes
+// @Description Import historical quotes from grouped CSV data and skip duplicate or invalid rows
+// @Tags Quotes
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body quotes.ImportQuotesRequest true "CSV import payload"
+// @Success 200 {object} quotes.ImportQuotesResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/quotes/import [post]
+func (h *Handlers) ImportQuotes(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req quotes.ImportQuotesRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+	if req.FileName == "" {
+		req.FileName = "quotes_import.csv"
+	}
+	req.UserID = claims.UserID
+
+	contactsList, err := h.contactsService.List(r.Context(), tenantID, schemaName, nil)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load contacts")
+		return
+	}
+
+	result, err := h.quotesService.ImportCSV(r.Context(), tenantID, schemaName, contactsList, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // GetQuote returns a quote by ID
 // @Summary Get quote
 // @Description Get quote details by ID

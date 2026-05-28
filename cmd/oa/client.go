@@ -1138,6 +1138,14 @@ func (c *apiClient) createQuote(ctx context.Context, tenantID string, req *quote
 	return &resp, nil
 }
 
+func (c *apiClient) importQuotes(ctx context.Context, tenantID string, req *quotes.ImportQuotesRequest) (*quotes.ImportQuotesResult, error) {
+	var resp quotes.ImportQuotesResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "quotes", "import"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) getQuote(ctx context.Context, tenantID, quoteID string) (*quotes.Quote, error) {
 	var resp quotes.Quote
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "quotes", quoteID), nil, c.apiToken, &resp); err != nil {

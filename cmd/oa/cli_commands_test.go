@@ -1221,6 +1221,17 @@ func TestCLIQuoteCommands(t *testing.T) {
 			assert.Equal(t, "prod-1", *line.ProductID)
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(quotePayload("quote-1", "QUO-00001", "DRAFT"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/import":
+			var req quotes.ImportQuotesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "quotes.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "QT-LEGACY-1")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed": 1,
+				"quotes_created": 1,
+				"lines_imported": 1,
+				"rows_skipped":   0,
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-1":
 			_ = json.NewEncoder(w).Encode(quotePayload("quote-1", "QUO-00001", "DRAFT"))
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-1":
@@ -1274,6 +1285,12 @@ func TestCLIQuoteCommands(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created quote QUO-00001 (quote-1)")
+
+	quoteImportFile := writeTempCSV(t, "quotes.csv", "quote_number,contact_id,quote_date,line_description,quantity,unit_price,vat_rate\nQT-LEGACY-1,contact-1,2026-03-15,Consulting,1,100,22\n")
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"quotes", "import", "--file", quoteImportFile})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 quotes, imported 1 lines, skipped 0 rows")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"quotes", "get", "--id", "quote-1"})

@@ -165,6 +165,30 @@ type CreateQuoteLineRequest struct {
 	ProductID       *string         `json:"product_id,omitempty"`
 }
 
+// ImportQuotesRequest contains CSV payload for quote migration.
+type ImportQuotesRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+	UserID     string `json:"-"`
+}
+
+// ImportQuotesResult summarizes a quote CSV import.
+type ImportQuotesResult struct {
+	FileName      string                 `json:"file_name,omitempty"`
+	RowsProcessed int                    `json:"rows_processed"`
+	QuotesCreated int                    `json:"quotes_created"`
+	LinesImported int                    `json:"lines_imported"`
+	RowsSkipped   int                    `json:"rows_skipped"`
+	Errors        []ImportQuotesRowError `json:"errors,omitempty"`
+}
+
+// ImportQuotesRowError describes a row-level quote import failure.
+type ImportQuotesRowError struct {
+	Row         int    `json:"row"`
+	QuoteNumber string `json:"quote_number,omitempty"`
+	Message     string `json:"message"`
+}
+
 // UpdateQuoteRequest is the request to update a quote
 type UpdateQuoteRequest struct {
 	ContactID    string                   `json:"contact_id"`

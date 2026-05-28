@@ -295,6 +295,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  banking reconciliations complete  Complete a bank reconciliation")
 	_, _ = fmt.Fprintln(a.stdout, "  quotes list               List quotes")
 	_, _ = fmt.Fprintln(a.stdout, "  quotes create             Create a quote")
+	_, _ = fmt.Fprintln(a.stdout, "  quotes import             Import quotes from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  quotes get                Show one quote")
 	_, _ = fmt.Fprintln(a.stdout, "  quotes update             Update a draft quote")
 	_, _ = fmt.Fprintln(a.stdout, "  quotes delete             Delete a draft quote")
@@ -3971,6 +3972,35 @@ func (a *cliApp) runQuotes(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, quote)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Created quote %s (%s)\n", quote.QuoteNumber, quote.ID)
+		return nil
+
+	case "import":
+		fs := flag.NewFlagSet("quotes import", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		filePath := fs.String("file", "", "CSV file path or - for stdin")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*filePath) == "" {
+			return errors.New("file is required")
+		}
+		content, fileName, err := readCSVInput(*filePath)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.importQuotes(ctx, cfg.TenantID, &quotes.ImportQuotesRequest{
+			CSVContent: content,
+			FileName:   fileName,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Processed %d rows, created %d quotes, imported %d lines, skipped %d rows\n", result.RowsProcessed, result.QuotesCreated, result.LinesImported, result.RowsSkipped)
 		return nil
 
 	case "get":
