@@ -700,6 +700,8 @@ go run ./cmd/oa reports income-statement --start 2026-01-01 --end 2026-03-31 --p
 go run ./cmd/oa reports cash-flow --start 2026-01-01 --end 2026-03-31
 go run ./cmd/oa reports cash-flow --start 2026-01-01 --end 2026-03-31 --method indirect
 go run ./cmd/oa reports cash-flow --start 2026-01-01 --end 2026-03-31 --investing-accounts CAPEX-1,CAPEX-2
+go run ./cmd/oa reports cash-flow-mapping get
+go run ./cmd/oa reports cash-flow-mapping update --operating-accounts PREPAY --investing-accounts CAPEX-1,CAPEX-2 --financing-accounts FOUNDERS
 go run ./cmd/oa reports cash-flow --start 2026-01-01 --end 2026-03-31 --csv --output ./cash-flow.csv
 go run ./cmd/oa reports cash-flow --start 2026-01-01 --end 2026-03-31 --xlsx --output ./cash-flow.xlsx
 go run ./cmd/oa reports cash-flow --start 2026-01-01 --end 2026-03-31 --pdf --output ./cash-flow.pdf
@@ -729,7 +731,7 @@ go run ./cmd/oa reports balance-confirmation \
   --output ./balance-confirmation.pdf
 ```
 
-Every report command supports `--json` for automation. `reports cash-flow --method` accepts `direct` or `indirect`; indirect operating cash flow starts with net income and adjusts for depreciation/amortization plus receivables, inventory, and payables changes. Cash-flow account mapping can be overridden per request with comma-separated `--operating-accounts`, `--investing-accounts`, and `--financing-accounts` for custom charts. Core statement, account-balance, aging, and balance-confirmation commands also support backend CSV export with `--csv`, XLSX export with `--xlsx`, and PDF export with `--pdf`; omit `--output` to stream the export bytes to stdout.
+Every report command supports `--json` for automation. `reports cash-flow --method` accepts `direct` or `indirect`; indirect operating cash flow starts with net income and adjusts for depreciation/amortization plus receivables, inventory, and payables changes. Cash-flow account mapping can be saved with `reports cash-flow-mapping update` or overridden per request with comma-separated `--operating-accounts`, `--investing-accounts`, and `--financing-accounts` for custom charts. Request-level overrides take precedence over saved mappings. Core statement, account-balance, aging, and balance-confirmation commands also support backend CSV export with `--csv`, XLSX export with `--xlsx`, and PDF export with `--pdf`; omit `--output` to stream the export bytes to stdout.
 
 ## Documents
 

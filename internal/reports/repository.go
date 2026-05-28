@@ -2,9 +2,12 @@ package reports
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 )
@@ -25,6 +28,12 @@ type Repository interface {
 
 	// GetContact retrieves contact details
 	GetContact(ctx context.Context, schemaName, tenantID, contactID string) (ContactInfo, error)
+
+	// GetCashFlowMappingOverrides retrieves tenant-level cash-flow account mappings.
+	GetCashFlowMappingOverrides(ctx context.Context, tenantID string) (CashFlowMappingOverrides, error)
+
+	// UpdateCashFlowMappingOverrides replaces tenant-level cash-flow account mappings.
+	UpdateCashFlowMappingOverrides(ctx context.Context, tenantID string, mapping CashFlowMappingOverrides) (CashFlowMappingOverrides, error)
 }
 
 // ContactInfo holds basic contact information for reports
@@ -258,18 +267,72 @@ func (r *PostgresRepository) GetContact(ctx context.Context, schemaName, tenantI
 	return c, nil
 }
 
+// GetCashFlowMappingOverrides retrieves tenant-level cash-flow account mappings from tenant settings.
+func (r *PostgresRepository) GetCashFlowMappingOverrides(ctx context.Context, tenantID string) (CashFlowMappingOverrides, error) {
+	var raw []byte
+	err := r.db.QueryRow(ctx, `
+		SELECT COALESCE(settings->'cash_flow_mapping', '{}'::jsonb)
+		FROM tenants
+		WHERE id = $1
+	`, tenantID).Scan(&raw)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return CashFlowMappingOverrides{}, fmt.Errorf("tenant not found")
+		}
+		return CashFlowMappingOverrides{}, fmt.Errorf("query cash flow mapping: %w", err)
+	}
+
+	var mapping CashFlowMappingOverrides
+	if err := json.Unmarshal(raw, &mapping); err != nil {
+		return CashFlowMappingOverrides{}, fmt.Errorf("parse cash flow mapping: %w", err)
+	}
+	return mapping, nil
+}
+
+// UpdateCashFlowMappingOverrides replaces tenant-level cash-flow account mappings in tenant settings.
+func (r *PostgresRepository) UpdateCashFlowMappingOverrides(ctx context.Context, tenantID string, mapping CashFlowMappingOverrides) (CashFlowMappingOverrides, error) {
+	raw, err := json.Marshal(mapping)
+	if err != nil {
+		return CashFlowMappingOverrides{}, fmt.Errorf("marshal cash flow mapping: %w", err)
+	}
+
+	var updatedRaw []byte
+	err = r.db.QueryRow(ctx, `
+		UPDATE tenants
+		SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{cash_flow_mapping}', $2::jsonb, true),
+			updated_at = NOW()
+		WHERE id = $1
+		RETURNING COALESCE(settings->'cash_flow_mapping', '{}'::jsonb)
+	`, tenantID, string(raw)).Scan(&updatedRaw)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return CashFlowMappingOverrides{}, fmt.Errorf("tenant not found")
+		}
+		return CashFlowMappingOverrides{}, fmt.Errorf("update cash flow mapping: %w", err)
+	}
+
+	var updated CashFlowMappingOverrides
+	if err := json.Unmarshal(updatedRaw, &updated); err != nil {
+		return CashFlowMappingOverrides{}, fmt.Errorf("parse updated cash flow mapping: %w", err)
+	}
+	return updated, nil
+}
+
 // MockRepository for testing
 type MockRepository struct {
-	JournalEntries        []JournalEntryWithLines
-	CashBalance           decimal.Decimal
-	ContactBalances       []ContactBalance
-	ContactInvoices       []BalanceInvoice
-	Contact               ContactInfo
-	GetEntriesErr         error
-	GetCashBalanceErr     error
-	GetContactBalancesErr error
-	GetContactInvoicesErr error
-	GetContactErr         error
+	JournalEntries           []JournalEntryWithLines
+	CashBalance              decimal.Decimal
+	CashFlowMapping          CashFlowMappingOverrides
+	ContactBalances          []ContactBalance
+	ContactInvoices          []BalanceInvoice
+	Contact                  ContactInfo
+	GetEntriesErr            error
+	GetCashBalanceErr        error
+	GetCashFlowMappingErr    error
+	UpdateCashFlowMappingErr error
+	GetContactBalancesErr    error
+	GetContactInvoicesErr    error
+	GetContactErr            error
 }
 
 // NewMockRepository creates a new mock repository
@@ -305,6 +368,23 @@ func (m *MockRepository) GetCashAccountBalance(ctx context.Context, schemaName, 
 		return decimal.Zero, m.GetCashBalanceErr
 	}
 	return m.CashBalance, nil
+}
+
+// GetCashFlowMappingOverrides returns mock tenant-level cash-flow mappings.
+func (m *MockRepository) GetCashFlowMappingOverrides(ctx context.Context, tenantID string) (CashFlowMappingOverrides, error) {
+	if m.GetCashFlowMappingErr != nil {
+		return CashFlowMappingOverrides{}, m.GetCashFlowMappingErr
+	}
+	return m.CashFlowMapping, nil
+}
+
+// UpdateCashFlowMappingOverrides updates mock tenant-level cash-flow mappings.
+func (m *MockRepository) UpdateCashFlowMappingOverrides(ctx context.Context, tenantID string, mapping CashFlowMappingOverrides) (CashFlowMappingOverrides, error) {
+	if m.UpdateCashFlowMappingErr != nil {
+		return CashFlowMappingOverrides{}, m.UpdateCashFlowMappingErr
+	}
+	m.CashFlowMapping = mapping
+	return m.CashFlowMapping, nil
 }
 
 // GetOutstandingInvoicesByContact returns mock contact balances

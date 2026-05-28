@@ -50,6 +50,9 @@ type CashFlowMappingOverrides struct {
 	FinancingAccountCodes []string `json:"financing_account_codes,omitempty"`
 }
 
+// UpdateCashFlowMappingRequest updates tenant-level cash-flow account mappings.
+type UpdateCashFlowMappingRequest = CashFlowMappingOverrides
+
 // JournalEntryWithLines represents a journal entry with its lines for reporting
 type JournalEntryWithLines struct {
 	ID          string        `json:"id"`

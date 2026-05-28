@@ -10848,6 +10848,117 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/reports/cash-flow/mapping": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get tenant-level cash-flow account-code mapping settings",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Get cash flow mapping",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.CashFlowMappingOverrides"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Replace tenant-level cash-flow account-code mapping settings",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Update cash flow mapping",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Cash-flow mapping settings",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.UpdateCashFlowMappingRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.CashFlowMappingOverrides"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/reports/income-statement": {
             "get": {
                 "security": [
@@ -18472,6 +18583,29 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_reports.UpdateCashFlowMappingRequest": {
+            "type": "object",
+            "properties": {
+                "financing_account_codes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "investing_account_codes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "operating_account_codes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_tax.CreateKMDRequest": {
             "type": "object",
             "properties": {
@@ -18622,6 +18756,29 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_tenant.CashFlowMappingSettings": {
+            "type": "object",
+            "properties": {
+                "financing_account_codes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "investing_account_codes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "operating_account_codes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_tenant.CreateInvitationRequest": {
             "type": "object",
             "properties": {
@@ -18687,6 +18844,14 @@ const docTemplate = `{
                 },
                 "bank_details": {
                     "type": "string"
+                },
+                "cash_flow_mapping": {
+                    "description": "Cash-flow account-code mapping settings",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_tenant.CashFlowMappingSettings"
+                        }
+                    ]
                 },
                 "country_code": {
                     "type": "string"

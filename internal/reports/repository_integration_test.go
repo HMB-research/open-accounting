@@ -156,6 +156,28 @@ func TestPostgresRepository_ReportQueries(t *testing.T) {
 			t.Fatalf("expected contact email to round-trip, got %q", contact.Email)
 		}
 	})
+
+	t.Run("cash flow mapping settings", func(t *testing.T) {
+		updated, err := repo.UpdateCashFlowMappingOverrides(ctx, tenant.ID, CashFlowMappingOverrides{
+			OperatingAccountCodes: []string{"PREPAY"},
+			InvestingAccountCodes: []string{"CAPEX-1"},
+			FinancingAccountCodes: []string{"FOUNDERS"},
+		})
+		if err != nil {
+			t.Fatalf("UpdateCashFlowMappingOverrides failed: %v", err)
+		}
+		if len(updated.InvestingAccountCodes) != 1 || updated.InvestingAccountCodes[0] != "CAPEX-1" {
+			t.Fatalf("expected CAPEX-1 investing mapping, got %#v", updated.InvestingAccountCodes)
+		}
+
+		mapping, err := repo.GetCashFlowMappingOverrides(ctx, tenant.ID)
+		if err != nil {
+			t.Fatalf("GetCashFlowMappingOverrides failed: %v", err)
+		}
+		if len(mapping.FinancingAccountCodes) != 1 || mapping.FinancingAccountCodes[0] != "FOUNDERS" {
+			t.Fatalf("expected FOUNDERS financing mapping, got %#v", mapping.FinancingAccountCodes)
+		}
+	})
 }
 
 func TestNewServiceUsesPostgresRepository(t *testing.T) {

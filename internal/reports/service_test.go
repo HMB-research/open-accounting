@@ -540,6 +540,105 @@ func TestCashFlowMappingOverrides(t *testing.T) {
 	assert.Equal(t, "500", result.NetCashChange.String())
 }
 
+func TestCashFlowPersistentMapping(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	mockRepo.CashFlowMapping = CashFlowMappingOverrides{
+		InvestingAccountCodes: []string{"capex-1"},
+	}
+	mockRepo.JournalEntries = []JournalEntryWithLines{
+		{
+			ID:          "custom-capex",
+			EntryDate:   time.Date(2024, 1, 18, 0, 0, 0, 0, time.UTC),
+			Description: "Capitalized platform work",
+			Lines: []JournalLine{
+				{AccountCode: "CAPEX-1", AccountType: "ASSET", AccountName: "Platform work", Debit: decimal.NewFromInt(300)},
+				{AccountCode: "1100", AccountType: "ASSET", AccountName: "Cash and Bank", Credit: decimal.NewFromInt(300)},
+			},
+		},
+	}
+
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", &CashFlowRequest{
+		StartDate: "2024-01-01",
+		EndDate:   "2024-01-31",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result.MappingOverrides)
+	assert.Equal(t, []string{"CAPEX-1"}, result.MappingOverrides.InvestingAccountCodes)
+	assert.Equal(t, "-300", cashFlowAmount(result.InvestingActivities, CFInvFixedAssets).String())
+	assert.Equal(t, decimal.Zero.String(), result.TotalOperating.String())
+}
+
+func TestCashFlowRequestMappingOverridesPersistentMapping(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	mockRepo.CashFlowMapping = CashFlowMappingOverrides{
+		InvestingAccountCodes: []string{"PREPAY"},
+	}
+	mockRepo.JournalEntries = []JournalEntryWithLines{
+		{
+			ID:          "prepayment",
+			EntryDate:   time.Date(2024, 1, 18, 0, 0, 0, 0, time.UTC),
+			Description: "Operating prepayment",
+			Lines: []JournalLine{
+				{AccountCode: "PREPAY", AccountType: "ASSET", AccountName: "Prepaid expenses", Debit: decimal.NewFromInt(200)},
+				{AccountCode: "1100", AccountType: "ASSET", AccountName: "Cash and Bank", Credit: decimal.NewFromInt(200)},
+			},
+		},
+	}
+
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", &CashFlowRequest{
+		StartDate: "2024-01-01",
+		EndDate:   "2024-01-31",
+		MappingOverrides: CashFlowMappingOverrides{
+			OperatingAccountCodes: []string{"prepay"},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result.MappingOverrides)
+	assert.Equal(t, []string{"PREPAY"}, result.MappingOverrides.OperatingAccountCodes)
+	assert.Empty(t, result.MappingOverrides.InvestingAccountCodes)
+	assert.Equal(t, "-200", cashFlowAmount(result.OperatingActivities, CFOperPayments).String())
+	assert.Equal(t, decimal.Zero.String(), result.TotalInvesting.String())
+}
+
+func TestCashFlowMappingSettings(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	updated, err := svc.UpdateCashFlowMapping(ctx, "tenant-1", CashFlowMappingOverrides{
+		OperatingAccountCodes: []string{" prepay ", "PREPAY"},
+		InvestingAccountCodes: []string{"capex-2", "CAPEX-1"},
+		FinancingAccountCodes: []string{"founders"},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"PREPAY"}, updated.OperatingAccountCodes)
+	assert.Equal(t, []string{"CAPEX-1", "CAPEX-2"}, updated.InvestingAccountCodes)
+	assert.Equal(t, []string{"FOUNDERS"}, updated.FinancingAccountCodes)
+
+	got, err := svc.GetCashFlowMapping(ctx, "tenant-1")
+	require.NoError(t, err)
+	assert.Equal(t, updated, got)
+}
+
+func TestCashFlowMappingRejectsConflictingAccountCodes(t *testing.T) {
+	_, err := NormalizeCashFlowMappingOverrides(CashFlowMappingOverrides{
+		OperatingAccountCodes: []string{"PREPAY"},
+		InvestingAccountCodes: []string{"prepay"},
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "PREPAY")
+}
+
 func TestCashFlowOpeningClosingBalance(t *testing.T) {
 	ctx := context.Background()
 	mockRepo := NewMockRepository()

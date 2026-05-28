@@ -2264,6 +2264,22 @@ func (c *apiClient) getCashFlowStatement(ctx context.Context, tenantID, startDat
 	return &resp, nil
 }
 
+func (c *apiClient) getCashFlowMapping(ctx context.Context, tenantID string) (*reports.CashFlowMappingOverrides, error) {
+	var resp reports.CashFlowMappingOverrides
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "reports", "cash-flow", "mapping"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) updateCashFlowMapping(ctx context.Context, tenantID string, mapping reports.CashFlowMappingOverrides) (*reports.CashFlowMappingOverrides, error) {
+	var resp reports.CashFlowMappingOverrides
+	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "reports", "cash-flow", "mapping"), mapping, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) exportCashFlowStatementCSV(ctx context.Context, tenantID, startDate, endDate, method string, overrides reports.CashFlowMappingOverrides) ([]byte, error) {
 	values := cashFlowStatementQuery(startDate, endDate, method, overrides)
 	values.Set("format", "csv")

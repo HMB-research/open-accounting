@@ -550,6 +550,8 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/reports/balance-sheet", h.GetBalanceSheet)
 				r.Get("/reports/income-statement", h.GetIncomeStatement)
 				r.Get("/reports/cash-flow", h.GetCashFlowStatement)
+				r.Get("/reports/cash-flow/mapping", h.GetCashFlowMapping)
+				r.Put("/reports/cash-flow/mapping", h.UpdateCashFlowMapping)
 				r.Get("/reports/balance-confirmations", h.GetBalanceConfirmationSummary)
 				r.Get("/reports/balance-confirmations/{contactID}", h.GetBalanceConfirmation)
 

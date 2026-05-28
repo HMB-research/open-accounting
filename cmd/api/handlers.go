@@ -1464,6 +1464,11 @@ func (h *Handlers) GetCashFlowStatement(w http.ResponseWriter, r *http.Request) 
 			FinancingAccountCodes: splitCSVQueryParam(r.URL.Query().Get("financing_accounts")),
 		},
 	}
+	req.MappingOverrides, err = reports.NormalizeCashFlowMappingOverrides(req.MappingOverrides)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	result, err := h.reportsService.GenerateCashFlowStatement(r.Context(), tenantID, schemaName, req)
 	if err != nil {
@@ -1501,6 +1506,66 @@ func (h *Handlers) GetCashFlowStatement(w http.ResponseWriter, r *http.Request) 
 	}
 
 	respondJSON(w, http.StatusOK, result)
+}
+
+// GetCashFlowMapping returns tenant-level cash-flow account mapping settings
+// @Summary Get cash flow mapping
+// @Description Get tenant-level cash-flow account-code mapping settings
+// @Tags Reports
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Success 200 {object} reports.CashFlowMappingOverrides
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/reports/cash-flow/mapping [get]
+func (h *Handlers) GetCashFlowMapping(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+
+	mapping, err := h.reportsService.GetCashFlowMapping(r.Context(), tenantID)
+	if err != nil {
+		log.Error().Err(err).Str("tenant", tenantID).Msg("Failed to get cash flow mapping")
+		respondError(w, http.StatusInternalServerError, "Failed to get cash flow mapping")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, mapping)
+}
+
+// UpdateCashFlowMapping updates tenant-level cash-flow account mapping settings
+// @Summary Update cash flow mapping
+// @Description Replace tenant-level cash-flow account-code mapping settings
+// @Tags Reports
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body reports.UpdateCashFlowMappingRequest true "Cash-flow mapping settings"
+// @Success 200 {object} reports.CashFlowMappingOverrides
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/reports/cash-flow/mapping [put]
+func (h *Handlers) UpdateCashFlowMapping(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+
+	var req reports.UpdateCashFlowMappingRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	normalized, err := reports.NormalizeCashFlowMappingOverrides(req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	mapping, err := h.reportsService.UpdateCashFlowMapping(r.Context(), tenantID, normalized)
+	if err != nil {
+		log.Error().Err(err).Str("tenant", tenantID).Msg("Failed to update cash flow mapping")
+		respondError(w, http.StatusInternalServerError, "Failed to update cash flow mapping")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, mapping)
 }
 
 func splitCSVQueryParam(value string) []string {

@@ -177,6 +177,43 @@ func TestExtendedReportHandlers(t *testing.T) {
 	}
 	assert.Equal(t, "-50", cashFlow.TotalInvesting.String())
 
+	reportsRepo.CashFlowMapping = reports.CashFlowMappingOverrides{InvestingAccountCodes: []string{"capex-1"}}
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCashFlowStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	cashFlow = reports.CashFlowStatement{}
+	assert.NoError(t, json.NewDecoder(rr.Body).Decode(&cashFlow))
+	if assert.NotNil(t, cashFlow.MappingOverrides) {
+		assert.Equal(t, []string{"CAPEX-1"}, cashFlow.MappingOverrides.InvestingAccountCodes)
+	}
+	assert.Equal(t, "-50", cashFlow.TotalInvesting.String())
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow/mapping", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCashFlowMapping(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	var mapping reports.CashFlowMappingOverrides
+	assert.NoError(t, json.NewDecoder(rr.Body).Decode(&mapping))
+	assert.Equal(t, []string{"CAPEX-1"}, mapping.InvestingAccountCodes)
+
+	body := strings.NewReader(`{"operating_account_codes":["prepay"],"investing_account_codes":["capex-2"],"financing_account_codes":["founders"]}`)
+	req = withURLParams(httptest.NewRequest(http.MethodPut, "/tenants/tenant-1/reports/cash-flow/mapping", body), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.UpdateCashFlowMapping(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	mapping = reports.CashFlowMappingOverrides{}
+	assert.NoError(t, json.NewDecoder(rr.Body).Decode(&mapping))
+	assert.Equal(t, []string{"PREPAY"}, mapping.OperatingAccountCodes)
+	assert.Equal(t, []string{"CAPEX-2"}, mapping.InvestingAccountCodes)
+	assert.Equal(t, []string{"FOUNDERS"}, mapping.FinancingAccountCodes)
+
+	body = strings.NewReader(`{"operating_account_codes":["prepay"],"investing_account_codes":["PREPAY"]}`)
+	req = withURLParams(httptest.NewRequest(http.MethodPut, "/tenants/tenant-1/reports/cash-flow/mapping", body), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.UpdateCashFlowMapping(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=2026-01-31&format=csv", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.GetCashFlowStatement(rr, req)

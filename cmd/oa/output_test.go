@@ -1501,6 +1501,16 @@ func TestPrintReports(t *testing.T) {
 	assert.Contains(t, cashFlowBuf.String(), "Cash flow 2026-01-01 to 2026-03-31")
 	assert.Contains(t, cashFlowBuf.String(), "Closing cash: 500")
 
+	var cashFlowMappingBuf bytes.Buffer
+	printCashFlowMapping(&cashFlowMappingBuf, &reports.CashFlowMappingOverrides{
+		OperatingAccountCodes: []string{"PREPAY"},
+		InvestingAccountCodes: []string{"CAPEX-1", "CAPEX-2"},
+	})
+	assert.Contains(t, cashFlowMappingBuf.String(), "Cash flow mapping")
+	assert.Contains(t, cashFlowMappingBuf.String(), "Operating accounts: PREPAY")
+	assert.Contains(t, cashFlowMappingBuf.String(), "Investing accounts: CAPEX-1, CAPEX-2")
+	assert.Contains(t, cashFlowMappingBuf.String(), "Financing accounts: -")
+
 	var agingBuf bytes.Buffer
 	printAgingReport(&agingBuf, &analytics.AgingReport{
 		ReportType: "receivables",

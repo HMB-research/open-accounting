@@ -4087,6 +4087,21 @@ definitions:
       oldest_invoice:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_reports.UpdateCashFlowMappingRequest:
+    properties:
+      financing_account_codes:
+        items:
+          type: string
+        type: array
+      investing_account_codes:
+        items:
+          type: string
+        type: array
+      operating_account_codes:
+        items:
+          type: string
+        type: array
+    type: object
   github_com_HMB-research_open-accounting_internal_tax.CreateKMDRequest:
     properties:
       month:
@@ -4187,6 +4202,21 @@ definitions:
       token:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_tenant.CashFlowMappingSettings:
+    properties:
+      financing_account_codes:
+        items:
+          type: string
+        type: array
+      investing_account_codes:
+        items:
+          type: string
+        type: array
+      operating_account_codes:
+        items:
+          type: string
+        type: array
+    type: object
   github_com_HMB-research_open-accounting_internal_tenant.CreateInvitationRequest:
     properties:
       email:
@@ -4230,6 +4260,10 @@ definitions:
         type: string
       bank_details:
         type: string
+      cash_flow_mapping:
+        allOf:
+        - $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tenant.CashFlowMappingSettings'
+        description: Cash-flow account-code mapping settings
       country_code:
         type: string
       date_format:
@@ -11219,6 +11253,76 @@ paths:
       security:
       - BearerAuth: []
       summary: Get cash flow statement
+      tags:
+      - Reports
+  /tenants/{tenantID}/reports/cash-flow/mapping:
+    get:
+      description: Get tenant-level cash-flow account-code mapping settings
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_reports.CashFlowMappingOverrides'
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get cash flow mapping
+      tags:
+      - Reports
+    put:
+      consumes:
+      - application/json
+      description: Replace tenant-level cash-flow account-code mapping settings
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Cash-flow mapping settings
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_reports.UpdateCashFlowMappingRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_reports.CashFlowMappingOverrides'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update cash flow mapping
       tags:
       - Reports
   /tenants/{tenantID}/reports/income-statement:
