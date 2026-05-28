@@ -24,6 +24,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
+	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
@@ -338,6 +339,67 @@ func (c *apiClient) listUnallocatedPayments(ctx context.Context, tenantID string
 
 	var resp []payments.Payment
 	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "payments", "unallocated"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) listQuotes(ctx context.Context, tenantID string, filter quotes.QuoteFilter) ([]quotes.Quote, error) {
+	values := url.Values{}
+	if filter.Status != "" {
+		values.Set("status", string(filter.Status))
+	}
+	if strings.TrimSpace(filter.ContactID) != "" {
+		values.Set("contact_id", strings.TrimSpace(filter.ContactID))
+	}
+	if filter.FromDate != nil {
+		values.Set("from_date", filter.FromDate.Format("2006-01-02"))
+	}
+	if filter.ToDate != nil {
+		values.Set("to_date", filter.ToDate.Format("2006-01-02"))
+	}
+	if strings.TrimSpace(filter.Search) != "" {
+		values.Set("search", strings.TrimSpace(filter.Search))
+	}
+
+	var resp []quotes.Quote
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "quotes"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createQuote(ctx context.Context, tenantID string, req *quotes.CreateQuoteRequest) (*quotes.Quote, error) {
+	var resp quotes.Quote
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "quotes"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getQuote(ctx context.Context, tenantID, quoteID string) (*quotes.Quote, error) {
+	var resp quotes.Quote
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "quotes", quoteID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) updateQuote(ctx context.Context, tenantID, quoteID string, req *quotes.UpdateQuoteRequest) (*quotes.Quote, error) {
+	var resp quotes.Quote
+	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "quotes", quoteID), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) deleteQuote(ctx context.Context, tenantID, quoteID string) error {
+	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "quotes", quoteID), nil, c.apiToken, nil)
+}
+
+func (c *apiClient) updateQuoteStatus(ctx context.Context, tenantID, quoteID, action string) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "quotes", quoteID, action), nil, c.apiToken, &resp); err != nil {
 		return nil, err
 	}
 	return resp, nil

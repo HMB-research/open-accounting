@@ -23,6 +23,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
+	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -71,6 +72,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runInvoices(ctx, args[1:])
 	case "payments":
 		return a.runPayments(ctx, args[1:])
+	case "quotes":
+		return a.runQuotes(ctx, args[1:])
 	case "reports":
 		return a.runReports(ctx, args[1:])
 	case "documents":
@@ -139,6 +142,14 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  payments get              Show one payment")
 	_, _ = fmt.Fprintln(a.stdout, "  payments allocate         Allocate a payment to an invoice")
 	_, _ = fmt.Fprintln(a.stdout, "  payments unallocated      List unallocated payments")
+	_, _ = fmt.Fprintln(a.stdout, "  quotes list               List quotes")
+	_, _ = fmt.Fprintln(a.stdout, "  quotes create             Create a quote")
+	_, _ = fmt.Fprintln(a.stdout, "  quotes get                Show one quote")
+	_, _ = fmt.Fprintln(a.stdout, "  quotes update             Update a draft quote")
+	_, _ = fmt.Fprintln(a.stdout, "  quotes delete             Delete a draft quote")
+	_, _ = fmt.Fprintln(a.stdout, "  quotes send               Mark a quote sent")
+	_, _ = fmt.Fprintln(a.stdout, "  quotes accept             Mark a quote accepted")
+	_, _ = fmt.Fprintln(a.stdout, "  quotes reject             Mark a quote rejected")
 	_, _ = fmt.Fprintln(a.stdout, "  reports trial-balance     Show trial balance")
 	_, _ = fmt.Fprintln(a.stdout, "  reports account-balance   Show one account balance")
 	_, _ = fmt.Fprintln(a.stdout, "  reports balance-sheet     Show balance sheet")
@@ -1149,6 +1160,236 @@ func (a *cliApp) runPayments(ctx context.Context, args []string) error {
 
 	default:
 		return fmt.Errorf("unknown payments subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runQuotes(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("quotes subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("quotes list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		statusFlag := fs.String("status", "", "Quote status")
+		contactID := fs.String("contact-id", "", "Contact id")
+		fromDate := fs.String("from", "", "From quote date in YYYY-MM-DD")
+		toDate := fs.String("to", "", "To quote date in YYYY-MM-DD")
+		search := fs.String("search", "", "Search term")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		status, err := parseOptionalQuoteStatus(*statusFlag)
+		if err != nil {
+			return err
+		}
+		fromDateValue, err := parseOptionalDate("from", *fromDate)
+		if err != nil {
+			return err
+		}
+		toDateValue, err := parseOptionalDate("to", *toDate)
+		if err != nil {
+			return err
+		}
+
+		quotesList, err := client.listQuotes(ctx, cfg.TenantID, quotes.QuoteFilter{
+			Status:    status,
+			ContactID: strings.TrimSpace(*contactID),
+			FromDate:  fromDateValue,
+			ToDate:    toDateValue,
+			Search:    strings.TrimSpace(*search),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, quotesList)
+		}
+		printQuotesTable(a.stdout, quotesList)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("quotes create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		contactID := fs.String("contact-id", "", "Contact id")
+		quoteDate := fs.String("quote-date", "", "Quote date in YYYY-MM-DD")
+		validUntil := fs.String("valid-until", "", "Valid until date in YYYY-MM-DD")
+		currency := fs.String("currency", "EUR", "Currency code")
+		exchangeRateFlag := fs.String("exchange-rate", "1", "Exchange rate to base currency")
+		notes := fs.String("notes", "", "Notes")
+		lines := quoteLineFlags{}
+		fs.Var(&lines, "line", "Line as comma-separated key=value pairs; repeatable")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*contactID) == "" {
+			return errors.New("contact-id is required")
+		}
+		quoteDateValue, err := parseRequiredDate("quote-date", *quoteDate)
+		if err != nil {
+			return err
+		}
+		validUntilValue, err := parseOptionalDate("valid-until", *validUntil)
+		if err != nil {
+			return err
+		}
+		if len(lines) == 0 {
+			return errors.New("at least one line is required")
+		}
+		exchangeRate, err := parseRequiredPositiveDecimal("exchange-rate", *exchangeRateFlag)
+		if err != nil {
+			return err
+		}
+
+		quote, err := client.createQuote(ctx, cfg.TenantID, &quotes.CreateQuoteRequest{
+			ContactID:    strings.TrimSpace(*contactID),
+			QuoteDate:    quoteDateValue,
+			ValidUntil:   validUntilValue,
+			Currency:     strings.ToUpper(strings.TrimSpace(*currency)),
+			ExchangeRate: exchangeRate,
+			Notes:        strings.TrimSpace(*notes),
+			Lines:        []quotes.CreateQuoteLineRequest(lines),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, quote)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created quote %s (%s)\n", quote.QuoteNumber, quote.ID)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("quotes get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		quoteID := fs.String("id", "", "Quote id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*quoteID) == "" {
+			return errors.New("id is required")
+		}
+
+		quote, err := client.getQuote(ctx, cfg.TenantID, strings.TrimSpace(*quoteID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, quote)
+		}
+		printQuote(a.stdout, quote)
+		return nil
+
+	case "update":
+		fs := flag.NewFlagSet("quotes update", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		quoteID := fs.String("id", "", "Quote id")
+		contactID := fs.String("contact-id", "", "Contact id")
+		quoteDate := fs.String("quote-date", "", "Quote date in YYYY-MM-DD")
+		validUntil := fs.String("valid-until", "", "Valid until date in YYYY-MM-DD")
+		currency := fs.String("currency", "EUR", "Currency code")
+		exchangeRateFlag := fs.String("exchange-rate", "1", "Exchange rate to base currency")
+		notes := fs.String("notes", "", "Notes")
+		lines := quoteLineFlags{}
+		fs.Var(&lines, "line", "Line as comma-separated key=value pairs; repeatable")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*quoteID) == "" {
+			return errors.New("id is required")
+		}
+		if strings.TrimSpace(*contactID) == "" {
+			return errors.New("contact-id is required")
+		}
+		quoteDateValue, err := parseRequiredDate("quote-date", *quoteDate)
+		if err != nil {
+			return err
+		}
+		validUntilValue, err := parseOptionalDate("valid-until", *validUntil)
+		if err != nil {
+			return err
+		}
+		if len(lines) == 0 {
+			return errors.New("at least one line is required")
+		}
+		exchangeRate, err := parseRequiredPositiveDecimal("exchange-rate", *exchangeRateFlag)
+		if err != nil {
+			return err
+		}
+
+		quote, err := client.updateQuote(ctx, cfg.TenantID, strings.TrimSpace(*quoteID), &quotes.UpdateQuoteRequest{
+			ContactID:    strings.TrimSpace(*contactID),
+			QuoteDate:    quoteDateValue,
+			ValidUntil:   validUntilValue,
+			Currency:     strings.ToUpper(strings.TrimSpace(*currency)),
+			ExchangeRate: exchangeRate,
+			Notes:        strings.TrimSpace(*notes),
+			Lines:        []quotes.CreateQuoteLineRequest(lines),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, quote)
+		}
+		printQuote(a.stdout, quote)
+		return nil
+
+	case "delete":
+		fs := flag.NewFlagSet("quotes delete", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		quoteID := fs.String("id", "", "Quote id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*quoteID) == "" {
+			return errors.New("id is required")
+		}
+
+		if err := client.deleteQuote(ctx, cfg.TenantID, strings.TrimSpace(*quoteID)); err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, map[string]string{"status": "deleted"})
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Deleted quote %s\n", strings.TrimSpace(*quoteID))
+		return nil
+
+	case "send", "accept", "reject":
+		fs := flag.NewFlagSet("quotes "+args[0], flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		quoteID := fs.String("id", "", "Quote id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*quoteID) == "" {
+			return errors.New("id is required")
+		}
+
+		result, err := client.updateQuoteStatus(ctx, cfg.TenantID, strings.TrimSpace(*quoteID), args[0])
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "%s quote %s\n", quoteActionPastTense(args[0]), strings.TrimSpace(*quoteID))
+		return nil
+
+	default:
+		return fmt.Errorf("unknown quotes subcommand %q", args[0])
 	}
 }
 
@@ -2645,6 +2886,19 @@ func parseOptionalInvoiceStatus(value string) (invoicing.InvoiceStatus, error) {
 	}
 }
 
+func parseOptionalQuoteStatus(value string) (quotes.QuoteStatus, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	switch quotes.QuoteStatus(normalized) {
+	case quotes.QuoteStatusDraft, quotes.QuoteStatusSent, quotes.QuoteStatusAccepted, quotes.QuoteStatusRejected, quotes.QuoteStatusExpired, quotes.QuoteStatusConverted:
+		return quotes.QuoteStatus(normalized), nil
+	default:
+		return "", fmt.Errorf("invalid quote status %q", value)
+	}
+}
+
 func parseOptionalPaymentType(value string) (payments.PaymentType, error) {
 	if strings.TrimSpace(value) == "" {
 		return "", nil
@@ -2689,6 +2943,19 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func quoteActionPastTense(action string) string {
+	switch action {
+	case "send":
+		return "Sent"
+	case "accept":
+		return "Accepted"
+	case "reject":
+		return "Rejected"
+	default:
+		return titleLabel(action)
+	}
 }
 
 type invoiceLineFlags []invoicing.CreateInvoiceLineRequest
@@ -2750,6 +3017,74 @@ func (l *invoiceLineFlags) Set(value string) error {
 }
 
 func (l *invoiceLineFlags) String() string {
+	if l == nil {
+		return ""
+	}
+	descriptions := make([]string, 0, len(*l))
+	for _, line := range *l {
+		descriptions = append(descriptions, line.Description)
+	}
+	return strings.Join(descriptions, ",")
+}
+
+type quoteLineFlags []quotes.CreateQuoteLineRequest
+
+func (l *quoteLineFlags) Set(value string) error {
+	reader := csv.NewReader(strings.NewReader(value))
+	reader.TrimLeadingSpace = true
+	reader.FieldsPerRecord = -1
+	fields, err := reader.Read()
+	if err != nil {
+		return fmt.Errorf("parse line: %w", err)
+	}
+
+	values := make(map[string]string)
+	for _, field := range fields {
+		key, val, ok := strings.Cut(field, "=")
+		if !ok {
+			return fmt.Errorf("line field %q must be key=value", field)
+		}
+		normalizedKey := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(key)), "-", "_")
+		values[normalizedKey] = strings.TrimSpace(val)
+	}
+
+	description := strings.TrimSpace(values["description"])
+	if description == "" {
+		return errors.New("line description is required")
+	}
+	quantity, err := parseRequiredPositiveDecimal("line quantity", firstNonEmpty(values["quantity"], values["qty"]))
+	if err != nil {
+		return err
+	}
+	unitPrice, err := parseRequiredNonNegativeDecimal("line unit_price", firstNonEmpty(values["unit_price"], values["price"]))
+	if err != nil {
+		return err
+	}
+	vatRate, err := parseRequiredNonNegativeDecimal("line vat_rate", firstNonEmpty(values["vat_rate"], values["vat"]))
+	if err != nil {
+		return err
+	}
+	discountPercent := decimal.Zero
+	if rawDiscount := firstNonEmpty(values["discount_percent"], values["discount"]); rawDiscount != "" {
+		discountPercent, err = parseRequiredNonNegativeDecimal("line discount_percent", rawDiscount)
+		if err != nil {
+			return err
+		}
+	}
+
+	*l = append(*l, quotes.CreateQuoteLineRequest{
+		Description:     description,
+		Quantity:        quantity,
+		Unit:            strings.TrimSpace(values["unit"]),
+		UnitPrice:       unitPrice,
+		DiscountPercent: discountPercent,
+		VATRate:         vatRate,
+		ProductID:       optionalStringPtr(firstNonEmpty(values["product_id"], values["product"])),
+	})
+	return nil
+}
+
+func (l *quoteLineFlags) String() string {
 	if l == nil {
 		return ""
 	}

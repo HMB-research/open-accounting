@@ -16,6 +16,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
+	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tax"
 )
@@ -159,6 +160,67 @@ func printInvoice(w io.Writer, invoice *invoicing.Invoice) {
 }
 
 func printInvoiceLinesTable(w io.Writer, lines []invoicing.InvoiceLine) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "NO\tDESCRIPTION\tQTY\tUNIT\tUNIT PRICE\tVAT\tTOTAL")
+	for _, line := range lines {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%d\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			line.LineNumber,
+			line.Description,
+			line.Quantity.String(),
+			line.Unit,
+			line.UnitPrice.String(),
+			line.VATRate.String(),
+			line.LineTotal.String(),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printQuotesTable(w io.Writer, quotesList []quotes.Quote) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNUMBER\tSTATUS\tDATE\tVALID UNTIL\tTOTAL\tCONTACT")
+	for _, quote := range quotesList {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			quote.ID,
+			quote.QuoteNumber,
+			quote.Status,
+			formatDate(quote.QuoteDate),
+			formatDatePtr(quote.ValidUntil),
+			quote.Total.String(),
+			quoteContactLabel(quote),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printQuote(w io.Writer, quote *quotes.Quote) {
+	_, _ = fmt.Fprintf(w, "Quote %s (%s)\n", quote.QuoteNumber, quote.Status)
+	_, _ = fmt.Fprintf(w, "ID: %s\n", quote.ID)
+	_, _ = fmt.Fprintf(w, "Contact: %s\n", quoteContactLabel(*quote))
+	_, _ = fmt.Fprintf(w, "Quote date: %s\n", formatDate(quote.QuoteDate))
+	_, _ = fmt.Fprintf(w, "Valid until: %s\n", formatDatePtr(quote.ValidUntil))
+	_, _ = fmt.Fprintf(w, "Subtotal: %s %s\n", quote.Subtotal.String(), quote.Currency)
+	_, _ = fmt.Fprintf(w, "VAT: %s\n", quote.VATAmount.String())
+	_, _ = fmt.Fprintf(w, "Total: %s\n", quote.Total.String())
+	if strings.TrimSpace(quote.Notes) != "" {
+		_, _ = fmt.Fprintf(w, "Notes: %s\n", quote.Notes)
+	}
+	if quote.ConvertedToOrderID != nil && strings.TrimSpace(*quote.ConvertedToOrderID) != "" {
+		_, _ = fmt.Fprintf(w, "Converted order: %s\n", *quote.ConvertedToOrderID)
+	}
+	if quote.ConvertedToInvoiceID != nil && strings.TrimSpace(*quote.ConvertedToInvoiceID) != "" {
+		_, _ = fmt.Fprintf(w, "Converted invoice: %s\n", *quote.ConvertedToInvoiceID)
+	}
+	if len(quote.Lines) > 0 {
+		printQuoteLinesTable(w, quote.Lines)
+	}
+}
+
+func printQuoteLinesTable(w io.Writer, lines []quotes.QuoteLine) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "NO\tDESCRIPTION\tQTY\tUNIT\tUNIT PRICE\tVAT\tTOTAL")
 	for _, line := range lines {
@@ -721,6 +783,13 @@ func invoiceContactLabel(invoice invoicing.Invoice) string {
 		return strings.TrimSpace(invoice.Contact.Name)
 	}
 	return invoice.ContactID
+}
+
+func quoteContactLabel(quote quotes.Quote) string {
+	if quote.Contact != nil && strings.TrimSpace(quote.Contact.Name) != "" {
+		return strings.TrimSpace(quote.Contact.Name)
+	}
+	return quote.ContactID
 }
 
 func journalLineAccountLabel(line accounting.JournalEntryLine) string {
