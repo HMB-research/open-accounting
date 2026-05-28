@@ -3658,6 +3658,39 @@ definitions:
       recurring_invoice_id:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_recurring.ImportRecurringInvoicesRequest:
+    properties:
+      csv_content:
+        type: string
+      file_name:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_recurring.ImportRecurringInvoicesResult:
+    properties:
+      errors:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_recurring.ImportRecurringInvoicesRowError'
+        type: array
+      file_name:
+        type: string
+      lines_imported:
+        type: integer
+      rows_processed:
+        type: integer
+      rows_skipped:
+        type: integer
+      templates_created:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_recurring.ImportRecurringInvoicesRowError:
+    properties:
+      message:
+        type: string
+      row:
+        type: integer
+      template:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_recurring.RecurringInvoice:
     properties:
       attach_pdf_to_email:
@@ -10621,6 +10654,43 @@ paths:
       security:
       - BearerAuth: []
       summary: Generate all due invoices
+      tags:
+      - Recurring
+  /tenants/{tenantID}/recurring-invoices/import:
+    post:
+      consumes:
+      - application/json
+      description: Import recurring invoice templates from grouped CSV data and skip
+        duplicate or invalid rows
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: CSV import payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_recurring.ImportRecurringInvoicesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_recurring.ImportRecurringInvoicesResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Import recurring invoices
       tags:
       - Recurring
   /tenants/{tenantID}/reports/account-balance/{accountID}:

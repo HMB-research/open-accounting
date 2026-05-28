@@ -315,6 +315,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  orders cancel             Cancel an order")
 	_, _ = fmt.Fprintln(a.stdout, "  recurring-invoices list   List recurring invoice templates")
 	_, _ = fmt.Fprintln(a.stdout, "  recurring-invoices create Create a recurring invoice template")
+	_, _ = fmt.Fprintln(a.stdout, "  recurring-invoices import Import recurring invoice templates from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  recurring-invoices from-invoice  Create template from an invoice")
 	_, _ = fmt.Fprintln(a.stdout, "  recurring-invoices get    Show one recurring invoice template")
 	_, _ = fmt.Fprintln(a.stdout, "  recurring-invoices update Update a recurring invoice template")
@@ -4502,6 +4503,35 @@ func (a *cliApp) runRecurringInvoices(ctx context.Context, args []string) error 
 			return printJSON(a.stdout, invoice)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Created recurring invoice %s (%s)\n", invoice.Name, invoice.ID)
+		return nil
+
+	case "import":
+		fs := flag.NewFlagSet("recurring-invoices import", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		filePath := fs.String("file", "", "CSV file path")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*filePath) == "" {
+			return errors.New("file is required")
+		}
+
+		content, fileName, err := readCSVInput(*filePath)
+		if err != nil {
+			return err
+		}
+		result, err := client.importRecurringInvoices(ctx, cfg.TenantID, &recurring.ImportRecurringInvoicesRequest{
+			FileName:   fileName,
+			CSVContent: content,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Processed %d rows, created %d recurring invoices, imported %d lines, skipped %d rows\n", result.RowsProcessed, result.TemplatesCreated, result.LinesImported, result.RowsSkipped)
 		return nil
 
 	case "from-invoice":

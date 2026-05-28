@@ -404,6 +404,7 @@ go run ./cmd/oa recurring-invoices from-invoice \
   --name "Repeat invoice" \
   --frequency QUARTERLY \
   --start-date 2026-04-01
+go run ./cmd/oa recurring-invoices import --file ./recurring-invoices.csv
 go run ./cmd/oa recurring-invoices get --id <recurring-id>
 go run ./cmd/oa recurring-invoices update --id <recurring-id> --frequency YEARLY --payment-terms-days 30
 go run ./cmd/oa recurring-invoices pause --id <recurring-id>
@@ -414,6 +415,8 @@ go run ./cmd/oa recurring-invoices delete --id <recurring-id>
 ```
 
 Frequencies are `WEEKLY`, `BIWEEKLY`, `MONTHLY`, `QUARTERLY`, and `YEARLY`. Use `--line` repeatedly on create or update. Recurring invoice email options include `--send-email`, `--recipient-email`, `--attach-pdf`, `--email-subject`, and `--email-message`.
+
+Recurring invoice imports use one CSV row per recurring template line and group rows by `name`. Required columns are `name`, `frequency`, `start_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`; optional columns include `invoice_type`, `currency`, `end_date`, `next_generation_date`, `payment_terms_days`, `reference`, `notes`, active/generation/email settings, `unit`, `discount_percent`, `account_id`, and `product_id`. Duplicate template names are skipped.
 
 ## Fixed assets
 

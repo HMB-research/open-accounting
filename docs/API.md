@@ -1404,6 +1404,21 @@ Content-Type: application/json
 
 Frequencies are `WEEKLY`, `BIWEEKLY`, `MONTHLY`, `QUARTERLY`, and `YEARLY`. `attach_pdf_to_email` defaults to true when omitted.
 
+### Import Recurring Invoices
+
+```http
+POST /tenants/{tenantId}/recurring-invoices/import
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "file_name": "recurring-invoices.csv",
+  "csv_content": "name,contact_code,frequency,start_date,line_description,quantity,unit_price,vat_rate\nMonthly Retainer,CUST-1,MONTHLY,2026-03-15,Consulting,1,100,22\n"
+}
+```
+
+Imports one CSV row per recurring template line and groups rows by `name`. Required columns are `name`, `frequency`, `start_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`. Optional columns include `invoice_type`, `currency`, `end_date`, `next_generation_date`, `payment_terms_days`, `reference`, `notes`, active/generation/email settings, `unit`, `discount_percent`, `account_id`, and `product_id`. Duplicate template names are skipped.
+
 ### Create From Existing Invoice
 
 ```http

@@ -1264,6 +1264,14 @@ func (c *apiClient) createRecurringInvoice(ctx context.Context, tenantID string,
 	return &resp, nil
 }
 
+func (c *apiClient) importRecurringInvoices(ctx context.Context, tenantID string, req *recurring.ImportRecurringInvoicesRequest) (*recurring.ImportRecurringInvoicesResult, error) {
+	var resp recurring.ImportRecurringInvoicesResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "recurring-invoices", "import"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) createRecurringInvoiceFromInvoice(ctx context.Context, tenantID, invoiceID string, req *recurring.CreateFromInvoiceRequest) (*recurring.RecurringInvoice, error) {
 	var resp recurring.RecurringInvoice
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "recurring-invoices", "from-invoice", invoiceID), req, c.apiToken, &resp); err != nil {
