@@ -1771,6 +1771,14 @@ func (c *apiClient) importOpeningBalances(ctx context.Context, tenantID string, 
 	return &resp, nil
 }
 
+func (c *apiClient) importJournalEntries(ctx context.Context, tenantID string, req *accounting.ImportJournalEntriesRequest) (*accounting.ImportJournalEntriesResult, error) {
+	var resp accounting.ImportJournalEntriesResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "journal-entries", "import"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) listJournalEntries(ctx context.Context, tenantID string, limit int) ([]accounting.JournalEntry, error) {
 	values := url.Values{}
 	if limit > 0 {

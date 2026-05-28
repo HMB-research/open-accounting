@@ -434,6 +434,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 
 				// Journal entries
 				r.Post("/journal-entries/import-opening-balances", h.ImportOpeningBalances)
+				r.Post("/journal-entries/import", h.ImportJournalEntries)
 				r.Get("/journal-entries", h.ListJournalEntries)
 				r.Get("/journal-entries/{entryID}", h.GetJournalEntry)
 				r.Post("/journal-entries", h.CreateJournalEntry)

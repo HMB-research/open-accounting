@@ -6543,6 +6543,74 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/journal-entries/import": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Import historical double-entry journal entries from grouped CSV rows",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Journal Entries"
+                ],
+                "summary": "Import journal entries",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Historical journal CSV payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ImportJournalEntriesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ImportJournalEntriesResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/journal-entries/import-opening-balances": {
             "post": {
                 "security": [
@@ -13020,6 +13088,75 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "name": {
+                    "type": "string"
+                },
+                "row": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.ImportJournalEntriesRequest": {
+            "type": "object",
+            "properties": {
+                "csv_content": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "post_entries": {
+                    "type": "boolean"
+                },
+                "source_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.ImportJournalEntriesResult": {
+            "type": "object",
+            "properties": {
+                "entries_created": {
+                    "type": "integer"
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ImportJournalEntriesRowError"
+                    }
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "journal_entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntry"
+                    }
+                },
+                "lines_imported": {
+                    "type": "integer"
+                },
+                "rows_processed": {
+                    "type": "integer"
+                },
+                "rows_skipped": {
+                    "type": "integer"
+                },
+                "total_credit": {
+                    "type": "number"
+                },
+                "total_debit": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.ImportJournalEntriesRowError": {
+            "type": "object",
+            "properties": {
+                "entry_reference": {
+                    "type": "string"
+                },
+                "message": {
                     "type": "string"
                 },
                 "row": {

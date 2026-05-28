@@ -533,3 +533,140 @@ func TestImportOpeningBalances(t *testing.T) {
 		})
 	}
 }
+
+func TestImportJournalEntries(t *testing.T) {
+	tests := []struct {
+		name           string
+		tenantID       string
+		claims         *auth.Claims
+		body           map[string]interface{}
+		setupMock      func(*mockTenantRepository, *mockAccountingRepository)
+		wantStatus     int
+		wantErrContain string
+		checkResponse  func(*testing.T, accounting.ImportJournalEntriesResult)
+	}{
+		{
+			name:     "imports posted historical journal entries",
+			tenantID: "tenant-1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			body: map[string]interface{}{
+				"file_name":    "journals.csv",
+				"source_type":  "LEGACY_GL",
+				"post_entries": true,
+				"csv_content": "entry_reference,entry_date,entry_description,account_code,line_description,debit,credit\n" +
+					"LEG-001,2026-03-31,Imported sale,1000,Cash received,100.00,0\n" +
+					"LEG-001,2026-03-31,Imported sale,4000,Revenue,0,100.00\n",
+			},
+			setupMock: func(tr *mockTenantRepository, ar *mockAccountingRepository) {
+				tr.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				ar.accounts["acc-1000"] = &accounting.Account{
+					ID:          "acc-1000",
+					TenantID:    "tenant-1",
+					Code:        "1000",
+					Name:        "Cash",
+					AccountType: accounting.AccountTypeAsset,
+					IsActive:    true,
+				}
+				ar.accounts["acc-4000"] = &accounting.Account{
+					ID:          "acc-4000",
+					TenantID:    "tenant-1",
+					Code:        "4000",
+					Name:        "Revenue",
+					AccountType: accounting.AccountTypeRevenue,
+					IsActive:    true,
+				}
+			},
+			wantStatus: http.StatusOK,
+			checkResponse: func(t *testing.T, resp accounting.ImportJournalEntriesResult) {
+				assert.Equal(t, "journals.csv", resp.FileName)
+				assert.Equal(t, 2, resp.RowsProcessed)
+				assert.Equal(t, 1, resp.EntriesCreated)
+				assert.Equal(t, 2, resp.LinesImported)
+				assert.True(t, resp.TotalDebit.Equal(decimal.NewFromInt(100)))
+				assert.True(t, resp.TotalCredit.Equal(decimal.NewFromInt(100)))
+				require.Len(t, resp.JournalEntries, 1)
+				assert.Equal(t, accounting.StatusPosted, resp.JournalEntries[0].Status)
+				assert.Equal(t, "LEG-001", resp.JournalEntries[0].Reference)
+				assert.Equal(t, "LEGACY_GL", resp.JournalEntries[0].SourceType)
+			},
+		},
+		{
+			name:     "locked period rows are skipped",
+			tenantID: "tenant-1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			body: map[string]interface{}{
+				"csv_content": "entry_reference,entry_date,account_code,debit,credit\n" +
+					"LOCKED,2026-02-15,1000,100.00,0\n" +
+					"LOCKED,2026-02-15,4000,0,100.00\n" +
+					"OK,2026-03-31,1000,50.00,0\n" +
+					"OK,2026-03-31,4000,0,50.00\n",
+			},
+			setupMock: func(tr *mockTenantRepository, ar *mockAccountingRepository) {
+				tenantRecord := tr.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				lockDate := "2026-02-28"
+				tenantRecord.Settings.PeriodLockDate = &lockDate
+				ar.accounts["acc-1000"] = &accounting.Account{ID: "acc-1000", TenantID: "tenant-1", Code: "1000", Name: "Cash", AccountType: accounting.AccountTypeAsset, IsActive: true}
+				ar.accounts["acc-4000"] = &accounting.Account{ID: "acc-4000", TenantID: "tenant-1", Code: "4000", Name: "Revenue", AccountType: accounting.AccountTypeRevenue, IsActive: true}
+			},
+			wantStatus: http.StatusOK,
+			checkResponse: func(t *testing.T, resp accounting.ImportJournalEntriesResult) {
+				assert.Equal(t, 4, resp.RowsProcessed)
+				assert.Equal(t, 1, resp.EntriesCreated)
+				assert.Equal(t, 2, resp.RowsSkipped)
+				require.Len(t, resp.Errors, 1)
+				assert.Contains(t, resp.Errors[0].Message, "period locked through 2026-02-28")
+			},
+		},
+		{
+			name:     "rejects missing csv content",
+			tenantID: "tenant-1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			body:           map[string]interface{}{},
+			wantStatus:     http.StatusBadRequest,
+			wantErrContain: "csv_content is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, tenantRepo, accountingRepo := setupAccountingTestHandlers()
+			if tt.setupMock != nil {
+				tt.setupMock(tenantRepo, accountingRepo)
+			}
+
+			req := makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tt.tenantID+"/journal-entries/import", tt.body, tt.claims)
+			req = withURLParams(req, map[string]string{"tenantID": tt.tenantID})
+			w := httptest.NewRecorder()
+
+			h.ImportJournalEntries(w, req)
+
+			assert.Equal(t, tt.wantStatus, w.Code, "response body: %s", w.Body.String())
+
+			if tt.wantErrContain != "" {
+				var resp map[string]string
+				err := json.NewDecoder(w.Body).Decode(&resp)
+				require.NoError(t, err)
+				assert.Contains(t, resp["error"], tt.wantErrContain)
+			}
+
+			if tt.checkResponse != nil {
+				var resp accounting.ImportJournalEntriesResult
+				err := json.NewDecoder(w.Body).Decode(&resp)
+				require.NoError(t, err)
+				tt.checkResponse(t, resp)
+			}
+		})
+	}
+}
