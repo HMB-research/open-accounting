@@ -49,6 +49,25 @@ func (m *mockDocumentRepository) ListDocuments(ctx context.Context, schemaName, 
 	return result, nil
 }
 
+func (m *mockDocumentRepository) ListRetentionReviewDocuments(ctx context.Context, schemaName, tenantID string, cutoff time.Time, includeMissing bool) ([]documents.Document, error) {
+	result := make([]documents.Document, 0, len(m.docs))
+	for _, doc := range m.docs {
+		if doc.TenantID != tenantID {
+			continue
+		}
+		if doc.RetentionUntil == nil {
+			if includeMissing {
+				result = append(result, *doc)
+			}
+			continue
+		}
+		if !doc.RetentionUntil.After(cutoff) {
+			result = append(result, *doc)
+		}
+	}
+	return result, nil
+}
+
 func (m *mockDocumentRepository) ListReviewSummaries(ctx context.Context, schemaName, tenantID, entityType string, entityIDs []string) (map[string]documents.ReviewSummary, error) {
 	result := make(map[string]documents.ReviewSummary, len(entityIDs))
 	for _, entityID := range entityIDs {
@@ -194,6 +213,18 @@ func TestUploadListDownloadAndDeleteDocument(t *testing.T) {
 	require.False(t, summaries[0].MissingEvidence)
 	require.Equal(t, "txn-2", summaries[1].EntityID)
 	require.True(t, summaries[1].MissingEvidence)
+
+	retentionReq := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/documents/retention?as_of=2027-03-01&horizon_days=45", nil, claims)
+	retentionReq = withURLParams(retentionReq, map[string]string{"tenantID": "tenant-1"})
+	retentionResp := httptest.NewRecorder()
+	h.GetDocumentRetentionReview(retentionResp, retentionReq)
+	require.Equal(t, http.StatusOK, retentionResp.Code)
+
+	var retentionReview documents.RetentionReview
+	require.NoError(t, json.NewDecoder(retentionResp.Body).Decode(&retentionReview))
+	require.Equal(t, 1, retentionReview.TotalCount)
+	require.Equal(t, 1, retentionReview.DueSoonCount)
+	require.Len(t, retentionReview.Documents, 1)
 
 	reviewReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/documents/"+uploaded.ID+"/mark-reviewed", nil, claims)
 	reviewReq = withURLParams(reviewReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})

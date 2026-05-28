@@ -2228,6 +2228,26 @@ func (c *apiClient) listDocumentReviewSummaries(ctx context.Context, tenantID st
 	return resp, nil
 }
 
+func (c *apiClient) getDocumentRetentionReview(ctx context.Context, tenantID, asOfDate string, horizonDays int, includeMissing bool) (*documents.RetentionReview, error) {
+	values := url.Values{}
+	if strings.TrimSpace(asOfDate) != "" {
+		values.Set("as_of", strings.TrimSpace(asOfDate))
+	}
+	if horizonDays >= 0 {
+		values.Set("horizon_days", strconv.Itoa(horizonDays))
+	}
+	if includeMissing {
+		values.Set("include_missing", "true")
+	}
+
+	var resp documents.RetentionReview
+	urlPath := withQuery(path.Join("/api/v1/tenants", tenantID, "documents", "retention"), values)
+	if err := c.request(ctx, http.MethodGet, urlPath, nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) uploadDocument(ctx context.Context, tenantID string, req *documents.UploadDocumentRequest, fileContent []byte) (*documents.Document, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)

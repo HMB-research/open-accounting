@@ -60,6 +60,39 @@ func (h *Handlers) ListDocumentReviewSummaries(w http.ResponseWriter, r *http.Re
 	respondJSON(w, http.StatusOK, result)
 }
 
+func (h *Handlers) GetDocumentRetentionReview(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	asOfDate := time.Now().UTC()
+	if rawAsOf := strings.TrimSpace(r.URL.Query().Get("as_of")); rawAsOf != "" {
+		parsed, err := time.Parse("2006-01-02", rawAsOf)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "Invalid as_of date, expected YYYY-MM-DD")
+			return
+		}
+		asOfDate = parsed
+	}
+	horizonDays := 30
+	if rawHorizon := strings.TrimSpace(r.URL.Query().Get("horizon_days")); rawHorizon != "" {
+		parsed, err := strconv.Atoi(rawHorizon)
+		if err != nil || parsed < 0 {
+			respondError(w, http.StatusBadRequest, "horizon_days must be zero or greater")
+			return
+		}
+		horizonDays = parsed
+	}
+	includeMissing := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("include_missing")), "true")
+
+	result, err := h.documentsService.GetRetentionReview(r.Context(), schemaName, tenantID, asOfDate, horizonDays, includeMissing)
+	if err != nil {
+		respondDocumentError(w, err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 func (h *Handlers) UploadDocument(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetClaims(r.Context())
 	tenantID := chi.URLParam(r, "tenantID")
