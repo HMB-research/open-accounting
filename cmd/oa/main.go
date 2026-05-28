@@ -146,6 +146,8 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  auth login                Log in and print JWT tokens")
 	_, _ = fmt.Fprintln(a.stdout, "  auth init                 Bootstrap and store a tenant-scoped API token")
 	_, _ = fmt.Fprintln(a.stdout, "  auth refresh              Exchange a refresh token for an access token")
+	_, _ = fmt.Fprintln(a.stdout, "  auth sessions             List refresh token sessions")
+	_, _ = fmt.Fprintln(a.stdout, "  auth revoke-session       Revoke a refresh token session by id")
 	_, _ = fmt.Fprintln(a.stdout, "  auth tenants              List tenants for the current token")
 	_, _ = fmt.Fprintln(a.stdout, "  auth status               Show current CLI auth status")
 	_, _ = fmt.Fprintln(a.stdout, "  auth logout               Revoke a refresh token and remove local CLI config")
@@ -619,6 +621,50 @@ func (a *cliApp) runAuth(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, memberships)
 		}
 		printTenantMembershipsTable(a.stdout, memberships)
+		return nil
+
+	case "sessions":
+		cfg, client, err := a.loadTokenClient()
+		if err != nil {
+			return err
+		}
+
+		fs := flag.NewFlagSet("auth sessions", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		includeInactive := fs.Bool("include-inactive", false, "Include revoked and expired sessions")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		sessions, err := client.listAuthSessions(ctx, *includeInactive, cfg.APIToken)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, sessions)
+		}
+		printRefreshSessions(a.stdout, sessions)
+		return nil
+
+	case "revoke-session":
+		cfg, client, err := a.loadTokenClient()
+		if err != nil {
+			return err
+		}
+
+		fs := flag.NewFlagSet("auth revoke-session", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		sessionID := fs.String("id", "", "Refresh session id")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*sessionID) == "" {
+			return errors.New("id is required")
+		}
+		if err := client.revokeAuthSession(ctx, strings.TrimSpace(*sessionID), cfg.APIToken); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintln(a.stdout, "Revoked refresh session")
 		return nil
 
 	case "status":

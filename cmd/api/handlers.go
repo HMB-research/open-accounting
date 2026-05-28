@@ -75,6 +75,8 @@ type refreshSessionManager interface {
 	CreateRefreshSession(ctx context.Context, userID, tokenID, tokenHash string, expiresAt time.Time) error
 	RotateRefreshSession(ctx context.Context, userID, oldTokenID, oldTokenHash, newTokenID, newTokenHash string, newExpiresAt time.Time) error
 	RevokeRefreshSession(ctx context.Context, userID, tokenID, tokenHash string) error
+	ListRefreshSessions(ctx context.Context, userID string, includeInactive bool) ([]auth.RefreshSession, error)
+	RevokeRefreshSessionByID(ctx context.Context, userID, tokenID string) error
 }
 
 // getSchemaName returns the schema name for a tenant
@@ -402,6 +404,74 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	respondJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
+}
+
+// ListAuthSessions lists refresh sessions for the authenticated user
+// @Summary List auth sessions
+// @Description List active refresh-token sessions for the authenticated user
+// @Tags Auth
+// @Produce json
+// @Security BearerAuth
+// @Param include_inactive query bool false "Include revoked and expired sessions"
+// @Success 200 {array} auth.RefreshSession
+// @Failure 401 {object} object{error=string}
+// @Router /auth/sessions [get]
+func (h *Handlers) ListAuthSessions(w http.ResponseWriter, r *http.Request) {
+	claims, ok := auth.GetClaims(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+	if h.refreshSessionService == nil {
+		respondError(w, http.StatusInternalServerError, "Refresh session service unavailable")
+		return
+	}
+
+	includeInactive := strings.EqualFold(r.URL.Query().Get("include_inactive"), "true")
+	sessions, err := h.refreshSessionService.ListRefreshSessions(r.Context(), claims.UserID, includeInactive)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list refresh sessions")
+		return
+	}
+	respondJSON(w, http.StatusOK, sessions)
+}
+
+// RevokeAuthSession revokes one refresh session for the authenticated user
+// @Summary Revoke auth session
+// @Description Revoke one refresh-token session for the authenticated user
+// @Tags Auth
+// @Produce json
+// @Security BearerAuth
+// @Param sessionID path string true "Refresh session id"
+// @Success 200 {object} object{status=string}
+// @Failure 401 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Router /auth/sessions/{sessionID} [delete]
+func (h *Handlers) RevokeAuthSession(w http.ResponseWriter, r *http.Request) {
+	claims, ok := auth.GetClaims(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+	if h.refreshSessionService == nil {
+		respondError(w, http.StatusInternalServerError, "Refresh session service unavailable")
+		return
+	}
+
+	sessionID := strings.TrimSpace(chi.URLParam(r, "sessionID"))
+	if sessionID == "" {
+		respondError(w, http.StatusBadRequest, "Session id is required")
+		return
+	}
+	if err := h.refreshSessionService.RevokeRefreshSessionByID(r.Context(), claims.UserID, sessionID); err != nil {
+		if errors.Is(err, auth.ErrRefreshSessionInvalid) {
+			respondError(w, http.StatusNotFound, "Refresh session not found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to revoke refresh session")
+		return
+	}
 	respondJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
 }
 

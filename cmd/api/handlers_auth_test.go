@@ -340,6 +340,7 @@ type mockRefreshSessionService struct {
 	createErr error
 	rotateErr error
 	revokeErr error
+	listErr   error
 }
 
 type mockRefreshSession struct {
@@ -381,6 +382,40 @@ func (m *mockRefreshSessionService) RevokeRefreshSession(ctx context.Context, us
 	}
 	session, ok := m.sessions[tokenID]
 	if !ok || session.userID != userID || session.tokenHash != tokenHash || session.revoked || !session.expiresAt.After(time.Now()) {
+		return auth.ErrRefreshSessionInvalid
+	}
+	session.revoked = true
+	m.sessions[tokenID] = session
+	return nil
+}
+
+func (m *mockRefreshSessionService) ListRefreshSessions(ctx context.Context, userID string, includeInactive bool) ([]auth.RefreshSession, error) {
+	if m.listErr != nil {
+		return nil, m.listErr
+	}
+	var sessions []auth.RefreshSession
+	for tokenID, session := range m.sessions {
+		active := !session.revoked && session.expiresAt.After(time.Now())
+		if session.userID == userID && (includeInactive || active) {
+			refreshSession := auth.RefreshSession{
+				ID:        tokenID,
+				UserID:    session.userID,
+				CreatedAt: time.Now().Add(-time.Minute),
+				ExpiresAt: session.expiresAt,
+			}
+			if session.revoked {
+				now := time.Now()
+				refreshSession.RevokedAt = &now
+			}
+			sessions = append(sessions, refreshSession)
+		}
+	}
+	return sessions, nil
+}
+
+func (m *mockRefreshSessionService) RevokeRefreshSessionByID(ctx context.Context, userID, tokenID string) error {
+	session, ok := m.sessions[tokenID]
+	if !ok || session.userID != userID || session.revoked || !session.expiresAt.After(time.Now()) {
 		return auth.ErrRefreshSessionInvalid
 	}
 	session.revoked = true
@@ -888,6 +923,58 @@ func TestLogoutRejectsInvalidRefreshToken(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.Logout(w, req)
 	assert.Equal(t, http.StatusUnauthorized, w.Code, "response body: %s", w.Body.String())
+}
+
+func TestListAuthSessions(t *testing.T) {
+	h, repo := setupAuthTestHandlers()
+	repo.addTestUser("user-1", "user@example.com", "Test User", "password123", true)
+	createMockRefreshSession(t, h, "user-1")
+	revokedToken := createMockRefreshSession(t, h, "user-1")
+
+	revokedClaims, err := h.tokenService.ValidateRefreshTokenClaims(revokedToken)
+	require.NoError(t, err)
+	require.NoError(t, h.refreshSessionService.RevokeRefreshSession(context.Background(), "user-1", revokedClaims.ID, auth.HashRefreshToken(revokedToken)))
+
+	claims := createTestClaims("user-1", "user@example.com", "", "")
+	req := makeAuthenticatedRequest(http.MethodGet, "/auth/sessions", nil, claims)
+	w := httptest.NewRecorder()
+	h.ListAuthSessions(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+
+	var activeSessions []auth.RefreshSession
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&activeSessions))
+	require.Len(t, activeSessions, 1)
+	assert.Nil(t, activeSessions[0].RevokedAt)
+
+	req = makeAuthenticatedRequest(http.MethodGet, "/auth/sessions?include_inactive=true", nil, claims)
+	w = httptest.NewRecorder()
+	h.ListAuthSessions(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+
+	var allSessions []auth.RefreshSession
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&allSessions))
+	require.Len(t, allSessions, 2)
+}
+
+func TestRevokeAuthSession(t *testing.T) {
+	h, repo := setupAuthTestHandlers()
+	repo.addTestUser("user-1", "user@example.com", "Test User", "password123", true)
+	refreshToken := createMockRefreshSession(t, h, "user-1")
+	refreshClaims, err := h.tokenService.ValidateRefreshTokenClaims(refreshToken)
+	require.NoError(t, err)
+
+	claims := createTestClaims("user-1", "user@example.com", "", "")
+	req := makeAuthenticatedRequest(http.MethodDelete, "/auth/sessions/"+refreshClaims.ID, nil, claims)
+	req = withURLParams(req, map[string]string{"sessionID": refreshClaims.ID})
+	w := httptest.NewRecorder()
+	h.RevokeAuthSession(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+
+	req = makeAuthenticatedRequest(http.MethodDelete, "/auth/sessions/"+refreshClaims.ID, nil, claims)
+	req = withURLParams(req, map[string]string{"sessionID": refreshClaims.ID})
+	w = httptest.NewRecorder()
+	h.RevokeAuthSession(w, req)
+	assert.Equal(t, http.StatusNotFound, w.Code, "response body: %s", w.Body.String())
 }
 
 // =============================================================================

@@ -58,6 +58,15 @@ type currentUser struct {
 	Name  string `json:"name"`
 }
 
+type refreshSession struct {
+	ID         string     `json:"id"`
+	UserID     string     `json:"user_id"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	ExpiresAt  time.Time  `json:"expires_at"`
+	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
+}
+
 type accountBalanceReport struct {
 	AccountID string `json:"account_id"`
 	AsOfDate  string `json:"as_of_date"`
@@ -135,6 +144,30 @@ func (c *apiClient) logout(ctx context.Context, refreshToken string) error {
 	return c.request(ctx, http.MethodPost, "/api/v1/auth/logout", map[string]string{
 		"refresh_token": refreshToken,
 	}, "", nil)
+}
+
+func (c *apiClient) listAuthSessions(ctx context.Context, includeInactive bool, accessToken string) ([]refreshSession, error) {
+	path := "/api/v1/auth/sessions"
+	if includeInactive {
+		path += "?include_inactive=true"
+	}
+	bearerToken := strings.TrimSpace(accessToken)
+	if bearerToken == "" {
+		bearerToken = c.apiToken
+	}
+	var sessions []refreshSession
+	if err := c.request(ctx, http.MethodGet, path, nil, bearerToken, &sessions); err != nil {
+		return nil, err
+	}
+	return sessions, nil
+}
+
+func (c *apiClient) revokeAuthSession(ctx context.Context, sessionID, accessToken string) error {
+	bearerToken := strings.TrimSpace(accessToken)
+	if bearerToken == "" {
+		bearerToken = c.apiToken
+	}
+	return c.request(ctx, http.MethodDelete, "/api/v1/auth/sessions/"+url.PathEscape(sessionID), nil, bearerToken, nil)
 }
 
 func (c *apiClient) health(ctx context.Context) (string, error) {

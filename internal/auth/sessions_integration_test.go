@@ -35,10 +35,19 @@ func TestRefreshSessionServiceLifecycle(t *testing.T) {
 	err = service.RotateRefreshSession(ctx, userID, oldTokenID, oldHash, newTokenID, newHash, expiresAt.Add(time.Hour))
 	require.NoError(t, err)
 
+	activeSessions, err := service.ListRefreshSessions(ctx, userID, false)
+	require.NoError(t, err)
+	require.Len(t, activeSessions, 1)
+	assert.Equal(t, newTokenID, activeSessions[0].ID)
+
+	allSessions, err := service.ListRefreshSessions(ctx, userID, true)
+	require.NoError(t, err)
+	require.Len(t, allSessions, 2)
+
 	err = service.RotateRefreshSession(ctx, userID, oldTokenID, oldHash, uuid.NewString(), HashRefreshToken("reuse"), expiresAt)
 	assert.ErrorIs(t, err, ErrRefreshSessionInvalid)
 
-	err = service.RevokeRefreshSession(ctx, userID, newTokenID, newHash)
+	err = service.RevokeRefreshSessionByID(ctx, userID, newTokenID)
 	require.NoError(t, err)
 
 	err = service.RevokeRefreshSession(ctx, userID, newTokenID, newHash)

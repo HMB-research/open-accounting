@@ -734,6 +734,21 @@ definitions:
       useful_life_months:
         type: integer
     type: object
+  github_com_HMB-research_open-accounting_internal_auth.RefreshSession:
+    properties:
+      created_at:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      last_used_at:
+        type: string
+      revoked_at:
+        type: string
+      user_id:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_banking.BankAccount:
     properties:
       account_number:
@@ -4475,6 +4490,73 @@ paths:
                 type: string
             type: object
       summary: Register new user
+      tags:
+      - Auth
+  /auth/sessions:
+    get:
+      description: List active refresh-token sessions for the authenticated user
+      parameters:
+      - description: Include revoked and expired sessions
+        in: query
+        name: include_inactive
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_auth.RefreshSession'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List auth sessions
+      tags:
+      - Auth
+  /auth/sessions/{sessionID}:
+    delete:
+      description: Revoke one refresh-token session for the authenticated user
+      parameters:
+      - description: Refresh session id
+        in: path
+        name: sessionID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Revoke auth session
       tags:
       - Auth
   /invitations/{token}:

@@ -373,6 +373,8 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 			// User routes
 			r.Get("/me", h.GetCurrentUser)
 			r.Get("/me/tenants", h.ListMyTenants)
+			r.Get("/auth/sessions", h.ListAuthSessions)
+			r.Delete("/auth/sessions/{sessionID}", h.RevokeAuthSession)
 
 			// Tenant management
 			r.Post("/tenants", h.CreateTenant)

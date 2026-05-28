@@ -157,6 +157,20 @@ func TestCLIAuthInitStatusAndLogoutFlow(t *testing.T) {
 				"name":  "CLI User",
 				"email": "cli@example.com",
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/auth/sessions":
+			require.Equal(t, "Bearer oa_raw_token_123456789", r.Header.Get("Authorization"))
+			assert.Equal(t, "true", r.URL.Query().Get("include_inactive"))
+			_ = json.NewEncoder(w).Encode([]map[string]string{
+				{
+					"id":         "session-1",
+					"user_id":    "user-1",
+					"created_at": "2026-05-28T12:00:00Z",
+					"expires_at": "2026-06-04T12:00:00Z",
+				},
+			})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/auth/sessions/session-1":
+			require.Equal(t, "Bearer oa_raw_token_123456789", r.Header.Get("Authorization"))
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "revoked"})
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -196,6 +210,17 @@ func TestCLIAuthInitStatusAndLogoutFlow(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "CLI User <cli@example.com>")
 	assert.Contains(t, stdout.String(), "Tenant: Alpha (tenant-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"auth", "sessions", "--include-inactive"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "session-1")
+	assert.Contains(t, stdout.String(), "active")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"auth", "revoke-session", "--id", "session-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Revoked refresh session")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"auth", "logout"})
