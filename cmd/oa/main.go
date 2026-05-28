@@ -388,6 +388,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  reports balance-confirmation  Show one balance confirmation")
 	_, _ = fmt.Fprintln(a.stdout, "  documents list            List documents for a record")
 	_, _ = fmt.Fprintln(a.stdout, "  documents review-summary  Summarize document review state")
+	_, _ = fmt.Fprintln(a.stdout, "  documents review-queue    List documents waiting for reviewer action")
 	_, _ = fmt.Fprintln(a.stdout, "  documents evidence-policy Evaluate required evidence policy")
 	_, _ = fmt.Fprintln(a.stdout, "  documents retention       List retention-due documents")
 	_, _ = fmt.Fprintln(a.stdout, "  documents upload          Upload a document to a record")
@@ -8667,6 +8668,36 @@ func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, summaries)
 		}
 		printDocumentReviewSummariesTable(a.stdout, summaries)
+		return nil
+
+	case "review-queue":
+		fs := flag.NewFlagSet("documents review-queue", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		entityType := fs.String("entity-type", "", "Optional entity type filter")
+		documentType := fs.String("document-type", "", "Optional document type filter")
+		reviewStatus := fs.String("status", documents.ReviewStatusPending, "Review status filter: PENDING, REVIEWED, APPROVED, REJECTED, or all")
+		limit := fs.Int("limit", 50, "Maximum documents to return")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *limit < 0 {
+			return errors.New("limit must be zero or greater")
+		}
+
+		queue, err := client.getDocumentReviewQueue(ctx, cfg.TenantID, &documents.ReviewQueueFilter{
+			EntityType:   strings.TrimSpace(*entityType),
+			DocumentType: strings.TrimSpace(*documentType),
+			ReviewStatus: strings.TrimSpace(*reviewStatus),
+			Limit:        *limit,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, queue)
+		}
+		printDocumentReviewQueue(a.stdout, queue)
 		return nil
 
 	case "evidence-policy":

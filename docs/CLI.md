@@ -751,6 +751,10 @@ go run ./cmd/oa documents upload \
   --file ./close-pack.pdf \
   --document-type close_pack \
   --notes "Approved fiscal-year close pack"
+go run ./cmd/oa documents review-queue \
+  --entity-type year_end_close \
+  --document-type close_pack \
+  --status PENDING
 go run ./cmd/oa documents review-summary --entity-type payment --entity-id <payment-id> --entity-id <payment-id>
 go run ./cmd/oa documents evidence-policy --entity-type payment --entity-id <payment-id> --document-type receipt --require-approved
 go run ./cmd/oa documents retention --as-of 2027-03-01 --horizon-days 45 --include-missing
@@ -761,7 +765,7 @@ go run ./cmd/oa documents mark-reviewed --id <document-id>
 go run ./cmd/oa documents delete --id <document-id>
 ```
 
-`documents evidence-policy` checks required evidence for one or more entity IDs. Repeat `--document-type` or `--required-document-type` to allow several document types in the rule, set `--min-count` for the required count, and use `--require-approved` when pending or reviewed-but-unapproved evidence must fail. `documents retention` returns a tenant-wide queue of documents whose `retention_until` is due by the cutoff, with optional missing-retention records. `documents review` supports `REVIEWED`, `APPROVED`, and `REJECTED`; rejected documents require a review note. `documents download` uses the server-provided filename when `--output` is omitted. Use `--output -` to stream the document content to stdout.
+`documents review-queue` returns a tenant-wide reviewer queue, defaulting to `PENDING` documents; filter by `--entity-type year_end_close --document-type close_pack` for fiscal-year close-pack approvals, and use `--status all` for audit review. `documents evidence-policy` checks required evidence for one or more entity IDs. Repeat `--document-type` or `--required-document-type` to allow several document types in the rule, set `--min-count` for the required count, and use `--require-approved` when pending or reviewed-but-unapproved evidence must fail. `documents retention` returns a tenant-wide queue of documents whose `retention_until` is due by the cutoff, with optional missing-retention records. `documents review` supports `REVIEWED`, `APPROVED`, and `REJECTED`; rejected documents require a review note. `documents download` uses the server-provided filename when `--output` is omitted. Use `--output -` to stream the document content to stdout.
 
 ## Journal entries
 
