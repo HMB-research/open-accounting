@@ -2104,6 +2104,7 @@ func TestCLIInventoryCommands(t *testing.T) {
 		"created_by":    "user-1",
 	}
 	importFile := writeTempCSV(t, "products.csv", "code,name,sales_price\nSKU-001,Widget,15.00\n")
+	stockImportFile := writeTempCSV(t, "stock.csv", "product_code,warehouse_code,quantity\nSKU-001,MAIN,12\n")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -2209,6 +2210,16 @@ func TestCLIInventoryCommands(t *testing.T) {
 			assert.Equal(t, "10.5", req.UnitCost)
 			assert.Equal(t, "Cycle count", req.Reason)
 			_ = json.NewEncoder(w).Encode(movementPayload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/stock-import":
+			var req inventory.ImportStockAdjustmentsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "stock.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "SKU-001")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed":       1,
+				"adjustments_imported": 1,
+				"rows_skipped":         0,
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/transfer":
 			var req inventory.TransferStockRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -2354,6 +2365,11 @@ func TestCLIInventoryCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"inventory", "adjust", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "-2.00", "--unit-cost", "10.50", "--reason", "Cycle count"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Adjusted stock for product prod-1 by -2 in warehouse wh-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "stock", "import", "--file", stockImportFile})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Processed 1 rows, imported 1 stock adjustments, skipped 0 rows")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"inventory", "transfer", "--product-id", "prod-1", "--from-warehouse-id", "wh-1", "--to-warehouse-id", "wh-2", "--quantity", "3.00", "--notes", "Move to branch", "--json"})

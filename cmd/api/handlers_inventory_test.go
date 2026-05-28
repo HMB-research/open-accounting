@@ -679,6 +679,56 @@ func TestAdjustStock(t *testing.T) {
 	}
 }
 
+func TestImportStockAdjustments(t *testing.T) {
+	h, repo, tenantRepo := setupInventoryTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	repo.products["prod-1"] = &inventory.Product{
+		ID:           "prod-1",
+		TenantID:     "tenant-1",
+		Code:         "SKU-001",
+		Name:         "Widget",
+		CurrentStock: decimal.Zero,
+	}
+	repo.warehouses["wh-1"] = &inventory.Warehouse{
+		ID:       "wh-1",
+		TenantID: "tenant-1",
+		Code:     "MAIN",
+		Name:     "Main Warehouse",
+	}
+
+	body := map[string]interface{}{
+		"file_name":   "stock.csv",
+		"csv_content": "product_code,warehouse_code,quantity,unit_cost,reason\nSKU-001,MAIN,12,10.50,Opening stock\n",
+	}
+	bodyBytes, _ := json.Marshal(body)
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/inventory/stock-import", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	claims := createTestClaims("user-1", "test@example.com", "tenant-1", "owner")
+	ctx := contextWithClaims(req.Context(), claims)
+	ctx = contextWithPlainClaims(ctx, claims)
+	req = req.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+	h.ImportStockAdjustments(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var result inventory.ImportStockAdjustmentsResult
+	err := json.Unmarshal(rr.Body.Bytes(), &result)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.AdjustmentsImported)
+	assert.Equal(t, 0, result.RowsSkipped)
+	assert.True(t, repo.products["prod-1"].CurrentStock.Equal(decimal.NewFromInt(12)))
+}
+
 func TestListProductCategories(t *testing.T) {
 	h, repo, tenantRepo := setupInventoryTestHandlers()
 

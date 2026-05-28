@@ -1387,6 +1387,41 @@ definitions:
       row:
         type: integer
     type: object
+  github_com_HMB-research_open-accounting_internal_inventory.ImportStockAdjustmentsRequest:
+    properties:
+      csv_content:
+        type: string
+      file_name:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_inventory.ImportStockAdjustmentsResult:
+    properties:
+      adjustments_imported:
+        type: integer
+      errors:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.ImportStockAdjustmentsRowError'
+        type: array
+      file_name:
+        type: string
+      rows_processed:
+        type: integer
+      rows_skipped:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_inventory.ImportStockAdjustmentsRowError:
+    properties:
+      message:
+        type: string
+      product_ref:
+        type: string
+      quantity:
+        type: string
+      row:
+        type: integer
+      warehouse_ref:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_invoicing.AutomatedReminderResult:
     properties:
       errors:
@@ -7022,6 +7057,43 @@ paths:
       summary: Import employees
       tags:
       - Payroll
+  /tenants/{tenantID}/inventory/stock-import:
+    post:
+      consumes:
+      - application/json
+      description: Import signed stock adjustment rows from CSV using product and
+        warehouse IDs or codes
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: CSV import payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.ImportStockAdjustmentsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.ImportStockAdjustmentsResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Import stock adjustments
+      tags:
+      - Inventory
   /tenants/{tenantID}/invitations:
     get:
       description: Get all pending invitations for a tenant

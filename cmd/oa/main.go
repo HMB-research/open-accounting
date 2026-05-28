@@ -351,6 +351,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  inventory warehouses update  Update a warehouse")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory warehouses delete  Delete a warehouse")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory adjust          Adjust product stock")
+	_, _ = fmt.Fprintln(a.stdout, "  inventory stock import    Import stock adjustments from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory transfer        Transfer stock between warehouses")
 	_, _ = fmt.Fprintln(a.stdout, "  cost-centers list         List cost centers")
 	_, _ = fmt.Fprintln(a.stdout, "  cost-centers create       Create a cost center")
@@ -5150,6 +5151,8 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		return a.runInventoryProducts(ctx, cfg, client, args[1:])
 	case "warehouses":
 		return a.runInventoryWarehouses(ctx, cfg, client, args[1:])
+	case "stock":
+		return a.runInventoryStock(ctx, cfg, client, args[1:])
 	case "adjust":
 		fs := flag.NewFlagSet("inventory adjust", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
@@ -5240,6 +5243,46 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 
 	default:
 		return fmt.Errorf("unknown inventory subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runInventoryStock(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("inventory stock subcommand required")
+	}
+
+	switch args[0] {
+	case "import":
+		fs := flag.NewFlagSet("inventory stock import", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		filePath := fs.String("file", "", "CSV file path")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*filePath) == "" {
+			return errors.New("file is required")
+		}
+
+		content, fileName, err := readCSVInput(*filePath)
+		if err != nil {
+			return err
+		}
+		result, err := client.importStockAdjustments(ctx, cfg.TenantID, &inventory.ImportStockAdjustmentsRequest{
+			FileName:   fileName,
+			CSVContent: content,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Processed %d rows, imported %d stock adjustments, skipped %d rows\n", result.RowsProcessed, result.AdjustmentsImported, result.RowsSkipped)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown inventory stock subcommand %q", args[0])
 	}
 }
 

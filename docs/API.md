@@ -1634,6 +1634,19 @@ Content-Type: application/json
 `quantity` is signed: positive quantities add stock and negative quantities remove stock.
 
 ```http
+POST /tenants/{tenantId}/inventory/stock-import
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "file_name": "stock.csv",
+  "csv_content": "product_code,warehouse_code,quantity,unit_cost,reason\nPRD-001,MAIN,12,10.50,Opening stock\n"
+}
+```
+
+Stock CSV imports require `quantity`, a product identifier (`product_id` or `product_code`), and a warehouse identifier (`warehouse_id` or `warehouse_code`). Quantities are signed adjustments; use positive quantities for opening stock or inbound counts and negative quantities for reductions.
+
+```http
 POST /tenants/{tenantId}/inventory/transfer
 Authorization: Bearer <token>
 Content-Type: application/json
