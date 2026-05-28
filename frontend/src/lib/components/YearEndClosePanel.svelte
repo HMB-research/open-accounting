@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { EvidencePolicyResult, YearEndCloseStatus } from '$lib/api';
+	import { api, type EvidencePolicyResult, type YearEndCloseStatus } from '$lib/api';
 	import DocumentManager from '$lib/components/DocumentManager.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 
@@ -39,6 +39,8 @@
 	}: Props = $props();
 
 	let showClosePackDocuments = $state(false);
+	let isDownloadingAuditArchive = $state(false);
+	let auditArchiveError = $state('');
 
 	function updatePeriodEndDate(event: Event) {
 		onperiodenddatechange?.((event.currentTarget as HTMLInputElement).value);
@@ -117,6 +119,21 @@
 
 	async function handleClosePackDocumentsChanged() {
 		await onrefresh?.();
+	}
+
+	async function downloadAuditArchive() {
+		if (!tenantId || !status?.period_end_date) {
+			return;
+		}
+		auditArchiveError = '';
+		isDownloadingAuditArchive = true;
+		try {
+			await api.downloadYearEndCloseAuditArchive(tenantId, status.period_end_date);
+		} catch (err) {
+			auditArchiveError = err instanceof Error ? err.message : m.settings_yearEndEvidenceDownloadError();
+		} finally {
+			isDownloadingAuditArchive = false;
+		}
 	}
 
 	let closePackEvidenceEntityId = $derived(status?.close_pack_evidence_entity_id || '');
@@ -233,6 +250,10 @@
 		<div class="alert alert-success">{successMessage}</div>
 	{/if}
 
+	{#if auditArchiveError}
+		<div class="alert alert-error">{auditArchiveError}</div>
+	{/if}
+
 	{#if isLoading && !status}
 		<p>{m.common_loading()}</p>
 	{:else if status}
@@ -290,14 +311,24 @@
 					<span>{m.settings_yearEndEvidenceCompliant()}</span>
 				</div>
 			</div>
-			<button
-				type="button"
-				class="btn btn-secondary"
-				disabled={!tenantId || !closePackEvidenceEntityId}
-				onclick={openClosePackDocuments}
-			>
-				{m.settings_yearEndEvidenceManage()}
-			</button>
+			<div class="year-end-evidence-actions">
+				<button
+					type="button"
+					class="btn btn-secondary"
+					disabled={!tenantId || !closePackEvidenceEntityId}
+					onclick={openClosePackDocuments}
+				>
+					{m.settings_yearEndEvidenceManage()}
+				</button>
+				<button
+					type="button"
+					class="btn btn-secondary"
+					disabled={!tenantId || !periodEndDate || isDownloadingAuditArchive}
+					onclick={downloadAuditArchive}
+				>
+					{isDownloadingAuditArchive ? m.settings_yearEndEvidenceDownloadingArchive() : m.settings_yearEndEvidenceDownloadArchive()}
+				</button>
+			</div>
 		</div>
 
 		<div class="year-end-content-grid">
@@ -503,6 +534,13 @@
 		font-size: 0.78rem;
 	}
 
+	.year-end-evidence-actions {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		align-items: stretch;
+	}
+
 	.year-end-checklist,
 	.year-end-callout {
 		padding: 1rem;
@@ -595,6 +633,7 @@
 		}
 
 		.year-end-toolbar-actions,
+		.year-end-evidence-actions,
 		.year-end-summary-grid {
 			grid-template-columns: 1fr;
 			display: grid;

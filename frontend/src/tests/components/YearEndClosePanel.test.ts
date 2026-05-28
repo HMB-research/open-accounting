@@ -5,6 +5,21 @@ import { baseLocale, setLocale } from "$lib/paraglide/runtime.js";
 import YearEndClosePanel from "$lib/components/YearEndClosePanel.svelte";
 import type { YearEndCloseStatus } from "$lib/api";
 
+const apiMock = vi.hoisted(() => ({
+  downloadYearEndCloseAuditArchive: vi.fn(),
+}));
+
+vi.mock("$lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("$lib/api")>();
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      downloadYearEndCloseAuditArchive: apiMock.downloadYearEndCloseAuditArchive,
+    },
+  };
+});
+
 function createStatus(
   overrides: Partial<YearEndCloseStatus> = {},
 ): YearEndCloseStatus {
@@ -55,6 +70,8 @@ describe("YearEndClosePanel", () => {
 
   beforeEach(() => {
     setLocale(baseLocale, { reload: false });
+    apiMock.downloadYearEndCloseAuditArchive.mockReset();
+    apiMock.downloadYearEndCloseAuditArchive.mockResolvedValue(undefined);
   });
 
   it("shows a ready carry-forward state and triggers actions", async () => {
@@ -89,6 +106,14 @@ describe("YearEndClosePanel", () => {
       screen.getByRole("button", { name: "Run carry-forward" }),
     );
     expect(onsubmit).toHaveBeenCalledTimes(1);
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Download audit archive" }),
+    );
+    expect(apiMock.downloadYearEndCloseAuditArchive).toHaveBeenCalledWith(
+      "tenant-1",
+      "2025-12-31",
+    );
 
     await fireEvent.change(screen.getByLabelText("Target year-end date"), {
       target: { value: "2024-12-31" },

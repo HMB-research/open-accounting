@@ -779,6 +779,44 @@ describe("API Client - Core Functionality", () => {
       expect(click).toHaveBeenCalledTimes(1);
       expect(revokeObjectURL).toHaveBeenCalledWith("blob:doc-1");
     });
+
+    it("should download a year-end close audit archive", async () => {
+      api.setTokens("valid-token", "refresh-token");
+
+      const blob = new Blob(["zip"]);
+      const createObjectURL = vi
+        .spyOn(URL, "createObjectURL")
+        .mockReturnValue("blob:year-end-audit");
+      const revokeObjectURL = vi
+        .spyOn(URL, "revokeObjectURL")
+        .mockImplementation(() => {});
+      const click = vi
+        .spyOn(HTMLAnchorElement.prototype, "click")
+        .mockImplementation(() => {});
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        blob: async () => blob,
+      });
+
+      await api.downloadYearEndCloseAuditArchive("tenant-123", "2025-12-31");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/year-end-close-audit-archive?period_end_date=2025-12-31",
+        ),
+        expect.objectContaining({
+          method: "GET",
+          headers: expect.objectContaining({
+            Authorization: "Bearer valid-token",
+          }),
+        }),
+      );
+      expect(createObjectURL).toHaveBeenCalledWith(blob);
+      expect(click).toHaveBeenCalledTimes(1);
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:year-end-audit");
+    });
   });
 
   describe("Account Endpoints", () => {
