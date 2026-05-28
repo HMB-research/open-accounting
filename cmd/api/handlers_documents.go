@@ -60,6 +60,53 @@ func (h *Handlers) ListDocumentReviewSummaries(w http.ResponseWriter, r *http.Re
 	respondJSON(w, http.StatusOK, result)
 }
 
+// GetDocumentReviewQueue returns tenant-wide documents waiting for review action.
+// @Summary Get document review queue
+// @Description List documents by review status with optional entity and document type filters
+// @Tags Documents
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param entity_type query string false "Entity type filter"
+// @Param document_type query string false "Document type filter"
+// @Param review_status query string false "Review status: PENDING, REVIEWED, APPROVED, REJECTED, or ALL"
+// @Param limit query int false "Maximum documents to return"
+// @Success 200 {object} documents.ReviewQueue
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/documents/review-queue [get]
+func (h *Handlers) GetDocumentReviewQueue(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	limit := 0
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed < 0 {
+			respondError(w, http.StatusBadRequest, "limit must be zero or greater")
+			return
+		}
+		limit = parsed
+	}
+
+	reviewStatus := strings.TrimSpace(r.URL.Query().Get("review_status"))
+	if reviewStatus == "" {
+		reviewStatus = strings.TrimSpace(r.URL.Query().Get("status"))
+	}
+	result, err := h.documentsService.GetReviewQueue(r.Context(), schemaName, tenantID, documents.ReviewQueueFilter{
+		EntityType:   strings.TrimSpace(r.URL.Query().Get("entity_type")),
+		DocumentType: strings.TrimSpace(r.URL.Query().Get("document_type")),
+		ReviewStatus: reviewStatus,
+		Limit:        limit,
+	})
+	if err != nil {
+		respondDocumentError(w, err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 func (h *Handlers) EvaluateDocumentEvidencePolicy(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)

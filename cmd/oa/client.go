@@ -2460,6 +2460,31 @@ func (c *apiClient) listDocumentReviewSummaries(ctx context.Context, tenantID st
 	return resp, nil
 }
 
+func (c *apiClient) getDocumentReviewQueue(ctx context.Context, tenantID string, filter *documents.ReviewQueueFilter) (*documents.ReviewQueue, error) {
+	values := url.Values{}
+	if filter != nil {
+		if strings.TrimSpace(filter.EntityType) != "" {
+			values.Set("entity_type", strings.TrimSpace(filter.EntityType))
+		}
+		if strings.TrimSpace(filter.DocumentType) != "" {
+			values.Set("document_type", strings.TrimSpace(filter.DocumentType))
+		}
+		if strings.TrimSpace(filter.ReviewStatus) != "" {
+			values.Set("review_status", strings.TrimSpace(filter.ReviewStatus))
+		}
+		if filter.Limit > 0 {
+			values.Set("limit", strconv.Itoa(filter.Limit))
+		}
+	}
+
+	var resp documents.ReviewQueue
+	urlPath := withQuery(path.Join("/api/v1/tenants", tenantID, "documents", "review-queue"), values)
+	if err := c.request(ctx, http.MethodGet, urlPath, nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) evaluateDocumentEvidencePolicy(ctx context.Context, tenantID string, req *documents.EvidencePolicyRequest) ([]documents.EvidencePolicyResult, error) {
 	var resp []documents.EvidencePolicyResult
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "documents", "evidence-policy"), req, c.apiToken, &resp); err != nil {

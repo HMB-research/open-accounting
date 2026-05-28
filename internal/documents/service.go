@@ -15,6 +15,11 @@ import (
 
 var fileNameSanitizer = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
+const (
+	defaultReviewQueueLimit = 50
+	maxReviewQueueLimit     = 200
+)
+
 type Service struct {
 	repo  Repository
 	store Store
@@ -155,6 +160,61 @@ func (s *Service) ListReviewSummaries(ctx context.Context, schemaName, tenantID,
 	}
 
 	return result, nil
+}
+
+func (s *Service) GetReviewQueue(ctx context.Context, schemaName, tenantID string, filter ReviewQueueFilter) (*ReviewQueue, error) {
+	entityType, err := normalizeOptionalEntityType(filter.EntityType)
+	if err != nil {
+		return nil, err
+	}
+	documentType, err := normalizeOptionalDocumentType(filter.DocumentType)
+	if err != nil {
+		return nil, err
+	}
+	reviewStatus, err := normalizeReviewQueueStatus(filter.ReviewStatus)
+	if err != nil {
+		return nil, err
+	}
+	limit, err := normalizeReviewQueueLimit(filter.Limit)
+	if err != nil {
+		return nil, err
+	}
+
+	normalizedFilter := ReviewQueueFilter{
+		EntityType:   entityType,
+		DocumentType: documentType,
+		ReviewStatus: reviewStatus,
+		Limit:        limit,
+	}
+	docs, err := s.repo.ListReviewQueueDocuments(ctx, schemaName, tenantID, normalizedFilter)
+	if err != nil {
+		return nil, err
+	}
+
+	queue := &ReviewQueue{
+		EntityType:   entityType,
+		DocumentType: documentType,
+		ReviewStatus: reviewQueueStatusLabel(reviewStatus),
+		Limit:        limit,
+		TotalCount:   len(docs),
+		Documents:    docs,
+	}
+	for _, doc := range docs {
+		switch doc.ReviewStatus {
+		case ReviewStatusReviewed:
+			queue.ReviewedCount++
+		case ReviewStatusApproved:
+			queue.ReviewedCount++
+			queue.ApprovedCount++
+		case ReviewStatusRejected:
+			queue.ReviewedCount++
+			queue.RejectedCount++
+		default:
+			queue.PendingReviewCount++
+		}
+	}
+
+	return queue, nil
 }
 
 func (s *Service) EvaluateEvidencePolicy(ctx context.Context, schemaName, tenantID string, req *EvidencePolicyRequest) ([]EvidencePolicyResult, error) {
@@ -317,6 +377,13 @@ func normalizeEntityType(value string) (string, error) {
 	}
 }
 
+func normalizeOptionalEntityType(value string) (string, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+	return normalizeEntityType(value)
+}
+
 func normalizeDocumentType(value string) (string, error) {
 	switch strings.TrimSpace(strings.ToLower(value)) {
 	case "", DocumentTypeSupportingDocument:
@@ -340,6 +407,13 @@ func normalizeDocumentType(value string) (string, error) {
 	}
 }
 
+func normalizeOptionalDocumentType(value string) (string, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+	return normalizeDocumentType(value)
+}
+
 func normalizeReviewStatus(value string) (string, error) {
 	switch strings.TrimSpace(strings.ToUpper(value)) {
 	case ReviewStatusReviewed:
@@ -351,6 +425,49 @@ func normalizeReviewStatus(value string) (string, error) {
 	default:
 		return "", fmt.Errorf("review_status must be REVIEWED, APPROVED, or REJECTED")
 	}
+}
+
+func normalizeReviewQueueStatus(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ReviewStatusPending, nil
+	}
+	if strings.EqualFold(trimmed, "all") {
+		return "", nil
+	}
+
+	switch strings.ToUpper(trimmed) {
+	case ReviewStatusPending:
+		return ReviewStatusPending, nil
+	case ReviewStatusReviewed:
+		return ReviewStatusReviewed, nil
+	case ReviewStatusApproved:
+		return ReviewStatusApproved, nil
+	case ReviewStatusRejected:
+		return ReviewStatusRejected, nil
+	default:
+		return "", fmt.Errorf("review_status must be PENDING, REVIEWED, APPROVED, REJECTED, or ALL")
+	}
+}
+
+func normalizeReviewQueueLimit(value int) (int, error) {
+	if value < 0 {
+		return 0, fmt.Errorf("limit must be zero or greater")
+	}
+	if value == 0 {
+		return defaultReviewQueueLimit, nil
+	}
+	if value > maxReviewQueueLimit {
+		return maxReviewQueueLimit, nil
+	}
+	return value, nil
+}
+
+func reviewQueueStatusLabel(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "ALL"
+	}
+	return value
 }
 
 func normalizeContentType(contentType, fileName string) string {

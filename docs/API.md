@@ -409,7 +409,7 @@ Authorization: Bearer <token>
 
 ### Document Attachments
 
-Document attachments currently support `invoice`, `journal_entry`, `payment`, `bank_transaction`, and `asset` entities.
+Document attachments currently support `invoice`, `journal_entry`, `payment`, `bank_transaction`, `asset`, and `year_end_close` entities.
 
 #### List Documents
 
@@ -435,7 +435,7 @@ file=<binary>
 
 - accepts PDFs, images, CSV files, text files, and similar supporting records
 - maximum file size is `10 MB`
-- supported `document_type` values currently include `supporting_document`, `receipt`, `reconciliation_evidence`, `contract`, `asset_record`, `tax_support`, and `other`
+- supported `document_type` values currently include `supporting_document`, `receipt`, `reconciliation_evidence`, `contract`, `asset_record`, `tax_support`, `close_pack`, and `other`
 - uploads start in `PENDING` review status and can carry optional retention metadata
 
 #### Download Document
@@ -457,6 +457,15 @@ Content-Type: application/json
   "entity_ids": ["<uuid>", "<uuid>"]
 }
 ```
+
+#### Review Queue
+
+```http
+GET /tenants/{tenantId}/documents/review-queue?entity_type=year_end_close&document_type=close_pack&review_status=PENDING&limit=50
+Authorization: Bearer <token>
+```
+
+Returns a tenant-wide document reviewer queue with optional `entity_type`, `document_type`, `review_status`, and `limit` filters. `review_status` defaults to `PENDING`; use `ALL` to include every review state. This is the reviewer-facing queue for close-pack approvals outside the company settings workflow.
 
 #### Evidence Policy
 

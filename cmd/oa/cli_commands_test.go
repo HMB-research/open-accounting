@@ -5639,6 +5639,35 @@ func TestCLIDocumentCommands(t *testing.T) {
 				"has_pending_review":   true,
 				"has_rejected":         false,
 			}})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/documents/review-queue":
+			assert.Equal(t, documents.EntityTypeYearEndClose, r.URL.Query().Get("entity_type"))
+			assert.Equal(t, documents.DocumentTypeClosePack, r.URL.Query().Get("document_type"))
+			assert.Equal(t, documents.ReviewStatusPending, r.URL.Query().Get("review_status"))
+			assert.Equal(t, "25", r.URL.Query().Get("limit"))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"entity_type":          documents.EntityTypeYearEndClose,
+				"document_type":        documents.DocumentTypeClosePack,
+				"review_status":        documents.ReviewStatusPending,
+				"limit":                25,
+				"total_count":          1,
+				"pending_review_count": 1,
+				"reviewed_count":       0,
+				"approved_count":       0,
+				"rejected_count":       0,
+				"documents": []map[string]any{{
+					"id":            "doc-close-pack",
+					"tenant_id":     "tenant-1",
+					"entity_type":   documents.EntityTypeYearEndClose,
+					"entity_id":     "11111111-1111-5111-8111-111111111111",
+					"document_type": documents.DocumentTypeClosePack,
+					"file_name":     "close-pack.pdf",
+					"content_type":  "application/pdf",
+					"file_size":     4096,
+					"review_status": documents.ReviewStatusPending,
+					"uploaded_by":   "user-1",
+					"created_at":    "2026-03-12T00:00:00Z",
+				}},
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents/evidence-policy":
 			var req documents.EvidencePolicyRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -5819,6 +5848,12 @@ func TestCLIDocumentCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "pay-1")
 	assert.Contains(t, stdout.String(), "true")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"documents", "review-queue", "--entity-type", "year_end_close", "--document-type", "close_pack", "--status", "PENDING", "--limit", "25"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Document review queue: status PENDING")
+	assert.Contains(t, stdout.String(), "close-pack.pdf")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"documents", "evidence-policy", "--entity-type", "payment", "--entity-id", "pay-1", "--entity-id", "pay-2", "--document-type", "receipt", "--require-approved"})

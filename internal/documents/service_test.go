@@ -41,6 +41,29 @@ func (m *mockRepository) ListDocuments(ctx context.Context, schemaName, tenantID
 	return result, nil
 }
 
+func (m *mockRepository) ListReviewQueueDocuments(ctx context.Context, schemaName, tenantID string, filter ReviewQueueFilter) ([]Document, error) {
+	result := make([]Document, 0, len(m.docs))
+	for _, doc := range m.docs {
+		if doc.TenantID != tenantID {
+			continue
+		}
+		if filter.EntityType != "" && doc.EntityType != filter.EntityType {
+			continue
+		}
+		if filter.DocumentType != "" && doc.DocumentType != filter.DocumentType {
+			continue
+		}
+		if filter.ReviewStatus != "" && doc.ReviewStatus != filter.ReviewStatus {
+			continue
+		}
+		result = append(result, *doc)
+		if filter.Limit > 0 && len(result) >= filter.Limit {
+			break
+		}
+	}
+	return result, nil
+}
+
 func (m *mockRepository) ListRetentionReviewDocuments(ctx context.Context, schemaName, tenantID string, cutoff time.Time, includeMissing bool) ([]Document, error) {
 	result := make([]Document, 0, len(m.docs))
 	for _, doc := range m.docs {
@@ -128,6 +151,78 @@ func (m *mockRepository) ReviewDocument(ctx context.Context, schemaName, tenantI
 func (m *mockRepository) DeleteDocument(ctx context.Context, schemaName, tenantID, documentID string) error {
 	delete(m.docs, documentID)
 	return nil
+}
+
+func TestService_GetReviewQueueFiltersClosePackDocuments(t *testing.T) {
+	t.Parallel()
+
+	store, err := NewLocalStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewLocalStore failed: %v", err)
+	}
+	repo := newMockRepository()
+	svc := NewService(repo, store)
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+
+	repo.docs["doc-close-pack"] = &Document{
+		ID:           "doc-close-pack",
+		TenantID:     "tenant-1",
+		EntityType:   EntityTypeYearEndClose,
+		EntityID:     "year-end-close-2025",
+		DocumentType: DocumentTypeClosePack,
+		FileName:     "close-pack.pdf",
+		ReviewStatus: ReviewStatusPending,
+		UploadedBy:   "user-1",
+		CreatedAt:    now,
+	}
+	repo.docs["doc-receipt"] = &Document{
+		ID:           "doc-receipt",
+		TenantID:     "tenant-1",
+		EntityType:   EntityTypePayment,
+		EntityID:     "pay-1",
+		DocumentType: DocumentTypeReceipt,
+		FileName:     "receipt.pdf",
+		ReviewStatus: ReviewStatusPending,
+		UploadedBy:   "user-1",
+		CreatedAt:    now,
+	}
+	repo.docs["doc-approved"] = &Document{
+		ID:           "doc-approved",
+		TenantID:     "tenant-1",
+		EntityType:   EntityTypeYearEndClose,
+		EntityID:     "year-end-close-2024",
+		DocumentType: DocumentTypeClosePack,
+		FileName:     "approved-close-pack.pdf",
+		ReviewStatus: ReviewStatusApproved,
+		UploadedBy:   "user-1",
+		CreatedAt:    now,
+	}
+
+	queue, err := svc.GetReviewQueue(context.Background(), "tenant_demo", "tenant-1", ReviewQueueFilter{
+		EntityType:   EntityTypeYearEndClose,
+		DocumentType: DocumentTypeClosePack,
+	})
+	if err != nil {
+		t.Fatalf("GetReviewQueue failed: %v", err)
+	}
+	if queue.ReviewStatus != ReviewStatusPending || queue.Limit != defaultReviewQueueLimit {
+		t.Fatalf("unexpected queue metadata: %#v", queue)
+	}
+	if queue.TotalCount != 1 || queue.PendingReviewCount != 1 || queue.Documents[0].ID != "doc-close-pack" {
+		t.Fatalf("unexpected filtered queue: %#v", queue)
+	}
+
+	allQueue, err := svc.GetReviewQueue(context.Background(), "tenant_demo", "tenant-1", ReviewQueueFilter{
+		EntityType:   EntityTypeYearEndClose,
+		DocumentType: DocumentTypeClosePack,
+		ReviewStatus: "all",
+	})
+	if err != nil {
+		t.Fatalf("GetReviewQueue all failed: %v", err)
+	}
+	if allQueue.TotalCount != 2 || allQueue.ApprovedCount != 1 || allQueue.ReviewStatus != "ALL" {
+		t.Fatalf("unexpected all-status queue: %#v", allQueue)
+	}
 }
 
 func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {

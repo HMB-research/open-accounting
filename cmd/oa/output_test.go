@@ -272,6 +272,27 @@ func TestPrintTables(t *testing.T) {
 	assert.Contains(t, summaryBuf.String(), "pay-1")
 	assert.Contains(t, summaryBuf.String(), "true")
 
+	var queueBuf bytes.Buffer
+	printDocumentReviewQueue(&queueBuf, &documents.ReviewQueue{
+		EntityType:         documents.EntityTypeYearEndClose,
+		DocumentType:       documents.DocumentTypeClosePack,
+		ReviewStatus:       documents.ReviewStatusPending,
+		Limit:              50,
+		TotalCount:         1,
+		PendingReviewCount: 1,
+		Documents: []documents.Document{{
+			ID:           "doc-close-pack",
+			EntityType:   documents.EntityTypeYearEndClose,
+			EntityID:     "year-end-close-2025",
+			DocumentType: documents.DocumentTypeClosePack,
+			FileName:     "close-pack.pdf",
+			ReviewStatus: documents.ReviewStatusPending,
+			CreatedAt:    now,
+		}},
+	})
+	assert.Contains(t, queueBuf.String(), "Document review queue: status PENDING")
+	assert.Contains(t, queueBuf.String(), "close-pack.pdf")
+
 	var policyBuf bytes.Buffer
 	printDocumentEvidencePolicy(&policyBuf, []documents.EvidencePolicyResult{{
 		EntityType:         documents.EntityTypePayment,

@@ -1200,6 +1200,37 @@ func printDocumentReviewSummariesTable(w io.Writer, summaries []documents.Review
 	_ = tw.Flush()
 }
 
+func printDocumentReviewQueue(w io.Writer, queue *documents.ReviewQueue) {
+	if queue == nil {
+		return
+	}
+	entityType := queue.EntityType
+	if strings.TrimSpace(entityType) == "" {
+		entityType = "all"
+	}
+	documentType := queue.DocumentType
+	if strings.TrimSpace(documentType) == "" {
+		documentType = "all"
+	}
+	_, _ = fmt.Fprintf(w, "Document review queue: status %s, entity %s, document type %s, limit %d\n",
+		queue.ReviewStatus,
+		entityType,
+		documentType,
+		queue.Limit,
+	)
+	_, _ = fmt.Fprintf(w, "Total: %d, pending: %d, reviewed: %d, approved: %d, rejected: %d\n",
+		queue.TotalCount,
+		queue.PendingReviewCount,
+		queue.ReviewedCount,
+		queue.ApprovedCount,
+		queue.RejectedCount,
+	)
+	if len(queue.Documents) == 0 {
+		return
+	}
+	printDocumentsTable(w, queue.Documents)
+}
+
 func printDocumentEvidencePolicy(w io.Writer, results []documents.EvidencePolicyResult) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ENTITY\tID\tCOMPLIANT\tTOTAL\tPENDING\tAPPROVED\tREJECTED\tVIOLATIONS")

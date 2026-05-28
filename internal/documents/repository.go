@@ -16,6 +16,7 @@ type Repository interface {
 	EntityExists(ctx context.Context, schemaName, tenantID, entityType, entityID string) (bool, error)
 	CreateDocument(ctx context.Context, schemaName string, doc *Document) error
 	ListDocuments(ctx context.Context, schemaName, tenantID, entityType, entityID string) ([]Document, error)
+	ListReviewQueueDocuments(ctx context.Context, schemaName, tenantID string, filter ReviewQueueFilter) ([]Document, error)
 	ListRetentionReviewDocuments(ctx context.Context, schemaName, tenantID string, cutoff time.Time, includeMissing bool) ([]Document, error)
 	ListReviewSummaries(ctx context.Context, schemaName, tenantID, entityType string, entityIDs []string) (map[string]ReviewSummary, error)
 	GetDocumentByID(ctx context.Context, schemaName, tenantID, documentID string) (*Document, error)
@@ -120,6 +121,63 @@ func (r *PostgresRepository) ListDocuments(ctx context.Context, schemaName, tena
 	return docs, nil
 }
 
+func (r *PostgresRepository) ListReviewQueueDocuments(ctx context.Context, schemaName, tenantID string, filter ReviewQueueFilter) ([]Document, error) {
+	table, err := database.QualifiedTable(schemaName, "documents")
+	if err != nil {
+		return nil, fmt.Errorf("qualify documents table: %w", err)
+	}
+
+	conditions := []string{"tenant_id = $1"}
+	queryArgs := []any{tenantID}
+	if strings.TrimSpace(filter.EntityType) != "" {
+		queryArgs = append(queryArgs, strings.TrimSpace(filter.EntityType))
+		conditions = append(conditions, fmt.Sprintf("entity_type = $%d", len(queryArgs)))
+	}
+	if strings.TrimSpace(filter.DocumentType) != "" {
+		queryArgs = append(queryArgs, strings.TrimSpace(filter.DocumentType))
+		conditions = append(conditions, fmt.Sprintf("document_type = $%d", len(queryArgs)))
+	}
+	if strings.TrimSpace(filter.ReviewStatus) != "" {
+		queryArgs = append(queryArgs, strings.TrimSpace(filter.ReviewStatus))
+		conditions = append(conditions, fmt.Sprintf("review_status = $%d", len(queryArgs)))
+	}
+	queryArgs = append(queryArgs, ReviewStatusPending, ReviewStatusRejected, ReviewStatusReviewed, ReviewStatusApproved, filter.Limit)
+	pendingStatusPlaceholder := len(queryArgs) - 4
+	rejectedStatusPlaceholder := len(queryArgs) - 3
+	reviewedStatusPlaceholder := len(queryArgs) - 2
+	approvedStatusPlaceholder := len(queryArgs) - 1
+	limitPlaceholder := len(queryArgs)
+
+	rows, err := r.db.Query(ctx, fmt.Sprintf(`
+		SELECT id, tenant_id, entity_type, entity_id, document_type, file_name, content_type, file_size, storage_key,
+		       COALESCE(notes, ''), retention_until, review_status, COALESCE(review_note, ''), reviewed_by, reviewed_at, uploaded_by, created_at
+		FROM %s
+		WHERE %s
+		ORDER BY
+			CASE review_status
+				WHEN $%d THEN 0
+				WHEN $%d THEN 1
+				WHEN $%d THEN 2
+				WHEN $%d THEN 3
+				ELSE 4
+			END,
+			created_at ASC,
+			file_name ASC
+		LIMIT $%d
+	`, table, strings.Join(conditions, " AND "), pendingStatusPlaceholder, rejectedStatusPlaceholder, reviewedStatusPlaceholder, approvedStatusPlaceholder, limitPlaceholder), queryArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("list document review queue: %w", err)
+	}
+	defer rows.Close()
+
+	docs, err := scanDocumentRows(rows, "review queue document")
+	if err != nil {
+		return nil, err
+	}
+
+	return docs, nil
+}
+
 func (r *PostgresRepository) ListRetentionReviewDocuments(ctx context.Context, schemaName, tenantID string, cutoff time.Time, includeMissing bool) ([]Document, error) {
 	table, err := database.QualifiedTable(schemaName, "documents")
 	if err != nil {
@@ -156,6 +214,25 @@ func (r *PostgresRepository) ListRetentionReviewDocuments(ctx context.Context, s
 		return nil, fmt.Errorf("iterate retention review documents: %w", err)
 	}
 
+	return docs, nil
+}
+
+func scanDocumentRows(rows pgx.Rows, label string) ([]Document, error) {
+	var docs []Document
+	for rows.Next() {
+		var doc Document
+		if err := rows.Scan(
+			&doc.ID, &doc.TenantID, &doc.EntityType, &doc.EntityID, &doc.DocumentType, &doc.FileName,
+			&doc.ContentType, &doc.FileSize, &doc.StorageKey, &doc.Notes, &doc.RetentionUntil,
+			&doc.ReviewStatus, &doc.ReviewNote, &doc.ReviewedBy, &doc.ReviewedAt, &doc.UploadedBy, &doc.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan %s: %w", label, err)
+		}
+		docs = append(docs, doc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate %s: %w", label, err)
+	}
 	return docs, nil
 }
 

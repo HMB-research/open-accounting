@@ -49,6 +49,29 @@ func (m *mockDocumentRepository) ListDocuments(ctx context.Context, schemaName, 
 	return result, nil
 }
 
+func (m *mockDocumentRepository) ListReviewQueueDocuments(ctx context.Context, schemaName, tenantID string, filter documents.ReviewQueueFilter) ([]documents.Document, error) {
+	result := make([]documents.Document, 0, len(m.docs))
+	for _, doc := range m.docs {
+		if doc.TenantID != tenantID {
+			continue
+		}
+		if filter.EntityType != "" && doc.EntityType != filter.EntityType {
+			continue
+		}
+		if filter.DocumentType != "" && doc.DocumentType != filter.DocumentType {
+			continue
+		}
+		if filter.ReviewStatus != "" && doc.ReviewStatus != filter.ReviewStatus {
+			continue
+		}
+		result = append(result, *doc)
+		if filter.Limit > 0 && len(result) >= filter.Limit {
+			break
+		}
+	}
+	return result, nil
+}
+
 func (m *mockDocumentRepository) ListRetentionReviewDocuments(ctx context.Context, schemaName, tenantID string, cutoff time.Time, includeMissing bool) ([]documents.Document, error) {
 	result := make([]documents.Document, 0, len(m.docs))
 	for _, doc := range m.docs {
@@ -225,6 +248,23 @@ func TestUploadListDownloadAndDeleteDocument(t *testing.T) {
 	require.Equal(t, 1, retentionReview.TotalCount)
 	require.Equal(t, 1, retentionReview.DueSoonCount)
 	require.Len(t, retentionReview.Documents, 1)
+
+	queueReq := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/documents/review-queue?entity_type=bank_transaction&document_type=reconciliation_evidence&review_status=PENDING&limit=25", nil, claims)
+	queueReq = withURLParams(queueReq, map[string]string{"tenantID": "tenant-1"})
+	queueResp := httptest.NewRecorder()
+	h.GetDocumentReviewQueue(queueResp, queueReq)
+	require.Equal(t, http.StatusOK, queueResp.Code)
+
+	var reviewQueue documents.ReviewQueue
+	require.NoError(t, json.NewDecoder(queueResp.Body).Decode(&reviewQueue))
+	require.Equal(t, documents.EntityTypeBankTxn, reviewQueue.EntityType)
+	require.Equal(t, documents.DocumentTypeReconciliation, reviewQueue.DocumentType)
+	require.Equal(t, documents.ReviewStatusPending, reviewQueue.ReviewStatus)
+	require.Equal(t, 25, reviewQueue.Limit)
+	require.Equal(t, 1, reviewQueue.TotalCount)
+	require.Equal(t, 1, reviewQueue.PendingReviewCount)
+	require.Len(t, reviewQueue.Documents, 1)
+	require.Equal(t, uploaded.ID, reviewQueue.Documents[0].ID)
 
 	reviewReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/documents/"+uploaded.ID+"/mark-reviewed", nil, claims)
 	reviewReq = withURLParams(reviewReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})

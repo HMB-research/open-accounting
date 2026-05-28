@@ -77,6 +77,26 @@ type ReviewSummary struct {
 	HasRejected        bool   `json:"has_rejected"`
 }
 
+type ReviewQueueFilter struct {
+	EntityType   string `json:"entity_type,omitempty"`
+	DocumentType string `json:"document_type,omitempty"`
+	ReviewStatus string `json:"review_status,omitempty"`
+	Limit        int    `json:"limit,omitempty"`
+}
+
+type ReviewQueue struct {
+	EntityType         string     `json:"entity_type,omitempty"`
+	DocumentType       string     `json:"document_type,omitempty"`
+	ReviewStatus       string     `json:"review_status"`
+	Limit              int        `json:"limit"`
+	TotalCount         int        `json:"total_count"`
+	PendingReviewCount int        `json:"pending_review_count"`
+	ReviewedCount      int        `json:"reviewed_count"`
+	ApprovedCount      int        `json:"approved_count"`
+	RejectedCount      int        `json:"rejected_count"`
+	Documents          []Document `json:"documents"`
+}
+
 type EvidencePolicyRequest struct {
 	EntityType string               `json:"entity_type"`
 	EntityIDs  []string             `json:"entity_ids"`
