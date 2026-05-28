@@ -327,6 +327,7 @@ Content-Type: application/json
 
 ```http
 GET /tenants/{tenantId}/year-end-close-status?period_end_date=2025-12-31
+GET /tenants/{tenantId}/year-end-close-pack?period_end_date=2025-12-31
 Authorization: Bearer <token>
 ```
 
@@ -338,6 +339,8 @@ Returns the fiscal-year readiness summary for the selected date, including:
 - whether revenue/expense activity exists for the year
 - retained-earnings account mapping
 - whether a carry-forward journal already exists
+
+The close pack endpoint adds the year-end trial balance, balance sheet, and income statement to the readiness summary.
 
 ### Post Year-End Carry-Forward
 
@@ -2059,10 +2062,13 @@ Reopen requests require a note. The API rejects fiscal-year reopen requests afte
 
 ```http
 GET /tenants/{tenantId}/year-end-close-status?period_end_date=2025-12-31
+GET /tenants/{tenantId}/year-end-close-pack?period_end_date=2025-12-31
 POST /tenants/{tenantId}/year-end-carry-forward
 POST /tenants/{tenantId}/year-end-carry-forward/reverse
 Authorization: Bearer <token>
 ```
+
+The close pack returns the readiness status plus year-end trial balance, balance sheet, and income statement for the selected fiscal year.
 
 Create carry-forward:
 

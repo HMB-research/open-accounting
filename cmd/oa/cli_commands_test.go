@@ -3554,6 +3554,43 @@ func TestCLICloseCommands(t *testing.T) {
 		"retained_earnings_account":     map[string]any{"id": "acc-retained", "code": "2999", "name": "Retained earnings"},
 		"net_income":                    "1200.00",
 	}
+	packPayload := map[string]any{
+		"status": statusPayload,
+		"trial_balance": map[string]any{
+			"tenant_id":     "tenant-1",
+			"as_of_date":    "2025-12-31T00:00:00Z",
+			"generated_at":  now,
+			"accounts":      []map[string]any{},
+			"total_debits":  "1000.00",
+			"total_credits": "1000.00",
+			"is_balanced":   true,
+		},
+		"balance_sheet": map[string]any{
+			"tenant_id":         "tenant-1",
+			"as_of_date":        "2025-12-31T00:00:00Z",
+			"generated_at":      now,
+			"assets":            []map[string]any{},
+			"liabilities":       []map[string]any{},
+			"equity":            []map[string]any{},
+			"total_assets":      "1500.00",
+			"total_liabilities": "300.00",
+			"total_equity":      "1200.00",
+			"retained_earnings": "1200.00",
+			"is_balanced":       true,
+		},
+		"income_statement": map[string]any{
+			"tenant_id":      "tenant-1",
+			"start_date":     "2025-01-01T00:00:00Z",
+			"end_date":       "2025-12-31T00:00:00Z",
+			"generated_at":   now,
+			"revenue":        []map[string]any{},
+			"expenses":       []map[string]any{},
+			"total_revenue":  "2000.00",
+			"total_expenses": "800.00",
+			"net_income":     "1200.00",
+		},
+		"generated_at": now,
+	}
 	carryForwardPayload := map[string]any{
 		"journal_entry": map[string]any{
 			"id":           "je-1",
@@ -3608,6 +3645,9 @@ func TestCLICloseCommands(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/year-end-close-status":
 			require.Equal(t, "2025-12-31", r.URL.Query().Get("period_end_date"))
 			_ = json.NewEncoder(w).Encode(statusPayload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/year-end-close-pack":
+			require.Equal(t, "2025-12-31", r.URL.Query().Get("period_end_date"))
+			_ = json.NewEncoder(w).Encode(packPayload)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/year-end-carry-forward":
 			var req accounting.CreateYearEndCarryForwardRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -3648,6 +3688,12 @@ func TestCLICloseCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"close", "year-end-status", "--period-end", "2025-12-31"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Carry-forward ready: true")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"close", "year-end-pack", "--period-end", "2025-12-31"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Trial balance: debits 1000")
+	assert.Contains(t, stdout.String(), "Income statement: revenue 2000")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"close", "carry-forward", "--period-end", "2025-12-31"})

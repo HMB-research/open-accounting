@@ -52,6 +52,15 @@ type YearEndCloseStatus struct {
 	ExistingCarryForward       *JournalEntrySummary `json:"existing_carry_forward,omitempty"`
 }
 
+// YearEndClosePack bundles close readiness with core year-end financial reports.
+type YearEndClosePack struct {
+	Status          *YearEndCloseStatus `json:"status"`
+	TrialBalance    *TrialBalance       `json:"trial_balance"`
+	BalanceSheet    *BalanceSheet       `json:"balance_sheet"`
+	IncomeStatement *IncomeStatement    `json:"income_statement"`
+	GeneratedAt     time.Time           `json:"generated_at"`
+}
+
 // CreateYearEndCarryForwardRequest requests a year-end carry-forward journal.
 type CreateYearEndCarryForwardRequest struct {
 	PeriodEndDate string `json:"period_end_date"`
@@ -152,6 +161,47 @@ func (s *Service) GetYearEndCloseStatus(ctx context.Context, schemaName, tenantI
 		(!needsRetainedEarningsAccount || status.HasRetainedEarningsAccount)
 
 	return status, nil
+}
+
+// GetYearEndClosePack returns readiness plus core fiscal year-end reports.
+func (s *Service) GetYearEndClosePack(ctx context.Context, schemaName, tenantID string, fiscalYearStartMonth int, rawPeriodEndDate string, lockedThroughDate *string) (*YearEndClosePack, error) {
+	status, err := s.GetYearEndCloseStatus(ctx, schemaName, tenantID, fiscalYearStartMonth, rawPeriodEndDate, lockedThroughDate)
+	if err != nil {
+		return nil, err
+	}
+	if !status.IsFiscalYearEnd {
+		return nil, fmt.Errorf("period end date must match the fiscal year end")
+	}
+
+	fiscalYearStartDate, err := time.Parse(yearEndDateLayout, status.FiscalYearStartDate)
+	if err != nil {
+		return nil, fmt.Errorf("parse fiscal year start date: %w", err)
+	}
+	fiscalYearEndDate, err := time.Parse(yearEndDateLayout, status.FiscalYearEndDate)
+	if err != nil {
+		return nil, fmt.Errorf("parse fiscal year end date: %w", err)
+	}
+
+	trialBalance, err := s.GetTrialBalance(ctx, schemaName, tenantID, fiscalYearEndDate)
+	if err != nil {
+		return nil, fmt.Errorf("load year-end trial balance: %w", err)
+	}
+	balanceSheet, err := s.GetBalanceSheet(ctx, schemaName, tenantID, fiscalYearEndDate)
+	if err != nil {
+		return nil, fmt.Errorf("load year-end balance sheet: %w", err)
+	}
+	incomeStatement, err := s.GetIncomeStatement(ctx, schemaName, tenantID, fiscalYearStartDate, fiscalYearEndDate)
+	if err != nil {
+		return nil, fmt.Errorf("load fiscal-year income statement: %w", err)
+	}
+
+	return &YearEndClosePack{
+		Status:          status,
+		TrialBalance:    trialBalance,
+		BalanceSheet:    balanceSheet,
+		IncomeStatement: incomeStatement,
+		GeneratedAt:     time.Now(),
+	}, nil
 }
 
 // CreateYearEndCarryForward creates and posts a year-end carry-forward journal entry.

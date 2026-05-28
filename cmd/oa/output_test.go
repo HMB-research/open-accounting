@@ -583,6 +583,25 @@ func TestPrintCloseOutputs(t *testing.T) {
 		ReversalJournalEntry: &accounting.JournalEntry{ID: "je-2", EntryNumber: "JE-2026-002", EntryDate: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Status: accounting.StatusPosted},
 		Status:               &status,
 	}
+	closePack := accounting.YearEndClosePack{
+		Status: &status,
+		TrialBalance: &accounting.TrialBalance{
+			TotalDebits:  decimal.NewFromInt(1000),
+			TotalCredits: decimal.NewFromInt(1000),
+			IsBalanced:   true,
+		},
+		BalanceSheet: &accounting.BalanceSheet{
+			TotalAssets:      decimal.NewFromInt(1500),
+			TotalLiabilities: decimal.NewFromInt(300),
+			TotalEquity:      decimal.NewFromInt(1200),
+			IsBalanced:       true,
+		},
+		IncomeStatement: &accounting.IncomeStatement{
+			TotalRevenue:  decimal.NewFromInt(2000),
+			TotalExpenses: decimal.NewFromInt(800),
+			NetIncome:     decimal.NewFromInt(1200),
+		},
+	}
 
 	var eventsBuf bytes.Buffer
 	printPeriodCloseEventsTable(&eventsBuf, []tenant.PeriodCloseEvent{event})
@@ -601,6 +620,11 @@ func TestPrintCloseOutputs(t *testing.T) {
 	printYearEndCloseStatus(&statusBuf, &status)
 	assert.Contains(t, statusBuf.String(), "Year-end close status 2025")
 	assert.Contains(t, statusBuf.String(), "Carry-forward ready: true")
+
+	var packBuf bytes.Buffer
+	printYearEndClosePack(&packBuf, &closePack)
+	assert.Contains(t, packBuf.String(), "Trial balance: debits 1000")
+	assert.Contains(t, packBuf.String(), "Income statement: revenue 2000")
 
 	var resultBuf bytes.Buffer
 	printYearEndCarryForwardResult(&resultBuf, &result)
