@@ -174,8 +174,23 @@ KMD export writes e-MTA XML. Omit `--output` to stream the XML to stdout.
 ## Invoices
 
 ```bash
+go run ./cmd/oa invoices list
+go run ./cmd/oa invoices list --type SALES --status DRAFT --from 2026-03-01 --to 2026-03-31
+go run ./cmd/oa invoices create \
+  --type SALES \
+  --contact-id <contact-id> \
+  --issue-date 2026-03-15 \
+  --due-date 2026-03-29 \
+  --reference PO-123 \
+  --line "description=Consulting,quantity=2,unit=hour,unit_price=100.00,vat_rate=22.00"
+go run ./cmd/oa invoices get --id <invoice-id>
+go run ./cmd/oa invoices pdf --id <invoice-id> --output ./invoice.pdf
+go run ./cmd/oa invoices send --id <invoice-id>
+go run ./cmd/oa invoices void --id <invoice-id>
 go run ./cmd/oa invoices import --file ./invoices.csv
 ```
+
+Use `--line` repeatedly on `invoices create` for multi-line invoices. Each line is comma-separated `key=value` pairs with `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, `account_id`, and `product_id`.
 
 ## Payments
 

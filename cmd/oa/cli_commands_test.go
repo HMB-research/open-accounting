@@ -19,6 +19,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/tenant"
@@ -283,6 +284,177 @@ func TestCLIAccountsCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"accounts", "import", "--file", importFile})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 accounts, skipped 0 rows")
+}
+
+func TestCLIInvoiceLifecycleCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	invoicePayload := func(status string) map[string]any {
+		return map[string]any{
+			"id":             "inv-1",
+			"tenant_id":      "tenant-1",
+			"invoice_number": "INV-00001",
+			"invoice_type":   "SALES",
+			"contact_id":     "contact-1",
+			"contact": map[string]any{
+				"id":           "contact-1",
+				"name":         "Acme",
+				"contact_type": "CUSTOMER",
+				"is_active":    true,
+			},
+			"issue_date":      "2026-03-15T00:00:00Z",
+			"due_date":        "2026-03-29T00:00:00Z",
+			"currency":        "EUR",
+			"exchange_rate":   "1.00",
+			"subtotal":        "180.00",
+			"vat_amount":      "39.60",
+			"total":           "219.60",
+			"base_subtotal":   "180.00",
+			"base_vat_amount": "39.60",
+			"base_total":      "219.60",
+			"amount_paid":     "0.00",
+			"status":          status,
+			"reference":       "REF-1",
+			"notes":           "March services",
+			"created_at":      "2026-03-15T12:00:00Z",
+			"created_by":      "user-1",
+			"updated_at":      "2026-03-15T12:00:00Z",
+			"lines": []map[string]any{{
+				"id":               "line-1",
+				"tenant_id":        "tenant-1",
+				"invoice_id":       "inv-1",
+				"line_number":      1,
+				"description":      "Consulting",
+				"quantity":         "2.00",
+				"unit":             "hour",
+				"unit_price":       "100.00",
+				"discount_percent": "10.00",
+				"vat_rate":         "22.00",
+				"line_subtotal":    "180.00",
+				"line_vat":         "39.60",
+				"line_total":       "219.60",
+				"account_id":       "acc-1",
+				"product_id":       "prod-1",
+			}},
+		}
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invoices":
+			w.Header().Set("Content-Type", "application/json")
+			require.Equal(t, "SALES", r.URL.Query().Get("type"))
+			require.Equal(t, "DRAFT", r.URL.Query().Get("status"))
+			require.Equal(t, "contact-1", r.URL.Query().Get("contact_id"))
+			require.Equal(t, "2026-03-01", r.URL.Query().Get("from_date"))
+			require.Equal(t, "2026-03-31", r.URL.Query().Get("to_date"))
+			require.Equal(t, "INV", r.URL.Query().Get("search"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{invoicePayload("DRAFT")})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices":
+			w.Header().Set("Content-Type", "application/json")
+			var req invoicing.CreateInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, invoicing.InvoiceTypeSales, req.InvoiceType)
+			assert.Equal(t, "contact-1", req.ContactID)
+			assert.Equal(t, "2026-03-15", req.IssueDate.Format("2006-01-02"))
+			assert.Equal(t, "2026-03-29", req.DueDate.Format("2006-01-02"))
+			assert.Equal(t, "EUR", req.Currency)
+			require.Len(t, req.Lines, 1)
+			line := req.Lines[0]
+			assert.Equal(t, "Consulting", line.Description)
+			assert.True(t, line.Quantity.Equal(decimal.RequireFromString("2.00")))
+			assert.True(t, line.UnitPrice.Equal(decimal.RequireFromString("100.00")))
+			assert.True(t, line.DiscountPercent.Equal(decimal.RequireFromString("10.00")))
+			assert.True(t, line.VATRate.Equal(decimal.RequireFromString("22.00")))
+			require.NotNil(t, line.AccountID)
+			require.NotNil(t, line.ProductID)
+			assert.Equal(t, "acc-1", *line.AccountID)
+			assert.Equal(t, "prod-1", *line.ProductID)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(invoicePayload("DRAFT"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/inv-1":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(invoicePayload("DRAFT"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/inv-1/pdf":
+			w.Header().Set("Content-Type", "application/pdf")
+			_, _ = w.Write([]byte("%PDF-1.4 invoice"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/inv-1/send":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "sent"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/inv-1/void":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "voided"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{
+		"invoices", "list",
+		"--type", "sales",
+		"--status", "draft",
+		"--contact-id", "contact-1",
+		"--from", "2026-03-01",
+		"--to", "2026-03-31",
+		"--search", "INV",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"invoice_number": "INV-00001"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"invoices", "create",
+		"--type", "sales",
+		"--contact-id", "contact-1",
+		"--issue-date", "2026-03-15",
+		"--due-date", "2026-03-29",
+		"--currency", "eur",
+		"--reference", "REF-1",
+		"--notes", "March services",
+		"--line", "description=Consulting,quantity=2,unit=hour,unit_price=100.00,discount_percent=10.00,vat_rate=22.00,account_id=acc-1,product_id=prod-1",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created invoice INV-00001 (inv-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"invoices", "get", "--id", "inv-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Invoice INV-00001")
+	assert.Contains(t, stdout.String(), "Consulting")
+
+	stdout.Reset()
+	outputPath := filepath.Join(t.TempDir(), "invoice.pdf")
+	err = app.run(context.Background(), []string{"invoices", "pdf", "--id", "inv-1", "--output", outputPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote Invoice PDF")
+	pdf, err := os.ReadFile(outputPath)
+	require.NoError(t, err)
+	assert.Equal(t, "%PDF-1.4 invoice", string(pdf))
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"invoices", "send", "--id", "inv-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Sent invoice inv-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"invoices", "void", "--id", "inv-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Voided invoice inv-1")
 }
 
 func TestCLIContactsInvoicesAndJournalCommands(t *testing.T) {
@@ -1517,6 +1689,26 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	_, _, err = parseYearMonthFlags("2026", "13")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "month must be between 1 and 12")
+
+	invoiceType, err := parseRequiredInvoiceType("credit_note")
+	require.NoError(t, err)
+	assert.Equal(t, invoicing.InvoiceTypeCreditNote, invoiceType)
+
+	_, err = parseRequiredInvoiceType("bad")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid invoice type")
+
+	invoiceStatus, err := parseOptionalInvoiceStatus("partially_paid")
+	require.NoError(t, err)
+	assert.Equal(t, invoicing.StatusPartiallyPaid, invoiceStatus)
+
+	var invoiceLines invoiceLineFlags
+	require.NoError(t, invoiceLines.Set("description=Service,quantity=1,unit_price=100,vat_rate=22"))
+	assert.Equal(t, "Service", invoiceLines.String())
+
+	err = invoiceLines.Set("description=Missing price,quantity=1,vat_rate=22")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unit_price is required")
 
 	paymentType, err := parseRequiredPaymentType("made")
 	require.NoError(t, err)

@@ -842,9 +842,12 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
-- `type` (string): `SALES` or `PURCHASE`
-- `status` (string): `DRAFT`, `SENT`, `PAID`, `VOID`
+- `type` (string): `SALES`, `PURCHASE`, or `CREDIT_NOTE`
+- `status` (string): `DRAFT`, `SENT`, `PARTIALLY_PAID`, `PAID`, `OVERDUE`, `VOIDED`
 - `contact_id` (uuid): Filter by contact
+- `from_date` (date): Filter from issue date, `YYYY-MM-DD`
+- `to_date` (date): Filter to issue date, `YYYY-MM-DD`
+- `search` (string): Search invoice numbers and references
 
 ### Create Invoice
 
@@ -870,6 +873,13 @@ Content-Type: application/json
 }
 ```
 
+### Get Invoice
+
+```http
+GET /tenants/{tenantId}/invoices/{invoiceId}
+Authorization: Bearer <token>
+```
+
 ### Download Invoice PDF
 
 ```http
@@ -878,6 +888,20 @@ Authorization: Bearer <token>
 ```
 
 Returns `application/pdf` file.
+
+### Send Invoice
+
+```http
+POST /tenants/{tenantId}/invoices/{invoiceId}/send
+Authorization: Bearer <token>
+```
+
+### Void Invoice
+
+```http
+POST /tenants/{tenantId}/invoices/{invoiceId}/void
+Authorization: Bearer <token>
+```
 
 ---
 
