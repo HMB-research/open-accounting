@@ -27,7 +27,8 @@ func (r apiRoute) String() string {
 func TestCLIRouteCoverageAgainstAPISource(t *testing.T) {
 	routes := collectAPIRoutesFromSource(t)
 	require.Greater(t, len(routes), 100, "route source parser should see the API route table")
-	cliDoc := readCLIReference(t)
+	knownCommands := collectKnownCLICommandPaths(t)
+	documentedCommands := collectDocumentedCLICommandPaths(t, knownCommands, readCLIReference(t))
 
 	var missing []string
 	var undocumented []string
@@ -44,7 +45,7 @@ func TestCLIRouteCoverageAgainstAPISource(t *testing.T) {
 		if command == "" {
 			continue
 		}
-		if !strings.Contains(cliDoc, "go run ./cmd/oa "+command) {
+		if !documentedCommands[command] {
 			undocumented = append(undocumented, fmt.Sprintf("%s -> %s", route.String(), command))
 		}
 	}
@@ -57,17 +58,36 @@ func TestCLIRouteCoverageAgainstAPISource(t *testing.T) {
 
 func TestCLIReferenceExamplesUseKnownCommandPaths(t *testing.T) {
 	knownCommands := collectKnownCLICommandPaths(t)
-	examples := collectCLIReferenceExampleCommands(readCLIReference(t))
-	require.Greater(t, len(examples), 100, "CLI guide should include broad command examples")
+	documentedCommands := collectDocumentedCLICommandPaths(t, knownCommands, readCLIReference(t))
+	require.Greater(t, len(documentedCommands), 100, "CLI guide should include broad command examples")
+}
 
-	var unknown []string
-	for _, example := range examples {
-		if _, ok := resolveKnownCLICommandPath(knownCommands, example); !ok {
-			unknown = append(unknown, example)
+func TestKnownCLICommandPathsAreDocumented(t *testing.T) {
+	knownCommands := collectKnownCLICommandPaths(t)
+	documentedCommands := collectDocumentedCLICommandPaths(t, knownCommands, readCLIReference(t))
+
+	var undocumented []string
+	for command := range knownCommands {
+		if !documentedCommands[command] {
+			undocumented = append(undocumented, command)
 		}
 	}
-	sort.Strings(unknown)
-	require.Empty(t, unknown, "docs/CLI.md examples with unknown command paths")
+	sort.Strings(undocumented)
+	require.Empty(t, undocumented, "known CLI commands missing from docs/CLI.md")
+}
+
+func TestCLIUsageListsKnownCommandPaths(t *testing.T) {
+	knownCommands := collectKnownCLICommandPaths(t)
+	usageCommands := collectCLIUsageCommandPaths(t, knownCommands)
+
+	var missing []string
+	for command := range knownCommands {
+		if !usageCommands[command] {
+			missing = append(missing, command)
+		}
+	}
+	sort.Strings(missing)
+	require.Empty(t, missing, "known CLI commands missing from oa help")
 }
 
 func collectAPIRoutesFromSource(t *testing.T) []apiRoute {
@@ -207,6 +227,85 @@ func collectCLIReferenceExampleCommands(reference string) []string {
 		commands = append(commands, rawCommand)
 	}
 	return commands
+}
+
+func collectDocumentedCLICommandPaths(t *testing.T, knownCommands map[string]bool, reference string) map[string]bool {
+	t.Helper()
+
+	examples := collectCLIReferenceExampleCommands(reference)
+	var unknown []string
+	documented := make(map[string]bool, len(examples))
+	for _, example := range examples {
+		command, ok := resolveKnownCLICommandPath(knownCommands, example)
+		if !ok {
+			unknown = append(unknown, example)
+			continue
+		}
+		documented[command] = true
+	}
+	sort.Strings(unknown)
+	require.Empty(t, unknown, "docs/CLI.md examples with unknown command paths")
+	return documented
+}
+
+func collectCLIUsageCommandPaths(t *testing.T, knownCommands map[string]bool) map[string]bool {
+	t.Helper()
+
+	app, stdout, _ := newTestCLIApp()
+	app.printUsage()
+
+	knownList := make([]string, 0, len(knownCommands))
+	for command := range knownCommands {
+		knownList = append(knownList, command)
+	}
+	sort.Slice(knownList, func(i, j int) bool {
+		if len(knownList[i]) == len(knownList[j]) {
+			return knownList[i] < knownList[j]
+		}
+		return len(knownList[i]) > len(knownList[j])
+	})
+
+	usageCommands := map[string]bool{}
+	var unknown []string
+	inCommands := false
+	for _, line := range strings.Split(stdout.String(), "\n") {
+		switch line {
+		case "Commands:":
+			inCommands = true
+			continue
+		case "":
+			inCommands = false
+		}
+		if !inCommands || !strings.HasPrefix(line, "  ") {
+			continue
+		}
+		raw := strings.TrimSpace(line)
+		command, ok := matchKnownCLIUsageCommand(raw, knownList)
+		if !ok {
+			unknown = append(unknown, raw)
+			continue
+		}
+		usageCommands[command] = true
+	}
+
+	sort.Strings(unknown)
+	require.Empty(t, unknown, "oa help entries that do not match known CLI commands")
+	return usageCommands
+}
+
+func matchKnownCLIUsageCommand(line string, knownCommands []string) (string, bool) {
+	for _, command := range knownCommands {
+		if line == command {
+			return command, true
+		}
+		if strings.HasPrefix(line, command) {
+			remainder := strings.TrimPrefix(line, command)
+			if len(remainder) > 0 && (remainder[0] == ' ' || remainder[0] == '\t') {
+				return command, true
+			}
+		}
+	}
+	return "", false
 }
 
 func resolveKnownCLICommandPath(knownCommands map[string]bool, rawCommand string) (string, bool) {
