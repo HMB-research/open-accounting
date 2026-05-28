@@ -676,6 +676,16 @@ func TestRefreshToken(t *testing.T) {
 			wantErrContain: "Invalid refresh token",
 		},
 		{
+			name: "access token cannot be used as refresh token",
+			setupMock: func(m *mockTenantRepository, ts *auth.TokenService) map[string]string {
+				m.addTestUser("user-1", "user@example.com", "Test User", "password123", true)
+				accessToken, _ := ts.GenerateAccessToken("user-1", "user@example.com", "", "")
+				return map[string]string{"refresh_token": accessToken}
+			},
+			wantStatus:     http.StatusUnauthorized,
+			wantErrContain: "Invalid refresh token",
+		},
+		{
 			name: "user not found",
 			setupMock: func(m *mockTenantRepository, ts *auth.TokenService) map[string]string {
 				// Generate token for user that doesn't exist in repo
