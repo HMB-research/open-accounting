@@ -408,6 +408,13 @@ class ApiClient {
     );
   }
 
+  async listTenantAuditEvents(tenantId: string, limit: number = 50) {
+    return this.request<TenantAuditEvent[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/audit-events?limit=${limit}`,
+    );
+  }
+
   async closePeriod(tenantId: string, data: ClosePeriodRequest) {
     return this.request<PeriodCloseResponse>(
       "POST",
@@ -2444,6 +2451,26 @@ export interface PeriodCloseEvent {
   lock_date_after?: string | null;
   note?: string;
   performed_by: string;
+  created_at: string;
+}
+
+export type TenantAuditAction =
+  | "user_role_updated"
+  | "user_removed"
+  | "invitation_created"
+  | "invitation_revoked";
+
+export type TenantAuditTargetType = "user" | "invitation";
+
+export interface TenantAuditEvent {
+  id: string;
+  tenant_id: string;
+  actor_user_id?: string;
+  action: TenantAuditAction;
+  target_type: TenantAuditTargetType;
+  target_id: string;
+  target_email?: string;
+  metadata?: Record<string, string>;
   created_at: string;
 }
 
