@@ -134,6 +134,37 @@ type InventoryMovement struct {
 	CreatedBy     string          `json:"created_by"`
 }
 
+// InventoryValuationMethodStandardCost values stock using each product purchase price.
+const InventoryValuationMethodStandardCost = "STANDARD_COST"
+
+// InventoryValuationLine represents one valued product/warehouse stock position.
+type InventoryValuationLine struct {
+	ProductID      string          `json:"product_id"`
+	ProductCode    string          `json:"product_code"`
+	ProductName    string          `json:"product_name"`
+	WarehouseID    string          `json:"warehouse_id,omitempty"`
+	WarehouseCode  string          `json:"warehouse_code,omitempty"`
+	WarehouseName  string          `json:"warehouse_name,omitempty"`
+	Quantity       decimal.Decimal `json:"quantity"`
+	ReservedQty    decimal.Decimal `json:"reserved_qty"`
+	AvailableQty   decimal.Decimal `json:"available_qty"`
+	UnitCost       decimal.Decimal `json:"unit_cost"`
+	InventoryValue decimal.Decimal `json:"inventory_value"`
+}
+
+// InventoryValuationReport summarizes valued on-hand stock for tracked goods.
+type InventoryValuationReport struct {
+	TenantID        string                   `json:"tenant_id"`
+	WarehouseID     string                   `json:"warehouse_id,omitempty"`
+	ValuationMethod string                   `json:"valuation_method"`
+	Lines           []InventoryValuationLine `json:"lines"`
+	TotalQuantity   decimal.Decimal          `json:"total_quantity"`
+	TotalReserved   decimal.Decimal          `json:"total_reserved"`
+	TotalAvailable  decimal.Decimal          `json:"total_available"`
+	TotalValue      decimal.Decimal          `json:"total_value"`
+	GeneratedAt     time.Time                `json:"generated_at"`
+}
+
 // CreateProductRequest represents a request to create a product
 type CreateProductRequest struct {
 	Code               string `json:"code,omitempty"`

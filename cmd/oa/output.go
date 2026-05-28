@@ -890,6 +890,69 @@ func printInventoryMovementsTable(w io.Writer, movements []inventory.InventoryMo
 	_ = tw.Flush()
 }
 
+func printInventoryValuation(w io.Writer, report *inventory.InventoryValuationReport) {
+	if report == nil {
+		return
+	}
+
+	_, _ = fmt.Fprintf(w, "Inventory valuation (%s)\n", report.ValuationMethod)
+	if strings.TrimSpace(report.WarehouseID) != "" {
+		_, _ = fmt.Fprintf(w, "Warehouse: %s\n", report.WarehouseID)
+	}
+	_, _ = fmt.Fprintf(w, "Generated: %s\n\n", formatTime(report.GeneratedAt))
+
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "PRODUCT\tWAREHOUSE\tQUANTITY\tRESERVED\tAVAILABLE\tUNIT COST\tVALUE")
+	for _, line := range report.Lines {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			inventoryValuationProductLabel(line),
+			inventoryValuationWarehouseLabel(line),
+			line.Quantity.String(),
+			line.ReservedQty.String(),
+			line.AvailableQty.String(),
+			line.UnitCost.String(),
+			line.InventoryValue.String(),
+		)
+	}
+	_, _ = fmt.Fprintf(
+		tw,
+		"TOTAL\t\t%s\t%s\t%s\t\t%s\n",
+		report.TotalQuantity.String(),
+		report.TotalReserved.String(),
+		report.TotalAvailable.String(),
+		report.TotalValue.String(),
+	)
+	_ = tw.Flush()
+}
+
+func inventoryValuationProductLabel(line inventory.InventoryValuationLine) string {
+	if strings.TrimSpace(line.ProductCode) != "" && strings.TrimSpace(line.ProductName) != "" {
+		return line.ProductCode + " " + line.ProductName
+	}
+	if strings.TrimSpace(line.ProductCode) != "" {
+		return line.ProductCode
+	}
+	if strings.TrimSpace(line.ProductName) != "" {
+		return line.ProductName
+	}
+	return line.ProductID
+}
+
+func inventoryValuationWarehouseLabel(line inventory.InventoryValuationLine) string {
+	if strings.TrimSpace(line.WarehouseCode) != "" && strings.TrimSpace(line.WarehouseName) != "" {
+		return line.WarehouseCode + " " + line.WarehouseName
+	}
+	if strings.TrimSpace(line.WarehouseCode) != "" {
+		return line.WarehouseCode
+	}
+	if strings.TrimSpace(line.WarehouseName) != "" {
+		return line.WarehouseName
+	}
+	return line.WarehouseID
+}
+
 func printCostCentersTable(w io.Writer, costCenters []accounting.CostCenter) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tCODE\tNAME\tACTIVE\tBUDGET\tPERIOD")

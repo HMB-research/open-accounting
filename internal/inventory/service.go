@@ -3,6 +3,8 @@ package inventory
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -305,6 +307,114 @@ func (s *Service) DeleteWarehouse(ctx context.Context, tenantID, schemaName, war
 		return fmt.Errorf("delete warehouse: %w", err)
 	}
 	return nil
+}
+
+// GetInventoryValuation returns standard-cost valuation for tracked goods.
+func (s *Service) GetInventoryValuation(ctx context.Context, tenantID, schemaName, warehouseID string) (*InventoryValuationReport, error) {
+	warehouseID = strings.TrimSpace(warehouseID)
+	if warehouseID != "" {
+		if _, err := s.repo.GetWarehouseByID(ctx, schemaName, tenantID, warehouseID); err != nil {
+			return nil, fmt.Errorf("get warehouse: %w", err)
+		}
+	}
+
+	products, err := s.repo.ListProducts(ctx, schemaName, tenantID, &ProductFilter{ProductType: ProductTypeGoods})
+	if err != nil {
+		return nil, fmt.Errorf("list products: %w", err)
+	}
+
+	warehouses, err := s.repo.ListWarehouses(ctx, schemaName, tenantID, false)
+	if err != nil {
+		return nil, fmt.Errorf("list warehouses: %w", err)
+	}
+	warehouseByID := make(map[string]Warehouse, len(warehouses))
+	for _, warehouse := range warehouses {
+		warehouseByID[warehouse.ID] = warehouse
+	}
+
+	report := &InventoryValuationReport{
+		TenantID:        tenantID,
+		WarehouseID:     warehouseID,
+		ValuationMethod: InventoryValuationMethodStandardCost,
+		Lines:           []InventoryValuationLine{},
+		TotalQuantity:   decimal.Zero,
+		TotalReserved:   decimal.Zero,
+		TotalAvailable:  decimal.Zero,
+		TotalValue:      decimal.Zero,
+		GeneratedAt:     time.Now(),
+	}
+
+	for _, product := range products {
+		if product.ProductType != ProductTypeGoods || !product.TrackInventory {
+			continue
+		}
+
+		levels, err := s.repo.GetStockLevelsByProduct(ctx, schemaName, tenantID, product.ID)
+		if err != nil {
+			return nil, fmt.Errorf("get stock levels for product %s: %w", product.ID, err)
+		}
+		if len(levels) == 0 {
+			if warehouseID == "" && !product.CurrentStock.IsZero() {
+				report.addValuationLine(inventoryValuationLine(product, StockLevel{
+					TenantID:     tenantID,
+					ProductID:    product.ID,
+					Quantity:     product.CurrentStock,
+					ReservedQty:  decimal.Zero,
+					AvailableQty: product.CurrentStock,
+				}, Warehouse{}))
+			}
+			continue
+		}
+
+		for _, level := range levels {
+			if level.TenantID != tenantID {
+				continue
+			}
+			if warehouseID != "" && level.WarehouseID != warehouseID {
+				continue
+			}
+			report.addValuationLine(inventoryValuationLine(product, level, warehouseByID[level.WarehouseID]))
+		}
+	}
+
+	sort.SliceStable(report.Lines, func(i, j int) bool {
+		left := report.Lines[i]
+		right := report.Lines[j]
+		leftKey := strings.Join([]string{left.ProductCode, left.ProductName, left.ProductID, left.WarehouseCode, left.WarehouseName, left.WarehouseID}, "\x00")
+		rightKey := strings.Join([]string{right.ProductCode, right.ProductName, right.ProductID, right.WarehouseCode, right.WarehouseName, right.WarehouseID}, "\x00")
+		return leftKey < rightKey
+	})
+
+	return report, nil
+}
+
+func inventoryValuationLine(product Product, level StockLevel, warehouse Warehouse) InventoryValuationLine {
+	line := InventoryValuationLine{
+		ProductID:      product.ID,
+		ProductCode:    product.Code,
+		ProductName:    product.Name,
+		WarehouseID:    level.WarehouseID,
+		WarehouseCode:  warehouse.Code,
+		WarehouseName:  warehouse.Name,
+		Quantity:       level.Quantity,
+		ReservedQty:    level.ReservedQty,
+		AvailableQty:   level.AvailableQty,
+		UnitCost:       product.PurchasePrice,
+		InventoryValue: level.Quantity.Mul(product.PurchasePrice),
+	}
+	if line.WarehouseID == "" {
+		line.WarehouseCode = "UNASSIGNED"
+		line.WarehouseName = "Unassigned"
+	}
+	return line
+}
+
+func (r *InventoryValuationReport) addValuationLine(line InventoryValuationLine) {
+	r.Lines = append(r.Lines, line)
+	r.TotalQuantity = r.TotalQuantity.Add(line.Quantity)
+	r.TotalReserved = r.TotalReserved.Add(line.ReservedQty)
+	r.TotalAvailable = r.TotalAvailable.Add(line.AvailableQty)
+	r.TotalValue = r.TotalValue.Add(line.InventoryValue)
 }
 
 // AdjustStock adjusts stock level for a product

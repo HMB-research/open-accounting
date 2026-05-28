@@ -352,6 +352,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  inventory products delete Delete a product or service")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory products stock-levels  List product stock levels")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory products movements  List product stock movements")
+	_, _ = fmt.Fprintln(a.stdout, "  inventory valuation       Show standard-cost inventory valuation")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory warehouses list List warehouses")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory warehouses create  Create a warehouse")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory warehouses import  Import warehouses from CSV")
@@ -5306,6 +5307,24 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		return a.runInventoryWarehouses(ctx, cfg, client, args[1:])
 	case "stock":
 		return a.runInventoryStock(ctx, cfg, client, args[1:])
+	case "valuation":
+		fs := flag.NewFlagSet("inventory valuation", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		warehouseID := fs.String("warehouse-id", "", "Warehouse id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		report, err := client.getInventoryValuation(ctx, cfg.TenantID, strings.TrimSpace(*warehouseID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, report)
+		}
+		printInventoryValuation(a.stdout, report)
+		return nil
 	case "adjust":
 		fs := flag.NewFlagSet("inventory adjust", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)

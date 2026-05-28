@@ -1149,6 +1149,31 @@ func TestPrintInventoryOutputs(t *testing.T) {
 		CreatedAt:    now,
 		CreatedBy:    "user-1",
 	}
+	valuation := inventory.InventoryValuationReport{
+		TenantID:        "tenant-1",
+		WarehouseID:     "wh-1",
+		ValuationMethod: inventory.InventoryValuationMethodStandardCost,
+		Lines: []inventory.InventoryValuationLine{
+			{
+				ProductID:      "prod-1",
+				ProductCode:    "PRD-001",
+				ProductName:    "Widget",
+				WarehouseID:    "wh-1",
+				WarehouseCode:  "MAIN",
+				WarehouseName:  "Main warehouse",
+				Quantity:       decimal.NewFromInt(12),
+				ReservedQty:    decimal.NewFromInt(2),
+				AvailableQty:   decimal.NewFromInt(10),
+				UnitCost:       decimal.NewFromFloat(10.5),
+				InventoryValue: decimal.NewFromInt(126),
+			},
+		},
+		TotalQuantity:  decimal.NewFromInt(12),
+		TotalReserved:  decimal.NewFromInt(2),
+		TotalAvailable: decimal.NewFromInt(10),
+		TotalValue:     decimal.NewFromInt(126),
+		GeneratedAt:    now,
+	}
 
 	var categoriesBuf bytes.Buffer
 	printProductCategoriesTable(&categoriesBuf, []inventory.ProductCategory{category})
@@ -1189,6 +1214,13 @@ func TestPrintInventoryOutputs(t *testing.T) {
 	printInventoryMovementsTable(&movementsBuf, []inventory.InventoryMovement{movement})
 	assert.Contains(t, movementsBuf.String(), "ADJUSTMENT")
 	assert.Contains(t, movementsBuf.String(), "Cycle count")
+
+	var valuationBuf bytes.Buffer
+	printInventoryValuation(&valuationBuf, &valuation)
+	assert.Contains(t, valuationBuf.String(), "Inventory valuation (STANDARD_COST)")
+	assert.Contains(t, valuationBuf.String(), "PRD-001 Widget")
+	assert.Contains(t, valuationBuf.String(), "MAIN Main warehouse")
+	assert.Contains(t, valuationBuf.String(), "126")
 }
 
 func TestPrintCostCenterOutputs(t *testing.T) {

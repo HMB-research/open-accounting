@@ -750,6 +750,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 		return commandForMethod(method, map[string]string{"GET": "inventory products stock-levels"})
 	case "/products/{productID}/movements":
 		return commandForMethod(method, map[string]string{"GET": "inventory products movements"})
+	case "/inventory/valuation":
+		return commandForMethod(method, map[string]string{"GET": "inventory valuation"})
 	case "/warehouses":
 		return commandForMethod(method, map[string]string{
 			"GET":  "inventory warehouses list",

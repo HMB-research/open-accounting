@@ -1759,6 +1759,54 @@ definitions:
       row:
         type: integer
     type: object
+  github_com_HMB-research_open-accounting_internal_inventory.InventoryValuationLine:
+    properties:
+      available_qty:
+        type: number
+      inventory_value:
+        type: number
+      product_code:
+        type: string
+      product_id:
+        type: string
+      product_name:
+        type: string
+      quantity:
+        type: number
+      reserved_qty:
+        type: number
+      unit_cost:
+        type: number
+      warehouse_code:
+        type: string
+      warehouse_id:
+        type: string
+      warehouse_name:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_inventory.InventoryValuationReport:
+    properties:
+      generated_at:
+        type: string
+      lines:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventoryValuationLine'
+        type: array
+      tenant_id:
+        type: string
+      total_available:
+        type: number
+      total_quantity:
+        type: number
+      total_reserved:
+        type: number
+      total_value:
+        type: number
+      valuation_method:
+        type: string
+      warehouse_id:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_invoicing.AutomatedReminderResult:
     properties:
       errors:
@@ -7651,6 +7699,46 @@ paths:
       security:
       - BearerAuth: []
       summary: Import stock adjustments
+      tags:
+      - Inventory
+  /tenants/{tenantID}/inventory/valuation:
+    get:
+      description: Return valued on-hand stock for tracked goods using product purchase
+        price as standard cost
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Warehouse ID
+        in: query
+        name: warehouse_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventoryValuationReport'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get inventory valuation
       tags:
       - Inventory
   /tenants/{tenantID}/invitations:
