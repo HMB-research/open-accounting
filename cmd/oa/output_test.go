@@ -616,6 +616,59 @@ func TestPrintReports(t *testing.T) {
 	assert.Contains(t, agingBuf.String(), "Receivables aging")
 	assert.Contains(t, agingBuf.String(), "Acme")
 
+	var dashboardBuf bytes.Buffer
+	printDashboardSummary(&dashboardBuf, &analytics.DashboardSummary{
+		TotalRevenue:       decimal.NewFromInt(1200),
+		TotalExpenses:      decimal.NewFromInt(700),
+		NetIncome:          decimal.NewFromInt(500),
+		RevenueChange:      decimal.NewFromInt(10),
+		ExpensesChange:     decimal.NewFromInt(5),
+		TotalReceivables:   decimal.NewFromInt(900),
+		OverdueReceivables: decimal.NewFromInt(100),
+		TotalPayables:      decimal.NewFromInt(300),
+		OverduePayables:    decimal.NewFromInt(50),
+		DraftInvoices:      1,
+		PendingInvoices:    2,
+		OverdueInvoices:    3,
+		PeriodStart:        asOf,
+		PeriodEnd:          asOf,
+	})
+	assert.Contains(t, dashboardBuf.String(), "Dashboard")
+	assert.Contains(t, dashboardBuf.String(), "Net income: 500")
+
+	var revenueChartBuf bytes.Buffer
+	printRevenueExpenseChart(&revenueChartBuf, &analytics.RevenueExpenseChart{
+		Labels:   []string{"2026-03"},
+		Revenue:  []decimal.Decimal{decimal.NewFromInt(1200)},
+		Expenses: []decimal.Decimal{decimal.NewFromInt(700)},
+		Profit:   []decimal.Decimal{decimal.NewFromInt(500)},
+	})
+	assert.Contains(t, revenueChartBuf.String(), "2026-03")
+	assert.Contains(t, revenueChartBuf.String(), "500")
+
+	var cashFlowChartBuf bytes.Buffer
+	printCashFlowChart(&cashFlowChartBuf, &analytics.CashFlowChart{
+		Labels:   []string{"2026-03"},
+		Inflows:  []decimal.Decimal{decimal.NewFromInt(1500)},
+		Outflows: []decimal.Decimal{decimal.NewFromInt(800)},
+		Net:      []decimal.Decimal{decimal.NewFromInt(700)},
+	})
+	assert.Contains(t, cashFlowChartBuf.String(), "INFLOWS")
+	assert.Contains(t, cashFlowChartBuf.String(), "700")
+
+	amount := decimal.NewFromInt(219)
+	var activityBuf bytes.Buffer
+	printActivityItems(&activityBuf, []analytics.ActivityItem{{
+		ID:          "act-1",
+		Type:        "INVOICE",
+		Action:      "created",
+		Description: "Invoice INV-1",
+		CreatedAt:   asOf,
+		Amount:      &amount,
+	}})
+	assert.Contains(t, activityBuf.String(), "Invoice INV-1")
+	assert.Contains(t, activityBuf.String(), "219")
+
 	var confirmationSummaryBuf bytes.Buffer
 	printBalanceConfirmationSummary(&confirmationSummaryBuf, &reports.BalanceConfirmationSummary{
 		Type:         reports.BalanceTypeReceivable,

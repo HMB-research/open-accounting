@@ -82,6 +82,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runAssets(ctx, args[1:])
 	case "cost-centers":
 		return a.runCostCenters(ctx, args[1:])
+	case "analytics":
+		return a.runAnalytics(ctx, args[1:])
 	case "reports":
 		return a.runReports(ctx, args[1:])
 	case "documents":
@@ -187,6 +189,10 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  cost-centers update       Update a cost center")
 	_, _ = fmt.Fprintln(a.stdout, "  cost-centers delete       Delete a cost center")
 	_, _ = fmt.Fprintln(a.stdout, "  cost-centers report       Show cost center budget report")
+	_, _ = fmt.Fprintln(a.stdout, "  analytics dashboard       Show dashboard summary")
+	_, _ = fmt.Fprintln(a.stdout, "  analytics revenue-expense Show revenue and expense chart data")
+	_, _ = fmt.Fprintln(a.stdout, "  analytics cash-flow       Show cash-flow chart data")
+	_, _ = fmt.Fprintln(a.stdout, "  analytics activity        Show recent activity")
 	_, _ = fmt.Fprintln(a.stdout, "  reports trial-balance     Show trial balance")
 	_, _ = fmt.Fprintln(a.stdout, "  reports account-balance   Show one account balance")
 	_, _ = fmt.Fprintln(a.stdout, "  reports balance-sheet     Show balance sheet")
@@ -2319,6 +2325,108 @@ func (a *cliApp) runCostCenters(ctx context.Context, args []string) error {
 
 	default:
 		return fmt.Errorf("unknown cost-centers subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runAnalytics(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("analytics subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "dashboard":
+		fs := flag.NewFlagSet("analytics dashboard", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		summary, err := client.getDashboardSummary(ctx, cfg.TenantID)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, summary)
+		}
+		printDashboardSummary(a.stdout, summary)
+		return nil
+
+	case "revenue-expense":
+		fs := flag.NewFlagSet("analytics revenue-expense", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		monthsFlag := fs.String("months", "12", "Number of months")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		months, err := parseRequiredPositiveInt("months", *monthsFlag)
+		if err != nil {
+			return err
+		}
+
+		chart, err := client.getRevenueExpenseChart(ctx, cfg.TenantID, months)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, chart)
+		}
+		printRevenueExpenseChart(a.stdout, chart)
+		return nil
+
+	case "cash-flow":
+		fs := flag.NewFlagSet("analytics cash-flow", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		monthsFlag := fs.String("months", "12", "Number of months")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		months, err := parseRequiredPositiveInt("months", *monthsFlag)
+		if err != nil {
+			return err
+		}
+
+		chart, err := client.getCashFlowChart(ctx, cfg.TenantID, months)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, chart)
+		}
+		printCashFlowChart(a.stdout, chart)
+		return nil
+
+	case "activity":
+		fs := flag.NewFlagSet("analytics activity", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		limitFlag := fs.String("limit", "10", "Number of activity items")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		limit, err := parseRequiredPositiveInt("limit", *limitFlag)
+		if err != nil {
+			return err
+		}
+
+		activity, err := client.getRecentActivity(ctx, cfg.TenantID, limit)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, activity)
+		}
+		printActivityItems(a.stdout, activity)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown analytics subcommand %q", args[0])
 	}
 }
 

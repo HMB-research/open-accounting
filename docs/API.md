@@ -1277,6 +1277,20 @@ Budget periods are `MONTHLY`, `QUARTERLY`, and `ANNUAL`.
 
 ---
 
+## Analytics
+
+```http
+GET /tenants/{tenantId}/analytics/dashboard
+GET /tenants/{tenantId}/analytics/revenue-expense?months=12
+GET /tenants/{tenantId}/analytics/cash-flow?months=12
+GET /tenants/{tenantId}/analytics/activity?limit=10
+Authorization: Bearer <token>
+```
+
+Analytics endpoints return dashboard totals, monthly chart arrays, and recent activity items for the tenant.
+
+---
+
 ## Payments
 
 ### List Payments

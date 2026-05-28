@@ -981,6 +981,53 @@ func (c *apiClient) getAgingReport(ctx context.Context, tenantID, reportType str
 	return &resp, nil
 }
 
+func (c *apiClient) getDashboardSummary(ctx context.Context, tenantID string) (*analytics.DashboardSummary, error) {
+	var resp analytics.DashboardSummary
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "analytics", "dashboard"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getRevenueExpenseChart(ctx context.Context, tenantID string, months int) (*analytics.RevenueExpenseChart, error) {
+	values := url.Values{}
+	if months > 0 {
+		values.Set("months", strconv.Itoa(months))
+	}
+
+	var resp analytics.RevenueExpenseChart
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "analytics", "revenue-expense"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getCashFlowChart(ctx context.Context, tenantID string, months int) (*analytics.CashFlowChart, error) {
+	values := url.Values{}
+	if months > 0 {
+		values.Set("months", strconv.Itoa(months))
+	}
+
+	var resp analytics.CashFlowChart
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "analytics", "cash-flow"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getRecentActivity(ctx context.Context, tenantID string, limit int) ([]analytics.ActivityItem, error) {
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+
+	var resp []analytics.ActivityItem
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "analytics", "activity"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
 func (c *apiClient) listDocuments(ctx context.Context, tenantID, entityType, entityID string) ([]documents.Document, error) {
 	values := url.Values{}
 	values.Set("entity_type", entityType)
