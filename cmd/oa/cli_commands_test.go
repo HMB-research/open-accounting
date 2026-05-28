@@ -3651,6 +3651,20 @@ func TestCLICloseCommands(t *testing.T) {
 		"has_retained_earnings_account": true,
 		"retained_earnings_account":     map[string]any{"id": "acc-retained", "code": "2999", "name": "Retained earnings"},
 		"net_income":                    "1200.00",
+		"close_pack_evidence_entity_id": "11111111-1111-5111-8111-111111111111",
+		"close_pack_evidence": map[string]any{
+			"entity_type":      "year_end_close",
+			"entity_id":        "11111111-1111-5111-8111-111111111111",
+			"compliant":        true,
+			"approved_count":   1,
+			"missing_evidence": false,
+			"document_type_counts": map[string]int{
+				"close_pack": 1,
+			},
+			"approved_document_type_counts": map[string]int{
+				"close_pack": 1,
+			},
+		},
 	}
 	packPayload := map[string]any{
 		"status": statusPayload,
@@ -3790,6 +3804,7 @@ func TestCLICloseCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"close", "year-end-status", "--period-end", "2025-12-31"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Carry-forward ready: true")
+	assert.Contains(t, stdout.String(), "Close-pack evidence compliant: true")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"close", "year-end-pack", "--period-end", "2025-12-31"})

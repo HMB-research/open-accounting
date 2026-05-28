@@ -627,7 +627,7 @@ go run ./cmd/oa close carry-forward --period-end 2025-12-31
 go run ./cmd/oa close reverse-carry-forward --period-end 2025-12-31 --reason "Late supplier accrual"
 ```
 
-Period close and reopen operations require a user role that can manage close workflows. Fiscal-year close requires `--reviewer-sign-off`; reopening requires a note, and fiscal-year periods cannot be reopened after carry-forward has been posted unless the carry-forward is explicitly reversed first. `close year-end-pack` returns the readiness status plus year-end trial balance, balance sheet, and income statement. Use `--json` for automation.
+Period close and reopen operations require a user role that can manage close workflows. Fiscal-year close requires `--reviewer-sign-off` plus approved `close_pack` evidence attached to the `year_end_close` entity printed by `close year-end-status` or `close year-end-pack`; carry-forward requires that approved close-pack evidence too. Reopening requires a note, and fiscal-year periods cannot be reopened after carry-forward has been posted unless the carry-forward is explicitly reversed first. `close year-end-pack` returns the readiness status plus year-end trial balance, balance sheet, and income statement. Use `--json` for automation.
 
 ## Banking
 
@@ -737,6 +737,12 @@ go run ./cmd/oa documents upload \
   --document-type reconciliation_evidence \
   --notes "Matched against March bank statement" \
   --retention-until 2027-03-31
+go run ./cmd/oa documents upload \
+  --entity-type year_end_close \
+  --entity-id <close-pack-evidence-entity-id> \
+  --file ./close-pack.pdf \
+  --document-type close_pack \
+  --notes "Approved fiscal-year close pack"
 go run ./cmd/oa documents review-summary --entity-type payment --entity-id <payment-id> --entity-id <payment-id>
 go run ./cmd/oa documents evidence-policy --entity-type payment --entity-id <payment-id> --document-type receipt --require-approved
 go run ./cmd/oa documents retention --as-of 2027-03-01 --horizon-days 45 --include-missing

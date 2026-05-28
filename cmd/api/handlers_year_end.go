@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -46,6 +50,10 @@ func (h *Handlers) GetYearEndCloseStatus(w http.ResponseWriter, r *http.Request)
 	)
 	if err != nil {
 		respondYearEndCloseError(w, err)
+		return
+	}
+	if err := h.attachYearEndCloseEvidenceStatus(r.Context(), routeCtx.schemaName, routeCtx.tenantID, status); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to evaluate close-pack evidence")
 		return
 	}
 
@@ -92,6 +100,12 @@ func (h *Handlers) GetYearEndClosePack(w http.ResponseWriter, r *http.Request) {
 		respondYearEndCloseError(w, err)
 		return
 	}
+	if pack.Status != nil {
+		if err := h.attachYearEndCloseEvidenceStatus(r.Context(), routeCtx.schemaName, routeCtx.tenantID, pack.Status); err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to evaluate close-pack evidence")
+			return
+		}
+	}
 
 	respondJSON(w, http.StatusOK, pack)
 }
@@ -128,6 +142,10 @@ func (h *Handlers) CreateYearEndCarryForward(w http.ResponseWriter, r *http.Requ
 		respondError(w, http.StatusNotFound, "Tenant not found")
 		return
 	}
+	if err := h.requireApprovedYearEndClosePackEvidence(r.Context(), tenantRecord, req.PeriodEndDate); err != nil {
+		respondYearEndCloseError(w, err)
+		return
+	}
 
 	result, err := h.accountingService.CreateYearEndCarryForward(
 		r.Context(),
@@ -140,6 +158,12 @@ func (h *Handlers) CreateYearEndCarryForward(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		respondYearEndCloseError(w, err)
 		return
+	}
+	if result.Status != nil {
+		if err := h.attachYearEndCloseEvidenceStatus(r.Context(), tenantRecord.SchemaName, tenantID, result.Status); err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to evaluate close-pack evidence")
+			return
+		}
 	}
 
 	respondJSON(w, http.StatusOK, result)
@@ -214,8 +238,67 @@ func (h *Handlers) yearEndCarryForwardExists(r *http.Request, tenantRecord *tena
 	return status.IsFiscalYearEnd && status.ExistingCarryForward != nil, nil
 }
 
+func (h *Handlers) requireApprovedYearEndClosePackEvidence(ctx context.Context, tenantRecord *tenant.Tenant, rawPeriodEndDate string) error {
+	if h.documentsService == nil {
+		return nil
+	}
+	isYearEnd, err := accounting.IsFiscalYearEndPeriod(rawPeriodEndDate, tenantRecord.Settings.FiscalYearStart)
+	if err != nil {
+		return err
+	}
+	if !isYearEnd {
+		return nil
+	}
+
+	entityID, err := accounting.YearEndCloseEvidenceEntityID(tenantRecord.ID, rawPeriodEndDate)
+	if err != nil {
+		return err
+	}
+	results, err := h.yearEndClosePackEvidence(ctx, tenantRecord.SchemaName, tenantRecord.ID, entityID)
+	if err != nil {
+		return err
+	}
+	if len(results) == 0 || !results[0].Compliant {
+		return fmt.Errorf("%w before completing fiscal-year close workflow for %s (entity_id: %s)", errApprovedClosePackEvidenceRequired, rawPeriodEndDate, entityID)
+	}
+
+	return nil
+}
+
+func (h *Handlers) attachYearEndCloseEvidenceStatus(ctx context.Context, schemaName, tenantID string, status *accounting.YearEndCloseStatus) error {
+	if h.documentsService == nil || status == nil || strings.TrimSpace(status.ClosePackEvidenceEntityID) == "" {
+		return nil
+	}
+
+	results, err := h.yearEndClosePackEvidence(ctx, schemaName, tenantID, status.ClosePackEvidenceEntityID)
+	if err != nil {
+		return err
+	}
+	if len(results) == 0 {
+		return nil
+	}
+
+	status.ClosePackEvidence = &results[0]
+	status.CarryForwardReady = status.CarryForwardReady && results[0].Compliant
+	return nil
+}
+
+func (h *Handlers) yearEndClosePackEvidence(ctx context.Context, schemaName, tenantID, entityID string) ([]documents.EvidencePolicyResult, error) {
+	return h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
+		EntityType: documents.EntityTypeYearEndClose,
+		EntityIDs:  []string{entityID},
+		Rules: []documents.EvidencePolicyRule{{
+			DocumentTypes:   []string{documents.DocumentTypeClosePack},
+			MinCount:        1,
+			RequireApproved: true,
+		}},
+	})
+}
+
 func respondYearEndCloseError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, errApprovedClosePackEvidenceRequired):
+		respondError(w, http.StatusConflict, err.Error())
 	case strings.Contains(err.Error(), "period end date"):
 		respondError(w, http.StatusBadRequest, err.Error())
 	case strings.Contains(err.Error(), "must match the fiscal year end"):

@@ -1529,6 +1529,12 @@ func printYearEndCloseStatus(w io.Writer, status *accounting.YearEndCloseStatus)
 	_, _ = fmt.Fprintf(w, "Carry-forward ready: %t\n", status.CarryForwardReady)
 	_, _ = fmt.Fprintf(w, "Retained earnings account: %t\n", status.HasRetainedEarningsAccount)
 	_, _ = fmt.Fprintf(w, "Net income: %s\n", status.NetIncome.String())
+	if status.ClosePackEvidenceEntityID != "" {
+		_, _ = fmt.Fprintf(w, "Close-pack evidence entity: %s\n", status.ClosePackEvidenceEntityID)
+	}
+	if status.ClosePackEvidence != nil {
+		_, _ = fmt.Fprintf(w, "Close-pack evidence compliant: %t\n", status.ClosePackEvidence.Compliant)
+	}
 	if status.RetainedEarningsAccount != nil {
 		_, _ = fmt.Fprintf(w, "Retained earnings: %s %s\n", status.RetainedEarningsAccount.Code, status.RetainedEarningsAccount.Name)
 	}

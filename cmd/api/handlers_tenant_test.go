@@ -11,7 +11,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/auth"
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -804,6 +806,60 @@ func TestClosePeriod(t *testing.T) {
 			assert.Equal(t, tt.wantSignOff, resp.Event.ReviewerSignOff)
 		})
 	}
+}
+
+func TestClosePeriodRequiresApprovedClosePackEvidence(t *testing.T) {
+	h, repo := setupTenantTestHandlers()
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+
+	tenantRecord := repo.addTestTenant("tenant-1", "Tenant", "tenant")
+	tenantRecord.Settings = tenant.DefaultSettings()
+	repo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+		{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner},
+	}
+
+	body := map[string]interface{}{
+		"period_end_date":   "2026-12-31",
+		"note":              "Year-end close",
+		"reviewer_sign_off": true,
+	}
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/period-close", body, &auth.Claims{
+		UserID: "user-1",
+		Email:  "user@example.com",
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	w := httptest.NewRecorder()
+
+	h.ClosePeriod(w, req)
+
+	require.Equal(t, http.StatusConflict, w.Code, "response body: %s", w.Body.String())
+	assert.Contains(t, w.Body.String(), "approved close-pack evidence is required")
+
+	entityID, err := accounting.YearEndCloseEvidenceEntityID("tenant-1", "2026-12-31")
+	require.NoError(t, err)
+	docRepo.docs["doc-close-pack"] = &documents.Document{
+		ID:           "doc-close-pack",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypeYearEndClose,
+		EntityID:     entityID,
+		DocumentType: documents.DocumentTypeClosePack,
+		FileName:     "close-pack.pdf",
+		ReviewStatus: documents.ReviewStatusApproved,
+		UploadedBy:   "user-1",
+		CreatedAt:    time.Now(),
+	}
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/period-close", body, &auth.Claims{
+		UserID: "user-1",
+		Email:  "user@example.com",
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	w = httptest.NewRecorder()
+
+	h.ClosePeriod(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
 }
 
 func TestClosePeriodRequiresAuthentication(t *testing.T) {

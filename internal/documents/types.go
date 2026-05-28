@@ -8,6 +8,7 @@ const (
 	EntityTypePayment      = "payment"
 	EntityTypeBankTxn      = "bank_transaction"
 	EntityTypeAsset        = "asset"
+	EntityTypeYearEndClose = "year_end_close"
 
 	DocumentTypeSupportingDocument = "supporting_document"
 	DocumentTypeReceipt            = "receipt"
@@ -15,6 +16,7 @@ const (
 	DocumentTypeContract           = "contract"
 	DocumentTypeAssetRecord        = "asset_record"
 	DocumentTypeTaxSupport         = "tax_support"
+	DocumentTypeClosePack          = "close_pack"
 	DocumentTypeOther              = "other"
 
 	ReviewStatusPending  = "PENDING"

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/database"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -31,6 +32,13 @@ func NewRepository(db *pgxpool.Pool) *PostgresRepository {
 }
 
 func (r *PostgresRepository) EntityExists(ctx context.Context, schemaName, tenantID, entityType, entityID string) (bool, error) {
+	if strings.TrimSpace(strings.ToLower(entityType)) == EntityTypeYearEndClose {
+		if _, err := uuid.Parse(strings.TrimSpace(entityID)); err != nil {
+			return false, nil
+		}
+		return true, nil
+	}
+
 	tableName, err := entityTableName(entityType)
 	if err != nil {
 		return false, err
@@ -285,6 +293,8 @@ func entityTableName(entityType string) (string, error) {
 		return "bank_transactions", nil
 	case EntityTypeAsset:
 		return "fixed_assets", nil
+	case EntityTypeYearEndClose:
+		return "", nil
 	default:
 		return "", fmt.Errorf("unsupported document entity type")
 	}

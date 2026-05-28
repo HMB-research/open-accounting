@@ -13058,6 +13058,12 @@ const docTemplate = `{
                 "carry_forward_ready": {
                     "type": "boolean"
                 },
+                "close_pack_evidence": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyResult"
+                },
+                "close_pack_evidence_entity_id": {
+                    "type": "string"
+                },
                 "existing_carry_forward": {
                     "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntrySummary"
                 },
@@ -14369,6 +14375,97 @@ const docTemplate = `{
                 },
                 "vat_number": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyResult": {
+            "type": "object",
+            "properties": {
+                "approved_count": {
+                    "type": "integer"
+                },
+                "approved_document_type_counts": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "compliant": {
+                    "type": "boolean"
+                },
+                "document_type_counts": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "type": "string"
+                },
+                "missing_evidence": {
+                    "type": "boolean"
+                },
+                "pending_review_count": {
+                    "type": "integer"
+                },
+                "rejected_count": {
+                    "type": "integer"
+                },
+                "reviewed_count": {
+                    "type": "integer"
+                },
+                "rule_results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyRuleResult"
+                    }
+                },
+                "total_count": {
+                    "type": "integer"
+                },
+                "violations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyRuleResult"
+                    }
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyRuleResult": {
+            "type": "object",
+            "properties": {
+                "accepted_count": {
+                    "type": "integer"
+                },
+                "approved_matching_count": {
+                    "type": "integer"
+                },
+                "compliant": {
+                    "type": "boolean"
+                },
+                "document_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "matching_count": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "require_approved": {
+                    "type": "boolean"
+                },
+                "required_count": {
+                    "type": "integer"
+                },
+                "rule_index": {
+                    "type": "integer"
                 }
             }
         },

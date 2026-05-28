@@ -528,6 +528,10 @@ definitions:
         type: boolean
       carry_forward_ready:
         type: boolean
+      close_pack_evidence:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyResult'
+      close_pack_evidence_entity_id:
+        type: string
       existing_carry_forward:
         $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntrySummary'
       fiscal_year_end_date:
@@ -1405,6 +1409,66 @@ definitions:
         type: string
       vat_number:
         type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyResult:
+    properties:
+      approved_count:
+        type: integer
+      approved_document_type_counts:
+        additionalProperties:
+          type: integer
+        type: object
+      compliant:
+        type: boolean
+      document_type_counts:
+        additionalProperties:
+          type: integer
+        type: object
+      entity_id:
+        type: string
+      entity_type:
+        type: string
+      missing_evidence:
+        type: boolean
+      pending_review_count:
+        type: integer
+      rejected_count:
+        type: integer
+      reviewed_count:
+        type: integer
+      rule_results:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyRuleResult'
+        type: array
+      total_count:
+        type: integer
+      violations:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyRuleResult'
+        type: array
+    type: object
+  github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyRuleResult:
+    properties:
+      accepted_count:
+        type: integer
+      approved_matching_count:
+        type: integer
+      compliant:
+        type: boolean
+      document_types:
+        items:
+          type: string
+        type: array
+      matching_count:
+        type: integer
+      message:
+        type: string
+      require_approved:
+        type: boolean
+      required_count:
+        type: integer
+      rule_index:
+        type: integer
     type: object
   github_com_HMB-research_open-accounting_internal_email.EmailLog:
     properties:

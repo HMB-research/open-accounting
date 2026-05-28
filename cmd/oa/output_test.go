@@ -575,6 +575,12 @@ func TestPrintCloseOutputs(t *testing.T) {
 		HasRetainedEarningsAccount: true,
 		RetainedEarningsAccount:    &accounting.AccountSummary{ID: "acc-retained", Code: "2999", Name: "Retained earnings"},
 		NetIncome:                  decimal.NewFromInt(1200),
+		ClosePackEvidenceEntityID:  "11111111-1111-5111-8111-111111111111",
+		ClosePackEvidence: &documents.EvidencePolicyResult{
+			EntityType: documents.EntityTypeYearEndClose,
+			EntityID:   "11111111-1111-5111-8111-111111111111",
+			Compliant:  true,
+		},
 	}
 	result := accounting.YearEndCarryForwardResult{
 		JournalEntry: &accounting.JournalEntry{ID: "je-1", EntryNumber: "JE-2026-001", Status: accounting.StatusPosted},
@@ -623,6 +629,7 @@ func TestPrintCloseOutputs(t *testing.T) {
 	printYearEndCloseStatus(&statusBuf, &status)
 	assert.Contains(t, statusBuf.String(), "Year-end close status 2025")
 	assert.Contains(t, statusBuf.String(), "Carry-forward ready: true")
+	assert.Contains(t, statusBuf.String(), "Close-pack evidence compliant: true")
 
 	var packBuf bytes.Buffer
 	printYearEndClosePack(&packBuf, &closePack)
