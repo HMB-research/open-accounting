@@ -570,6 +570,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				// Recurring Invoices
 				r.Get("/recurring-invoices", h.ListRecurringInvoices)
 				r.Post("/recurring-invoices", h.CreateRecurringInvoice)
+				r.Post("/recurring-invoices/import", h.ImportRecurringInvoices)
 				r.Post("/recurring-invoices/from-invoice/{invoiceID}", h.CreateRecurringInvoiceFromInvoice)
 				r.Post("/recurring-invoices/generate-due", h.GenerateDueRecurringInvoices)
 				r.Get("/recurring-invoices/{recurringID}", h.GetRecurringInvoice)

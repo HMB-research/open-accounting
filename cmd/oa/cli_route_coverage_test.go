@@ -830,6 +830,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 			"GET":  "recurring-invoices list",
 			"POST": "recurring-invoices create",
 		})
+	case "/recurring-invoices/import":
+		return commandForMethod(method, map[string]string{"POST": "recurring-invoices import"})
 	case "/recurring-invoices/from-invoice/{invoiceID}":
 		return commandForMethod(method, map[string]string{"POST": "recurring-invoices from-invoice"})
 	case "/recurring-invoices/generate-due":

@@ -176,6 +176,30 @@ type CreateRecurringInvoiceLineRequest struct {
 	ProductID       *string         `json:"product_id,omitempty"`
 }
 
+// ImportRecurringInvoicesRequest contains CSV payload for recurring invoice template migration.
+type ImportRecurringInvoicesRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+	UserID     string `json:"-"`
+}
+
+// ImportRecurringInvoicesResult summarizes a recurring invoice CSV import.
+type ImportRecurringInvoicesResult struct {
+	FileName         string                            `json:"file_name,omitempty"`
+	RowsProcessed    int                               `json:"rows_processed"`
+	TemplatesCreated int                               `json:"templates_created"`
+	LinesImported    int                               `json:"lines_imported"`
+	RowsSkipped      int                               `json:"rows_skipped"`
+	Errors           []ImportRecurringInvoicesRowError `json:"errors,omitempty"`
+}
+
+// ImportRecurringInvoicesRowError describes a row-level recurring invoice import failure.
+type ImportRecurringInvoicesRowError struct {
+	Row      int    `json:"row"`
+	Template string `json:"template,omitempty"`
+	Message  string `json:"message"`
+}
+
 // UpdateRecurringInvoiceRequest is the request to update a recurring invoice
 type UpdateRecurringInvoiceRequest struct {
 	Name             *string                             `json:"name,omitempty"`

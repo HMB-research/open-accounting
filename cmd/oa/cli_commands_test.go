@@ -1640,6 +1640,18 @@ func TestCLIRecurringInvoiceCommands(t *testing.T) {
 			require.NotNil(t, req.Lines[0].ProductID)
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(recurringPayload("rec-1", "Monthly retainer", true))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/import":
+			var req recurring.ImportRecurringInvoicesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "recurring.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "Monthly Legacy")
+			_ = json.NewEncoder(w).Encode(recurring.ImportRecurringInvoicesResult{
+				FileName:         req.FileName,
+				RowsProcessed:    1,
+				TemplatesCreated: 1,
+				LinesImported:    1,
+				RowsSkipped:      0,
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/from-invoice/inv-template":
 			var req recurring.CreateFromInvoiceRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -1728,6 +1740,12 @@ func TestCLIRecurringInvoiceCommands(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created recurring invoice Monthly retainer (rec-1)")
+
+	recurringImportFile := writeTempCSV(t, "recurring.csv", "name,contact_id,frequency,start_date,line_description,quantity,unit_price,vat_rate\nMonthly Legacy,contact-1,MONTHLY,2026-03-15,Consulting,1,100,22\n")
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"recurring-invoices", "import", "--file", recurringImportFile})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 recurring invoices, imported 1 lines, skipped 0 rows")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{

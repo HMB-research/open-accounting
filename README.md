@@ -20,7 +20,7 @@
 >
 > Full local baseline last verified on 2026-05-28:
 > `go test ./...`, `golangci-lint run`, `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)`, `cd frontend && bun run lint`, `cd frontend && bun run check`, `cd frontend && bun run test`, `cd frontend && bun run build`, `cd frontend && bun run test:e2e:smoke`, and the full local `demo-chromium` Playwright project pass against fresh PostgreSQL-backed demo environments.
-> Production hardening, deeper historical cutover tooling beyond the current payroll, tax, quote/order, cost-center/product-category/warehouse/product/stock, and fixed-asset migration imports, deeper accountant exception actions, and automated document retention/reconciliation policy enforcement are still in progress.
+> Production hardening, deeper historical cutover tooling beyond the current payroll, tax, quote/order/recurring-template, cost-center/product-category/warehouse/product/stock, and fixed-asset migration imports, deeper accountant exception actions, and automated document retention/reconciliation policy enforcement are still in progress.
 
 CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API token once and then uses that token for subsequent reads and mutations.
 
@@ -49,7 +49,7 @@ curl -X POST http://localhost:8080/api/demo/reset -H 'X-Demo-Secret: test-demo-s
 
 ## What is Open Accounting?
 
-Open Accounting is a **self-hosted, multi-tenant accounting platform** focused today on **Estonian SMB and accountant workflows**. The current wedge is accounting, invoicing, payroll, bank import/reconciliation, and KMD/TSD export for self-hosted teams that want source access and tenant isolation.
+Open Accounting is a **self-hosted, multi-tenant accounting platform** focused today on **Estonian SMB and accountant workflows**. The current wedge is accounting, invoicing, recurring billing, payroll, bank import/reconciliation, and KMD/TSD export for self-hosted teams that want source access and tenant isolation.
 
 It is not yet a full SmartAccounts/Merit replacement or a production-hardened embedded accounting platform. Built with modern technologies and focused on **Estonian/EU compliance**, it provides:
 
@@ -87,7 +87,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 | **Contacts** | Customer and supplier management |
 | **Payments** | Payment recording with invoice allocation |
 | **PDF Generation** | Professional invoice PDFs with customizable branding |
-| **Recurring Invoices** | Automated invoice generation on schedule |
+| **Recurring Invoices** | Automated invoice generation on schedule with grouped CSV import |
 
 ### Fixed Assets
 | Feature | Description |
@@ -216,6 +216,7 @@ go run ./cmd/oa accounts list
 go run ./cmd/oa contacts import --file ./contacts.csv
 go run ./cmd/oa employees import --file ./employees.csv
 go run ./cmd/oa payments import --file ./payments.csv
+go run ./cmd/oa recurring-invoices import --file ./recurring-invoices.csv
 go run ./cmd/oa payroll import-history --file ./payroll-history.csv
 go run ./cmd/oa payroll import-leave-balances --file ./leave-balances.csv
 go run ./cmd/oa assets import --file ./assets.csv
@@ -323,7 +324,7 @@ open-accounting/
 - [x] Access/refresh JWT purpose separation
 - [x] Revocable, single-use refresh token sessions
 - [x] CLI/API refresh-session listing and revocation
-- [x] CSV import for chart of accounts, contacts, employees, invoices, quotes, orders, payments, cost centers, product categories/warehouses/products/stock, fixed assets, and opening balances
+- [x] CSV import for chart of accounts, contacts, employees, invoices, quotes, orders, recurring invoice templates, payments, cost centers, product categories/warehouses/products/stock, fixed assets, and opening balances
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings
 - [x] Fiscal-year close readiness and retained-earnings carry-forward workflow
@@ -333,7 +334,7 @@ open-accounting/
 - [x] Backup creation and restore-drill scripts for self-hosted operations
 
 ### Still missing for reliable production use
-- [ ] Remaining external migration imports beyond payroll, tax history, cost-center/product-category/warehouse/product/stock, and fixed assets
+- [ ] Remaining external migration imports beyond payroll, tax history, quote/order/recurring-template, cost-center/product-category/warehouse/product/stock, and fixed assets
 - [ ] Automated document policy enforcement in close packs and broader workflow blockers
 - [ ] Broader auth administration controls
 - [ ] E-invoice, direct bank feeds, SEPA initiation, and automatic e-MTA submission
