@@ -466,6 +466,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				// Quotes
 				r.Get("/quotes", h.ListQuotes)
 				r.Post("/quotes", h.CreateQuote)
+				r.Post("/quotes/import", h.ImportQuotes)
 				r.Get("/quotes/{quoteID}", h.GetQuote)
 				r.Put("/quotes/{quoteID}", h.UpdateQuote)
 				r.Delete("/quotes/{quoteID}", h.DeleteQuote)

@@ -351,9 +351,12 @@ go run ./cmd/oa quotes send --id <quote-id>
 go run ./cmd/oa quotes accept --id <quote-id>
 go run ./cmd/oa quotes reject --id <quote-id>
 go run ./cmd/oa quotes delete --id <quote-id>
+go run ./cmd/oa quotes import --file ./quotes.csv
 ```
 
 Use `--line` repeatedly on `quotes create` and `quotes update` for multi-line offers. Each line accepts `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, and `product_id`. Quote statuses are `DRAFT`, `SENT`, `ACCEPTED`, `REJECTED`, `EXPIRED`, and `CONVERTED`.
+
+Quote imports use one CSV row per quote line and group rows by `quote_number`. Required columns are `quote_number`, `quote_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`; optional columns include `valid_until`, `status`, `currency`, `exchange_rate`, `notes`, `unit`, `discount_percent`, and `product_id`.
 
 ## Orders
 

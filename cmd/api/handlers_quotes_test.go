@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -147,6 +148,13 @@ func setupQuotesTestHandlers() (*Handlers, *mockQuotesRepository, *mockTenantRep
 		tenantService: tenantSvc,
 	}
 	return h, quotesRepo, tenantRepo
+}
+
+func setupQuotesImportTestHandlers() (*Handlers, *mockQuotesRepository, *mockTenantRepository, *mockContactsRepository) {
+	h, quotesRepo, tenantRepo := setupQuotesTestHandlers()
+	contactsRepo := newMockContactsRepository()
+	h.contactsService = contacts.NewServiceWithRepository(contactsRepo)
+	return h, quotesRepo, tenantRepo, contactsRepo
 }
 
 func TestListQuotes(t *testing.T) {
@@ -288,6 +296,52 @@ func TestCreateQuote(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestImportQuotes(t *testing.T) {
+	h, repo, tenantRepo, contactsRepo := setupQuotesImportTestHandlers()
+	tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+	contact := contactsRepo.addTestContact("contact-1", "tenant-1", "Acme", contacts.ContactTypeCustomer, true)
+	contact.Code = "CUST-1"
+
+	csvContent := `quote_number,contact_code,quote_date,valid_until,status,line_description,quantity,unit_price,vat_rate
+QT-100,CUST-1,2026-03-15,2026-04-15,sent,Consulting,2,100,22
+`
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/quotes/import", map[string]interface{}{
+		"file_name":   "quotes.csv",
+		"csv_content": csvContent,
+	}, createTestClaims("user-1", "test@example.com", "tenant-1", "owner"))
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+
+	w := httptest.NewRecorder()
+	h.ImportQuotes(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	var result quotes.ImportQuotesResult
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&result))
+	assert.Equal(t, "quotes.csv", result.FileName)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.QuotesCreated)
+	assert.Equal(t, 1, result.LinesImported)
+	assert.Zero(t, result.RowsSkipped)
+
+	require.Len(t, repo.quotes, 1)
+	for _, quote := range repo.quotes {
+		assert.Equal(t, "QT-100", quote.QuoteNumber)
+		assert.Equal(t, "contact-1", quote.ContactID)
+		assert.Equal(t, quotes.QuoteStatusSent, quote.Status)
+		assert.Equal(t, "user-1", quote.CreatedBy)
+	}
+
+	missingReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/quotes/import", map[string]interface{}{
+		"file_name": "quotes.csv",
+	}, createTestClaims("user-1", "test@example.com", "tenant-1", "owner"))
+	missingReq = withURLParams(missingReq, map[string]string{"tenantID": "tenant-1"})
+	missingResp := httptest.NewRecorder()
+	h.ImportQuotes(missingResp, missingReq)
+
+	assert.Equal(t, http.StatusBadRequest, missingResp.Code)
+	assert.Contains(t, missingResp.Body.String(), "csv_content is required")
 }
 
 func TestGetQuote(t *testing.T) {

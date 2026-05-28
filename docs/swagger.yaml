@@ -3373,6 +3373,39 @@ definitions:
       valid_until:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_quotes.ImportQuotesRequest:
+    properties:
+      csv_content:
+        type: string
+      file_name:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_quotes.ImportQuotesResult:
+    properties:
+      errors:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_quotes.ImportQuotesRowError'
+        type: array
+      file_name:
+        type: string
+      lines_imported:
+        type: integer
+      quotes_created:
+        type: integer
+      rows_processed:
+        type: integer
+      rows_skipped:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_quotes.ImportQuotesRowError:
+    properties:
+      message:
+        type: string
+      quote_number:
+        type: string
+      row:
+        type: integer
+    type: object
   github_com_HMB-research_open-accounting_internal_quotes.Quote:
     properties:
       contact:
@@ -10050,6 +10083,43 @@ paths:
       security:
       - BearerAuth: []
       summary: Send quote
+      tags:
+      - Quotes
+  /tenants/{tenantID}/quotes/import:
+    post:
+      consumes:
+      - application/json
+      description: Import historical quotes from grouped CSV data and skip duplicate
+        or invalid rows
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: CSV import payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_quotes.ImportQuotesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_quotes.ImportQuotesResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Import quotes
       tags:
       - Quotes
   /tenants/{tenantID}/reconciliations/{reconciliationID}:

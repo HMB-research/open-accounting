@@ -1225,6 +1225,16 @@ Content-Type: application/json
 }
 ```
 
+### Import Quotes
+
+```http
+POST /tenants/{tenantId}/quotes/import
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+Imports one CSV row per quote line and groups rows by `quote_number`. Required columns are `quote_number`, `quote_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`. Optional columns include `valid_until`, `status`, `currency`, `exchange_rate`, `notes`, `unit`, `discount_percent`, and `product_id`. Duplicate quote numbers are skipped.
+
 ### Get Quote
 
 ```http
