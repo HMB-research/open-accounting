@@ -102,6 +102,15 @@ func TestPrintTables(t *testing.T) {
 	})
 	assert.Contains(t, membershipBuf.String(), "Joined tenant Alpha")
 
+	var membershipsBuf bytes.Buffer
+	printTenantMembershipsTable(&membershipsBuf, []tenant.TenantMembership{{
+		Tenant:    tenant.Tenant{ID: "tenant-1", Name: "Alpha", Slug: "alpha"},
+		Role:      tenant.RoleAdmin,
+		IsDefault: true,
+	}})
+	assert.Contains(t, membershipsBuf.String(), "Alpha")
+	assert.Contains(t, membershipsBuf.String(), "admin")
+
 	var registriesBuf bytes.Buffer
 	printPluginRegistriesTable(&registriesBuf, []plugin.Registry{{
 		Name:       "Official",
