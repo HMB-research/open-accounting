@@ -458,6 +458,35 @@ go run ./cmd/oa reminders rules trigger
 
 Reminder trigger types are `BEFORE_DUE`, `ON_DUE`, and `AFTER_DUE`. Use `--json` on reminder reads and mutations for automation.
 
+## Email
+
+```bash
+go run ./cmd/oa email smtp get
+go run ./cmd/oa email smtp update \
+  --host smtp.example.com \
+  --port 587 \
+  --username robot \
+  --password 'smtp-password' \
+  --from-email billing@example.com \
+  --from-name Billing \
+  --use-tls=true
+go run ./cmd/oa email smtp test --recipient-email you@example.com
+
+go run ./cmd/oa email templates list
+go run ./cmd/oa email templates update \
+  --type OVERDUE_REMINDER \
+  --subject "Reminder for {{.InvoiceNumber}}" \
+  --body-html-file ./overdue-reminder.html \
+  --body-text-file ./overdue-reminder.txt \
+  --active true
+
+go run ./cmd/oa email log --limit 25
+go run ./cmd/oa email invoice --invoice-id <invoice-id> --recipient-email billing@example.com --attach-pdf
+go run ./cmd/oa email payment-receipt --payment-id <payment-id> --recipient-email billing@example.com
+```
+
+Template types are `INVOICE_SEND`, `PAYMENT_RECEIPT`, and `OVERDUE_REMINDER`. Use `--json` on email reads and mutations for automation.
+
 ## Banking
 
 ```bash

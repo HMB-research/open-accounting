@@ -22,6 +22,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
@@ -81,6 +82,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runPayments(ctx, args[1:])
 	case "reminders":
 		return a.runReminders(ctx, args[1:])
+	case "email":
+		return a.runEmail(ctx, args[1:])
 	case "banking":
 		return a.runBanking(ctx, args[1:])
 	case "quotes":
@@ -170,6 +173,8 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  payments unallocated      List unallocated payments")
 	_, _ = fmt.Fprintln(a.stdout, "  reminders overdue         List overdue invoices for reminders")
 	_, _ = fmt.Fprintln(a.stdout, "  reminders rules list      List automated reminder rules")
+	_, _ = fmt.Fprintln(a.stdout, "  email smtp get            Show SMTP email settings")
+	_, _ = fmt.Fprintln(a.stdout, "  email templates list      List email templates")
 	_, _ = fmt.Fprintln(a.stdout, "  banking accounts list     List bank accounts")
 	_, _ = fmt.Fprintln(a.stdout, "  banking transactions list List bank transactions")
 	_, _ = fmt.Fprintln(a.stdout, "  banking reconciliations list  List bank reconciliations")
@@ -1514,6 +1519,285 @@ func (a *cliApp) runReminderRules(ctx context.Context, cfg *cliConfig, client *a
 
 	default:
 		return fmt.Errorf("unknown reminders rules subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runEmail(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("email subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "smtp":
+		return a.runEmailSMTP(ctx, cfg, client, args[1:])
+	case "templates":
+		return a.runEmailTemplates(ctx, cfg, client, args[1:])
+	case "log":
+		fs := flag.NewFlagSet("email log", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		limitFlag := fs.String("limit", "50", "Number of email log entries")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		limit, err := parseRequiredPositiveInt("limit", *limitFlag)
+		if err != nil {
+			return err
+		}
+
+		logs, err := client.listEmailLog(ctx, cfg.TenantID, limit)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, logs)
+		}
+		printEmailLogsTable(a.stdout, logs)
+		return nil
+	case "invoice":
+		fs := flag.NewFlagSet("email invoice", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		invoiceID := fs.String("invoice-id", "", "Invoice id")
+		recipientEmail := fs.String("recipient-email", "", "Recipient email")
+		recipientName := fs.String("recipient-name", "", "Recipient name")
+		subject := fs.String("subject", "", "Email subject override")
+		message := fs.String("message", "", "Email message")
+		attachPDF := fs.Bool("attach-pdf", false, "Attach invoice PDF")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*invoiceID) == "" {
+			return errors.New("invoice-id is required")
+		}
+		if strings.TrimSpace(*recipientEmail) == "" {
+			return errors.New("recipient-email is required")
+		}
+
+		result, err := client.emailInvoice(ctx, cfg.TenantID, strings.TrimSpace(*invoiceID), &email.SendInvoiceRequest{
+			RecipientEmail: strings.TrimSpace(*recipientEmail),
+			RecipientName:  strings.TrimSpace(*recipientName),
+			Subject:        strings.TrimSpace(*subject),
+			Message:        strings.TrimSpace(*message),
+			AttachPDF:      *attachPDF,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		printEmailSentResponse(a.stdout, result)
+		return nil
+	case "payment-receipt":
+		fs := flag.NewFlagSet("email payment-receipt", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		paymentID := fs.String("payment-id", "", "Payment id")
+		recipientEmail := fs.String("recipient-email", "", "Recipient email")
+		recipientName := fs.String("recipient-name", "", "Recipient name")
+		subject := fs.String("subject", "", "Email subject override")
+		message := fs.String("message", "", "Email message")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*paymentID) == "" {
+			return errors.New("payment-id is required")
+		}
+		if strings.TrimSpace(*recipientEmail) == "" {
+			return errors.New("recipient-email is required")
+		}
+
+		result, err := client.emailPaymentReceipt(ctx, cfg.TenantID, strings.TrimSpace(*paymentID), &email.SendPaymentReceiptRequest{
+			RecipientEmail: strings.TrimSpace(*recipientEmail),
+			RecipientName:  strings.TrimSpace(*recipientName),
+			Subject:        strings.TrimSpace(*subject),
+			Message:        strings.TrimSpace(*message),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		printEmailSentResponse(a.stdout, result)
+		return nil
+	default:
+		return fmt.Errorf("unknown email subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runEmailSMTP(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("email smtp subcommand required")
+	}
+
+	switch args[0] {
+	case "get":
+		fs := flag.NewFlagSet("email smtp get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		config, err := client.getSMTPConfig(ctx, cfg.TenantID)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, config)
+		}
+		printSMTPConfig(a.stdout, config)
+		return nil
+	case "update":
+		fs := flag.NewFlagSet("email smtp update", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		host := fs.String("host", "", "SMTP host")
+		portFlag := fs.String("port", "587", "SMTP port")
+		username := fs.String("username", "", "SMTP username")
+		password := fs.String("password", "", "SMTP password")
+		fromEmail := fs.String("from-email", "", "From email address")
+		fromName := fs.String("from-name", "", "From display name")
+		useTLS := fs.Bool("use-tls", true, "Use TLS")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*host) == "" {
+			return errors.New("host is required")
+		}
+		if strings.TrimSpace(*fromEmail) == "" {
+			return errors.New("from-email is required")
+		}
+		portValue, err := parseRequiredPositiveInt("port", *portFlag)
+		if err != nil {
+			return err
+		}
+
+		req := &email.UpdateSMTPConfigRequest{
+			Host:      strings.TrimSpace(*host),
+			Port:      portValue,
+			Username:  strings.TrimSpace(*username),
+			Password:  *password,
+			FromEmail: strings.TrimSpace(*fromEmail),
+			FromName:  strings.TrimSpace(*fromName),
+			UseTLS:    *useTLS,
+		}
+		if err := client.updateSMTPConfig(ctx, cfg.TenantID, req); err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, map[string]string{"status": "updated"})
+		}
+		_, _ = fmt.Fprintln(a.stdout, "Updated SMTP configuration")
+		return nil
+	case "test":
+		fs := flag.NewFlagSet("email smtp test", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		recipientEmail := fs.String("recipient-email", "", "Recipient email")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*recipientEmail) == "" {
+			return errors.New("recipient-email is required")
+		}
+
+		result, err := client.testSMTP(ctx, cfg.TenantID, &email.TestSMTPRequest{RecipientEmail: strings.TrimSpace(*recipientEmail)})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		printSMTPTestResponse(a.stdout, result)
+		return nil
+	default:
+		return fmt.Errorf("unknown email smtp subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runEmailTemplates(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("email templates subcommand required")
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("email templates list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		templates, err := client.listEmailTemplates(ctx, cfg.TenantID)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, templates)
+		}
+		printEmailTemplatesTable(a.stdout, templates)
+		return nil
+	case "update":
+		fs := flag.NewFlagSet("email templates update", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		templateTypeFlag := fs.String("type", "", "Template type: INVOICE_SEND, PAYMENT_RECEIPT, OVERDUE_REMINDER")
+		subject := fs.String("subject", "", "Email subject template")
+		bodyHTML := fs.String("body-html", "", "HTML body template")
+		bodyHTMLFile := fs.String("body-html-file", "", "Read HTML body template from file or '-'")
+		bodyText := fs.String("body-text", "", "Plain text body template")
+		bodyTextFile := fs.String("body-text-file", "", "Read plain text body template from file or '-'")
+		activeFlag := fs.String("active", "true", "Set active state: true or false")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		templateType, err := parseRequiredEmailTemplateType(*templateTypeFlag)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(*subject) == "" {
+			return errors.New("subject is required")
+		}
+		resolvedBodyHTML, err := resolveTextFlag("body-html", *bodyHTML, *bodyHTMLFile)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(resolvedBodyHTML) == "" {
+			return errors.New("body-html is required")
+		}
+		resolvedBodyText, err := resolveTextFlag("body-text", *bodyText, *bodyTextFile)
+		if err != nil {
+			return err
+		}
+		active, err := strconv.ParseBool(strings.TrimSpace(*activeFlag))
+		if err != nil {
+			return fmt.Errorf("parse active: %w", err)
+		}
+
+		template, err := client.updateEmailTemplate(ctx, cfg.TenantID, templateType, &email.UpdateTemplateRequest{
+			Subject:  strings.TrimSpace(*subject),
+			BodyHTML: resolvedBodyHTML,
+			BodyText: resolvedBodyText,
+			IsActive: active,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, template)
+		}
+		printEmailTemplate(a.stdout, template)
+		return nil
+	default:
+		return fmt.Errorf("unknown email templates subcommand %q", args[0])
 	}
 }
 
@@ -6505,6 +6789,19 @@ func parseRequiredReminderTriggerType(value string) (invoicing.TriggerType, erro
 	}
 }
 
+func parseRequiredEmailTemplateType(value string) (email.TemplateType, error) {
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	switch email.TemplateType(normalized) {
+	case email.TemplateInvoiceSend, email.TemplatePaymentReceipt, email.TemplateOverdueReminder:
+		return email.TemplateType(normalized), nil
+	default:
+		if normalized == "" {
+			return "", errors.New("type is required")
+		}
+		return "", fmt.Errorf("invalid email template type %q", value)
+	}
+}
+
 func optionalStringPtr(value string) *string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
@@ -6957,6 +7254,20 @@ func (f *stringListFlags) String() string {
 		return ""
 	}
 	return strings.Join(*f, ",")
+}
+
+func resolveTextFlag(name, inlineValue, filePath string) (string, error) {
+	if strings.TrimSpace(inlineValue) != "" && strings.TrimSpace(filePath) != "" {
+		return "", fmt.Errorf("%s and %s-file cannot both be set", name, name)
+	}
+	if strings.TrimSpace(filePath) == "" {
+		return inlineValue, nil
+	}
+	data, _, err := readFileInput(strings.TrimSpace(filePath), name+".txt")
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 func writeExportOutput(w io.Writer, outputPath string, content []byte, description string) error {

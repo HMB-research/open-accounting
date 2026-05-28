@@ -1693,6 +1693,85 @@ Trigger types are `BEFORE_DUE`, `ON_DUE`, and `AFTER_DUE`. Rule updates support 
 
 ---
 
+## Email
+
+### SMTP Settings
+
+```http
+GET /tenants/{tenantId}/settings/smtp
+PUT /tenants/{tenantId}/settings/smtp
+POST /tenants/{tenantId}/settings/smtp/test
+Authorization: Bearer <token>
+```
+
+Update SMTP settings:
+
+```json
+{
+  "smtp_host": "smtp.example.com",
+  "smtp_port": 587,
+  "smtp_username": "robot",
+  "smtp_password": "secret",
+  "smtp_from_email": "billing@example.com",
+  "smtp_from_name": "Billing",
+  "smtp_use_tls": true
+}
+```
+
+Test SMTP settings:
+
+```json
+{
+  "recipient_email": "you@example.com"
+}
+```
+
+### Templates and Log
+
+```http
+GET /tenants/{tenantId}/email-templates
+PUT /tenants/{tenantId}/email-templates/{templateType}
+GET /tenants/{tenantId}/email-log?limit=50
+Authorization: Bearer <token>
+```
+
+Template types are `INVOICE_SEND`, `PAYMENT_RECEIPT`, and `OVERDUE_REMINDER`.
+
+Update an email template:
+
+```json
+{
+  "subject": "Reminder for {{.InvoiceNumber}}",
+  "body_html": "<p>Please pay {{.InvoiceNumber}}</p>",
+  "body_text": "Please pay {{.InvoiceNumber}}",
+  "is_active": true
+}
+```
+
+### Send Email
+
+```http
+POST /tenants/{tenantId}/invoices/{invoiceId}/email
+POST /tenants/{tenantId}/payments/{paymentId}/email-receipt
+Authorization: Bearer <token>
+```
+
+Send an invoice email:
+
+```json
+{
+  "recipient_email": "billing@example.com",
+  "recipient_name": "Acme",
+  "subject": "Invoice INV-00001",
+  "message": "Please see attached.",
+  "attach_pdf": true
+}
+```
+
+Payment receipt emails use the same recipient, subject, and message fields without `attach_pdf`.
+
+---
+
 ## Banking
 
 ### Bank Accounts

@@ -23,6 +23,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
@@ -423,6 +424,76 @@ func (c *apiClient) triggerReminderRules(ctx context.Context, tenantID string) (
 		return nil, err
 	}
 	return resp, nil
+}
+
+func (c *apiClient) getSMTPConfig(ctx context.Context, tenantID string) (*email.SMTPConfig, error) {
+	var resp email.SMTPConfig
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "settings", "smtp"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) updateSMTPConfig(ctx context.Context, tenantID string, req *email.UpdateSMTPConfigRequest) error {
+	var resp map[string]string
+	return c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "settings", "smtp"), req, c.apiToken, &resp)
+}
+
+func (c *apiClient) testSMTP(ctx context.Context, tenantID string, req *email.TestSMTPRequest) (*email.TestSMTPResponse, error) {
+	var resp email.TestSMTPResponse
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "settings", "smtp", "test"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) listEmailTemplates(ctx context.Context, tenantID string) ([]email.EmailTemplate, error) {
+	var resp []email.EmailTemplate
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "email-templates"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) updateEmailTemplate(ctx context.Context, tenantID string, templateType email.TemplateType, req *email.UpdateTemplateRequest) (*email.EmailTemplate, error) {
+	var resp email.EmailTemplate
+	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "email-templates", string(templateType)), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) listEmailLog(ctx context.Context, tenantID string, limit int) ([]email.EmailLog, error) {
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	pathValue := path.Join("/api/v1/tenants", tenantID, "email-log")
+	if encoded := values.Encode(); encoded != "" {
+		pathValue += "?" + encoded
+	}
+
+	var resp []email.EmailLog
+	if err := c.request(ctx, http.MethodGet, pathValue, nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) emailInvoice(ctx context.Context, tenantID, invoiceID string, req *email.SendInvoiceRequest) (*email.EmailSentResponse, error) {
+	var resp email.EmailSentResponse
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "invoices", invoiceID, "email"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) emailPaymentReceipt(ctx context.Context, tenantID, paymentID string, req *email.SendPaymentReceiptRequest) (*email.EmailSentResponse, error) {
+	var resp email.EmailSentResponse
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "payments", paymentID, "email-receipt"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }
 
 func (c *apiClient) listBankAccounts(ctx context.Context, tenantID string, activeOnly bool) ([]banking.BankAccount, error) {

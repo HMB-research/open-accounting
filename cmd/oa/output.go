@@ -17,6 +17,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
@@ -1025,6 +1026,80 @@ func printAutomatedReminderResultsTable(w io.Writer, results []invoicing.Automat
 		)
 	}
 	_ = tw.Flush()
+}
+
+func printSMTPConfig(w io.Writer, config *email.SMTPConfig) {
+	_, _ = fmt.Fprintf(w, "SMTP configuration\n")
+	_, _ = fmt.Fprintf(w, "Host: %s\n", config.Host)
+	_, _ = fmt.Fprintf(w, "Port: %d\n", config.Port)
+	_, _ = fmt.Fprintf(w, "Username: %s\n", config.Username)
+	_, _ = fmt.Fprintf(w, "From: %s <%s>\n", config.FromName, config.FromEmail)
+	_, _ = fmt.Fprintf(w, "Use TLS: %t\n", config.UseTLS)
+	_, _ = fmt.Fprintf(w, "Configured: %t\n", config.IsConfigured())
+}
+
+func printSMTPTestResponse(w io.Writer, result *email.TestSMTPResponse) {
+	_, _ = fmt.Fprintf(w, "SMTP test result\n")
+	_, _ = fmt.Fprintf(w, "Success: %t\n", result.Success)
+	if strings.TrimSpace(result.Message) != "" {
+		_, _ = fmt.Fprintf(w, "Message: %s\n", result.Message)
+	}
+}
+
+func printEmailTemplatesTable(w io.Writer, templates []email.EmailTemplate) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "TYPE\tSUBJECT\tACTIVE\tUPDATED")
+	for _, template := range templates {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%t\t%s\n",
+			template.TemplateType,
+			template.Subject,
+			template.IsActive,
+			formatTime(template.UpdatedAt),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printEmailTemplate(w io.Writer, template *email.EmailTemplate) {
+	_, _ = fmt.Fprintf(w, "Email template %s\n", template.TemplateType)
+	_, _ = fmt.Fprintf(w, "Subject: %s\n", template.Subject)
+	_, _ = fmt.Fprintf(w, "Active: %t\n", template.IsActive)
+	_, _ = fmt.Fprintf(w, "Body HTML bytes: %d\n", len(template.BodyHTML))
+	if strings.TrimSpace(template.BodyText) != "" {
+		_, _ = fmt.Fprintf(w, "Body text bytes: %d\n", len(template.BodyText))
+	}
+}
+
+func printEmailLogsTable(w io.Writer, logs []email.EmailLog) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tTYPE\tRECIPIENT\tSUBJECT\tSTATUS\tSENT\tERROR")
+	for _, log := range logs {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			log.ID,
+			log.EmailType,
+			log.RecipientEmail,
+			log.Subject,
+			log.Status,
+			formatTimePtr(log.SentAt),
+			log.ErrorMessage,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printEmailSentResponse(w io.Writer, result *email.EmailSentResponse) {
+	_, _ = fmt.Fprintf(w, "Email sent\n")
+	_, _ = fmt.Fprintf(w, "Success: %t\n", result.Success)
+	if strings.TrimSpace(result.LogID) != "" {
+		_, _ = fmt.Fprintf(w, "Log ID: %s\n", result.LogID)
+	}
+	if strings.TrimSpace(result.Message) != "" {
+		_, _ = fmt.Fprintf(w, "Message: %s\n", result.Message)
+	}
 }
 
 func printBankAccountsTable(w io.Writer, accounts []banking.BankAccount) {

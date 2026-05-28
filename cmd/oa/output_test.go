@@ -16,6 +16,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
@@ -251,6 +252,67 @@ func TestPrintReminderOutputs(t *testing.T) {
 	printAutomatedReminderResultsTable(&triggerBuf, []invoicing.AutomatedReminderResult{triggerResult})
 	assert.Contains(t, triggerBuf.String(), "Seven days overdue")
 	assert.Contains(t, triggerBuf.String(), "1")
+}
+
+func TestPrintEmailOutputs(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	smtpConfig := email.SMTPConfig{
+		Host:      "smtp.example.com",
+		Port:      587,
+		Username:  "robot",
+		FromEmail: "billing@example.com",
+		FromName:  "Billing",
+		UseTLS:    true,
+	}
+	template := email.EmailTemplate{
+		ID:           "tmpl-1",
+		TemplateType: email.TemplateOverdueReminder,
+		Subject:      "Reminder",
+		BodyHTML:     "<p>Reminder</p>",
+		BodyText:     "Reminder",
+		IsActive:     true,
+		UpdatedAt:    now,
+	}
+	log := email.EmailLog{
+		ID:             "email-1",
+		EmailType:      string(email.TemplateInvoiceSend),
+		RecipientEmail: "billing@example.com",
+		Subject:        "Invoice",
+		Status:         email.StatusSent,
+		SentAt:         &now,
+		CreatedAt:      now,
+	}
+
+	var smtpBuf bytes.Buffer
+	printSMTPConfig(&smtpBuf, &smtpConfig)
+	assert.Contains(t, smtpBuf.String(), "smtp.example.com")
+	assert.Contains(t, smtpBuf.String(), "Configured: true")
+
+	var testBuf bytes.Buffer
+	printSMTPTestResponse(&testBuf, &email.TestSMTPResponse{Success: true, Message: "Test email sent successfully"})
+	assert.Contains(t, testBuf.String(), "Success: true")
+
+	var templatesBuf bytes.Buffer
+	printEmailTemplatesTable(&templatesBuf, []email.EmailTemplate{template})
+	assert.Contains(t, templatesBuf.String(), "OVERDUE_REMINDER")
+	assert.Contains(t, templatesBuf.String(), "Reminder")
+
+	var templateBuf bytes.Buffer
+	printEmailTemplate(&templateBuf, &template)
+	assert.Contains(t, templateBuf.String(), "Email template OVERDUE_REMINDER")
+	assert.Contains(t, templateBuf.String(), "Body HTML bytes")
+
+	var logsBuf bytes.Buffer
+	printEmailLogsTable(&logsBuf, []email.EmailLog{log})
+	assert.Contains(t, logsBuf.String(), "email-1")
+	assert.Contains(t, logsBuf.String(), "billing@example.com")
+
+	var sentBuf bytes.Buffer
+	printEmailSentResponse(&sentBuf, &email.EmailSentResponse{Success: true, LogID: "email-1", Message: "sent"})
+	assert.Contains(t, sentBuf.String(), "Email sent")
+	assert.Contains(t, sentBuf.String(), "Log ID: email-1")
 }
 
 func TestPrintBankingOutputs(t *testing.T) {
