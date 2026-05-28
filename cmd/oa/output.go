@@ -910,6 +910,52 @@ func printAgingReport(w io.Writer, report *analytics.AgingReport) {
 	_ = tw.Flush()
 }
 
+func printDashboardSummary(w io.Writer, summary *analytics.DashboardSummary) {
+	_, _ = fmt.Fprintf(w, "Dashboard %s..%s\n", formatDate(summary.PeriodStart), formatDate(summary.PeriodEnd))
+	_, _ = fmt.Fprintf(w, "Revenue: %s (%s%%)\n", summary.TotalRevenue.String(), summary.RevenueChange.String())
+	_, _ = fmt.Fprintf(w, "Expenses: %s (%s%%)\n", summary.TotalExpenses.String(), summary.ExpensesChange.String())
+	_, _ = fmt.Fprintf(w, "Net income: %s\n", summary.NetIncome.String())
+	_, _ = fmt.Fprintf(w, "Receivables: %s (overdue %s)\n", summary.TotalReceivables.String(), summary.OverdueReceivables.String())
+	_, _ = fmt.Fprintf(w, "Payables: %s (overdue %s)\n", summary.TotalPayables.String(), summary.OverduePayables.String())
+	_, _ = fmt.Fprintf(w, "Invoices: %d draft, %d pending, %d overdue\n", summary.DraftInvoices, summary.PendingInvoices, summary.OverdueInvoices)
+}
+
+func printRevenueExpenseChart(w io.Writer, chart *analytics.RevenueExpenseChart) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "PERIOD\tREVENUE\tEXPENSES\tPROFIT")
+	for i, label := range chart.Labels {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", label, decimalAt(chart.Revenue, i), decimalAt(chart.Expenses, i), decimalAt(chart.Profit, i))
+	}
+	_ = tw.Flush()
+}
+
+func printCashFlowChart(w io.Writer, chart *analytics.CashFlowChart) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "PERIOD\tINFLOWS\tOUTFLOWS\tNET")
+	for i, label := range chart.Labels {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", label, decimalAt(chart.Inflows, i), decimalAt(chart.Outflows, i), decimalAt(chart.Net, i))
+	}
+	_ = tw.Flush()
+}
+
+func printActivityItems(w io.Writer, activity []analytics.ActivityItem) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tTYPE\tACTION\tAMOUNT\tCREATED\tDESCRIPTION")
+	for _, item := range activity {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			item.ID,
+			item.Type,
+			item.Action,
+			formatDecimalPtr(item.Amount),
+			item.CreatedAt.Format(time.RFC3339),
+			item.Description,
+		)
+	}
+	_ = tw.Flush()
+}
+
 func printBalanceConfirmationSummary(w io.Writer, report *reports.BalanceConfirmationSummary) {
 	_, _ = fmt.Fprintf(w, "%s balance confirmations as of %s\n", report.Type, report.AsOfDate)
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
@@ -1020,6 +1066,13 @@ func formatDecimalPtr(value *decimal.Decimal) string {
 		return "-"
 	}
 	return value.String()
+}
+
+func decimalAt(values []decimal.Decimal, index int) string {
+	if index < 0 || index >= len(values) {
+		return "-"
+	}
+	return values[index].String()
 }
 
 func payslipEmployeeName(payslip payroll.Payslip) string {

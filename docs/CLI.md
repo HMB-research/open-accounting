@@ -303,6 +303,17 @@ go run ./cmd/oa cost-centers delete --id <cost-center-id>
 
 Budget periods are `MONTHLY`, `QUARTERLY`, and `ANNUAL`. Use `--json` on cost-center read and mutation commands for automation.
 
+## Analytics
+
+```bash
+go run ./cmd/oa analytics dashboard
+go run ./cmd/oa analytics revenue-expense --months 6
+go run ./cmd/oa analytics cash-flow --months 6
+go run ./cmd/oa analytics activity --limit 20
+```
+
+Analytics commands are read-only and support `--json` for dashboards, chart data, and activity feeds.
+
 ## Payments
 
 ```bash

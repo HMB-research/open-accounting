@@ -1680,6 +1680,96 @@ func TestCLIPaymentCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "PMT-00002")
 }
 
+func TestCLIAnalyticsCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/analytics/dashboard":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"total_revenue":       "1200.00",
+				"total_expenses":      "700.00",
+				"net_income":          "500.00",
+				"revenue_change":      "10.00",
+				"expenses_change":     "5.00",
+				"total_receivables":   "900.00",
+				"total_payables":      "300.00",
+				"overdue_receivables": "100.00",
+				"overdue_payables":    "50.00",
+				"draft_invoices":      1,
+				"pending_invoices":    2,
+				"overdue_invoices":    3,
+				"period_start":        "2026-03-01T00:00:00Z",
+				"period_end":          "2026-03-31T00:00:00Z",
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/analytics/revenue-expense":
+			require.Equal(t, "3", r.URL.Query().Get("months"))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"labels":   []string{"2026-03"},
+				"revenue":  []string{"1200.00"},
+				"expenses": []string{"700.00"},
+				"profit":   []string{"500.00"},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/analytics/cash-flow":
+			require.Equal(t, "6", r.URL.Query().Get("months"))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"labels":   []string{"2026-03"},
+				"inflows":  []string{"1500.00"},
+				"outflows": []string{"800.00"},
+				"net":      []string{"700.00"},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/analytics/activity":
+			require.Equal(t, "5", r.URL.Query().Get("limit"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"id":          "act-1",
+				"type":        "INVOICE",
+				"action":      "created",
+				"description": "Invoice INV-1",
+				"created_at":  "2026-03-31T12:00:00Z",
+				"amount":      "219.00",
+			}})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"analytics", "dashboard"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Net income: 500")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"analytics", "revenue-expense", "--months", "3"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "2026-03")
+	assert.Contains(t, stdout.String(), "500")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"analytics", "cash-flow", "--months", "6"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "INFLOWS")
+	assert.Contains(t, stdout.String(), "700")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"analytics", "activity", "--limit", "5", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"description": "Invoice INV-1"`)
+}
+
 func TestCLIReportsCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
