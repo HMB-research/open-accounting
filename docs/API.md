@@ -1568,6 +1568,21 @@ Content-Type: application/json
 
 `sales_price` is required. If `code` is omitted, the service generates one.
 
+### Import Products
+
+```http
+POST /tenants/{tenantId}/products/import
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "file_name": "products.csv",
+  "csv_content": "code,name,product_type,category_name,sales_price,purchase_price,vat_rate,track_inventory\nPRD-001,Widget,GOODS,Parts,15.00,10.50,22,true\n"
+}
+```
+
+Required CSV columns are `name` and `sales_price`. Optional columns include `code`, `product_type`, `category_id`, `category_name`, `description`, `unit`, purchase/VAT/reorder prices, account IDs, `track_inventory`, `status` or `is_active`, `barcode`, `supplier_id`, and `lead_time_days`. Omitted codes are generated; supplied codes are preserved and checked for duplicates. Use inventory stock adjustment commands or APIs after product import to load opening quantities.
+
 ### Get, Update, and Delete Product
 
 ```http

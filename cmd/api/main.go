@@ -509,6 +509,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				// Inventory - Products
 				r.Get("/products", h.ListProducts)
 				r.Post("/products", h.CreateProduct)
+				r.Post("/products/import", h.ImportProducts)
 				r.Get("/products/{productID}", h.GetProduct)
 				r.Put("/products/{productID}", h.UpdateProduct)
 				r.Delete("/products/{productID}", h.DeleteProduct)

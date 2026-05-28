@@ -3967,6 +3967,41 @@ func (h *Handlers) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, product)
 }
 
+// ImportProducts imports product master data from CSV
+// @Summary Import products
+// @Description Import product master data from CSV, preserving optional product codes and resolving category names
+// @Tags Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body inventory.ImportProductsRequest true "CSV import payload"
+// @Success 200 {object} inventory.ImportProductsResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/products/import [post]
+func (h *Handlers) ImportProducts(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req inventory.ImportProductsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+
+	result, err := h.inventoryService.ImportProductsCSV(r.Context(), tenantID, schemaName, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // GetProduct gets a product by ID
 func (h *Handlers) GetProduct(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")

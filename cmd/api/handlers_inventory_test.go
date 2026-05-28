@@ -452,6 +452,48 @@ func TestCreateProduct(t *testing.T) {
 	}
 }
 
+func TestImportProducts(t *testing.T) {
+	h, repo, tenantRepo := setupInventoryTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	body := map[string]interface{}{
+		"file_name":   "products.csv",
+		"csv_content": "code,name,product_type,sales_price,purchase_price,track_inventory,status\nSKU-001,Widget,GOODS,15.00,10.50,true,ACTIVE\n",
+	}
+	bodyBytes, _ := json.Marshal(body)
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/products/import", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.ImportProducts(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var result inventory.ImportProductsResult
+	err := json.Unmarshal(rr.Body.Bytes(), &result)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.ProductsCreated)
+	assert.Equal(t, 0, result.RowsSkipped)
+
+	require.Len(t, repo.products, 1)
+	for _, product := range repo.products {
+		assert.Equal(t, "SKU-001", product.Code)
+		assert.Equal(t, "Widget", product.Name)
+		assert.Equal(t, inventory.ProductTypeGoods, product.ProductType)
+		assert.True(t, product.TrackInventory)
+		assert.True(t, product.IsActive)
+		assert.True(t, product.SalesPrice.Equal(decimal.RequireFromString("15.00")))
+	}
+}
+
 func TestGetProduct(t *testing.T) {
 	h, repo, tenantRepo := setupInventoryTestHandlers()
 
