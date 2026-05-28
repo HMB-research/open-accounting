@@ -245,6 +245,18 @@ func TestCLIAccountsCommands(t *testing.T) {
 				"account_type": req.AccountType,
 				"is_active":    true,
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/accounts/acc-1":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":           "acc-1",
+				"tenant_id":    "tenant-1",
+				"code":         "1000",
+				"name":         "Cash",
+				"account_type": "ASSET",
+				"is_active":    true,
+				"is_system":    false,
+				"description":  "Main cash account",
+				"created_at":   "2026-03-12T00:00:00Z",
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/accounts/import":
 			var req accounting.ImportAccountsRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -279,6 +291,12 @@ func TestCLIAccountsCommands(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created account 1000 (acc-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"accounts", "get", "--id", "acc-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Account 1000 Cash")
+	assert.Contains(t, stdout.String(), "Main cash account")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"accounts", "import", "--file", importFile})

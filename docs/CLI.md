@@ -95,6 +95,7 @@ go run ./cmd/oa tokens revoke --id <token-id>
 go run ./cmd/oa accounts list
 go run ./cmd/oa accounts list --active-only
 go run ./cmd/oa accounts create --code 1100 --name Cash --type ASSET
+go run ./cmd/oa accounts get --id <account-id>
 go run ./cmd/oa accounts import --file ./accounts.csv
 ```
 
