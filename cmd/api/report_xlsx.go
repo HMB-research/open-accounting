@@ -157,7 +157,7 @@ func xlsxCellRef(row, column int) string {
 
 func isNumericReportColumn(header string) bool {
 	switch strings.ToLower(strings.TrimSpace(header)) {
-	case "amount", "amount_paid", "balance", "contact_count", "contact_invoice_count", "count", "credit_balance", "current", "days_1_30", "days_31_60", "days_61_90", "days_90_plus", "days_overdue", "debit_balance", "invoice_count", "net_balance", "outstanding_amount", "total", "total_amount", "total_balance":
+	case "amount", "amount_paid", "balance", "budget_amount", "budget_used_percentage", "contact_count", "contact_invoice_count", "count", "credit_balance", "current", "days_1_30", "days_31_60", "days_61_90", "days_90_plus", "days_overdue", "debit_balance", "invoice_count", "net_balance", "outstanding_amount", "total", "total_amount", "total_balance", "total_expenses":
 		return true
 	default:
 		return false
@@ -165,7 +165,12 @@ func isNumericReportColumn(header string) bool {
 }
 
 func isBoolReportColumn(header string) bool {
-	return strings.EqualFold(strings.TrimSpace(header), "is_subtotal")
+	switch strings.ToLower(strings.TrimSpace(header)) {
+	case "is_over_budget", "is_subtotal":
+		return true
+	default:
+		return false
+	}
 }
 
 func xlsxEscape(value string) string {

@@ -118,6 +118,86 @@ definitions:
       total_liabilities:
         type: number
     type: object
+  github_com_HMB-research_open-accounting_internal_accounting.BudgetPeriod:
+    enum:
+    - MONTHLY
+    - QUARTERLY
+    - ANNUAL
+    type: string
+    x-enum-varnames:
+    - BudgetPeriodMonthly
+    - BudgetPeriodQuarterly
+    - BudgetPeriodAnnual
+  github_com_HMB-research_open-accounting_internal_accounting.CostCenter:
+    properties:
+      budget_amount:
+        type: number
+      budget_period:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.BudgetPeriod'
+      budget_used_percentage:
+        type: number
+      children:
+        description: Computed fields for reports
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CostCenter'
+        type: array
+      code:
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      parent_id:
+        type: string
+      tenant_id:
+        type: string
+      total_spent:
+        type: number
+      updated_at:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.CostCenterReport:
+    properties:
+      cost_centers:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CostCenterSummary'
+        type: array
+      generated_at:
+        type: string
+      period_end:
+        type: string
+      period_start:
+        type: string
+      tenant_id:
+        type: string
+      total_budget:
+        type: number
+      total_expenses:
+        type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.CostCenterSummary:
+    properties:
+      budget_amount:
+        type: number
+      budget_used_percentage:
+        type: number
+      cost_center:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CostCenter'
+      is_over_budget:
+        type: boolean
+      period_end:
+        type: string
+      period_start:
+        type: string
+      total_expenses:
+        type: number
+    type: object
   github_com_HMB-research_open-accounting_internal_accounting.CreateAccountRequest:
     properties:
       account_type:
@@ -6751,6 +6831,57 @@ paths:
       security:
       - BearerAuth: []
       summary: Import cost centers
+      tags:
+      - Cost Centers
+  /tenants/{tenantID}/cost-centers/report:
+    get:
+      description: Get cost center budget and expense report, with optional CSV, XLSX,
+        or PDF export
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Start date (YYYY-MM-DD)
+        in: query
+        name: start_date
+        type: string
+      - description: End date (YYYY-MM-DD)
+        in: query
+        name: end_date
+        type: string
+      - description: 'Response format: json, csv, xlsx, or pdf'
+        in: query
+        name: format
+        type: string
+      produces:
+      - application/json
+      - text/csv
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CostCenterReport'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get cost center budget report
       tags:
       - Cost Centers
   /tenants/{tenantID}/email-log:

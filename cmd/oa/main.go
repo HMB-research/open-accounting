@@ -6159,7 +6159,14 @@ func (a *cliApp) runCostCenters(ctx context.Context, args []string) error {
 		startDate := fs.String("start", "", "Start date in YYYY-MM-DD")
 		endDate := fs.String("end", "", "End date in YYYY-MM-DD")
 		asJSON := fs.Bool("json", false, "Output JSON")
+		asCSV := fs.Bool("csv", false, "Output CSV")
+		asXLSX := fs.Bool("xlsx", false, "Output XLSX")
+		asPDF := fs.Bool("pdf", false, "Output PDF")
+		outputPath := fs.String("output", "", "Optional CSV/XLSX/PDF output file path")
 		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *asPDF, *outputPath); err != nil {
 			return err
 		}
 		startDateValue, err := parseOptionalDate("start", *startDate)
@@ -6169,6 +6176,28 @@ func (a *cliApp) runCostCenters(ctx context.Context, args []string) error {
 		endDateValue, err := parseOptionalDate("end", *endDate)
 		if err != nil {
 			return err
+		}
+
+		if *asCSV {
+			content, err := client.exportCostCenterReport(ctx, cfg.TenantID, startDateValue, endDateValue, "csv")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "cost center report CSV")
+		}
+		if *asXLSX {
+			content, err := client.exportCostCenterReport(ctx, cfg.TenantID, startDateValue, endDateValue, "xlsx")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "cost center report XLSX")
+		}
+		if *asPDF {
+			content, err := client.exportCostCenterReport(ctx, cfg.TenantID, startDateValue, endDateValue, "pdf")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "cost center report PDF")
 		}
 
 		report, err := client.getCostCenterReport(ctx, cfg.TenantID, startDateValue, endDateValue)
