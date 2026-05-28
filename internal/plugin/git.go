@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"gopkg.in/yaml.v3"
 )
 
 // Repository URL patterns
@@ -284,8 +285,7 @@ func parseRegistryIndex(data []byte, index *RegistryIndex) error {
 
 // parseManifestYAML is a helper to parse YAML content
 func parseManifestYAML(data []byte, v interface{}) error {
-	// Use the yaml package from manifest.go
-	return nil // This will be implemented using gopkg.in/yaml.v3
+	return yaml.Unmarshal(data, v)
 }
 
 // SyncRegistry fetches and caches the plugin list from a registry

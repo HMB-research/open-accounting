@@ -627,16 +627,57 @@ func TestParseRegistryIndex(t *testing.T) {
 		name        string
 		data        []byte
 		expectError bool
+		validate    func(t *testing.T, index RegistryIndex)
 	}{
 		{
 			name:        "empty_data",
 			data:        []byte{},
-			expectError: false, // parseManifestYAML currently returns nil
+			expectError: false,
 		},
 		{
 			name:        "valid_yaml",
 			data:        []byte("version: 1\nplugins: []"),
 			expectError: false,
+		},
+		{
+			name: "valid_plugin_index",
+			data: []byte(`version: 1
+plugins:
+  - name: vat-tools
+    display_name: VAT Tools
+    description: VAT automation helpers
+    repository: https://github.com/example/vat-tools
+    version: 1.2.3
+    author: Example Ltd
+    license: MIT
+    tags:
+      - vat
+      - estonia
+    downloads: 42
+    stars: 7
+`),
+			expectError: false,
+			validate: func(t *testing.T, index RegistryIndex) {
+				t.Helper()
+				require.Len(t, index.Plugins, 1)
+				plugin := index.Plugins[0]
+				assert.Equal(t, 1, index.Version)
+				assert.Equal(t, "vat-tools", plugin.Name)
+				assert.Equal(t, "VAT Tools", plugin.DisplayName)
+				assert.Equal(t, "VAT automation helpers", plugin.Description)
+				assert.Equal(t, "https://github.com/example/vat-tools", plugin.Repository)
+				assert.Equal(t, "1.2.3", plugin.Version)
+				assert.Equal(t, "Example Ltd", plugin.Author)
+				assert.Equal(t, "MIT", plugin.License)
+				assert.Equal(t, []string{"vat", "estonia"}, plugin.Tags)
+				assert.Equal(t, 42, plugin.Downloads)
+				assert.Equal(t, 7, plugin.Stars)
+			},
+		},
+		{
+			name:        "invalid_yaml",
+			data:        []byte("version: ["),
+			expectError: true,
 		},
 	}
 
@@ -649,6 +690,9 @@ func TestParseRegistryIndex(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
+				if tt.validate != nil {
+					tt.validate(t, index)
+				}
 			}
 		})
 	}
@@ -656,10 +700,13 @@ func TestParseRegistryIndex(t *testing.T) {
 
 // TestParseManifestYAML tests the parseManifestYAML helper
 func TestParseManifestYAML(t *testing.T) {
-	var result interface{}
+	var result map[string]string
 	err := parseManifestYAML([]byte("test: value"), &result)
-	// Currently parseManifestYAML returns nil (stub implementation)
-	assert.NoError(t, err)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"test": "value"}, result)
+
+	err = parseManifestYAML([]byte("test: ["), &result)
+	assert.Error(t, err)
 }
 
 // TestService_FetchRegistryIndex_InvalidURL tests FetchRegistryIndex with invalid URL
