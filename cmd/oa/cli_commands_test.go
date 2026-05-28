@@ -1120,6 +1120,31 @@ func TestCLIEmployeesCommands(t *testing.T) {
 	}))
 
 	employeesFile := writeTempCSV(t, "employees.csv", "employee_number,first_name,last_name,start_date,base_salary\nEMP-001,Mari,Maasikas,2026-01-15,3200\n")
+	employeePayload := func(firstName, lastName string, active bool) map[string]any {
+		return map[string]any{
+			"id":                     "emp-1",
+			"tenant_id":              "tenant-1",
+			"employee_number":        "EMP-001",
+			"first_name":             firstName,
+			"last_name":              lastName,
+			"personal_code":          "49001010001",
+			"email":                  "mari@example.com",
+			"phone":                  "+372 555 1234",
+			"address":                "Tallinn",
+			"bank_account":           "EE471000001020145685",
+			"start_date":             "2026-01-15T00:00:00Z",
+			"position":               "Accountant",
+			"department":             "Finance",
+			"employment_type":        "FULL_TIME",
+			"tax_residency":          "EE",
+			"apply_basic_exemption":  true,
+			"basic_exemption_amount": "700.00",
+			"funded_pension_rate":    "0.02",
+			"is_active":              active,
+			"created_at":             "2026-01-15T00:00:00Z",
+			"updated_at":             "2026-01-15T00:00:00Z",
+		}
+	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -1128,29 +1153,32 @@ func TestCLIEmployeesCommands(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/employees":
 			require.Equal(t, "true", r.URL.Query().Get("active_only"))
-			_ = json.NewEncoder(w).Encode([]map[string]any{{
-				"id":              "emp-1",
-				"employee_number": "EMP-001",
-				"first_name":      "Mari",
-				"last_name":       "Maasikas",
-				"employment_type": "FULL_TIME",
-				"email":           "mari@example.com",
-				"is_active":       true,
-			}})
+			_ = json.NewEncoder(w).Encode([]map[string]any{employeePayload("Mari", "Maasikas", true)})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/employees":
 			var req payroll.CreateEmployeeRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "Mari", req.FirstName)
 			assert.Equal(t, "Maasikas", req.LastName)
 			assert.Equal(t, payroll.EmploymentFullTime, req.EmploymentType)
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"id":              "emp-1",
-				"employee_number": req.EmployeeNumber,
-				"first_name":      req.FirstName,
-				"last_name":       req.LastName,
-				"employment_type": req.EmploymentType,
-				"is_active":       true,
-			})
+			_ = json.NewEncoder(w).Encode(employeePayload(req.FirstName, req.LastName, true))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-1":
+			_ = json.NewEncoder(w).Encode(employeePayload("Mari", "Maasikas", true))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-1":
+			var req payroll.UpdateEmployeeRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Maria", req.FirstName)
+			assert.Equal(t, "Finance", req.Department)
+			require.NotNil(t, req.ApplyBasicExemption)
+			assert.False(t, *req.ApplyBasicExemption)
+			require.NotNil(t, req.IsActive)
+			assert.True(t, *req.IsActive)
+			_ = json.NewEncoder(w).Encode(employeePayload("Maria", "Maasikas", true))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-1/salary":
+			var req map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Contains(t, req, "amount")
+			assert.Contains(t, req, "effective_from")
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "salary updated"})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/employees/import":
 			var req payroll.ImportEmployeesRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -1188,6 +1216,29 @@ func TestCLIEmployeesCommands(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created employee Mari Maasikas (emp-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"employees", "get", "--id", "emp-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Employee Mari Maasikas")
+	assert.Contains(t, stdout.String(), "Position: Accountant")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"employees", "update",
+		"--id", "emp-1",
+		"--first-name", "Maria",
+		"--department", "Finance",
+		"--apply-basic-exemption", "false",
+		"--active", "true",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Employee Maria Maasikas")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"employees", "set-salary", "--id", "emp-1", "--amount", "3200.00", "--effective-from", "2026-03-01"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Set base salary for employee emp-1 to 3200")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"employees", "import", "--file", employeesFile})

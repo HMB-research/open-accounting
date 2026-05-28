@@ -83,17 +83,27 @@ func TestPrintTables(t *testing.T) {
 	assert.Contains(t, contactDetailBuf.String(), "hello@example.com")
 
 	var employeeBuf bytes.Buffer
-	printEmployeesTable(&employeeBuf, []payroll.Employee{{
-		ID:             "employee-1",
-		EmployeeNumber: "EMP-001",
-		FirstName:      "Mari",
-		LastName:       "Maasikas",
-		EmploymentType: payroll.EmploymentFullTime,
-		Email:          "mari@example.com",
-		IsActive:       true,
-	}})
+	employee := payroll.Employee{
+		ID:                "employee-1",
+		EmployeeNumber:    "EMP-001",
+		FirstName:         "Mari",
+		LastName:          "Maasikas",
+		EmploymentType:    payroll.EmploymentFullTime,
+		Email:             "mari@example.com",
+		StartDate:         now,
+		Position:          "Accountant",
+		Department:        "Finance",
+		FundedPensionRate: decimal.NewFromFloat(0.02),
+		IsActive:          true,
+	}
+	printEmployeesTable(&employeeBuf, []payroll.Employee{employee})
 	assert.Contains(t, employeeBuf.String(), "NUMBER")
 	assert.Contains(t, employeeBuf.String(), "Mari Maasikas")
+
+	var employeeDetailBuf bytes.Buffer
+	printEmployee(&employeeDetailBuf, &employee)
+	assert.Contains(t, employeeDetailBuf.String(), "Employee Mari Maasikas")
+	assert.Contains(t, employeeDetailBuf.String(), "Position: Accountant")
 
 	var documentBuf bytes.Buffer
 	printDocumentsTable(&documentBuf, []documents.Document{{

@@ -254,6 +254,34 @@ func printEmployeesTable(w io.Writer, employees []payroll.Employee) {
 	_ = tw.Flush()
 }
 
+func printEmployee(w io.Writer, employee *payroll.Employee) {
+	_, _ = fmt.Fprintf(w, "Employee %s (%s)\n", employee.FullName(), employee.EmploymentType)
+	_, _ = fmt.Fprintf(w, "ID: %s\n", employee.ID)
+	if strings.TrimSpace(employee.EmployeeNumber) != "" {
+		_, _ = fmt.Fprintf(w, "Number: %s\n", employee.EmployeeNumber)
+	}
+	if strings.TrimSpace(employee.PersonalCode) != "" {
+		_, _ = fmt.Fprintf(w, "Personal code: %s\n", employee.PersonalCode)
+	}
+	if strings.TrimSpace(employee.Email) != "" {
+		_, _ = fmt.Fprintf(w, "Email: %s\n", employee.Email)
+	}
+	if strings.TrimSpace(employee.Phone) != "" {
+		_, _ = fmt.Fprintf(w, "Phone: %s\n", employee.Phone)
+	}
+	if strings.TrimSpace(employee.Position) != "" {
+		_, _ = fmt.Fprintf(w, "Position: %s\n", employee.Position)
+	}
+	if strings.TrimSpace(employee.Department) != "" {
+		_, _ = fmt.Fprintf(w, "Department: %s\n", employee.Department)
+	}
+	_, _ = fmt.Fprintf(w, "Start date: %s\n", formatDate(employee.StartDate))
+	_, _ = fmt.Fprintf(w, "End date: %s\n", formatDatePtr(employee.EndDate))
+	_, _ = fmt.Fprintf(w, "Basic exemption: %t (%s)\n", employee.ApplyBasicExemption, employee.BasicExemptionAmount.String())
+	_, _ = fmt.Fprintf(w, "Funded pension rate: %s\n", employee.FundedPensionRate.String())
+	_, _ = fmt.Fprintf(w, "Active: %t\n", employee.IsActive)
+}
+
 func printDocumentsTable(w io.Writer, docs []documents.Document) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tENTITY\tTYPE\tFILE\tREVIEW\tRETENTION\tCREATED")
