@@ -16,6 +16,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/reports"
+	"github.com/HMB-research/open-accounting/internal/tax"
 )
 
 func TestPrintJSON(t *testing.T) {
@@ -217,6 +218,73 @@ func TestPrintReports(t *testing.T) {
 	})
 	assert.Contains(t, confirmationBuf.String(), "INV-1")
 	assert.Contains(t, confirmationBuf.String(), "Total balance: 900")
+}
+
+func TestPrintTaxReports(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 31, 12, 0, 0, 0, time.UTC)
+
+	tsd := payroll.TSDDeclaration{
+		ID:                  "tsd-1",
+		PeriodYear:          2026,
+		PeriodMonth:         3,
+		TotalPayments:       decimal.NewFromInt(3200),
+		TotalIncomeTax:      decimal.NewFromInt(500),
+		TotalSocialTax:      decimal.NewFromInt(1056),
+		TotalUnemploymentER: decimal.NewFromFloat(25.6),
+		TotalUnemploymentEE: decimal.NewFromFloat(51.2),
+		TotalFundedPension:  decimal.NewFromInt(64),
+		Status:              payroll.TSDDraft,
+		CreatedAt:           now,
+		UpdatedAt:           now,
+		Rows: []payroll.TSDRow{{
+			FirstName:     "Mari",
+			LastName:      "Maasikas",
+			PaymentType:   "10",
+			GrossPayment:  decimal.NewFromInt(3200),
+			TaxableAmount: decimal.NewFromInt(2500),
+			IncomeTax:     decimal.NewFromInt(500),
+			SocialTax:     decimal.NewFromInt(1056),
+		}},
+	}
+
+	var tsdListBuf bytes.Buffer
+	printTSDDeclarationsTable(&tsdListBuf, []payroll.TSDDeclaration{tsd})
+	assert.Contains(t, tsdListBuf.String(), "2026-03")
+	assert.Contains(t, tsdListBuf.String(), "3200")
+
+	var tsdBuf bytes.Buffer
+	printTSDDeclaration(&tsdBuf, &tsd)
+	assert.Contains(t, tsdBuf.String(), "TSD 2026-03")
+	assert.Contains(t, tsdBuf.String(), "Mari Maasikas")
+
+	kmd := tax.KMDDeclaration{
+		ID:             "kmd-1",
+		Year:           2026,
+		Month:          3,
+		Status:         "DRAFT",
+		TotalOutputVAT: decimal.NewFromInt(220),
+		TotalInputVAT:  decimal.NewFromInt(80),
+		Rows: []tax.KMDRow{{
+			Code:        tax.KMDRow1,
+			Description: "Taxable sales",
+			TaxBase:     decimal.NewFromInt(1000),
+			TaxAmount:   decimal.NewFromInt(220),
+		}},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	var kmdListBuf bytes.Buffer
+	printKMDDeclarationsTable(&kmdListBuf, []tax.KMDDeclaration{kmd})
+	assert.Contains(t, kmdListBuf.String(), "2026-03")
+	assert.Contains(t, kmdListBuf.String(), "140")
+
+	var kmdBuf bytes.Buffer
+	printKMDDeclaration(&kmdBuf, &kmd)
+	assert.Contains(t, kmdBuf.String(), "KMD 2026-03")
+	assert.Contains(t, kmdBuf.String(), "Taxable sales")
 }
 
 func TestFormatHelpers(t *testing.T) {

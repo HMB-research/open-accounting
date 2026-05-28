@@ -1015,6 +1015,63 @@ Returns `application/xml` file compatible with Estonian e-MTA.
 
 ---
 
+## Payroll Tax (TSD)
+
+### List TSD Declarations
+
+```http
+GET /tenants/{tenantId}/tsd
+Authorization: Bearer <token>
+```
+
+### Get TSD Declaration
+
+```http
+GET /tenants/{tenantId}/tsd/{year}/{month}
+Authorization: Bearer <token>
+```
+
+### Generate TSD From Payroll Run
+
+```http
+POST /tenants/{tenantId}/payroll-runs/{runId}/tsd
+Authorization: Bearer <token>
+```
+
+The payroll run must be approved or paid before TSD generation.
+
+### Export TSD to XML
+
+```http
+GET /tenants/{tenantId}/tsd/{year}/{month}/xml
+Authorization: Bearer <token>
+```
+
+Returns `application/xml` for e-MTA import.
+
+### Export TSD to CSV
+
+```http
+GET /tenants/{tenantId}/tsd/{year}/{month}/csv
+Authorization: Bearer <token>
+```
+
+Returns `text/csv` for review or import tooling.
+
+### Mark TSD Submitted
+
+```http
+POST /tenants/{tenantId}/tsd/{year}/{month}/submit
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "emta_reference": "EMTA-123"
+}
+```
+
+---
+
 ## Error Responses
 
 All errors return JSON with an `error` field:
