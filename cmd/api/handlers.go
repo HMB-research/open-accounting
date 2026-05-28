@@ -1165,11 +1165,12 @@ func (h *Handlers) GetTrialBalance(w http.ResponseWriter, r *http.Request) {
 // @Summary Get account balance
 // @Description Get the balance of a specific account as of a date
 // @Tags Reports
-// @Produce json
+// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param accountID path string true "Account ID"
 // @Param as_of_date query string false "As of date (YYYY-MM-DD)"
+// @Param format query string false "Response format: json, csv, xlsx, or pdf"
 // @Success 200 {object} object{account_id=string,as_of_date=string,balance=string}
 // @Failure 400 {object} object{error=string}
 // @Failure 500 {object} object{error=string}
@@ -1190,16 +1191,52 @@ func (h *Handlers) GetAccountBalance(w http.ResponseWriter, r *http.Request) {
 		asOfDate = parsed
 	}
 
+	format, err := reportResponseFormat(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	balance, err := h.accountingService.GetAccountBalance(r.Context(), schemaName, tenantID, accountID, asOfDate)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to get account balance")
 		return
 	}
+	asOfDateText := asOfDate.Format("2006-01-02")
+	balanceText := balance.String()
+
+	if format == "csv" {
+		content, err := accountBalanceCSV(accountID, asOfDateText, balanceText)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export account balance CSV")
+			return
+		}
+		respondReportCSV(w, fmt.Sprintf("account-balance-%s-%s.csv", accountID, asOfDateText), content)
+		return
+	}
+	if format == "xlsx" {
+		content, err := accountBalanceXLSX(accountID, asOfDateText, balanceText)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export account balance XLSX")
+			return
+		}
+		respondReportXLSX(w, fmt.Sprintf("account-balance-%s-%s.xlsx", accountID, asOfDateText), content)
+		return
+	}
+	if format == "pdf" {
+		content, err := accountBalancePDF(accountID, asOfDateText, balanceText)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export account balance PDF")
+			return
+		}
+		respondReportPDF(w, fmt.Sprintf("account-balance-%s-%s.pdf", accountID, asOfDateText), content)
+		return
+	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"account_id": accountID,
-		"as_of_date": asOfDate.Format("2006-01-02"),
-		"balance":    balance.String(),
+		"as_of_date": asOfDateText,
+		"balance":    balanceText,
 	})
 }
 

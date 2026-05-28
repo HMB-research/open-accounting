@@ -2144,6 +2144,14 @@ func (c *apiClient) getAccountBalanceReport(ctx context.Context, tenantID, accou
 	return &resp, nil
 }
 
+func (c *apiClient) exportAccountBalanceReport(ctx context.Context, tenantID, accountID, asOfDate, format string) ([]byte, error) {
+	values := url.Values{"format": []string{format}}
+	if strings.TrimSpace(asOfDate) != "" {
+		values.Set("as_of_date", strings.TrimSpace(asOfDate))
+	}
+	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "account-balance", accountID), values), nil, c.apiToken)
+}
+
 func (c *apiClient) getBalanceSheet(ctx context.Context, tenantID, asOfDate string) (*accounting.BalanceSheet, error) {
 	values := url.Values{}
 	if strings.TrimSpace(asOfDate) != "" {

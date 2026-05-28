@@ -10253,7 +10253,10 @@ const docTemplate = `{
                 ],
                 "description": "Get the balance of a specific account as of a date",
                 "produces": [
-                    "application/json"
+                    "application/json",
+                    "text/csv",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/pdf"
                 ],
                 "tags": [
                     "Reports"
@@ -10278,6 +10281,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "As of date (YYYY-MM-DD)",
                         "name": "as_of_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Response format: json, csv, xlsx, or pdf",
+                        "name": "format",
                         "in": "query"
                     }
                 ],

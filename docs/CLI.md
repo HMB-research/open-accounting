@@ -680,6 +680,9 @@ go run ./cmd/oa reports trial-balance --as-of 2026-03-31 --csv --output ./trial-
 go run ./cmd/oa reports trial-balance --as-of 2026-03-31 --xlsx --output ./trial-balance.xlsx
 go run ./cmd/oa reports trial-balance --as-of 2026-03-31 --pdf --output ./trial-balance.pdf
 go run ./cmd/oa reports account-balance --account-id <account-id> --as-of 2026-03-31
+go run ./cmd/oa reports account-balance --account-id <account-id> --as-of 2026-03-31 --csv --output ./account-balance.csv
+go run ./cmd/oa reports account-balance --account-id <account-id> --as-of 2026-03-31 --xlsx --output ./account-balance.xlsx
+go run ./cmd/oa reports account-balance --account-id <account-id> --as-of 2026-03-31 --pdf --output ./account-balance.pdf
 go run ./cmd/oa reports balance-sheet --as-of 2026-03-31
 go run ./cmd/oa reports balance-sheet --as-of 2026-03-31 --csv --output ./balance-sheet.csv
 go run ./cmd/oa reports balance-sheet --as-of 2026-03-31 --xlsx --output ./balance-sheet.xlsx
@@ -718,7 +721,7 @@ go run ./cmd/oa reports balance-confirmation \
   --output ./balance-confirmation.pdf
 ```
 
-Every report command supports `--json` for automation. Core statement, aging, and balance-confirmation commands also support backend CSV export with `--csv`, XLSX export with `--xlsx`, and PDF export with `--pdf`; omit `--output` to stream the export bytes to stdout.
+Every report command supports `--json` for automation. Core statement, account-balance, aging, and balance-confirmation commands also support backend CSV export with `--csv`, XLSX export with `--xlsx`, and PDF export with `--pdf`; omit `--output` to stream the export bytes to stdout.
 
 ## Documents
 

@@ -157,6 +157,22 @@ func cashFlowStatementCSV(report *reports.CashFlowStatement) ([]byte, error) {
 	return buffer.Bytes(), nil
 }
 
+func accountBalanceCSV(accountID, asOfDate, balance string) ([]byte, error) {
+	buffer := &bytes.Buffer{}
+	writer := csv.NewWriter(buffer)
+	if err := writer.Write([]string{"account_id", "as_of_date", "balance"}); err != nil {
+		return nil, err
+	}
+	if err := writer.Write([]string{accountID, asOfDate, balance}); err != nil {
+		return nil, err
+	}
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return nil, err
+	}
+	return buffer.Bytes(), nil
+}
+
 func writeAccountSectionCSV(writer *csv.Writer, section string, accounts []accounting.AccountBalance) error {
 	for _, account := range accounts {
 		row := append([]string{section}, accountBalanceCSVRow(account)...)

@@ -10711,8 +10711,15 @@ paths:
         in: query
         name: as_of_date
         type: string
+      - description: 'Response format: json, csv, xlsx, or pdf'
+        in: query
+        name: format
+        type: string
       produces:
       - application/json
+      - text/csv
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - application/pdf
       responses:
         "200":
           description: OK

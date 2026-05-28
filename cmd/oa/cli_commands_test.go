@@ -4190,6 +4190,21 @@ func TestCLIReportsCommands(t *testing.T) {
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/account-balance/acc-1":
 			require.Equal(t, "2026-03-31", r.URL.Query().Get("as_of_date"))
+			if r.URL.Query().Get("format") == "csv" {
+				w.Header().Set("Content-Type", "text/csv")
+				_, _ = w.Write([]byte("account_id,as_of_date,balance\nacc-1,2026-03-31,500.00\n"))
+				return
+			}
+			if r.URL.Query().Get("format") == "xlsx" {
+				w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+				_, _ = w.Write([]byte("xlsx-account-balance"))
+				return
+			}
+			if r.URL.Query().Get("format") == "pdf" {
+				w.Header().Set("Content-Type", "application/pdf")
+				_, _ = w.Write([]byte("%PDF account balance"))
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"account_id": "acc-1",
 				"as_of_date": "2026-03-31",
@@ -4389,6 +4404,29 @@ func TestCLIReportsCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"reports", "account-balance", "--account-id", "acc-1", "--as-of", "2026-03-31"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "500.00")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "account-balance", "--account-id", "acc-1", "--as-of", "2026-03-31", "--csv"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "account_id,as_of_date,balance")
+
+	stdout.Reset()
+	accountBalanceXLSXPath := filepath.Join(t.TempDir(), "account-balance.xlsx")
+	err = app.run(context.Background(), []string{"reports", "account-balance", "--account-id", "acc-1", "--as-of", "2026-03-31", "--xlsx", "--output", accountBalanceXLSXPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote account balance XLSX")
+	accountBalanceXLSX, err := os.ReadFile(accountBalanceXLSXPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("xlsx-account-balance"), accountBalanceXLSX)
+
+	stdout.Reset()
+	accountBalancePDFPath := filepath.Join(t.TempDir(), "account-balance.pdf")
+	err = app.run(context.Background(), []string{"reports", "account-balance", "--account-id", "acc-1", "--as-of", "2026-03-31", "--pdf", "--output", accountBalancePDFPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote account balance PDF")
+	accountBalancePDF, err := os.ReadFile(accountBalancePDFPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("%PDF account balance"), accountBalancePDF)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"reports", "balance-sheet", "--as-of", "2026-03-31"})
