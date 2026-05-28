@@ -3140,6 +3140,7 @@ func (a *cliApp) runClose(ctx context.Context, args []string) error {
 		fs.SetOutput(a.stderr)
 		periodEnd := fs.String("period-end", "", "Period end date, YYYY-MM-DD")
 		note := fs.String("note", "", "Close note")
+		reviewerSignOff := fs.Bool("reviewer-sign-off", false, "Confirm reviewer sign-off for fiscal year close")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -3149,8 +3150,9 @@ func (a *cliApp) runClose(ctx context.Context, args []string) error {
 		}
 
 		resp, err := client.closePeriod(ctx, cfg.TenantID, &tenant.ClosePeriodRequest{
-			PeriodEndDate: strings.TrimSpace(*periodEnd),
-			Note:          strings.TrimSpace(*note),
+			PeriodEndDate:   strings.TrimSpace(*periodEnd),
+			Note:            strings.TrimSpace(*note),
+			ReviewerSignOff: *reviewerSignOff,
 		})
 		if err != nil {
 			return err

@@ -34,10 +34,11 @@ func (r *PostgresRepository) UpdateTenantWithPeriodCloseEvent(ctx context.Contex
 			lock_date_before,
 			lock_date_after,
 			note,
+			reviewer_sign_off,
 			performed_by,
 			created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-	`, event.ID, event.TenantID, event.Action, event.CloseKind, event.PeriodEndDate, event.LockDateBefore, event.LockDateAfter, event.Note, event.PerformedBy, event.CreatedAt)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`, event.ID, event.TenantID, event.Action, event.CloseKind, event.PeriodEndDate, event.LockDateBefore, event.LockDateAfter, event.Note, event.ReviewerSignOff, event.PerformedBy, event.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("insert period close event: %w", err)
 	}
@@ -55,7 +56,7 @@ func (r *PostgresRepository) ListPeriodCloseEvents(ctx context.Context, tenantID
 	}
 
 	rows, err := r.db.Query(ctx, `
-		SELECT id, tenant_id, action, close_kind, period_end_date, lock_date_before, lock_date_after, note, performed_by, created_at
+		SELECT id, tenant_id, action, close_kind, period_end_date, lock_date_before, lock_date_after, note, reviewer_sign_off, performed_by, created_at
 		FROM tenant_period_closes
 		WHERE tenant_id = $1
 		ORDER BY created_at DESC
@@ -82,6 +83,7 @@ func (r *PostgresRepository) ListPeriodCloseEvents(ctx context.Context, tenantID
 			&lockDateBefore,
 			&lockDateAfter,
 			&event.Note,
+			&event.ReviewerSignOff,
 			&event.PerformedBy,
 			&event.CreatedAt,
 		); err != nil {
@@ -115,7 +117,7 @@ func (r *PostgresRepository) GetLatestCloseEventForPeriod(ctx context.Context, t
 	var lockDateAfter *time.Time
 
 	err := r.db.QueryRow(ctx, `
-		SELECT id, tenant_id, action, close_kind, period_end_date, lock_date_before, lock_date_after, note, performed_by, created_at
+		SELECT id, tenant_id, action, close_kind, period_end_date, lock_date_before, lock_date_after, note, reviewer_sign_off, performed_by, created_at
 		FROM tenant_period_closes
 		WHERE tenant_id = $1
 			AND period_end_date = $2
@@ -131,6 +133,7 @@ func (r *PostgresRepository) GetLatestCloseEventForPeriod(ctx context.Context, t
 		&lockDateBefore,
 		&lockDateAfter,
 		&event.Note,
+		&event.ReviewerSignOff,
 		&event.PerformedBy,
 		&event.CreatedAt,
 	)

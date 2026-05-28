@@ -3687,7 +3687,10 @@ func TestCLICloseCommands(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "2026-03-31", req.PeriodEndDate)
 			assert.Equal(t, "March close", req.Note)
-			_ = json.NewEncoder(w).Encode(map[string]any{"tenant": tenantPayload, "event": closeEventPayload("close", "March close")})
+			assert.True(t, req.ReviewerSignOff)
+			event := closeEventPayload("close", "March close")
+			event["reviewer_sign_off"] = true
+			_ = json.NewEncoder(w).Encode(map[string]any{"tenant": tenantPayload, "event": event})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/period-reopen":
 			var req tenant.ReopenPeriodRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -3726,10 +3729,11 @@ func TestCLICloseCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"action": "close"`)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"close", "period", "--period-end", "2026-03-31", "--note", "March close"})
+	err = app.run(context.Background(), []string{"close", "period", "--period-end", "2026-03-31", "--note", "March close", "--reviewer-sign-off"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Closed period")
 	assert.Contains(t, stdout.String(), "Period end: 2026-03-31")
+	assert.Contains(t, stdout.String(), "Reviewer sign-off: true")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"close", "reopen", "--period-end", "2026-03-31", "--note", "Adjustments"})

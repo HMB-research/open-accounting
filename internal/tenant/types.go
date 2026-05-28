@@ -56,22 +56,24 @@ const (
 
 // PeriodCloseEvent records a close or reopen action for a tenant.
 type PeriodCloseEvent struct {
-	ID             string    `json:"id"`
-	TenantID       string    `json:"tenant_id"`
-	Action         string    `json:"action"`
-	CloseKind      string    `json:"close_kind"`
-	PeriodEndDate  string    `json:"period_end_date"`
-	LockDateBefore *string   `json:"lock_date_before,omitempty"`
-	LockDateAfter  *string   `json:"lock_date_after,omitempty"`
-	Note           string    `json:"note,omitempty"`
-	PerformedBy    string    `json:"performed_by"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID              string    `json:"id"`
+	TenantID        string    `json:"tenant_id"`
+	Action          string    `json:"action"`
+	CloseKind       string    `json:"close_kind"`
+	PeriodEndDate   string    `json:"period_end_date"`
+	LockDateBefore  *string   `json:"lock_date_before,omitempty"`
+	LockDateAfter   *string   `json:"lock_date_after,omitempty"`
+	Note            string    `json:"note,omitempty"`
+	ReviewerSignOff bool      `json:"reviewer_sign_off,omitempty"`
+	PerformedBy     string    `json:"performed_by"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 // ClosePeriodRequest closes a month-end or year-end period.
 type ClosePeriodRequest struct {
-	PeriodEndDate string `json:"period_end_date"`
-	Note          string `json:"note,omitempty"`
+	PeriodEndDate   string `json:"period_end_date"`
+	Note            string `json:"note,omitempty"`
+	ReviewerSignOff bool   `json:"reviewer_sign_off,omitempty"`
 }
 
 // ReopenPeriodRequest reopens a previously closed period.

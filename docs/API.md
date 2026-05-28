@@ -298,12 +298,14 @@ Content-Type: application/json
 
 {
   "period_end_date": "2026-01-31",
-  "note": "Month-end checks completed"
+  "note": "Month-end checks completed",
+  "reviewer_sign_off": false
 }
 ```
 
 - `period_end_date` must be `YYYY-MM-DD`
 - the date must be the last day of a month
+- `reviewer_sign_off` is required when the selected period is the fiscal year-end
 - only roles with close permissions can perform this action
 
 ### Reopen Period
@@ -2087,11 +2089,12 @@ Close or reopen request:
 ```json
 {
   "period_end_date": "2026-03-31",
-  "note": "March close"
+  "note": "March close",
+  "reviewer_sign_off": false
 }
 ```
 
-Reopen requests require a note. The API rejects fiscal-year reopen requests after year-end carry-forward has been posted.
+Fiscal-year close requests require `reviewer_sign_off=true`. Reopen requests require a note. The API rejects fiscal-year reopen requests after year-end carry-forward has been posted.
 
 ### Year-End Carry-Forward
 

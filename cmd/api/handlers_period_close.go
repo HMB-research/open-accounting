@@ -130,6 +130,8 @@ func respondPeriodCloseError(w http.ResponseWriter, err error) {
 		respondError(w, http.StatusBadRequest, err.Error())
 	case strings.Contains(err.Error(), "note is required"):
 		respondError(w, http.StatusBadRequest, err.Error())
+	case strings.Contains(err.Error(), "reviewer sign-off is required"):
+		respondError(w, http.StatusBadRequest, err.Error())
 	case strings.Contains(err.Error(), "period already closed through"):
 		respondError(w, http.StatusConflict, err.Error())
 	case strings.Contains(err.Error(), "no closed period to reopen"):
