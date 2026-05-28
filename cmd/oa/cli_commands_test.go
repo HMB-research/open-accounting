@@ -3789,6 +3789,24 @@ func TestCLICloseCommands(t *testing.T) {
 		},
 		"generated_at": now,
 	}
+	auditPayload := map[string]any{
+		"pack":            packPayload,
+		"evidence_policy": statusPayload["close_pack_evidence"],
+		"documents": []map[string]any{{
+			"id":            "doc-close-pack",
+			"tenant_id":     "tenant-1",
+			"entity_type":   documents.EntityTypeYearEndClose,
+			"entity_id":     "11111111-1111-5111-8111-111111111111",
+			"document_type": documents.DocumentTypeClosePack,
+			"file_name":     "close-pack.pdf",
+			"content_type":  "application/pdf",
+			"file_size":     4096,
+			"review_status": documents.ReviewStatusApproved,
+			"uploaded_by":   "user-1",
+			"created_at":    now,
+		}},
+		"generated_at": now,
+	}
 	carryForwardPayload := map[string]any{
 		"journal_entry": map[string]any{
 			"id":           "je-1",
@@ -3849,6 +3867,9 @@ func TestCLICloseCommands(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/year-end-close-pack":
 			require.Equal(t, "2025-12-31", r.URL.Query().Get("period_end_date"))
 			_ = json.NewEncoder(w).Encode(packPayload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/year-end-close-audit-evidence":
+			require.Equal(t, "2025-12-31", r.URL.Query().Get("period_end_date"))
+			_ = json.NewEncoder(w).Encode(auditPayload)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/year-end-carry-forward":
 			var req accounting.CreateYearEndCarryForwardRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -3897,6 +3918,12 @@ func TestCLICloseCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Trial balance: debits 1000")
 	assert.Contains(t, stdout.String(), "Income statement: revenue 2000")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"close", "year-end-audit", "--period-end", "2025-12-31"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Close-pack audit evidence generated")
+	assert.Contains(t, stdout.String(), "close-pack.pdf")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"close", "carry-forward", "--period-end", "2025-12-31"})

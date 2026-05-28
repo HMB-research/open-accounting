@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/documents"
@@ -108,6 +109,77 @@ func (h *Handlers) GetYearEndClosePack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, pack)
+}
+
+// GetYearEndCloseAuditEvidence returns the year-end close pack plus close-pack reviewer evidence metadata.
+// @Summary Get year-end close audit evidence
+// @Description Get year-end close readiness, core reports, close-pack evidence policy, and attached close-pack document metadata
+// @Tags Period Close
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param period_end_date query string true "Fiscal year-end date (YYYY-MM-DD)"
+// @Success 200 {object} accounting.YearEndCloseAuditEvidence
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/year-end-close-audit-evidence [get]
+func (h *Handlers) GetYearEndCloseAuditEvidence(w http.ResponseWriter, r *http.Request) {
+	routeCtx := h.tenantContextFromRequest(r)
+	periodEndDate := strings.TrimSpace(r.URL.Query().Get("period_end_date"))
+	if periodEndDate == "" {
+		respondError(w, http.StatusBadRequest, "period end date is required")
+		return
+	}
+
+	tenantRecord, err := h.tenantService.GetTenant(r.Context(), routeCtx.tenantID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Tenant not found")
+		return
+	}
+
+	pack, err := h.accountingService.GetYearEndClosePack(
+		r.Context(),
+		routeCtx.schemaName,
+		routeCtx.tenantID,
+		tenantRecord.Settings.FiscalYearStart,
+		periodEndDate,
+		tenantRecord.Settings.PeriodLockDate,
+	)
+	if err != nil {
+		respondYearEndCloseError(w, err)
+		return
+	}
+	var attachedDocuments []documents.Document
+	var evidencePolicy *documents.EvidencePolicyResult
+	if pack.Status != nil {
+		if err := h.attachYearEndCloseEvidenceStatus(r.Context(), routeCtx.schemaName, routeCtx.tenantID, pack.Status); err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to evaluate close-pack evidence")
+			return
+		}
+		evidencePolicy = pack.Status.ClosePackEvidence
+		if h.documentsService != nil && strings.TrimSpace(pack.Status.ClosePackEvidenceEntityID) != "" {
+			attachedDocuments, err = h.documentsService.ListDocuments(
+				r.Context(),
+				routeCtx.schemaName,
+				routeCtx.tenantID,
+				documents.EntityTypeYearEndClose,
+				pack.Status.ClosePackEvidenceEntityID,
+			)
+			if err != nil {
+				respondDocumentError(w, err)
+				return
+			}
+		}
+	}
+
+	respondJSON(w, http.StatusOK, &accounting.YearEndCloseAuditEvidence{
+		Pack:           pack,
+		EvidencePolicy: evidencePolicy,
+		Documents:      attachedDocuments,
+		GeneratedAt:    time.Now().UTC(),
+	})
 }
 
 // CreateYearEndCarryForward creates and posts a fiscal year-end carry-forward journal.

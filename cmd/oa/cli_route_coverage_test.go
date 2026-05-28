@@ -553,6 +553,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 		return commandForMethod(method, map[string]string{"GET": "close year-end-status"})
 	case "/year-end-close-pack":
 		return commandForMethod(method, map[string]string{"GET": "close year-end-pack"})
+	case "/year-end-close-audit-evidence":
+		return commandForMethod(method, map[string]string{"GET": "close year-end-audit"})
 	case "/year-end-carry-forward":
 		return commandForMethod(method, map[string]string{"POST": "close carry-forward"})
 	case "/year-end-carry-forward/reverse":

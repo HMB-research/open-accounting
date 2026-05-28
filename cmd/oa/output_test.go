@@ -673,6 +673,25 @@ func TestPrintCloseOutputs(t *testing.T) {
 	assert.Contains(t, packBuf.String(), "Trial balance: debits 1000")
 	assert.Contains(t, packBuf.String(), "Income statement: revenue 2000")
 
+	var auditBuf bytes.Buffer
+	printYearEndCloseAuditEvidence(&auditBuf, &accounting.YearEndCloseAuditEvidence{
+		Pack:           &closePack,
+		EvidencePolicy: status.ClosePackEvidence,
+		Documents: []documents.Document{{
+			ID:           "doc-close-pack",
+			EntityType:   documents.EntityTypeYearEndClose,
+			EntityID:     "11111111-1111-5111-8111-111111111111",
+			DocumentType: documents.DocumentTypeClosePack,
+			FileName:     "close-pack.pdf",
+			ReviewStatus: documents.ReviewStatusApproved,
+			CreatedAt:    now,
+		}},
+		GeneratedAt: now,
+	})
+	assert.Contains(t, auditBuf.String(), "Close-pack audit evidence generated")
+	assert.Contains(t, auditBuf.String(), "Evidence policy compliant: true")
+	assert.Contains(t, auditBuf.String(), "close-pack.pdf")
+
 	var resultBuf bytes.Buffer
 	printYearEndCarryForwardResult(&resultBuf, &result)
 	assert.Contains(t, resultBuf.String(), "Created year-end carry-forward JE-2026-001")
