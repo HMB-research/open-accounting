@@ -84,6 +84,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runReminders(ctx, args[1:])
 	case "email":
 		return a.runEmail(ctx, args[1:])
+	case "interest":
+		return a.runInterest(ctx, args[1:])
 	case "banking":
 		return a.runBanking(ctx, args[1:])
 	case "quotes":
@@ -175,6 +177,8 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  reminders rules list      List automated reminder rules")
 	_, _ = fmt.Fprintln(a.stdout, "  email smtp get            Show SMTP email settings")
 	_, _ = fmt.Fprintln(a.stdout, "  email templates list      List email templates")
+	_, _ = fmt.Fprintln(a.stdout, "  interest settings get     Show late-payment interest settings")
+	_, _ = fmt.Fprintln(a.stdout, "  interest overdue          List overdue invoices with interest")
 	_, _ = fmt.Fprintln(a.stdout, "  banking accounts list     List bank accounts")
 	_, _ = fmt.Fprintln(a.stdout, "  banking transactions list List bank transactions")
 	_, _ = fmt.Fprintln(a.stdout, "  banking reconciliations list  List bank reconciliations")
@@ -1798,6 +1802,133 @@ func (a *cliApp) runEmailTemplates(ctx context.Context, cfg *cliConfig, client *
 		return nil
 	default:
 		return fmt.Errorf("unknown email templates subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runInterest(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("interest subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "settings":
+		return a.runInterestSettings(ctx, cfg, client, args[1:])
+	case "overdue":
+		fs := flag.NewFlagSet("interest overdue", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		results, err := client.listOverdueInvoicesWithInterest(ctx, cfg.TenantID)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, results)
+		}
+		printInterestCalculationsTable(a.stdout, results)
+		return nil
+	case "invoice":
+		fs := flag.NewFlagSet("interest invoice", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		invoiceID := fs.String("invoice-id", "", "Invoice id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*invoiceID) == "" {
+			return errors.New("invoice-id is required")
+		}
+
+		result, err := client.getInvoiceInterest(ctx, cfg.TenantID, strings.TrimSpace(*invoiceID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		printInterestCalculation(a.stdout, result)
+		return nil
+	case "history":
+		fs := flag.NewFlagSet("interest history", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		invoiceID := fs.String("invoice-id", "", "Invoice id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*invoiceID) == "" {
+			return errors.New("invoice-id is required")
+		}
+
+		history, err := client.listInvoiceInterestHistory(ctx, cfg.TenantID, strings.TrimSpace(*invoiceID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, history)
+		}
+		printInvoiceInterestHistoryTable(a.stdout, history)
+		return nil
+	default:
+		return fmt.Errorf("unknown interest subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runInterestSettings(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("interest settings subcommand required")
+	}
+
+	switch args[0] {
+	case "get":
+		fs := flag.NewFlagSet("interest settings get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		settings, err := client.getInterestSettings(ctx, cfg.TenantID)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, settings)
+		}
+		printInterestSettings(a.stdout, settings)
+		return nil
+	case "update":
+		fs := flag.NewFlagSet("interest settings update", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		rate := fs.String("rate", "", "Daily interest rate, e.g. 0.0005")
+		annualRate := fs.String("annual-rate", "", "Annual interest rate, e.g. 0.1825")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		parsedRate, err := parseInterestRateFlags(*rate, *annualRate)
+		if err != nil {
+			return err
+		}
+
+		settings, err := client.updateInterestSettings(ctx, cfg.TenantID, &invoicing.UpdateInterestSettingsRequest{Rate: parsedRate})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, settings)
+		}
+		printInterestSettings(a.stdout, settings)
+		return nil
+	default:
+		return fmt.Errorf("unknown interest settings subcommand %q", args[0])
 	}
 }
 
@@ -6800,6 +6931,37 @@ func parseRequiredEmailTemplateType(value string) (email.TemplateType, error) {
 		}
 		return "", fmt.Errorf("invalid email template type %q", value)
 	}
+}
+
+func parseInterestRateFlags(rateValue, annualRateValue string) (float64, error) {
+	hasRate := strings.TrimSpace(rateValue) != ""
+	hasAnnualRate := strings.TrimSpace(annualRateValue) != ""
+	if hasRate && hasAnnualRate {
+		return 0, errors.New("rate and annual-rate cannot both be set")
+	}
+	if !hasRate && !hasAnnualRate {
+		return 0, errors.New("rate or annual-rate is required")
+	}
+
+	sourceName := "rate"
+	sourceValue := rateValue
+	divisor := 1.0
+	if hasAnnualRate {
+		sourceName = "annual-rate"
+		sourceValue = annualRateValue
+		divisor = 365
+	}
+
+	parsed, err := strconv.ParseFloat(strings.TrimSpace(sourceValue), 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse %s: %w", sourceName, err)
+	}
+	rate := parsed / divisor
+	req := &invoicing.UpdateInterestSettingsRequest{Rate: rate}
+	if err := req.Validate(); err != nil {
+		return 0, err
+	}
+	return rate, nil
 }
 
 func optionalStringPtr(value string) *string {

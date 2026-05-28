@@ -1102,6 +1102,66 @@ func printEmailSentResponse(w io.Writer, result *email.EmailSentResponse) {
 	}
 }
 
+func printInterestSettings(w io.Writer, settings *invoicing.InterestSettings) {
+	_, _ = fmt.Fprintf(w, "Interest settings\n")
+	_, _ = fmt.Fprintf(w, "Enabled: %t\n", settings.IsEnabled)
+	_, _ = fmt.Fprintf(w, "Daily rate: %.6f\n", settings.Rate)
+	_, _ = fmt.Fprintf(w, "Annual rate: %.6f\n", settings.AnnualRate)
+	if strings.TrimSpace(settings.Description) != "" {
+		_, _ = fmt.Fprintf(w, "Description: %s\n", settings.Description)
+	}
+}
+
+func printInterestCalculationsTable(w io.Writer, results []invoicing.InterestCalculationResult) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "INVOICE\tDUE\tDAYS\tOUTSTANDING\tDAILY\tINTEREST\tTOTAL\tCURRENCY")
+	for _, result := range results {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\n",
+			result.InvoiceNumber,
+			formatDate(result.DueDate),
+			result.DaysOverdue,
+			result.OutstandingAmount.String(),
+			result.DailyInterest.String(),
+			result.TotalInterest.String(),
+			result.TotalWithInterest.String(),
+			result.Currency,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printInterestCalculation(w io.Writer, result *invoicing.InterestCalculationResult) {
+	_, _ = fmt.Fprintf(w, "Interest for invoice %s (%s)\n", result.InvoiceNumber, result.InvoiceID)
+	_, _ = fmt.Fprintf(w, "Due date: %s\n", formatDate(result.DueDate))
+	_, _ = fmt.Fprintf(w, "Days overdue: %d\n", result.DaysOverdue)
+	_, _ = fmt.Fprintf(w, "Outstanding: %s %s\n", result.OutstandingAmount.String(), result.Currency)
+	_, _ = fmt.Fprintf(w, "Interest rate: %s\n", result.InterestRate.String())
+	_, _ = fmt.Fprintf(w, "Daily interest: %s\n", result.DailyInterest.String())
+	_, _ = fmt.Fprintf(w, "Total interest: %s\n", result.TotalInterest.String())
+	_, _ = fmt.Fprintf(w, "Total with interest: %s\n", result.TotalWithInterest.String())
+}
+
+func printInvoiceInterestHistoryTable(w io.Writer, history []invoicing.InvoiceInterest) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tCALCULATED\tDAYS\tPRINCIPAL\tRATE\tINTEREST\tTOTAL")
+	for _, item := range history {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
+			item.ID,
+			formatTime(item.CalculatedAt),
+			item.DaysOverdue,
+			item.PrincipalAmount.String(),
+			item.InterestRate.String(),
+			item.InterestAmount.String(),
+			item.TotalWithInterest.String(),
+		)
+	}
+	_ = tw.Flush()
+}
+
 func printBankAccountsTable(w io.Writer, accounts []banking.BankAccount) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tNAME\tACCOUNT\tBANK\tCURRENCY\tDEFAULT\tACTIVE\tBALANCE")

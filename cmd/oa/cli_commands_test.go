@@ -2617,6 +2617,106 @@ func TestCLIEmailCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Email sent")
 }
 
+func TestCLIInterestCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	now := "2026-03-15T12:00:00Z"
+	calculationPayload := map[string]any{
+		"invoice_id":          "inv-1",
+		"invoice_number":      "INV-00001",
+		"due_date":            "2026-03-01T00:00:00Z",
+		"days_overdue":        14,
+		"outstanding_amount":  "500.00",
+		"interest_rate":       "0.0005",
+		"daily_interest":      "0.25",
+		"total_interest":      "3.50",
+		"total_with_interest": "503.50",
+		"calculated_at":       now,
+		"currency":            "EUR",
+	}
+	historyPayload := []map[string]any{{
+		"id":                  "interest-1",
+		"invoice_id":          "inv-1",
+		"calculated_at":       now,
+		"days_overdue":        14,
+		"principal_amount":    "500.00",
+		"interest_rate":       "0.0005",
+		"interest_amount":     "3.50",
+		"total_with_interest": "503.50",
+		"created_at":          now,
+	}}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/settings/interest":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rate":        0.0005,
+				"annual_rate": 0.1825,
+				"description": "0.050% daily (18.2% annually)",
+				"is_enabled":  true,
+			})
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/settings/interest":
+			var req invoicing.UpdateInterestSettingsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.InDelta(t, 0.0005, req.Rate, 0.0000001)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rate":        req.Rate,
+				"annual_rate": req.Rate * 365,
+				"description": "0.050% daily (18.2% annually)",
+				"is_enabled":  true,
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/overdue-with-interest":
+			_ = json.NewEncoder(w).Encode([]map[string]any{calculationPayload})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/inv-1/interest":
+			_ = json.NewEncoder(w).Encode(calculationPayload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/inv-1/interest/history":
+			_ = json.NewEncoder(w).Encode(historyPayload)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"interest", "settings", "get", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"is_enabled": true`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"interest", "settings", "update", "--annual-rate", "0.1825"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Daily rate: 0.000500")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"interest", "overdue", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"invoice_number": "INV-00001"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"interest", "invoice", "--invoice-id", "inv-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Interest for invoice INV-00001")
+	assert.Contains(t, stdout.String(), "Total interest: 3.5")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"interest", "history", "--invoice-id", "inv-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "interest-1")
+}
+
 func TestCLIBankingCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
@@ -4188,6 +4288,14 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "email templates subcommand required")
 
+	err = app.runInterest(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "interest subcommand required")
+
+	err = app.runInterestSettings(context.Background(), &cliConfig{}, &apiClient{}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "interest settings subcommand required")
+
 	err = app.runBanking(context.Background(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "banking subcommand required")
@@ -4473,6 +4581,22 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	_, err = parseRequiredEmailTemplateType("unknown")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid email template type")
+
+	interestRate, err := parseInterestRateFlags("0.0005", "")
+	require.NoError(t, err)
+	assert.Equal(t, 0.0005, interestRate)
+
+	interestRate, err = parseInterestRateFlags("", "0.1825")
+	require.NoError(t, err)
+	assert.InDelta(t, 0.0005, interestRate, 0.0000001)
+
+	_, err = parseInterestRateFlags("0.0005", "0.1825")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "rate and annual-rate cannot both be set")
+
+	_, err = parseInterestRateFlags("", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "rate or annual-rate is required")
 
 	bankStatus, err := parseOptionalBankTransactionStatus("matched")
 	require.NoError(t, err)

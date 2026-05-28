@@ -496,6 +496,46 @@ func (c *apiClient) emailPaymentReceipt(ctx context.Context, tenantID, paymentID
 	return &resp, nil
 }
 
+func (c *apiClient) getInterestSettings(ctx context.Context, tenantID string) (*invoicing.InterestSettings, error) {
+	var resp invoicing.InterestSettings
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "settings", "interest"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) updateInterestSettings(ctx context.Context, tenantID string, req *invoicing.UpdateInterestSettingsRequest) (*invoicing.InterestSettings, error) {
+	var resp invoicing.InterestSettings
+	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "settings", "interest"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) listOverdueInvoicesWithInterest(ctx context.Context, tenantID string) ([]invoicing.InterestCalculationResult, error) {
+	var resp []invoicing.InterestCalculationResult
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "invoices", "overdue-with-interest"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) getInvoiceInterest(ctx context.Context, tenantID, invoiceID string) (*invoicing.InterestCalculationResult, error) {
+	var resp invoicing.InterestCalculationResult
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "invoices", invoiceID, "interest"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) listInvoiceInterestHistory(ctx context.Context, tenantID, invoiceID string) ([]invoicing.InvoiceInterest, error) {
+	var resp []invoicing.InvoiceInterest
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "invoices", invoiceID, "interest", "history"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
 func (c *apiClient) listBankAccounts(ctx context.Context, tenantID string, activeOnly bool) ([]banking.BankAccount, error) {
 	values := url.Values{}
 	if activeOnly {

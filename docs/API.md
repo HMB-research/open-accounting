@@ -1772,6 +1772,37 @@ Payment receipt emails use the same recipient, subject, and message fields witho
 
 ---
 
+## Interest
+
+### Settings
+
+```http
+GET /tenants/{tenantId}/settings/interest
+PUT /tenants/{tenantId}/settings/interest
+Authorization: Bearer <token>
+```
+
+Update late-payment interest settings with the daily rate:
+
+```json
+{
+  "rate": 0.0005
+}
+```
+
+### Calculations
+
+```http
+GET /tenants/{tenantId}/invoices/overdue-with-interest
+GET /tenants/{tenantId}/invoices/{invoiceId}/interest
+GET /tenants/{tenantId}/invoices/{invoiceId}/interest/history
+Authorization: Bearer <token>
+```
+
+The calculation response includes the invoice number, due date, days overdue, outstanding amount, daily interest, total interest, total with interest, and currency.
+
+---
+
 ## Banking
 
 ### Bank Accounts
