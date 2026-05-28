@@ -4322,6 +4322,8 @@ func TestCLIReportsCommands(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/cash-flow":
 			require.Equal(t, "2026-01-01", r.URL.Query().Get("start_date"))
 			require.Equal(t, "2026-03-31", r.URL.Query().Get("end_date"))
+			method := r.URL.Query().Get("method")
+			assert.Contains(t, []string{"direct", "indirect"}, method)
 			if r.URL.Query().Get("format") == "csv" {
 				w.Header().Set("Content-Type", "text/csv")
 				_, _ = w.Write([]byte("section,code,description,description_et,amount,is_subtotal\nsummary,closing_cash,Closing cash,,500.00,true\n"))
@@ -4336,6 +4338,7 @@ func TestCLIReportsCommands(t *testing.T) {
 				"tenant_id":            "tenant-1",
 				"start_date":           "2026-01-01",
 				"end_date":             "2026-03-31",
+				"method":               method,
 				"operating_activities": []map[string]any{{"code": "CF_OPER_TOTAL", "description": "Operating total", "amount": "500.00"}},
 				"investing_activities": []map[string]any{},
 				"financing_activities": []map[string]any{},
@@ -4530,6 +4533,12 @@ func TestCLIReportsCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"reports", "cash-flow", "--start", "2026-01-01", "--end", "2026-03-31"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Closing cash: 500")
+	assert.Contains(t, stdout.String(), "Method: direct")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "cash-flow", "--start", "2026-01-01", "--end", "2026-03-31", "--method", "indirect"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Method: indirect")
 
 	stdout.Reset()
 	cashFlowCSVPath := filepath.Join(t.TempDir(), "cash-flow.csv")

@@ -11,6 +11,7 @@ type CashFlowStatement struct {
 	TenantID            string          `json:"tenant_id"`
 	StartDate           string          `json:"start_date"`
 	EndDate             string          `json:"end_date"`
+	Method              string          `json:"method"`
 	OperatingActivities []CashFlowItem  `json:"operating_activities"`
 	InvestingActivities []CashFlowItem  `json:"investing_activities"`
 	FinancingActivities []CashFlowItem  `json:"financing_activities"`
@@ -36,6 +37,7 @@ type CashFlowItem struct {
 type CashFlowRequest struct {
 	StartDate   string `json:"start_date"`
 	EndDate     string `json:"end_date"`
+	Method      string `json:"method,omitempty"`       // "direct" or "indirect"
 	CompareType string `json:"compare_type,omitempty"` // "", "previous_months", "previous_years", "quarters", "objects"
 }
 
@@ -66,6 +68,13 @@ const (
 	CFOperInterestPd = "CF_OPER_INTEREST_PD" // Makstud intressid
 	CFOperOther      = "CF_OPER_OTHER"       // Muud rahavood äritegevusest
 	CFOperTotal      = "CF_OPER_TOTAL"       // Rahavood äritegevusest kokku
+
+	// Operating Activities - indirect method
+	CFOperNetIncome    = "CF_OPER_NET_INCOME"   // Aruandeperioodi kasum või kahjum
+	CFOperDepreciation = "CF_OPER_DEPRECIATION" // Kulum ja amortisatsioon
+	CFOperReceivables  = "CF_OPER_RECEIVABLES"  // Nõuete muutus
+	CFOperInventory    = "CF_OPER_INVENTORY"    // Varude muutus
+	CFOperPayables     = "CF_OPER_PAYABLES"     // Võlgnevuste muutus
 
 	// Investing Activities - Rahavood investeerimistegevusest
 	CFInvFixedAssets  = "CF_INV_FIXED_ASSETS" // Materiaalse põhivara ost/müük

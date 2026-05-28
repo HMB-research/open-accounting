@@ -2046,6 +2046,9 @@ func printIncomeStatement(w io.Writer, report *accounting.IncomeStatement) {
 
 func printCashFlowStatement(w io.Writer, report *reports.CashFlowStatement) {
 	_, _ = fmt.Fprintf(w, "Cash flow %s to %s\n", report.StartDate, report.EndDate)
+	if strings.TrimSpace(report.Method) != "" {
+		_, _ = fmt.Fprintf(w, "Method: %s\n", report.Method)
+	}
 	printCashFlowItems(w, "Operating activities", report.OperatingActivities)
 	printCashFlowItems(w, "Investing activities", report.InvestingActivities)
 	printCashFlowItems(w, "Financing activities", report.FinancingActivities)

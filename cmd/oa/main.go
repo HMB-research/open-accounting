@@ -32,6 +32,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/plugin"
 	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/recurring"
+	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -8198,6 +8199,7 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		fs.SetOutput(a.stderr)
 		startDate := fs.String("start", "", "Start date in YYYY-MM-DD")
 		endDate := fs.String("end", "", "End date in YYYY-MM-DD")
+		methodFlag := fs.String("method", reports.CashFlowMethodDirect, "Cash flow method: direct or indirect")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		asCSV := fs.Bool("csv", false, "Output CSV")
 		asXLSX := fs.Bool("xlsx", false, "Output XLSX")
@@ -8212,29 +8214,33 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		if strings.TrimSpace(*startDate) == "" || strings.TrimSpace(*endDate) == "" {
 			return errors.New("start and end are required")
 		}
+		method, err := reports.NormalizeCashFlowMethod(*methodFlag)
+		if err != nil {
+			return err
+		}
 		if *asCSV {
-			content, err := client.exportCashFlowStatementCSV(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate))
+			content, err := client.exportCashFlowStatementCSV(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate), method)
 			if err != nil {
 				return err
 			}
 			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "cash flow CSV")
 		}
 		if *asXLSX {
-			content, err := client.exportCashFlowStatementXLSX(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate))
+			content, err := client.exportCashFlowStatementXLSX(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate), method)
 			if err != nil {
 				return err
 			}
 			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "cash flow XLSX")
 		}
 		if *asPDF {
-			content, err := client.exportCashFlowStatementPDF(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate))
+			content, err := client.exportCashFlowStatementPDF(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate), method)
 			if err != nil {
 				return err
 			}
 			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "cash flow PDF")
 		}
 
-		report, err := client.getCashFlowStatement(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate))
+		report, err := client.getCashFlowStatement(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate), method)
 		if err != nil {
 			return err
 		}
