@@ -2227,6 +2227,21 @@ Content-Type: application/json
 }
 ```
 
+### Import Historical KMD Declarations
+
+```http
+POST /tenants/{tenantId}/tax/kmd/import-history
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "file_name": "kmd-history.csv",
+  "csv_content": "year,month,status,submitted_at,row_code,description,tax_base,tax_amount\n2025,12,ACCEPTED,2026-01-20,1,Taxable sales,1000.00,220.00\n2025,12,ACCEPTED,2026-01-20,4,Input VAT,363.64,80.00\n"
+}
+```
+
+Imports incumbent-system KMD history without overwriting existing declaration periods. Required CSV columns are `year`, `month`, and `row_code`; `tax_base`, `tax_amount`, `status`, `submitted_at`, `description`, `total_output_vat`, and `total_input_vat` are optional migration fields.
+
 ### Export KMD to XML
 
 ```http

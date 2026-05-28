@@ -1933,6 +1933,14 @@ func (c *apiClient) generateKMD(ctx context.Context, tenantID string, req *tax.C
 	return &resp, nil
 }
 
+func (c *apiClient) importKMDHistory(ctx context.Context, tenantID string, req *tax.ImportKMDHistoryRequest) (*tax.ImportKMDHistoryResult, error) {
+	var resp tax.ImportKMDHistoryResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "tax", "kmd", "import-history"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) exportKMDXML(ctx context.Context, tenantID string, year, month int) ([]byte, error) {
 	return c.requestRaw(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "tax", "kmd", strconv.Itoa(year), strconv.Itoa(month), "xml"), nil, c.apiToken)
 }

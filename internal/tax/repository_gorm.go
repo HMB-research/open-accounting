@@ -4,6 +4,7 @@ package tax
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -146,17 +147,19 @@ func (r *GORMRepository) SaveDeclaration(ctx context.Context, schemaName string,
 		}
 
 		// Upsert declaration using raw SQL for ON CONFLICT
-		err = tx.Exec(fmt.Sprintf(`
-			INSERT INTO %s (id, tenant_id, year, month, status, total_output_vat, total_input_vat, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		err = tx.Raw(fmt.Sprintf(`
+			INSERT INTO %s (id, tenant_id, year, month, status, total_output_vat, total_input_vat, submitted_at, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT (tenant_id, year, month) DO UPDATE SET
 				status = EXCLUDED.status,
 				total_output_vat = EXCLUDED.total_output_vat,
 				total_input_vat = EXCLUDED.total_input_vat,
+				submitted_at = EXCLUDED.submitted_at,
 				updated_at = EXCLUDED.updated_at
+			RETURNING id
 		`, declarationsTable), decl.ID, decl.TenantID, decl.Year, decl.Month, decl.Status,
 			decl.TotalOutputVAT.String(), decl.TotalInputVAT.String(),
-			decl.CreatedAt, decl.UpdatedAt).Error
+			decl.SubmittedAt, decl.CreatedAt, decl.UpdatedAt).Scan(&decl.ID).Error
 		if err != nil {
 			return fmt.Errorf("insert declaration: %w", err)
 		}
@@ -194,6 +197,9 @@ func (r *GORMRepository) GetDeclaration(ctx context.Context, schemaName, tenantI
 	var declModel models.KMDDeclaration
 	err = db.Where("tenant_id = ? AND year = ? AND month = ?", tenantID, year, month).First(&declModel).Error
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("get declaration: %w", err)
 	}
 

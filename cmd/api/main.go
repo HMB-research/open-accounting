@@ -565,6 +565,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 
 				// Tax (Estonian KMD)
 				r.Post("/tax/kmd", h.HandleGenerateKMD)
+				r.Post("/tax/kmd/import-history", h.HandleImportKMDHistory)
 				r.Get("/tax/kmd", h.HandleListKMD)
 				r.Get("/tax/kmd/{year}/{month}/xml", h.HandleExportKMD)
 

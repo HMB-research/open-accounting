@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -39,6 +40,45 @@ func (h *Handlers) HandleGenerateKMD(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, decl)
+}
+
+// HandleImportKMDHistory imports historical KMD declarations from CSV data.
+// @Summary Import historical KMD declarations
+// @Description Import historical Estonian VAT declarations (KMD) from CSV data
+// @Tags Tax
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body tax.ImportKMDHistoryRequest true "CSV import payload"
+// @Success 200 {object} tax.ImportKMDHistoryResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/tax/kmd/import-history [post]
+func (h *Handlers) HandleImportKMDHistory(w http.ResponseWriter, r *http.Request) {
+	tenantCtx := h.tenantContextFromRequest(r)
+
+	var req tax.ImportKMDHistoryRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+
+	if req.FileName == "" {
+		req.FileName = "kmd-history.csv"
+	}
+
+	result, err := h.taxService.ImportKMDHistoryCSV(r.Context(), tenantCtx.schemaName, tenantCtx.tenantID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
 }
 
 // HandleListKMD lists all KMD declarations for a tenant

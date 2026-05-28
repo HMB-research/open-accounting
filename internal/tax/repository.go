@@ -126,16 +126,17 @@ func (r *PostgresRepository) SaveDeclaration(ctx context.Context, schemaName str
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	_, err = tx.Exec(ctx, fmt.Sprintf(`
-		INSERT INTO %s.kmd_declarations (id, tenant_id, year, month, status, total_output_vat, total_input_vat, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	err = tx.QueryRow(ctx, fmt.Sprintf(`
+		INSERT INTO %s.kmd_declarations (id, tenant_id, year, month, status, total_output_vat, total_input_vat, submitted_at, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (tenant_id, year, month) DO UPDATE SET
 			status = EXCLUDED.status,
 			total_output_vat = EXCLUDED.total_output_vat,
 			total_input_vat = EXCLUDED.total_input_vat,
+			submitted_at = EXCLUDED.submitted_at,
 			updated_at = EXCLUDED.updated_at
 		RETURNING id
-	`, schemaName), decl.ID, decl.TenantID, decl.Year, decl.Month, decl.Status, decl.TotalOutputVAT, decl.TotalInputVAT, decl.CreatedAt, decl.UpdatedAt)
+	`, schemaName), decl.ID, decl.TenantID, decl.Year, decl.Month, decl.Status, decl.TotalOutputVAT, decl.TotalInputVAT, decl.SubmittedAt, decl.CreatedAt, decl.UpdatedAt).Scan(&decl.ID)
 	if err != nil {
 		return fmt.Errorf("insert declaration: %w", err)
 	}
