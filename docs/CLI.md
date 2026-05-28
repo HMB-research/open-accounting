@@ -100,11 +100,14 @@ go run ./cmd/oa auth status
 go run ./cmd/oa auth tenants
 go run ./cmd/oa auth login --email you@example.com --password 'your-password' --tenant-id <tenant-id>
 go run ./cmd/oa auth refresh --refresh-token <refresh-token> --tenant-id <tenant-id>
+go run ./cmd/oa auth sessions
+go run ./cmd/oa auth sessions --include-inactive
+go run ./cmd/oa auth revoke-session --id <session-id>
 go run ./cmd/oa auth logout --refresh-token <refresh-token>
 go run ./cmd/oa auth logout
 ```
 
-`auth login` and `auth refresh` print short-lived JWT tokens. `auth refresh` returns a replacement refresh token and revokes the presented refresh session. `auth logout --refresh-token` revokes that refresh session on the server before removing local CLI config. The normal automation flow still uses `auth init`, which stores a tenant-scoped API token.
+`auth login` and `auth refresh` print short-lived JWT tokens. `auth refresh` returns a replacement refresh token and revokes the presented refresh session. `auth sessions` lists refresh sessions for the current user, and `auth revoke-session` revokes a session by id. `auth logout --refresh-token` revokes that refresh session on the server before removing local CLI config. The normal automation flow still uses `auth init`, which stores a tenant-scoped API token.
 
 ## Tenant administration
 

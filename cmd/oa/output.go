@@ -66,6 +66,33 @@ func printLoginResponse(w io.Writer, resp *loginResponse) {
 	}
 }
 
+func printRefreshSessions(w io.Writer, sessions []refreshSession) {
+	if len(sessions) == 0 {
+		_, _ = fmt.Fprintln(w, "No refresh sessions found")
+		return
+	}
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tCREATED\tLAST USED\tEXPIRES\tSTATUS")
+	for _, session := range sessions {
+		status := "active"
+		if session.RevokedAt != nil {
+			status = "revoked"
+		} else if time.Now().After(session.ExpiresAt) {
+			status = "expired"
+		}
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\n",
+			session.ID,
+			session.CreatedAt.Format(time.RFC3339),
+			formatTimePtr(session.LastUsedAt),
+			session.ExpiresAt.Format(time.RFC3339),
+			status,
+		)
+	}
+	_ = tw.Flush()
+}
+
 func printAPITokensTable(w io.Writer, tokens []apitoken.APIToken) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tNAME\tPREFIX\tEXPIRES\tLAST USED\tCREATED")

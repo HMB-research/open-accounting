@@ -45,7 +45,7 @@ Still not done:
 | Payroll, leave management, TSD generation/export | `Working` | Payroll, leave balances/records, and TSD XML/CSV export exist; automatic submission does not. |
 | KMD generation/export and historical import | `Working` | KMD generation/export and row-level historical KMD CSV import exist; direct e-MTA submission does not. |
 | Quotes, orders, fixed assets | `Working` | Features exist and have tests, but accountant-grade polish is still limited. |
-| Multi-tenant auth, RBAC, tenant isolation | `Working` | Core tenant model is in place; API startup now rejects missing or short production JWT secrets and missing production CORS origins, JWT access/refresh tokens are purpose-separated, and refresh tokens are persisted as revocable single-use sessions. Broader auth/session administration controls are still needed. |
+| Multi-tenant auth, RBAC, tenant isolation | `Working` | Core tenant model is in place; API startup now rejects missing or short production JWT secrets and missing production CORS origins, JWT access/refresh tokens are purpose-separated, and refresh tokens are persisted as revocable single-use sessions with API/CLI listing and revocation. Broader auth administration controls are still needed. |
 | CLI and API token automation | `Working` | `cmd/oa` supports operational health/demo checks, auth registration/login/refresh/token bootstrap, tenant lifecycle/user/invitation administration, plugin and plugin-registry administration, token management, accounts, contacts, employees, payroll run lifecycle, payroll history, leave balances and leave records, TSD/KMD declarations, KMD history import, and exports, invoices, payments, payment reminders and reminder rules, email settings/templates/logs/send actions, interest settings/calculations/history, period close/year-end workflows, banking accounts, bank transaction import/matching/review/reconciliation, quotes, orders, recurring invoices, fixed assets, inventory and warehouses, cost centers, analytics, core reports, document upload/download/review-summary/retention/review workflows, and opening-balance imports using tenant-scoped API tokens. |
 | Chart of accounts, contacts, employee, invoice, payroll-history, leave-balance, KMD-history, and opening-balance imports | `Working` | CSV imports exist for core setup and migration data, including employee master data plus recurring base salary setup, finalized payroll runs/payslips, leave balances, and row-level historical KMD declarations. Payroll-history, leave-balance, and KMD-history imports are exposed through API and CLI flows. |
 | Report exports | `Beta` | Trial balance, balance sheet, income statement, cash flow, aging, and balance confirmation reports now have backend CSV, XLSX, and PDF export through API and CLI. Some specialized report exports are still incomplete. |
@@ -80,7 +80,7 @@ Still not done:
 2. Add year-end reversal/reopen handling and fuller year-end packs on top of the new close/reopen and carry-forward foundation.
 3. Extend the new accountant portfolio rollup into deeper exception actions beyond banking, including dedicated accounting follow-up workflows.
 4. Add policy automation on top of the document approval, retention review, and reconciliation-evidence layer.
-5. Add broader auth/session administration controls and remaining auth hardening.
+5. Add broader auth administration controls and remaining auth hardening.
 6. Add backup monitoring/offsite storage guidance around the new backup and restore-drill scripts.
 
 ## Related Docs

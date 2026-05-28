@@ -480,6 +480,10 @@ func cliCommandForRoute(route apiRoute) (string, bool) {
 		return commandForMethod(route.Method, map[string]string{"POST": "auth refresh"})
 	case "/auth/logout":
 		return commandForMethod(route.Method, map[string]string{"POST": "auth logout"})
+	case "/auth/sessions":
+		return commandForMethod(route.Method, map[string]string{"GET": "auth sessions"})
+	case "/auth/sessions/{sessionID}":
+		return commandForMethod(route.Method, map[string]string{"DELETE": "auth revoke-session"})
 	case "/invitations/{token}":
 		return commandForMethod(route.Method, map[string]string{"GET": "invitations get"})
 	case "/invitations/accept":

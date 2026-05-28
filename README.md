@@ -314,6 +314,7 @@ open-accounting/
 - [x] Tenant-scoped API token auth and Go CLI
 - [x] Access/refresh JWT purpose separation
 - [x] Revocable, single-use refresh token sessions
+- [x] CLI/API refresh-session listing and revocation
 - [x] CSV import for chart of accounts, contacts, employees, invoices, and opening balances
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings
@@ -324,7 +325,7 @@ open-accounting/
 ### Still missing for reliable production use
 - [ ] Historical payroll and broader external migration imports
 - [ ] Broader document evidence policy enforcement
-- [ ] Broader auth/session administration controls
+- [ ] Broader auth administration controls
 - [ ] E-invoice, direct bank feeds, SEPA initiation, and automatic e-MTA submission
 
 ---

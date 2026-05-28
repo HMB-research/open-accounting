@@ -117,6 +117,22 @@ Content-Type: application/json
 }
 ```
 
+### Auth Sessions
+
+List and revoke refresh-token sessions for the authenticated user.
+
+```http
+GET /auth/sessions
+Authorization: Bearer <access-token-or-api-token>
+```
+
+Pass `include_inactive=true` to include revoked and expired sessions.
+
+```http
+DELETE /auth/sessions/{sessionID}
+Authorization: Bearer <access-token-or-api-token>
+```
+
 ---
 
 ## API Tokens
