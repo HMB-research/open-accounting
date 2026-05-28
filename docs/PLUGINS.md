@@ -280,6 +280,8 @@ type Event struct {
 
 ## UI Extension Points
 
+Frontend slot declarations are currently metadata-only. Host components keep rendering their fallback content, and the runtime logs a browser warning if enabled plugin metadata declares slot content. Plugin Svelte components are not dynamically loaded yet.
+
 ### Available Slots
 
 | Slot Name | Location | Description |
