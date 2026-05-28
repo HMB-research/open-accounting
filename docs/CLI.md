@@ -500,6 +500,18 @@ go run ./cmd/oa interest history --invoice-id <invoice-id>
 
 The interest rate is a daily decimal rate (`0.0005` = 0.05% daily). `--annual-rate` divides the provided annual decimal rate by 365 before sending it to the API. Use `--json` on interest commands for automation.
 
+## Period close
+
+```bash
+go run ./cmd/oa close events --limit 20
+go run ./cmd/oa close period --period-end 2026-03-31 --note "March close"
+go run ./cmd/oa close reopen --period-end 2026-03-31 --note "Correcting late supplier invoice"
+go run ./cmd/oa close year-end-status --period-end 2025-12-31
+go run ./cmd/oa close carry-forward --period-end 2025-12-31
+```
+
+Period close and reopen operations require a user role that can manage close workflows. Reopening requires a note, and fiscal-year periods cannot be reopened after carry-forward has been posted. Use `--json` for automation.
+
 ## Banking
 
 ```bash

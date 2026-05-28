@@ -58,6 +58,11 @@ type accountBalanceReport struct {
 	Balance   string `json:"balance"`
 }
 
+type periodCloseMutationResponse struct {
+	Tenant *tenant.Tenant           `json:"tenant"`
+	Event  *tenant.PeriodCloseEvent `json:"event"`
+}
+
 func newAPIClient(baseURL, apiToken string) *apiClient {
 	return &apiClient{
 		baseURL:  normalizeBaseURL(baseURL),
@@ -534,6 +539,57 @@ func (c *apiClient) listInvoiceInterestHistory(ctx context.Context, tenantID, in
 		return nil, err
 	}
 	return resp, nil
+}
+
+func (c *apiClient) listPeriodCloseEvents(ctx context.Context, tenantID string, limit int) ([]tenant.PeriodCloseEvent, error) {
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	pathValue := path.Join("/api/v1/tenants", tenantID, "period-close-events")
+	if encoded := values.Encode(); encoded != "" {
+		pathValue += "?" + encoded
+	}
+
+	var resp []tenant.PeriodCloseEvent
+	if err := c.request(ctx, http.MethodGet, pathValue, nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) closePeriod(ctx context.Context, tenantID string, req *tenant.ClosePeriodRequest) (*periodCloseMutationResponse, error) {
+	var resp periodCloseMutationResponse
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "period-close"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) reopenPeriod(ctx context.Context, tenantID string, req *tenant.ReopenPeriodRequest) (*periodCloseMutationResponse, error) {
+	var resp periodCloseMutationResponse
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "period-reopen"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getYearEndCloseStatus(ctx context.Context, tenantID, periodEndDate string) (*accounting.YearEndCloseStatus, error) {
+	values := url.Values{}
+	values.Set("period_end_date", periodEndDate)
+	var resp accounting.YearEndCloseStatus
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "year-end-close-status")+"?"+values.Encode(), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) createYearEndCarryForward(ctx context.Context, tenantID string, req *accounting.CreateYearEndCarryForwardRequest) (*accounting.YearEndCarryForwardResult, error) {
+	var resp accounting.YearEndCarryForwardResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "year-end-carry-forward"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }
 
 func (c *apiClient) listBankAccounts(ctx context.Context, tenantID string, activeOnly bool) ([]banking.BankAccount, error) {

@@ -1803,6 +1803,46 @@ The calculation response includes the invoice number, due date, days overdue, ou
 
 ---
 
+## Period Close and Year-End
+
+### Period Close Events
+
+```http
+GET /tenants/{tenantId}/period-close-events?limit=20
+POST /tenants/{tenantId}/period-close
+POST /tenants/{tenantId}/period-reopen
+Authorization: Bearer <token>
+```
+
+Close or reopen request:
+
+```json
+{
+  "period_end_date": "2026-03-31",
+  "note": "March close"
+}
+```
+
+Reopen requests require a note. The API rejects fiscal-year reopen requests after year-end carry-forward has been posted.
+
+### Year-End Carry-Forward
+
+```http
+GET /tenants/{tenantId}/year-end-close-status?period_end_date=2025-12-31
+POST /tenants/{tenantId}/year-end-carry-forward
+Authorization: Bearer <token>
+```
+
+Create carry-forward:
+
+```json
+{
+  "period_end_date": "2025-12-31"
+}
+```
+
+---
+
 ## Banking
 
 ### Bank Accounts

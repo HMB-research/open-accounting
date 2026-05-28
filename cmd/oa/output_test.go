@@ -26,6 +26,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tax"
+	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
 func TestPrintJSON(t *testing.T) {
@@ -363,6 +364,64 @@ func TestPrintInterestOutputs(t *testing.T) {
 	printInvoiceInterestHistoryTable(&historyBuf, []invoicing.InvoiceInterest{history})
 	assert.Contains(t, historyBuf.String(), "interest-1")
 	assert.Contains(t, historyBuf.String(), "503.5")
+}
+
+func TestPrintCloseOutputs(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	lockBefore := "2026-02-28"
+	lockAfter := "2026-03-31"
+	event := tenant.PeriodCloseEvent{
+		ID:             "close-1",
+		Action:         tenant.PeriodCloseActionClose,
+		CloseKind:      tenant.PeriodCloseKindMonthEnd,
+		PeriodEndDate:  "2026-03-31",
+		LockDateBefore: &lockBefore,
+		LockDateAfter:  &lockAfter,
+		Note:           "March close",
+		CreatedAt:      now,
+	}
+	status := accounting.YearEndCloseStatus{
+		PeriodEndDate:              "2025-12-31",
+		FiscalYearLabel:            "2025",
+		FiscalYearEndDate:          "2025-12-31",
+		CarryForwardDate:           "2026-01-01",
+		IsFiscalYearEnd:            true,
+		PeriodClosed:               true,
+		CarryForwardNeeded:         true,
+		CarryForwardReady:          true,
+		HasRetainedEarningsAccount: true,
+		RetainedEarningsAccount:    &accounting.AccountSummary{ID: "acc-retained", Code: "2999", Name: "Retained earnings"},
+		NetIncome:                  decimal.NewFromInt(1200),
+	}
+	result := accounting.YearEndCarryForwardResult{
+		JournalEntry: &accounting.JournalEntry{ID: "je-1", EntryNumber: "JE-2026-001", Status: accounting.StatusPosted},
+		Status:       &status,
+	}
+
+	var eventsBuf bytes.Buffer
+	printPeriodCloseEventsTable(&eventsBuf, []tenant.PeriodCloseEvent{event})
+	assert.Contains(t, eventsBuf.String(), "close-1")
+	assert.Contains(t, eventsBuf.String(), "March close")
+
+	var mutationBuf bytes.Buffer
+	printPeriodCloseMutationResponse(&mutationBuf, "Closed period", &periodCloseMutationResponse{
+		Tenant: &tenant.Tenant{Settings: tenant.TenantSettings{PeriodLockDate: &lockAfter}},
+		Event:  &event,
+	})
+	assert.Contains(t, mutationBuf.String(), "Closed period")
+	assert.Contains(t, mutationBuf.String(), "Tenant lock date: 2026-03-31")
+
+	var statusBuf bytes.Buffer
+	printYearEndCloseStatus(&statusBuf, &status)
+	assert.Contains(t, statusBuf.String(), "Year-end close status 2025")
+	assert.Contains(t, statusBuf.String(), "Carry-forward ready: true")
+
+	var resultBuf bytes.Buffer
+	printYearEndCarryForwardResult(&resultBuf, &result)
+	assert.Contains(t, resultBuf.String(), "Created year-end carry-forward JE-2026-001")
+	assert.Contains(t, resultBuf.String(), "Status: POSTED")
 }
 
 func TestPrintBankingOutputs(t *testing.T) {
