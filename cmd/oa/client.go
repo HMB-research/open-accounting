@@ -19,6 +19,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/analytics"
 	"github.com/HMB-research/open-accounting/internal/apitoken"
+	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
@@ -462,6 +463,113 @@ func (c *apiClient) deleteOrder(ctx context.Context, tenantID, orderID string) e
 func (c *apiClient) updateOrderStatus(ctx context.Context, tenantID, orderID, action string) (map[string]string, error) {
 	var resp map[string]string
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "orders", orderID, action), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) listAssetCategories(ctx context.Context, tenantID string) ([]assets.AssetCategory, error) {
+	var resp []assets.AssetCategory
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "asset-categories"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createAssetCategory(ctx context.Context, tenantID string, req *assets.CreateCategoryRequest) (*assets.AssetCategory, error) {
+	var resp assets.AssetCategory
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "asset-categories"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getAssetCategory(ctx context.Context, tenantID, categoryID string) (*assets.AssetCategory, error) {
+	var resp assets.AssetCategory
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "asset-categories", categoryID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) deleteAssetCategory(ctx context.Context, tenantID, categoryID string) error {
+	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "asset-categories", categoryID), nil, c.apiToken, nil)
+}
+
+func (c *apiClient) listAssets(ctx context.Context, tenantID string, filter assets.AssetFilter) ([]assets.FixedAsset, error) {
+	values := url.Values{}
+	if filter.Status != "" {
+		values.Set("status", string(filter.Status))
+	}
+	if strings.TrimSpace(filter.CategoryID) != "" {
+		values.Set("category_id", strings.TrimSpace(filter.CategoryID))
+	}
+	if strings.TrimSpace(filter.Search) != "" {
+		values.Set("search", strings.TrimSpace(filter.Search))
+	}
+
+	var resp []assets.FixedAsset
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "assets"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createAsset(ctx context.Context, tenantID string, req *assets.CreateAssetRequest) (*assets.FixedAsset, error) {
+	var resp assets.FixedAsset
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "assets"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getAsset(ctx context.Context, tenantID, assetID string) (*assets.FixedAsset, error) {
+	var resp assets.FixedAsset
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "assets", assetID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) updateAsset(ctx context.Context, tenantID, assetID string, req *assets.UpdateAssetRequest) (*assets.FixedAsset, error) {
+	var resp assets.FixedAsset
+	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "assets", assetID), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) deleteAsset(ctx context.Context, tenantID, assetID string) error {
+	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "assets", assetID), nil, c.apiToken, nil)
+}
+
+func (c *apiClient) activateAsset(ctx context.Context, tenantID, assetID string) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "assets", assetID, "activate"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) disposeAsset(ctx context.Context, tenantID, assetID string, req *assets.DisposeAssetRequest) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "assets", assetID, "dispose"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) recordAssetDepreciation(ctx context.Context, tenantID, assetID string) (*assets.DepreciationEntry, error) {
+	var resp assets.DepreciationEntry
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "assets", assetID, "depreciation"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) listAssetDepreciation(ctx context.Context, tenantID, assetID string) ([]assets.DepreciationEntry, error) {
+	var resp []assets.DepreciationEntry
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "assets", assetID, "depreciation"), nil, c.apiToken, &resp); err != nil {
 		return nil, err
 	}
 	return resp, nil

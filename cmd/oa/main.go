@@ -18,6 +18,7 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/apitoken"
+	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
@@ -77,6 +78,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runQuotes(ctx, args[1:])
 	case "orders":
 		return a.runOrders(ctx, args[1:])
+	case "assets":
+		return a.runAssets(ctx, args[1:])
 	case "reports":
 		return a.runReports(ctx, args[1:])
 	case "documents":
@@ -163,6 +166,19 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  orders ship               Mark an order shipped")
 	_, _ = fmt.Fprintln(a.stdout, "  orders deliver            Mark an order delivered")
 	_, _ = fmt.Fprintln(a.stdout, "  orders cancel             Cancel an order")
+	_, _ = fmt.Fprintln(a.stdout, "  assets categories list    List fixed asset categories")
+	_, _ = fmt.Fprintln(a.stdout, "  assets categories create  Create a fixed asset category")
+	_, _ = fmt.Fprintln(a.stdout, "  assets categories get     Show one fixed asset category")
+	_, _ = fmt.Fprintln(a.stdout, "  assets categories delete  Delete a fixed asset category")
+	_, _ = fmt.Fprintln(a.stdout, "  assets list               List fixed assets")
+	_, _ = fmt.Fprintln(a.stdout, "  assets create             Create a fixed asset")
+	_, _ = fmt.Fprintln(a.stdout, "  assets get                Show one fixed asset")
+	_, _ = fmt.Fprintln(a.stdout, "  assets update             Update a fixed asset")
+	_, _ = fmt.Fprintln(a.stdout, "  assets delete             Delete a draft fixed asset")
+	_, _ = fmt.Fprintln(a.stdout, "  assets activate           Activate a fixed asset")
+	_, _ = fmt.Fprintln(a.stdout, "  assets dispose            Dispose or sell a fixed asset")
+	_, _ = fmt.Fprintln(a.stdout, "  assets depreciate         Record monthly depreciation")
+	_, _ = fmt.Fprintln(a.stdout, "  assets depreciation       List depreciation history")
 	_, _ = fmt.Fprintln(a.stdout, "  reports trial-balance     Show trial balance")
 	_, _ = fmt.Fprintln(a.stdout, "  reports account-balance   Show one account balance")
 	_, _ = fmt.Fprintln(a.stdout, "  reports balance-sheet     Show balance sheet")
@@ -1635,6 +1651,463 @@ func (a *cliApp) runOrders(ctx context.Context, args []string) error {
 
 	default:
 		return fmt.Errorf("unknown orders subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runAssets(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("assets subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+	if args[0] == "categories" {
+		return a.runAssetCategories(ctx, cfg, client, args[1:])
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("assets list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		statusFlag := fs.String("status", "", "Asset status")
+		categoryID := fs.String("category-id", "", "Category id")
+		search := fs.String("search", "", "Search term")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		status, err := parseOptionalAssetStatus(*statusFlag)
+		if err != nil {
+			return err
+		}
+
+		assetList, err := client.listAssets(ctx, cfg.TenantID, assets.AssetFilter{
+			Status:     status,
+			CategoryID: strings.TrimSpace(*categoryID),
+			Search:     strings.TrimSpace(*search),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, assetList)
+		}
+		printAssetsTable(a.stdout, assetList)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("assets create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		name := fs.String("name", "", "Asset name")
+		description := fs.String("description", "", "Description")
+		categoryID := fs.String("category-id", "", "Category id")
+		purchaseDate := fs.String("purchase-date", "", "Purchase date in YYYY-MM-DD")
+		purchaseCostFlag := fs.String("purchase-cost", "", "Purchase cost")
+		supplierID := fs.String("supplier-id", "", "Supplier id")
+		serialNumber := fs.String("serial-number", "", "Serial number")
+		location := fs.String("location", "", "Location")
+		depreciationMethodFlag := fs.String("depreciation-method", "STRAIGHT_LINE", "Depreciation method")
+		usefulLifeMonthsFlag := fs.String("useful-life-months", "60", "Useful life in months")
+		residualValueFlag := fs.String("residual-value", "0", "Residual value")
+		depreciationStartDate := fs.String("depreciation-start-date", "", "Depreciation start date in YYYY-MM-DD")
+		assetAccountID := fs.String("asset-account-id", "", "Asset account id")
+		depreciationExpenseAccountID := fs.String("depreciation-expense-account-id", "", "Depreciation expense account id")
+		accumulatedDepreciationAccountID := fs.String("accumulated-depreciation-account-id", "", "Accumulated depreciation account id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*name) == "" {
+			return errors.New("name is required")
+		}
+		purchaseDateValue, err := parseRequiredDate("purchase-date", *purchaseDate)
+		if err != nil {
+			return err
+		}
+		purchaseCost, err := parseRequiredPositiveDecimal("purchase-cost", *purchaseCostFlag)
+		if err != nil {
+			return err
+		}
+		depreciationMethod, err := parseOptionalDepreciationMethod(*depreciationMethodFlag)
+		if err != nil {
+			return err
+		}
+		usefulLifeMonths, err := parseRequiredPositiveInt("useful-life-months", *usefulLifeMonthsFlag)
+		if err != nil {
+			return err
+		}
+		residualValue, err := parseRequiredNonNegativeDecimal("residual-value", *residualValueFlag)
+		if err != nil {
+			return err
+		}
+		depreciationStartDateValue, err := parseOptionalDate("depreciation-start-date", *depreciationStartDate)
+		if err != nil {
+			return err
+		}
+
+		asset, err := client.createAsset(ctx, cfg.TenantID, &assets.CreateAssetRequest{
+			Name:                          strings.TrimSpace(*name),
+			Description:                   strings.TrimSpace(*description),
+			CategoryID:                    optionalStringPtr(*categoryID),
+			PurchaseDate:                  purchaseDateValue,
+			PurchaseCost:                  purchaseCost,
+			SupplierID:                    optionalStringPtr(*supplierID),
+			SerialNumber:                  strings.TrimSpace(*serialNumber),
+			Location:                      strings.TrimSpace(*location),
+			DepreciationMethod:            depreciationMethod,
+			UsefulLifeMonths:              usefulLifeMonths,
+			ResidualValue:                 residualValue,
+			DepreciationStartDate:         depreciationStartDateValue,
+			AssetAccountID:                optionalStringPtr(*assetAccountID),
+			DepreciationExpenseAccountID:  optionalStringPtr(*depreciationExpenseAccountID),
+			AccumulatedDepreciationAcctID: optionalStringPtr(*accumulatedDepreciationAccountID),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, asset)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created asset %s (%s)\n", asset.AssetNumber, asset.ID)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("assets get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		assetID := fs.String("id", "", "Asset id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*assetID) == "" {
+			return errors.New("id is required")
+		}
+
+		asset, err := client.getAsset(ctx, cfg.TenantID, strings.TrimSpace(*assetID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, asset)
+		}
+		printAsset(a.stdout, asset)
+		return nil
+
+	case "update":
+		fs := flag.NewFlagSet("assets update", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		assetID := fs.String("id", "", "Asset id")
+		name := fs.String("name", "", "Asset name")
+		description := fs.String("description", "", "Description")
+		categoryID := fs.String("category-id", "", "Category id")
+		serialNumber := fs.String("serial-number", "", "Serial number")
+		location := fs.String("location", "", "Location")
+		depreciationMethodFlag := fs.String("depreciation-method", "STRAIGHT_LINE", "Depreciation method")
+		usefulLifeMonthsFlag := fs.String("useful-life-months", "60", "Useful life in months")
+		residualValueFlag := fs.String("residual-value", "0", "Residual value")
+		assetAccountID := fs.String("asset-account-id", "", "Asset account id")
+		depreciationExpenseAccountID := fs.String("depreciation-expense-account-id", "", "Depreciation expense account id")
+		accumulatedDepreciationAccountID := fs.String("accumulated-depreciation-account-id", "", "Accumulated depreciation account id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*assetID) == "" {
+			return errors.New("id is required")
+		}
+		if strings.TrimSpace(*name) == "" {
+			return errors.New("name is required")
+		}
+		depreciationMethod, err := parseOptionalDepreciationMethod(*depreciationMethodFlag)
+		if err != nil {
+			return err
+		}
+		usefulLifeMonths, err := parseRequiredPositiveInt("useful-life-months", *usefulLifeMonthsFlag)
+		if err != nil {
+			return err
+		}
+		residualValue, err := parseRequiredNonNegativeDecimal("residual-value", *residualValueFlag)
+		if err != nil {
+			return err
+		}
+
+		asset, err := client.updateAsset(ctx, cfg.TenantID, strings.TrimSpace(*assetID), &assets.UpdateAssetRequest{
+			Name:                          strings.TrimSpace(*name),
+			Description:                   strings.TrimSpace(*description),
+			CategoryID:                    optionalStringPtr(*categoryID),
+			SerialNumber:                  strings.TrimSpace(*serialNumber),
+			Location:                      strings.TrimSpace(*location),
+			DepreciationMethod:            depreciationMethod,
+			UsefulLifeMonths:              usefulLifeMonths,
+			ResidualValue:                 residualValue,
+			AssetAccountID:                optionalStringPtr(*assetAccountID),
+			DepreciationExpenseAccountID:  optionalStringPtr(*depreciationExpenseAccountID),
+			AccumulatedDepreciationAcctID: optionalStringPtr(*accumulatedDepreciationAccountID),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, asset)
+		}
+		printAsset(a.stdout, asset)
+		return nil
+
+	case "delete":
+		fs := flag.NewFlagSet("assets delete", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		assetID := fs.String("id", "", "Asset id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*assetID) == "" {
+			return errors.New("id is required")
+		}
+
+		if err := client.deleteAsset(ctx, cfg.TenantID, strings.TrimSpace(*assetID)); err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, map[string]string{"status": "deleted"})
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Deleted asset %s\n", strings.TrimSpace(*assetID))
+		return nil
+
+	case "activate":
+		fs := flag.NewFlagSet("assets activate", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		assetID := fs.String("id", "", "Asset id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*assetID) == "" {
+			return errors.New("id is required")
+		}
+
+		result, err := client.activateAsset(ctx, cfg.TenantID, strings.TrimSpace(*assetID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Activated asset %s\n", strings.TrimSpace(*assetID))
+		return nil
+
+	case "dispose":
+		fs := flag.NewFlagSet("assets dispose", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		assetID := fs.String("id", "", "Asset id")
+		disposalDate := fs.String("disposal-date", "", "Disposal date in YYYY-MM-DD")
+		methodFlag := fs.String("method", "", "Disposal method")
+		proceedsFlag := fs.String("proceeds", "0", "Disposal proceeds")
+		notes := fs.String("notes", "", "Disposal notes")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*assetID) == "" {
+			return errors.New("id is required")
+		}
+		disposalDateValue, err := parseRequiredDate("disposal-date", *disposalDate)
+		if err != nil {
+			return err
+		}
+		method, err := parseRequiredDisposalMethod(*methodFlag)
+		if err != nil {
+			return err
+		}
+		proceeds, err := parseRequiredNonNegativeDecimal("proceeds", *proceedsFlag)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.disposeAsset(ctx, cfg.TenantID, strings.TrimSpace(*assetID), &assets.DisposeAssetRequest{
+			DisposalDate:     disposalDateValue,
+			DisposalMethod:   method,
+			DisposalProceeds: proceeds,
+			DisposalNotes:    strings.TrimSpace(*notes),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Disposed asset %s\n", strings.TrimSpace(*assetID))
+		return nil
+
+	case "depreciate":
+		fs := flag.NewFlagSet("assets depreciate", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		assetID := fs.String("id", "", "Asset id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*assetID) == "" {
+			return errors.New("id is required")
+		}
+
+		entry, err := client.recordAssetDepreciation(ctx, cfg.TenantID, strings.TrimSpace(*assetID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, entry)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Recorded depreciation %s for asset %s\n", entry.DepreciationAmount.String(), strings.TrimSpace(*assetID))
+		return nil
+
+	case "depreciation":
+		fs := flag.NewFlagSet("assets depreciation", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		assetID := fs.String("id", "", "Asset id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*assetID) == "" {
+			return errors.New("id is required")
+		}
+
+		entries, err := client.listAssetDepreciation(ctx, cfg.TenantID, strings.TrimSpace(*assetID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, entries)
+		}
+		printDepreciationEntriesTable(a.stdout, entries)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown assets subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runAssetCategories(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("assets categories subcommand required")
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("assets categories list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		categories, err := client.listAssetCategories(ctx, cfg.TenantID)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, categories)
+		}
+		printAssetCategoriesTable(a.stdout, categories)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("assets categories create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		name := fs.String("name", "", "Category name")
+		description := fs.String("description", "", "Description")
+		depreciationMethodFlag := fs.String("depreciation-method", "STRAIGHT_LINE", "Depreciation method")
+		usefulLifeMonthsFlag := fs.String("useful-life-months", "60", "Default useful life in months")
+		residualPercentFlag := fs.String("residual-percent", "0", "Default residual value percentage")
+		assetAccountID := fs.String("asset-account-id", "", "Asset account id")
+		depreciationExpenseAccountID := fs.String("depreciation-expense-account-id", "", "Depreciation expense account id")
+		accumulatedDepreciationAccountID := fs.String("accumulated-depreciation-account-id", "", "Accumulated depreciation account id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*name) == "" {
+			return errors.New("name is required")
+		}
+		depreciationMethod, err := parseOptionalDepreciationMethod(*depreciationMethodFlag)
+		if err != nil {
+			return err
+		}
+		usefulLifeMonths, err := parseRequiredPositiveInt("useful-life-months", *usefulLifeMonthsFlag)
+		if err != nil {
+			return err
+		}
+		residualPercent, err := parseRequiredNonNegativeDecimal("residual-percent", *residualPercentFlag)
+		if err != nil {
+			return err
+		}
+
+		category, err := client.createAssetCategory(ctx, cfg.TenantID, &assets.CreateCategoryRequest{
+			Name:                          strings.TrimSpace(*name),
+			Description:                   strings.TrimSpace(*description),
+			DepreciationMethod:            depreciationMethod,
+			DefaultUsefulLifeMonths:       usefulLifeMonths,
+			DefaultResidualValuePercent:   residualPercent,
+			AssetAccountID:                optionalStringPtr(*assetAccountID),
+			DepreciationExpenseAccountID:  optionalStringPtr(*depreciationExpenseAccountID),
+			AccumulatedDepreciationAcctID: optionalStringPtr(*accumulatedDepreciationAccountID),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, category)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created asset category %s (%s)\n", category.Name, category.ID)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("assets categories get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		categoryID := fs.String("id", "", "Category id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*categoryID) == "" {
+			return errors.New("id is required")
+		}
+
+		category, err := client.getAssetCategory(ctx, cfg.TenantID, strings.TrimSpace(*categoryID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, category)
+		}
+		printAssetCategory(a.stdout, category)
+		return nil
+
+	case "delete":
+		fs := flag.NewFlagSet("assets categories delete", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		categoryID := fs.String("id", "", "Category id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*categoryID) == "" {
+			return errors.New("id is required")
+		}
+
+		if err := client.deleteAssetCategory(ctx, cfg.TenantID, strings.TrimSpace(*categoryID)); err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, map[string]string{"status": "deleted"})
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Deleted asset category %s\n", strings.TrimSpace(*categoryID))
+		return nil
+
+	default:
+		return fmt.Errorf("unknown assets categories subcommand %q", args[0])
 	}
 }
 
@@ -3154,6 +3627,45 @@ func parseOptionalOrderStatus(value string) (orders.OrderStatus, error) {
 		return orders.OrderStatus(normalized), nil
 	default:
 		return "", fmt.Errorf("invalid order status %q", value)
+	}
+}
+
+func parseOptionalAssetStatus(value string) (assets.AssetStatus, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	switch assets.AssetStatus(normalized) {
+	case assets.AssetStatusDraft, assets.AssetStatusActive, assets.AssetStatusDisposed, assets.AssetStatusSold:
+		return assets.AssetStatus(normalized), nil
+	default:
+		return "", fmt.Errorf("invalid asset status %q", value)
+	}
+}
+
+func parseOptionalDepreciationMethod(value string) (assets.DepreciationMethod, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	switch assets.DepreciationMethod(normalized) {
+	case assets.DepreciationStraightLine, assets.DepreciationDecliningBalance, assets.DepreciationUnitsOfProd:
+		return assets.DepreciationMethod(normalized), nil
+	default:
+		return "", fmt.Errorf("invalid depreciation method %q", value)
+	}
+}
+
+func parseRequiredDisposalMethod(value string) (assets.DisposalMethod, error) {
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	switch assets.DisposalMethod(normalized) {
+	case assets.DisposalSold, assets.DisposalScrapped, assets.DisposalDonated, assets.DisposalLost:
+		return assets.DisposalMethod(normalized), nil
+	default:
+		if normalized == "" {
+			return "", errors.New("method is required")
+		}
+		return "", fmt.Errorf("invalid disposal method %q", value)
 	}
 }
 

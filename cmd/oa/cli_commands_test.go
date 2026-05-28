@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
+	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
@@ -851,6 +852,255 @@ func TestCLIOrderCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"orders", "delete", "--id", "order-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Deleted order order-1")
+}
+
+func TestCLIAssetCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	categoryPayload := map[string]any{
+		"id":                                  "cat-1",
+		"tenant_id":                           "tenant-1",
+		"name":                                "Equipment",
+		"description":                         "Office equipment",
+		"depreciation_method":                 "STRAIGHT_LINE",
+		"default_useful_life_months":          60,
+		"default_residual_value_percent":      "10.00",
+		"asset_account_id":                    "acc-asset",
+		"depreciation_expense_account_id":     "acc-expense",
+		"accumulated_depreciation_account_id": "acc-accum",
+		"created_at":                          "2026-03-15T12:00:00Z",
+		"updated_at":                          "2026-03-15T12:00:00Z",
+	}
+	assetPayload := func(status string) map[string]any {
+		return map[string]any{
+			"id":                                  "asset-1",
+			"tenant_id":                           "tenant-1",
+			"asset_number":                        "FA-00001",
+			"name":                                "Laptop",
+			"description":                         "Developer laptop",
+			"category_id":                         "cat-1",
+			"status":                              status,
+			"purchase_date":                       "2026-03-15T00:00:00Z",
+			"purchase_cost":                       "1200.00",
+			"supplier_id":                         "supplier-1",
+			"serial_number":                       "SN-1",
+			"location":                            "Tallinn",
+			"depreciation_method":                 "STRAIGHT_LINE",
+			"useful_life_months":                  36,
+			"residual_value":                      "100.00",
+			"depreciation_start_date":             "2026-04-01T00:00:00Z",
+			"accumulated_depreciation":            "50.00",
+			"book_value":                          "1150.00",
+			"last_depreciation_date":              "2026-04-30T00:00:00Z",
+			"asset_account_id":                    "acc-asset",
+			"depreciation_expense_account_id":     "acc-expense",
+			"accumulated_depreciation_account_id": "acc-accum",
+			"created_at":                          "2026-03-15T12:00:00Z",
+			"created_by":                          "user-1",
+			"updated_at":                          "2026-03-15T12:00:00Z",
+		}
+	}
+	depreciationPayload := map[string]any{
+		"id":                  "dep-1",
+		"tenant_id":           "tenant-1",
+		"asset_id":            "asset-1",
+		"depreciation_date":   "2026-04-30T00:00:00Z",
+		"period_start":        "2026-04-01T00:00:00Z",
+		"period_end":          "2026-04-30T00:00:00Z",
+		"depreciation_amount": "25.00",
+		"accumulated_total":   "75.00",
+		"book_value_after":    "1125.00",
+		"created_at":          "2026-04-30T12:00:00Z",
+		"created_by":          "user-1",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/asset-categories":
+			_ = json.NewEncoder(w).Encode([]map[string]any{categoryPayload})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/asset-categories":
+			var req assets.CreateCategoryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Equipment", req.Name)
+			assert.Equal(t, assets.DepreciationStraightLine, req.DepreciationMethod)
+			assert.Equal(t, 60, req.DefaultUsefulLifeMonths)
+			assert.True(t, req.DefaultResidualValuePercent.Equal(decimal.RequireFromString("10.00")))
+			require.NotNil(t, req.AssetAccountID)
+			assert.Equal(t, "acc-asset", *req.AssetAccountID)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(categoryPayload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/asset-categories/cat-1":
+			_ = json.NewEncoder(w).Encode(categoryPayload)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/asset-categories/cat-1":
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/assets":
+			require.Equal(t, "ACTIVE", r.URL.Query().Get("status"))
+			require.Equal(t, "cat-1", r.URL.Query().Get("category_id"))
+			require.Equal(t, "Laptop", r.URL.Query().Get("search"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{assetPayload("ACTIVE")})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/assets":
+			var req assets.CreateAssetRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Laptop", req.Name)
+			assert.Equal(t, "2026-03-15", req.PurchaseDate.Format("2006-01-02"))
+			assert.True(t, req.PurchaseCost.Equal(decimal.RequireFromString("1200.00")))
+			assert.Equal(t, assets.DepreciationStraightLine, req.DepreciationMethod)
+			assert.Equal(t, 36, req.UsefulLifeMonths)
+			assert.True(t, req.ResidualValue.Equal(decimal.RequireFromString("100.00")))
+			require.NotNil(t, req.DepreciationStartDate)
+			assert.Equal(t, "2026-04-01", req.DepreciationStartDate.Format("2006-01-02"))
+			require.NotNil(t, req.CategoryID)
+			require.NotNil(t, req.SupplierID)
+			assert.Equal(t, "cat-1", *req.CategoryID)
+			assert.Equal(t, "supplier-1", *req.SupplierID)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(assetPayload("DRAFT"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-1":
+			_ = json.NewEncoder(w).Encode(assetPayload("ACTIVE"))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-1":
+			var req assets.UpdateAssetRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Updated laptop", req.Name)
+			assert.Equal(t, "Tartu", req.Location)
+			assert.Equal(t, 48, req.UsefulLifeMonths)
+			assert.True(t, req.ResidualValue.Equal(decimal.RequireFromString("150.00")))
+			_ = json.NewEncoder(w).Encode(assetPayload("ACTIVE"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-1/activate":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "active"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-1/dispose":
+			var req assets.DisposeAssetRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-05-01", req.DisposalDate.Format("2006-01-02"))
+			assert.Equal(t, assets.DisposalSold, req.DisposalMethod)
+			assert.True(t, req.DisposalProceeds.Equal(decimal.RequireFromString("900.00")))
+			assert.Equal(t, "Sold to employee", req.DisposalNotes)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "disposed"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-1/depreciation":
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(depreciationPayload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-1/depreciation":
+			_ = json.NewEncoder(w).Encode([]map[string]any{depreciationPayload})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-1":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"assets", "categories", "list", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Equipment"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"assets", "categories", "create",
+		"--name", "Equipment",
+		"--description", "Office equipment",
+		"--depreciation-method", "straight_line",
+		"--useful-life-months", "60",
+		"--residual-percent", "10.00",
+		"--asset-account-id", "acc-asset",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created asset category Equipment (cat-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"assets", "categories", "get", "--id", "cat-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Asset category Equipment")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"assets", "categories", "delete", "--id", "cat-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Deleted asset category cat-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"assets", "list", "--status", "active", "--category-id", "cat-1", "--search", "Laptop", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"asset_number": "FA-00001"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"assets", "create",
+		"--name", "Laptop",
+		"--description", "Developer laptop",
+		"--category-id", "cat-1",
+		"--purchase-date", "2026-03-15",
+		"--purchase-cost", "1200.00",
+		"--supplier-id", "supplier-1",
+		"--serial-number", "SN-1",
+		"--location", "Tallinn",
+		"--depreciation-method", "straight_line",
+		"--useful-life-months", "36",
+		"--residual-value", "100.00",
+		"--depreciation-start-date", "2026-04-01",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created asset FA-00001 (asset-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"assets", "get", "--id", "asset-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Asset FA-00001 Laptop")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"assets", "update",
+		"--id", "asset-1",
+		"--name", "Updated laptop",
+		"--location", "Tartu",
+		"--useful-life-months", "48",
+		"--residual-value", "150.00",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Asset FA-00001")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"assets", "activate", "--id", "asset-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Activated asset asset-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"assets", "dispose",
+		"--id", "asset-1",
+		"--disposal-date", "2026-05-01",
+		"--method", "sold",
+		"--proceeds", "900.00",
+		"--notes", "Sold to employee",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Disposed asset asset-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"assets", "depreciate", "--id", "asset-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Recorded depreciation 25")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"assets", "depreciation", "--id", "asset-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "dep-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"assets", "delete", "--id", "asset-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Deleted asset asset-1")
 }
 
 func TestCLIJournalEntryCommands(t *testing.T) {
@@ -2345,6 +2595,30 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	_, err = parseOptionalOrderStatus("bad")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid order status")
+
+	assetStatus, err := parseOptionalAssetStatus("disposed")
+	require.NoError(t, err)
+	assert.Equal(t, assets.AssetStatusDisposed, assetStatus)
+
+	_, err = parseOptionalAssetStatus("bad")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid asset status")
+
+	depreciationMethod, err := parseOptionalDepreciationMethod("units_of_production")
+	require.NoError(t, err)
+	assert.Equal(t, assets.DepreciationUnitsOfProd, depreciationMethod)
+
+	_, err = parseOptionalDepreciationMethod("bad")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid depreciation method")
+
+	disposalMethod, err := parseRequiredDisposalMethod("scrapped")
+	require.NoError(t, err)
+	assert.Equal(t, assets.DisposalScrapped, disposalMethod)
+
+	_, err = parseRequiredDisposalMethod("")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "method is required")
 
 	var invoiceLines invoiceLineFlags
 	require.NoError(t, invoiceLines.Set("description=Service,quantity=1,unit_price=100,vat_rate=22"))

@@ -12,6 +12,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/analytics"
 	"github.com/HMB-research/open-accounting/internal/apitoken"
+	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
@@ -318,6 +319,87 @@ func TestPrintOrderOutputs(t *testing.T) {
 	assert.Contains(t, orderBuf.String(), "Expected delivery: 2026-03-22")
 	assert.Contains(t, orderBuf.String(), "Converted invoice: inv-1")
 	assert.Contains(t, orderBuf.String(), "Consulting")
+}
+
+func TestPrintAssetOutputs(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	category := assets.AssetCategory{
+		ID:                          "cat-1",
+		TenantID:                    "tenant-1",
+		Name:                        "Equipment",
+		Description:                 "Office equipment",
+		DepreciationMethod:          assets.DepreciationStraightLine,
+		DefaultUsefulLifeMonths:     60,
+		DefaultResidualValuePercent: decimal.NewFromInt(10),
+		CreatedAt:                   now,
+		UpdatedAt:                   now,
+	}
+	categoryID := "cat-1"
+	supplierID := "supplier-1"
+	depStart := now
+	lastDep := now.AddDate(0, 1, 0)
+	asset := assets.FixedAsset{
+		ID:                      "asset-1",
+		TenantID:                "tenant-1",
+		AssetNumber:             "FA-00001",
+		Name:                    "Laptop",
+		Description:             "Developer laptop",
+		CategoryID:              &categoryID,
+		Status:                  assets.AssetStatusActive,
+		PurchaseDate:            now,
+		PurchaseCost:            decimal.NewFromInt(1200),
+		SupplierID:              &supplierID,
+		SerialNumber:            "SN-1",
+		Location:                "Tallinn",
+		DepreciationMethod:      assets.DepreciationStraightLine,
+		UsefulLifeMonths:        36,
+		ResidualValue:           decimal.NewFromInt(100),
+		DepreciationStartDate:   &depStart,
+		AccumulatedDepreciation: decimal.NewFromInt(50),
+		BookValue:               decimal.NewFromInt(1150),
+		LastDepreciationDate:    &lastDep,
+		CreatedAt:               now,
+		CreatedBy:               "user-1",
+		UpdatedAt:               now,
+	}
+	entry := assets.DepreciationEntry{
+		ID:                 "dep-1",
+		TenantID:           "tenant-1",
+		AssetID:            "asset-1",
+		DepreciationDate:   now,
+		PeriodStart:        now,
+		PeriodEnd:          now.AddDate(0, 1, -1),
+		DepreciationAmount: decimal.NewFromInt(25),
+		AccumulatedTotal:   decimal.NewFromInt(75),
+		BookValueAfter:     decimal.NewFromInt(1125),
+		CreatedAt:          now,
+		CreatedBy:          "user-1",
+	}
+
+	var categoriesBuf bytes.Buffer
+	printAssetCategoriesTable(&categoriesBuf, []assets.AssetCategory{category})
+	assert.Contains(t, categoriesBuf.String(), "Equipment")
+
+	var categoryBuf bytes.Buffer
+	printAssetCategory(&categoryBuf, &category)
+	assert.Contains(t, categoryBuf.String(), "Office equipment")
+
+	var assetsBuf bytes.Buffer
+	printAssetsTable(&assetsBuf, []assets.FixedAsset{asset})
+	assert.Contains(t, assetsBuf.String(), "FA-00001")
+	assert.Contains(t, assetsBuf.String(), "1150")
+
+	var assetBuf bytes.Buffer
+	printAsset(&assetBuf, &asset)
+	assert.Contains(t, assetBuf.String(), "Asset FA-00001 Laptop")
+	assert.Contains(t, assetBuf.String(), "Serial number: SN-1")
+
+	var depreciationBuf bytes.Buffer
+	printDepreciationEntriesTable(&depreciationBuf, []assets.DepreciationEntry{entry})
+	assert.Contains(t, depreciationBuf.String(), "dep-1")
+	assert.Contains(t, depreciationBuf.String(), "25")
 }
 
 func TestPrintPayrollOutputs(t *testing.T) {

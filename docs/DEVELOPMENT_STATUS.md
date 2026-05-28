@@ -48,7 +48,7 @@ Still not done:
 | KMD generation/export | `Working` | KMD generation/export exists; direct e-MTA submission does not. |
 | Quotes, orders, fixed assets | `Working` | Features exist and have tests, but accountant-grade polish is still limited. |
 | Multi-tenant auth, RBAC, tenant isolation | `Working` | Core tenant model is in place; auth hardening is still needed for production trust. |
-| CLI and API token automation | `Working` | `cmd/oa` supports token bootstrap, token management, accounts, contacts, employees, payroll run lifecycle, payroll history, leave balances, TSD/KMD declarations and exports, invoices, payments, quotes, orders, core reports, document workflows, and opening-balance imports using tenant-scoped API tokens. |
+| CLI and API token automation | `Working` | `cmd/oa` supports token bootstrap, token management, accounts, contacts, employees, payroll run lifecycle, payroll history, leave balances, TSD/KMD declarations and exports, invoices, payments, quotes, orders, fixed assets, core reports, document workflows, and opening-balance imports using tenant-scoped API tokens. |
 | Chart of accounts, contacts, employee, invoice, payroll-history, leave-balance, and opening-balance imports | `Working` | CSV imports exist for core setup and migration data, including employee master data plus recurring base salary setup, finalized payroll runs/payslips, and leave balances. Payroll-history and leave-balance imports are exposed through API, web UI, and CLI flows. |
 | Report exports | `Beta` | CSV/XLSX export exists, but the current path is mostly client-side and not yet authoritative. |
 | Cash flow reporting | `Beta` | Present in code and UI, but needs more accountant-grade validation before stronger claims. |
