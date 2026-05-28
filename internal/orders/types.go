@@ -154,6 +154,30 @@ type CreateOrderLineRequest struct {
 	ProductID       *string         `json:"product_id,omitempty"`
 }
 
+// ImportOrdersRequest contains CSV payload for order migration.
+type ImportOrdersRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+	UserID     string `json:"-"`
+}
+
+// ImportOrdersResult summarizes an order CSV import.
+type ImportOrdersResult struct {
+	FileName      string                 `json:"file_name,omitempty"`
+	RowsProcessed int                    `json:"rows_processed"`
+	OrdersCreated int                    `json:"orders_created"`
+	LinesImported int                    `json:"lines_imported"`
+	RowsSkipped   int                    `json:"rows_skipped"`
+	Errors        []ImportOrdersRowError `json:"errors,omitempty"`
+}
+
+// ImportOrdersRowError describes a row-level order import failure.
+type ImportOrdersRowError struct {
+	Row         int    `json:"row"`
+	OrderNumber string `json:"order_number,omitempty"`
+	Message     string `json:"message"`
+}
+
 // UpdateOrderRequest is the request to update an order
 type UpdateOrderRequest struct {
 	ContactID        string                   `json:"contact_id"`

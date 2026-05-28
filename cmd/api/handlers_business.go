@@ -3324,6 +3324,52 @@ func (h *Handlers) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, order)
 }
 
+// ImportOrders imports orders from CSV data.
+// @Summary Import orders
+// @Description Import historical orders from grouped CSV data and skip duplicate or invalid rows
+// @Tags Orders
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body orders.ImportOrdersRequest true "CSV import payload"
+// @Success 200 {object} orders.ImportOrdersResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/orders/import [post]
+func (h *Handlers) ImportOrders(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req orders.ImportOrdersRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+	if req.FileName == "" {
+		req.FileName = "orders_import.csv"
+	}
+	req.UserID = claims.UserID
+
+	contactsList, err := h.contactsService.List(r.Context(), tenantID, schemaName, nil)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load contacts")
+		return
+	}
+
+	result, err := h.ordersService.ImportCSV(r.Context(), tenantID, schemaName, contactsList, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // GetOrder returns an order by ID
 // @Summary Get order
 // @Description Get order details by ID

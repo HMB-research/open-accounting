@@ -1207,6 +1207,14 @@ func (c *apiClient) createOrder(ctx context.Context, tenantID string, req *order
 	return &resp, nil
 }
 
+func (c *apiClient) importOrders(ctx context.Context, tenantID string, req *orders.ImportOrdersRequest) (*orders.ImportOrdersResult, error) {
+	var resp orders.ImportOrdersResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "orders", "import"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) getOrder(ctx context.Context, tenantID, orderID string) (*orders.Order, error) {
 	var resp orders.Order
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "orders", orderID), nil, c.apiToken, &resp); err != nil {

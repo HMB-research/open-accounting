@@ -20,7 +20,7 @@
 >
 > Full local baseline last verified on 2026-05-28:
 > `go test ./...`, `golangci-lint run`, `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)`, `cd frontend && bun run lint`, `cd frontend && bun run check`, `cd frontend && bun run test`, `cd frontend && bun run build`, `cd frontend && bun run test:e2e:smoke`, and the full local `demo-chromium` Playwright project pass against fresh PostgreSQL-backed demo environments.
-> Production hardening, deeper historical cutover tooling beyond the current payroll, tax, quote, cost-center/product-category/warehouse/product/stock, and fixed-asset migration imports, deeper accountant exception actions, and automated document retention/reconciliation policy enforcement are still in progress.
+> Production hardening, deeper historical cutover tooling beyond the current payroll, tax, quote/order, cost-center/product-category/warehouse/product/stock, and fixed-asset migration imports, deeper accountant exception actions, and automated document retention/reconciliation policy enforcement are still in progress.
 
 CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API token once and then uses that token for subsequent reads and mutations.
 
@@ -83,7 +83,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 |---------|-------------|
 | **Invoicing** | Sales and purchase invoices with line items and VAT |
 | **Quotes** | Sales quotes with draft/sent/accepted workflow, conversion to orders, and grouped CSV import |
-| **Orders** | Order management with quote linking and status tracking |
+| **Orders** | Order management with quote linking, status tracking, and grouped CSV import |
 | **Contacts** | Customer and supplier management |
 | **Payments** | Payment recording with invoice allocation |
 | **PDF Generation** | Professional invoice PDFs with customizable branding |
@@ -323,7 +323,7 @@ open-accounting/
 - [x] Access/refresh JWT purpose separation
 - [x] Revocable, single-use refresh token sessions
 - [x] CLI/API refresh-session listing and revocation
-- [x] CSV import for chart of accounts, contacts, employees, invoices, quotes, payments, cost centers, product categories/warehouses/products/stock, fixed assets, and opening balances
+- [x] CSV import for chart of accounts, contacts, employees, invoices, quotes, orders, payments, cost centers, product categories/warehouses/products/stock, fixed assets, and opening balances
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings
 - [x] Fiscal-year close readiness and retained-earnings carry-forward workflow

@@ -381,9 +381,12 @@ go run ./cmd/oa orders ship --id <order-id>
 go run ./cmd/oa orders deliver --id <order-id>
 go run ./cmd/oa orders cancel --id <order-id>
 go run ./cmd/oa orders delete --id <order-id>
+go run ./cmd/oa orders import --file ./orders.csv
 ```
 
 Use `--line` repeatedly on `orders create` and `orders update`. Each line accepts `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, and `product_id`. Order statuses are `PENDING`, `CONFIRMED`, `PROCESSING`, `SHIPPED`, `DELIVERED`, and `CANCELED`.
+
+Order imports use one CSV row per order line and group rows by `order_number`. Required columns are `order_number`, `order_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`; optional columns include `expected_delivery`, `status`, `currency`, `exchange_rate`, `notes`, `quote_id`, `unit`, `discount_percent`, and `product_id`.
 
 ## Recurring invoices
 

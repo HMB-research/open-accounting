@@ -304,6 +304,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  quotes reject             Mark a quote rejected")
 	_, _ = fmt.Fprintln(a.stdout, "  orders list               List orders")
 	_, _ = fmt.Fprintln(a.stdout, "  orders create             Create an order")
+	_, _ = fmt.Fprintln(a.stdout, "  orders import             Import orders from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  orders get                Show one order")
 	_, _ = fmt.Fprintln(a.stdout, "  orders update             Update an order")
 	_, _ = fmt.Fprintln(a.stdout, "  orders delete             Delete a pending order")
@@ -4233,6 +4234,35 @@ func (a *cliApp) runOrders(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, order)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Created order %s (%s)\n", order.OrderNumber, order.ID)
+		return nil
+
+	case "import":
+		fs := flag.NewFlagSet("orders import", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		filePath := fs.String("file", "", "CSV file path or - for stdin")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*filePath) == "" {
+			return errors.New("file is required")
+		}
+		content, fileName, err := readCSVInput(*filePath)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.importOrders(ctx, cfg.TenantID, &orders.ImportOrdersRequest{
+			CSVContent: content,
+			FileName:   fileName,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Processed %d rows, created %d orders, imported %d lines, skipped %d rows\n", result.RowsProcessed, result.OrdersCreated, result.LinesImported, result.RowsSkipped)
 		return nil
 
 	case "get":

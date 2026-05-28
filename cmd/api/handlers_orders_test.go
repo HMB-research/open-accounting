@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -132,6 +133,13 @@ func setupOrdersTestHandlers() (*Handlers, *mockOrdersRepository, *mockTenantRep
 		tenantService: tenantSvc,
 	}
 	return h, ordersRepo, tenantRepo
+}
+
+func setupOrdersImportTestHandlers() (*Handlers, *mockOrdersRepository, *mockTenantRepository, *mockContactsRepository) {
+	h, ordersRepo, tenantRepo := setupOrdersTestHandlers()
+	contactsRepo := newMockContactsRepository()
+	h.contactsService = contacts.NewServiceWithRepository(contactsRepo)
+	return h, ordersRepo, tenantRepo, contactsRepo
 }
 
 func TestListOrders(t *testing.T) {
@@ -306,6 +314,52 @@ func TestCreateOrder(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestImportOrders(t *testing.T) {
+	h, repo, tenantRepo, contactsRepo := setupOrdersImportTestHandlers()
+	tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+	contact := contactsRepo.addTestContact("contact-1", "tenant-1", "Acme", contacts.ContactTypeCustomer, true)
+	contact.Code = "CUST-1"
+
+	csvContent := `order_number,contact_code,order_date,expected_delivery,status,line_description,quantity,unit_price,vat_rate
+ORD-100,CUST-1,2026-03-15,2026-03-22,confirmed,Consulting,2,100,22
+`
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/orders/import", map[string]interface{}{
+		"file_name":   "orders.csv",
+		"csv_content": csvContent,
+	}, createTestClaims("user-1", "test@example.com", "tenant-1", "owner"))
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+
+	w := httptest.NewRecorder()
+	h.ImportOrders(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	var result orders.ImportOrdersResult
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&result))
+	assert.Equal(t, "orders.csv", result.FileName)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.OrdersCreated)
+	assert.Equal(t, 1, result.LinesImported)
+	assert.Zero(t, result.RowsSkipped)
+
+	require.Len(t, repo.orders, 1)
+	for _, order := range repo.orders {
+		assert.Equal(t, "ORD-100", order.OrderNumber)
+		assert.Equal(t, "contact-1", order.ContactID)
+		assert.Equal(t, orders.OrderStatusConfirmed, order.Status)
+		assert.Equal(t, "user-1", order.CreatedBy)
+	}
+
+	missingReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/orders/import", map[string]interface{}{
+		"file_name": "orders.csv",
+	}, createTestClaims("user-1", "test@example.com", "tenant-1", "owner"))
+	missingReq = withURLParams(missingReq, map[string]string{"tenantID": "tenant-1"})
+	missingResp := httptest.NewRecorder()
+	h.ImportOrders(missingResp, missingReq)
+
+	assert.Equal(t, http.StatusBadRequest, missingResp.Code)
+	assert.Contains(t, missingResp.Body.String(), "csv_content is required")
 }
 
 func TestGetOrder(t *testing.T) {
