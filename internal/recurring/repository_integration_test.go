@@ -667,9 +667,62 @@ func TestRepository_UpdateAfterGeneration(t *testing.T) {
 }
 
 func TestRepository_UpdateInvoiceEmailStatus(t *testing.T) {
-	// Skip: The invoices table is missing email columns (last_email_sent_at, last_email_status, last_email_log_id)
-	// This is a pre-existing schema issue - the repository function exists but schema doesn't have the columns
-	t.Skip("Skipping: invoices table missing email columns (last_email_sent_at, last_email_status, last_email_log_id)")
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	repo := NewPostgresRepository(pool)
+	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
+		t.Fatalf("Failed to ensure schema: %v", err)
+	}
+
+	ctx := context.Background()
+	contactID := uuid.New().String()
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.contacts
+		(id, tenant_id, code, name, contact_type, country_code, payment_terms_days, credit_limit, is_active, created_at, updated_at)
+		VALUES ($1, $2, 'CEMAIL', 'Email Customer', 'CUSTOMER', 'EE', 14, 0, true, NOW(), NOW())
+	`, contactID, tenant.ID)
+	if err != nil {
+		t.Fatalf("Failed to create test contact: %v", err)
+	}
+
+	userID := testutil.CreateTestUser(t, pool, "recurring-email-status@example.com")
+	invoiceID := uuid.New().String()
+	_, err = pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.invoices
+		(id, tenant_id, invoice_number, invoice_type, contact_id, issue_date, due_date, currency, subtotal, vat_amount, total, status, created_by, created_at, updated_at)
+		VALUES ($1, $2, 'INV-EMAIL-001', 'SALES', $3, NOW(), NOW(), 'EUR', 100.00, 20.00, 120.00, 'SENT', $4, NOW(), NOW())
+	`, invoiceID, tenant.ID, contactID, userID)
+	if err != nil {
+		t.Fatalf("Failed to create test invoice: %v", err)
+	}
+
+	sentAt := time.Now()
+	logID := uuid.New().String()
+	if err := repo.UpdateInvoiceEmailStatus(ctx, tenant.SchemaName, invoiceID, &sentAt, "SENT", logID); err != nil {
+		t.Fatalf("UpdateInvoiceEmailStatus failed: %v", err)
+	}
+
+	var gotSentAt *time.Time
+	var gotStatus string
+	var gotLogID string
+	err = pool.QueryRow(ctx, `
+		SELECT last_email_sent_at, last_email_status, last_email_log_id::text
+		FROM `+tenant.SchemaName+`.invoices
+		WHERE id = $1
+	`, invoiceID).Scan(&gotSentAt, &gotStatus, &gotLogID)
+	if err != nil {
+		t.Fatalf("Failed to read invoice email status: %v", err)
+	}
+	if gotSentAt == nil {
+		t.Fatal("expected last_email_sent_at to be set")
+	}
+	if gotStatus != "SENT" {
+		t.Errorf("expected status SENT, got %s", gotStatus)
+	}
+	if gotLogID != logID {
+		t.Errorf("expected log id %s, got %s", logID, gotLogID)
+	}
 }
 
 func TestRepository_SetActive_NotFound(t *testing.T) {
