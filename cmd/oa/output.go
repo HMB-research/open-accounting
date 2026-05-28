@@ -84,6 +84,48 @@ func printTenant(w io.Writer, tenantRecord *tenant.Tenant) {
 	}
 }
 
+func printTenantUsersTable(w io.Writer, users []tenant.TenantUser) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "USER\tROLE\tDEFAULT\tCREATED")
+	for _, user := range users {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%t\t%s\n",
+			user.UserID,
+			user.Role,
+			user.IsDefault,
+			user.CreatedAt.Format(time.RFC3339),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printInvitationsTable(w io.Writer, invitations []tenant.UserInvitation) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tEMAIL\tROLE\tTENANT\tEXPIRES\tCREATED")
+	for _, invitation := range invitations {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			invitation.ID,
+			invitation.Email,
+			invitation.Role,
+			firstNonEmpty(invitation.TenantName, invitation.TenantID),
+			invitation.ExpiresAt.Format(time.RFC3339),
+			invitation.CreatedAt.Format(time.RFC3339),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printTenantMembership(w io.Writer, membership *tenant.TenantMembership) {
+	_, _ = fmt.Fprintf(w, "Joined tenant %s (%s) as %s\n", membership.Tenant.Name, membership.Tenant.ID, membership.Role)
+	if strings.TrimSpace(membership.Tenant.Slug) != "" {
+		_, _ = fmt.Fprintf(w, "Slug: %s\n", membership.Tenant.Slug)
+	}
+	_, _ = fmt.Fprintf(w, "Default: %t\n", membership.IsDefault)
+}
+
 func printAccountsTable(w io.Writer, accounts []accounting.Account) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tCODE\tNAME\tTYPE\tACTIVE")

@@ -95,6 +95,26 @@ go run ./cmd/oa tenant complete-onboarding
 
 Use `--id <tenant-id>` on `tenant get`, `tenant update`, and `tenant complete-onboarding` to target a tenant other than the configured one. Use `--settings-file ./tenant-settings.json` instead of `--settings-json` for larger settings payloads.
 
+## Tenant users and invitations
+
+```bash
+go run ./cmd/oa users list
+go run ./cmd/oa users update-role --id <user-id> --role accountant
+go run ./cmd/oa users remove --id <user-id>
+
+go run ./cmd/oa invitations list
+go run ./cmd/oa invitations create --email newuser@example.com --role viewer
+go run ./cmd/oa invitations revoke --id <invitation-id>
+go run ./cmd/oa invitations get --token <invitation-token> --base-url http://localhost:8080
+go run ./cmd/oa invitations accept \
+  --token <invitation-token> \
+  --name "New User" \
+  --password 'new-password' \
+  --base-url http://localhost:8080
+```
+
+Use `--password-stdin` on `invitations accept` to avoid placing a new-user password in shell history.
+
 ## Manage API tokens
 
 ```bash

@@ -141,6 +141,58 @@ func (c *apiClient) completeTenantOnboarding(ctx context.Context, tenantID strin
 	return c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "complete-onboarding"), nil, c.apiToken, nil)
 }
 
+func (c *apiClient) listTenantUsers(ctx context.Context, tenantID string) ([]tenant.TenantUser, error) {
+	var resp []tenant.TenantUser
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "users"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) removeTenantUser(ctx context.Context, tenantID, userID string) error {
+	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "users", userID), nil, c.apiToken, nil)
+}
+
+func (c *apiClient) updateTenantUserRole(ctx context.Context, tenantID, userID, role string) error {
+	return c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "users", userID, "role"), map[string]string{"role": role}, c.apiToken, nil)
+}
+
+func (c *apiClient) listInvitations(ctx context.Context, tenantID string) ([]tenant.UserInvitation, error) {
+	var resp []tenant.UserInvitation
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "invitations"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createInvitation(ctx context.Context, tenantID string, req *tenant.CreateInvitationRequest) (*tenant.UserInvitation, error) {
+	var resp tenant.UserInvitation
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "invitations"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) revokeInvitation(ctx context.Context, tenantID, invitationID string) error {
+	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "invitations", invitationID), nil, c.apiToken, nil)
+}
+
+func (c *apiClient) getInvitationByToken(ctx context.Context, token string) (*tenant.UserInvitation, error) {
+	var resp tenant.UserInvitation
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/invitations", token), nil, "", &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) acceptInvitation(ctx context.Context, req *tenant.AcceptInvitationRequest) (*tenant.TenantMembership, error) {
+	var resp tenant.TenantMembership
+	if err := c.request(ctx, http.MethodPost, "/api/v1/invitations/accept", req, "", &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) createAPIToken(ctx context.Context, tenantID string, req *apitoken.CreateRequest, bearerToken string) (*apitoken.CreateResult, error) {
 	var resp apitoken.CreateResult
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "api-tokens"), req, bearerToken, &resp); err != nil {
