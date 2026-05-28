@@ -3870,6 +3870,11 @@ func TestCLICloseCommands(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/year-end-close-audit-evidence":
 			require.Equal(t, "2025-12-31", r.URL.Query().Get("period_end_date"))
 			_ = json.NewEncoder(w).Encode(auditPayload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/year-end-close-audit-archive":
+			require.Equal(t, "2025-12-31", r.URL.Query().Get("period_end_date"))
+			w.Header().Set("Content-Type", "application/zip")
+			w.Header().Set("Content-Disposition", `attachment; filename="year-end-close-audit-2025-12-31.zip"`)
+			_, _ = w.Write([]byte("zip-bytes"))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/year-end-carry-forward":
 			var req accounting.CreateYearEndCarryForwardRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -3924,6 +3929,15 @@ func TestCLICloseCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Close-pack audit evidence generated")
 	assert.Contains(t, stdout.String(), "close-pack.pdf")
+
+	stdout.Reset()
+	archivePath := filepath.Join(t.TempDir(), "year-end-audit.zip")
+	err = app.run(context.Background(), []string{"close", "year-end-archive", "--period-end", "2025-12-31", "--output", archivePath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Downloaded year-end close audit archive")
+	archiveBytes, err := os.ReadFile(archivePath)
+	require.NoError(t, err)
+	assert.Equal(t, "zip-bytes", string(archiveBytes))
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"close", "carry-forward", "--period-end", "2025-12-31"})
