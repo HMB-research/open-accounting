@@ -41,7 +41,7 @@ Still not done:
 |------|--------|-------|
 | Core ledger (accounts, journal entries, trial balance, balance sheet, income statement) | `Working` | Core accounting paths exist and are covered by passing backend tests. |
 | Invoicing, contacts, payments, reminders, interest, recurring invoices | `Working` | Core SMB workflows are present and part of the verified baseline, including overdue-invoice reminders, automated reminder rules, and late-payment interest calculations. |
-| Banking CSV import and reconciliation | `Working` | Manual import and reconciliation work; direct bank feeds do not. |
+| Banking CSV import and reconciliation | `Working` | Manual import and reconciliation work, and reconciliation completion now blocks transactions explicitly marked `EVIDENCE_REQUIRED` until approved reconciliation evidence is attached. Direct bank feeds do not. |
 | Payroll, leave management, TSD generation/export | `Working` | Payroll, leave balances/records, and TSD XML/CSV export exist; automatic submission does not. |
 | KMD generation/export and historical import | `Working` | KMD generation/export and row-level historical KMD CSV import exist; direct e-MTA submission does not. |
 | Quotes, orders, fixed assets | `Working` | Features exist and have tests, but accountant-grade polish is still limited. |
@@ -62,7 +62,7 @@ Still not done:
 | Backup and restore drills | `Beta` | Operator scripts now create PostgreSQL custom-format backups with checksums and restore them into a separate drill database with core table and migration verification. Offsite storage, monitoring, and scheduled restore drills remain deployment responsibilities. |
 | Demo seeded flows and broad view coverage | `Demo-only` | Useful for demos and regression checks, not the same as release-quality smoke coverage. |
 | Historical payroll, KMD history, and broader incumbent-system migration imports | `Beta` | Employee master-data import, finalized historical payroll run/payslip CSV import, leave-balance CSV import, and row-level KMD history import now exist. Full incumbent-system cutover paths are still missing. |
-| Broader document retention and reconciliation evidence workflow | `Beta` | Reconciliation evidence can now be attached to bank transactions and assets with document type, review status, approval/rejection decisions, review notes, retention metadata, tenant-wide retention review, and API/CLI evidence-policy evaluation. Automated workflow blocks and close-pack policy enforcement are still missing. |
+| Broader document retention and reconciliation evidence workflow | `Beta` | Reconciliation evidence can now be attached to bank transactions and assets with document type, review status, approval/rejection decisions, review notes, retention metadata, tenant-wide retention review, API/CLI evidence-policy evaluation, and a reconciliation-completion blocker for transactions marked `EVIDENCE_REQUIRED`. Close-pack policy enforcement is still missing. |
 | Direct bank feeds, SEPA initiation, e-invoice, OCR, automatic e-MTA submission | `Blocked` | Requires external partnerships, licensing, certification, or additional infrastructure. |
 
 ## What The Project Can Honestly Claim Today

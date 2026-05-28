@@ -283,6 +283,11 @@ func (r *PostgresRepository) ListTransactions(ctx context.Context, schemaName, t
 			args = append(args, filter.Status)
 			argNum++
 		}
+		if filter.ReconciliationID != "" {
+			query += fmt.Sprintf(" AND reconciliation_id = $%d", argNum)
+			args = append(args, filter.ReconciliationID)
+			argNum++
+		}
 		if filter.FromDate != nil {
 			query += fmt.Sprintf(" AND transaction_date >= $%d", argNum)
 			args = append(args, *filter.FromDate)
