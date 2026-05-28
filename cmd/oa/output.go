@@ -1687,6 +1687,31 @@ func printYearEndClosePack(w io.Writer, pack *accounting.YearEndClosePack) {
 	}
 }
 
+func printYearEndCloseAuditEvidence(w io.Writer, audit *accounting.YearEndCloseAuditEvidence) {
+	if audit == nil {
+		return
+	}
+	if audit.Pack != nil {
+		printYearEndClosePack(w, audit.Pack)
+	}
+	_, _ = fmt.Fprintf(w, "Close-pack audit evidence generated: %s\n", audit.GeneratedAt.Format(time.RFC3339))
+	if audit.EvidencePolicy != nil {
+		_, _ = fmt.Fprintf(w, "Evidence policy compliant: %t, total documents: %d, pending: %d, approved: %d, rejected: %d\n",
+			audit.EvidencePolicy.Compliant,
+			audit.EvidencePolicy.TotalCount,
+			audit.EvidencePolicy.PendingReviewCount,
+			audit.EvidencePolicy.ApprovedCount,
+			audit.EvidencePolicy.RejectedCount,
+		)
+	}
+	if len(audit.Documents) == 0 {
+		_, _ = fmt.Fprintln(w, "Attached close-pack documents: 0")
+		return
+	}
+	_, _ = fmt.Fprintf(w, "Attached close-pack documents: %d\n", len(audit.Documents))
+	printDocumentsTable(w, audit.Documents)
+}
+
 func printYearEndCarryForwardResult(w io.Writer, result *accounting.YearEndCarryForwardResult) {
 	if result.JournalEntry != nil {
 		_, _ = fmt.Fprintf(w, "Created year-end carry-forward %s (%s)\n", result.JournalEntry.EntryNumber, result.JournalEntry.ID)

@@ -933,6 +933,16 @@ func (c *apiClient) getYearEndClosePack(ctx context.Context, tenantID, periodEnd
 	return &resp, nil
 }
 
+func (c *apiClient) getYearEndCloseAuditEvidence(ctx context.Context, tenantID, periodEndDate string) (*accounting.YearEndCloseAuditEvidence, error) {
+	values := url.Values{}
+	values.Set("period_end_date", periodEndDate)
+	var resp accounting.YearEndCloseAuditEvidence
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "year-end-close-audit-evidence")+"?"+values.Encode(), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) createYearEndCarryForward(ctx context.Context, tenantID string, req *accounting.CreateYearEndCarryForwardRequest) (*accounting.YearEndCarryForwardResult, error) {
 	var resp accounting.YearEndCarryForwardResult
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "year-end-carry-forward"), req, c.apiToken, &resp); err != nil {

@@ -331,6 +331,75 @@ func TestGetYearEndClosePack(t *testing.T) {
 	assert.True(t, resp.TrialBalance.TotalCredits.Equal(decimal.NewFromInt(1000)))
 }
 
+func TestGetYearEndCloseAuditEvidenceIncludesClosePackDocuments(t *testing.T) {
+	h, repo, accountingRepo := setupTenantAccountingHandlers()
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+
+	settings := tenant.DefaultSettings()
+	settings.PeriodLockDate = stringPtr("2025-12-31")
+	repo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		Name:       "Tenant",
+		Slug:       "tenant",
+		SchemaName: "tenant_tenant",
+		Settings:   settings,
+	}
+	accountingRepo.accounts["retained"] = &accounting.Account{
+		ID:          "retained",
+		TenantID:    "tenant-1",
+		Code:        "3200",
+		Name:        "Retained Earnings",
+		AccountType: accounting.AccountTypeEquity,
+		IsActive:    true,
+	}
+	accountingRepo.periodBalances = []accounting.AccountBalance{
+		{
+			AccountID:     "revenue-1",
+			AccountCode:   "4100",
+			AccountName:   "Sales Revenue",
+			AccountType:   accounting.AccountTypeRevenue,
+			CreditBalance: decimal.NewFromInt(1000),
+			NetBalance:    decimal.NewFromInt(-1000),
+		},
+	}
+	entityID, err := accounting.YearEndCloseEvidenceEntityID("tenant-1", "2025-12-31")
+	require.NoError(t, err)
+	docRepo.docs["doc-close-pack"] = &documents.Document{
+		ID:           "doc-close-pack",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypeYearEndClose,
+		EntityID:     entityID,
+		DocumentType: documents.DocumentTypeClosePack,
+		FileName:     "close-pack.pdf",
+		ContentType:  "application/pdf",
+		FileSize:     4096,
+		ReviewStatus: documents.ReviewStatusApproved,
+		UploadedBy:   "user-1",
+		CreatedAt:    time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC),
+	}
+
+	req := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/year-end-close-audit-evidence?period_end_date=2025-12-31", nil, &auth.Claims{
+		UserID: "user-1",
+		Email:  "user@example.com",
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	w := httptest.NewRecorder()
+
+	h.GetYearEndCloseAuditEvidence(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	var resp accounting.YearEndCloseAuditEvidence
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	require.NotNil(t, resp.Pack)
+	require.NotNil(t, resp.Pack.Status)
+	require.NotNil(t, resp.EvidencePolicy)
+	assert.True(t, resp.EvidencePolicy.Compliant)
+	require.Len(t, resp.Documents, 1)
+	assert.Equal(t, "close-pack.pdf", resp.Documents[0].FileName)
+	assert.Equal(t, entityID, resp.Pack.Status.ClosePackEvidenceEntityID)
+}
+
 func TestCreateYearEndCarryForward(t *testing.T) {
 	h, repo, accountingRepo := setupTenantAccountingHandlers()
 	settings := tenant.DefaultSettings()

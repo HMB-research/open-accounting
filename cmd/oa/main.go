@@ -274,6 +274,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  close reopen              Reopen an accounting period")
 	_, _ = fmt.Fprintln(a.stdout, "  close year-end-status     Show year-end close readiness")
 	_, _ = fmt.Fprintln(a.stdout, "  close year-end-pack       Show year-end close pack")
+	_, _ = fmt.Fprintln(a.stdout, "  close year-end-audit      Show year-end close audit evidence")
 	_, _ = fmt.Fprintln(a.stdout, "  close carry-forward       Create year-end carry-forward entries")
 	_, _ = fmt.Fprintln(a.stdout, "  close reverse-carry-forward Reverse year-end carry-forward entries")
 	_, _ = fmt.Fprintln(a.stdout, "  banking accounts list     List bank accounts")
@@ -3275,6 +3276,27 @@ func (a *cliApp) runClose(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, pack)
 		}
 		printYearEndClosePack(a.stdout, pack)
+		return nil
+	case "year-end-audit":
+		fs := flag.NewFlagSet("close year-end-audit", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		periodEnd := fs.String("period-end", "", "Period end date, YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*periodEnd) == "" {
+			return errors.New("period-end is required")
+		}
+
+		audit, err := client.getYearEndCloseAuditEvidence(ctx, cfg.TenantID, strings.TrimSpace(*periodEnd))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, audit)
+		}
+		printYearEndCloseAuditEvidence(a.stdout, audit)
 		return nil
 	case "carry-forward":
 		fs := flag.NewFlagSet("close carry-forward", flag.ContinueOnError)

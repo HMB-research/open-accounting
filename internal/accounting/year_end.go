@@ -64,6 +64,14 @@ type YearEndClosePack struct {
 	GeneratedAt     time.Time           `json:"generated_at"`
 }
 
+// YearEndCloseAuditEvidence bundles the close pack with reviewer evidence metadata.
+type YearEndCloseAuditEvidence struct {
+	Pack           *YearEndClosePack               `json:"pack"`
+	EvidencePolicy *documents.EvidencePolicyResult `json:"evidence_policy,omitempty"`
+	Documents      []documents.Document            `json:"documents"`
+	GeneratedAt    time.Time                       `json:"generated_at"`
+}
+
 // CreateYearEndCarryForwardRequest requests a year-end carry-forward journal.
 type CreateYearEndCarryForwardRequest struct {
 	PeriodEndDate string `json:"period_end_date"`
