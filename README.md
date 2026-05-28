@@ -18,10 +18,8 @@
 > **⚠️ Development Status**
 > This project is under active development and not yet production-ready. APIs may change, and features may be incomplete. Contributions and feedback welcome!
 >
-> Full local baseline last verified on 2026-03-13:
-> `go test ./...`, `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)`, `cd frontend && bun run test`, and `cd frontend && bun run test:e2e:smoke` pass.
-> Targeted Go 1.26.2, historical-payroll, and leave-balance import verification on 2026-04-24:
-> `go test ./...`, `cd frontend && bun run test -- api.test.ts`, and `cd frontend && bun run check` pass.
+> Full local baseline last verified on 2026-05-28:
+> `go test ./...`, `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)`, `cd frontend && bun run check`, `cd frontend && bun run test`, `cd frontend && bun run build`, `cd frontend && bun run test:e2e:smoke`, and the full local `demo-chromium` Playwright project pass against fresh PostgreSQL-backed demo environments.
 > Production hardening, deeper historical cutover tooling beyond payroll runs, deeper accountant exception actions, and broader document retention/reconciliation workflows are still in progress.
 
 CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API token once and then uses that token for subsequent reads and mutations.

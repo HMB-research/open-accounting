@@ -1,6 +1,6 @@
 # Open Accounting Development Status
 
-> Last updated: 2026-04-24
+> Last updated: 2026-05-28
 > This is the current-state status document. Historical plan docs may be more optimistic than what is verified here.
 
 ## Status Definitions
@@ -15,26 +15,21 @@
 
 ## Verified Engineering Baseline
 
-Full local baseline last completed on 2026-03-13:
+Full local baseline last completed on 2026-05-28:
 
 - `go test ./...` passes
 - `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)` passes against a fresh PostgreSQL database
-- `cd frontend && bun run test` passes with 21 files and 491 tests
 - `cd frontend && bun run check` passes with 0 errors and 0 warnings
+- `cd frontend && bun run test` passes with 21 files and 493 tests
+- `cd frontend && bun run build` passes
 - `cd frontend && bun run test:e2e:smoke` passes against a fresh locally seeded demo environment
+- `cd frontend && bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium --workers=1` passes against a fresh locally seeded demo environment with 250 passed and 12 intentionally skipped reset tests under `CI=true`
 - Backend integration tests are now blocking in CI
 - Core accountant smoke E2E is now blocking in CI
 
-Targeted verification completed on 2026-04-24 after moving to Go 1.26.2 and adding historical payroll and leave-balance imports:
-
-- `go test ./...` passes
-- `cd frontend && bun run test -- api.test.ts` passes with 179 tests
-- `cd frontend && bun run check` passes with 0 errors and 0 warnings
-- Swagger docs were regenerated with `swag` built against Go 1.26.2
-
 Still not done:
 
-- Demo E2E remains informational rather than a strict release gate
+- Broad demo E2E remains informational rather than a strict release gate
 - Documentation outside this file may still contain historical planning language
 
 ## Capability Matrix
@@ -69,7 +64,7 @@ Still not done:
 ## What The Project Can Honestly Claim Today
 
 - Open Accounting is a broad, real codebase with working accounting, invoicing, payroll, banking, and multi-tenant foundations.
-- The local backend, frontend, and tagged backend integration test baselines were green in the last full local baseline on 2026-03-13.
+- The local backend, frontend, tagged backend integration, smoke E2E, and full local demo E2E baselines were green in the last full local baseline on 2026-05-28.
 - The project now includes a working Go CLI and tenant-scoped API tokens for scriptable reads and writes.
 - Historical payroll run/payslip import and leave-balance import are now available through API, web UI, and CLI, but broader incumbent-system cutover is still incomplete.
 - The project is still not production-ready for accounting firms that need full historical cutover tooling, year-end reversal/reopen tooling, document retention controls, and hardened operations.
