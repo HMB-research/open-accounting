@@ -240,6 +240,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  invoices import           Import invoices from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  payments list             List payments")
 	_, _ = fmt.Fprintln(a.stdout, "  payments create           Create a payment")
+	_, _ = fmt.Fprintln(a.stdout, "  payments import           Import payments from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  payments get              Show one payment")
 	_, _ = fmt.Fprintln(a.stdout, "  payments allocate         Allocate a payment to an invoice")
 	_, _ = fmt.Fprintln(a.stdout, "  payments unallocated      List unallocated payments")
@@ -2295,6 +2296,35 @@ func (a *cliApp) runPayments(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, payment)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Created payment %s (%s)\n", payment.PaymentNumber, payment.ID)
+		return nil
+
+	case "import":
+		fs := flag.NewFlagSet("payments import", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		filePath := fs.String("file", "", "CSV file path or - for stdin")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*filePath) == "" {
+			return errors.New("file is required")
+		}
+		content, fileName, err := readCSVInput(*filePath)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.importPayments(ctx, cfg.TenantID, &payments.ImportPaymentsRequest{
+			CSVContent: content,
+			FileName:   fileName,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Processed %d rows, created %d payments, skipped %d rows\n", result.RowsProcessed, result.PaymentsCreated, result.RowsSkipped)
 		return nil
 
 	case "get":

@@ -644,6 +644,14 @@ func (c *apiClient) createPayment(ctx context.Context, tenantID string, req *pay
 	return &resp, nil
 }
 
+func (c *apiClient) importPayments(ctx context.Context, tenantID string, req *payments.ImportPaymentsRequest) (*payments.ImportPaymentsResult, error) {
+	var resp payments.ImportPaymentsResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "payments", "import"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) getPayment(ctx context.Context, tenantID, paymentID string) (*payments.Payment, error) {
 	var resp payments.Payment
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "payments", paymentID), nil, c.apiToken, &resp); err != nil {

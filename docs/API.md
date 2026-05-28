@@ -1786,6 +1786,7 @@ Authorization: Bearer <token>
 
 ```http
 POST /tenants/{tenantId}/payments
+POST /tenants/{tenantId}/payments/import
 Authorization: Bearer <token>
 Content-Type: application/json
 
@@ -1805,6 +1806,19 @@ Content-Type: application/json
 **Payment Types:** `RECEIVED`, `MADE`
 
 The request may include `allocations` with `invoice_id` and `amount` entries to allocate the payment while creating it.
+
+```http
+POST /tenants/{tenantId}/payments/import
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "file_name": "payments.csv",
+  "csv_content": "payment_number,payment_type,payment_date,amount,currency,invoice_id,allocation_amount\nPAY-001,RECEIVED,2026-03-15,1220.00,EUR,uuid,1220.00\n"
+}
+```
+
+Payment CSV imports require `payment_type`, `payment_date`, and `amount`. Optional columns include `payment_number`, `contact_id`, `currency`, `exchange_rate`, `payment_method`, `bank_account`, `reference`, `notes`, `invoice_id`, and `allocation_amount`. Omitted payment numbers are generated; supplied numbers are preserved and checked for duplicates.
 
 ### Get Payment
 

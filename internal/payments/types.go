@@ -80,6 +80,31 @@ type CreatePaymentRequest struct {
 	UserID        string              `json:"-"`
 }
 
+// ImportPaymentsRequest contains CSV payload for payment history migration.
+type ImportPaymentsRequest struct {
+	CSVContent string     `json:"csv_content"`
+	FileName   string     `json:"file_name,omitempty"`
+	UserID     string     `json:"-"`
+	LockDate   *time.Time `json:"-"`
+}
+
+// ImportPaymentsResult summarizes a payment CSV import.
+type ImportPaymentsResult struct {
+	FileName        string                   `json:"file_name,omitempty"`
+	RowsProcessed   int                      `json:"rows_processed"`
+	PaymentsCreated int                      `json:"payments_created"`
+	RowsSkipped     int                      `json:"rows_skipped"`
+	Errors          []ImportPaymentsRowError `json:"errors,omitempty"`
+}
+
+// ImportPaymentsRowError describes a row-level payment import failure.
+type ImportPaymentsRowError struct {
+	Row           int    `json:"row"`
+	PaymentNumber string `json:"payment_number,omitempty"`
+	Reference     string `json:"reference,omitempty"`
+	Message       string `json:"message"`
+}
+
 // AllocationRequest represents a payment allocation in a request
 type AllocationRequest struct {
 	InvoiceID string          `json:"invoice_id"`

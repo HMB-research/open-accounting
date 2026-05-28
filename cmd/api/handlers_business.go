@@ -872,6 +872,50 @@ func (h *Handlers) CreatePayment(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, payment)
 }
 
+// ImportPayments imports payment history from CSV
+// @Summary Import payments
+// @Description Import historical payments from CSV, preserving supplied payment numbers and optional invoice allocations
+// @Tags Payments
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body payments.ImportPaymentsRequest true "CSV import payload"
+// @Success 200 {object} payments.ImportPaymentsResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/payments/import [post]
+func (h *Handlers) ImportPayments(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req payments.ImportPaymentsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+	req.UserID = claims.UserID
+
+	lockDate, err := h.getTenantPeriodLockDate(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to validate period lock")
+		return
+	}
+	req.LockDate = lockDate
+
+	result, err := h.paymentsService.ImportPaymentsCSV(r.Context(), tenantID, schemaName, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // GetPayment returns a payment by ID
 // @Summary Get payment
 // @Description Get payment details by ID

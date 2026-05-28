@@ -2904,6 +2904,7 @@ func TestCLIPaymentCommands(t *testing.T) {
 			}},
 		}
 	}
+	importFile := writeTempCSV(t, "payments.csv", "payment_number,payment_type,payment_date,amount\nPAY-001,RECEIVED,2026-03-15,100.00\n")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -2933,6 +2934,16 @@ func TestCLIPaymentCommands(t *testing.T) {
 			assert.True(t, req.Allocations[0].Amount.Equal(decimal.RequireFromString("60.00")))
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(paymentPayload("pay-1", "PMT-00001"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments/import":
+			var req payments.ImportPaymentsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "payments.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "PAY-001")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed":   1,
+				"payments_created": 1,
+				"rows_skipped":     0,
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payments/pay-1":
 			_ = json.NewEncoder(w).Encode(paymentPayload("pay-1", "PMT-00001"))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments/pay-1/allocate":
@@ -2984,6 +2995,11 @@ func TestCLIPaymentCommands(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created payment PMT-00001 (pay-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payments", "import", "--file", importFile})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 payments, skipped 0 rows")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"payments", "get", "--id", "pay-1"})

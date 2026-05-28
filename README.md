@@ -215,6 +215,7 @@ go run ./cmd/oa auth init \
 go run ./cmd/oa accounts list
 go run ./cmd/oa contacts import --file ./contacts.csv
 go run ./cmd/oa employees import --file ./employees.csv
+go run ./cmd/oa payments import --file ./payments.csv
 go run ./cmd/oa payroll import-history --file ./payroll-history.csv
 go run ./cmd/oa payroll import-leave-balances --file ./leave-balances.csv
 go run ./cmd/oa assets import --file ./assets.csv
@@ -322,7 +323,7 @@ open-accounting/
 - [x] Access/refresh JWT purpose separation
 - [x] Revocable, single-use refresh token sessions
 - [x] CLI/API refresh-session listing and revocation
-- [x] CSV import for chart of accounts, contacts, employees, invoices, cost centers, product categories/warehouses/products/stock, fixed assets, and opening balances
+- [x] CSV import for chart of accounts, contacts, employees, invoices, payments, cost centers, product categories/warehouses/products/stock, fixed assets, and opening balances
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings
 - [x] Fiscal-year close readiness and retained-earnings carry-forward workflow
