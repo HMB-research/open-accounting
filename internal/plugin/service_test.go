@@ -1317,11 +1317,6 @@ func TestService_LoadAndUnloadPlugin(t *testing.T) {
 	manifest := &Manifest{
 		Name:    "test-plugin",
 		Version: "1.0.0",
-		Backend: &BackendConfig{
-			Hooks: []HookConfig{
-				{Event: "invoice.created", Handler: "handleInvoice"},
-			},
-		},
 	}
 
 	// Test loadPlugin
@@ -1382,6 +1377,40 @@ func TestService_LoadPlugin_WithoutBackend(t *testing.T) {
 	}
 	if loaded.Manifest.Frontend == nil {
 		t.Error("expected frontend manifest to be set")
+	}
+}
+
+func TestService_LoadPlugin_WithHooksRequiresRuntime(t *testing.T) {
+	repo := NewMockRepository()
+	hooks := NewHookRegistry()
+	service := NewServiceWithRepository(repo, hooks, "/tmp/plugins")
+
+	plugin := &Plugin{
+		ID:   uuid.New(),
+		Name: "hooks-plugin",
+	}
+
+	manifest := &Manifest{
+		Name:    "hooks-plugin",
+		Version: "1.0.0",
+		Backend: &BackendConfig{
+			Package: "internal/plugin",
+			Entry:   "main.go",
+			Hooks: []HookConfig{
+				{Event: "invoice.created", Handler: "handleInvoice"},
+			},
+		},
+	}
+
+	if err := service.loadPlugin(plugin, manifest); err == nil {
+		t.Fatal("expected unsupported backend runtime error")
+	}
+
+	if _, exists := service.GetLoadedPlugin("hooks-plugin"); exists {
+		t.Error("expected plugin not to be loaded when hook runtime is unavailable")
+	}
+	if hooks.HasHandlers("invoice.created") {
+		t.Error("expected hook not to be registered when hook runtime is unavailable")
 	}
 }
 
@@ -1925,17 +1954,15 @@ func TestService_EnablePlugin_WithHooks(t *testing.T) {
 	service := NewServiceWithRepository(repo, hooks, "/tmp/plugins")
 
 	err := service.EnablePlugin(ctx, pluginID, []string{"hooks:register"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected unsupported backend runtime error")
 	}
 
-	// Verify plugin is loaded with hooks
-	loaded, exists := service.GetLoadedPlugin("test-plugin-with-hooks")
-	if !exists {
-		t.Error("expected plugin to be loaded")
+	if _, exists := service.GetLoadedPlugin("test-plugin-with-hooks"); exists {
+		t.Error("expected plugin not to be loaded when hook runtime is unavailable")
 	}
-	if loaded == nil {
-		t.Error("expected loaded plugin to not be nil")
+	if repo.plugins[pluginID].State != StateFailed {
+		t.Errorf("expected failed plugin state, got %s", repo.plugins[pluginID].State)
 	}
 }
 
@@ -2017,16 +2044,12 @@ func TestService_LoadPlugin_WithRoutes(t *testing.T) {
 	}
 
 	err := service.loadPlugin(plugin, manifest)
-	if err != nil {
-		t.Fatalf("loadPlugin failed: %v", err)
+	if err == nil {
+		t.Fatal("expected unsupported backend runtime error")
 	}
 
-	loaded, exists := service.GetLoadedPlugin("routes-plugin")
-	if !exists {
-		t.Error("expected plugin to be loaded")
-	}
-	if loaded.Manifest.Backend == nil {
-		t.Error("expected backend manifest to be set")
+	if _, exists := service.GetLoadedPlugin("routes-plugin"); exists {
+		t.Error("expected plugin not to be loaded when route runtime is unavailable")
 	}
 }
 

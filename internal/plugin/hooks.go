@@ -3,12 +3,17 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
+
+// ErrPluginRuntimeUnavailable is returned when a plugin hook is invoked without
+// a backend runtime capable of executing plugin code.
+var ErrPluginRuntimeUnavailable = errors.New("plugin backend runtime is not available")
 
 // Event types for the hook system
 const (
@@ -102,19 +107,16 @@ func (r *HookRegistry) registerPluginHook(pluginID uuid.UUID, eventType, handler
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Note: The actual handler implementation would be loaded from the plugin
-	// For now, we store the metadata and log when the hook is called
 	r.handlers[eventType] = append(r.handlers[eventType], pluginHookHandler{
 		PluginID:    pluginID,
 		HandlerName: handlerName,
 		Handler: func(ctx context.Context, event Event) error {
-			// This is a placeholder - actual implementation would invoke the plugin's handler
-			log.Debug().
+			log.Error().
 				Str("plugin_id", pluginID.String()).
 				Str("handler", handlerName).
 				Str("event", eventType).
-				Msg("Plugin hook invoked")
-			return nil
+				Msg("Plugin hook declared but backend runtime is unavailable")
+			return ErrPluginRuntimeUnavailable
 		},
 	})
 }
