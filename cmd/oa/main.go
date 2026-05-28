@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/csv"
 	"errors"
 	"flag"
 	"fmt"
@@ -119,6 +120,12 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  tax kmd list              List KMD declarations")
 	_, _ = fmt.Fprintln(a.stdout, "  tax kmd generate          Generate KMD declaration")
 	_, _ = fmt.Fprintln(a.stdout, "  tax kmd export-xml        Export KMD XML")
+	_, _ = fmt.Fprintln(a.stdout, "  invoices list             List invoices")
+	_, _ = fmt.Fprintln(a.stdout, "  invoices create           Create an invoice")
+	_, _ = fmt.Fprintln(a.stdout, "  invoices get              Show one invoice")
+	_, _ = fmt.Fprintln(a.stdout, "  invoices pdf              Download an invoice PDF")
+	_, _ = fmt.Fprintln(a.stdout, "  invoices send             Mark an invoice sent")
+	_, _ = fmt.Fprintln(a.stdout, "  invoices void             Void an invoice")
 	_, _ = fmt.Fprintln(a.stdout, "  invoices import           Import invoices from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  payments list             List payments")
 	_, _ = fmt.Fprintln(a.stdout, "  payments create           Create a payment")
@@ -558,6 +565,199 @@ func (a *cliApp) runInvoices(ctx context.Context, args []string) error {
 	}
 
 	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("invoices list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		invoiceTypeFlag := fs.String("type", "", "Invoice type: SALES, PURCHASE, or CREDIT_NOTE")
+		statusFlag := fs.String("status", "", "Invoice status")
+		contactID := fs.String("contact-id", "", "Contact id")
+		fromDate := fs.String("from", "", "From issue date in YYYY-MM-DD")
+		toDate := fs.String("to", "", "To issue date in YYYY-MM-DD")
+		search := fs.String("search", "", "Search term")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		invoiceType, err := parseOptionalInvoiceType(*invoiceTypeFlag)
+		if err != nil {
+			return err
+		}
+		status, err := parseOptionalInvoiceStatus(*statusFlag)
+		if err != nil {
+			return err
+		}
+		fromDateValue, err := parseOptionalDate("from", *fromDate)
+		if err != nil {
+			return err
+		}
+		toDateValue, err := parseOptionalDate("to", *toDate)
+		if err != nil {
+			return err
+		}
+
+		invoices, err := client.listInvoices(ctx, cfg.TenantID, invoicing.InvoiceFilter{
+			InvoiceType: invoiceType,
+			Status:      status,
+			ContactID:   strings.TrimSpace(*contactID),
+			FromDate:    fromDateValue,
+			ToDate:      toDateValue,
+			Search:      strings.TrimSpace(*search),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, invoices)
+		}
+		printInvoicesTable(a.stdout, invoices)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("invoices create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		invoiceTypeFlag := fs.String("type", "", "Invoice type: SALES, PURCHASE, or CREDIT_NOTE")
+		contactID := fs.String("contact-id", "", "Contact id")
+		issueDate := fs.String("issue-date", "", "Issue date in YYYY-MM-DD")
+		dueDate := fs.String("due-date", "", "Due date in YYYY-MM-DD")
+		currency := fs.String("currency", "EUR", "Currency code")
+		exchangeRateFlag := fs.String("exchange-rate", "1", "Exchange rate to base currency")
+		reference := fs.String("reference", "", "Reference")
+		notes := fs.String("notes", "", "Notes")
+		lines := invoiceLineFlags{}
+		fs.Var(&lines, "line", "Line as comma-separated key=value pairs; repeatable")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		invoiceType, err := parseRequiredInvoiceType(*invoiceTypeFlag)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(*contactID) == "" {
+			return errors.New("contact-id is required")
+		}
+		issueDateValue, err := parseRequiredDate("issue-date", *issueDate)
+		if err != nil {
+			return err
+		}
+		dueDateValue, err := parseRequiredDate("due-date", *dueDate)
+		if err != nil {
+			return err
+		}
+		if len(lines) == 0 {
+			return errors.New("at least one line is required")
+		}
+		exchangeRate, err := parseRequiredPositiveDecimal("exchange-rate", *exchangeRateFlag)
+		if err != nil {
+			return err
+		}
+
+		invoice, err := client.createInvoice(ctx, cfg.TenantID, &invoicing.CreateInvoiceRequest{
+			InvoiceType:  invoiceType,
+			ContactID:    strings.TrimSpace(*contactID),
+			IssueDate:    issueDateValue,
+			DueDate:      dueDateValue,
+			Currency:     strings.ToUpper(strings.TrimSpace(*currency)),
+			ExchangeRate: exchangeRate,
+			Reference:    strings.TrimSpace(*reference),
+			Notes:        strings.TrimSpace(*notes),
+			Lines:        []invoicing.CreateInvoiceLineRequest(lines),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, invoice)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created invoice %s (%s)\n", invoice.InvoiceNumber, invoice.ID)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("invoices get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		invoiceID := fs.String("id", "", "Invoice id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*invoiceID) == "" {
+			return errors.New("id is required")
+		}
+
+		invoice, err := client.getInvoice(ctx, cfg.TenantID, strings.TrimSpace(*invoiceID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, invoice)
+		}
+		printInvoice(a.stdout, invoice)
+		return nil
+
+	case "pdf":
+		fs := flag.NewFlagSet("invoices pdf", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		invoiceID := fs.String("id", "", "Invoice id")
+		outputPath := fs.String("output", "", "Optional output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*invoiceID) == "" {
+			return errors.New("id is required")
+		}
+
+		content, err := client.downloadInvoicePDF(ctx, cfg.TenantID, strings.TrimSpace(*invoiceID))
+		if err != nil {
+			return err
+		}
+		return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "Invoice PDF")
+
+	case "send":
+		fs := flag.NewFlagSet("invoices send", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		invoiceID := fs.String("id", "", "Invoice id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*invoiceID) == "" {
+			return errors.New("id is required")
+		}
+
+		result, err := client.sendInvoice(ctx, cfg.TenantID, strings.TrimSpace(*invoiceID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Sent invoice %s\n", strings.TrimSpace(*invoiceID))
+		return nil
+
+	case "void":
+		fs := flag.NewFlagSet("invoices void", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		invoiceID := fs.String("id", "", "Invoice id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*invoiceID) == "" {
+			return errors.New("id is required")
+		}
+
+		result, err := client.voidInvoice(ctx, cfg.TenantID, strings.TrimSpace(*invoiceID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Voided invoice %s\n", strings.TrimSpace(*invoiceID))
+		return nil
+
 	case "import":
 		fs := flag.NewFlagSet("invoices import", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
@@ -1899,6 +2099,17 @@ func parseOptionalDate(name, value string) (*time.Time, error) {
 	return &parsed, nil
 }
 
+func parseRequiredDate(name, value string) (time.Time, error) {
+	parsed, err := parseOptionalDate(name, value)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if parsed == nil {
+		return time.Time{}, fmt.Errorf("%s is required", name)
+	}
+	return *parsed, nil
+}
+
 func parseRequiredPositiveInt(name, value string) (int, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
@@ -1929,6 +2140,54 @@ func parseRequiredPositiveDecimal(name, value string) (decimal.Decimal, error) {
 	return parsed, nil
 }
 
+func parseRequiredNonNegativeDecimal(name, value string) (decimal.Decimal, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return decimal.Zero, fmt.Errorf("%s is required", name)
+	}
+	parsed, err := decimal.NewFromString(trimmed)
+	if err != nil {
+		return decimal.Zero, fmt.Errorf("parse %s: %w", name, err)
+	}
+	if parsed.LessThan(decimal.Zero) {
+		return decimal.Zero, fmt.Errorf("%s must be non-negative", name)
+	}
+	return parsed, nil
+}
+
+func parseOptionalInvoiceType(value string) (invoicing.InvoiceType, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+	return parseRequiredInvoiceType(value)
+}
+
+func parseRequiredInvoiceType(value string) (invoicing.InvoiceType, error) {
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	switch invoicing.InvoiceType(normalized) {
+	case invoicing.InvoiceTypeSales, invoicing.InvoiceTypePurchase, invoicing.InvoiceTypeCreditNote:
+		return invoicing.InvoiceType(normalized), nil
+	default:
+		if normalized == "" {
+			return "", errors.New("type is required")
+		}
+		return "", fmt.Errorf("invalid invoice type %q", value)
+	}
+}
+
+func parseOptionalInvoiceStatus(value string) (invoicing.InvoiceStatus, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	switch invoicing.InvoiceStatus(normalized) {
+	case invoicing.StatusDraft, invoicing.StatusSent, invoicing.StatusPartiallyPaid, invoicing.StatusPaid, invoicing.StatusOverdue, invoicing.StatusVoided:
+		return invoicing.InvoiceStatus(normalized), nil
+	default:
+		return "", fmt.Errorf("invalid invoice status %q", value)
+	}
+}
+
 func parseOptionalPaymentType(value string) (payments.PaymentType, error) {
 	if strings.TrimSpace(value) == "" {
 		return "", nil
@@ -1955,6 +2214,84 @@ func optionalStringPtr(value string) *string {
 		return nil
 	}
 	return &trimmed
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+type invoiceLineFlags []invoicing.CreateInvoiceLineRequest
+
+func (l *invoiceLineFlags) Set(value string) error {
+	reader := csv.NewReader(strings.NewReader(value))
+	reader.TrimLeadingSpace = true
+	reader.FieldsPerRecord = -1
+	fields, err := reader.Read()
+	if err != nil {
+		return fmt.Errorf("parse line: %w", err)
+	}
+
+	values := make(map[string]string)
+	for _, field := range fields {
+		key, val, ok := strings.Cut(field, "=")
+		if !ok {
+			return fmt.Errorf("line field %q must be key=value", field)
+		}
+		normalizedKey := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(key)), "-", "_")
+		values[normalizedKey] = strings.TrimSpace(val)
+	}
+
+	description := strings.TrimSpace(values["description"])
+	if description == "" {
+		return errors.New("line description is required")
+	}
+	quantity, err := parseRequiredPositiveDecimal("line quantity", firstNonEmpty(values["quantity"], values["qty"]))
+	if err != nil {
+		return err
+	}
+	unitPrice, err := parseRequiredNonNegativeDecimal("line unit_price", firstNonEmpty(values["unit_price"], values["price"]))
+	if err != nil {
+		return err
+	}
+	vatRate, err := parseRequiredNonNegativeDecimal("line vat_rate", firstNonEmpty(values["vat_rate"], values["vat"]))
+	if err != nil {
+		return err
+	}
+	discountPercent := decimal.Zero
+	if rawDiscount := firstNonEmpty(values["discount_percent"], values["discount"]); rawDiscount != "" {
+		discountPercent, err = parseRequiredNonNegativeDecimal("line discount_percent", rawDiscount)
+		if err != nil {
+			return err
+		}
+	}
+
+	*l = append(*l, invoicing.CreateInvoiceLineRequest{
+		Description:     description,
+		Quantity:        quantity,
+		Unit:            strings.TrimSpace(values["unit"]),
+		UnitPrice:       unitPrice,
+		DiscountPercent: discountPercent,
+		VATRate:         vatRate,
+		AccountID:       optionalStringPtr(firstNonEmpty(values["account_id"], values["account"])),
+		ProductID:       optionalStringPtr(firstNonEmpty(values["product_id"], values["product"])),
+	})
+	return nil
+}
+
+func (l *invoiceLineFlags) String() string {
+	if l == nil {
+		return ""
+	}
+	descriptions := make([]string, 0, len(*l))
+	for _, line := range *l {
+		descriptions = append(descriptions, line.Description)
+	}
+	return strings.Join(descriptions, ",")
 }
 
 type allocationFlags []payments.AllocationRequest

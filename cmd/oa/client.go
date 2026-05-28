@@ -185,6 +185,70 @@ func (c *apiClient) importInvoices(ctx context.Context, tenantID string, req *in
 	return &resp, nil
 }
 
+func (c *apiClient) listInvoices(ctx context.Context, tenantID string, filter invoicing.InvoiceFilter) ([]invoicing.Invoice, error) {
+	values := url.Values{}
+	if filter.InvoiceType != "" {
+		values.Set("type", string(filter.InvoiceType))
+	}
+	if filter.Status != "" {
+		values.Set("status", string(filter.Status))
+	}
+	if strings.TrimSpace(filter.ContactID) != "" {
+		values.Set("contact_id", strings.TrimSpace(filter.ContactID))
+	}
+	if filter.FromDate != nil {
+		values.Set("from_date", filter.FromDate.Format("2006-01-02"))
+	}
+	if filter.ToDate != nil {
+		values.Set("to_date", filter.ToDate.Format("2006-01-02"))
+	}
+	if strings.TrimSpace(filter.Search) != "" {
+		values.Set("search", strings.TrimSpace(filter.Search))
+	}
+
+	var resp []invoicing.Invoice
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "invoices"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createInvoice(ctx context.Context, tenantID string, req *invoicing.CreateInvoiceRequest) (*invoicing.Invoice, error) {
+	var resp invoicing.Invoice
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "invoices"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getInvoice(ctx context.Context, tenantID, invoiceID string) (*invoicing.Invoice, error) {
+	var resp invoicing.Invoice
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "invoices", invoiceID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) downloadInvoicePDF(ctx context.Context, tenantID, invoiceID string) ([]byte, error) {
+	return c.requestRaw(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "invoices", invoiceID, "pdf"), nil, c.apiToken)
+}
+
+func (c *apiClient) sendInvoice(ctx context.Context, tenantID, invoiceID string) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "invoices", invoiceID, "send"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) voidInvoice(ctx context.Context, tenantID, invoiceID string) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "invoices", invoiceID, "void"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
 func (c *apiClient) listPayments(ctx context.Context, tenantID string, filter payments.PaymentFilter) ([]payments.Payment, error) {
 	values := url.Values{}
 	if filter.PaymentType != "" {

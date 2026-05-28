@@ -13,6 +13,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/reports"
@@ -60,6 +61,70 @@ func printContactsTable(w io.Writer, contactsList []contacts.Contact) {
 	_, _ = fmt.Fprintln(tw, "ID\tNAME\tTYPE\tEMAIL\tACTIVE")
 	for _, contact := range contactsList {
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%t\n", contact.ID, contact.Name, contact.ContactType, contact.Email, contact.IsActive)
+	}
+	_ = tw.Flush()
+}
+
+func printInvoicesTable(w io.Writer, invoices []invoicing.Invoice) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNUMBER\tTYPE\tSTATUS\tISSUE\tDUE\tTOTAL\tPAID\tDUE AMOUNT\tCONTACT")
+	for _, invoice := range invoices {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			invoice.ID,
+			invoice.InvoiceNumber,
+			invoice.InvoiceType,
+			invoice.Status,
+			formatDate(invoice.IssueDate),
+			formatDate(invoice.DueDate),
+			invoice.Total.String(),
+			invoice.AmountPaid.String(),
+			invoice.AmountDue().String(),
+			invoiceContactLabel(invoice),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printInvoice(w io.Writer, invoice *invoicing.Invoice) {
+	_, _ = fmt.Fprintf(w, "Invoice %s (%s)\n", invoice.InvoiceNumber, invoice.Status)
+	_, _ = fmt.Fprintf(w, "ID: %s\n", invoice.ID)
+	_, _ = fmt.Fprintf(w, "Type: %s\n", invoice.InvoiceType)
+	_, _ = fmt.Fprintf(w, "Contact: %s\n", invoiceContactLabel(*invoice))
+	_, _ = fmt.Fprintf(w, "Issue date: %s\n", formatDate(invoice.IssueDate))
+	_, _ = fmt.Fprintf(w, "Due date: %s\n", formatDate(invoice.DueDate))
+	_, _ = fmt.Fprintf(w, "Subtotal: %s %s\n", invoice.Subtotal.String(), invoice.Currency)
+	_, _ = fmt.Fprintf(w, "VAT: %s\n", invoice.VATAmount.String())
+	_, _ = fmt.Fprintf(w, "Total: %s\n", invoice.Total.String())
+	_, _ = fmt.Fprintf(w, "Paid: %s\n", invoice.AmountPaid.String())
+	_, _ = fmt.Fprintf(w, "Due amount: %s\n", invoice.AmountDue().String())
+	if strings.TrimSpace(invoice.Reference) != "" {
+		_, _ = fmt.Fprintf(w, "Reference: %s\n", invoice.Reference)
+	}
+	if strings.TrimSpace(invoice.Notes) != "" {
+		_, _ = fmt.Fprintf(w, "Notes: %s\n", invoice.Notes)
+	}
+	if len(invoice.Lines) > 0 {
+		printInvoiceLinesTable(w, invoice.Lines)
+	}
+}
+
+func printInvoiceLinesTable(w io.Writer, lines []invoicing.InvoiceLine) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "NO\tDESCRIPTION\tQTY\tUNIT\tUNIT PRICE\tVAT\tTOTAL")
+	for _, line := range lines {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%d\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			line.LineNumber,
+			line.Description,
+			line.Quantity.String(),
+			line.Unit,
+			line.UnitPrice.String(),
+			line.VATRate.String(),
+			line.LineTotal.String(),
+		)
 	}
 	_ = tw.Flush()
 }
@@ -514,6 +579,13 @@ func payslipEmployeeName(payslip payroll.Payslip) string {
 		return payslip.EmployeeID
 	}
 	return strings.TrimSpace(payslip.Employee.FullName())
+}
+
+func invoiceContactLabel(invoice invoicing.Invoice) string {
+	if invoice.Contact != nil && strings.TrimSpace(invoice.Contact.Name) != "" {
+		return strings.TrimSpace(invoice.Contact.Name)
+	}
+	return invoice.ContactID
 }
 
 func titleLabel(value string) string {

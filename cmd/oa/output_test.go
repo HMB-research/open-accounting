@@ -14,6 +14,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/reports"
@@ -136,6 +137,59 @@ func TestPrintPaymentOutputs(t *testing.T) {
 	assert.Contains(t, paymentBuf.String(), "Payment PMT-00001")
 	assert.Contains(t, paymentBuf.String(), "Unallocated: 40")
 	assert.Contains(t, paymentBuf.String(), "inv-1")
+}
+
+func TestPrintInvoiceOutputs(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	invoice := invoicing.Invoice{
+		ID:            "inv-1",
+		TenantID:      "tenant-1",
+		InvoiceNumber: "INV-00001",
+		InvoiceType:   invoicing.InvoiceTypeSales,
+		ContactID:     "contact-1",
+		Contact:       &contacts.Contact{Name: "Acme"},
+		IssueDate:     now,
+		DueDate:       now.AddDate(0, 0, 14),
+		Currency:      "EUR",
+		ExchangeRate:  decimal.NewFromInt(1),
+		Subtotal:      decimal.NewFromInt(180),
+		VATAmount:     decimal.NewFromFloat(39.6),
+		Total:         decimal.NewFromFloat(219.6),
+		BaseSubtotal:  decimal.NewFromInt(180),
+		BaseVATAmount: decimal.NewFromFloat(39.6),
+		BaseTotal:     decimal.NewFromFloat(219.6),
+		AmountPaid:    decimal.NewFromInt(20),
+		Status:        invoicing.StatusDraft,
+		Reference:     "REF-1",
+		Notes:         "March services",
+		CreatedAt:     now,
+		CreatedBy:     "user-1",
+		UpdatedAt:     now,
+		Lines: []invoicing.InvoiceLine{{
+			LineNumber:   1,
+			Description:  "Consulting",
+			Quantity:     decimal.NewFromInt(2),
+			Unit:         "hour",
+			UnitPrice:    decimal.NewFromInt(100),
+			VATRate:      decimal.NewFromInt(22),
+			LineSubtotal: decimal.NewFromInt(180),
+			LineVAT:      decimal.NewFromFloat(39.6),
+			LineTotal:    decimal.NewFromFloat(219.6),
+		}},
+	}
+
+	var invoicesBuf bytes.Buffer
+	printInvoicesTable(&invoicesBuf, []invoicing.Invoice{invoice})
+	assert.Contains(t, invoicesBuf.String(), "INV-00001")
+	assert.Contains(t, invoicesBuf.String(), "199.6")
+
+	var invoiceBuf bytes.Buffer
+	printInvoice(&invoiceBuf, &invoice)
+	assert.Contains(t, invoiceBuf.String(), "Invoice INV-00001")
+	assert.Contains(t, invoiceBuf.String(), "Due amount: 199.6")
+	assert.Contains(t, invoiceBuf.String(), "Consulting")
 }
 
 func TestPrintPayrollOutputs(t *testing.T) {
