@@ -315,6 +315,56 @@ func TestPrintEmailOutputs(t *testing.T) {
 	assert.Contains(t, sentBuf.String(), "Log ID: email-1")
 }
 
+func TestPrintInterestOutputs(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	result := invoicing.InterestCalculationResult{
+		InvoiceID:         "inv-1",
+		InvoiceNumber:     "INV-00001",
+		DueDate:           time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+		DaysOverdue:       14,
+		OutstandingAmount: decimal.NewFromInt(500),
+		InterestRate:      decimal.RequireFromString("0.0005"),
+		DailyInterest:     decimal.RequireFromString("0.25"),
+		TotalInterest:     decimal.RequireFromString("3.50"),
+		TotalWithInterest: decimal.RequireFromString("503.50"),
+		CalculatedAt:      now,
+		Currency:          "EUR",
+	}
+	history := invoicing.InvoiceInterest{
+		ID:                "interest-1",
+		InvoiceID:         "inv-1",
+		CalculatedAt:      now,
+		DaysOverdue:       14,
+		PrincipalAmount:   decimal.NewFromInt(500),
+		InterestRate:      decimal.RequireFromString("0.0005"),
+		InterestAmount:    decimal.RequireFromString("3.50"),
+		TotalWithInterest: decimal.RequireFromString("503.50"),
+		CreatedAt:         now,
+	}
+
+	var settingsBuf bytes.Buffer
+	printInterestSettings(&settingsBuf, &invoicing.InterestSettings{Rate: 0.0005, AnnualRate: 0.1825, Description: "0.050% daily", IsEnabled: true})
+	assert.Contains(t, settingsBuf.String(), "Enabled: true")
+	assert.Contains(t, settingsBuf.String(), "Daily rate: 0.000500")
+
+	var tableBuf bytes.Buffer
+	printInterestCalculationsTable(&tableBuf, []invoicing.InterestCalculationResult{result})
+	assert.Contains(t, tableBuf.String(), "INV-00001")
+	assert.Contains(t, tableBuf.String(), "503.5")
+
+	var resultBuf bytes.Buffer
+	printInterestCalculation(&resultBuf, &result)
+	assert.Contains(t, resultBuf.String(), "Interest for invoice INV-00001")
+	assert.Contains(t, resultBuf.String(), "Total interest: 3.5")
+
+	var historyBuf bytes.Buffer
+	printInvoiceInterestHistoryTable(&historyBuf, []invoicing.InvoiceInterest{history})
+	assert.Contains(t, historyBuf.String(), "interest-1")
+	assert.Contains(t, historyBuf.String(), "503.5")
+}
+
 func TestPrintBankingOutputs(t *testing.T) {
 	t.Parallel()
 

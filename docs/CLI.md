@@ -487,6 +487,19 @@ go run ./cmd/oa email payment-receipt --payment-id <payment-id> --recipient-emai
 
 Template types are `INVOICE_SEND`, `PAYMENT_RECEIPT`, and `OVERDUE_REMINDER`. Use `--json` on email reads and mutations for automation.
 
+## Interest
+
+```bash
+go run ./cmd/oa interest settings get
+go run ./cmd/oa interest settings update --rate 0.0005
+go run ./cmd/oa interest settings update --annual-rate 0.1825
+go run ./cmd/oa interest overdue
+go run ./cmd/oa interest invoice --invoice-id <invoice-id>
+go run ./cmd/oa interest history --invoice-id <invoice-id>
+```
+
+The interest rate is a daily decimal rate (`0.0005` = 0.05% daily). `--annual-rate` divides the provided annual decimal rate by 365 before sending it to the API. Use `--json` on interest commands for automation.
+
 ## Banking
 
 ```bash
