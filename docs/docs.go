@@ -10793,6 +10793,24 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "Comma-separated account codes to force into operating cash flow",
+                        "name": "operating_accounts",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated account codes to force into investing cash flow",
+                        "name": "investing_accounts",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated account codes to force into financing cash flow",
+                        "name": "financing_accounts",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "Response format: json, csv, xlsx, or pdf",
                         "name": "format",
                         "in": "query"
@@ -18346,6 +18364,29 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_reports.CashFlowMappingOverrides": {
+            "type": "object",
+            "properties": {
+                "financing_account_codes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "investing_account_codes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "operating_account_codes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_reports.CashFlowStatement": {
             "type": "object",
             "properties": {
@@ -18369,6 +18410,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.CashFlowItem"
                     }
+                },
+                "mapping_overrides": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.CashFlowMappingOverrides"
                 },
                 "method": {
                     "type": "string"

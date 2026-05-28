@@ -484,6 +484,62 @@ func TestCashFlowCustomChartNameClassifications(t *testing.T) {
 	assert.Equal(t, "620", result.TotalFinancing.String())
 }
 
+func TestCashFlowMappingOverrides(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	mockRepo.JournalEntries = []JournalEntryWithLines{
+		{
+			ID:          "custom-operating",
+			EntryDate:   time.Date(2024, 1, 10, 0, 0, 0, 0, time.UTC),
+			Description: "Prepayment treated as operating",
+			Lines: []JournalLine{
+				{AccountCode: "PREPAY", AccountType: "ASSET", AccountName: "Prepayment clearing", Debit: decimal.NewFromInt(200), Credit: decimal.Zero},
+				{AccountCode: "BANK", AccountType: "ASSET", AccountName: "Bank account", Debit: decimal.Zero, Credit: decimal.NewFromInt(200)},
+			},
+		},
+		{
+			ID:          "custom-investing",
+			EntryDate:   time.Date(2024, 1, 11, 0, 0, 0, 0, time.UTC),
+			Description: "Capitalized platform work",
+			Lines: []JournalLine{
+				{AccountCode: "CAPEX-1", AccountType: "ASSET", AccountName: "Long-term platform", Debit: decimal.NewFromInt(300), Credit: decimal.Zero},
+				{AccountCode: "BANK", AccountType: "ASSET", AccountName: "Bank account", Debit: decimal.Zero, Credit: decimal.NewFromInt(300)},
+			},
+		},
+		{
+			ID:          "custom-financing",
+			EntryDate:   time.Date(2024, 1, 12, 0, 0, 0, 0, time.UTC),
+			Description: "Founder funding",
+			Lines: []JournalLine{
+				{AccountCode: "BANK", AccountType: "ASSET", AccountName: "Bank account", Debit: decimal.NewFromInt(1000), Credit: decimal.Zero},
+				{AccountCode: "FOUNDERS", AccountType: "LIABILITY", AccountName: "Founder funding", Debit: decimal.Zero, Credit: decimal.NewFromInt(1000)},
+			},
+		},
+	}
+
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", &CashFlowRequest{
+		StartDate: "2024-01-01",
+		EndDate:   "2024-01-31",
+		MappingOverrides: CashFlowMappingOverrides{
+			OperatingAccountCodes: []string{"prepay"},
+			InvestingAccountCodes: []string{"capex-1"},
+			FinancingAccountCodes: []string{"founders"},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result.MappingOverrides)
+	assert.Equal(t, []string{"PREPAY"}, result.MappingOverrides.OperatingAccountCodes)
+	assert.Equal(t, []string{"CAPEX-1"}, result.MappingOverrides.InvestingAccountCodes)
+	assert.Equal(t, []string{"FOUNDERS"}, result.MappingOverrides.FinancingAccountCodes)
+	assert.Equal(t, "-200", cashFlowAmount(result.OperatingActivities, CFOperPayments).String())
+	assert.Equal(t, "-300", cashFlowAmount(result.InvestingActivities, CFInvFixedAssets).String())
+	assert.Equal(t, "1000", cashFlowAmount(result.FinancingActivities, CFFinLoansRcvd).String())
+	assert.Equal(t, "500", result.NetCashChange.String())
+}
+
 func TestCashFlowOpeningClosingBalance(t *testing.T) {
 	ctx := context.Background()
 	mockRepo := NewMockRepository()

@@ -4016,6 +4016,21 @@ definitions:
       is_subtotal:
         type: boolean
     type: object
+  github_com_HMB-research_open-accounting_internal_reports.CashFlowMappingOverrides:
+    properties:
+      financing_account_codes:
+        items:
+          type: string
+        type: array
+      investing_account_codes:
+        items:
+          type: string
+        type: array
+      operating_account_codes:
+        items:
+          type: string
+        type: array
+    type: object
   github_com_HMB-research_open-accounting_internal_reports.CashFlowStatement:
     properties:
       closing_cash:
@@ -4032,6 +4047,8 @@ definitions:
         items:
           $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_reports.CashFlowItem'
         type: array
+      mapping_overrides:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_reports.CashFlowMappingOverrides'
       method:
         type: string
       net_cash_change:
@@ -11158,6 +11175,18 @@ paths:
       - description: 'Cash flow method: direct or indirect'
         in: query
         name: method
+        type: string
+      - description: Comma-separated account codes to force into operating cash flow
+        in: query
+        name: operating_accounts
+        type: string
+      - description: Comma-separated account codes to force into investing cash flow
+        in: query
+        name: investing_accounts
+        type: string
+      - description: Comma-separated account codes to force into financing cash flow
+        in: query
+        name: financing_accounts
         type: string
       - description: 'Response format: json, csv, xlsx, or pdf'
         in: query

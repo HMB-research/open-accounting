@@ -4360,6 +4360,11 @@ func TestCLIReportsCommands(t *testing.T) {
 			require.Equal(t, "2026-03-31", r.URL.Query().Get("end_date"))
 			method := r.URL.Query().Get("method")
 			assert.Contains(t, []string{"direct", "indirect"}, method)
+			if r.URL.Query().Get("investing_accounts") != "" {
+				require.Equal(t, "CAPEX-1", r.URL.Query().Get("investing_accounts"))
+				require.Equal(t, "PREPAY", r.URL.Query().Get("operating_accounts"))
+				require.Equal(t, "FOUNDERS", r.URL.Query().Get("financing_accounts"))
+			}
 			if r.URL.Query().Get("format") == "csv" {
 				w.Header().Set("Content-Type", "text/csv")
 				_, _ = w.Write([]byte("section,code,description,description_et,amount,is_subtotal\nsummary,closing_cash,Closing cash,,500.00,true\n"))
@@ -4575,6 +4580,19 @@ func TestCLIReportsCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"reports", "cash-flow", "--start", "2026-01-01", "--end", "2026-03-31", "--method", "indirect"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Method: indirect")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"reports", "cash-flow",
+		"--start", "2026-01-01",
+		"--end", "2026-03-31",
+		"--operating-accounts", "PREPAY",
+		"--investing-accounts", "CAPEX-1",
+		"--financing-accounts", "FOUNDERS",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"method": "direct"`)
 
 	stdout.Reset()
 	cashFlowCSVPath := filepath.Join(t.TempDir(), "cash-flow.csv")
