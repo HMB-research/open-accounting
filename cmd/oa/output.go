@@ -14,6 +14,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/quotes"
@@ -221,6 +222,67 @@ func printQuote(w io.Writer, quote *quotes.Quote) {
 }
 
 func printQuoteLinesTable(w io.Writer, lines []quotes.QuoteLine) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "NO\tDESCRIPTION\tQTY\tUNIT\tUNIT PRICE\tVAT\tTOTAL")
+	for _, line := range lines {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%d\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			line.LineNumber,
+			line.Description,
+			line.Quantity.String(),
+			line.Unit,
+			line.UnitPrice.String(),
+			line.VATRate.String(),
+			line.LineTotal.String(),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printOrdersTable(w io.Writer, ordersList []orders.Order) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNUMBER\tSTATUS\tDATE\tEXPECTED\tTOTAL\tCONTACT")
+	for _, order := range ordersList {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			order.ID,
+			order.OrderNumber,
+			order.Status,
+			formatDate(order.OrderDate),
+			formatDatePtr(order.ExpectedDelivery),
+			order.Total.String(),
+			orderContactLabel(order),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printOrder(w io.Writer, order *orders.Order) {
+	_, _ = fmt.Fprintf(w, "Order %s (%s)\n", order.OrderNumber, order.Status)
+	_, _ = fmt.Fprintf(w, "ID: %s\n", order.ID)
+	_, _ = fmt.Fprintf(w, "Contact: %s\n", orderContactLabel(*order))
+	_, _ = fmt.Fprintf(w, "Order date: %s\n", formatDate(order.OrderDate))
+	_, _ = fmt.Fprintf(w, "Expected delivery: %s\n", formatDatePtr(order.ExpectedDelivery))
+	_, _ = fmt.Fprintf(w, "Subtotal: %s %s\n", order.Subtotal.String(), order.Currency)
+	_, _ = fmt.Fprintf(w, "VAT: %s\n", order.VATAmount.String())
+	_, _ = fmt.Fprintf(w, "Total: %s\n", order.Total.String())
+	if order.QuoteID != nil && strings.TrimSpace(*order.QuoteID) != "" {
+		_, _ = fmt.Fprintf(w, "Quote: %s\n", *order.QuoteID)
+	}
+	if strings.TrimSpace(order.Notes) != "" {
+		_, _ = fmt.Fprintf(w, "Notes: %s\n", order.Notes)
+	}
+	if order.ConvertedToInvoiceID != nil && strings.TrimSpace(*order.ConvertedToInvoiceID) != "" {
+		_, _ = fmt.Fprintf(w, "Converted invoice: %s\n", *order.ConvertedToInvoiceID)
+	}
+	if len(order.Lines) > 0 {
+		printOrderLinesTable(w, order.Lines)
+	}
+}
+
+func printOrderLinesTable(w io.Writer, lines []orders.OrderLine) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "NO\tDESCRIPTION\tQTY\tUNIT\tUNIT PRICE\tVAT\tTOTAL")
 	for _, line := range lines {
@@ -790,6 +852,13 @@ func quoteContactLabel(quote quotes.Quote) string {
 		return strings.TrimSpace(quote.Contact.Name)
 	}
 	return quote.ContactID
+}
+
+func orderContactLabel(order orders.Order) string {
+	if order.Contact != nil && strings.TrimSpace(order.Contact.Name) != "" {
+		return strings.TrimSpace(order.Contact.Name)
+	}
+	return order.ContactID
 }
 
 func journalLineAccountLabel(line accounting.JournalEntryLine) string {

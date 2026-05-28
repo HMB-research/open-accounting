@@ -15,6 +15,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/quotes"
@@ -264,6 +265,59 @@ func TestPrintQuoteOutputs(t *testing.T) {
 	assert.Contains(t, quoteBuf.String(), "Quote QUO-00001")
 	assert.Contains(t, quoteBuf.String(), "Valid until: 2026-04-14")
 	assert.Contains(t, quoteBuf.String(), "Consulting")
+}
+
+func TestPrintOrderOutputs(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	expectedDelivery := now.AddDate(0, 0, 7)
+	quoteID := "quote-1"
+	invoiceID := "inv-1"
+	order := orders.Order{
+		ID:                   "order-1",
+		TenantID:             "tenant-1",
+		OrderNumber:          "ORD-00001",
+		ContactID:            "contact-1",
+		Contact:              &contacts.Contact{Name: "Acme"},
+		OrderDate:            now,
+		ExpectedDelivery:     &expectedDelivery,
+		Status:               orders.OrderStatusConfirmed,
+		Currency:             "EUR",
+		ExchangeRate:         decimal.NewFromInt(1),
+		Subtotal:             decimal.NewFromInt(180),
+		VATAmount:            decimal.NewFromFloat(39.6),
+		Total:                decimal.NewFromFloat(219.6),
+		Notes:                "March order",
+		QuoteID:              &quoteID,
+		ConvertedToInvoiceID: &invoiceID,
+		CreatedAt:            now,
+		CreatedBy:            "user-1",
+		UpdatedAt:            now,
+		Lines: []orders.OrderLine{{
+			LineNumber:   1,
+			Description:  "Consulting",
+			Quantity:     decimal.NewFromInt(2),
+			Unit:         "hour",
+			UnitPrice:    decimal.NewFromInt(100),
+			VATRate:      decimal.NewFromInt(22),
+			LineSubtotal: decimal.NewFromInt(180),
+			LineVAT:      decimal.NewFromFloat(39.6),
+			LineTotal:    decimal.NewFromFloat(219.6),
+		}},
+	}
+
+	var ordersBuf bytes.Buffer
+	printOrdersTable(&ordersBuf, []orders.Order{order})
+	assert.Contains(t, ordersBuf.String(), "ORD-00001")
+	assert.Contains(t, ordersBuf.String(), "Acme")
+
+	var orderBuf bytes.Buffer
+	printOrder(&orderBuf, &order)
+	assert.Contains(t, orderBuf.String(), "Order ORD-00001")
+	assert.Contains(t, orderBuf.String(), "Expected delivery: 2026-03-22")
+	assert.Contains(t, orderBuf.String(), "Converted invoice: inv-1")
+	assert.Contains(t, orderBuf.String(), "Consulting")
 }
 
 func TestPrintPayrollOutputs(t *testing.T) {

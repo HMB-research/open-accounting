@@ -224,6 +224,33 @@ go run ./cmd/oa quotes delete --id <quote-id>
 
 Use `--line` repeatedly on `quotes create` and `quotes update` for multi-line offers. Each line accepts `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, and `product_id`. Quote statuses are `DRAFT`, `SENT`, `ACCEPTED`, `REJECTED`, `EXPIRED`, and `CONVERTED`.
 
+## Orders
+
+```bash
+go run ./cmd/oa orders list
+go run ./cmd/oa orders list --status CONFIRMED --contact-id <contact-id> --from 2026-03-01 --to 2026-03-31
+go run ./cmd/oa orders create \
+  --contact-id <contact-id> \
+  --order-date 2026-03-15 \
+  --expected-delivery 2026-03-22 \
+  --quote-id <quote-id> \
+  --line "description=Consulting,quantity=2,unit=hour,unit_price=100.00,vat_rate=22.00"
+go run ./cmd/oa orders get --id <order-id>
+go run ./cmd/oa orders update \
+  --id <order-id> \
+  --contact-id <contact-id> \
+  --order-date 2026-03-16 \
+  --line "description=Updated consulting,quantity=3,unit=hour,unit_price=100.00,vat_rate=22.00"
+go run ./cmd/oa orders confirm --id <order-id>
+go run ./cmd/oa orders process --id <order-id>
+go run ./cmd/oa orders ship --id <order-id>
+go run ./cmd/oa orders deliver --id <order-id>
+go run ./cmd/oa orders cancel --id <order-id>
+go run ./cmd/oa orders delete --id <order-id>
+```
+
+Use `--line` repeatedly on `orders create` and `orders update`. Each line accepts `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, and `product_id`. Order statuses are `PENDING`, `CONFIRMED`, `PROCESSING`, `SHIPPED`, `DELIVERED`, and `CANCELED`.
+
 ## Payments
 
 ```bash
