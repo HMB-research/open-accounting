@@ -193,6 +193,17 @@ dropdb openaccounting_restore_drill
 
 The restore drill refuses to use the same URL as `DATABASE_URL`, checks the `.sha256` file when present, and verifies that core Open Accounting tables and migrations were restored.
 
+Check backup freshness and checksum from cron, systemd timers, or monitoring agents:
+
+```bash
+scripts/db-backup-health.sh \
+  --backup-dir ./backups \
+  --max-age-hours 26 \
+  --status-file /var/lib/node_exporter/textfile_collector/openaccounting_backup.prom
+```
+
+The health check finds the newest `openaccounting_*.dump`, requires a non-empty file, verifies `FILE.sha256`, fails when the backup is older than the configured threshold, and can write Prometheus textfile metrics.
+
 ---
 
 ## Troubleshooting

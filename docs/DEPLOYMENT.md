@@ -201,6 +201,17 @@ dropdb openaccounting_restore_drill
 
 `db-restore-drill.sh` refuses to run when the restore URL matches `DATABASE_URL`, checks the checksum when present, requires an empty target database unless `--allow-non-empty` is passed, restores with `pg_restore`, and verifies core Open Accounting tables plus applied migrations.
 
+Monitor backup freshness and checksum status with the health script. It exits non-zero on missing, stale, undersized, or checksum-failing backups and can emit Prometheus textfile metrics:
+
+```bash
+scripts/db-backup-health.sh \
+  --backup-dir /backups \
+  --max-age-hours 26 \
+  --status-file /var/lib/node_exporter/textfile_collector/openaccounting_backup.prom
+```
+
+Alert when `open_accounting_backup_health` is `0` or when `open_accounting_backup_latest_age_seconds` exceeds the expected schedule plus a grace period. Use a separate object-storage sync or platform backup export for offsite copies, and run `db-restore-drill.sh` from a scheduled job against the latest synced backup.
+
 ### Connection Pooling
 
 For high-traffic deployments, use PgBouncer:
