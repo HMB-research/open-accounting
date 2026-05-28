@@ -34,6 +34,9 @@ func (s *Service) GenerateCashFlowStatement(ctx context.Context, tenantID, schem
 	if err != nil {
 		return nil, fmt.Errorf("invalid end date: %w", err)
 	}
+	if endDate.Before(startDate) {
+		return nil, fmt.Errorf("end date must be on or after start date")
+	}
 
 	// Get journal entries for the period
 	entries, err := s.repo.GetJournalEntriesForPeriod(ctx, schemaName, tenantID, startDate, endDate)
