@@ -309,9 +309,13 @@ func (s *Service) DeleteWarehouse(ctx context.Context, tenantID, schemaName, war
 	return nil
 }
 
-// GetInventoryValuation returns standard-cost valuation for tracked goods.
-func (s *Service) GetInventoryValuation(ctx context.Context, tenantID, schemaName, warehouseID string) (*InventoryValuationReport, error) {
+// GetInventoryValuation returns inventory valuation for tracked goods.
+func (s *Service) GetInventoryValuation(ctx context.Context, tenantID, schemaName, warehouseID, method string) (*InventoryValuationReport, error) {
 	warehouseID = strings.TrimSpace(warehouseID)
+	valuationMethod, err := normalizeInventoryValuationMethod(method)
+	if err != nil {
+		return nil, err
+	}
 	if warehouseID != "" {
 		if _, err := s.repo.GetWarehouseByID(ctx, schemaName, tenantID, warehouseID); err != nil {
 			return nil, fmt.Errorf("get warehouse: %w", err)
@@ -335,7 +339,7 @@ func (s *Service) GetInventoryValuation(ctx context.Context, tenantID, schemaNam
 	report := &InventoryValuationReport{
 		TenantID:        tenantID,
 		WarehouseID:     warehouseID,
-		ValuationMethod: InventoryValuationMethodStandardCost,
+		ValuationMethod: valuationMethod,
 		Lines:           []InventoryValuationLine{},
 		TotalQuantity:   decimal.Zero,
 		TotalReserved:   decimal.Zero,
@@ -347,6 +351,11 @@ func (s *Service) GetInventoryValuation(ctx context.Context, tenantID, schemaNam
 	for _, product := range products {
 		if product.ProductType != ProductTypeGoods || !product.TrackInventory {
 			continue
+		}
+
+		unitCost, err := s.inventoryValuationUnitCost(ctx, tenantID, schemaName, product, valuationMethod)
+		if err != nil {
+			return nil, err
 		}
 
 		levels, err := s.repo.GetStockLevelsByProduct(ctx, schemaName, tenantID, product.ID)
@@ -361,7 +370,7 @@ func (s *Service) GetInventoryValuation(ctx context.Context, tenantID, schemaNam
 					Quantity:     product.CurrentStock,
 					ReservedQty:  decimal.Zero,
 					AvailableQty: product.CurrentStock,
-				}, Warehouse{}))
+				}, Warehouse{}, unitCost))
 			}
 			continue
 		}
@@ -373,7 +382,7 @@ func (s *Service) GetInventoryValuation(ctx context.Context, tenantID, schemaNam
 			if warehouseID != "" && level.WarehouseID != warehouseID {
 				continue
 			}
-			report.addValuationLine(inventoryValuationLine(product, level, warehouseByID[level.WarehouseID]))
+			report.addValuationLine(inventoryValuationLine(product, level, warehouseByID[level.WarehouseID], unitCost))
 		}
 	}
 
@@ -388,7 +397,60 @@ func (s *Service) GetInventoryValuation(ctx context.Context, tenantID, schemaNam
 	return report, nil
 }
 
-func inventoryValuationLine(product Product, level StockLevel, warehouse Warehouse) InventoryValuationLine {
+func normalizeInventoryValuationMethod(method string) (string, error) {
+	normalized := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(method), "-", "_"))
+	switch normalized {
+	case "", "STANDARD", InventoryValuationMethodStandardCost:
+		return InventoryValuationMethodStandardCost, nil
+	case "WEIGHTED", "AVERAGE_COST", InventoryValuationMethodWeightedAverage:
+		return InventoryValuationMethodWeightedAverage, nil
+	default:
+		return "", fmt.Errorf("invalid valuation method: %s", method)
+	}
+}
+
+func (s *Service) inventoryValuationUnitCost(ctx context.Context, tenantID, schemaName string, product Product, method string) (decimal.Decimal, error) {
+	if method == InventoryValuationMethodStandardCost {
+		return product.PurchasePrice, nil
+	}
+
+	movements, err := s.repo.ListMovements(ctx, schemaName, tenantID, product.ID)
+	if err != nil {
+		return decimal.Zero, fmt.Errorf("list movements for product %s: %w", product.ID, err)
+	}
+
+	totalQuantity := decimal.Zero
+	totalCost := decimal.Zero
+	for _, movement := range movements {
+		if movement.TenantID != tenantID {
+			continue
+		}
+		if movement.MovementType != MovementTypeIn && movement.MovementType != MovementTypeAdjustment {
+			continue
+		}
+		if movement.Quantity.LessThanOrEqual(decimal.Zero) {
+			continue
+		}
+
+		movementCost := movement.TotalCost
+		if movementCost.IsZero() && movement.UnitCost.GreaterThan(decimal.Zero) {
+			movementCost = movement.Quantity.Mul(movement.UnitCost)
+		}
+		if movementCost.LessThanOrEqual(decimal.Zero) {
+			continue
+		}
+
+		totalQuantity = totalQuantity.Add(movement.Quantity)
+		totalCost = totalCost.Add(movementCost)
+	}
+
+	if totalQuantity.IsZero() {
+		return product.PurchasePrice, nil
+	}
+	return totalCost.Div(totalQuantity), nil
+}
+
+func inventoryValuationLine(product Product, level StockLevel, warehouse Warehouse, unitCost decimal.Decimal) InventoryValuationLine {
 	line := InventoryValuationLine{
 		ProductID:      product.ID,
 		ProductCode:    product.Code,
@@ -399,8 +461,8 @@ func inventoryValuationLine(product Product, level StockLevel, warehouse Warehou
 		Quantity:       level.Quantity,
 		ReservedQty:    level.ReservedQty,
 		AvailableQty:   level.AvailableQty,
-		UnitCost:       product.PurchasePrice,
-		InventoryValue: level.Quantity.Mul(product.PurchasePrice),
+		UnitCost:       unitCost,
+		InventoryValue: level.Quantity.Mul(unitCost),
 	}
 	if line.WarehouseID == "" {
 		line.WarehouseCode = "UNASSIGNED"

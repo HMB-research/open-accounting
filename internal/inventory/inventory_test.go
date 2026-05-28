@@ -1651,8 +1651,37 @@ func TestService_GetInventoryValuation(t *testing.T) {
 		ReservedQty:  decimal.Zero,
 		AvailableQty: decimal.RequireFromString("3.00"),
 	}
+	ts.repo.Movements["p1"] = []InventoryMovement{
+		{
+			ID:           "mov-1",
+			TenantID:     "tenant-1",
+			ProductID:    "p1",
+			MovementType: MovementTypeIn,
+			Quantity:     decimal.RequireFromString("10.00"),
+			UnitCost:     decimal.RequireFromString("8.00"),
+			TotalCost:    decimal.RequireFromString("80.00"),
+		},
+		{
+			ID:           "mov-2",
+			TenantID:     "tenant-1",
+			ProductID:    "p1",
+			MovementType: MovementTypeIn,
+			Quantity:     decimal.RequireFromString("10.00"),
+			UnitCost:     decimal.RequireFromString("12.00"),
+			TotalCost:    decimal.RequireFromString("120.00"),
+		},
+		{
+			ID:           "mov-out",
+			TenantID:     "tenant-1",
+			ProductID:    "p1",
+			MovementType: MovementTypeOut,
+			Quantity:     decimal.RequireFromString("2.00"),
+			UnitCost:     decimal.RequireFromString("99.00"),
+			TotalCost:    decimal.RequireFromString("198.00"),
+		},
+	}
 
-	report, err := ts.svc.GetInventoryValuation(ctx, "tenant-1", "test_schema", "")
+	report, err := ts.svc.GetInventoryValuation(ctx, "tenant-1", "test_schema", "", "")
 	require.NoError(t, err)
 	require.Len(t, report.Lines, 2)
 	assert.Equal(t, InventoryValuationMethodStandardCost, report.ValuationMethod)
@@ -1664,13 +1693,24 @@ func TestService_GetInventoryValuation(t *testing.T) {
 	assert.Equal(t, "BRANCH", report.Lines[0].WarehouseCode)
 	assert.True(t, report.Lines[0].InventoryValue.Equal(decimal.RequireFromString("31.5000")))
 
-	filtered, err := ts.svc.GetInventoryValuation(ctx, "tenant-1", "test_schema", "wh-1")
+	weighted, err := ts.svc.GetInventoryValuation(ctx, "tenant-1", "test_schema", "", "weighted-average")
+	require.NoError(t, err)
+	require.Len(t, weighted.Lines, 2)
+	assert.Equal(t, InventoryValuationMethodWeightedAverage, weighted.ValuationMethod)
+	assert.True(t, weighted.Lines[0].UnitCost.Equal(decimal.RequireFromString("10.00")))
+	assert.True(t, weighted.TotalValue.Equal(decimal.RequireFromString("150.00")))
+
+	filtered, err := ts.svc.GetInventoryValuation(ctx, "tenant-1", "test_schema", "wh-1", "")
 	require.NoError(t, err)
 	require.Len(t, filtered.Lines, 1)
 	assert.Equal(t, "wh-1", filtered.WarehouseID)
 	assert.Equal(t, "MAIN", filtered.Lines[0].WarehouseCode)
 	assert.True(t, filtered.TotalQuantity.Equal(decimal.RequireFromString("12.00")))
 	assert.True(t, filtered.TotalValue.Equal(decimal.RequireFromString("126.0000")))
+
+	_, err = ts.svc.GetInventoryValuation(ctx, "tenant-1", "test_schema", "", "fifo")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid valuation method")
 }
 
 func TestNewService(t *testing.T) {

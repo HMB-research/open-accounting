@@ -1564,10 +1564,13 @@ func (c *apiClient) listInventoryMovements(ctx context.Context, tenantID, produc
 	return resp, nil
 }
 
-func (c *apiClient) getInventoryValuation(ctx context.Context, tenantID, warehouseID string) (*inventory.InventoryValuationReport, error) {
+func (c *apiClient) getInventoryValuation(ctx context.Context, tenantID, warehouseID, method string) (*inventory.InventoryValuationReport, error) {
 	values := url.Values{}
 	if strings.TrimSpace(warehouseID) != "" {
 		values.Set("warehouse_id", strings.TrimSpace(warehouseID))
+	}
+	if strings.TrimSpace(method) != "" {
+		values.Set("method", strings.TrimSpace(method))
 	}
 
 	var resp inventory.InventoryValuationReport

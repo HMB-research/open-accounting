@@ -7703,8 +7703,8 @@ paths:
       - Inventory
   /tenants/{tenantID}/inventory/valuation:
     get:
-      description: Return valued on-hand stock for tracked goods using product purchase
-        price as standard cost
+      description: Return valued on-hand stock for tracked goods using standard-cost
+        or weighted-average valuation
       parameters:
       - description: Tenant ID
         in: path
@@ -7714,6 +7714,10 @@ paths:
       - description: Warehouse ID
         in: query
         name: warehouse_id
+        type: string
+      - description: 'Valuation method: standard-cost or weighted-average'
+        in: query
+        name: method
         type: string
       produces:
       - application/json

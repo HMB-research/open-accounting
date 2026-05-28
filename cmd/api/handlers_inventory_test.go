@@ -937,8 +937,28 @@ func TestGetInventoryValuation(t *testing.T) {
 		ReservedQty:  decimal.RequireFromString("2.00"),
 		AvailableQty: decimal.RequireFromString("10.00"),
 	}
+	repo.movements["prod-1"] = []inventory.InventoryMovement{
+		{
+			ID:           "mov-1",
+			TenantID:     "tenant-1",
+			ProductID:    "prod-1",
+			MovementType: inventory.MovementTypeIn,
+			Quantity:     decimal.RequireFromString("10.00"),
+			UnitCost:     decimal.RequireFromString("8.00"),
+			TotalCost:    decimal.RequireFromString("80.00"),
+		},
+		{
+			ID:           "mov-2",
+			TenantID:     "tenant-1",
+			ProductID:    "prod-1",
+			MovementType: inventory.MovementTypeIn,
+			Quantity:     decimal.RequireFromString("10.00"),
+			UnitCost:     decimal.RequireFromString("12.00"),
+			TotalCost:    decimal.RequireFromString("120.00"),
+		},
+	}
 
-	req := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/inventory/valuation?warehouse_id=wh-1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/inventory/valuation?warehouse_id=wh-1&method=weighted-average", nil)
 	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
 	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
 
@@ -950,12 +970,13 @@ func TestGetInventoryValuation(t *testing.T) {
 	var result inventory.InventoryValuationReport
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &result))
 	require.Len(t, result.Lines, 1)
-	assert.Equal(t, inventory.InventoryValuationMethodStandardCost, result.ValuationMethod)
+	assert.Equal(t, inventory.InventoryValuationMethodWeightedAverage, result.ValuationMethod)
 	assert.Equal(t, "wh-1", result.WarehouseID)
 	assert.Equal(t, "SKU-001", result.Lines[0].ProductCode)
 	assert.Equal(t, "MAIN", result.Lines[0].WarehouseCode)
+	assert.True(t, result.Lines[0].UnitCost.Equal(decimal.RequireFromString("10.00")))
 	assert.True(t, result.TotalQuantity.Equal(decimal.RequireFromString("12.00")))
-	assert.True(t, result.TotalValue.Equal(decimal.RequireFromString("126.0000")))
+	assert.True(t, result.TotalValue.Equal(decimal.RequireFromString("120.00")))
 }
 
 func TestListProductCategories(t *testing.T) {

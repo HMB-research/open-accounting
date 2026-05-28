@@ -5377,7 +5377,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Return valued on-hand stock for tracked goods using product purchase price as standard cost",
+                "description": "Return valued on-hand stock for tracked goods using standard-cost or weighted-average valuation",
                 "produces": [
                     "application/json"
                 ],
@@ -5397,6 +5397,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Warehouse ID",
                         "name": "warehouse_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Valuation method: standard-cost or weighted-average",
+                        "name": "method",
                         "in": "query"
                     }
                 ],
