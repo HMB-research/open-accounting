@@ -1607,6 +1607,7 @@ Authorization: Bearer <token>
 ```http
 GET /tenants/{tenantId}/warehouses?active_only=true
 POST /tenants/{tenantId}/warehouses
+POST /tenants/{tenantId}/warehouses/import
 GET /tenants/{tenantId}/warehouses/{warehouseId}
 PUT /tenants/{tenantId}/warehouses/{warehouseId}
 DELETE /tenants/{tenantId}/warehouses/{warehouseId}
@@ -1614,6 +1615,19 @@ Authorization: Bearer <token>
 ```
 
 Create warehouse payloads accept `code`, `name`, optional `address`, and `is_default`. Update payloads accept `name`, optional `address`, `is_default`, and `is_active`.
+
+```http
+POST /tenants/{tenantId}/warehouses/import
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "file_name": "warehouses.csv",
+  "csv_content": "code,name,address,is_default,status\nMAIN,Main warehouse,Tallinn,true,ACTIVE\n"
+}
+```
+
+Warehouse CSV imports require `code` and `name`. Optional columns include `address`, `is_default`, `status`, and `is_active`; `status` accepts `ACTIVE` or `INACTIVE`. Supplied codes are preserved and checked for duplicates.
 
 ### Stock Operations
 

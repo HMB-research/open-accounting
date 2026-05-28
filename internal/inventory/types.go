@@ -215,6 +215,29 @@ type CreateWarehouseRequest struct {
 	IsDefault bool   `json:"is_default"`
 }
 
+// ImportWarehousesRequest contains CSV payload for warehouse master migration.
+type ImportWarehousesRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+}
+
+// ImportWarehousesResult summarizes a warehouse CSV import.
+type ImportWarehousesResult struct {
+	FileName          string                     `json:"file_name,omitempty"`
+	RowsProcessed     int                        `json:"rows_processed"`
+	WarehousesCreated int                        `json:"warehouses_created"`
+	RowsSkipped       int                        `json:"rows_skipped"`
+	Errors            []ImportWarehousesRowError `json:"errors,omitempty"`
+}
+
+// ImportWarehousesRowError describes a row-level warehouse import failure.
+type ImportWarehousesRowError struct {
+	Row     int    `json:"row"`
+	Code    string `json:"code,omitempty"`
+	Name    string `json:"name,omitempty"`
+	Message string `json:"message"`
+}
+
 // UpdateWarehouseRequest represents a request to update a warehouse
 type UpdateWarehouseRequest struct {
 	Name      string `json:"name"`

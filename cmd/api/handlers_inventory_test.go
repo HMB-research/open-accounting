@@ -608,6 +608,47 @@ func TestCreateWarehouse(t *testing.T) {
 	assert.Equal(t, "Test Warehouse", result.Name)
 }
 
+func TestImportWarehouses(t *testing.T) {
+	h, repo, tenantRepo := setupInventoryTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	body := map[string]interface{}{
+		"file_name":   "warehouses.csv",
+		"csv_content": "code,name,address,is_default,status\nMAIN,Main Warehouse,Tallinn,true,ACTIVE\n",
+	}
+	bodyBytes, _ := json.Marshal(body)
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/warehouses/import", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.ImportWarehouses(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var result inventory.ImportWarehousesResult
+	err := json.Unmarshal(rr.Body.Bytes(), &result)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.WarehousesCreated)
+	assert.Equal(t, 0, result.RowsSkipped)
+
+	require.Len(t, repo.warehouses, 1)
+	for _, warehouse := range repo.warehouses {
+		assert.Equal(t, "MAIN", warehouse.Code)
+		assert.Equal(t, "Main Warehouse", warehouse.Name)
+		assert.Equal(t, "Tallinn", warehouse.Address)
+		assert.True(t, warehouse.IsDefault)
+		assert.True(t, warehouse.IsActive)
+	}
+}
+
 func TestAdjustStock(t *testing.T) {
 	h, repo, tenantRepo := setupInventoryTestHandlers()
 
