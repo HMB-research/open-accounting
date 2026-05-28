@@ -252,6 +252,11 @@ func TestCLIAuthPublicCommands(t *testing.T) {
 				"token_type":   "Bearer",
 				"expires_in":   900,
 			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/logout":
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "refresh-123", req["refresh_token"])
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "revoked"})
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -276,6 +281,12 @@ func TestCLIAuthPublicCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "jwt-refreshed")
 	assert.Contains(t, stdout.String(), "900 seconds")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"auth", "logout", "--base-url", server.URL, "--refresh-token", "refresh-123"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Revoked refresh session")
+	assert.Contains(t, stdout.String(), "Removed local CLI config")
 }
 
 func TestCLITokenCommands(t *testing.T) {

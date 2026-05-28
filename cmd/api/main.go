@@ -95,6 +95,7 @@ func main() {
 
 	// Initialize services
 	tokenService := auth.NewTokenService(cfg.JWTSecret, cfg.AccessExpiry, cfg.RefreshExpiry)
+	refreshSessionService := auth.NewRefreshSessionService(pool)
 	apiTokenService := apitoken.NewService(pool)
 	tokenService.SetAPITokenValidator(apiTokenService)
 	tenantService := tenant.NewService(pool)
@@ -148,6 +149,7 @@ func main() {
 	handlers := &Handlers{
 		pool:                     pool,
 		tokenService:             tokenService,
+		refreshSessionService:    refreshSessionService,
 		apiTokenService:          apiTokenService,
 		tenantService:            tenantService,
 		accountingService:        accountingService,
@@ -358,6 +360,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 		r.Post("/auth/register", h.Register)
 		r.Post("/auth/login", h.Login)
 		r.Post("/auth/refresh", h.RefreshToken)
+		r.Post("/auth/logout", h.Logout)
 
 		// Public invitation endpoints (no auth required)
 		r.Get("/invitations/{token}", h.GetInvitationByToken)

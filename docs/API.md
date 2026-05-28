@@ -102,6 +102,21 @@ Content-Type: application/json
 }
 ```
 
+The response includes a replacement `refresh_token`; store the new refresh token and discard the old one.
+
+### Logout
+
+Revoke a refresh token session.
+
+```http
+POST /auth/logout
+Content-Type: application/json
+
+{
+  "refresh_token": "eyJhbGc..."
+}
+```
+
 ---
 
 ## API Tokens

@@ -96,21 +96,22 @@ Each tenant gets a dedicated PostgreSQL schema (e.g., `tenant_acme`) containing:
       │──────────────────▶│
       │                   │  2. Validate credentials
       │                   │  3. Generate JWT tokens
+      │                   │  4. Persist hashed refresh session
       │◀──────────────────│
       │ access_token      │
       │ refresh_token     │
       │                   │
-      │  4. Optional: create tenant-scoped API token
+      │  5. Optional: create tenant-scoped API token
       │──────────────────▶│
-      │                   │  5. Persist token hash + metadata
+      │                   │  6. Persist token hash + metadata
       │◀──────────────────│
       │ raw api token     │
       │                   │
-      │  6. API call + Bearer token
+      │  7. API call + Bearer token
       │──────────────────▶│
-      │                   │  7. Validate JWT or API token
-      │                   │  8. Extract claims
-      │                   │  9. Check tenant access
+      │                   │  8. Validate JWT or API token
+      │                   │  9. Extract claims
+      │                   │ 10. Check tenant access
       │◀──────────────────│
       │ Response          │
 ```
@@ -127,7 +128,7 @@ Each tenant gets a dedicated PostgreSQL schema (e.g., `tenant_acme`) containing:
 }
 ```
 
-`token_kind` is enforced during validation: JWT access tokens must use `access_token`, JWT refresh tokens must use `refresh_token`, and tenant-scoped API tokens use `api_token` after lookup by the API token service. Refresh tokens are accepted only by `/auth/refresh`, and access tokens are rejected as refresh tokens.
+`token_kind` is enforced during validation: JWT access tokens must use `access_token`, JWT refresh tokens must use `refresh_token`, and tenant-scoped API tokens use `api_token` after lookup by the API token service. Refresh tokens are accepted only by `/auth/refresh` and `/auth/logout`, access tokens are rejected as refresh tokens, and refresh tokens are stored server-side as hashed sessions so they can be rotated and revoked.
 
 ### API Token Notes
 
