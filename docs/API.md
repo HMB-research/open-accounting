@@ -1977,6 +1977,51 @@ Reconciliation statuses are `IN_PROGRESS` and `COMPLETED`.
 
 ---
 
+## Plugins
+
+### Admin Registries
+
+```http
+GET /admin/plugin-registries
+POST /admin/plugin-registries
+DELETE /admin/plugin-registries/{id}
+POST /admin/plugin-registries/{id}/sync
+Authorization: Bearer <token>
+```
+
+`POST /admin/plugin-registries` accepts `name`, `url`, and optional `description`.
+
+### Admin Plugins
+
+```http
+GET /admin/plugins
+GET /admin/plugins/search?q=vat
+GET /admin/plugins/permissions
+POST /admin/plugins/install
+GET /admin/plugins/{id}
+POST /admin/plugins/{id}/enable
+POST /admin/plugins/{id}/disable
+DELETE /admin/plugins/{id}
+Authorization: Bearer <token>
+```
+
+Install requests accept `repository_url`. Enable requests accept `granted_permissions`.
+
+### Tenant Plugins
+
+```http
+GET /tenants/{tenantId}/plugins
+POST /tenants/{tenantId}/plugins/{pluginId}/enable
+POST /tenants/{tenantId}/plugins/{pluginId}/disable
+GET /tenants/{tenantId}/plugins/{pluginId}/settings
+PUT /tenants/{tenantId}/plugins/{pluginId}/settings
+Authorization: Bearer <token>
+```
+
+Tenant plugin enable and settings update requests accept arbitrary plugin-specific JSON settings.
+
+---
+
 ## User Management
 
 ### Invite User

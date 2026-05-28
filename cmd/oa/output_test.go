@@ -22,6 +22,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
+	"github.com/HMB-research/open-accounting/internal/plugin"
 	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/reports"
@@ -100,6 +101,46 @@ func TestPrintTables(t *testing.T) {
 		Role:   tenant.RoleViewer,
 	})
 	assert.Contains(t, membershipBuf.String(), "Joined tenant Alpha")
+
+	var registriesBuf bytes.Buffer
+	printPluginRegistriesTable(&registriesBuf, []plugin.Registry{{
+		Name:       "Official",
+		URL:        "https://plugins.example.com",
+		IsOfficial: true,
+		IsActive:   true,
+	}})
+	assert.Contains(t, registriesBuf.String(), "Official")
+
+	var pluginsBuf bytes.Buffer
+	printPluginsTable(&pluginsBuf, []plugin.Plugin{{
+		Name:          "vat-tools",
+		DisplayName:   "VAT Tools",
+		Version:       "1.0.0",
+		RepositoryURL: "https://github.com/example/vat-tools",
+		State:         plugin.StateEnabled,
+	}})
+	assert.Contains(t, pluginsBuf.String(), "VAT Tools")
+
+	var searchBuf bytes.Buffer
+	printPluginSearchResultsTable(&searchBuf, []plugin.PluginSearchResult{{
+		Plugin:   plugin.PluginInfo{Name: "vat-tools", DisplayName: "VAT Tools", Version: "1.0.0", Repository: "https://github.com/example/vat-tools"},
+		Registry: "Official",
+	}})
+	assert.Contains(t, searchBuf.String(), "Official")
+
+	var permissionsBuf bytes.Buffer
+	printPluginPermissionsTable(&permissionsBuf, map[string]plugin.Permission{
+		"contacts:read": {Name: "contacts:read", Category: plugin.CategoryDataAccess, Risk: plugin.RiskLow, Description: "Read contacts"},
+	})
+	assert.Contains(t, permissionsBuf.String(), "contacts:read")
+
+	var tenantPluginsBuf bytes.Buffer
+	printTenantPluginsTable(&tenantPluginsBuf, []plugin.TenantPlugin{{
+		IsEnabled: true,
+		UpdatedAt: now,
+		Plugin:    &plugin.Plugin{DisplayName: "VAT Tools"},
+	}})
+	assert.Contains(t, tenantPluginsBuf.String(), "VAT Tools")
 
 	var accountBuf bytes.Buffer
 	account := accounting.Account{

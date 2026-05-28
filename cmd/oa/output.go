@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
+	"github.com/HMB-research/open-accounting/internal/plugin"
 	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/reports"
@@ -124,6 +126,96 @@ func printTenantMembership(w io.Writer, membership *tenant.TenantMembership) {
 		_, _ = fmt.Fprintf(w, "Slug: %s\n", membership.Tenant.Slug)
 	}
 	_, _ = fmt.Fprintf(w, "Default: %t\n", membership.IsDefault)
+}
+
+func printPluginRegistriesTable(w io.Writer, registries []plugin.Registry) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNAME\tURL\tOFFICIAL\tACTIVE\tLAST SYNC")
+	for _, registry := range registries {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%t\t%t\t%s\n",
+			registry.ID,
+			registry.Name,
+			registry.URL,
+			registry.IsOfficial,
+			registry.IsActive,
+			formatTimePtr(registry.LastSyncedAt),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printPluginsTable(w io.Writer, plugins []plugin.Plugin) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNAME\tDISPLAY\tVERSION\tSTATE\tREPOSITORY")
+	for _, item := range plugins {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			item.ID,
+			item.Name,
+			item.DisplayName,
+			item.Version,
+			item.State,
+			item.RepositoryURL,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printPluginSearchResultsTable(w io.Writer, results []plugin.PluginSearchResult) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "NAME\tDISPLAY\tVERSION\tREGISTRY\tREPOSITORY")
+	for _, result := range results {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\n",
+			result.Plugin.Name,
+			result.Plugin.DisplayName,
+			result.Plugin.Version,
+			result.Registry,
+			result.Plugin.Repository,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printPluginPermissionsTable(w io.Writer, permissions map[string]plugin.Permission) {
+	keys := make([]string, 0, len(permissions))
+	for key := range permissions {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "NAME\tCATEGORY\tRISK\tDESCRIPTION")
+	for _, key := range keys {
+		permission := permissions[key]
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", permission.Name, permission.Category, permission.Risk, permission.Description)
+	}
+	_ = tw.Flush()
+}
+
+func printTenantPluginsTable(w io.Writer, plugins []plugin.TenantPlugin) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "PLUGIN\tNAME\tENABLED\tTENANT\tUPDATED")
+	for _, tenantPlugin := range plugins {
+		name := tenantPlugin.PluginID.String()
+		if tenantPlugin.Plugin != nil && strings.TrimSpace(tenantPlugin.Plugin.DisplayName) != "" {
+			name = tenantPlugin.Plugin.DisplayName
+		}
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%t\t%s\t%s\n",
+			tenantPlugin.PluginID,
+			name,
+			tenantPlugin.IsEnabled,
+			tenantPlugin.TenantID,
+			tenantPlugin.UpdatedAt.Format(time.RFC3339),
+		)
+	}
+	_ = tw.Flush()
 }
 
 func printAccountsTable(w io.Writer, accounts []accounting.Account) {
