@@ -20,7 +20,7 @@
 >
 > Full local baseline last verified on 2026-05-28:
 > `go test ./...`, `golangci-lint run`, `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)`, `cd frontend && bun run lint`, `cd frontend && bun run check`, `cd frontend && bun run test`, `cd frontend && bun run build`, `cd frontend && bun run test:e2e:smoke`, and the full local `demo-chromium` Playwright project pass against fresh PostgreSQL-backed demo environments.
-> Production hardening, deeper historical cutover tooling beyond payroll, tax, product, and fixed-asset imports, deeper accountant exception actions, and automated document retention/reconciliation policy enforcement are still in progress.
+> Production hardening, deeper historical cutover tooling beyond payroll, tax, product/stock, and fixed-asset imports, deeper accountant exception actions, and automated document retention/reconciliation policy enforcement are still in progress.
 
 CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API token once and then uses that token for subsequent reads and mutations.
 
@@ -317,7 +317,7 @@ open-accounting/
 - [x] Access/refresh JWT purpose separation
 - [x] Revocable, single-use refresh token sessions
 - [x] CLI/API refresh-session listing and revocation
-- [x] CSV import for chart of accounts, contacts, employees, invoices, products, fixed assets, and opening balances
+- [x] CSV import for chart of accounts, contacts, employees, invoices, products/stock, fixed assets, and opening balances
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings
 - [x] Fiscal-year close readiness and retained-earnings carry-forward workflow
@@ -327,7 +327,7 @@ open-accounting/
 - [x] Backup creation and restore-drill scripts for self-hosted operations
 
 ### Still missing for reliable production use
-- [ ] Remaining external migration imports beyond payroll, tax history, products, and fixed assets
+- [ ] Remaining external migration imports beyond payroll, tax history, product/stock, and fixed assets
 - [ ] Automated document policy enforcement in close packs and broader workflow blockers
 - [ ] Broader auth administration controls
 - [ ] E-invoice, direct bank feeds, SEPA initiation, and automatic e-MTA submission

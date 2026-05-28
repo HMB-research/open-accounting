@@ -476,10 +476,11 @@ go run ./cmd/oa inventory warehouses update --id <warehouse-id> --name "Main war
 go run ./cmd/oa inventory warehouses delete --id <warehouse-id>
 
 go run ./cmd/oa inventory adjust --product-id <product-id> --warehouse-id <warehouse-id> --quantity -2 --unit-cost 10.50 --reason "Cycle count"
+go run ./cmd/oa inventory stock import --file ./stock.csv
 go run ./cmd/oa inventory transfer --product-id <product-id> --from-warehouse-id <warehouse-id> --to-warehouse-id <warehouse-id> --quantity 3
 ```
 
-Product types are `GOODS` and `SERVICE`; product statuses are `ACTIVE` and `INACTIVE`. Product CSV imports require `name` and `sales_price`; optional columns include `code`, `product_type`, `category_id`, `category_name`, prices, VAT, reorder settings, account IDs, inventory tracking, status, barcode, supplier, and lead time. Use `--json` on inventory read and mutation commands for automation. `inventory adjust` accepts signed quantities; positive quantities add stock and negative quantities remove stock.
+Product types are `GOODS` and `SERVICE`; product statuses are `ACTIVE` and `INACTIVE`. Product CSV imports require `name` and `sales_price`; optional columns include `code`, `product_type`, `category_id`, `category_name`, prices, VAT, reorder settings, account IDs, inventory tracking, status, barcode, supplier, and lead time. Use `--json` on inventory read and mutation commands for automation. `inventory adjust` accepts signed quantities; positive quantities add stock and negative quantities remove stock. `inventory stock import` accepts `product_id` or `product_code`, `warehouse_id` or `warehouse_code`, signed `quantity`, optional `unit_cost`, and optional `reason`.
 
 ## Cost centers
 

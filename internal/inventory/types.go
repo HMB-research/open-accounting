@@ -233,6 +233,31 @@ type AdjustStockRequest struct {
 	UserID      string `json:"-"`
 }
 
+// ImportStockAdjustmentsRequest contains CSV payload for stock adjustment migration.
+type ImportStockAdjustmentsRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+	UserID     string `json:"-"`
+}
+
+// ImportStockAdjustmentsResult summarizes a stock adjustment CSV import.
+type ImportStockAdjustmentsResult struct {
+	FileName            string                           `json:"file_name,omitempty"`
+	RowsProcessed       int                              `json:"rows_processed"`
+	AdjustmentsImported int                              `json:"adjustments_imported"`
+	RowsSkipped         int                              `json:"rows_skipped"`
+	Errors              []ImportStockAdjustmentsRowError `json:"errors,omitempty"`
+}
+
+// ImportStockAdjustmentsRowError describes a row-level stock import failure.
+type ImportStockAdjustmentsRowError struct {
+	Row          int    `json:"row"`
+	ProductRef   string `json:"product_ref,omitempty"`
+	WarehouseRef string `json:"warehouse_ref,omitempty"`
+	Quantity     string `json:"quantity,omitempty"`
+	Message      string `json:"message"`
+}
+
 // TransferStockRequest represents a request to transfer stock between warehouses
 type TransferStockRequest struct {
 	ProductID       string `json:"product_id"`

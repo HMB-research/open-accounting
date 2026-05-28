@@ -5168,6 +5168,63 @@
                 }
             }
         },
+        "/tenants/{tenantID}/inventory/stock-import": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Import signed stock adjustment rows from CSV using product and warehouse IDs or codes",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Inventory"
+                ],
+                "summary": "Import stock adjustments",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "CSV import payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_inventory.ImportStockAdjustmentsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_inventory.ImportStockAdjustmentsResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/invitations": {
             "get": {
                 "security": [
@@ -13435,6 +13492,60 @@
                 },
                 "row": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_inventory.ImportStockAdjustmentsRequest": {
+            "type": "object",
+            "properties": {
+                "csv_content": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_inventory.ImportStockAdjustmentsResult": {
+            "type": "object",
+            "properties": {
+                "adjustments_imported": {
+                    "type": "integer"
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_inventory.ImportStockAdjustmentsRowError"
+                    }
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "rows_processed": {
+                    "type": "integer"
+                },
+                "rows_skipped": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_inventory.ImportStockAdjustmentsRowError": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "product_ref": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "string"
+                },
+                "row": {
+                    "type": "integer"
+                },
+                "warehouse_ref": {
+                    "type": "string"
                 }
             }
         },

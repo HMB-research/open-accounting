@@ -4168,6 +4168,48 @@ func (h *Handlers) DeleteWarehouse(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
+// ImportStockAdjustments imports stock adjustments from CSV
+// @Summary Import stock adjustments
+// @Description Import signed stock adjustment rows from CSV using product and warehouse IDs or codes
+// @Tags Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body inventory.ImportStockAdjustmentsRequest true "CSV import payload"
+// @Success 200 {object} inventory.ImportStockAdjustmentsResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/inventory/stock-import [post]
+func (h *Handlers) ImportStockAdjustments(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	claims, ok := r.Context().Value("claims").(*auth.Claims)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Invalid or missing authentication")
+		return
+	}
+
+	var req inventory.ImportStockAdjustmentsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+	req.UserID = claims.UserID
+
+	result, err := h.inventoryService.ImportStockAdjustmentsCSV(r.Context(), tenantID, schemaName, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // AdjustStock adjusts stock for a product
 func (h *Handlers) AdjustStock(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")

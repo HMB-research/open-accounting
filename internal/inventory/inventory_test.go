@@ -747,6 +747,60 @@ func TestService_ImportProductsCSV_DuplicateCode(t *testing.T) {
 	assert.Contains(t, result.Errors[0].Message, "duplicate code")
 }
 
+func TestService_ImportStockAdjustmentsCSV(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products["prod-1"] = &Product{
+		ID:           "prod-1",
+		TenantID:     "tenant-1",
+		Code:         "SKU-001",
+		Name:         "Widget",
+		ProductType:  ProductTypeGoods,
+		CurrentStock: decimal.Zero,
+	}
+	ts.repo.Warehouses["wh-1"] = &Warehouse{
+		ID:       "wh-1",
+		TenantID: "tenant-1",
+		Code:     "MAIN",
+		Name:     "Main",
+		IsActive: true,
+	}
+
+	result, err := ts.svc.ImportStockAdjustmentsCSV(ctx, "tenant-1", "test_schema", &ImportStockAdjustmentsRequest{
+		FileName: "stock.csv",
+		UserID:   "user-1",
+		CSVContent: "product_code,warehouse_code,quantity,unit_cost,reason\n" +
+			"SKU-001,MAIN,12,10.50,Opening stock\n" +
+			"MISSING,MAIN,5,10.50,Missing product\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "stock.csv", result.FileName)
+	assert.Equal(t, 2, result.RowsProcessed)
+	assert.Equal(t, 1, result.AdjustmentsImported)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, 3, result.Errors[0].Row)
+	assert.Contains(t, result.Errors[0].Message, "product_code")
+
+	product := ts.repo.Products["prod-1"]
+	assert.True(t, product.CurrentStock.Equal(decimal.NewFromInt(12)))
+
+	level := ts.repo.StockLevels["prod-1-wh-1"]
+	require.NotNil(t, level)
+	assert.True(t, level.Quantity.Equal(decimal.NewFromInt(12)))
+	assert.True(t, level.AvailableQty.Equal(decimal.NewFromInt(12)))
+
+	require.Len(t, ts.repo.Movements["prod-1"], 1)
+	movement := ts.repo.Movements["prod-1"][0]
+	assert.Equal(t, MovementTypeIn, movement.MovementType)
+	assert.True(t, movement.Quantity.Equal(decimal.NewFromInt(12)))
+	assert.True(t, movement.UnitCost.Equal(decimal.RequireFromString("10.50")))
+	assert.Equal(t, "Opening stock", movement.Notes)
+	assert.Equal(t, "user-1", movement.CreatedBy)
+}
+
 func TestService_CreateProduct_InvalidSalesPrice(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()

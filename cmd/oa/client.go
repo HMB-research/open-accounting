@@ -1567,6 +1567,14 @@ func (c *apiClient) adjustStock(ctx context.Context, tenantID string, req *inven
 	return &resp, nil
 }
 
+func (c *apiClient) importStockAdjustments(ctx context.Context, tenantID string, req *inventory.ImportStockAdjustmentsRequest) (*inventory.ImportStockAdjustmentsResult, error) {
+	var resp inventory.ImportStockAdjustmentsResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "inventory", "stock-import"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) transferStock(ctx context.Context, tenantID string, req *inventory.TransferStockRequest) (map[string]string, error) {
 	var resp map[string]string
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "inventory", "transfer"), req, c.apiToken, &resp); err != nil {
