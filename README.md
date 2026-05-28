@@ -322,11 +322,12 @@ open-accounting/
 - [x] Fiscal-year close readiness and retained-earnings carry-forward workflow
 - [x] Document attachments for invoices, journal entries, payments, bank transactions, and fixed assets
 - [x] Document evidence policy evaluation through API and CLI
+- [x] Reconciliation completion blocks bank transactions marked as requiring evidence until approved evidence is attached
 - [x] Backup creation and restore-drill scripts for self-hosted operations
 
 ### Still missing for reliable production use
 - [ ] Historical payroll and broader external migration imports
-- [ ] Automated document policy enforcement in close packs and workflow blockers
+- [ ] Automated document policy enforcement in close packs and broader workflow blockers
 - [ ] Broader auth administration controls
 - [ ] E-invoice, direct bank feeds, SEPA initiation, and automatic e-MTA submission
 

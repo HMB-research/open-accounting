@@ -2092,7 +2092,7 @@ Create a reconciliation:
 }
 ```
 
-Reconciliation statuses are `IN_PROGRESS` and `COMPLETED`.
+Reconciliation statuses are `IN_PROGRESS` and `COMPLETED`. Completing a reconciliation checks document evidence for matched transactions that an accountant has marked `EVIDENCE_REQUIRED`. Each flagged transaction must have at least one approved `reconciliation_evidence` document attached as a `bank_transaction` document, otherwise completion returns `409 Conflict`.
 
 ---
 

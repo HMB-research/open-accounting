@@ -9407,7 +9407,9 @@ paths:
       - Banking
   /tenants/{tenantID}/reconciliations/{reconciliationID}/complete:
     post:
-      description: Mark a reconciliation session as complete
+      description: Mark a reconciliation session as complete. Matched transactions
+        marked EVIDENCE_REQUIRED must have approved reconciliation evidence before
+        completion.
       parameters:
       - description: Tenant ID
         in: path
@@ -9431,6 +9433,13 @@ paths:
             type: object
         "400":
           description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
           schema:
             properties:
               error:

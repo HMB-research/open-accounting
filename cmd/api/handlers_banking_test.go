@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/HMB-research/open-accounting/internal/banking"
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -145,6 +146,9 @@ func (m *mockBankingRepository) ListTransactions(ctx context.Context, schemaName
 				continue
 			}
 			if filter.Status != "" && tx.Status != filter.Status {
+				continue
+			}
+			if filter.ReconciliationID != "" && (tx.ReconciliationID == nil || *tx.ReconciliationID != filter.ReconciliationID) {
 				continue
 			}
 		}
@@ -1253,6 +1257,62 @@ func TestCompleteReconciliation(t *testing.T) {
 			assert.Equal(t, tt.wantStatus, rr.Code)
 		})
 	}
+}
+
+func TestCompleteReconciliationRequiresApprovedEvidenceForFlaggedTransactions(t *testing.T) {
+	h, repo, tenantRepo := setupBankingTestHandlers()
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	reconciliationID := "rec-1"
+	repo.reconciliations[reconciliationID] = &banking.BankReconciliation{
+		ID:            reconciliationID,
+		TenantID:      "tenant-1",
+		BankAccountID: "acc-1",
+		Status:        banking.ReconciliationInProgress,
+	}
+	repo.transactions["txn-1"] = &banking.BankTransaction{
+		ID:               "txn-1",
+		TenantID:         "tenant-1",
+		BankAccountID:    "acc-1",
+		Status:           banking.StatusMatched,
+		FollowUpStatus:   banking.FollowUpEvidenceRequired,
+		ReconciliationID: &reconciliationID,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/reconciliations/rec-1/complete", nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "reconciliationID": reconciliationID})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.CompleteReconciliation(rr, req)
+
+	require.Equal(t, http.StatusConflict, rr.Code)
+	assert.Contains(t, rr.Body.String(), "approved reconciliation evidence is required")
+	assert.Equal(t, banking.ReconciliationInProgress, repo.reconciliations[reconciliationID].Status)
+
+	docRepo.docs["doc-1"] = &documents.Document{
+		ID:           "doc-1",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypeBankTxn,
+		EntityID:     "txn-1",
+		DocumentType: documents.DocumentTypeReconciliation,
+		FileName:     "statement-line.pdf",
+		ReviewStatus: documents.ReviewStatusApproved,
+		UploadedBy:   "user-1",
+		CreatedAt:    time.Now(),
+	}
+
+	rr = httptest.NewRecorder()
+	h.CompleteReconciliation(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, banking.ReconciliationCompleted, repo.reconciliations[reconciliationID].Status)
 }
 
 func TestGetImportHistory(t *testing.T) {

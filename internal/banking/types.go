@@ -190,12 +190,13 @@ type TransactionReviewUpdate struct {
 
 // TransactionFilter provides filtering options for bank transactions
 type TransactionFilter struct {
-	BankAccountID string
-	Status        TransactionStatus
-	FromDate      *time.Time
-	ToDate        *time.Time
-	MinAmount     *decimal.Decimal
-	MaxAmount     *decimal.Decimal
+	BankAccountID    string
+	Status           TransactionStatus
+	ReconciliationID string
+	FromDate         *time.Time
+	ToDate           *time.Time
+	MinAmount        *decimal.Decimal
+	MaxAmount        *decimal.Decimal
 }
 
 // BankAccountFilter provides filtering options for bank accounts

@@ -834,6 +834,14 @@ func TestRepository_AddTransactionToReconciliation(t *testing.T) {
 	if assignedReconID == nil || *assignedReconID != reconID {
 		t.Error("expected transaction to be assigned to reconciliation")
 	}
+
+	filtered, err := repo.ListTransactions(ctx, tenant.SchemaName, tenant.ID, &TransactionFilter{ReconciliationID: reconID})
+	if err != nil {
+		t.Fatalf("ListTransactions with reconciliation filter failed: %v", err)
+	}
+	if len(filtered) != 1 || filtered[0].ID != txID {
+		t.Fatalf("expected reconciliation filter to return %s, got %#v", txID, filtered)
+	}
 }
 
 func TestRepository_ListTransactionsWithFilters(t *testing.T) {

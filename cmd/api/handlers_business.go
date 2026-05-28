@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -16,6 +17,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
@@ -30,6 +32,8 @@ import (
 	_ "github.com/HMB-research/open-accounting/internal/analytics"
 	_ "github.com/HMB-research/open-accounting/internal/tax"
 )
+
+var errApprovedReconciliationEvidenceRequired = errors.New("approved reconciliation evidence is required")
 
 // =============================================================================
 // ANALYTICS HANDLERS
@@ -1877,7 +1881,7 @@ func (h *Handlers) GetReconciliation(w http.ResponseWriter, r *http.Request) {
 
 // CompleteReconciliation marks a reconciliation as complete
 // @Summary Complete reconciliation
-// @Description Mark a reconciliation session as complete
+// @Description Mark a reconciliation session as complete. Matched transactions marked EVIDENCE_REQUIRED must have approved reconciliation evidence before completion.
 // @Tags Banking
 // @Produce json
 // @Security BearerAuth
@@ -1885,11 +1889,21 @@ func (h *Handlers) GetReconciliation(w http.ResponseWriter, r *http.Request) {
 // @Param reconciliationID path string true "Reconciliation ID"
 // @Success 200 {object} object{status=string}
 // @Failure 400 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
 // @Router /tenants/{tenantID}/reconciliations/{reconciliationID}/complete [post]
 func (h *Handlers) CompleteReconciliation(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	reconciliationID := chi.URLParam(r, "reconciliationID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.requireApprovedReconciliationEvidence(r.Context(), schemaName, tenantID, reconciliationID); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, errApprovedReconciliationEvidenceRequired) {
+			status = http.StatusConflict
+		}
+		respondError(w, status, err.Error())
+		return
+	}
 
 	if err := h.bankingService.CompleteReconciliation(r.Context(), schemaName, tenantID, reconciliationID); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
@@ -1897,6 +1911,55 @@ func (h *Handlers) CompleteReconciliation(w http.ResponseWriter, r *http.Request
 	}
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "completed"})
+}
+
+func (h *Handlers) requireApprovedReconciliationEvidence(ctx context.Context, schemaName, tenantID, reconciliationID string) error {
+	if h.documentsService == nil {
+		return nil
+	}
+
+	transactions, err := h.bankingService.ListTransactions(ctx, schemaName, tenantID, &banking.TransactionFilter{
+		ReconciliationID: reconciliationID,
+		Status:           banking.StatusMatched,
+	})
+	if err != nil {
+		return fmt.Errorf("load reconciliation transactions: %w", err)
+	}
+
+	transactionIDs := make([]string, 0, len(transactions))
+	for _, transaction := range transactions {
+		if transaction.FollowUpStatus == banking.FollowUpEvidenceRequired {
+			transactionIDs = append(transactionIDs, transaction.ID)
+		}
+	}
+	if len(transactionIDs) == 0 {
+		return nil
+	}
+
+	results, err := h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
+		EntityType: documents.EntityTypeBankTxn,
+		EntityIDs:  transactionIDs,
+		Rules: []documents.EvidencePolicyRule{{
+			DocumentTypes:   []string{documents.DocumentTypeReconciliation},
+			MinCount:        1,
+			RequireApproved: true,
+		}},
+	})
+	if err != nil {
+		return err
+	}
+
+	failingIDs := make([]string, 0, len(results))
+	for _, result := range results {
+		if !result.Compliant {
+			failingIDs = append(failingIDs, result.EntityID)
+		}
+	}
+	if len(failingIDs) > 0 {
+		return fmt.Errorf("%w before completing reconciliation for bank transactions: %s", errApprovedReconciliationEvidenceRequired, strings.Join(failingIDs, ", "))
+	}
+
+	return nil
 }
 
 // AutoMatchTransactions attempts to auto-match unmatched transactions

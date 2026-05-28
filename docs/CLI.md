@@ -653,7 +653,7 @@ go run ./cmd/oa banking reconciliations get --id <reconciliation-id>
 go run ./cmd/oa banking reconciliations complete --id <reconciliation-id>
 ```
 
-Bank transaction statuses are `UNMATCHED`, `MATCHED`, and `RECONCILED`. Follow-up statuses are `NONE`, `EVIDENCE_REQUIRED`, and `READY_TO_MATCH`. Bank CSV imports accept comma, semicolon, or tab delimiters with headers such as `date`, `amount`, `description`, `reference`, `counterparty_name`, `counterparty_account`, `value_date`, and `external_id`. Use `--json` on banking read and mutation commands for automation.
+Bank transaction statuses are `UNMATCHED`, `MATCHED`, and `RECONCILED`. Follow-up statuses are `NONE`, `EVIDENCE_REQUIRED`, and `READY_TO_MATCH`. Reconciliation completion blocks matched transactions marked `EVIDENCE_REQUIRED` until they have approved `reconciliation_evidence` documents; use `documents upload`, `documents review`, and `documents evidence-policy` to resolve evidence failures. Bank CSV imports accept comma, semicolon, or tab delimiters with headers such as `date`, `amount`, `description`, `reference`, `counterparty_name`, `counterparty_account`, `value_date`, and `external_id`. Use `--json` on banking read and mutation commands for automation.
 
 ## Reports
 
