@@ -157,7 +157,7 @@ func xlsxCellRef(row, column int) string {
 
 func isNumericReportColumn(header string) bool {
 	switch strings.ToLower(strings.TrimSpace(header)) {
-	case "debit_balance", "credit_balance", "net_balance", "amount":
+	case "amount", "amount_paid", "balance", "contact_count", "contact_invoice_count", "count", "credit_balance", "current", "days_1_30", "days_31_60", "days_61_90", "days_90_plus", "days_overdue", "debit_balance", "invoice_count", "net_balance", "outstanding_amount", "total", "total_amount", "total_balance":
 		return true
 	default:
 		return false

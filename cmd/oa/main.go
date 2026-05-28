@@ -7681,12 +7681,33 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		fs.SetOutput(a.stderr)
 		reportType := fs.String("type", "receivables", "Aging report type: receivables or payables")
 		asJSON := fs.Bool("json", false, "Output JSON")
+		asCSV := fs.Bool("csv", false, "Output CSV")
+		asXLSX := fs.Bool("xlsx", false, "Output XLSX")
+		outputPath := fs.String("output", "", "Optional CSV/XLSX output file path")
 		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *outputPath); err != nil {
 			return err
 		}
 		normalizedType := strings.ToLower(strings.TrimSpace(*reportType))
 		if normalizedType != "receivables" && normalizedType != "payables" {
 			return errors.New("type must be receivables or payables")
+		}
+
+		if *asCSV {
+			content, err := client.exportAgingReport(ctx, cfg.TenantID, normalizedType, "csv")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, normalizedType+" aging CSV")
+		}
+		if *asXLSX {
+			content, err := client.exportAgingReport(ctx, cfg.TenantID, normalizedType, "xlsx")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, normalizedType+" aging XLSX")
 		}
 
 		report, err := client.getAgingReport(ctx, cfg.TenantID, normalizedType)
@@ -7705,7 +7726,13 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		balanceType := fs.String("type", "", "Balance type: RECEIVABLE or PAYABLE")
 		asOf := fs.String("as-of", "", "As-of date in YYYY-MM-DD")
 		asJSON := fs.Bool("json", false, "Output JSON")
+		asCSV := fs.Bool("csv", false, "Output CSV")
+		asXLSX := fs.Bool("xlsx", false, "Output XLSX")
+		outputPath := fs.String("output", "", "Optional CSV/XLSX output file path")
 		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *outputPath); err != nil {
 			return err
 		}
 		normalizedType := strings.ToUpper(strings.TrimSpace(*balanceType))
@@ -7714,6 +7741,21 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		}
 		if strings.TrimSpace(*asOf) == "" {
 			return errors.New("as-of is required")
+		}
+
+		if *asCSV {
+			content, err := client.exportBalanceConfirmationSummary(ctx, cfg.TenantID, normalizedType, strings.TrimSpace(*asOf), "csv")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "balance confirmations CSV")
+		}
+		if *asXLSX {
+			content, err := client.exportBalanceConfirmationSummary(ctx, cfg.TenantID, normalizedType, strings.TrimSpace(*asOf), "xlsx")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "balance confirmations XLSX")
 		}
 
 		report, err := client.getBalanceConfirmationSummary(ctx, cfg.TenantID, normalizedType, strings.TrimSpace(*asOf))
@@ -7733,7 +7775,13 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		balanceType := fs.String("type", "", "Balance type: RECEIVABLE or PAYABLE")
 		asOf := fs.String("as-of", "", "As-of date in YYYY-MM-DD")
 		asJSON := fs.Bool("json", false, "Output JSON")
+		asCSV := fs.Bool("csv", false, "Output CSV")
+		asXLSX := fs.Bool("xlsx", false, "Output XLSX")
+		outputPath := fs.String("output", "", "Optional CSV/XLSX output file path")
 		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *outputPath); err != nil {
 			return err
 		}
 		if strings.TrimSpace(*contactID) == "" {
@@ -7745,6 +7793,21 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		}
 		if strings.TrimSpace(*asOf) == "" {
 			return errors.New("as-of is required")
+		}
+
+		if *asCSV {
+			content, err := client.exportBalanceConfirmation(ctx, cfg.TenantID, strings.TrimSpace(*contactID), normalizedType, strings.TrimSpace(*asOf), "csv")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "balance confirmation CSV")
+		}
+		if *asXLSX {
+			content, err := client.exportBalanceConfirmation(ctx, cfg.TenantID, strings.TrimSpace(*contactID), normalizedType, strings.TrimSpace(*asOf), "xlsx")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "balance confirmation XLSX")
 		}
 
 		report, err := client.getBalanceConfirmation(ctx, cfg.TenantID, strings.TrimSpace(*contactID), normalizedType, strings.TrimSpace(*asOf))

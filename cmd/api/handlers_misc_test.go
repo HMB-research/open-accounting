@@ -178,6 +178,20 @@ func TestExtendedReportHandlers(t *testing.T) {
 	h.GetBalanceConfirmationSummary(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-confirmations?type=RECEIVABLE&as_of_date=2026-01-31&format=csv", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetBalanceConfirmationSummary(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Header().Get("Content-Type"), "text/csv")
+	assert.Contains(t, rr.Body.String(), "row_type,type,as_of_date")
+	assert.Contains(t, rr.Body.String(), "contact-1")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-confirmations?type=RECEIVABLE&as_of_date=2026-01-31&format=xlsx", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetBalanceConfirmationSummary(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	requireXLSXContains(t, rr.Body.Bytes(), "contact-1")
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-confirmations?type=OTHER&as_of_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.GetBalanceConfirmationSummary(rr, req)
@@ -190,6 +204,25 @@ func TestExtendedReportHandlers(t *testing.T) {
 	rr = httptest.NewRecorder()
 	h.GetBalanceConfirmation(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-confirmations/contact-1?type=RECEIVABLE&as_of_date=2026-01-31&format=csv", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"contactID": "contact-1",
+	})
+	rr = httptest.NewRecorder()
+	h.GetBalanceConfirmation(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "invoice_id,invoice_number")
+	assert.Contains(t, rr.Body.String(), "inv-1")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-confirmations/contact-1?type=RECEIVABLE&as_of_date=2026-01-31&format=xlsx", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"contactID": "contact-1",
+	})
+	rr = httptest.NewRecorder()
+	h.GetBalanceConfirmation(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	requireXLSXContains(t, rr.Body.Bytes(), "INV-001")
 
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-confirmations/contact-1?type=RECEIVABLE&as_of_date=invalid", nil), map[string]string{
 		"tenantID":  "tenant-1",

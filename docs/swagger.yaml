@@ -9737,8 +9737,14 @@ paths:
         name: tenantID
         required: true
         type: string
+      - description: 'Response format: json, csv, or xlsx'
+        in: query
+        name: format
+        type: string
       produces:
       - application/json
+      - text/csv
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
       responses:
         "200":
           description: OK
@@ -9765,8 +9771,14 @@ paths:
         name: tenantID
         required: true
         type: string
+      - description: 'Response format: json, csv, or xlsx'
+        in: query
+        name: format
+        type: string
       produces:
       - application/json
+      - text/csv
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
       responses:
         "200":
           description: OK
@@ -9803,8 +9815,14 @@ paths:
         name: as_of_date
         required: true
         type: string
+      - description: 'Response format: json, csv, or xlsx'
+        in: query
+        name: format
+        type: string
       produces:
       - application/json
+      - text/csv
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
       responses:
         "200":
           description: OK
@@ -9854,8 +9872,14 @@ paths:
         name: as_of_date
         required: true
         type: string
+      - description: 'Response format: json, csv, or xlsx'
+        in: query
+        name: format
+        type: string
       produces:
       - application/json
+      - text/csv
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
       responses:
         "200":
           description: OK

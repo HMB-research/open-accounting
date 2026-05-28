@@ -3986,6 +3986,11 @@ func TestCLIReportsCommands(t *testing.T) {
 				"generated_at":         "2026-03-31T12:00:00Z",
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/aging/receivables":
+			if r.URL.Query().Get("format") == "csv" {
+				w.Header().Set("Content-Type", "text/csv")
+				_, _ = w.Write([]byte("row_type,report_type,contact_name,total\ncontact,receivables,Acme,900.00\n"))
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"report_type": "receivables",
 				"as_of_date":  "2026-03-31T00:00:00Z",
@@ -3999,6 +4004,11 @@ func TestCLIReportsCommands(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/balance-confirmations":
 			require.Equal(t, "RECEIVABLE", r.URL.Query().Get("type"))
 			require.Equal(t, "2026-03-31", r.URL.Query().Get("as_of_date"))
+			if r.URL.Query().Get("format") == "xlsx" {
+				w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+				_, _ = w.Write([]byte("xlsx-balance-confirmations"))
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"type":          "RECEIVABLE",
 				"as_of_date":    "2026-03-31",
@@ -4018,6 +4028,11 @@ func TestCLIReportsCommands(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/balance-confirmations/contact-1":
 			require.Equal(t, "RECEIVABLE", r.URL.Query().Get("type"))
 			require.Equal(t, "2026-03-31", r.URL.Query().Get("as_of_date"))
+			if r.URL.Query().Get("format") == "csv" {
+				w.Header().Set("Content-Type", "text/csv")
+				_, _ = w.Write([]byte("invoice_id,invoice_number,outstanding_amount\ninvoice-1,INV-1,900.00\n"))
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"id":            "confirmation-1",
 				"tenant_id":     "tenant-1",
@@ -4104,14 +4119,41 @@ func TestCLIReportsCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"report_type": "receivables"`)
 
 	stdout.Reset()
+	agingCSVPath := filepath.Join(t.TempDir(), "aging.csv")
+	err = app.run(context.Background(), []string{"reports", "aging", "--type", "receivables", "--csv", "--output", agingCSVPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote receivables aging CSV")
+	agingCSV, err := os.ReadFile(agingCSVPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(agingCSV), "Acme")
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"reports", "balance-confirmations", "--type", "receivable", "--as-of", "2026-03-31"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Total balance: 900")
 
 	stdout.Reset()
+	confirmationSummaryXLSXPath := filepath.Join(t.TempDir(), "balance-confirmations.xlsx")
+	err = app.run(context.Background(), []string{"reports", "balance-confirmations", "--type", "receivable", "--as-of", "2026-03-31", "--xlsx", "--output", confirmationSummaryXLSXPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote balance confirmations XLSX")
+	confirmationSummaryXLSX, err := os.ReadFile(confirmationSummaryXLSXPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("xlsx-balance-confirmations"), confirmationSummaryXLSX)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"reports", "balance-confirmation", "--contact-id", "contact-1", "--type", "RECEIVABLE", "--as-of", "2026-03-31"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "INV-1")
+
+	stdout.Reset()
+	confirmationCSVPath := filepath.Join(t.TempDir(), "balance-confirmation.csv")
+	err = app.run(context.Background(), []string{"reports", "balance-confirmation", "--contact-id", "contact-1", "--type", "RECEIVABLE", "--as-of", "2026-03-31", "--csv", "--output", confirmationCSVPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote balance confirmation CSV")
+	confirmationCSV, err := os.ReadFile(confirmationCSVPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(confirmationCSV), "INV-1")
 }
 
 func TestCLIEmployeesCommands(t *testing.T) {

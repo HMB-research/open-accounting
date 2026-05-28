@@ -2088,6 +2088,14 @@ func (c *apiClient) getBalanceConfirmationSummary(ctx context.Context, tenantID,
 	return &resp, nil
 }
 
+func (c *apiClient) exportBalanceConfirmationSummary(ctx context.Context, tenantID, balanceType, asOfDate, format string) ([]byte, error) {
+	values := url.Values{}
+	values.Set("type", strings.TrimSpace(balanceType))
+	values.Set("as_of_date", strings.TrimSpace(asOfDate))
+	values.Set("format", strings.TrimSpace(format))
+	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "balance-confirmations"), values), nil, c.apiToken)
+}
+
 func (c *apiClient) getBalanceConfirmation(ctx context.Context, tenantID, contactID, balanceType, asOfDate string) (*reports.BalanceConfirmation, error) {
 	values := url.Values{}
 	values.Set("type", strings.TrimSpace(balanceType))
@@ -2100,12 +2108,26 @@ func (c *apiClient) getBalanceConfirmation(ctx context.Context, tenantID, contac
 	return &resp, nil
 }
 
+func (c *apiClient) exportBalanceConfirmation(ctx context.Context, tenantID, contactID, balanceType, asOfDate, format string) ([]byte, error) {
+	values := url.Values{}
+	values.Set("type", strings.TrimSpace(balanceType))
+	values.Set("as_of_date", strings.TrimSpace(asOfDate))
+	values.Set("format", strings.TrimSpace(format))
+	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "balance-confirmations", contactID), values), nil, c.apiToken)
+}
+
 func (c *apiClient) getAgingReport(ctx context.Context, tenantID, reportType string) (*analytics.AgingReport, error) {
 	var resp analytics.AgingReport
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "reports", "aging", reportType), nil, c.apiToken, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
+}
+
+func (c *apiClient) exportAgingReport(ctx context.Context, tenantID, reportType, format string) ([]byte, error) {
+	values := url.Values{}
+	values.Set("format", strings.TrimSpace(format))
+	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "aging", reportType), values), nil, c.apiToken)
 }
 
 func (c *apiClient) getDashboardSummary(ctx context.Context, tenantID string) (*analytics.DashboardSummary, error) {
