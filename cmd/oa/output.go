@@ -65,6 +65,41 @@ func printContactsTable(w io.Writer, contactsList []contacts.Contact) {
 	_ = tw.Flush()
 }
 
+func printContact(w io.Writer, contact *contacts.Contact) {
+	_, _ = fmt.Fprintf(w, "Contact %s (%s)\n", contact.Name, contact.ContactType)
+	_, _ = fmt.Fprintf(w, "ID: %s\n", contact.ID)
+	if strings.TrimSpace(contact.Code) != "" {
+		_, _ = fmt.Fprintf(w, "Code: %s\n", contact.Code)
+	}
+	if strings.TrimSpace(contact.Email) != "" {
+		_, _ = fmt.Fprintf(w, "Email: %s\n", contact.Email)
+	}
+	if strings.TrimSpace(contact.Phone) != "" {
+		_, _ = fmt.Fprintf(w, "Phone: %s\n", contact.Phone)
+	}
+	if strings.TrimSpace(contact.RegCode) != "" {
+		_, _ = fmt.Fprintf(w, "Registration code: %s\n", contact.RegCode)
+	}
+	if strings.TrimSpace(contact.VATNumber) != "" {
+		_, _ = fmt.Fprintf(w, "VAT number: %s\n", contact.VATNumber)
+	}
+	if strings.TrimSpace(contact.AddressLine1) != "" {
+		_, _ = fmt.Fprintf(w, "Address: %s\n", contact.AddressLine1)
+	}
+	if strings.TrimSpace(contact.City) != "" || strings.TrimSpace(contact.PostalCode) != "" {
+		_, _ = fmt.Fprintf(w, "City: %s %s\n", contact.PostalCode, contact.City)
+	}
+	if strings.TrimSpace(contact.CountryCode) != "" {
+		_, _ = fmt.Fprintf(w, "Country: %s\n", contact.CountryCode)
+	}
+	_, _ = fmt.Fprintf(w, "Payment terms: %d days\n", contact.PaymentTermsDays)
+	_, _ = fmt.Fprintf(w, "Credit limit: %s\n", contact.CreditLimit.String())
+	_, _ = fmt.Fprintf(w, "Active: %t\n", contact.IsActive)
+	if strings.TrimSpace(contact.Notes) != "" {
+		_, _ = fmt.Fprintf(w, "Notes: %s\n", contact.Notes)
+	}
+}
+
 func printInvoicesTable(w io.Writer, invoices []invoicing.Invoice) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tNUMBER\tTYPE\tSTATUS\tISSUE\tDUE\tTOTAL\tPAID\tDUE AMOUNT\tCONTACT")

@@ -577,6 +577,7 @@ Authorization: Bearer <token>
 
 **Query Parameters:**
 - `type` (string): `CUSTOMER`, `SUPPLIER`, or `BOTH`
+- `active_only` (boolean): Return active contacts only
 - `search` (string): Search by name or email
 
 ### Create Contact
@@ -598,6 +599,36 @@ Content-Type: application/json
   "payment_terms_days": 30
 }
 ```
+
+### Get Contact
+
+```http
+GET /tenants/{tenantId}/contacts/{contactId}
+Authorization: Bearer <token>
+```
+
+### Update Contact
+
+```http
+PUT /tenants/{tenantId}/contacts/{contactId}
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "email": "billing@example.com",
+  "payment_terms_days": 30,
+  "is_active": true
+}
+```
+
+### Delete Contact
+
+```http
+DELETE /tenants/{tenantId}/contacts/{contactId}
+Authorization: Bearer <token>
+```
+
+Contacts are soft-deleted by deactivating them.
 
 ### Import Contacts
 

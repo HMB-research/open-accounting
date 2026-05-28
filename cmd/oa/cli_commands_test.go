@@ -470,6 +470,29 @@ func TestCLIContactsInvoicesAndJournalCommands(t *testing.T) {
 	contactsFile := writeTempCSV(t, "contacts.csv", "name,email\nAcme,hello@example.com\n")
 	invoicesFile := writeTempCSV(t, "invoices.csv", "invoice_number,contact_name,total\nINV-1,Acme,100\n")
 	openingBalancesFile := writeTempCSV(t, "opening-balances.csv", "account_code,debit,credit\n1000,500,0\n")
+	contactPayload := func(name string, active bool) map[string]any {
+		return map[string]any{
+			"id":                 "contact-1",
+			"tenant_id":          "tenant-1",
+			"code":               "CUST-1",
+			"name":               name,
+			"contact_type":       "CUSTOMER",
+			"reg_code":           "12345678",
+			"vat_number":         "EE123456789",
+			"email":              "hello@example.com",
+			"phone":              "+372 555 1234",
+			"address_line1":      "123 Main St",
+			"city":               "Tallinn",
+			"postal_code":        "10111",
+			"country_code":       "EE",
+			"payment_terms_days": 14,
+			"credit_limit":       "1500.00",
+			"is_active":          active,
+			"notes":              "Key customer",
+			"created_at":         "2026-03-12T00:00:00Z",
+			"updated_at":         "2026-03-12T00:00:00Z",
+		}
+	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -480,24 +503,29 @@ func TestCLIContactsInvoicesAndJournalCommands(t *testing.T) {
 			require.Equal(t, "CUSTOMER", r.URL.Query().Get("type"))
 			require.Equal(t, "acme", r.URL.Query().Get("search"))
 			require.Equal(t, "true", r.URL.Query().Get("active_only"))
-			_ = json.NewEncoder(w).Encode([]map[string]any{{
-				"id":           "contact-1",
-				"name":         "Acme",
-				"contact_type": "CUSTOMER",
-				"is_active":    true,
-			}})
+			_ = json.NewEncoder(w).Encode([]map[string]any{contactPayload("Acme", true)})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/contacts":
 			var req contacts.CreateContactRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "Acme", req.Name)
 			assert.True(t, req.CreditLimit.Equal(decimal.RequireFromString("1500")))
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"id":           "contact-1",
-				"name":         req.Name,
-				"contact_type": req.ContactType,
-				"email":        req.Email,
-				"is_active":    true,
-			})
+			_ = json.NewEncoder(w).Encode(contactPayload(req.Name, true))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/contacts/contact-1":
+			_ = json.NewEncoder(w).Encode(contactPayload("Acme", true))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/contacts/contact-1":
+			var req contacts.UpdateContactRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.NotNil(t, req.Name)
+			assert.Equal(t, "Acme Updated", *req.Name)
+			require.NotNil(t, req.PaymentTermsDays)
+			assert.Equal(t, 30, *req.PaymentTermsDays)
+			require.NotNil(t, req.CreditLimit)
+			assert.True(t, req.CreditLimit.Equal(decimal.RequireFromString("2500.00")))
+			require.NotNil(t, req.IsActive)
+			assert.False(t, *req.IsActive)
+			_ = json.NewEncoder(w).Encode(contactPayload("Acme Updated", false))
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/contacts/contact-1":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/contacts/import":
 			var req contacts.ImportContactsRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -555,6 +583,31 @@ func TestCLIContactsInvoicesAndJournalCommands(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created contact Acme (contact-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"contacts", "get", "--id", "contact-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Contact Acme")
+	assert.Contains(t, stdout.String(), "Credit limit: 1500")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"contacts",
+		"update",
+		"--id", "contact-1",
+		"--name", "Acme Updated",
+		"--payment-terms-days", "30",
+		"--credit-limit", "2500.00",
+		"--active", "false",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Contact Acme Updated")
+	assert.Contains(t, stdout.String(), "Active: false")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"contacts", "delete", "--id", "contact-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Deleted contact contact-1")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"contacts", "import", "--file", contactsFile})
