@@ -530,12 +530,13 @@ go run ./cmd/oa payments create \
   --method BANK_TRANSFER \
   --reference BANK-001 \
   --allocate <invoice-id>:1220.00
+go run ./cmd/oa payments import --file ./payments.csv
 go run ./cmd/oa payments get --id <payment-id>
 go run ./cmd/oa payments allocate --id <payment-id> --invoice-id <invoice-id> --amount 250.00
 go run ./cmd/oa payments unallocated --type RECEIVED
 ```
 
-Use `--allocate invoice-id:amount` repeatedly on `payments create` to allocate a new payment to multiple invoices. Payment types are `RECEIVED` and `MADE`; `--json` is available on list, create, get, allocate, and unallocated commands.
+Use `--allocate invoice-id:amount` repeatedly on `payments create` to allocate a new payment to multiple invoices. Payment CSV imports require `payment_type`, `payment_date`, and `amount`, with optional `payment_number`, `contact_id`, `invoice_id`, and `allocation_amount`. Payment types are `RECEIVED` and `MADE`; `--json` is available on list, create, import, get, allocate, and unallocated commands.
 
 ## Payment reminders
 

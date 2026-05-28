@@ -67,6 +67,29 @@ func (h *Handlers) rejectLockedPeriod(w http.ResponseWriter, ctx context.Context
 	return true
 }
 
+func (h *Handlers) getTenantPeriodLockDate(ctx context.Context, tenantID string) (*time.Time, error) {
+	currentTenant, err := h.tenantService.GetTenant(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("load tenant settings: %w", err)
+	}
+
+	if currentTenant.Settings.PeriodLockDate == nil {
+		return nil, nil
+	}
+
+	lockDateRaw := strings.TrimSpace(*currentTenant.Settings.PeriodLockDate)
+	if lockDateRaw == "" {
+		return nil, nil
+	}
+
+	lockDate, err := time.Parse(periodLockLayout, lockDateRaw)
+	if err != nil {
+		return nil, fmt.Errorf("invalid tenant period lock date %q: %w", lockDateRaw, err)
+	}
+
+	return &lockDate, nil
+}
+
 func normalizePeriodDate(value time.Time) time.Time {
 	utcValue := value.UTC()
 	return time.Date(utcValue.Year(), utcValue.Month(), utcValue.Day(), 0, 0, 0, 0, time.UTC)

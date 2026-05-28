@@ -349,6 +349,47 @@ func TestCreatePayment(t *testing.T) {
 	}
 }
 
+func TestImportPayments(t *testing.T) {
+	h, repo, tenantRepo := setupPaymentTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	body := map[string]interface{}{
+		"file_name":   "payments.csv",
+		"csv_content": "payment_number,payment_type,payment_date,amount,invoice_id,allocation_amount\nPAY-001,RECEIVED,2026-03-15,100.00,inv-1,60.00\n",
+	}
+	bodyBytes, _ := json.Marshal(body)
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/payments/import", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.ImportPayments(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var result payments.ImportPaymentsResult
+	err := json.Unmarshal(rr.Body.Bytes(), &result)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.PaymentsCreated)
+	assert.Equal(t, 0, result.RowsSkipped)
+
+	require.Len(t, repo.payments, 1)
+	for _, payment := range repo.payments {
+		assert.Equal(t, "PAY-001", payment.PaymentNumber)
+		assert.Equal(t, "user-1", payment.CreatedBy)
+		assert.True(t, payment.Amount.Equal(decimal.RequireFromString("100.00")))
+		require.Len(t, repo.allocations[payment.ID], 1)
+		assert.Equal(t, "inv-1", repo.allocations[payment.ID][0].InvoiceID)
+	}
+}
+
 func TestGetPayment(t *testing.T) {
 	h, repo, tenantRepo := setupPaymentTestHandlers()
 

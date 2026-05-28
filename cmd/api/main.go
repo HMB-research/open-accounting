@@ -533,6 +533,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				// Payments
 				r.Get("/payments", h.ListPayments)
 				r.Post("/payments", h.CreatePayment)
+				r.Post("/payments/import", h.ImportPayments)
 				r.Get("/payments/{paymentID}", h.GetPayment)
 				r.Post("/payments/{paymentID}/allocate", h.AllocatePayment)
 				r.Get("/payments/unallocated", h.GetUnallocatedPayments)

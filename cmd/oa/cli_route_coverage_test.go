@@ -768,6 +768,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 			"GET":  "payments list",
 			"POST": "payments create",
 		})
+	case "/payments/import":
+		return commandForMethod(method, map[string]string{"POST": "payments import"})
 	case "/payments/unallocated":
 		return commandForMethod(method, map[string]string{"GET": "payments unallocated"})
 	case "/payments/{paymentID}":

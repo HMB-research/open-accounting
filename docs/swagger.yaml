@@ -2180,6 +2180,39 @@ definitions:
       reference:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_payments.ImportPaymentsRequest:
+    properties:
+      csv_content:
+        type: string
+      file_name:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_payments.ImportPaymentsResult:
+    properties:
+      errors:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payments.ImportPaymentsRowError'
+        type: array
+      file_name:
+        type: string
+      payments_created:
+        type: integer
+      rows_processed:
+        type: integer
+      rows_skipped:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_payments.ImportPaymentsRowError:
+    properties:
+      message:
+        type: string
+      payment_number:
+        type: string
+      reference:
+        type: string
+      row:
+        type: integer
+    type: object
   github_com_HMB-research_open-accounting_internal_payments.Payment:
     properties:
       allocations:
@@ -8833,6 +8866,43 @@ paths:
       summary: Email payment receipt
       tags:
       - Email
+  /tenants/{tenantID}/payments/import:
+    post:
+      consumes:
+      - application/json
+      description: Import historical payments from CSV, preserving supplied payment
+        numbers and optional invoice allocations
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: CSV import payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payments.ImportPaymentsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payments.ImportPaymentsResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Import payments
+      tags:
+      - Payments
   /tenants/{tenantID}/payments/unallocated:
     get:
       description: Get payments with remaining unallocated amounts

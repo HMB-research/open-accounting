@@ -692,6 +692,69 @@ func TestService_Create(t *testing.T) {
 	}
 }
 
+func TestService_ImportPaymentsCSV(t *testing.T) {
+	repo := NewMockRepository()
+	invoiceSvc := &MockInvoiceService{}
+	service := NewServiceWithRepository(repo, invoiceSvc)
+	ctx := context.Background()
+
+	repo.payments["existing"] = &Payment{
+		ID:            "existing",
+		TenantID:      "tenant-1",
+		PaymentNumber: "PMT-EXISTING",
+		PaymentType:   PaymentTypeReceived,
+		Amount:        decimal.NewFromInt(10),
+	}
+	lockDate := time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC)
+
+	result, err := service.ImportPaymentsCSV(ctx, "tenant-1", "test_schema", &ImportPaymentsRequest{
+		FileName: "payments.csv",
+		UserID:   "user-1",
+		LockDate: &lockDate,
+		CSVContent: "payment_number,payment_type,payment_date,amount,currency,exchange_rate,contact_id,invoice_id,allocation_amount,reference\n" +
+			"PAY-001,RECEIVED,2026-03-15,100.00,EUR,1,contact-1,inv-1,60.00,Receipt 1\n" +
+			",MADE,2026-03-16,50.00,EUR,1,,,,Supplier payment\n" +
+			"PMT-EXISTING,RECEIVED,2026-03-17,20.00,EUR,1,,,,Duplicate\n" +
+			"PAY-LOCKED,RECEIVED,2026-01-15,25.00,EUR,1,,,,Locked\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "payments.csv", result.FileName)
+	assert.Equal(t, 4, result.RowsProcessed)
+	assert.Equal(t, 2, result.PaymentsCreated)
+	assert.Equal(t, 2, result.RowsSkipped)
+	require.Len(t, result.Errors, 2)
+	assert.Contains(t, result.Errors[0].Message, "duplicate payment_number")
+	assert.Contains(t, result.Errors[1].Message, "period locked")
+
+	var preserved *Payment
+	var generated *Payment
+	for _, payment := range repo.payments {
+		switch payment.Reference {
+		case "Receipt 1":
+			preserved = payment
+		case "Supplier payment":
+			generated = payment
+		}
+	}
+
+	require.NotNil(t, preserved)
+	assert.Equal(t, "PAY-001", preserved.PaymentNumber)
+	assert.Equal(t, PaymentTypeReceived, preserved.PaymentType)
+	assert.True(t, preserved.Amount.Equal(decimal.RequireFromString("100.00")))
+	assert.Equal(t, "contact-1", *preserved.ContactID)
+	assert.Equal(t, "user-1", preserved.CreatedBy)
+	require.Len(t, repo.allocations[preserved.ID], 1)
+	assert.Equal(t, "inv-1", repo.allocations[preserved.ID][0].InvoiceID)
+	assert.True(t, repo.allocations[preserved.ID][0].Amount.Equal(decimal.RequireFromString("60.00")))
+	require.Len(t, invoiceSvc.recordPaymentCalls, 1)
+	assert.Equal(t, "inv-1", invoiceSvc.recordPaymentCalls[0].invoiceID)
+
+	require.NotNil(t, generated)
+	assert.Equal(t, "OUT-00001", generated.PaymentNumber)
+	assert.Equal(t, PaymentTypeMade, generated.PaymentType)
+}
+
 func TestService_Create_WithExchangeRate(t *testing.T) {
 	repo := NewMockRepository()
 	invoiceSvc := &MockInvoiceService{}
