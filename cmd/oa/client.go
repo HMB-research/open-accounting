@@ -1174,6 +1174,120 @@ func (c *apiClient) importLeaveBalances(ctx context.Context, tenantID string, re
 	return &resp, nil
 }
 
+func (c *apiClient) listAbsenceTypes(ctx context.Context, tenantID string, activeOnly bool) ([]payroll.AbsenceType, error) {
+	values := url.Values{}
+	if activeOnly {
+		values.Set("active_only", "true")
+	}
+
+	var resp []payroll.AbsenceType
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "absence-types"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) getAbsenceType(ctx context.Context, tenantID, typeID string) (*payroll.AbsenceType, error) {
+	var resp payroll.AbsenceType
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "absence-types", typeID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) listLeaveBalances(ctx context.Context, tenantID, employeeID string, year int) ([]payroll.LeaveBalance, error) {
+	values := url.Values{}
+	if year > 0 {
+		values.Set("year", strconv.Itoa(year))
+	}
+
+	var resp []payroll.LeaveBalance
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "employees", employeeID, "leave-balances"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) getLeaveBalancesByYear(ctx context.Context, tenantID, employeeID string, year int) ([]payroll.LeaveBalance, error) {
+	var resp []payroll.LeaveBalance
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "employees", employeeID, "leave-balances", strconv.Itoa(year)), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) updateLeaveBalance(ctx context.Context, tenantID, employeeID string, year int, absenceTypeID string, req *payroll.UpdateLeaveBalanceRequest) (*payroll.LeaveBalance, error) {
+	var resp payroll.LeaveBalance
+	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "employees", employeeID, "leave-balances", strconv.Itoa(year), absenceTypeID), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) initializeLeaveBalances(ctx context.Context, tenantID, employeeID string, year int) ([]payroll.LeaveBalance, error) {
+	var resp []payroll.LeaveBalance
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "employees", employeeID, "leave-balances", strconv.Itoa(year), "initialize"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) listLeaveRecords(ctx context.Context, tenantID, employeeID string, year int) ([]payroll.LeaveRecord, error) {
+	values := url.Values{}
+	if strings.TrimSpace(employeeID) != "" {
+		values.Set("employee_id", strings.TrimSpace(employeeID))
+	}
+	if year > 0 {
+		values.Set("year", strconv.Itoa(year))
+	}
+
+	var resp []payroll.LeaveRecord
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "leave-records"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createLeaveRecord(ctx context.Context, tenantID string, req *payroll.CreateLeaveRecordRequest) (*payroll.LeaveRecord, error) {
+	var resp payroll.LeaveRecord
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "leave-records"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getLeaveRecord(ctx context.Context, tenantID, recordID string) (*payroll.LeaveRecord, error) {
+	var resp payroll.LeaveRecord
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "leave-records", recordID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) approveLeaveRecord(ctx context.Context, tenantID, recordID string) (*payroll.LeaveRecord, error) {
+	var resp payroll.LeaveRecord
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "leave-records", recordID, "approve"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) rejectLeaveRecord(ctx context.Context, tenantID, recordID string, req *payroll.RejectLeaveRequest) (*payroll.LeaveRecord, error) {
+	var resp payroll.LeaveRecord
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "leave-records", recordID, "reject"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) cancelLeaveRecord(ctx context.Context, tenantID, recordID string) (*payroll.LeaveRecord, error) {
+	var resp payroll.LeaveRecord
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "leave-records", recordID, "cancel"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) listPayrollRuns(ctx context.Context, tenantID string, year int) ([]payroll.PayrollRun, error) {
 	values := url.Values{}
 	if year > 0 {

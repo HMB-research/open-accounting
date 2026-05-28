@@ -155,6 +155,41 @@ Import employees first so payroll history rows can match existing employees by `
 
 Leave balance imports create or update balances by employee + absence type + year. Match absence types with `absence_type_code`, `absence_type`, or `absence_type_id`.
 
+## Leave management
+
+```bash
+go run ./cmd/oa leave absence-types list --active-only
+go run ./cmd/oa leave absence-types get --id <absence-type-id>
+
+go run ./cmd/oa leave balances list --employee-id <employee-id> --year 2026
+go run ./cmd/oa leave balances by-year --employee-id <employee-id> --year 2026
+go run ./cmd/oa leave balances update \
+  --employee-id <employee-id> \
+  --absence-type-id <absence-type-id> \
+  --year 2026 \
+  --entitled-days 28 \
+  --carryover-days 2 \
+  --notes "Imported balance correction"
+go run ./cmd/oa leave balances initialize --employee-id <employee-id> --year 2026
+go run ./cmd/oa leave balances import --file ./leave-balances.csv
+
+go run ./cmd/oa leave records list --employee-id <employee-id> --year 2026
+go run ./cmd/oa leave records create \
+  --employee-id <employee-id> \
+  --absence-type-id <absence-type-id> \
+  --start-date 2026-07-01 \
+  --end-date 2026-07-05 \
+  --total-days 5 \
+  --working-days 3 \
+  --notes "Summer leave"
+go run ./cmd/oa leave records get --id <leave-record-id>
+go run ./cmd/oa leave records approve --id <leave-record-id>
+go run ./cmd/oa leave records reject --id <leave-record-id> --reason "Staffing shortage"
+go run ./cmd/oa leave records cancel --id <leave-record-id>
+```
+
+Use `--json` on leave-management reads and mutations for automation. Leave record statuses are `PENDING`, `APPROVED`, `REJECTED`, and `CANCELLED`.
+
 ## TSD declarations
 
 ```bash
