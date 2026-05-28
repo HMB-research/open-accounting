@@ -1071,6 +1071,87 @@ Authorization: Bearer <token>
 
 ---
 
+## Orders
+
+### List Orders
+
+```http
+GET /tenants/{tenantId}/orders
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `status` (string): `PENDING`, `CONFIRMED`, `PROCESSING`, `SHIPPED`, `DELIVERED`, or `CANCELED`
+- `contact_id` (uuid): Filter by contact
+- `from_date` (date): Filter from order date, `YYYY-MM-DD`
+- `to_date` (date): Filter to order date, `YYYY-MM-DD`
+- `search` (string): Search order numbers and related text
+
+### Create Order
+
+```http
+POST /tenants/{tenantId}/orders
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "contact_id": "uuid",
+  "order_date": "2026-03-15T00:00:00Z",
+  "expected_delivery": "2026-03-22T00:00:00Z",
+  "currency": "EUR",
+  "exchange_rate": "1",
+  "quote_id": "uuid",
+  "notes": "March order",
+  "lines": [
+    {
+      "description": "Consulting services",
+      "quantity": "2",
+      "unit": "hour",
+      "unit_price": "100.00",
+      "discount_percent": "0",
+      "vat_rate": "22.00"
+    }
+  ]
+}
+```
+
+### Get Order
+
+```http
+GET /tenants/{tenantId}/orders/{orderId}
+Authorization: Bearer <token>
+```
+
+### Update Order
+
+```http
+PUT /tenants/{tenantId}/orders/{orderId}
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+Pending or confirmed orders can be updated with the same editable fields used by `Create Order`, except `quote_id`.
+
+### Delete Order
+
+```http
+DELETE /tenants/{tenantId}/orders/{orderId}
+Authorization: Bearer <token>
+```
+
+### Order Lifecycle
+
+```http
+POST /tenants/{tenantId}/orders/{orderId}/confirm
+POST /tenants/{tenantId}/orders/{orderId}/process
+POST /tenants/{tenantId}/orders/{orderId}/ship
+POST /tenants/{tenantId}/orders/{orderId}/deliver
+POST /tenants/{tenantId}/orders/{orderId}/cancel
+Authorization: Bearer <token>
+```
+
+---
+
 ## Payments
 
 ### List Payments

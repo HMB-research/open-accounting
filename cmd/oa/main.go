@@ -21,6 +21,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/quotes"
@@ -74,6 +75,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runPayments(ctx, args[1:])
 	case "quotes":
 		return a.runQuotes(ctx, args[1:])
+	case "orders":
+		return a.runOrders(ctx, args[1:])
 	case "reports":
 		return a.runReports(ctx, args[1:])
 	case "documents":
@@ -150,6 +153,16 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  quotes send               Mark a quote sent")
 	_, _ = fmt.Fprintln(a.stdout, "  quotes accept             Mark a quote accepted")
 	_, _ = fmt.Fprintln(a.stdout, "  quotes reject             Mark a quote rejected")
+	_, _ = fmt.Fprintln(a.stdout, "  orders list               List orders")
+	_, _ = fmt.Fprintln(a.stdout, "  orders create             Create an order")
+	_, _ = fmt.Fprintln(a.stdout, "  orders get                Show one order")
+	_, _ = fmt.Fprintln(a.stdout, "  orders update             Update an order")
+	_, _ = fmt.Fprintln(a.stdout, "  orders delete             Delete a pending order")
+	_, _ = fmt.Fprintln(a.stdout, "  orders confirm            Mark an order confirmed")
+	_, _ = fmt.Fprintln(a.stdout, "  orders process            Mark an order processing")
+	_, _ = fmt.Fprintln(a.stdout, "  orders ship               Mark an order shipped")
+	_, _ = fmt.Fprintln(a.stdout, "  orders deliver            Mark an order delivered")
+	_, _ = fmt.Fprintln(a.stdout, "  orders cancel             Cancel an order")
 	_, _ = fmt.Fprintln(a.stdout, "  reports trial-balance     Show trial balance")
 	_, _ = fmt.Fprintln(a.stdout, "  reports account-balance   Show one account balance")
 	_, _ = fmt.Fprintln(a.stdout, "  reports balance-sheet     Show balance sheet")
@@ -1390,6 +1403,238 @@ func (a *cliApp) runQuotes(ctx context.Context, args []string) error {
 
 	default:
 		return fmt.Errorf("unknown quotes subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runOrders(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("orders subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("orders list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		statusFlag := fs.String("status", "", "Order status")
+		contactID := fs.String("contact-id", "", "Contact id")
+		fromDate := fs.String("from", "", "From order date in YYYY-MM-DD")
+		toDate := fs.String("to", "", "To order date in YYYY-MM-DD")
+		search := fs.String("search", "", "Search term")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		status, err := parseOptionalOrderStatus(*statusFlag)
+		if err != nil {
+			return err
+		}
+		fromDateValue, err := parseOptionalDate("from", *fromDate)
+		if err != nil {
+			return err
+		}
+		toDateValue, err := parseOptionalDate("to", *toDate)
+		if err != nil {
+			return err
+		}
+
+		ordersList, err := client.listOrders(ctx, cfg.TenantID, orders.OrderFilter{
+			Status:    status,
+			ContactID: strings.TrimSpace(*contactID),
+			FromDate:  fromDateValue,
+			ToDate:    toDateValue,
+			Search:    strings.TrimSpace(*search),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, ordersList)
+		}
+		printOrdersTable(a.stdout, ordersList)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("orders create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		contactID := fs.String("contact-id", "", "Contact id")
+		orderDate := fs.String("order-date", "", "Order date in YYYY-MM-DD")
+		expectedDelivery := fs.String("expected-delivery", "", "Expected delivery date in YYYY-MM-DD")
+		currency := fs.String("currency", "EUR", "Currency code")
+		exchangeRateFlag := fs.String("exchange-rate", "1", "Exchange rate to base currency")
+		notes := fs.String("notes", "", "Notes")
+		quoteID := fs.String("quote-id", "", "Source quote id")
+		lines := orderLineFlags{}
+		fs.Var(&lines, "line", "Line as comma-separated key=value pairs; repeatable")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*contactID) == "" {
+			return errors.New("contact-id is required")
+		}
+		orderDateValue, err := parseRequiredDate("order-date", *orderDate)
+		if err != nil {
+			return err
+		}
+		expectedDeliveryValue, err := parseOptionalDate("expected-delivery", *expectedDelivery)
+		if err != nil {
+			return err
+		}
+		if len(lines) == 0 {
+			return errors.New("at least one line is required")
+		}
+		exchangeRate, err := parseRequiredPositiveDecimal("exchange-rate", *exchangeRateFlag)
+		if err != nil {
+			return err
+		}
+
+		order, err := client.createOrder(ctx, cfg.TenantID, &orders.CreateOrderRequest{
+			ContactID:        strings.TrimSpace(*contactID),
+			OrderDate:        orderDateValue,
+			ExpectedDelivery: expectedDeliveryValue,
+			Currency:         strings.ToUpper(strings.TrimSpace(*currency)),
+			ExchangeRate:     exchangeRate,
+			Notes:            strings.TrimSpace(*notes),
+			QuoteID:          optionalStringPtr(*quoteID),
+			Lines:            []orders.CreateOrderLineRequest(lines),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, order)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created order %s (%s)\n", order.OrderNumber, order.ID)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("orders get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		orderID := fs.String("id", "", "Order id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*orderID) == "" {
+			return errors.New("id is required")
+		}
+
+		order, err := client.getOrder(ctx, cfg.TenantID, strings.TrimSpace(*orderID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, order)
+		}
+		printOrder(a.stdout, order)
+		return nil
+
+	case "update":
+		fs := flag.NewFlagSet("orders update", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		orderID := fs.String("id", "", "Order id")
+		contactID := fs.String("contact-id", "", "Contact id")
+		orderDate := fs.String("order-date", "", "Order date in YYYY-MM-DD")
+		expectedDelivery := fs.String("expected-delivery", "", "Expected delivery date in YYYY-MM-DD")
+		currency := fs.String("currency", "EUR", "Currency code")
+		exchangeRateFlag := fs.String("exchange-rate", "1", "Exchange rate to base currency")
+		notes := fs.String("notes", "", "Notes")
+		lines := orderLineFlags{}
+		fs.Var(&lines, "line", "Line as comma-separated key=value pairs; repeatable")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*orderID) == "" {
+			return errors.New("id is required")
+		}
+		if strings.TrimSpace(*contactID) == "" {
+			return errors.New("contact-id is required")
+		}
+		orderDateValue, err := parseRequiredDate("order-date", *orderDate)
+		if err != nil {
+			return err
+		}
+		expectedDeliveryValue, err := parseOptionalDate("expected-delivery", *expectedDelivery)
+		if err != nil {
+			return err
+		}
+		if len(lines) == 0 {
+			return errors.New("at least one line is required")
+		}
+		exchangeRate, err := parseRequiredPositiveDecimal("exchange-rate", *exchangeRateFlag)
+		if err != nil {
+			return err
+		}
+
+		order, err := client.updateOrder(ctx, cfg.TenantID, strings.TrimSpace(*orderID), &orders.UpdateOrderRequest{
+			ContactID:        strings.TrimSpace(*contactID),
+			OrderDate:        orderDateValue,
+			ExpectedDelivery: expectedDeliveryValue,
+			Currency:         strings.ToUpper(strings.TrimSpace(*currency)),
+			ExchangeRate:     exchangeRate,
+			Notes:            strings.TrimSpace(*notes),
+			Lines:            []orders.CreateOrderLineRequest(lines),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, order)
+		}
+		printOrder(a.stdout, order)
+		return nil
+
+	case "delete":
+		fs := flag.NewFlagSet("orders delete", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		orderID := fs.String("id", "", "Order id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*orderID) == "" {
+			return errors.New("id is required")
+		}
+
+		if err := client.deleteOrder(ctx, cfg.TenantID, strings.TrimSpace(*orderID)); err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, map[string]string{"status": "deleted"})
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Deleted order %s\n", strings.TrimSpace(*orderID))
+		return nil
+
+	case "confirm", "process", "ship", "deliver", "cancel":
+		fs := flag.NewFlagSet("orders "+args[0], flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		orderID := fs.String("id", "", "Order id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*orderID) == "" {
+			return errors.New("id is required")
+		}
+
+		result, err := client.updateOrderStatus(ctx, cfg.TenantID, strings.TrimSpace(*orderID), args[0])
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "%s order %s\n", orderActionPastTense(args[0]), strings.TrimSpace(*orderID))
+		return nil
+
+	default:
+		return fmt.Errorf("unknown orders subcommand %q", args[0])
 	}
 }
 
@@ -2899,6 +3144,19 @@ func parseOptionalQuoteStatus(value string) (quotes.QuoteStatus, error) {
 	}
 }
 
+func parseOptionalOrderStatus(value string) (orders.OrderStatus, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	switch orders.OrderStatus(normalized) {
+	case orders.OrderStatusPending, orders.OrderStatusConfirmed, orders.OrderStatusProcessing, orders.OrderStatusShipped, orders.OrderStatusDelivered, orders.OrderStatusCanceled:
+		return orders.OrderStatus(normalized), nil
+	default:
+		return "", fmt.Errorf("invalid order status %q", value)
+	}
+}
+
 func parseOptionalPaymentType(value string) (payments.PaymentType, error) {
 	if strings.TrimSpace(value) == "" {
 		return "", nil
@@ -2953,6 +3211,23 @@ func quoteActionPastTense(action string) string {
 		return "Accepted"
 	case "reject":
 		return "Rejected"
+	default:
+		return titleLabel(action)
+	}
+}
+
+func orderActionPastTense(action string) string {
+	switch action {
+	case "confirm":
+		return "Confirmed"
+	case "process":
+		return "Processed"
+	case "ship":
+		return "Shipped"
+	case "deliver":
+		return "Delivered"
+	case "cancel":
+		return "Canceled"
 	default:
 		return titleLabel(action)
 	}
@@ -3017,6 +3292,74 @@ func (l *invoiceLineFlags) Set(value string) error {
 }
 
 func (l *invoiceLineFlags) String() string {
+	if l == nil {
+		return ""
+	}
+	descriptions := make([]string, 0, len(*l))
+	for _, line := range *l {
+		descriptions = append(descriptions, line.Description)
+	}
+	return strings.Join(descriptions, ",")
+}
+
+type orderLineFlags []orders.CreateOrderLineRequest
+
+func (l *orderLineFlags) Set(value string) error {
+	reader := csv.NewReader(strings.NewReader(value))
+	reader.TrimLeadingSpace = true
+	reader.FieldsPerRecord = -1
+	fields, err := reader.Read()
+	if err != nil {
+		return fmt.Errorf("parse line: %w", err)
+	}
+
+	values := make(map[string]string)
+	for _, field := range fields {
+		key, val, ok := strings.Cut(field, "=")
+		if !ok {
+			return fmt.Errorf("line field %q must be key=value", field)
+		}
+		normalizedKey := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(key)), "-", "_")
+		values[normalizedKey] = strings.TrimSpace(val)
+	}
+
+	description := strings.TrimSpace(values["description"])
+	if description == "" {
+		return errors.New("line description is required")
+	}
+	quantity, err := parseRequiredPositiveDecimal("line quantity", firstNonEmpty(values["quantity"], values["qty"]))
+	if err != nil {
+		return err
+	}
+	unitPrice, err := parseRequiredNonNegativeDecimal("line unit_price", firstNonEmpty(values["unit_price"], values["price"]))
+	if err != nil {
+		return err
+	}
+	vatRate, err := parseRequiredNonNegativeDecimal("line vat_rate", firstNonEmpty(values["vat_rate"], values["vat"]))
+	if err != nil {
+		return err
+	}
+	discountPercent := decimal.Zero
+	if rawDiscount := firstNonEmpty(values["discount_percent"], values["discount"]); rawDiscount != "" {
+		discountPercent, err = parseRequiredNonNegativeDecimal("line discount_percent", rawDiscount)
+		if err != nil {
+			return err
+		}
+	}
+
+	*l = append(*l, orders.CreateOrderLineRequest{
+		Description:     description,
+		Quantity:        quantity,
+		Unit:            strings.TrimSpace(values["unit"]),
+		UnitPrice:       unitPrice,
+		DiscountPercent: discountPercent,
+		VATRate:         vatRate,
+		ProductID:       optionalStringPtr(firstNonEmpty(values["product_id"], values["product"])),
+	})
+	return nil
+}
+
+func (l *orderLineFlags) String() string {
 	if l == nil {
 		return ""
 	}

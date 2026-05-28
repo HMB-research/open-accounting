@@ -20,6 +20,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/quotes"
@@ -653,6 +654,203 @@ func TestCLIQuoteCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"quotes", "delete", "--id", "quote-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Deleted quote quote-1")
+}
+
+func TestCLIOrderCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	orderPayload := func(id, number, status string) map[string]any {
+		return map[string]any{
+			"id":           id,
+			"tenant_id":    "tenant-1",
+			"order_number": number,
+			"contact_id":   "contact-1",
+			"contact": map[string]any{
+				"id":           "contact-1",
+				"name":         "Acme",
+				"contact_type": "CUSTOMER",
+				"is_active":    true,
+			},
+			"order_date":        "2026-03-15T00:00:00Z",
+			"expected_delivery": "2026-03-22T00:00:00Z",
+			"status":            status,
+			"currency":          "EUR",
+			"exchange_rate":     "1.00",
+			"subtotal":          "180.00",
+			"vat_amount":        "39.60",
+			"total":             "219.60",
+			"notes":             "March order",
+			"quote_id":          "quote-1",
+			"created_at":        "2026-03-15T12:00:00Z",
+			"created_by":        "user-1",
+			"updated_at":        "2026-03-15T12:00:00Z",
+			"lines": []map[string]any{{
+				"id":               "line-1",
+				"tenant_id":        "tenant-1",
+				"order_id":         id,
+				"line_number":      1,
+				"description":      "Consulting",
+				"quantity":         "2.00",
+				"unit":             "hour",
+				"unit_price":       "100.00",
+				"discount_percent": "10.00",
+				"vat_rate":         "22.00",
+				"line_subtotal":    "180.00",
+				"line_vat":         "39.60",
+				"line_total":       "219.60",
+				"product_id":       "prod-1",
+			}},
+		}
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders":
+			require.Equal(t, "CONFIRMED", r.URL.Query().Get("status"))
+			require.Equal(t, "contact-1", r.URL.Query().Get("contact_id"))
+			require.Equal(t, "2026-03-01", r.URL.Query().Get("from_date"))
+			require.Equal(t, "2026-03-31", r.URL.Query().Get("to_date"))
+			require.Equal(t, "ORD", r.URL.Query().Get("search"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{orderPayload("order-1", "ORD-00001", "CONFIRMED")})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders":
+			var req orders.CreateOrderRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "contact-1", req.ContactID)
+			assert.Equal(t, "2026-03-15", req.OrderDate.Format("2006-01-02"))
+			require.NotNil(t, req.ExpectedDelivery)
+			assert.Equal(t, "2026-03-22", req.ExpectedDelivery.Format("2006-01-02"))
+			assert.Equal(t, "EUR", req.Currency)
+			assert.Equal(t, "March order", req.Notes)
+			require.NotNil(t, req.QuoteID)
+			assert.Equal(t, "quote-1", *req.QuoteID)
+			require.Len(t, req.Lines, 1)
+			line := req.Lines[0]
+			assert.Equal(t, "Consulting", line.Description)
+			assert.True(t, line.Quantity.Equal(decimal.RequireFromString("2.00")))
+			assert.True(t, line.UnitPrice.Equal(decimal.RequireFromString("100.00")))
+			assert.True(t, line.DiscountPercent.Equal(decimal.RequireFromString("10.00")))
+			assert.True(t, line.VATRate.Equal(decimal.RequireFromString("22.00")))
+			require.NotNil(t, line.ProductID)
+			assert.Equal(t, "prod-1", *line.ProductID)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(orderPayload("order-1", "ORD-00001", "PENDING"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1":
+			_ = json.NewEncoder(w).Encode(orderPayload("order-1", "ORD-00001", "CONFIRMED"))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1":
+			var req orders.UpdateOrderRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "contact-1", req.ContactID)
+			assert.Equal(t, "2026-03-16", req.OrderDate.Format("2006-01-02"))
+			assert.Equal(t, "Updated order", req.Notes)
+			require.Len(t, req.Lines, 1)
+			assert.Equal(t, "Updated consulting", req.Lines[0].Description)
+			_ = json.NewEncoder(w).Encode(orderPayload("order-1", "ORD-00002", "CONFIRMED"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1/confirm":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "confirmed"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1/process":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "processing"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1/ship":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "shipped"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1/deliver":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "delivered"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1/cancel":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "canceled"})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{
+		"orders", "list",
+		"--status", "confirmed",
+		"--contact-id", "contact-1",
+		"--from", "2026-03-01",
+		"--to", "2026-03-31",
+		"--search", "ORD",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"order_number": "ORD-00001"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"orders", "create",
+		"--contact-id", "contact-1",
+		"--order-date", "2026-03-15",
+		"--expected-delivery", "2026-03-22",
+		"--currency", "eur",
+		"--notes", "March order",
+		"--quote-id", "quote-1",
+		"--line", "description=Consulting,quantity=2,unit=hour,unit_price=100.00,discount_percent=10.00,vat_rate=22.00,product_id=prod-1",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created order ORD-00001 (order-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"orders", "get", "--id", "order-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Order ORD-00001")
+	assert.Contains(t, stdout.String(), "Consulting")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"orders", "update",
+		"--id", "order-1",
+		"--contact-id", "contact-1",
+		"--order-date", "2026-03-16",
+		"--currency", "eur",
+		"--notes", "Updated order",
+		"--line", "description=Updated consulting,quantity=3,unit=hour,unit_price=100.00,vat_rate=22.00",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Order ORD-00002")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"orders", "confirm", "--id", "order-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Confirmed order order-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"orders", "process", "--id", "order-1", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "processing"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"orders", "ship", "--id", "order-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Shipped order order-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"orders", "deliver", "--id", "order-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Delivered order order-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"orders", "cancel", "--id", "order-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Canceled order order-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"orders", "delete", "--id", "order-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Deleted order order-1")
 }
 
 func TestCLIJournalEntryCommands(t *testing.T) {
@@ -2140,6 +2338,14 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid quote status")
 
+	orderStatus, err := parseOptionalOrderStatus("processing")
+	require.NoError(t, err)
+	assert.Equal(t, orders.OrderStatusProcessing, orderStatus)
+
+	_, err = parseOptionalOrderStatus("bad")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid order status")
+
 	var invoiceLines invoiceLineFlags
 	require.NoError(t, invoiceLines.Set("description=Service,quantity=1,unit_price=100,vat_rate=22"))
 	assert.Equal(t, "Service", invoiceLines.String())
@@ -2157,6 +2363,16 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	err = quoteLines.Set("description=Missing vat,quantity=1,unit_price=100")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "vat_rate is required")
+
+	var orderLines orderLineFlags
+	require.NoError(t, orderLines.Set("description=Order line,qty=2,price=50,vat=22,product=prod-2"))
+	assert.Equal(t, "Order line", orderLines.String())
+	require.NotNil(t, orderLines[0].ProductID)
+	assert.Equal(t, "prod-2", *orderLines[0].ProductID)
+
+	err = orderLines.Set("description=Missing quantity,unit_price=100,vat_rate=22")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "quantity is required")
 
 	var journalLines journalLineFlags
 	require.NoError(t, journalLines.Set("account_id=acc-1,debit=100,description=Debit line"))

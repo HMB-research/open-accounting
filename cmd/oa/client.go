@@ -22,6 +22,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/quotes"
@@ -400,6 +401,67 @@ func (c *apiClient) deleteQuote(ctx context.Context, tenantID, quoteID string) e
 func (c *apiClient) updateQuoteStatus(ctx context.Context, tenantID, quoteID, action string) (map[string]string, error) {
 	var resp map[string]string
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "quotes", quoteID, action), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) listOrders(ctx context.Context, tenantID string, filter orders.OrderFilter) ([]orders.Order, error) {
+	values := url.Values{}
+	if filter.Status != "" {
+		values.Set("status", string(filter.Status))
+	}
+	if strings.TrimSpace(filter.ContactID) != "" {
+		values.Set("contact_id", strings.TrimSpace(filter.ContactID))
+	}
+	if filter.FromDate != nil {
+		values.Set("from_date", filter.FromDate.Format("2006-01-02"))
+	}
+	if filter.ToDate != nil {
+		values.Set("to_date", filter.ToDate.Format("2006-01-02"))
+	}
+	if strings.TrimSpace(filter.Search) != "" {
+		values.Set("search", strings.TrimSpace(filter.Search))
+	}
+
+	var resp []orders.Order
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "orders"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createOrder(ctx context.Context, tenantID string, req *orders.CreateOrderRequest) (*orders.Order, error) {
+	var resp orders.Order
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "orders"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getOrder(ctx context.Context, tenantID, orderID string) (*orders.Order, error) {
+	var resp orders.Order
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "orders", orderID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) updateOrder(ctx context.Context, tenantID, orderID string, req *orders.UpdateOrderRequest) (*orders.Order, error) {
+	var resp orders.Order
+	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "orders", orderID), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) deleteOrder(ctx context.Context, tenantID, orderID string) error {
+	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "orders", orderID), nil, c.apiToken, nil)
+}
+
+func (c *apiClient) updateOrderStatus(ctx context.Context, tenantID, orderID, action string) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "orders", orderID, action), nil, c.apiToken, &resp); err != nil {
 		return nil, err
 	}
 	return resp, nil
