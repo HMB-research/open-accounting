@@ -28,6 +28,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/quotes"
+	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
@@ -464,6 +465,83 @@ func (c *apiClient) deleteOrder(ctx context.Context, tenantID, orderID string) e
 func (c *apiClient) updateOrderStatus(ctx context.Context, tenantID, orderID, action string) (map[string]string, error) {
 	var resp map[string]string
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "orders", orderID, action), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) listRecurringInvoices(ctx context.Context, tenantID string, activeOnly bool) ([]recurring.RecurringInvoice, error) {
+	values := url.Values{}
+	if activeOnly {
+		values.Set("active_only", "true")
+	}
+
+	var resp []recurring.RecurringInvoice
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "recurring-invoices"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createRecurringInvoice(ctx context.Context, tenantID string, req *recurring.CreateRecurringInvoiceRequest) (*recurring.RecurringInvoice, error) {
+	var resp recurring.RecurringInvoice
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "recurring-invoices"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) createRecurringInvoiceFromInvoice(ctx context.Context, tenantID, invoiceID string, req *recurring.CreateFromInvoiceRequest) (*recurring.RecurringInvoice, error) {
+	var resp recurring.RecurringInvoice
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "recurring-invoices", "from-invoice", invoiceID), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getRecurringInvoice(ctx context.Context, tenantID, recurringID string) (*recurring.RecurringInvoice, error) {
+	var resp recurring.RecurringInvoice
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "recurring-invoices", recurringID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) updateRecurringInvoice(ctx context.Context, tenantID, recurringID string, req *recurring.UpdateRecurringInvoiceRequest) (*recurring.RecurringInvoice, error) {
+	var resp recurring.RecurringInvoice
+	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "recurring-invoices", recurringID), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) deleteRecurringInvoice(ctx context.Context, tenantID, recurringID string) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "recurring-invoices", recurringID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) updateRecurringInvoiceStatus(ctx context.Context, tenantID, recurringID, action string) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "recurring-invoices", recurringID, action), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) generateRecurringInvoice(ctx context.Context, tenantID, recurringID string) (*recurring.GenerationResult, error) {
+	var resp recurring.GenerationResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "recurring-invoices", recurringID, "generate"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) generateDueRecurringInvoices(ctx context.Context, tenantID string) ([]recurring.GenerationResult, error) {
+	var resp []recurring.GenerationResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "recurring-invoices", "generate-due"), nil, c.apiToken, &resp); err != nil {
 		return nil, err
 	}
 	return resp, nil

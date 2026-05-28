@@ -251,6 +251,33 @@ go run ./cmd/oa orders delete --id <order-id>
 
 Use `--line` repeatedly on `orders create` and `orders update`. Each line accepts `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, and `product_id`. Order statuses are `PENDING`, `CONFIRMED`, `PROCESSING`, `SHIPPED`, `DELIVERED`, and `CANCELED`.
 
+## Recurring invoices
+
+```bash
+go run ./cmd/oa recurring-invoices list --active-only
+go run ./cmd/oa recurring-invoices create \
+  --name "Monthly retainer" \
+  --contact-id <contact-id> \
+  --frequency MONTHLY \
+  --start-date 2026-03-15 \
+  --payment-terms-days 21 \
+  --line "description=Consulting,quantity=2,unit=hour,unit_price=100.00,vat_rate=22.00"
+go run ./cmd/oa recurring-invoices from-invoice \
+  --invoice-id <invoice-id> \
+  --name "Repeat invoice" \
+  --frequency QUARTERLY \
+  --start-date 2026-04-01
+go run ./cmd/oa recurring-invoices get --id <recurring-id>
+go run ./cmd/oa recurring-invoices update --id <recurring-id> --frequency YEARLY --payment-terms-days 30
+go run ./cmd/oa recurring-invoices pause --id <recurring-id>
+go run ./cmd/oa recurring-invoices resume --id <recurring-id>
+go run ./cmd/oa recurring-invoices generate --id <recurring-id>
+go run ./cmd/oa recurring-invoices generate-due
+go run ./cmd/oa recurring-invoices delete --id <recurring-id>
+```
+
+Frequencies are `WEEKLY`, `BIWEEKLY`, `MONTHLY`, `QUARTERLY`, and `YEARLY`. Use `--line` repeatedly on create or update. Recurring invoice email options include `--send-email`, `--recipient-email`, `--attach-pdf`, `--email-subject`, and `--email-message`.
+
 ## Fixed assets
 
 ```bash

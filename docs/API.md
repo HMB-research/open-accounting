@@ -1152,6 +1152,89 @@ Authorization: Bearer <token>
 
 ---
 
+## Recurring Invoices
+
+### List Recurring Invoices
+
+```http
+GET /tenants/{tenantId}/recurring-invoices?active_only=true
+Authorization: Bearer <token>
+```
+
+### Create Recurring Invoice
+
+```http
+POST /tenants/{tenantId}/recurring-invoices
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "Monthly retainer",
+  "contact_id": "uuid",
+  "invoice_type": "SALES",
+  "currency": "EUR",
+  "frequency": "MONTHLY",
+  "start_date": "2026-03-15T00:00:00Z",
+  "end_date": "2026-12-31T00:00:00Z",
+  "payment_terms_days": 21,
+  "reference": "RET-1",
+  "send_email_on_generation": true,
+  "attach_pdf_to_email": true,
+  "lines": [
+    {
+      "description": "Consulting services",
+      "quantity": "2",
+      "unit": "hour",
+      "unit_price": "100.00",
+      "discount_percent": "0",
+      "vat_rate": "22.00"
+    }
+  ]
+}
+```
+
+Frequencies are `WEEKLY`, `BIWEEKLY`, `MONTHLY`, `QUARTERLY`, and `YEARLY`. `attach_pdf_to_email` defaults to true when omitted.
+
+### Create From Existing Invoice
+
+```http
+POST /tenants/{tenantId}/recurring-invoices/from-invoice/{invoiceId}
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "Repeat invoice",
+  "frequency": "QUARTERLY",
+  "start_date": "2026-04-01T00:00:00Z",
+  "payment_terms_days": 14
+}
+```
+
+### Get, Update, and Delete Recurring Invoice
+
+```http
+GET /tenants/{tenantId}/recurring-invoices/{recurringId}
+PUT /tenants/{tenantId}/recurring-invoices/{recurringId}
+DELETE /tenants/{tenantId}/recurring-invoices/{recurringId}
+Authorization: Bearer <token>
+```
+
+Update payloads accept optional `name`, `contact_id`, `frequency`, `end_date`, `payment_terms_days`, `reference`, `notes`, `lines`, and email configuration fields.
+
+### Recurring Invoice Lifecycle
+
+```http
+POST /tenants/{tenantId}/recurring-invoices/{recurringId}/pause
+POST /tenants/{tenantId}/recurring-invoices/{recurringId}/resume
+POST /tenants/{tenantId}/recurring-invoices/{recurringId}/generate
+POST /tenants/{tenantId}/recurring-invoices/generate-due
+Authorization: Bearer <token>
+```
+
+Manual generation returns the generated invoice id and invoice number. `generate-due` processes every due active recurring invoice for the tenant.
+
+---
+
 ## Fixed Assets
 
 ### Asset Categories
