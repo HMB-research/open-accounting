@@ -317,9 +317,6 @@ func TestRevenueChangePercentage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.previous.IsZero() {
-				t.Skip("Cannot calculate percentage change from zero")
-			}
 			change := tt.current.Sub(tt.previous).Div(tt.previous).Mul(decimal.NewFromInt(100)).Round(0)
 			if !change.Equal(tt.expected) {
 				t.Errorf("Change = %s%%, want %s%%", change, tt.expected)
