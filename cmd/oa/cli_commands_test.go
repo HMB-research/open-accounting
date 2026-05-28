@@ -300,6 +300,163 @@ func TestCLITenantCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Marked tenant tenant-1 onboarding complete")
 }
 
+func TestCLIUsersCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/users":
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"tenant_id":  "tenant-1",
+				"user_id":    "user-2",
+				"role":       "viewer",
+				"is_default": false,
+				"created_at": "2026-03-12T00:00:00Z",
+			}})
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-2/role":
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "accountant", req["role"])
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-2":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "removed"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"users", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "user-2")
+	assert.Contains(t, stdout.String(), "viewer")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"users", "update-role", "--id", "user-2", "--role", "accountant"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Updated user user-2 role to accountant")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"users", "remove", "--id", "user-2"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Removed user user-2")
+}
+
+func TestCLIInvitationCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	invitationResponse := map[string]any{
+		"id":          "inv-1",
+		"tenant_id":   "tenant-1",
+		"tenant_name": "Alpha",
+		"email":       "new@example.com",
+		"role":        "accountant",
+		"invited_by":  "user-1",
+		"expires_at":  "2026-03-19T00:00:00Z",
+		"created_at":  "2026-03-12T00:00:00Z",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasPrefix(r.URL.Path, "/api/v1/tenants/") {
+			require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		} else {
+			assert.Empty(t, r.Header.Get("Authorization"))
+		}
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invitations":
+			_ = json.NewEncoder(w).Encode([]map[string]any{invitationResponse})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invitations":
+			var req tenant.CreateInvitationRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "new@example.com", req.Email)
+			assert.Equal(t, tenant.RoleAccountant, req.Role)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(invitationResponse)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/invitations/inv-1":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "revoked"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/invitations/public-token":
+			_ = json.NewEncoder(w).Encode(invitationResponse)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/invitations/accept":
+			var req tenant.AcceptInvitationRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "public-token", req.Token)
+			assert.Equal(t, "secret", req.Password)
+			assert.Equal(t, "New User", req.Name)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tenant": map[string]any{
+					"id":   "tenant-1",
+					"name": "Alpha",
+					"slug": "alpha",
+					"settings": map[string]any{
+						"default_currency": "EUR",
+						"country_code":     "EE",
+						"timezone":         "Europe/Tallinn",
+					},
+					"is_active":  true,
+					"created_at": "2026-03-12T00:00:00Z",
+					"updated_at": "2026-03-12T00:00:00Z",
+				},
+				"role":       "accountant",
+				"is_default": false,
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"invitations", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "new@example.com")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"invitations", "create", "--email", "new@example.com", "--role", "accountant"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Invited new@example.com as accountant")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"invitations", "revoke", "--id", "inv-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Revoked invitation inv-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"invitations", "get", "--token", "public-token", "--base-url", server.URL})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "new@example.com")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"invitations", "accept", "--token", "public-token", "--name", "New User", "--password", "secret", "--base-url", server.URL})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Joined tenant Alpha")
+}
+
 func TestCLIAccountsCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
@@ -4490,6 +4647,14 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	err = app.runTenant(context.Background(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "tenant subcommand required")
+
+	err = app.runUsers(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "users subcommand required")
+
+	err = app.runInvitations(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invitations subcommand required")
 
 	err = app.runTokens(context.Background(), nil)
 	require.Error(t, err)

@@ -1994,6 +1994,26 @@ Content-Type: application/json
 
 **Roles:** `admin`, `accountant`, `viewer`
 
+### List Invitations
+
+```http
+GET /tenants/{tenantId}/invitations
+Authorization: Bearer <token>
+```
+
+### Revoke Invitation
+
+```http
+DELETE /tenants/{tenantId}/invitations/{invitationId}
+Authorization: Bearer <token>
+```
+
+### Get Invitation (Public)
+
+```http
+GET /invitations/{token}
+```
+
 ### Accept Invitation (Public)
 
 ```http
@@ -2011,6 +2031,13 @@ Content-Type: application/json
 
 ```http
 GET /tenants/{tenantId}/users
+Authorization: Bearer <token>
+```
+
+### Remove Tenant User
+
+```http
+DELETE /tenants/{tenantId}/users/{userId}
 Authorization: Bearer <token>
 ```
 

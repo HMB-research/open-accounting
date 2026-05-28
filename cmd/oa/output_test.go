@@ -70,6 +70,37 @@ func TestPrintTables(t *testing.T) {
 	assert.Contains(t, tenantBuf.String(), "Tenant Alpha")
 	assert.Contains(t, tenantBuf.String(), "finance@example.com")
 
+	var tenantUsersBuf bytes.Buffer
+	printTenantUsersTable(&tenantUsersBuf, []tenant.TenantUser{{
+		TenantID:  "tenant-1",
+		UserID:    "user-1",
+		Role:      tenant.RoleAdmin,
+		IsDefault: true,
+		CreatedAt: now,
+	}})
+	assert.Contains(t, tenantUsersBuf.String(), "user-1")
+	assert.Contains(t, tenantUsersBuf.String(), "admin")
+
+	var invitationsBuf bytes.Buffer
+	printInvitationsTable(&invitationsBuf, []tenant.UserInvitation{{
+		ID:         "inv-1",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		Email:      "new@example.com",
+		Role:       tenant.RoleAccountant,
+		ExpiresAt:  now,
+		CreatedAt:  now,
+	}})
+	assert.Contains(t, invitationsBuf.String(), "new@example.com")
+	assert.Contains(t, invitationsBuf.String(), "Alpha")
+
+	var membershipBuf bytes.Buffer
+	printTenantMembership(&membershipBuf, &tenant.TenantMembership{
+		Tenant: tenant.Tenant{ID: "tenant-1", Name: "Alpha", Slug: "alpha"},
+		Role:   tenant.RoleViewer,
+	})
+	assert.Contains(t, membershipBuf.String(), "Joined tenant Alpha")
+
 	var accountBuf bytes.Buffer
 	account := accounting.Account{
 		ID:          "account-1",

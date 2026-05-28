@@ -63,6 +63,10 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runAuth(ctx, args[1:])
 	case "tenant", "tenants":
 		return a.runTenant(ctx, args[1:])
+	case "users":
+		return a.runUsers(ctx, args[1:])
+	case "invitations":
+		return a.runInvitations(ctx, args[1:])
 	case "tokens":
 		return a.runTokens(ctx, args[1:])
 	case "accounts":
@@ -132,6 +136,12 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  tenant create             Create a tenant")
 	_, _ = fmt.Fprintln(a.stdout, "  tenant update             Update tenant settings")
 	_, _ = fmt.Fprintln(a.stdout, "  tenant complete-onboarding  Mark onboarding complete")
+	_, _ = fmt.Fprintln(a.stdout, "  users list                List tenant users")
+	_, _ = fmt.Fprintln(a.stdout, "  users update-role         Update a tenant user role")
+	_, _ = fmt.Fprintln(a.stdout, "  users remove              Remove a tenant user")
+	_, _ = fmt.Fprintln(a.stdout, "  invitations list          List pending tenant invitations")
+	_, _ = fmt.Fprintln(a.stdout, "  invitations create        Invite a user")
+	_, _ = fmt.Fprintln(a.stdout, "  invitations accept        Accept an invitation token")
 	_, _ = fmt.Fprintln(a.stdout, "  tokens list               List API tokens for the configured tenant")
 	_, _ = fmt.Fprintln(a.stdout, "  tokens create             Create another API token")
 	_, _ = fmt.Fprintln(a.stdout, "  tokens revoke             Revoke an API token by id")
@@ -511,6 +521,230 @@ func (a *cliApp) runTenant(ctx context.Context, args []string) error {
 
 	default:
 		return fmt.Errorf("unknown tenant subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runUsers(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("users subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("users list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		users, err := client.listTenantUsers(ctx, cfg.TenantID)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, users)
+		}
+		printTenantUsersTable(a.stdout, users)
+		return nil
+
+	case "update-role":
+		fs := flag.NewFlagSet("users update-role", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		userID := fs.String("id", "", "User id")
+		role := fs.String("role", "", "New role: admin, accountant, viewer")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*userID) == "" || strings.TrimSpace(*role) == "" {
+			return errors.New("id and role are required")
+		}
+
+		if err := client.updateTenantUserRole(ctx, cfg.TenantID, strings.TrimSpace(*userID), strings.TrimSpace(*role)); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Updated user %s role to %s\n", strings.TrimSpace(*userID), strings.TrimSpace(*role))
+		return nil
+
+	case "remove":
+		fs := flag.NewFlagSet("users remove", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		userID := fs.String("id", "", "User id")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*userID) == "" {
+			return errors.New("id is required")
+		}
+
+		if err := client.removeTenantUser(ctx, cfg.TenantID, strings.TrimSpace(*userID)); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Removed user %s\n", strings.TrimSpace(*userID))
+		return nil
+
+	default:
+		return fmt.Errorf("unknown users subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runInvitations(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("invitations subcommand required")
+	}
+
+	switch args[0] {
+	case "list":
+		cfg, client, err := a.loadAuthenticatedClient()
+		if err != nil {
+			return err
+		}
+
+		fs := flag.NewFlagSet("invitations list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		invitations, err := client.listInvitations(ctx, cfg.TenantID)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, invitations)
+		}
+		printInvitationsTable(a.stdout, invitations)
+		return nil
+
+	case "create":
+		cfg, client, err := a.loadAuthenticatedClient()
+		if err != nil {
+			return err
+		}
+
+		fs := flag.NewFlagSet("invitations create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		email := fs.String("email", "", "Invitee email")
+		role := fs.String("role", tenant.RoleViewer, "Role: admin, accountant, viewer")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*email) == "" || strings.TrimSpace(*role) == "" {
+			return errors.New("email and role are required")
+		}
+
+		invitation, err := client.createInvitation(ctx, cfg.TenantID, &tenant.CreateInvitationRequest{
+			Email: strings.TrimSpace(*email),
+			Role:  strings.TrimSpace(*role),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, invitation)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Invited %s as %s (%s)\n", invitation.Email, invitation.Role, invitation.ID)
+		return nil
+
+	case "revoke":
+		cfg, client, err := a.loadAuthenticatedClient()
+		if err != nil {
+			return err
+		}
+
+		fs := flag.NewFlagSet("invitations revoke", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		invitationID := fs.String("id", "", "Invitation id")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*invitationID) == "" {
+			return errors.New("id is required")
+		}
+
+		if err := client.revokeInvitation(ctx, cfg.TenantID, strings.TrimSpace(*invitationID)); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Revoked invitation %s\n", strings.TrimSpace(*invitationID))
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("invitations get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		token := fs.String("token", "", "Invitation token")
+		baseURL := fs.String("base-url", "", "API base URL; defaults to config or OA_BASE_URL")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*token) == "" {
+			return errors.New("token is required")
+		}
+		client, err := a.loadPublicClient(*baseURL)
+		if err != nil {
+			return err
+		}
+
+		invitation, err := client.getInvitationByToken(ctx, strings.TrimSpace(*token))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, invitation)
+		}
+		printInvitationsTable(a.stdout, []tenant.UserInvitation{*invitation})
+		return nil
+
+	case "accept":
+		fs := flag.NewFlagSet("invitations accept", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		token := fs.String("token", "", "Invitation token")
+		password := fs.String("password", "", "Password for a new user")
+		passwordStdin := fs.Bool("password-stdin", false, "Read password from stdin")
+		name := fs.String("name", "", "Name for a new user")
+		baseURL := fs.String("base-url", "", "API base URL; defaults to config or OA_BASE_URL")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*token) == "" {
+			return errors.New("token is required")
+		}
+		passwordValue := ""
+		if strings.TrimSpace(*password) != "" || *passwordStdin {
+			var err error
+			passwordValue, err = resolvePassword(*password, *passwordStdin)
+			if err != nil {
+				return err
+			}
+		}
+		client, err := a.loadPublicClient(*baseURL)
+		if err != nil {
+			return err
+		}
+
+		membership, err := client.acceptInvitation(ctx, &tenant.AcceptInvitationRequest{
+			Token:    strings.TrimSpace(*token),
+			Password: passwordValue,
+			Name:     strings.TrimSpace(*name),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, membership)
+		}
+		printTenantMembership(a.stdout, membership)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown invitations subcommand %q", args[0])
 	}
 }
 
@@ -6918,6 +7152,17 @@ func (a *cliApp) loadTokenClient() (*cliConfig, *apiClient, error) {
 		return nil, nil, errors.New("no API token configured, run `oa auth init` first")
 	}
 	return cfg, newAPIClient(cfg.BaseURL, cfg.APIToken), nil
+}
+
+func (a *cliApp) loadPublicClient(baseURL string) (*apiClient, error) {
+	if strings.TrimSpace(baseURL) != "" {
+		return newAPIClient(baseURL, ""), nil
+	}
+	cfg, err := loadRuntimeConfig()
+	if err != nil {
+		return nil, err
+	}
+	return newAPIClient(cfg.BaseURL, ""), nil
 }
 
 func resolvePassword(password string, passwordStdin bool) (string, error) {
