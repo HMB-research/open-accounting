@@ -26,6 +26,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/quotes"
+	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -853,6 +854,247 @@ func TestCLIOrderCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"orders", "delete", "--id", "order-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Deleted order order-1")
+}
+
+func TestCLIRecurringInvoiceCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	recurringPayload := func(id, name string, active bool) map[string]any {
+		return map[string]any{
+			"id":                       id,
+			"tenant_id":                "tenant-1",
+			"name":                     name,
+			"contact_id":               "contact-1",
+			"contact_name":             "Acme",
+			"invoice_type":             "SALES",
+			"currency":                 "EUR",
+			"frequency":                "MONTHLY",
+			"start_date":               "2026-03-15T00:00:00Z",
+			"end_date":                 "2026-12-31T00:00:00Z",
+			"next_generation_date":     "2026-04-15T00:00:00Z",
+			"payment_terms_days":       21,
+			"reference":                "RET-1",
+			"notes":                    "Monthly services",
+			"is_active":                active,
+			"generated_count":          2,
+			"created_at":               "2026-03-15T12:00:00Z",
+			"created_by":               "user-1",
+			"updated_at":               "2026-03-15T12:00:00Z",
+			"send_email_on_generation": true,
+			"email_template_type":      "INVOICE_SEND",
+			"recipient_email_override": "billing@example.com",
+			"attach_pdf_to_email":      true,
+			"email_subject_override":   "Monthly invoice",
+			"email_message":            "Please see attached invoice.",
+			"lines": []map[string]any{{
+				"id":                   "line-1",
+				"recurring_invoice_id": id,
+				"line_number":          1,
+				"description":          "Consulting",
+				"quantity":             "2.00",
+				"unit":                 "hour",
+				"unit_price":           "100.00",
+				"discount_percent":     "10.00",
+				"vat_rate":             "22.00",
+				"account_id":           "acc-1",
+				"product_id":           "prod-1",
+			}},
+		}
+	}
+	generationPayload := map[string]any{
+		"recurring_invoice_id":     "rec-1",
+		"generated_invoice_id":     "inv-1",
+		"generated_invoice_number": "INV-00001",
+		"email_sent":               true,
+		"email_status":             "SENT",
+		"email_log_id":             "email-1",
+		"email_error":              "",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices":
+			require.Equal(t, "true", r.URL.Query().Get("active_only"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{recurringPayload("rec-1", "Monthly retainer", true)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices":
+			var req recurring.CreateRecurringInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Monthly retainer", req.Name)
+			assert.Equal(t, "contact-1", req.ContactID)
+			assert.Equal(t, "SALES", req.InvoiceType)
+			assert.Equal(t, "EUR", req.Currency)
+			assert.Equal(t, recurring.FrequencyMonthly, req.Frequency)
+			assert.Equal(t, "2026-03-15", req.StartDate.Format("2006-01-02"))
+			require.NotNil(t, req.EndDate)
+			assert.Equal(t, "2026-12-31", req.EndDate.Format("2006-01-02"))
+			assert.Equal(t, 21, req.PaymentTermsDays)
+			assert.True(t, req.SendEmailOnGeneration)
+			assert.Equal(t, "billing@example.com", req.RecipientEmailOverride)
+			require.NotNil(t, req.AttachPDFToEmail)
+			assert.True(t, *req.AttachPDFToEmail)
+			require.Len(t, req.Lines, 1)
+			assert.Equal(t, "Consulting", req.Lines[0].Description)
+			assert.True(t, req.Lines[0].Quantity.Equal(decimal.RequireFromString("2.00")))
+			assert.True(t, req.Lines[0].DiscountPercent.Equal(decimal.RequireFromString("10.00")))
+			require.NotNil(t, req.Lines[0].AccountID)
+			require.NotNil(t, req.Lines[0].ProductID)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(recurringPayload("rec-1", "Monthly retainer", true))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/from-invoice/inv-template":
+			var req recurring.CreateFromInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "From invoice", req.Name)
+			assert.Equal(t, recurring.FrequencyBiweekly, req.Frequency)
+			assert.Equal(t, "2026-04-01", req.StartDate.Format("2006-01-02"))
+			assert.Equal(t, 14, req.PaymentTermsDays)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(recurringPayload("rec-2", "From invoice", true))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/rec-1":
+			_ = json.NewEncoder(w).Encode(recurringPayload("rec-1", "Monthly retainer", true))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/rec-1":
+			var req recurring.UpdateRecurringInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.NotNil(t, req.Name)
+			assert.Equal(t, "Quarterly retainer", *req.Name)
+			require.NotNil(t, req.Frequency)
+			assert.Equal(t, recurring.FrequencyQuarterly, *req.Frequency)
+			require.NotNil(t, req.PaymentTermsDays)
+			assert.Equal(t, 30, *req.PaymentTermsDays)
+			require.NotNil(t, req.SendEmailOnGeneration)
+			assert.False(t, *req.SendEmailOnGeneration)
+			require.NotNil(t, req.AttachPDFToEmail)
+			assert.False(t, *req.AttachPDFToEmail)
+			require.Len(t, req.Lines, 1)
+			assert.Equal(t, "Updated consulting", req.Lines[0].Description)
+			payload := recurringPayload("rec-1", "Quarterly retainer", true)
+			payload["frequency"] = "QUARTERLY"
+			payload["payment_terms_days"] = 30
+			payload["send_email_on_generation"] = false
+			payload["attach_pdf_to_email"] = false
+			payload["lines"] = []map[string]any{{
+				"id":                   "line-2",
+				"recurring_invoice_id": "rec-1",
+				"line_number":          1,
+				"description":          "Updated consulting",
+				"quantity":             "3.00",
+				"unit":                 "hour",
+				"unit_price":           "100.00",
+				"vat_rate":             "22.00",
+			}}
+			_ = json.NewEncoder(w).Encode(payload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/rec-1/pause":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "paused"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/rec-1/resume":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "resumed"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/rec-1/generate":
+			_ = json.NewEncoder(w).Encode(generationPayload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/generate-due":
+			_ = json.NewEncoder(w).Encode([]map[string]any{generationPayload})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/rec-1":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"recurring-invoices", "list", "--active-only", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Monthly retainer"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"recurring-invoices", "create",
+		"--name", "Monthly retainer",
+		"--contact-id", "contact-1",
+		"--type", "sales",
+		"--currency", "eur",
+		"--frequency", "monthly",
+		"--start-date", "2026-03-15",
+		"--end-date", "2026-12-31",
+		"--payment-terms-days", "21",
+		"--reference", "RET-1",
+		"--notes", "Monthly services",
+		"--send-email",
+		"--recipient-email", "billing@example.com",
+		"--attach-pdf",
+		"--email-subject", "Monthly invoice",
+		"--email-message", "Please see attached invoice.",
+		"--line", "description=Consulting,quantity=2,unit=hour,unit_price=100.00,discount_percent=10.00,vat_rate=22.00,account_id=acc-1,product_id=prod-1",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created recurring invoice Monthly retainer (rec-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"recurring-invoices", "from-invoice",
+		"--invoice-id", "inv-template",
+		"--name", "From invoice",
+		"--frequency", "biweekly",
+		"--start-date", "2026-04-01",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created recurring invoice From invoice (rec-2) from invoice inv-template")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"recurring-invoices", "get", "--id", "rec-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Recurring invoice Monthly retainer")
+	assert.Contains(t, stdout.String(), "Consulting")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"recurring-invoices", "update",
+		"--id", "rec-1",
+		"--name", "Quarterly retainer",
+		"--frequency", "quarterly",
+		"--payment-terms-days", "30",
+		"--send-email", "false",
+		"--attach-pdf", "false",
+		"--line", "description=Updated consulting,quantity=3,unit=hour,unit_price=100.00,vat_rate=22.00",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Recurring invoice Quarterly retainer")
+	assert.Contains(t, stdout.String(), "Attach PDF: false")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"recurring-invoices", "pause", "--id", "rec-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Paused recurring invoice rec-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"recurring-invoices", "resume", "--id", "rec-1", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "resumed"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"recurring-invoices", "generate", "--id", "rec-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Generated invoice INV-00001 (inv-1) from recurring invoice rec-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"recurring-invoices", "generate-due"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "INV-00001")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"recurring-invoices", "delete", "--id", "rec-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Deleted recurring invoice rec-1")
 }
 
 func TestCLIAssetCommands(t *testing.T) {
@@ -3179,6 +3421,23 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, quantity.Equal(decimal.RequireFromString("-2.50")))
 
+	frequency, err := parseRequiredRecurringFrequency("yearly")
+	require.NoError(t, err)
+	assert.Equal(t, recurring.FrequencyYearly, frequency)
+
+	_, err = parseRequiredRecurringFrequency("bad")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid recurring invoice frequency")
+
+	boolValue, err := parseOptionalBoolPtr("send-email", "true")
+	require.NoError(t, err)
+	require.NotNil(t, boolValue)
+	assert.True(t, *boolValue)
+
+	boolValue, err = parseOptionalBoolPtr("send-email", "")
+	require.NoError(t, err)
+	assert.Nil(t, boolValue)
+
 	depreciationMethod, err := parseOptionalDepreciationMethod("units_of_production")
 	require.NoError(t, err)
 	assert.Equal(t, assets.DepreciationUnitsOfProd, depreciationMethod)
@@ -3239,6 +3498,16 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	err = orderLines.Set("description=Missing quantity,unit_price=100,vat_rate=22")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "quantity is required")
+
+	var recurringLines recurringLineFlags
+	require.NoError(t, recurringLines.Set("description=Recurring line,qty=2,price=50,vat=22,account=acc-1,product=prod-1"))
+	assert.Equal(t, "Recurring line", recurringLines.String())
+	require.NotNil(t, recurringLines[0].AccountID)
+	require.NotNil(t, recurringLines[0].ProductID)
+
+	err = recurringLines.Set("description=Missing vat,quantity=1,unit_price=100")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "vat_rate is required")
 
 	var journalLines journalLineFlags
 	require.NoError(t, journalLines.Set("account_id=acc-1,debit=100,description=Debit line"))

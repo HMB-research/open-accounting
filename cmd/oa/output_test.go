@@ -21,6 +21,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/quotes"
+	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tax"
 )
@@ -320,6 +321,72 @@ func TestPrintOrderOutputs(t *testing.T) {
 	assert.Contains(t, orderBuf.String(), "Expected delivery: 2026-03-22")
 	assert.Contains(t, orderBuf.String(), "Converted invoice: inv-1")
 	assert.Contains(t, orderBuf.String(), "Consulting")
+}
+
+func TestPrintRecurringInvoiceOutputs(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	endDate := now.AddDate(0, 9, 16)
+	recurringInvoice := recurring.RecurringInvoice{
+		ID:                     "rec-1",
+		TenantID:               "tenant-1",
+		Name:                   "Monthly retainer",
+		ContactID:              "contact-1",
+		ContactName:            "Acme",
+		InvoiceType:            "SALES",
+		Currency:               "EUR",
+		Frequency:              recurring.FrequencyMonthly,
+		StartDate:              now,
+		EndDate:                &endDate,
+		NextGenerationDate:     now.AddDate(0, 1, 0),
+		PaymentTermsDays:       21,
+		Reference:              "RET-1",
+		Notes:                  "Monthly services",
+		IsActive:               true,
+		GeneratedCount:         2,
+		CreatedAt:              now,
+		CreatedBy:              "user-1",
+		UpdatedAt:              now,
+		SendEmailOnGeneration:  true,
+		EmailTemplateType:      "INVOICE_SEND",
+		RecipientEmailOverride: "billing@example.com",
+		AttachPDFToEmail:       true,
+		EmailSubjectOverride:   "Monthly invoice",
+		EmailMessage:           "Please see attached invoice.",
+		Lines: []recurring.RecurringInvoiceLine{{
+			LineNumber:      1,
+			Description:     "Consulting",
+			Quantity:        decimal.NewFromInt(2),
+			Unit:            "hour",
+			UnitPrice:       decimal.NewFromInt(100),
+			DiscountPercent: decimal.NewFromInt(10),
+			VATRate:         decimal.NewFromInt(22),
+		}},
+	}
+	result := recurring.GenerationResult{
+		RecurringInvoiceID:     "rec-1",
+		GeneratedInvoiceID:     "inv-1",
+		GeneratedInvoiceNumber: "INV-00001",
+		EmailSent:              true,
+		EmailStatus:            "SENT",
+	}
+
+	var tableBuf bytes.Buffer
+	printRecurringInvoicesTable(&tableBuf, []recurring.RecurringInvoice{recurringInvoice})
+	assert.Contains(t, tableBuf.String(), "Monthly retainer")
+	assert.Contains(t, tableBuf.String(), "Acme")
+
+	var detailBuf bytes.Buffer
+	printRecurringInvoice(&detailBuf, &recurringInvoice)
+	assert.Contains(t, detailBuf.String(), "Recurring invoice Monthly retainer")
+	assert.Contains(t, detailBuf.String(), "Email recipient: billing@example.com")
+	assert.Contains(t, detailBuf.String(), "Consulting")
+
+	var resultsBuf bytes.Buffer
+	printRecurringGenerationResultsTable(&resultsBuf, []recurring.GenerationResult{result})
+	assert.Contains(t, resultsBuf.String(), "INV-00001")
+	assert.Contains(t, resultsBuf.String(), "SENT")
 }
 
 func TestPrintAssetOutputs(t *testing.T) {

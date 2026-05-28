@@ -22,6 +22,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/quotes"
+	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tax"
 )
@@ -300,6 +301,90 @@ func printOrderLinesTable(w io.Writer, lines []orders.OrderLine) {
 			line.UnitPrice.String(),
 			line.VATRate.String(),
 			line.LineTotal.String(),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printRecurringInvoicesTable(w io.Writer, invoices []recurring.RecurringInvoice) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNAME\tCONTACT\tFREQUENCY\tNEXT\tACTIVE\tGENERATED")
+	for _, invoice := range invoices {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%t\t%d\n",
+			invoice.ID,
+			invoice.Name,
+			recurringContactLabel(invoice),
+			invoice.Frequency,
+			formatDate(invoice.NextGenerationDate),
+			invoice.IsActive,
+			invoice.GeneratedCount,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printRecurringInvoice(w io.Writer, invoice *recurring.RecurringInvoice) {
+	_, _ = fmt.Fprintf(w, "Recurring invoice %s (%s)\n", invoice.Name, invoice.Frequency)
+	_, _ = fmt.Fprintf(w, "ID: %s\n", invoice.ID)
+	_, _ = fmt.Fprintf(w, "Contact: %s\n", recurringContactLabel(*invoice))
+	_, _ = fmt.Fprintf(w, "Type: %s\n", invoice.InvoiceType)
+	_, _ = fmt.Fprintf(w, "Currency: %s\n", invoice.Currency)
+	_, _ = fmt.Fprintf(w, "Start date: %s\n", formatDate(invoice.StartDate))
+	_, _ = fmt.Fprintf(w, "End date: %s\n", formatDatePtr(invoice.EndDate))
+	_, _ = fmt.Fprintf(w, "Next generation: %s\n", formatDate(invoice.NextGenerationDate))
+	_, _ = fmt.Fprintf(w, "Payment terms: %d days\n", invoice.PaymentTermsDays)
+	_, _ = fmt.Fprintf(w, "Active: %t\n", invoice.IsActive)
+	_, _ = fmt.Fprintf(w, "Generated count: %d\n", invoice.GeneratedCount)
+	if strings.TrimSpace(invoice.Reference) != "" {
+		_, _ = fmt.Fprintf(w, "Reference: %s\n", invoice.Reference)
+	}
+	if strings.TrimSpace(invoice.Notes) != "" {
+		_, _ = fmt.Fprintf(w, "Notes: %s\n", invoice.Notes)
+	}
+	_, _ = fmt.Fprintf(w, "Send email: %t\n", invoice.SendEmailOnGeneration)
+	if strings.TrimSpace(invoice.EmailTemplateType) != "" {
+		_, _ = fmt.Fprintf(w, "Email template: %s\n", invoice.EmailTemplateType)
+	}
+	if strings.TrimSpace(invoice.RecipientEmailOverride) != "" {
+		_, _ = fmt.Fprintf(w, "Email recipient: %s\n", invoice.RecipientEmailOverride)
+	}
+	_, _ = fmt.Fprintf(w, "Attach PDF: %t\n", invoice.AttachPDFToEmail)
+	if len(invoice.Lines) > 0 {
+		printRecurringInvoiceLinesTable(w, invoice.Lines)
+	}
+}
+
+func printRecurringInvoiceLinesTable(w io.Writer, lines []recurring.RecurringInvoiceLine) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "NO\tDESCRIPTION\tQTY\tUNIT\tUNIT PRICE\tVAT")
+	for _, line := range lines {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%d\t%s\t%s\t%s\t%s\t%s\n",
+			line.LineNumber,
+			line.Description,
+			line.Quantity.String(),
+			line.Unit,
+			line.UnitPrice.String(),
+			line.VATRate.String(),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printRecurringGenerationResultsTable(w io.Writer, results []recurring.GenerationResult) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "RECURRING\tINVOICE\tNUMBER\tEMAIL")
+	for _, result := range results {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\n",
+			result.RecurringInvoiceID,
+			result.GeneratedInvoiceID,
+			result.GeneratedInvoiceNumber,
+			result.EmailStatus,
 		)
 	}
 	_ = tw.Flush()
@@ -1262,6 +1347,13 @@ func orderContactLabel(order orders.Order) string {
 		return strings.TrimSpace(order.Contact.Name)
 	}
 	return order.ContactID
+}
+
+func recurringContactLabel(invoice recurring.RecurringInvoice) string {
+	if strings.TrimSpace(invoice.ContactName) != "" {
+		return strings.TrimSpace(invoice.ContactName)
+	}
+	return invoice.ContactID
 }
 
 func journalLineAccountLabel(line accounting.JournalEntryLine) string {

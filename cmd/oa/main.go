@@ -27,6 +27,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/quotes"
+	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -79,6 +80,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runQuotes(ctx, args[1:])
 	case "orders":
 		return a.runOrders(ctx, args[1:])
+	case "recurring-invoices":
+		return a.runRecurringInvoices(ctx, args[1:])
 	case "assets":
 		return a.runAssets(ctx, args[1:])
 	case "inventory":
@@ -173,6 +176,9 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  orders ship               Mark an order shipped")
 	_, _ = fmt.Fprintln(a.stdout, "  orders deliver            Mark an order delivered")
 	_, _ = fmt.Fprintln(a.stdout, "  orders cancel             Cancel an order")
+	_, _ = fmt.Fprintln(a.stdout, "  recurring-invoices list   List recurring invoice templates")
+	_, _ = fmt.Fprintln(a.stdout, "  recurring-invoices create Create a recurring invoice template")
+	_, _ = fmt.Fprintln(a.stdout, "  recurring-invoices generate-due  Generate all due recurring invoices")
 	_, _ = fmt.Fprintln(a.stdout, "  assets categories list    List fixed asset categories")
 	_, _ = fmt.Fprintln(a.stdout, "  assets categories create  Create a fixed asset category")
 	_, _ = fmt.Fprintln(a.stdout, "  assets categories get     Show one fixed asset category")
@@ -1673,6 +1679,379 @@ func (a *cliApp) runOrders(ctx context.Context, args []string) error {
 
 	default:
 		return fmt.Errorf("unknown orders subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runRecurringInvoices(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("recurring-invoices subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("recurring-invoices list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		activeOnly := fs.Bool("active-only", false, "List only active recurring invoices")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		invoices, err := client.listRecurringInvoices(ctx, cfg.TenantID, *activeOnly)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, invoices)
+		}
+		printRecurringInvoicesTable(a.stdout, invoices)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("recurring-invoices create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		name := fs.String("name", "", "Recurring invoice name")
+		contactID := fs.String("contact-id", "", "Contact id")
+		invoiceTypeFlag := fs.String("type", "SALES", "Invoice type")
+		currency := fs.String("currency", "EUR", "Currency code")
+		frequencyFlag := fs.String("frequency", "", "Frequency")
+		startDate := fs.String("start-date", "", "Start date in YYYY-MM-DD")
+		endDate := fs.String("end-date", "", "End date in YYYY-MM-DD")
+		paymentTermsDaysFlag := fs.String("payment-terms-days", "14", "Payment terms in days")
+		reference := fs.String("reference", "", "Reference")
+		notes := fs.String("notes", "", "Notes")
+		sendEmail := fs.Bool("send-email", false, "Send generated invoices by email")
+		emailTemplateType := fs.String("email-template-type", "", "Email template type")
+		recipientEmail := fs.String("recipient-email", "", "Recipient email override")
+		attachPDF := fs.Bool("attach-pdf", true, "Attach generated invoice PDF to email")
+		emailSubject := fs.String("email-subject", "", "Email subject override")
+		emailMessage := fs.String("email-message", "", "Email message override")
+		lines := recurringLineFlags{}
+		fs.Var(&lines, "line", "Line as comma-separated key=value pairs; repeatable")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*name) == "" {
+			return errors.New("name is required")
+		}
+		if strings.TrimSpace(*contactID) == "" {
+			return errors.New("contact-id is required")
+		}
+		invoiceType, err := parseRequiredInvoiceType(*invoiceTypeFlag)
+		if err != nil {
+			return err
+		}
+		frequency, err := parseRequiredRecurringFrequency(*frequencyFlag)
+		if err != nil {
+			return err
+		}
+		startDateValue, err := parseRequiredDate("start-date", *startDate)
+		if err != nil {
+			return err
+		}
+		endDateValue, err := parseOptionalDate("end-date", *endDate)
+		if err != nil {
+			return err
+		}
+		paymentTermsDays, err := parseRequiredNonNegativeInt("payment-terms-days", *paymentTermsDaysFlag)
+		if err != nil {
+			return err
+		}
+		if len(lines) == 0 {
+			return errors.New("at least one line is required")
+		}
+
+		attachPDFValue := *attachPDF
+		invoice, err := client.createRecurringInvoice(ctx, cfg.TenantID, &recurring.CreateRecurringInvoiceRequest{
+			Name:                   strings.TrimSpace(*name),
+			ContactID:              strings.TrimSpace(*contactID),
+			InvoiceType:            string(invoiceType),
+			Currency:               strings.ToUpper(strings.TrimSpace(*currency)),
+			Frequency:              frequency,
+			StartDate:              startDateValue,
+			EndDate:                endDateValue,
+			PaymentTermsDays:       paymentTermsDays,
+			Reference:              strings.TrimSpace(*reference),
+			Notes:                  strings.TrimSpace(*notes),
+			Lines:                  []recurring.CreateRecurringInvoiceLineRequest(lines),
+			SendEmailOnGeneration:  *sendEmail,
+			EmailTemplateType:      strings.TrimSpace(*emailTemplateType),
+			RecipientEmailOverride: strings.TrimSpace(*recipientEmail),
+			AttachPDFToEmail:       &attachPDFValue,
+			EmailSubjectOverride:   strings.TrimSpace(*emailSubject),
+			EmailMessage:           strings.TrimSpace(*emailMessage),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, invoice)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created recurring invoice %s (%s)\n", invoice.Name, invoice.ID)
+		return nil
+
+	case "from-invoice":
+		fs := flag.NewFlagSet("recurring-invoices from-invoice", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		invoiceID := fs.String("invoice-id", "", "Source invoice id")
+		name := fs.String("name", "", "Recurring invoice name")
+		frequencyFlag := fs.String("frequency", "", "Frequency")
+		startDate := fs.String("start-date", "", "Start date in YYYY-MM-DD")
+		endDate := fs.String("end-date", "", "End date in YYYY-MM-DD")
+		paymentTermsDaysFlag := fs.String("payment-terms-days", "14", "Payment terms in days")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*invoiceID) == "" {
+			return errors.New("invoice-id is required")
+		}
+		if strings.TrimSpace(*name) == "" {
+			return errors.New("name is required")
+		}
+		frequency, err := parseRequiredRecurringFrequency(*frequencyFlag)
+		if err != nil {
+			return err
+		}
+		startDateValue, err := parseRequiredDate("start-date", *startDate)
+		if err != nil {
+			return err
+		}
+		endDateValue, err := parseOptionalDate("end-date", *endDate)
+		if err != nil {
+			return err
+		}
+		paymentTermsDays, err := parseRequiredNonNegativeInt("payment-terms-days", *paymentTermsDaysFlag)
+		if err != nil {
+			return err
+		}
+
+		invoice, err := client.createRecurringInvoiceFromInvoice(ctx, cfg.TenantID, strings.TrimSpace(*invoiceID), &recurring.CreateFromInvoiceRequest{
+			Name:             strings.TrimSpace(*name),
+			Frequency:        frequency,
+			StartDate:        startDateValue,
+			EndDate:          endDateValue,
+			PaymentTermsDays: paymentTermsDays,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, invoice)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created recurring invoice %s (%s) from invoice %s\n", invoice.Name, invoice.ID, strings.TrimSpace(*invoiceID))
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("recurring-invoices get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		recurringID := fs.String("id", "", "Recurring invoice id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*recurringID) == "" {
+			return errors.New("id is required")
+		}
+
+		invoice, err := client.getRecurringInvoice(ctx, cfg.TenantID, strings.TrimSpace(*recurringID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, invoice)
+		}
+		printRecurringInvoice(a.stdout, invoice)
+		return nil
+
+	case "update":
+		fs := flag.NewFlagSet("recurring-invoices update", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		recurringID := fs.String("id", "", "Recurring invoice id")
+		name := fs.String("name", "", "Recurring invoice name")
+		contactID := fs.String("contact-id", "", "Contact id")
+		frequencyFlag := fs.String("frequency", "", "Frequency")
+		endDate := fs.String("end-date", "", "End date in YYYY-MM-DD")
+		paymentTermsDaysFlag := fs.String("payment-terms-days", "", "Payment terms in days")
+		reference := fs.String("reference", "", "Reference")
+		notes := fs.String("notes", "", "Notes")
+		sendEmailFlag := fs.String("send-email", "", "Send generated invoices by email: true or false")
+		emailTemplateType := fs.String("email-template-type", "", "Email template type")
+		recipientEmail := fs.String("recipient-email", "", "Recipient email override")
+		attachPDFFlag := fs.String("attach-pdf", "", "Attach generated invoice PDF to email: true or false")
+		emailSubject := fs.String("email-subject", "", "Email subject override")
+		emailMessage := fs.String("email-message", "", "Email message override")
+		lines := recurringLineFlags{}
+		fs.Var(&lines, "line", "Line as comma-separated key=value pairs; repeatable")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*recurringID) == "" {
+			return errors.New("id is required")
+		}
+
+		req := &recurring.UpdateRecurringInvoiceRequest{}
+		if trimmed := strings.TrimSpace(*name); trimmed != "" {
+			req.Name = &trimmed
+		}
+		if trimmed := strings.TrimSpace(*contactID); trimmed != "" {
+			req.ContactID = &trimmed
+		}
+		if strings.TrimSpace(*frequencyFlag) != "" {
+			frequency, err := parseRequiredRecurringFrequency(*frequencyFlag)
+			if err != nil {
+				return err
+			}
+			req.Frequency = &frequency
+		}
+		if strings.TrimSpace(*endDate) != "" {
+			endDateValue, err := parseRequiredDate("end-date", *endDate)
+			if err != nil {
+				return err
+			}
+			req.EndDate = &endDateValue
+		}
+		if strings.TrimSpace(*paymentTermsDaysFlag) != "" {
+			paymentTermsDays, err := parseRequiredNonNegativeInt("payment-terms-days", *paymentTermsDaysFlag)
+			if err != nil {
+				return err
+			}
+			req.PaymentTermsDays = &paymentTermsDays
+		}
+		if trimmed := strings.TrimSpace(*reference); trimmed != "" {
+			req.Reference = &trimmed
+		}
+		if trimmed := strings.TrimSpace(*notes); trimmed != "" {
+			req.Notes = &trimmed
+		}
+		sendEmailValue, err := parseOptionalBoolPtr("send-email", *sendEmailFlag)
+		if err != nil {
+			return err
+		}
+		req.SendEmailOnGeneration = sendEmailValue
+		if trimmed := strings.TrimSpace(*emailTemplateType); trimmed != "" {
+			req.EmailTemplateType = &trimmed
+		}
+		if trimmed := strings.TrimSpace(*recipientEmail); trimmed != "" {
+			req.RecipientEmailOverride = &trimmed
+		}
+		attachPDFValue, err := parseOptionalBoolPtr("attach-pdf", *attachPDFFlag)
+		if err != nil {
+			return err
+		}
+		req.AttachPDFToEmail = attachPDFValue
+		if trimmed := strings.TrimSpace(*emailSubject); trimmed != "" {
+			req.EmailSubjectOverride = &trimmed
+		}
+		if trimmed := strings.TrimSpace(*emailMessage); trimmed != "" {
+			req.EmailMessage = &trimmed
+		}
+		if len(lines) > 0 {
+			req.Lines = []recurring.CreateRecurringInvoiceLineRequest(lines)
+		}
+
+		invoice, err := client.updateRecurringInvoice(ctx, cfg.TenantID, strings.TrimSpace(*recurringID), req)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, invoice)
+		}
+		printRecurringInvoice(a.stdout, invoice)
+		return nil
+
+	case "delete":
+		fs := flag.NewFlagSet("recurring-invoices delete", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		recurringID := fs.String("id", "", "Recurring invoice id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*recurringID) == "" {
+			return errors.New("id is required")
+		}
+
+		result, err := client.deleteRecurringInvoice(ctx, cfg.TenantID, strings.TrimSpace(*recurringID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Deleted recurring invoice %s\n", strings.TrimSpace(*recurringID))
+		return nil
+
+	case "pause", "resume":
+		fs := flag.NewFlagSet("recurring-invoices "+args[0], flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		recurringID := fs.String("id", "", "Recurring invoice id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*recurringID) == "" {
+			return errors.New("id is required")
+		}
+
+		result, err := client.updateRecurringInvoiceStatus(ctx, cfg.TenantID, strings.TrimSpace(*recurringID), args[0])
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "%s recurring invoice %s\n", titleLabel(args[0])+"d", strings.TrimSpace(*recurringID))
+		return nil
+
+	case "generate":
+		fs := flag.NewFlagSet("recurring-invoices generate", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		recurringID := fs.String("id", "", "Recurring invoice id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*recurringID) == "" {
+			return errors.New("id is required")
+		}
+
+		result, err := client.generateRecurringInvoice(ctx, cfg.TenantID, strings.TrimSpace(*recurringID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Generated invoice %s (%s) from recurring invoice %s\n", result.GeneratedInvoiceNumber, result.GeneratedInvoiceID, result.RecurringInvoiceID)
+		return nil
+
+	case "generate-due":
+		fs := flag.NewFlagSet("recurring-invoices generate-due", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		results, err := client.generateDueRecurringInvoices(ctx, cfg.TenantID)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, results)
+		}
+		printRecurringGenerationResultsTable(a.stdout, results)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown recurring-invoices subcommand %q", args[0])
 	}
 }
 
@@ -4525,6 +4904,17 @@ func parseRequiredNonNegativeInt(name, value string) (int, error) {
 	return parsed, nil
 }
 
+func parseOptionalBoolPtr(name, value string) (*bool, error) {
+	if strings.TrimSpace(value) == "" {
+		return nil, nil
+	}
+	parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", name, err)
+	}
+	return &parsed, nil
+}
+
 func parseRequiredPositiveDecimal(name, value string) (decimal.Decimal, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
@@ -4680,6 +5070,19 @@ func parseOptionalProductStatus(value string) (inventory.ProductStatus, error) {
 		return inventory.ProductStatus(normalized), nil
 	default:
 		return "", fmt.Errorf("invalid product status %q", value)
+	}
+}
+
+func parseRequiredRecurringFrequency(value string) (recurring.Frequency, error) {
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	switch recurring.Frequency(normalized) {
+	case recurring.FrequencyWeekly, recurring.FrequencyBiweekly, recurring.FrequencyMonthly, recurring.FrequencyQuarterly, recurring.FrequencyYearly:
+		return recurring.Frequency(normalized), nil
+	default:
+		if normalized == "" {
+			return "", errors.New("frequency is required")
+		}
+		return "", fmt.Errorf("invalid recurring invoice frequency %q", value)
 	}
 }
 
@@ -4993,6 +5396,75 @@ func (l *quoteLineFlags) Set(value string) error {
 }
 
 func (l *quoteLineFlags) String() string {
+	if l == nil {
+		return ""
+	}
+	descriptions := make([]string, 0, len(*l))
+	for _, line := range *l {
+		descriptions = append(descriptions, line.Description)
+	}
+	return strings.Join(descriptions, ",")
+}
+
+type recurringLineFlags []recurring.CreateRecurringInvoiceLineRequest
+
+func (l *recurringLineFlags) Set(value string) error {
+	reader := csv.NewReader(strings.NewReader(value))
+	reader.TrimLeadingSpace = true
+	reader.FieldsPerRecord = -1
+	fields, err := reader.Read()
+	if err != nil {
+		return fmt.Errorf("parse line: %w", err)
+	}
+
+	values := make(map[string]string)
+	for _, field := range fields {
+		key, val, ok := strings.Cut(field, "=")
+		if !ok {
+			return fmt.Errorf("line field %q must be key=value", field)
+		}
+		normalizedKey := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(key)), "-", "_")
+		values[normalizedKey] = strings.TrimSpace(val)
+	}
+
+	description := strings.TrimSpace(values["description"])
+	if description == "" {
+		return errors.New("line description is required")
+	}
+	quantity, err := parseRequiredPositiveDecimal("line quantity", firstNonEmpty(values["quantity"], values["qty"]))
+	if err != nil {
+		return err
+	}
+	unitPrice, err := parseRequiredNonNegativeDecimal("line unit_price", firstNonEmpty(values["unit_price"], values["price"]))
+	if err != nil {
+		return err
+	}
+	vatRate, err := parseRequiredNonNegativeDecimal("line vat_rate", firstNonEmpty(values["vat_rate"], values["vat"]))
+	if err != nil {
+		return err
+	}
+	discountPercent := decimal.Zero
+	if rawDiscount := firstNonEmpty(values["discount_percent"], values["discount"]); rawDiscount != "" {
+		discountPercent, err = parseRequiredNonNegativeDecimal("line discount_percent", rawDiscount)
+		if err != nil {
+			return err
+		}
+	}
+
+	*l = append(*l, recurring.CreateRecurringInvoiceLineRequest{
+		Description:     description,
+		Quantity:        quantity,
+		Unit:            strings.TrimSpace(values["unit"]),
+		UnitPrice:       unitPrice,
+		DiscountPercent: discountPercent,
+		VATRate:         vatRate,
+		AccountID:       optionalStringPtr(firstNonEmpty(values["account_id"], values["account"])),
+		ProductID:       optionalStringPtr(firstNonEmpty(values["product_id"], values["product"])),
+	})
+	return nil
+}
+
+func (l *recurringLineFlags) String() string {
 	if l == nil {
 		return ""
 	}
