@@ -3,6 +3,7 @@ package reports
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -55,16 +56,17 @@ func (s *Service) GenerateCashFlowStatement(ctx context.Context, tenantID, schem
 	if err != nil {
 		return nil, fmt.Errorf("get opening cash: %w", err)
 	}
+	mappingOverrides := newCashFlowMappingOverrides(req.MappingOverrides)
 
 	// Classify and aggregate cash flows
 	var operating []CashFlowItem
 	if method == CashFlowMethodIndirect {
-		operating = s.classifyOperatingActivitiesIndirect(entries)
+		operating = s.classifyOperatingActivitiesIndirect(entries, mappingOverrides)
 	} else {
-		operating = s.classifyOperatingActivities(entries)
+		operating = s.classifyOperatingActivities(entries, mappingOverrides)
 	}
-	investing := s.classifyInvestingActivities(entries)
-	financing := s.classifyFinancingActivities(entries)
+	investing := s.classifyInvestingActivities(entries, mappingOverrides)
+	financing := s.classifyFinancingActivities(entries, mappingOverrides)
 
 	totalOperating := sumCashFlowItems(operating)
 	totalInvesting := sumCashFlowItems(investing)
@@ -101,6 +103,7 @@ func (s *Service) GenerateCashFlowStatement(ctx context.Context, tenantID, schem
 		StartDate:           req.StartDate,
 		EndDate:             req.EndDate,
 		Method:              method,
+		MappingOverrides:    mappingOverrides.response(),
 		OperatingActivities: operating,
 		InvestingActivities: investing,
 		FinancingActivities: financing,
@@ -130,7 +133,86 @@ func NormalizeCashFlowMethod(method string) (string, error) {
 	}
 }
 
-func (s *Service) classifyOperatingActivities(entries []JournalEntryWithLines) []CashFlowItem {
+type cashFlowMappingOverrides struct {
+	operating map[string]struct{}
+	investing map[string]struct{}
+	financing map[string]struct{}
+}
+
+func newCashFlowMappingOverrides(overrides CashFlowMappingOverrides) cashFlowMappingOverrides {
+	return cashFlowMappingOverrides{
+		operating: accountCodeSet(overrides.OperatingAccountCodes),
+		investing: accountCodeSet(overrides.InvestingAccountCodes),
+		financing: accountCodeSet(overrides.FinancingAccountCodes),
+	}
+}
+
+func accountCodeSet(codes []string) map[string]struct{} {
+	result := make(map[string]struct{})
+	for _, code := range codes {
+		for _, part := range strings.Split(code, ",") {
+			normalized := normalizeAccountCode(part)
+			if normalized != "" {
+				result[normalized] = struct{}{}
+			}
+		}
+	}
+	return result
+}
+
+func normalizeAccountCode(code string) string {
+	return strings.ToUpper(strings.TrimSpace(code))
+}
+
+func (o cashFlowMappingOverrides) response() *CashFlowMappingOverrides {
+	if len(o.operating) == 0 && len(o.investing) == 0 && len(o.financing) == 0 {
+		return nil
+	}
+	return &CashFlowMappingOverrides{
+		OperatingAccountCodes: sortedAccountCodes(o.operating),
+		InvestingAccountCodes: sortedAccountCodes(o.investing),
+		FinancingAccountCodes: sortedAccountCodes(o.financing),
+	}
+}
+
+func sortedAccountCodes(codeSet map[string]struct{}) []string {
+	if len(codeSet) == 0 {
+		return nil
+	}
+	codes := make([]string, 0, len(codeSet))
+	for code := range codeSet {
+		codes = append(codes, code)
+	}
+	sort.Strings(codes)
+	return codes
+}
+
+func (o cashFlowMappingOverrides) hasAccount(codeSet map[string]struct{}, line JournalLine) bool {
+	_, ok := codeSet[normalizeAccountCode(line.AccountCode)]
+	return ok
+}
+
+func (o cashFlowMappingOverrides) isOperatingOverride(line JournalLine) bool {
+	return o.hasAccount(o.operating, line)
+}
+
+func (o cashFlowMappingOverrides) isInvestingOverride(line JournalLine) bool {
+	return o.hasAccount(o.investing, line)
+}
+
+func (o cashFlowMappingOverrides) isFinancingOverride(line JournalLine) bool {
+	return o.hasAccount(o.financing, line)
+}
+
+func (o cashFlowMappingOverrides) isInvestingLine(line JournalLine) bool {
+	return o.isInvestingOverride(line) || isFixedAssetLine(line)
+}
+
+func (o cashFlowMappingOverrides) isFinancingLine(line JournalLine) bool {
+	return o.isFinancingOverride(line) || isLoanLine(line) || isShareCapitalLine(line) || isDividendLine(line)
+}
+
+func (s *Service) classifyOperatingActivities(entries []JournalEntryWithLines, overrides cashFlowMappingOverrides) []CashFlowItem {
 	var receipts, payments, wages, taxes, interestPaid decimal.Decimal
 
 	for _, entry := range entries {
@@ -139,12 +221,12 @@ func (s *Service) classifyOperatingActivities(entries []JournalEntryWithLines) [
 			continue
 		}
 
-		if hasCashFlowAccount(entry.Lines, isFixedAssetLine, isLoanLine, isShareCapitalLine, isDividendLine) {
+		if hasCashFlowAccount(entry.Lines, overrides.isInvestingLine, overrides.isFinancingLine) {
 			continue
 		}
 
 		if cashMovement.GreaterThan(decimal.Zero) {
-			if hasRevenueOrReceivable(entry.Lines) {
+			if hasRevenueOrReceivable(entry.Lines, overrides) {
 				receipts = receipts.Add(cashMovement)
 			}
 			continue
@@ -159,7 +241,7 @@ func (s *Service) classifyOperatingActivities(entries []JournalEntryWithLines) [
 		case hasCashFlowAccount(entry.Lines, isWageLine):
 			wages = wages.Add(outflow)
 		default:
-			if hasOperatingPayableOrExpense(entry.Lines) {
+			if hasOperatingPayableOrExpense(entry.Lines, overrides) {
 				payments = payments.Add(outflow)
 			}
 		}
@@ -210,7 +292,7 @@ func (s *Service) classifyOperatingActivities(entries []JournalEntryWithLines) [
 	return items
 }
 
-func (s *Service) classifyOperatingActivitiesIndirect(entries []JournalEntryWithLines) []CashFlowItem {
+func (s *Service) classifyOperatingActivitiesIndirect(entries []JournalEntryWithLines, overrides cashFlowMappingOverrides) []CashFlowItem {
 	var netIncome, depreciation, receivablesDelta, inventoryDelta, payablesDelta decimal.Decimal
 
 	for _, entry := range entries {
@@ -218,8 +300,13 @@ func (s *Service) classifyOperatingActivitiesIndirect(entries []JournalEntryWith
 			if isCashLine(line) {
 				continue
 			}
+			if overrides.isInvestingOverride(line) || overrides.isFinancingOverride(line) {
+				continue
+			}
 
 			switch {
+			case overrides.isOperatingOverride(line):
+				netIncome = netIncome.Add(line.Credit.Sub(line.Debit))
 			case line.AccountType == "REVENUE":
 				netIncome = netIncome.Add(line.Credit.Sub(line.Debit))
 			case line.AccountType == "EXPENSE":
@@ -279,7 +366,7 @@ func (s *Service) classifyOperatingActivitiesIndirect(entries []JournalEntryWith
 	return items
 }
 
-func (s *Service) classifyInvestingActivities(entries []JournalEntryWithLines) []CashFlowItem {
+func (s *Service) classifyInvestingActivities(entries []JournalEntryWithLines, overrides cashFlowMappingOverrides) []CashFlowItem {
 	var fixedAssets decimal.Decimal
 
 	for _, entry := range entries {
@@ -287,7 +374,7 @@ func (s *Service) classifyInvestingActivities(entries []JournalEntryWithLines) [
 		var isFixedAsset bool
 
 		for _, line := range entry.Lines {
-			if isFixedAssetLine(line) {
+			if overrides.isInvestingLine(line) {
 				isFixedAsset = true
 			}
 		}
@@ -310,7 +397,7 @@ func (s *Service) classifyInvestingActivities(entries []JournalEntryWithLines) [
 	return items
 }
 
-func (s *Service) classifyFinancingActivities(entries []JournalEntryWithLines) []CashFlowItem {
+func (s *Service) classifyFinancingActivities(entries []JournalEntryWithLines, overrides cashFlowMappingOverrides) []CashFlowItem {
 	var loans, shares, dividends decimal.Decimal
 
 	for _, entry := range entries {
@@ -318,7 +405,7 @@ func (s *Service) classifyFinancingActivities(entries []JournalEntryWithLines) [
 		var isLoan, isShare, isDividend bool
 
 		for _, line := range entry.Lines {
-			if isLoanLine(line) {
+			if overrides.isFinancingOverride(line) || isLoanLine(line) {
 				isLoan = true
 			}
 			if isShareCapitalLine(line) {
@@ -412,22 +499,25 @@ func hasCashFlowAccount(lines []JournalLine, classifiers ...func(JournalLine) bo
 	return false
 }
 
-func hasRevenueOrReceivable(lines []JournalLine) bool {
+func hasRevenueOrReceivable(lines []JournalLine, overrides cashFlowMappingOverrides) bool {
 	for _, line := range lines {
 		if isCashLine(line) {
 			continue
 		}
-		if line.AccountType == "REVENUE" || isReceivableLine(line) {
+		if overrides.isOperatingOverride(line) || line.AccountType == "REVENUE" || isReceivableLine(line) {
 			return true
 		}
 	}
 	return false
 }
 
-func hasOperatingPayableOrExpense(lines []JournalLine) bool {
+func hasOperatingPayableOrExpense(lines []JournalLine, overrides cashFlowMappingOverrides) bool {
 	for _, line := range lines {
 		if isCashLine(line) {
 			continue
+		}
+		if overrides.isOperatingOverride(line) {
+			return true
 		}
 		if line.AccountType == "EXPENSE" || isPayableLine(line) || line.AccountType == "LIABILITY" {
 			return true

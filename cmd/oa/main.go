@@ -8220,6 +8220,9 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		startDate := fs.String("start", "", "Start date in YYYY-MM-DD")
 		endDate := fs.String("end", "", "End date in YYYY-MM-DD")
 		methodFlag := fs.String("method", reports.CashFlowMethodDirect, "Cash flow method: direct or indirect")
+		operatingAccounts := fs.String("operating-accounts", "", "Comma-separated account codes to force into operating cash flow")
+		investingAccounts := fs.String("investing-accounts", "", "Comma-separated account codes to force into investing cash flow")
+		financingAccounts := fs.String("financing-accounts", "", "Comma-separated account codes to force into financing cash flow")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		asCSV := fs.Bool("csv", false, "Output CSV")
 		asXLSX := fs.Bool("xlsx", false, "Output XLSX")
@@ -8238,29 +8241,34 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
+		mappingOverrides := reports.CashFlowMappingOverrides{
+			OperatingAccountCodes: splitCSVFlag(*operatingAccounts),
+			InvestingAccountCodes: splitCSVFlag(*investingAccounts),
+			FinancingAccountCodes: splitCSVFlag(*financingAccounts),
+		}
 		if *asCSV {
-			content, err := client.exportCashFlowStatementCSV(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate), method)
+			content, err := client.exportCashFlowStatementCSV(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate), method, mappingOverrides)
 			if err != nil {
 				return err
 			}
 			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "cash flow CSV")
 		}
 		if *asXLSX {
-			content, err := client.exportCashFlowStatementXLSX(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate), method)
+			content, err := client.exportCashFlowStatementXLSX(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate), method, mappingOverrides)
 			if err != nil {
 				return err
 			}
 			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "cash flow XLSX")
 		}
 		if *asPDF {
-			content, err := client.exportCashFlowStatementPDF(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate), method)
+			content, err := client.exportCashFlowStatementPDF(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate), method, mappingOverrides)
 			if err != nil {
 				return err
 			}
 			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "cash flow PDF")
 		}
 
-		report, err := client.getCashFlowStatement(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate), method)
+		report, err := client.getCashFlowStatement(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate), method, mappingOverrides)
 		if err != nil {
 			return err
 		}
@@ -9864,6 +9872,21 @@ func detectCLICSVDelimiter(content string) rune {
 		}
 	}
 	return bestDelimiter
+}
+
+func splitCSVFlag(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }
 
 func readFileInput(filePath string, stdinFileName string) (content []byte, fileName string, err error) {

@@ -8,20 +8,21 @@ import (
 
 // CashFlowStatement represents an Estonian-standard cash flow statement
 type CashFlowStatement struct {
-	TenantID            string          `json:"tenant_id"`
-	StartDate           string          `json:"start_date"`
-	EndDate             string          `json:"end_date"`
-	Method              string          `json:"method"`
-	OperatingActivities []CashFlowItem  `json:"operating_activities"`
-	InvestingActivities []CashFlowItem  `json:"investing_activities"`
-	FinancingActivities []CashFlowItem  `json:"financing_activities"`
-	TotalOperating      decimal.Decimal `json:"total_operating"`
-	TotalInvesting      decimal.Decimal `json:"total_investing"`
-	TotalFinancing      decimal.Decimal `json:"total_financing"`
-	NetCashChange       decimal.Decimal `json:"net_cash_change"`
-	OpeningCash         decimal.Decimal `json:"opening_cash"`
-	ClosingCash         decimal.Decimal `json:"closing_cash"`
-	GeneratedAt         time.Time       `json:"generated_at"`
+	TenantID            string                    `json:"tenant_id"`
+	StartDate           string                    `json:"start_date"`
+	EndDate             string                    `json:"end_date"`
+	Method              string                    `json:"method"`
+	MappingOverrides    *CashFlowMappingOverrides `json:"mapping_overrides,omitempty"`
+	OperatingActivities []CashFlowItem            `json:"operating_activities"`
+	InvestingActivities []CashFlowItem            `json:"investing_activities"`
+	FinancingActivities []CashFlowItem            `json:"financing_activities"`
+	TotalOperating      decimal.Decimal           `json:"total_operating"`
+	TotalInvesting      decimal.Decimal           `json:"total_investing"`
+	TotalFinancing      decimal.Decimal           `json:"total_financing"`
+	NetCashChange       decimal.Decimal           `json:"net_cash_change"`
+	OpeningCash         decimal.Decimal           `json:"opening_cash"`
+	ClosingCash         decimal.Decimal           `json:"closing_cash"`
+	GeneratedAt         time.Time                 `json:"generated_at"`
 }
 
 // CashFlowItem represents a line item in the cash flow statement
@@ -35,10 +36,18 @@ type CashFlowItem struct {
 
 // CashFlowRequest represents a request to generate cash flow statement
 type CashFlowRequest struct {
-	StartDate   string `json:"start_date"`
-	EndDate     string `json:"end_date"`
-	Method      string `json:"method,omitempty"`       // "direct" or "indirect"
-	CompareType string `json:"compare_type,omitempty"` // "", "previous_months", "previous_years", "quarters", "objects"
+	StartDate        string                   `json:"start_date"`
+	EndDate          string                   `json:"end_date"`
+	Method           string                   `json:"method,omitempty"`       // "direct" or "indirect"
+	CompareType      string                   `json:"compare_type,omitempty"` // "", "previous_months", "previous_years", "quarters", "objects"
+	MappingOverrides CashFlowMappingOverrides `json:"mapping_overrides,omitempty"`
+}
+
+// CashFlowMappingOverrides contains per-request account-code mapping overrides for custom charts.
+type CashFlowMappingOverrides struct {
+	OperatingAccountCodes []string `json:"operating_account_codes,omitempty"`
+	InvestingAccountCodes []string `json:"investing_account_codes,omitempty"`
+	FinancingAccountCodes []string `json:"financing_account_codes,omitempty"`
 }
 
 // JournalEntryWithLines represents a journal entry with its lines for reporting

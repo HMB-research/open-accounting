@@ -1407,6 +1407,9 @@ func (h *Handlers) GetIncomeStatement(w http.ResponseWriter, r *http.Request) {
 // @Param start_date query string true "Start date (YYYY-MM-DD)"
 // @Param end_date query string true "End date (YYYY-MM-DD)"
 // @Param method query string false "Cash flow method: direct or indirect"
+// @Param operating_accounts query string false "Comma-separated account codes to force into operating cash flow"
+// @Param investing_accounts query string false "Comma-separated account codes to force into investing cash flow"
+// @Param financing_accounts query string false "Comma-separated account codes to force into financing cash flow"
 // @Param format query string false "Response format: json, csv, xlsx, or pdf"
 // @Success 200 {object} reports.CashFlowStatement
 // @Failure 400 {object} object{error=string}
@@ -1455,6 +1458,11 @@ func (h *Handlers) GetCashFlowStatement(w http.ResponseWriter, r *http.Request) 
 		StartDate: startDateStr,
 		EndDate:   endDateStr,
 		Method:    method,
+		MappingOverrides: reports.CashFlowMappingOverrides{
+			OperatingAccountCodes: splitCSVQueryParam(r.URL.Query().Get("operating_accounts")),
+			InvestingAccountCodes: splitCSVQueryParam(r.URL.Query().Get("investing_accounts")),
+			FinancingAccountCodes: splitCSVQueryParam(r.URL.Query().Get("financing_accounts")),
+		},
 	}
 
 	result, err := h.reportsService.GenerateCashFlowStatement(r.Context(), tenantID, schemaName, req)
@@ -1493,6 +1501,21 @@ func (h *Handlers) GetCashFlowStatement(w http.ResponseWriter, r *http.Request) 
 	}
 
 	respondJSON(w, http.StatusOK, result)
+}
+
+func splitCSVQueryParam(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }
 
 // GetBalanceConfirmationSummary returns a summary of all outstanding balances by contact

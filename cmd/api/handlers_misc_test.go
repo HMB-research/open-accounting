@@ -120,6 +120,14 @@ func TestExtendedReportHandlers(t *testing.T) {
 				{AccountCode: "4000", AccountType: "REVENUE", Credit: decimal.NewFromInt(500)},
 			},
 		},
+		{
+			ID:        "custom-capex",
+			EntryDate: time.Date(2026, 1, 16, 0, 0, 0, 0, time.UTC),
+			Lines: []reports.JournalLine{
+				{AccountCode: "CAPEX-1", AccountType: "ASSET", AccountName: "Long-term platform", Debit: decimal.NewFromInt(50)},
+				{AccountCode: "1000", AccountType: "ASSET", AccountName: "Cash", Credit: decimal.NewFromInt(50)},
+			},
+		},
 	}
 	reportsRepo.CashBalance = decimal.NewFromInt(1000)
 	reportsRepo.ContactBalances = []reports.ContactBalance{{
@@ -157,6 +165,17 @@ func TestExtendedReportHandlers(t *testing.T) {
 	cashFlow = reports.CashFlowStatement{}
 	assert.NoError(t, json.NewDecoder(rr.Body).Decode(&cashFlow))
 	assert.Equal(t, reports.CashFlowMethodIndirect, cashFlow.Method)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=2026-01-31&investing_accounts=CAPEX-1", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCashFlowStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	cashFlow = reports.CashFlowStatement{}
+	assert.NoError(t, json.NewDecoder(rr.Body).Decode(&cashFlow))
+	if assert.NotNil(t, cashFlow.MappingOverrides) {
+		assert.Equal(t, []string{"CAPEX-1"}, cashFlow.MappingOverrides.InvestingAccountCodes)
+	}
+	assert.Equal(t, "-50", cashFlow.TotalInvesting.String())
 
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=2026-01-31&format=csv", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
