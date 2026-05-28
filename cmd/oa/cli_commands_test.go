@@ -2183,7 +2183,7 @@ func TestCLIInventoryCommands(t *testing.T) {
 	valuationPayload := map[string]any{
 		"tenant_id":        "tenant-1",
 		"warehouse_id":     "wh-1",
-		"valuation_method": "STANDARD_COST",
+		"valuation_method": "WEIGHTED_AVERAGE",
 		"lines": []map[string]any{
 			{
 				"product_id":      "prod-1",
@@ -2195,14 +2195,14 @@ func TestCLIInventoryCommands(t *testing.T) {
 				"quantity":        "12.00",
 				"reserved_qty":    "2.00",
 				"available_qty":   "10.00",
-				"unit_cost":       "10.50",
-				"inventory_value": "126.00",
+				"unit_cost":       "10.00",
+				"inventory_value": "120.00",
 			},
 		},
 		"total_quantity":  "12.00",
 		"total_reserved":  "2.00",
 		"total_available": "10.00",
-		"total_value":     "126.00",
+		"total_value":     "120.00",
 		"generated_at":    "2026-03-15T12:00:00Z",
 	}
 	categoryImportFile := writeTempCSV(t, "categories.csv", "name,description\nParts,Spare parts\n")
@@ -2291,6 +2291,7 @@ func TestCLIInventoryCommands(t *testing.T) {
 			_ = json.NewEncoder(w).Encode([]map[string]any{movementPayload})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/valuation":
 			require.Equal(t, "wh-1", r.URL.Query().Get("warehouse_id"))
+			require.Equal(t, "weighted-average", r.URL.Query().Get("method"))
 			_ = json.NewEncoder(w).Encode(valuationPayload)
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-1":
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
@@ -2480,11 +2481,11 @@ func TestCLIInventoryCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Cycle count")
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"inventory", "valuation", "--warehouse-id", "wh-1"})
+	err = app.run(context.Background(), []string{"inventory", "valuation", "--warehouse-id", "wh-1", "--method", "weighted-average"})
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), "Inventory valuation (STANDARD_COST)")
+	assert.Contains(t, stdout.String(), "Inventory valuation (WEIGHTED_AVERAGE)")
 	assert.Contains(t, stdout.String(), "PRD-001 Widget")
-	assert.Contains(t, stdout.String(), "126")
+	assert.Contains(t, stdout.String(), "120")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"inventory", "products", "delete", "--id", "prod-1"})

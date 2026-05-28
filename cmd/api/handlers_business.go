@@ -4258,14 +4258,15 @@ func (h *Handlers) GetInventoryMovements(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, http.StatusOK, movements)
 }
 
-// GetInventoryValuation returns standard-cost inventory valuation by warehouse.
+// GetInventoryValuation returns inventory valuation by warehouse.
 // @Summary Get inventory valuation
-// @Description Return valued on-hand stock for tracked goods using product purchase price as standard cost
+// @Description Return valued on-hand stock for tracked goods using standard-cost or weighted-average valuation
 // @Tags Inventory
 // @Produce json
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param warehouse_id query string false "Warehouse ID"
+// @Param method query string false "Valuation method: standard-cost or weighted-average"
 // @Success 200 {object} inventory.InventoryValuationReport
 // @Failure 400 {object} object{error=string}
 // @Failure 500 {object} object{error=string}
@@ -4274,11 +4275,12 @@ func (h *Handlers) GetInventoryValuation(w http.ResponseWriter, r *http.Request)
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
 	warehouseID := strings.TrimSpace(r.URL.Query().Get("warehouse_id"))
+	method := strings.TrimSpace(r.URL.Query().Get("method"))
 
-	report, err := h.inventoryService.GetInventoryValuation(r.Context(), tenantID, schemaName, warehouseID)
+	report, err := h.inventoryService.GetInventoryValuation(r.Context(), tenantID, schemaName, warehouseID, method)
 	if err != nil {
 		status := http.StatusInternalServerError
-		if warehouseID != "" && strings.Contains(err.Error(), "warehouse") {
+		if strings.Contains(err.Error(), "invalid valuation method") || (warehouseID != "" && strings.Contains(err.Error(), "warehouse")) {
 			status = http.StatusBadRequest
 		}
 		respondError(w, status, fmt.Sprintf("Failed to get inventory valuation: %v", err))

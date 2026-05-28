@@ -134,8 +134,12 @@ type InventoryMovement struct {
 	CreatedBy     string          `json:"created_by"`
 }
 
-// InventoryValuationMethodStandardCost values stock using each product purchase price.
-const InventoryValuationMethodStandardCost = "STANDARD_COST"
+const (
+	// InventoryValuationMethodStandardCost values stock using each product purchase price.
+	InventoryValuationMethodStandardCost = "STANDARD_COST"
+	// InventoryValuationMethodWeightedAverage values stock using weighted average inbound movement cost.
+	InventoryValuationMethodWeightedAverage = "WEIGHTED_AVERAGE"
+)
 
 // InventoryValuationLine represents one valued product/warehouse stock position.
 type InventoryValuationLine struct {
