@@ -415,6 +415,57 @@ class ApiClient {
     );
   }
 
+  async listTenantUsers(tenantId: string) {
+    return this.request<TenantUser[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/users`,
+    );
+  }
+
+  async updateTenantUserRole(
+    tenantId: string,
+    userId: string,
+    role: EditableTenantRole,
+  ) {
+    return this.request<{ status: string }>(
+      "PUT",
+      `/api/v1/tenants/${tenantId}/users/${userId}/role`,
+      { role },
+    );
+  }
+
+  async removeTenantUser(tenantId: string, userId: string) {
+    return this.request<{ status: string }>(
+      "DELETE",
+      `/api/v1/tenants/${tenantId}/users/${userId}`,
+    );
+  }
+
+  async listInvitations(tenantId: string) {
+    return this.request<UserInvitation[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/invitations`,
+    );
+  }
+
+  async createInvitation(
+    tenantId: string,
+    data: CreateInvitationRequest,
+  ) {
+    return this.request<UserInvitation>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/invitations`,
+      data,
+    );
+  }
+
+  async revokeInvitation(tenantId: string, invitationId: string) {
+    return this.request<{ status: string }>(
+      "DELETE",
+      `/api/v1/tenants/${tenantId}/invitations/${invitationId}`,
+    );
+  }
+
   async closePeriod(tenantId: string, data: ClosePeriodRequest) {
     return this.request<PeriodCloseResponse>(
       "POST",
@@ -2472,6 +2523,35 @@ export interface TenantAuditEvent {
   target_email?: string;
   metadata?: Record<string, string>;
   created_at: string;
+}
+
+export type TenantRole = "owner" | "admin" | "accountant" | "viewer";
+
+export type EditableTenantRole = Exclude<TenantRole, "owner">;
+
+export interface TenantUser {
+  tenant_id: string;
+  user_id: string;
+  role: TenantRole;
+  is_default: boolean;
+  created_at: string;
+}
+
+export interface UserInvitation {
+  id: string;
+  tenant_id: string;
+  tenant_name?: string;
+  email: string;
+  role: EditableTenantRole;
+  invited_by: string;
+  expires_at: string;
+  accepted_at?: string;
+  created_at: string;
+}
+
+export interface CreateInvitationRequest {
+  email: string;
+  role: EditableTenantRole;
 }
 
 export interface ClosePeriodRequest {
