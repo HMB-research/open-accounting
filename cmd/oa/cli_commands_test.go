@@ -21,6 +21,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
@@ -2461,6 +2462,161 @@ func TestCLIReminderCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Seven days overdue")
 }
 
+func TestCLIEmailCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	now := "2026-03-15T12:00:00Z"
+	templatePayload := func(templateType, subject string, active bool) map[string]any {
+		return map[string]any{
+			"id":            "tmpl-1",
+			"tenant_id":     "tenant-1",
+			"template_type": templateType,
+			"subject":       subject,
+			"body_html":     "<p>Reminder</p>",
+			"body_text":     "Reminder",
+			"is_active":     active,
+			"created_at":    now,
+			"updated_at":    now,
+		}
+	}
+	emailSentPayload := map[string]any{
+		"success": true,
+		"log_id":  "email-2",
+		"message": "Email sent successfully",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/settings/smtp":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"smtp_host":       "smtp.example.com",
+				"smtp_port":       587,
+				"smtp_username":   "robot",
+				"smtp_from_email": "billing@example.com",
+				"smtp_from_name":  "Billing",
+				"smtp_use_tls":    true,
+			})
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/settings/smtp":
+			var req email.UpdateSMTPConfigRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "smtp2.example.com", req.Host)
+			assert.Equal(t, 2525, req.Port)
+			assert.Equal(t, "robot", req.Username)
+			assert.Equal(t, "secret", req.Password)
+			assert.Equal(t, "billing@example.com", req.FromEmail)
+			assert.Equal(t, "Billing", req.FromName)
+			assert.False(t, req.UseTLS)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/settings/smtp/test":
+			var req email.TestSMTPRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "test@example.com", req.RecipientEmail)
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "message": "Test email sent successfully"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/email-templates":
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				templatePayload("INVOICE_SEND", "Invoice", true),
+				templatePayload("OVERDUE_REMINDER", "Reminder", true),
+			})
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/email-templates/OVERDUE_REMINDER":
+			var req email.UpdateTemplateRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Reminder", req.Subject)
+			assert.Equal(t, "<p>Reminder</p>", req.BodyHTML)
+			assert.Equal(t, "Reminder", req.BodyText)
+			assert.False(t, req.IsActive)
+			_ = json.NewEncoder(w).Encode(templatePayload("OVERDUE_REMINDER", "Reminder", false))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/email-log":
+			require.Equal(t, "25", r.URL.Query().Get("limit"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"id":              "email-1",
+				"tenant_id":       "tenant-1",
+				"email_type":      "INVOICE_SEND",
+				"recipient_email": "billing@example.com",
+				"recipient_name":  "Acme",
+				"subject":         "Invoice INV-00001",
+				"status":          "SENT",
+				"sent_at":         now,
+				"related_id":      "inv-1",
+				"created_at":      now,
+			}})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/inv-1/email":
+			var req email.SendInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "billing@example.com", req.RecipientEmail)
+			assert.Equal(t, "Acme", req.RecipientName)
+			assert.Equal(t, "Invoice INV-00001", req.Subject)
+			assert.Equal(t, "See attached", req.Message)
+			assert.True(t, req.AttachPDF)
+			_ = json.NewEncoder(w).Encode(emailSentPayload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments/pay-1/email-receipt":
+			var req email.SendPaymentReceiptRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "billing@example.com", req.RecipientEmail)
+			assert.Equal(t, "Acme", req.RecipientName)
+			assert.Equal(t, "Receipt", req.Subject)
+			assert.Equal(t, "Thanks", req.Message)
+			_ = json.NewEncoder(w).Encode(emailSentPayload)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"email", "smtp", "get", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"smtp_host": "smtp.example.com"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"email", "smtp", "update", "--host", "smtp2.example.com", "--port", "2525", "--username", "robot", "--password", "secret", "--from-email", "billing@example.com", "--from-name", "Billing", "--use-tls=false"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Updated SMTP configuration")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"email", "smtp", "test", "--recipient-email", "test@example.com"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Success: true")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"email", "templates", "list", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"template_type": "INVOICE_SEND"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"email", "templates", "update", "--type", "overdue_reminder", "--subject", "Reminder", "--body-html", "<p>Reminder</p>", "--body-text", "Reminder", "--active", "false"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Email template OVERDUE_REMINDER")
+	assert.Contains(t, stdout.String(), "Active: false")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"email", "log", "--limit", "25"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "email-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"email", "invoice", "--invoice-id", "inv-1", "--recipient-email", "billing@example.com", "--recipient-name", "Acme", "--subject", "Invoice INV-00001", "--message", "See attached", "--attach-pdf"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Log ID: email-2")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"email", "payment-receipt", "--payment-id", "pay-1", "--recipient-email", "billing@example.com", "--recipient-name", "Acme", "--subject", "Receipt", "--message", "Thanks"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Email sent")
+}
+
 func TestCLIBankingCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
@@ -4020,6 +4176,18 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "reminders rules subcommand required")
 
+	err = app.runEmail(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "email subcommand required")
+
+	err = app.runEmailSMTP(context.Background(), &cliConfig{}, &apiClient{}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "email smtp subcommand required")
+
+	err = app.runEmailTemplates(context.Background(), &cliConfig{}, &apiClient{}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "email templates subcommand required")
+
 	err = app.runBanking(context.Background(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "banking subcommand required")
@@ -4294,6 +4462,18 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid reminder trigger type")
 
+	emailTemplateType, err := parseRequiredEmailTemplateType("payment_receipt")
+	require.NoError(t, err)
+	assert.Equal(t, email.TemplatePaymentReceipt, emailTemplateType)
+
+	_, err = parseRequiredEmailTemplateType("")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "type is required")
+
+	_, err = parseRequiredEmailTemplateType("unknown")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid email template type")
+
 	bankStatus, err := parseOptionalBankTransactionStatus("matched")
 	require.NoError(t, err)
 	assert.Equal(t, banking.StatusMatched, bankStatus)
@@ -4337,6 +4517,15 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	err = invoiceIDs.Set(" ")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "value cannot be empty")
+
+	textPath := writeTempCSV(t, "body.html", "<p>From file</p>")
+	resolvedText, err := resolveTextFlag("body-html", "", textPath)
+	require.NoError(t, err)
+	assert.Equal(t, "<p>From file</p>", resolvedText)
+
+	_, err = resolveTextFlag("body-html", "inline", textPath)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "body-html and body-html-file cannot both be set")
 
 	var exportBuf strings.Builder
 	err = writeExportOutput(&exportBuf, "", []byte("raw export"), "Raw")
