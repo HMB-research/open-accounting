@@ -617,6 +617,37 @@ class ApiClient {
     document.body.removeChild(a);
   }
 
+  async downloadYearEndCloseAuditArchive(
+    tenantId: string,
+    periodEndDate: string,
+  ) {
+    const query = buildQuery({ period_end_date: periodEndDate });
+    const response = await fetch(
+      `${getApiBase()}/api/v1/tenants/${tenantId}/year-end-close-audit-archive${query}`,
+      {
+        method: "GET",
+        headers: this.accessToken
+          ? { Authorization: `Bearer ${this.accessToken}` }
+          : {},
+      },
+    );
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}) as ApiError);
+      throw new Error(error.error || "Failed to download year-end audit archive");
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `year-end-close-audit-${periodEndDate}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  }
+
   // Account endpoints
   async listAccounts(tenantId: string, activeOnly = false) {
     const query = activeOnly ? "?active_only=true" : "";
