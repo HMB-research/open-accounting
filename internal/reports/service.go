@@ -103,51 +103,36 @@ func (s *Service) GenerateCashFlowStatement(ctx context.Context, tenantID, schem
 }
 
 func (s *Service) classifyOperatingActivities(entries []JournalEntryWithLines) []CashFlowItem {
-	var receipts, payments decimal.Decimal
+	var receipts, payments, wages, taxes, interestPaid decimal.Decimal
 
 	for _, entry := range entries {
-		// Look for cash account movements
-		var cashMovement decimal.Decimal
-		var counterpartyType string
-
-		for _, line := range entry.Lines {
-			if isCashAccount(line.AccountCode) {
-				cashMovement = line.Debit.Sub(line.Credit)
-			} else {
-				counterpartyType = line.AccountType
-			}
-		}
-
+		cashMovement := cashMovementForEntry(entry)
 		if cashMovement.IsZero() {
 			continue
 		}
 
-		// Skip if counterparty is fixed asset (investing) or loan (financing)
-		for _, line := range entry.Lines {
-			if isFixedAssetAccount(line.AccountCode) || isLoanAccount(line.AccountCode) || isDividendAccount(line.AccountCode) {
-				// This is investing or financing, not operating
-				cashMovement = decimal.Zero
-				break
-			}
-		}
-
-		if cashMovement.IsZero() {
+		if hasCashFlowAccount(entry.Lines, isFixedAssetAccount, isLoanAccount, isShareCapitalAccount, isDividendAccount) {
 			continue
 		}
 
-		// Classify based on counterparty account
-		switch counterpartyType {
-		case "REVENUE", "ASSET": // Receivables
-			if cashMovement.GreaterThan(decimal.Zero) {
+		if cashMovement.GreaterThan(decimal.Zero) {
+			if hasRevenueOrReceivable(entry.Lines) {
 				receipts = receipts.Add(cashMovement)
 			}
-		case "EXPENSE":
-			if cashMovement.LessThan(decimal.Zero) {
-				payments = payments.Add(cashMovement.Abs())
-			}
-		case "LIABILITY":
-			if cashMovement.LessThan(decimal.Zero) {
-				payments = payments.Add(cashMovement.Abs())
+			continue
+		}
+
+		outflow := cashMovement.Abs()
+		switch {
+		case hasCashFlowAccount(entry.Lines, isInterestAccount):
+			interestPaid = interestPaid.Add(outflow)
+		case hasCashFlowAccount(entry.Lines, isTaxAccount):
+			taxes = taxes.Add(outflow)
+		case hasCashFlowAccount(entry.Lines, isWageAccount):
+			wages = wages.Add(outflow)
+		default:
+			if hasOperatingPayableOrExpense(entry.Lines) {
+				payments = payments.Add(outflow)
 			}
 		}
 	}
@@ -169,6 +154,30 @@ func (s *Service) classifyOperatingActivities(entries []JournalEntryWithLines) [
 			Amount:        payments.Neg(),
 		})
 	}
+	if !wages.IsZero() {
+		items = append(items, CashFlowItem{
+			Code:          CFOperWages,
+			Description:   "Wages and payroll taxes paid",
+			DescriptionET: "Töötajatele ja nende eest makstud raha",
+			Amount:        wages.Neg(),
+		})
+	}
+	if !taxes.IsZero() {
+		items = append(items, CashFlowItem{
+			Code:          CFOperTaxes,
+			Description:   "Taxes paid",
+			DescriptionET: "Maksude tasumine",
+			Amount:        taxes.Neg(),
+		})
+	}
+	if !interestPaid.IsZero() {
+		items = append(items, CashFlowItem{
+			Code:          CFOperInterestPd,
+			Description:   "Interest paid",
+			DescriptionET: "Makstud intressid",
+			Amount:        interestPaid.Neg(),
+		})
+	}
 
 	return items
 }
@@ -178,13 +187,10 @@ func (s *Service) classifyInvestingActivities(entries []JournalEntryWithLines) [
 	var fixedAssets decimal.Decimal
 
 	for _, entry := range entries {
-		var cashMovement decimal.Decimal
+		cashMovement := cashMovementForEntry(entry)
 		var isFixedAsset bool
 
 		for _, line := range entry.Lines {
-			if isCashAccount(line.AccountCode) {
-				cashMovement = line.Debit.Sub(line.Credit)
-			}
 			if isFixedAssetAccount(line.AccountCode) {
 				isFixedAsset = true
 			}
@@ -210,18 +216,18 @@ func (s *Service) classifyInvestingActivities(entries []JournalEntryWithLines) [
 
 func (s *Service) classifyFinancingActivities(entries []JournalEntryWithLines) []CashFlowItem {
 	// Simplified - look for loan and equity related cash movements
-	var loans, dividends decimal.Decimal
+	var loans, shares, dividends decimal.Decimal
 
 	for _, entry := range entries {
-		var cashMovement decimal.Decimal
-		var isLoan, isDividend bool
+		cashMovement := cashMovementForEntry(entry)
+		var isLoan, isShare, isDividend bool
 
 		for _, line := range entry.Lines {
-			if isCashAccount(line.AccountCode) {
-				cashMovement = line.Debit.Sub(line.Credit)
-			}
 			if isLoanAccount(line.AccountCode) {
 				isLoan = true
+			}
+			if isShareCapitalAccount(line.AccountCode) {
+				isShare = true
 			}
 			if isDividendAccount(line.AccountCode) {
 				isDividend = true
@@ -231,7 +237,10 @@ func (s *Service) classifyFinancingActivities(entries []JournalEntryWithLines) [
 		if isLoan && !cashMovement.IsZero() {
 			loans = loans.Add(cashMovement)
 		}
-		if isDividend && !cashMovement.IsZero() {
+		if isShare && cashMovement.GreaterThan(decimal.Zero) {
+			shares = shares.Add(cashMovement)
+		}
+		if isDividend && cashMovement.LessThan(decimal.Zero) {
 			dividends = dividends.Add(cashMovement)
 		}
 	}
@@ -253,6 +262,14 @@ func (s *Service) classifyFinancingActivities(entries []JournalEntryWithLines) [
 				Amount:        loans,
 			})
 		}
+	}
+	if !shares.IsZero() {
+		items = append(items, CashFlowItem{
+			Code:          CFFinShares,
+			Description:   "Share capital contributions",
+			DescriptionET: "Aktsiate või osade emiteerimine",
+			Amount:        shares,
+		})
 	}
 	if !dividends.IsZero() {
 		items = append(items, CashFlowItem{
@@ -276,9 +293,57 @@ func sumCashFlowItems(items []CashFlowItem) decimal.Decimal {
 	return sum
 }
 
+func cashMovementForEntry(entry JournalEntryWithLines) decimal.Decimal {
+	cashMovement := decimal.Zero
+	for _, line := range entry.Lines {
+		if isCashAccount(line.AccountCode) {
+			cashMovement = cashMovement.Add(line.Debit.Sub(line.Credit))
+		}
+	}
+	return cashMovement
+}
+
+func hasCashFlowAccount(lines []JournalLine, classifiers ...func(string) bool) bool {
+	for _, line := range lines {
+		if isCashAccount(line.AccountCode) {
+			continue
+		}
+		for _, classifier := range classifiers {
+			if classifier(line.AccountCode) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func hasRevenueOrReceivable(lines []JournalLine) bool {
+	for _, line := range lines {
+		if isCashAccount(line.AccountCode) {
+			continue
+		}
+		if line.AccountType == "REVENUE" || isReceivableAccount(line.AccountCode) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasOperatingPayableOrExpense(lines []JournalLine) bool {
+	for _, line := range lines {
+		if isCashAccount(line.AccountCode) {
+			continue
+		}
+		if line.AccountType == "EXPENSE" || isPayableAccount(line.AccountCode) || line.AccountType == "LIABILITY" {
+			return true
+		}
+	}
+	return false
+}
+
 func isCashAccount(code string) bool {
-	// Estonian chart of accounts: 1000-1099 are typically cash accounts
-	return len(code) >= 4 && code[:2] == "10"
+	// Default chart: 1000 is the asset header and 1100 is cash/bank.
+	return len(code) >= 4 && (code[:2] == "10" || code[:2] == "11")
 }
 
 func isFixedAssetAccount(code string) bool {
@@ -287,13 +352,35 @@ func isFixedAssetAccount(code string) bool {
 }
 
 func isLoanAccount(code string) bool {
-	// Estonian chart of accounts: 2000-2099 are short-term loans, 2500+ long-term
-	return len(code) >= 4 && (code[:2] == "20" || code[:2] == "25")
+	return len(code) >= 4 && (code[:2] == "24" || code[:2] == "25")
+}
+
+func isShareCapitalAccount(code string) bool {
+	return len(code) >= 4 && code[:2] == "31"
 }
 
 func isDividendAccount(code string) bool {
-	// Estonian chart of accounts: 3xxx are equity, dividends declared would be here
-	return len(code) >= 4 && code[:1] == "3"
+	return len(code) >= 4 && (code[:2] == "32" || code[:2] == "33")
+}
+
+func isReceivableAccount(code string) bool {
+	return len(code) >= 4 && code[:2] == "12"
+}
+
+func isPayableAccount(code string) bool {
+	return len(code) >= 4 && code[:2] == "21"
+}
+
+func isWageAccount(code string) bool {
+	return len(code) >= 4 && (code[:2] == "23" || code[:2] == "52")
+}
+
+func isTaxAccount(code string) bool {
+	return len(code) >= 4 && (code[:2] == "22" || code[:2] == "58")
+}
+
+func isInterestAccount(code string) bool {
+	return len(code) >= 4 && code[:2] == "57"
 }
 
 // GetBalanceConfirmationSummary generates a summary of all balances for receivables or payables
