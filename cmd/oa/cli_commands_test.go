@@ -2787,6 +2787,7 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 			},
 		}
 	}
+	journalImportFile := writeTempCSV(t, "journals.csv", "entry_reference,entry_date,account_code,debit,credit\nLEG-001,2026-03-31,1000,100.00,0\nLEG-001,2026-03-31,4000,0,100.00\n")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -2808,6 +2809,22 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 			assert.True(t, req.Lines[1].CreditAmount.Equal(decimal.RequireFromString("100.00")))
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(journalPayload("je-1", "JE-2026-001", accounting.StatusDraft))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/import":
+			var req accounting.ImportJournalEntriesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "journals.csv", req.FileName)
+			assert.Equal(t, "LEGACY_GL", req.SourceType)
+			assert.True(t, req.PostEntries)
+			assert.Contains(t, req.CSVContent, "LEG-001")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed":  2,
+				"entries_created": 1,
+				"lines_imported":  2,
+				"rows_skipped":    0,
+				"total_debit":     "100.00",
+				"total_credit":    "100.00",
+				"journal_entries": []map[string]any{journalPayload("je-import-1", "JE-2026-003", accounting.StatusPosted)},
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-1":
 			_ = json.NewEncoder(w).Encode(journalPayload("je-1", "JE-2026-001", accounting.StatusDraft))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-1/post":
@@ -2845,6 +2862,11 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created journal entry JE-2026-001 (je-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"journal", "import", "--file", journalImportFile, "--source-type", "LEGACY_GL", "--post"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Processed 2 rows, created 1 journal entries, imported 2 lines, skipped 0 rows")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"journal", "get", "--id", "je-1"})

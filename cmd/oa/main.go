@@ -401,6 +401,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  journal post              Post a journal entry")
 	_, _ = fmt.Fprintln(a.stdout, "  journal void              Void a journal entry")
 	_, _ = fmt.Fprintln(a.stdout, "  journal import-opening-balances  Import opening balances from CSV")
+	_, _ = fmt.Fprintln(a.stdout, "  journal import            Import historical journal entries from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "")
 	_, _ = fmt.Fprintln(a.stdout, "Environment overrides:")
 	_, _ = fmt.Fprintln(a.stdout, "  OA_BASE_URL, OA_API_TOKEN, OA_TENANT_ID")
@@ -7483,6 +7484,46 @@ func (a *cliApp) runJournal(ctx context.Context, args []string) error {
 			result.LinesImported,
 			result.TotalDebit.String(),
 			result.TotalCredit.String(),
+		)
+		return nil
+
+	case "import":
+		fs := flag.NewFlagSet("journal import", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		filePath := fs.String("file", "", "CSV file path")
+		sourceType := fs.String("source-type", "", "Default source type")
+		postEntries := fs.Bool("post", false, "Post imported entries immediately")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*filePath) == "" {
+			return errors.New("file is required")
+		}
+
+		content, fileName, err := readCSVInput(*filePath)
+		if err != nil {
+			return err
+		}
+		result, err := client.importJournalEntries(ctx, cfg.TenantID, &accounting.ImportJournalEntriesRequest{
+			FileName:    fileName,
+			CSVContent:  content,
+			SourceType:  strings.TrimSpace(*sourceType),
+			PostEntries: *postEntries,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(
+			a.stdout,
+			"Processed %d rows, created %d journal entries, imported %d lines, skipped %d rows\n",
+			result.RowsProcessed,
+			result.EntriesCreated,
+			result.LinesImported,
+			result.RowsSkipped,
 		)
 		return nil
 

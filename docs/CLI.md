@@ -776,9 +776,11 @@ go run ./cmd/oa journal create \
 go run ./cmd/oa journal get --id <journal-entry-id>
 go run ./cmd/oa journal post --id <journal-entry-id>
 go run ./cmd/oa journal void --id <journal-entry-id> --reason "Duplicate entry"
+go run ./cmd/oa journal import --file ./journal-entries.csv --source-type LEGACY_GL --post
 ```
 
 Use `--line` repeatedly on `journal create`. Each line is comma-separated `key=value` pairs with `account_id` and exactly one of `debit` or `credit`; optional keys include `description`, `currency`, and `exchange_rate`.
+`journal import` expects grouped CSV rows with `entry_reference`, `entry_date`, `account_code`, `debit`, and `credit`; optional columns include `entry_description`, `line_description`, `currency`, `exchange_rate`, `source_type`, and `source_id`.
 
 ## Opening balances
 

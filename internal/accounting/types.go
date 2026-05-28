@@ -90,6 +90,36 @@ type ImportOpeningBalancesResult struct {
 	JournalEntry  *JournalEntry   `json:"journal_entry"`
 }
 
+// ImportJournalEntriesRequest contains CSV payload for historical journal import.
+type ImportJournalEntriesRequest struct {
+	CSVContent     string     `json:"csv_content"`
+	FileName       string     `json:"file_name,omitempty"`
+	SourceType     string     `json:"source_type,omitempty"`
+	PostEntries    bool       `json:"post_entries,omitempty"`
+	UserID         string     `json:"-"`
+	PeriodLockDate *time.Time `json:"-"`
+}
+
+// ImportJournalEntriesResult summarizes a historical journal CSV import.
+type ImportJournalEntriesResult struct {
+	FileName       string                         `json:"file_name,omitempty"`
+	RowsProcessed  int                            `json:"rows_processed"`
+	EntriesCreated int                            `json:"entries_created"`
+	LinesImported  int                            `json:"lines_imported"`
+	RowsSkipped    int                            `json:"rows_skipped"`
+	TotalDebit     decimal.Decimal                `json:"total_debit"`
+	TotalCredit    decimal.Decimal                `json:"total_credit"`
+	JournalEntries []JournalEntry                 `json:"journal_entries,omitempty"`
+	Errors         []ImportJournalEntriesRowError `json:"errors,omitempty"`
+}
+
+// ImportJournalEntriesRowError describes a journal import group or row failure.
+type ImportJournalEntriesRowError struct {
+	Row            int    `json:"row"`
+	EntryReference string `json:"entry_reference,omitempty"`
+	Message        string `json:"message"`
+}
+
 // JournalEntry represents an immutable accounting transaction
 type JournalEntry struct {
 	ID          string             `json:"id"`

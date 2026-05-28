@@ -323,6 +323,51 @@ definitions:
       row:
         type: integer
     type: object
+  github_com_HMB-research_open-accounting_internal_accounting.ImportJournalEntriesRequest:
+    properties:
+      csv_content:
+        type: string
+      file_name:
+        type: string
+      post_entries:
+        type: boolean
+      source_type:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.ImportJournalEntriesResult:
+    properties:
+      entries_created:
+        type: integer
+      errors:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ImportJournalEntriesRowError'
+        type: array
+      file_name:
+        type: string
+      journal_entries:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntry'
+        type: array
+      lines_imported:
+        type: integer
+      rows_processed:
+        type: integer
+      rows_skipped:
+        type: integer
+      total_credit:
+        type: number
+      total_debit:
+        type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.ImportJournalEntriesRowError:
+    properties:
+      entry_reference:
+        type: string
+      message:
+        type: string
+      row:
+        type: integer
+    type: object
   github_com_HMB-research_open-accounting_internal_accounting.ImportOpeningBalancesRequest:
     properties:
       csv_content:
@@ -8633,6 +8678,50 @@ paths:
       security:
       - BearerAuth: []
       summary: Void journal entry
+      tags:
+      - Journal Entries
+  /tenants/{tenantID}/journal-entries/import:
+    post:
+      consumes:
+      - application/json
+      description: Import historical double-entry journal entries from grouped CSV
+        rows
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Historical journal CSV payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ImportJournalEntriesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ImportJournalEntriesResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Import journal entries
       tags:
       - Journal Entries
   /tenants/{tenantID}/journal-entries/import-opening-balances:

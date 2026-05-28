@@ -707,6 +707,23 @@ Content-Type: application/json
 
 The import creates a journal entry and posts it immediately. If the tenant period is locked for the chosen date, the API returns `409 Conflict`.
 
+### Import Historical Journal Entries
+
+```http
+POST /tenants/{tenantId}/journal-entries/import
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "file_name": "journal-entries.csv",
+  "source_type": "LEGACY_GL",
+  "post_entries": true,
+  "csv_content": "entry_reference,entry_date,entry_description,account_code,line_description,debit,credit\nLEG-001,2026-03-31,Imported sale,1000,Cash received,100.00,0\nLEG-001,2026-03-31,Imported sale,4000,Revenue,0,100.00\n"
+}
+```
+
+Rows are grouped by `entry_reference`; each group must have one `entry_date`, at least two lines, known `account_code` values, and balanced debit/credit totals. Locked-period groups are skipped with row errors in the import result.
+
 ---
 
 ## Contacts

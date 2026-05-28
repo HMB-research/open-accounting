@@ -872,6 +872,62 @@ func (h *Handlers) ImportOpeningBalances(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, http.StatusOK, result)
 }
 
+// ImportJournalEntries imports historical journal entries from grouped CSV rows.
+// @Summary Import journal entries
+// @Description Import historical double-entry journal entries from grouped CSV rows
+// @Tags Journal Entries
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body accounting.ImportJournalEntriesRequest true "Historical journal CSV payload"
+// @Success 200 {object} accounting.ImportJournalEntriesResult
+// @Failure 400 {object} object{error=string}
+// @Failure 401 {object} object{error=string}
+// @Router /tenants/{tenantID}/journal-entries/import [post]
+func (h *Handlers) ImportJournalEntries(w http.ResponseWriter, r *http.Request) {
+	claims, ok := auth.GetClaims(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Not authenticated")
+		return
+	}
+
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req accounting.ImportJournalEntriesRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+
+	if tenantRecord, err := h.tenantService.GetTenant(r.Context(), tenantID); err == nil && tenantRecord.Settings.PeriodLockDate != nil {
+		lockDate, err := time.Parse("2006-01-02", strings.TrimSpace(*tenantRecord.Settings.PeriodLockDate))
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "tenant period_lock_date must be in YYYY-MM-DD format")
+			return
+		}
+		req.PeriodLockDate = &lockDate
+	}
+
+	req.UserID = claims.UserID
+	if req.FileName == "" {
+		req.FileName = "journal_entries.csv"
+	}
+
+	result, err := h.accountingService.ImportJournalEntriesCSV(r.Context(), schemaName, tenantID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // GetAccount returns an account by ID
 // @Summary Get account
 // @Description Get account details by ID
