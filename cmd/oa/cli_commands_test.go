@@ -20,6 +20,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
@@ -1101,6 +1102,333 @@ func TestCLIAssetCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"assets", "delete", "--id", "asset-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Deleted asset asset-1")
+}
+
+func TestCLIInventoryCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	categoryPayload := map[string]any{
+		"id":          "cat-1",
+		"tenant_id":   "tenant-1",
+		"name":        "Parts",
+		"description": "Spare parts",
+		"parent_id":   "parent-1",
+		"created_at":  "2026-03-15T12:00:00Z",
+		"updated_at":  "2026-03-15T12:00:00Z",
+	}
+	productPayload := func(name string, active bool) map[string]any {
+		return map[string]any{
+			"id":                   "prod-1",
+			"tenant_id":            "tenant-1",
+			"code":                 "PRD-001",
+			"name":                 name,
+			"description":          "Inventory item",
+			"product_type":         "GOODS",
+			"category_id":          "cat-1",
+			"unit":                 "pcs",
+			"purchase_price":       "10.50",
+			"sales_price":          "15.00",
+			"vat_rate":             "22.00",
+			"min_stock_level":      "5.00",
+			"current_stock":        "12.00",
+			"reorder_point":        "7.00",
+			"sale_account_id":      "acc-sale",
+			"purchase_account_id":  "acc-purchase",
+			"inventory_account_id": "acc-inventory",
+			"track_inventory":      true,
+			"is_active":            active,
+			"barcode":              "123456",
+			"supplier_id":          "supplier-1",
+			"lead_time_days":       4,
+			"created_at":           "2026-03-15T12:00:00Z",
+			"updated_at":           "2026-03-15T12:00:00Z",
+		}
+	}
+	warehousePayload := func(name string) map[string]any {
+		return map[string]any{
+			"id":         "wh-1",
+			"tenant_id":  "tenant-1",
+			"code":       "MAIN",
+			"name":       name,
+			"address":    "Tallinn",
+			"is_default": true,
+			"is_active":  true,
+			"created_at": "2026-03-15T12:00:00Z",
+			"updated_at": "2026-03-15T12:00:00Z",
+		}
+	}
+	stockLevelPayload := map[string]any{
+		"id":            "stock-1",
+		"tenant_id":     "tenant-1",
+		"product_id":    "prod-1",
+		"warehouse_id":  "wh-1",
+		"quantity":      "12.00",
+		"reserved_qty":  "2.00",
+		"available_qty": "10.00",
+		"last_updated":  "2026-03-15T12:00:00Z",
+	}
+	movementPayload := map[string]any{
+		"id":            "mov-1",
+		"tenant_id":     "tenant-1",
+		"product_id":    "prod-1",
+		"warehouse_id":  "wh-1",
+		"movement_type": "ADJUSTMENT",
+		"quantity":      "2.00",
+		"unit_cost":     "10.50",
+		"total_cost":    "21.00",
+		"reference":     "ADJ-1",
+		"notes":         "Cycle count",
+		"movement_date": "2026-03-15T00:00:00Z",
+		"created_at":    "2026-03-15T12:00:00Z",
+		"created_by":    "user-1",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/product-categories":
+			_ = json.NewEncoder(w).Encode([]map[string]any{categoryPayload})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/product-categories":
+			var req inventory.CreateCategoryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Parts", req.Name)
+			assert.Equal(t, "Spare parts", req.Description)
+			assert.Equal(t, "parent-1", req.ParentID)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(categoryPayload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/product-categories/cat-1":
+			_ = json.NewEncoder(w).Encode(categoryPayload)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/product-categories/cat-1":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/products":
+			require.Equal(t, "GOODS", r.URL.Query().Get("product_type"))
+			require.Equal(t, "ACTIVE", r.URL.Query().Get("status"))
+			require.Equal(t, "cat-1", r.URL.Query().Get("category_id"))
+			require.Equal(t, "Widget", r.URL.Query().Get("search"))
+			require.Equal(t, "true", r.URL.Query().Get("low_stock"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{productPayload("Widget", true)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/products":
+			var req inventory.CreateProductRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "PRD-001", req.Code)
+			assert.Equal(t, "Widget", req.Name)
+			assert.Equal(t, "GOODS", req.ProductType)
+			assert.Equal(t, "cat-1", req.CategoryID)
+			assert.Equal(t, "pcs", req.Unit)
+			assert.Equal(t, "10.5", req.PurchasePrice)
+			assert.Equal(t, "15", req.SalesPrice)
+			assert.Equal(t, "22", req.VATRate)
+			assert.Equal(t, "5", req.MinStockLevel)
+			assert.Equal(t, "7", req.ReorderPoint)
+			assert.True(t, req.TrackInventory)
+			assert.Equal(t, "123456", req.Barcode)
+			assert.Equal(t, "supplier-1", req.SupplierID)
+			assert.Equal(t, 4, req.LeadTimeDays)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(productPayload("Widget", true))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-1":
+			_ = json.NewEncoder(w).Encode(productPayload("Widget", true))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-1":
+			var req inventory.UpdateProductRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Updated widget", req.Name)
+			assert.Equal(t, "16", req.SalesPrice)
+			assert.False(t, req.IsActive)
+			assert.True(t, req.TrackInventory)
+			_ = json.NewEncoder(w).Encode(productPayload("Updated widget", false))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-1/stock-levels":
+			_ = json.NewEncoder(w).Encode([]map[string]any{stockLevelPayload})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-1/movements":
+			_ = json.NewEncoder(w).Encode([]map[string]any{movementPayload})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-1":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses":
+			require.Equal(t, "true", r.URL.Query().Get("active_only"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{warehousePayload("Main warehouse")})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses":
+			var req inventory.CreateWarehouseRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "MAIN", req.Code)
+			assert.Equal(t, "Main warehouse", req.Name)
+			assert.Equal(t, "Tallinn", req.Address)
+			assert.True(t, req.IsDefault)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(warehousePayload("Main warehouse"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses/wh-1":
+			_ = json.NewEncoder(w).Encode(warehousePayload("Main warehouse"))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses/wh-1":
+			var req inventory.UpdateWarehouseRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Updated warehouse", req.Name)
+			assert.Equal(t, "Tartu", req.Address)
+			assert.False(t, req.IsDefault)
+			assert.True(t, req.IsActive)
+			_ = json.NewEncoder(w).Encode(warehousePayload("Updated warehouse"))
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses/wh-1":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/adjust":
+			var req inventory.AdjustStockRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "prod-1", req.ProductID)
+			assert.Equal(t, "wh-1", req.WarehouseID)
+			assert.Equal(t, "-2", req.Quantity)
+			assert.Equal(t, "10.5", req.UnitCost)
+			assert.Equal(t, "Cycle count", req.Reason)
+			_ = json.NewEncoder(w).Encode(movementPayload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/transfer":
+			var req inventory.TransferStockRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "prod-1", req.ProductID)
+			assert.Equal(t, "wh-1", req.FromWarehouseID)
+			assert.Equal(t, "wh-2", req.ToWarehouseID)
+			assert.Equal(t, "3", req.Quantity)
+			assert.Equal(t, "Move to branch", req.Notes)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "transferred"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"inventory", "categories", "list", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Parts"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "categories", "create", "--name", "Parts", "--description", "Spare parts", "--parent-id", "parent-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created product category Parts (cat-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "categories", "get", "--id", "cat-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Product category Parts")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "categories", "delete", "--id", "cat-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Deleted product category cat-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"inventory", "products", "list",
+		"--type", "goods",
+		"--status", "active",
+		"--category-id", "cat-1",
+		"--search", "Widget",
+		"--low-stock",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"code": "PRD-001"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"inventory", "products", "create",
+		"--code", "PRD-001",
+		"--name", "Widget",
+		"--description", "Inventory item",
+		"--type", "goods",
+		"--category-id", "cat-1",
+		"--unit", "pcs",
+		"--purchase-price", "10.50",
+		"--sales-price", "15.00",
+		"--vat-rate", "22.00",
+		"--min-stock-level", "5.00",
+		"--reorder-point", "7.00",
+		"--sale-account-id", "acc-sale",
+		"--purchase-account-id", "acc-purchase",
+		"--inventory-account-id", "acc-inventory",
+		"--barcode", "123456",
+		"--supplier-id", "supplier-1",
+		"--lead-time-days", "4",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created product PRD-001 Widget (prod-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "products", "get", "--id", "prod-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Product PRD-001 Widget")
+	assert.Contains(t, stdout.String(), "Current stock: 12")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"inventory", "products", "update",
+		"--id", "prod-1",
+		"--name", "Updated widget",
+		"--purchase-price", "10.50",
+		"--sales-price", "16.00",
+		"--active=false",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Product PRD-001 Updated widget")
+	assert.Contains(t, stdout.String(), "Active: false")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "products", "stock-levels", "--id", "prod-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "AVAILABLE")
+	assert.Contains(t, stdout.String(), "10")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "products", "movements", "--id", "prod-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "ADJUSTMENT")
+	assert.Contains(t, stdout.String(), "Cycle count")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "products", "delete", "--id", "prod-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Deleted product prod-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "warehouses", "list", "--active-only", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"code": "MAIN"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "warehouses", "create", "--code", "MAIN", "--name", "Main warehouse", "--address", "Tallinn", "--default"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created warehouse MAIN Main warehouse (wh-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "warehouses", "get", "--id", "wh-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Warehouse MAIN Main warehouse")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "warehouses", "update", "--id", "wh-1", "--name", "Updated warehouse", "--address", "Tartu"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Warehouse MAIN Updated warehouse")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "warehouses", "delete", "--id", "wh-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Deleted warehouse wh-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "adjust", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "-2.00", "--unit-cost", "10.50", "--reason", "Cycle count"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Adjusted stock for product prod-1 by -2 in warehouse wh-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "transfer", "--product-id", "prod-1", "--from-warehouse-id", "wh-1", "--to-warehouse-id", "wh-2", "--quantity", "3.00", "--notes", "Move to branch", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "transferred"`)
 }
 
 func TestCLICostCenterCommands(t *testing.T) {
@@ -2830,6 +3158,26 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	_, err = parseOptionalAssetStatus("bad")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid asset status")
+
+	productType, err := parseRequiredProductType("service")
+	require.NoError(t, err)
+	assert.Equal(t, inventory.ProductTypeService, productType)
+
+	_, err = parseRequiredProductType("")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "type is required")
+
+	productStatus, err := parseOptionalProductStatus("inactive")
+	require.NoError(t, err)
+	assert.Equal(t, inventory.ProductStatusInactive, productStatus)
+
+	_, err = parseOptionalProductStatus("bad")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid product status")
+
+	quantity, err := parseRequiredDecimal("quantity", "-2.50")
+	require.NoError(t, err)
+	assert.True(t, quantity.Equal(decimal.RequireFromString("-2.50")))
 
 	depreciationMethod, err := parseOptionalDepreciationMethod("units_of_production")
 	require.NoError(t, err)

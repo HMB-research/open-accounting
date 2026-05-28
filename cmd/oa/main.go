@@ -21,6 +21,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
@@ -80,6 +81,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runOrders(ctx, args[1:])
 	case "assets":
 		return a.runAssets(ctx, args[1:])
+	case "inventory":
+		return a.runInventory(ctx, args[1:])
 	case "cost-centers":
 		return a.runCostCenters(ctx, args[1:])
 	case "analytics":
@@ -183,6 +186,11 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  assets dispose            Dispose or sell a fixed asset")
 	_, _ = fmt.Fprintln(a.stdout, "  assets depreciate         Record monthly depreciation")
 	_, _ = fmt.Fprintln(a.stdout, "  assets depreciation       List depreciation history")
+	_, _ = fmt.Fprintln(a.stdout, "  inventory categories list List product categories")
+	_, _ = fmt.Fprintln(a.stdout, "  inventory products list   List products and services")
+	_, _ = fmt.Fprintln(a.stdout, "  inventory warehouses list List warehouses")
+	_, _ = fmt.Fprintln(a.stdout, "  inventory adjust          Adjust product stock")
+	_, _ = fmt.Fprintln(a.stdout, "  inventory transfer        Transfer stock between warehouses")
 	_, _ = fmt.Fprintln(a.stdout, "  cost-centers list         List cost centers")
 	_, _ = fmt.Fprintln(a.stdout, "  cost-centers create       Create a cost center")
 	_, _ = fmt.Fprintln(a.stdout, "  cost-centers get          Show one cost center")
@@ -2125,6 +2133,663 @@ func (a *cliApp) runAssetCategories(ctx context.Context, cfg *cliConfig, client 
 	}
 }
 
+func (a *cliApp) runInventory(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("inventory subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "categories":
+		return a.runInventoryCategories(ctx, cfg, client, args[1:])
+	case "products":
+		return a.runInventoryProducts(ctx, cfg, client, args[1:])
+	case "warehouses":
+		return a.runInventoryWarehouses(ctx, cfg, client, args[1:])
+	case "adjust":
+		fs := flag.NewFlagSet("inventory adjust", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		productID := fs.String("product-id", "", "Product id")
+		warehouseID := fs.String("warehouse-id", "", "Warehouse id")
+		quantityFlag := fs.String("quantity", "", "Signed quantity adjustment")
+		unitCostFlag := fs.String("unit-cost", "0", "Unit cost")
+		reason := fs.String("reason", "", "Adjustment reason")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*productID) == "" {
+			return errors.New("product-id is required")
+		}
+		if strings.TrimSpace(*warehouseID) == "" {
+			return errors.New("warehouse-id is required")
+		}
+		quantity, err := parseRequiredDecimal("quantity", *quantityFlag)
+		if err != nil {
+			return err
+		}
+		if quantity.IsZero() {
+			return errors.New("quantity must not be zero")
+		}
+		unitCost, err := parseRequiredNonNegativeDecimal("unit-cost", *unitCostFlag)
+		if err != nil {
+			return err
+		}
+
+		movement, err := client.adjustStock(ctx, cfg.TenantID, &inventory.AdjustStockRequest{
+			ProductID:   strings.TrimSpace(*productID),
+			WarehouseID: strings.TrimSpace(*warehouseID),
+			Quantity:    quantity.String(),
+			UnitCost:    unitCost.String(),
+			Reason:      strings.TrimSpace(*reason),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, movement)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Adjusted stock for product %s by %s in warehouse %s\n", strings.TrimSpace(*productID), quantity.String(), strings.TrimSpace(*warehouseID))
+		return nil
+
+	case "transfer":
+		fs := flag.NewFlagSet("inventory transfer", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		productID := fs.String("product-id", "", "Product id")
+		fromWarehouseID := fs.String("from-warehouse-id", "", "Source warehouse id")
+		toWarehouseID := fs.String("to-warehouse-id", "", "Destination warehouse id")
+		quantityFlag := fs.String("quantity", "", "Quantity to transfer")
+		notes := fs.String("notes", "", "Transfer notes")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*productID) == "" {
+			return errors.New("product-id is required")
+		}
+		if strings.TrimSpace(*fromWarehouseID) == "" {
+			return errors.New("from-warehouse-id is required")
+		}
+		if strings.TrimSpace(*toWarehouseID) == "" {
+			return errors.New("to-warehouse-id is required")
+		}
+		quantity, err := parseRequiredPositiveDecimal("quantity", *quantityFlag)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.transferStock(ctx, cfg.TenantID, &inventory.TransferStockRequest{
+			ProductID:       strings.TrimSpace(*productID),
+			FromWarehouseID: strings.TrimSpace(*fromWarehouseID),
+			ToWarehouseID:   strings.TrimSpace(*toWarehouseID),
+			Quantity:        quantity.String(),
+			Notes:           strings.TrimSpace(*notes),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Transferred %s of product %s from %s to %s\n", quantity.String(), strings.TrimSpace(*productID), strings.TrimSpace(*fromWarehouseID), strings.TrimSpace(*toWarehouseID))
+		return nil
+
+	default:
+		return fmt.Errorf("unknown inventory subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runInventoryCategories(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("inventory categories subcommand required")
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("inventory categories list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		categories, err := client.listProductCategories(ctx, cfg.TenantID)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, categories)
+		}
+		printProductCategoriesTable(a.stdout, categories)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("inventory categories create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		name := fs.String("name", "", "Category name")
+		description := fs.String("description", "", "Description")
+		parentID := fs.String("parent-id", "", "Parent category id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*name) == "" {
+			return errors.New("name is required")
+		}
+
+		category, err := client.createProductCategory(ctx, cfg.TenantID, &inventory.CreateCategoryRequest{
+			Name:        strings.TrimSpace(*name),
+			Description: strings.TrimSpace(*description),
+			ParentID:    strings.TrimSpace(*parentID),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, category)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created product category %s (%s)\n", category.Name, category.ID)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("inventory categories get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		categoryID := fs.String("id", "", "Category id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*categoryID) == "" {
+			return errors.New("id is required")
+		}
+
+		category, err := client.getProductCategory(ctx, cfg.TenantID, strings.TrimSpace(*categoryID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, category)
+		}
+		printProductCategory(a.stdout, category)
+		return nil
+
+	case "delete":
+		fs := flag.NewFlagSet("inventory categories delete", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		categoryID := fs.String("id", "", "Category id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*categoryID) == "" {
+			return errors.New("id is required")
+		}
+
+		result, err := client.deleteProductCategory(ctx, cfg.TenantID, strings.TrimSpace(*categoryID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Deleted product category %s\n", strings.TrimSpace(*categoryID))
+		return nil
+
+	default:
+		return fmt.Errorf("unknown inventory categories subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runInventoryProducts(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("inventory products subcommand required")
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("inventory products list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		typeFlag := fs.String("type", "", "Product type")
+		statusFlag := fs.String("status", "", "Product status")
+		categoryID := fs.String("category-id", "", "Category id")
+		search := fs.String("search", "", "Search term")
+		lowStock := fs.Bool("low-stock", false, "List products below reorder threshold")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		productType, err := parseOptionalProductType(*typeFlag)
+		if err != nil {
+			return err
+		}
+		status, err := parseOptionalProductStatus(*statusFlag)
+		if err != nil {
+			return err
+		}
+
+		products, err := client.listProducts(ctx, cfg.TenantID, inventory.ProductFilter{
+			ProductType: productType,
+			Status:      status,
+			CategoryID:  strings.TrimSpace(*categoryID),
+			Search:      strings.TrimSpace(*search),
+			LowStock:    *lowStock,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, products)
+		}
+		printProductsTable(a.stdout, products)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("inventory products create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		code := fs.String("code", "", "Product code")
+		name := fs.String("name", "", "Product name")
+		description := fs.String("description", "", "Description")
+		typeFlag := fs.String("type", string(inventory.ProductTypeGoods), "Product type")
+		categoryID := fs.String("category-id", "", "Category id")
+		unit := fs.String("unit", "pcs", "Unit of measure")
+		purchasePriceFlag := fs.String("purchase-price", "0", "Purchase price")
+		salesPriceFlag := fs.String("sales-price", "", "Sales price")
+		vatRateFlag := fs.String("vat-rate", "22", "VAT rate")
+		minStockLevelFlag := fs.String("min-stock-level", "0", "Minimum stock level")
+		reorderPointFlag := fs.String("reorder-point", "0", "Reorder point")
+		saleAccountID := fs.String("sale-account-id", "", "Sale account id")
+		purchaseAccountID := fs.String("purchase-account-id", "", "Purchase account id")
+		inventoryAccountID := fs.String("inventory-account-id", "", "Inventory account id")
+		trackInventory := fs.Bool("track-inventory", true, "Track inventory for this product")
+		barcode := fs.String("barcode", "", "Barcode")
+		supplierID := fs.String("supplier-id", "", "Supplier id")
+		leadTimeDaysFlag := fs.String("lead-time-days", "0", "Lead time in days")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*name) == "" {
+			return errors.New("name is required")
+		}
+		productType, err := parseRequiredProductType(*typeFlag)
+		if err != nil {
+			return err
+		}
+		purchasePrice, err := parseRequiredNonNegativeDecimal("purchase-price", *purchasePriceFlag)
+		if err != nil {
+			return err
+		}
+		salesPrice, err := parseRequiredNonNegativeDecimal("sales-price", *salesPriceFlag)
+		if err != nil {
+			return err
+		}
+		vatRate, err := parseRequiredNonNegativeDecimal("vat-rate", *vatRateFlag)
+		if err != nil {
+			return err
+		}
+		minStockLevel, err := parseRequiredNonNegativeDecimal("min-stock-level", *minStockLevelFlag)
+		if err != nil {
+			return err
+		}
+		reorderPoint, err := parseRequiredNonNegativeDecimal("reorder-point", *reorderPointFlag)
+		if err != nil {
+			return err
+		}
+		leadTimeDays, err := parseRequiredNonNegativeInt("lead-time-days", *leadTimeDaysFlag)
+		if err != nil {
+			return err
+		}
+
+		product, err := client.createProduct(ctx, cfg.TenantID, &inventory.CreateProductRequest{
+			Code:               strings.TrimSpace(*code),
+			Name:               strings.TrimSpace(*name),
+			Description:        strings.TrimSpace(*description),
+			ProductType:        string(productType),
+			CategoryID:         strings.TrimSpace(*categoryID),
+			Unit:               strings.TrimSpace(*unit),
+			PurchasePrice:      purchasePrice.String(),
+			SalesPrice:         salesPrice.String(),
+			VATRate:            vatRate.String(),
+			MinStockLevel:      minStockLevel.String(),
+			ReorderPoint:       reorderPoint.String(),
+			SaleAccountID:      strings.TrimSpace(*saleAccountID),
+			PurchaseAccountID:  strings.TrimSpace(*purchaseAccountID),
+			InventoryAccountID: strings.TrimSpace(*inventoryAccountID),
+			TrackInventory:     *trackInventory,
+			Barcode:            strings.TrimSpace(*barcode),
+			SupplierID:         strings.TrimSpace(*supplierID),
+			LeadTimeDays:       leadTimeDays,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, product)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created product %s %s (%s)\n", product.Code, product.Name, product.ID)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("inventory products get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		productID := fs.String("id", "", "Product id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*productID) == "" {
+			return errors.New("id is required")
+		}
+
+		product, err := client.getProduct(ctx, cfg.TenantID, strings.TrimSpace(*productID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, product)
+		}
+		printProduct(a.stdout, product)
+		return nil
+
+	case "update":
+		fs := flag.NewFlagSet("inventory products update", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		productID := fs.String("id", "", "Product id")
+		name := fs.String("name", "", "Product name")
+		description := fs.String("description", "", "Description")
+		categoryID := fs.String("category-id", "", "Category id")
+		unit := fs.String("unit", "pcs", "Unit of measure")
+		purchasePriceFlag := fs.String("purchase-price", "0", "Purchase price")
+		salesPriceFlag := fs.String("sales-price", "", "Sales price")
+		vatRateFlag := fs.String("vat-rate", "22", "VAT rate")
+		minStockLevelFlag := fs.String("min-stock-level", "0", "Minimum stock level")
+		reorderPointFlag := fs.String("reorder-point", "0", "Reorder point")
+		saleAccountID := fs.String("sale-account-id", "", "Sale account id")
+		purchaseAccountID := fs.String("purchase-account-id", "", "Purchase account id")
+		inventoryAccountID := fs.String("inventory-account-id", "", "Inventory account id")
+		trackInventory := fs.Bool("track-inventory", true, "Track inventory for this product")
+		active := fs.Bool("active", true, "Set active")
+		barcode := fs.String("barcode", "", "Barcode")
+		supplierID := fs.String("supplier-id", "", "Supplier id")
+		leadTimeDaysFlag := fs.String("lead-time-days", "0", "Lead time in days")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*productID) == "" {
+			return errors.New("id is required")
+		}
+		if strings.TrimSpace(*name) == "" {
+			return errors.New("name is required")
+		}
+		purchasePrice, err := parseRequiredNonNegativeDecimal("purchase-price", *purchasePriceFlag)
+		if err != nil {
+			return err
+		}
+		salesPrice, err := parseRequiredNonNegativeDecimal("sales-price", *salesPriceFlag)
+		if err != nil {
+			return err
+		}
+		vatRate, err := parseRequiredNonNegativeDecimal("vat-rate", *vatRateFlag)
+		if err != nil {
+			return err
+		}
+		minStockLevel, err := parseRequiredNonNegativeDecimal("min-stock-level", *minStockLevelFlag)
+		if err != nil {
+			return err
+		}
+		reorderPoint, err := parseRequiredNonNegativeDecimal("reorder-point", *reorderPointFlag)
+		if err != nil {
+			return err
+		}
+		leadTimeDays, err := parseRequiredNonNegativeInt("lead-time-days", *leadTimeDaysFlag)
+		if err != nil {
+			return err
+		}
+
+		product, err := client.updateProduct(ctx, cfg.TenantID, strings.TrimSpace(*productID), &inventory.UpdateProductRequest{
+			Name:               strings.TrimSpace(*name),
+			Description:        strings.TrimSpace(*description),
+			CategoryID:         strings.TrimSpace(*categoryID),
+			Unit:               strings.TrimSpace(*unit),
+			PurchasePrice:      purchasePrice.String(),
+			SalesPrice:         salesPrice.String(),
+			VATRate:            vatRate.String(),
+			MinStockLevel:      minStockLevel.String(),
+			ReorderPoint:       reorderPoint.String(),
+			SaleAccountID:      strings.TrimSpace(*saleAccountID),
+			PurchaseAccountID:  strings.TrimSpace(*purchaseAccountID),
+			InventoryAccountID: strings.TrimSpace(*inventoryAccountID),
+			TrackInventory:     *trackInventory,
+			IsActive:           *active,
+			Barcode:            strings.TrimSpace(*barcode),
+			SupplierID:         strings.TrimSpace(*supplierID),
+			LeadTimeDays:       leadTimeDays,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, product)
+		}
+		printProduct(a.stdout, product)
+		return nil
+
+	case "delete":
+		fs := flag.NewFlagSet("inventory products delete", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		productID := fs.String("id", "", "Product id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*productID) == "" {
+			return errors.New("id is required")
+		}
+
+		result, err := client.deleteProduct(ctx, cfg.TenantID, strings.TrimSpace(*productID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Deleted product %s\n", strings.TrimSpace(*productID))
+		return nil
+
+	case "stock-levels":
+		fs := flag.NewFlagSet("inventory products stock-levels", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		productID := fs.String("id", "", "Product id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*productID) == "" {
+			return errors.New("id is required")
+		}
+
+		levels, err := client.listStockLevels(ctx, cfg.TenantID, strings.TrimSpace(*productID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, levels)
+		}
+		printStockLevelsTable(a.stdout, levels)
+		return nil
+
+	case "movements":
+		fs := flag.NewFlagSet("inventory products movements", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		productID := fs.String("id", "", "Product id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*productID) == "" {
+			return errors.New("id is required")
+		}
+
+		movements, err := client.listInventoryMovements(ctx, cfg.TenantID, strings.TrimSpace(*productID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, movements)
+		}
+		printInventoryMovementsTable(a.stdout, movements)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown inventory products subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runInventoryWarehouses(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("inventory warehouses subcommand required")
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("inventory warehouses list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		activeOnly := fs.Bool("active-only", false, "List only active warehouses")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		warehouses, err := client.listWarehouses(ctx, cfg.TenantID, *activeOnly)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, warehouses)
+		}
+		printWarehousesTable(a.stdout, warehouses)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("inventory warehouses create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		code := fs.String("code", "", "Warehouse code")
+		name := fs.String("name", "", "Warehouse name")
+		address := fs.String("address", "", "Address")
+		isDefault := fs.Bool("default", false, "Set as default warehouse")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*code) == "" {
+			return errors.New("code is required")
+		}
+		if strings.TrimSpace(*name) == "" {
+			return errors.New("name is required")
+		}
+
+		warehouse, err := client.createWarehouse(ctx, cfg.TenantID, &inventory.CreateWarehouseRequest{
+			Code:      strings.TrimSpace(*code),
+			Name:      strings.TrimSpace(*name),
+			Address:   strings.TrimSpace(*address),
+			IsDefault: *isDefault,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, warehouse)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created warehouse %s %s (%s)\n", warehouse.Code, warehouse.Name, warehouse.ID)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("inventory warehouses get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		warehouseID := fs.String("id", "", "Warehouse id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*warehouseID) == "" {
+			return errors.New("id is required")
+		}
+
+		warehouse, err := client.getWarehouse(ctx, cfg.TenantID, strings.TrimSpace(*warehouseID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, warehouse)
+		}
+		printWarehouse(a.stdout, warehouse)
+		return nil
+
+	case "update":
+		fs := flag.NewFlagSet("inventory warehouses update", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		warehouseID := fs.String("id", "", "Warehouse id")
+		name := fs.String("name", "", "Warehouse name")
+		address := fs.String("address", "", "Address")
+		isDefault := fs.Bool("default", false, "Set as default warehouse")
+		active := fs.Bool("active", true, "Set active")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*warehouseID) == "" {
+			return errors.New("id is required")
+		}
+		if strings.TrimSpace(*name) == "" {
+			return errors.New("name is required")
+		}
+
+		warehouse, err := client.updateWarehouse(ctx, cfg.TenantID, strings.TrimSpace(*warehouseID), &inventory.UpdateWarehouseRequest{
+			Name:      strings.TrimSpace(*name),
+			Address:   strings.TrimSpace(*address),
+			IsDefault: *isDefault,
+			IsActive:  *active,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, warehouse)
+		}
+		printWarehouse(a.stdout, warehouse)
+		return nil
+
+	case "delete":
+		fs := flag.NewFlagSet("inventory warehouses delete", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		warehouseID := fs.String("id", "", "Warehouse id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*warehouseID) == "" {
+			return errors.New("id is required")
+		}
+
+		result, err := client.deleteWarehouse(ctx, cfg.TenantID, strings.TrimSpace(*warehouseID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Deleted warehouse %s\n", strings.TrimSpace(*warehouseID))
+		return nil
+
+	default:
+		return fmt.Errorf("unknown inventory warehouses subcommand %q", args[0])
+	}
+}
+
 func (a *cliApp) runCostCenters(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New("cost-centers subcommand required")
@@ -3875,6 +4540,18 @@ func parseRequiredPositiveDecimal(name, value string) (decimal.Decimal, error) {
 	return parsed, nil
 }
 
+func parseRequiredDecimal(name, value string) (decimal.Decimal, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return decimal.Zero, fmt.Errorf("%s is required", name)
+	}
+	parsed, err := decimal.NewFromString(trimmed)
+	if err != nil {
+		return decimal.Zero, fmt.Errorf("parse %s: %w", name, err)
+	}
+	return parsed, nil
+}
+
 func parseRequiredNonNegativeDecimal(name, value string) (decimal.Decimal, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
@@ -3970,6 +4647,39 @@ func parseOptionalAssetStatus(value string) (assets.AssetStatus, error) {
 		return assets.AssetStatus(normalized), nil
 	default:
 		return "", fmt.Errorf("invalid asset status %q", value)
+	}
+}
+
+func parseOptionalProductType(value string) (inventory.ProductType, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+	return parseRequiredProductType(value)
+}
+
+func parseRequiredProductType(value string) (inventory.ProductType, error) {
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	switch inventory.ProductType(normalized) {
+	case inventory.ProductTypeGoods, inventory.ProductTypeService:
+		return inventory.ProductType(normalized), nil
+	default:
+		if normalized == "" {
+			return "", errors.New("type is required")
+		}
+		return "", fmt.Errorf("invalid product type %q", value)
+	}
+}
+
+func parseOptionalProductStatus(value string) (inventory.ProductStatus, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	switch inventory.ProductStatus(normalized) {
+	case inventory.ProductStatusActive, inventory.ProductStatusInactive:
+		return inventory.ProductStatus(normalized), nil
+	default:
+		return "", fmt.Errorf("invalid product status %q", value)
 	}
 }
 

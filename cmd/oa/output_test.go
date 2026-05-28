@@ -15,6 +15,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
@@ -400,6 +401,123 @@ func TestPrintAssetOutputs(t *testing.T) {
 	printDepreciationEntriesTable(&depreciationBuf, []assets.DepreciationEntry{entry})
 	assert.Contains(t, depreciationBuf.String(), "dep-1")
 	assert.Contains(t, depreciationBuf.String(), "25")
+}
+
+func TestPrintInventoryOutputs(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	category := inventory.ProductCategory{
+		ID:          "cat-1",
+		TenantID:    "tenant-1",
+		Name:        "Parts",
+		Description: "Spare parts",
+		ParentID:    "parent-1",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	product := inventory.Product{
+		ID:                 "prod-1",
+		TenantID:           "tenant-1",
+		Code:               "PRD-001",
+		Name:               "Widget",
+		Description:        "Inventory item",
+		ProductType:        inventory.ProductTypeGoods,
+		CategoryID:         "cat-1",
+		Unit:               "pcs",
+		PurchasePrice:      decimal.NewFromFloat(10.5),
+		SalesPrice:         decimal.NewFromInt(15),
+		VATRate:            decimal.NewFromInt(22),
+		MinStockLevel:      decimal.NewFromInt(5),
+		CurrentStock:       decimal.NewFromInt(12),
+		ReorderPoint:       decimal.NewFromInt(7),
+		SaleAccountID:      "acc-sale",
+		PurchaseAccountID:  "acc-purchase",
+		InventoryAccountID: "acc-inventory",
+		TrackInventory:     true,
+		IsActive:           true,
+		Barcode:            "123456",
+		SupplierID:         "supplier-1",
+		LeadTimeDays:       4,
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+	warehouse := inventory.Warehouse{
+		ID:        "wh-1",
+		TenantID:  "tenant-1",
+		Code:      "MAIN",
+		Name:      "Main warehouse",
+		Address:   "Tallinn",
+		IsDefault: true,
+		IsActive:  true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	level := inventory.StockLevel{
+		ID:           "stock-1",
+		TenantID:     "tenant-1",
+		ProductID:    "prod-1",
+		WarehouseID:  "wh-1",
+		Quantity:     decimal.NewFromInt(12),
+		ReservedQty:  decimal.NewFromInt(2),
+		AvailableQty: decimal.NewFromInt(10),
+		LastUpdated:  now,
+	}
+	movement := inventory.InventoryMovement{
+		ID:           "mov-1",
+		TenantID:     "tenant-1",
+		ProductID:    "prod-1",
+		WarehouseID:  "wh-1",
+		MovementType: inventory.MovementTypeAdjustment,
+		Quantity:     decimal.NewFromInt(2),
+		UnitCost:     decimal.NewFromFloat(10.5),
+		TotalCost:    decimal.NewFromInt(21),
+		Reference:    "ADJ-1",
+		Notes:        "Cycle count",
+		MovementDate: now,
+		CreatedAt:    now,
+		CreatedBy:    "user-1",
+	}
+
+	var categoriesBuf bytes.Buffer
+	printProductCategoriesTable(&categoriesBuf, []inventory.ProductCategory{category})
+	assert.Contains(t, categoriesBuf.String(), "Parts")
+	assert.Contains(t, categoriesBuf.String(), "parent-1")
+
+	var categoryBuf bytes.Buffer
+	printProductCategory(&categoryBuf, &category)
+	assert.Contains(t, categoryBuf.String(), "Product category Parts")
+	assert.Contains(t, categoryBuf.String(), "Spare parts")
+
+	var productsBuf bytes.Buffer
+	printProductsTable(&productsBuf, []inventory.Product{product})
+	assert.Contains(t, productsBuf.String(), "PRD-001")
+	assert.Contains(t, productsBuf.String(), "12")
+
+	var productBuf bytes.Buffer
+	printProduct(&productBuf, &product)
+	assert.Contains(t, productBuf.String(), "Product PRD-001 Widget")
+	assert.Contains(t, productBuf.String(), "Track inventory: true")
+
+	var warehousesBuf bytes.Buffer
+	printWarehousesTable(&warehousesBuf, []inventory.Warehouse{warehouse})
+	assert.Contains(t, warehousesBuf.String(), "MAIN")
+	assert.Contains(t, warehousesBuf.String(), "Tallinn")
+
+	var warehouseBuf bytes.Buffer
+	printWarehouse(&warehouseBuf, &warehouse)
+	assert.Contains(t, warehouseBuf.String(), "Warehouse MAIN Main warehouse")
+	assert.Contains(t, warehouseBuf.String(), "Default: true")
+
+	var stockBuf bytes.Buffer
+	printStockLevelsTable(&stockBuf, []inventory.StockLevel{level})
+	assert.Contains(t, stockBuf.String(), "AVAILABLE")
+	assert.Contains(t, stockBuf.String(), "10")
+
+	var movementsBuf bytes.Buffer
+	printInventoryMovementsTable(&movementsBuf, []inventory.InventoryMovement{movement})
+	assert.Contains(t, movementsBuf.String(), "ADJUSTMENT")
+	assert.Contains(t, movementsBuf.String(), "Cycle count")
 }
 
 func TestPrintCostCenterOutputs(t *testing.T) {
