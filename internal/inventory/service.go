@@ -316,12 +316,35 @@ func (s *Service) AdjustStock(ctx context.Context, tenantID, schemaName string, 
 
 	unitCost := decimal.Zero
 	if req.UnitCost != "" {
-		unitCost, _ = decimal.NewFromString(req.UnitCost)
+		unitCost, err = decimal.NewFromString(req.UnitCost)
+		if err != nil {
+			return nil, fmt.Errorf("invalid unit cost: %w", err)
+		}
 	}
 
 	product, err := s.repo.GetProductByID(ctx, schemaName, tenantID, req.ProductID)
 	if err != nil {
 		return nil, fmt.Errorf("get product: %w", err)
+	}
+	if _, err := s.repo.GetWarehouseByID(ctx, schemaName, tenantID, req.WarehouseID); err != nil {
+		return nil, fmt.Errorf("get warehouse: %w", err)
+	}
+
+	currentLevel, err := s.stockLevelForWarehouse(ctx, tenantID, schemaName, req.ProductID, req.WarehouseID)
+	if err != nil {
+		return nil, fmt.Errorf("get stock level: %w", err)
+	}
+	newWarehouseStock := currentLevel.Quantity.Add(quantity)
+	if newWarehouseStock.IsNegative() {
+		return nil, fmt.Errorf("stock adjustment would make warehouse stock negative")
+	}
+	if newWarehouseStock.LessThan(currentLevel.ReservedQty) {
+		return nil, fmt.Errorf("stock adjustment would reduce warehouse stock below reserved quantity")
+	}
+
+	newProductStock := product.CurrentStock.Add(quantity)
+	if newProductStock.IsNegative() {
+		return nil, fmt.Errorf("stock adjustment would make product stock negative")
 	}
 
 	movementType := MovementTypeAdjustment
@@ -351,24 +374,14 @@ func (s *Service) AdjustStock(ctx context.Context, tenantID, schemaName string, 
 		return nil, fmt.Errorf("create movement: %w", err)
 	}
 
-	// Update product's current stock
-	newStock := product.CurrentStock.Add(quantity)
-	if err := s.repo.UpdateProductStock(ctx, schemaName, tenantID, req.ProductID, newStock); err != nil {
+	if err := s.repo.UpdateProductStock(ctx, schemaName, tenantID, req.ProductID, newProductStock); err != nil {
 		return nil, fmt.Errorf("update product stock: %w", err)
 	}
 
-	// Update stock level for warehouse
-	stockLevel := &StockLevel{
-		ID:           uuid.New().String(),
-		TenantID:     tenantID,
-		ProductID:    req.ProductID,
-		WarehouseID:  req.WarehouseID,
-		Quantity:     newStock,
-		ReservedQty:  decimal.Zero,
-		AvailableQty: newStock,
-		LastUpdated:  time.Now(),
-	}
-	if err := s.repo.UpsertStockLevel(ctx, schemaName, stockLevel); err != nil {
+	currentLevel.Quantity = newWarehouseStock
+	currentLevel.AvailableQty = newWarehouseStock.Sub(currentLevel.ReservedQty)
+	currentLevel.LastUpdated = time.Now()
+	if err := s.repo.UpsertStockLevel(ctx, schemaName, currentLevel); err != nil {
 		return nil, fmt.Errorf("update stock level: %w", err)
 	}
 
@@ -385,14 +398,37 @@ func (s *Service) TransferStock(ctx context.Context, tenantID, schemaName string
 	if quantity.LessThanOrEqual(decimal.Zero) {
 		return fmt.Errorf("quantity must be positive")
 	}
+	if req.FromWarehouseID == req.ToWarehouseID {
+		return fmt.Errorf("source and destination warehouses must differ")
+	}
+	if _, err := s.repo.GetProductByID(ctx, schemaName, tenantID, req.ProductID); err != nil {
+		return fmt.Errorf("get product: %w", err)
+	}
+	if _, err := s.repo.GetWarehouseByID(ctx, schemaName, tenantID, req.FromWarehouseID); err != nil {
+		return fmt.Errorf("get source warehouse: %w", err)
+	}
+	if _, err := s.repo.GetWarehouseByID(ctx, schemaName, tenantID, req.ToWarehouseID); err != nil {
+		return fmt.Errorf("get destination warehouse: %w", err)
+	}
 
-	// Create OUT movement for source warehouse
+	sourceLevel, err := s.stockLevelForWarehouse(ctx, tenantID, schemaName, req.ProductID, req.FromWarehouseID)
+	if err != nil {
+		return fmt.Errorf("get source stock level: %w", err)
+	}
+	destinationLevel, err := s.stockLevelForWarehouse(ctx, tenantID, schemaName, req.ProductID, req.ToWarehouseID)
+	if err != nil {
+		return fmt.Errorf("get destination stock level: %w", err)
+	}
+	if sourceLevel.AvailableQty.LessThan(quantity) {
+		return fmt.Errorf("insufficient available stock in source warehouse")
+	}
+
 	outMovement := &InventoryMovement{
 		ID:            uuid.New().String(),
 		TenantID:      tenantID,
 		ProductID:     req.ProductID,
 		WarehouseID:   req.FromWarehouseID,
-		MovementType:  MovementTypeTransfer,
+		MovementType:  MovementTypeOut,
 		Quantity:      quantity,
 		UnitCost:      decimal.Zero,
 		TotalCost:     decimal.Zero,
@@ -408,7 +444,6 @@ func (s *Service) TransferStock(ctx context.Context, tenantID, schemaName string
 		return fmt.Errorf("create out movement: %w", err)
 	}
 
-	// Create IN movement for destination warehouse
 	inMovement := &InventoryMovement{
 		ID:           uuid.New().String(),
 		TenantID:     tenantID,
@@ -429,7 +464,46 @@ func (s *Service) TransferStock(ctx context.Context, tenantID, schemaName string
 		return fmt.Errorf("create in movement: %w", err)
 	}
 
+	sourceLevel.Quantity = sourceLevel.Quantity.Sub(quantity)
+	sourceLevel.AvailableQty = sourceLevel.AvailableQty.Sub(quantity)
+	sourceLevel.LastUpdated = time.Now()
+	if err := s.repo.UpsertStockLevel(ctx, schemaName, sourceLevel); err != nil {
+		return fmt.Errorf("update source stock level: %w", err)
+	}
+
+	destinationLevel.Quantity = destinationLevel.Quantity.Add(quantity)
+	destinationLevel.AvailableQty = destinationLevel.AvailableQty.Add(quantity)
+	destinationLevel.LastUpdated = time.Now()
+	if err := s.repo.UpsertStockLevel(ctx, schemaName, destinationLevel); err != nil {
+		return fmt.Errorf("update destination stock level: %w", err)
+	}
+
 	return nil
+}
+
+func (s *Service) stockLevelForWarehouse(ctx context.Context, tenantID, schemaName, productID, warehouseID string) (*StockLevel, error) {
+	levels, err := s.repo.GetStockLevelsByProduct(ctx, schemaName, tenantID, productID)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, level := range levels {
+		if level.WarehouseID == warehouseID {
+			levelCopy := level
+			return &levelCopy, nil
+		}
+	}
+
+	return &StockLevel{
+		ID:           uuid.New().String(),
+		TenantID:     tenantID,
+		ProductID:    productID,
+		WarehouseID:  warehouseID,
+		Quantity:     decimal.Zero,
+		ReservedQty:  decimal.Zero,
+		AvailableQty: decimal.Zero,
+		LastUpdated:  time.Now(),
+	}, nil
 }
 
 // GetStockLevels retrieves stock levels for a product

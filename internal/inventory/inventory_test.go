@@ -1159,6 +1159,12 @@ func TestService_AdjustStock(t *testing.T) {
 		Name:         "Widget",
 		CurrentStock: decimal.NewFromInt(100),
 	}
+	ts.repo.Warehouses["wh-1"] = &Warehouse{
+		ID:       "wh-1",
+		TenantID: "tenant-1",
+		Name:     "Main",
+		IsActive: true,
+	}
 
 	req := &AdjustStockRequest{
 		ProductID:   "p1",
@@ -1177,6 +1183,11 @@ func TestService_AdjustStock(t *testing.T) {
 	// Check product stock updated
 	product, _ := ts.repo.GetProductByID(ctx, "test_schema", "tenant-1", "p1")
 	assert.True(t, product.CurrentStock.Equal(decimal.NewFromInt(150)))
+
+	level := ts.repo.StockLevels["p1-wh-1"]
+	require.NotNil(t, level)
+	assert.True(t, level.Quantity.Equal(decimal.NewFromInt(50)))
+	assert.True(t, level.AvailableQty.Equal(decimal.NewFromInt(50)))
 }
 
 func TestService_AdjustStock_Negative(t *testing.T) {
@@ -1188,6 +1199,21 @@ func TestService_AdjustStock_Negative(t *testing.T) {
 		TenantID:     "tenant-1",
 		Name:         "Widget",
 		CurrentStock: decimal.NewFromInt(100),
+	}
+	ts.repo.Warehouses["wh-1"] = &Warehouse{
+		ID:       "wh-1",
+		TenantID: "tenant-1",
+		Name:     "Main",
+		IsActive: true,
+	}
+	ts.repo.StockLevels["p1-wh-1"] = &StockLevel{
+		ID:           "sl-1",
+		TenantID:     "tenant-1",
+		ProductID:    "p1",
+		WarehouseID:  "wh-1",
+		Quantity:     decimal.NewFromInt(40),
+		ReservedQty:  decimal.NewFromInt(5),
+		AvailableQty: decimal.NewFromInt(35),
 	}
 
 	req := &AdjustStockRequest{
@@ -1206,6 +1232,39 @@ func TestService_AdjustStock_Negative(t *testing.T) {
 	// Check product stock updated
 	product, _ := ts.repo.GetProductByID(ctx, "test_schema", "tenant-1", "p1")
 	assert.True(t, product.CurrentStock.Equal(decimal.NewFromInt(70)))
+
+	level := ts.repo.StockLevels["p1-wh-1"]
+	require.NotNil(t, level)
+	assert.True(t, level.Quantity.Equal(decimal.NewFromInt(10)))
+	assert.True(t, level.ReservedQty.Equal(decimal.NewFromInt(5)))
+	assert.True(t, level.AvailableQty.Equal(decimal.NewFromInt(5)))
+}
+
+func TestService_AdjustStock_WarehouseStockCannotGoNegative(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products["p1"] = &Product{
+		ID:           "p1",
+		TenantID:     "tenant-1",
+		Name:         "Widget",
+		CurrentStock: decimal.NewFromInt(100),
+	}
+	ts.repo.Warehouses["wh-1"] = &Warehouse{
+		ID:       "wh-1",
+		TenantID: "tenant-1",
+		Name:     "Main",
+		IsActive: true,
+	}
+
+	_, err := ts.svc.AdjustStock(ctx, "tenant-1", "test_schema", &AdjustStockRequest{
+		ProductID:   "p1",
+		WarehouseID: "wh-1",
+		Quantity:    "-1",
+		UserID:      "user-1",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "warehouse stock negative")
 }
 
 func TestService_AdjustStock_InvalidQuantity(t *testing.T) {
@@ -1227,6 +1286,43 @@ func TestService_TransferStock(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
 
+	ts.repo.Products["p1"] = &Product{
+		ID:           "p1",
+		TenantID:     "tenant-1",
+		Name:         "Widget",
+		CurrentStock: decimal.NewFromInt(100),
+	}
+	ts.repo.Warehouses["wh-1"] = &Warehouse{
+		ID:       "wh-1",
+		TenantID: "tenant-1",
+		Name:     "Main",
+		IsActive: true,
+	}
+	ts.repo.Warehouses["wh-2"] = &Warehouse{
+		ID:       "wh-2",
+		TenantID: "tenant-1",
+		Name:     "Branch",
+		IsActive: true,
+	}
+	ts.repo.StockLevels["p1-wh-1"] = &StockLevel{
+		ID:           "sl-1",
+		TenantID:     "tenant-1",
+		ProductID:    "p1",
+		WarehouseID:  "wh-1",
+		Quantity:     decimal.NewFromInt(60),
+		ReservedQty:  decimal.NewFromInt(10),
+		AvailableQty: decimal.NewFromInt(50),
+	}
+	ts.repo.StockLevels["p1-wh-2"] = &StockLevel{
+		ID:           "sl-2",
+		TenantID:     "tenant-1",
+		ProductID:    "p1",
+		WarehouseID:  "wh-2",
+		Quantity:     decimal.NewFromInt(40),
+		ReservedQty:  decimal.Zero,
+		AvailableQty: decimal.NewFromInt(40),
+	}
+
 	req := &TransferStockRequest{
 		ProductID:       "p1",
 		FromWarehouseID: "wh-1",
@@ -1242,6 +1338,52 @@ func TestService_TransferStock(t *testing.T) {
 	// Check movements created
 	movements := ts.repo.Movements["p1"]
 	assert.Len(t, movements, 2) // OUT and IN movements
+	assert.Equal(t, MovementTypeOut, movements[0].MovementType)
+	assert.Equal(t, MovementTypeIn, movements[1].MovementType)
+
+	sourceLevel := ts.repo.StockLevels["p1-wh-1"]
+	require.NotNil(t, sourceLevel)
+	assert.True(t, sourceLevel.Quantity.Equal(decimal.NewFromInt(35)))
+	assert.True(t, sourceLevel.ReservedQty.Equal(decimal.NewFromInt(10)))
+	assert.True(t, sourceLevel.AvailableQty.Equal(decimal.NewFromInt(25)))
+
+	destinationLevel := ts.repo.StockLevels["p1-wh-2"]
+	require.NotNil(t, destinationLevel)
+	assert.True(t, destinationLevel.Quantity.Equal(decimal.NewFromInt(65)))
+	assert.True(t, destinationLevel.AvailableQty.Equal(decimal.NewFromInt(65)))
+
+	product, err := ts.repo.GetProductByID(ctx, "test_schema", "tenant-1", "p1")
+	require.NoError(t, err)
+	assert.True(t, product.CurrentStock.Equal(decimal.NewFromInt(100)))
+}
+
+func TestService_TransferStock_InsufficientSourceStock(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products["p1"] = &Product{ID: "p1", TenantID: "tenant-1", Name: "Widget"}
+	ts.repo.Warehouses["wh-1"] = &Warehouse{ID: "wh-1", TenantID: "tenant-1", Name: "Main", IsActive: true}
+	ts.repo.Warehouses["wh-2"] = &Warehouse{ID: "wh-2", TenantID: "tenant-1", Name: "Branch", IsActive: true}
+	ts.repo.StockLevels["p1-wh-1"] = &StockLevel{
+		ID:           "sl-1",
+		TenantID:     "tenant-1",
+		ProductID:    "p1",
+		WarehouseID:  "wh-1",
+		Quantity:     decimal.NewFromInt(10),
+		ReservedQty:  decimal.NewFromInt(4),
+		AvailableQty: decimal.NewFromInt(6),
+	}
+
+	err := ts.svc.TransferStock(ctx, "tenant-1", "test_schema", &TransferStockRequest{
+		ProductID:       "p1",
+		FromWarehouseID: "wh-1",
+		ToWarehouseID:   "wh-2",
+		Quantity:        "7",
+		UserID:          "user-1",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "insufficient available stock")
+	assert.Empty(t, ts.repo.Movements["p1"])
 }
 
 func TestService_TransferStock_InvalidQuantity(t *testing.T) {

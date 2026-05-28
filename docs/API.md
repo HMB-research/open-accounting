@@ -1697,7 +1697,7 @@ Content-Type: application/json
 }
 ```
 
-`quantity` is signed: positive quantities add stock and negative quantities remove stock.
+`quantity` is signed: positive quantities add stock and negative quantities remove stock. Adjustments update both the product total stock and the selected warehouse stock level; reductions cannot drive that warehouse below zero or below reserved quantity.
 
 ```http
 POST /tenants/{tenantId}/inventory/stock-import
@@ -1726,7 +1726,7 @@ Content-Type: application/json
 }
 ```
 
-Transfers require a positive quantity.
+Transfers require a positive quantity and enough available stock in the source warehouse. Successful transfers create an outbound movement for the source warehouse, an inbound movement for the destination warehouse, and update both warehouse stock levels without changing total product stock.
 
 ---
 
