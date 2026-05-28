@@ -57,6 +57,33 @@ func printAPITokensTable(w io.Writer, tokens []apitoken.APIToken) {
 	_ = tw.Flush()
 }
 
+func printTenant(w io.Writer, tenantRecord *tenant.Tenant) {
+	_, _ = fmt.Fprintf(w, "Tenant %s (%s)\n", tenantRecord.Name, tenantRecord.ID)
+	if strings.TrimSpace(tenantRecord.Slug) != "" {
+		_, _ = fmt.Fprintf(w, "Slug: %s\n", tenantRecord.Slug)
+	}
+	if strings.TrimSpace(tenantRecord.SchemaName) != "" {
+		_, _ = fmt.Fprintf(w, "Schema: %s\n", tenantRecord.SchemaName)
+	}
+	_, _ = fmt.Fprintf(w, "Active: %t\n", tenantRecord.IsActive)
+	_, _ = fmt.Fprintf(w, "Onboarding complete: %t\n", tenantRecord.OnboardingCompleted)
+	_, _ = fmt.Fprintf(w, "Currency: %s\n", tenantRecord.Settings.DefaultCurrency)
+	_, _ = fmt.Fprintf(w, "Country: %s\n", tenantRecord.Settings.CountryCode)
+	_, _ = fmt.Fprintf(w, "Timezone: %s\n", tenantRecord.Settings.Timezone)
+	if strings.TrimSpace(tenantRecord.Settings.Email) != "" {
+		_, _ = fmt.Fprintf(w, "Email: %s\n", tenantRecord.Settings.Email)
+	}
+	if strings.TrimSpace(tenantRecord.Settings.VATNumber) != "" {
+		_, _ = fmt.Fprintf(w, "VAT number: %s\n", tenantRecord.Settings.VATNumber)
+	}
+	if strings.TrimSpace(tenantRecord.Settings.RegCode) != "" {
+		_, _ = fmt.Fprintf(w, "Registration code: %s\n", tenantRecord.Settings.RegCode)
+	}
+	if tenantRecord.Settings.PeriodLockDate != nil && strings.TrimSpace(*tenantRecord.Settings.PeriodLockDate) != "" {
+		_, _ = fmt.Fprintf(w, "Period lock date: %s\n", *tenantRecord.Settings.PeriodLockDate)
+	}
+}
+
 func printAccountsTable(w io.Writer, accounts []accounting.Account) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tCODE\tNAME\tTYPE\tACTIVE")

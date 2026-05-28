@@ -113,6 +113,34 @@ func (c *apiClient) listMyTenants(ctx context.Context, bearerToken string) ([]te
 	return resp, nil
 }
 
+func (c *apiClient) createTenant(ctx context.Context, req *tenant.CreateTenantRequest) (*tenant.Tenant, error) {
+	var resp tenant.Tenant
+	if err := c.request(ctx, http.MethodPost, "/api/v1/tenants", req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getTenant(ctx context.Context, tenantID string) (*tenant.Tenant, error) {
+	var resp tenant.Tenant
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) updateTenant(ctx context.Context, tenantID string, req *tenant.UpdateTenantRequest) (*tenant.Tenant, error) {
+	var resp tenant.Tenant
+	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) completeTenantOnboarding(ctx context.Context, tenantID string) error {
+	return c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "complete-onboarding"), nil, c.apiToken, nil)
+}
+
 func (c *apiClient) createAPIToken(ctx context.Context, tenantID string, req *apitoken.CreateRequest, bearerToken string) (*apitoken.CreateResult, error) {
 	var resp apitoken.CreateResult
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "api-tokens"), req, bearerToken, &resp); err != nil {

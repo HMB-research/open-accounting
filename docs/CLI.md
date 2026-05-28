@@ -79,6 +79,22 @@ go run ./cmd/oa auth status
 go run ./cmd/oa auth logout
 ```
 
+## Tenant administration
+
+```bash
+go run ./cmd/oa tenant get
+go run ./cmd/oa tenant create \
+  --name "Acme Corp" \
+  --slug acme-corp \
+  --settings-json '{"default_currency":"EUR","country_code":"EE","timezone":"Europe/Tallinn"}'
+go run ./cmd/oa tenant update \
+  --name "Acme Finance" \
+  --settings-json '{"email":"finance@acme.example","timezone":"Europe/Tallinn"}'
+go run ./cmd/oa tenant complete-onboarding
+```
+
+Use `--id <tenant-id>` on `tenant get`, `tenant update`, and `tenant complete-onboarding` to target a tenant other than the configured one. Use `--settings-file ./tenant-settings.json` instead of `--settings-json` for larger settings payloads.
+
 ## Manage API tokens
 
 ```bash

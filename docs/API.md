@@ -229,6 +229,13 @@ Content-Type: application/json
 
 `period_lock_date` is returned on tenant reads, but it is no longer mutable through the generic tenant settings endpoint. Use the explicit period close/reopen endpoints below so changes are audited.
 
+### Complete Onboarding
+
+```http
+POST /tenants/{tenantId}/complete-onboarding
+Authorization: Bearer <token>
+```
+
 ### List Period Close Events
 
 ```http
