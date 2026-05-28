@@ -60,6 +60,10 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 	}
 
 	switch args[0] {
+	case "health":
+		return a.runHealth(ctx, args[1:])
+	case "demo":
+		return a.runDemo(ctx, args[1:])
 	case "auth":
 		return a.runAuth(ctx, args[1:])
 	case "tenant", "tenants":
@@ -134,6 +138,9 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "Open Accounting CLI")
 	_, _ = fmt.Fprintln(a.stdout, "")
 	_, _ = fmt.Fprintln(a.stdout, "Commands:")
+	_, _ = fmt.Fprintln(a.stdout, "  health                    Check API health")
+	_, _ = fmt.Fprintln(a.stdout, "  demo status               Show demo data status")
+	_, _ = fmt.Fprintln(a.stdout, "  demo reset                Reset demo data")
 	_, _ = fmt.Fprintln(a.stdout, "  auth register             Register a user")
 	_, _ = fmt.Fprintln(a.stdout, "  auth init                 Bootstrap and store a tenant-scoped API token")
 	_, _ = fmt.Fprintln(a.stdout, "  auth refresh              Exchange a refresh token for an access token")
@@ -286,6 +293,68 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "")
 	_, _ = fmt.Fprintln(a.stdout, "Environment overrides:")
 	_, _ = fmt.Fprintln(a.stdout, "  OA_BASE_URL, OA_API_TOKEN, OA_TENANT_ID")
+}
+
+func (a *cliApp) runHealth(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("health", flag.ContinueOnError)
+	fs.SetOutput(a.stderr)
+	baseURL := fs.String("base-url", defaultBaseURL(), "API base URL")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	client := newAPIClient(*baseURL, "")
+	status, err := client.health(ctx)
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintln(a.stdout, strings.TrimSpace(status))
+	return nil
+}
+
+func (a *cliApp) runDemo(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("demo subcommand required")
+	}
+
+	switch args[0] {
+	case "status":
+		fs := flag.NewFlagSet("demo status", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		baseURL := fs.String("base-url", defaultBaseURL(), "API base URL")
+		secret := fs.String("secret", "", "Demo reset/status secret")
+		user := fs.Int("user", 0, "Demo user number")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *user <= 0 {
+			return errors.New("user is required")
+		}
+		client := newAPIClient(*baseURL, "")
+		payload, err := client.demoStatus(ctx, *user, *secret)
+		if err != nil {
+			return err
+		}
+		return printRawJSON(a.stdout, payload)
+
+	case "reset":
+		fs := flag.NewFlagSet("demo reset", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		baseURL := fs.String("base-url", defaultBaseURL(), "API base URL")
+		secret := fs.String("secret", "", "Demo reset/status secret")
+		user := fs.Int("user", 0, "Optional demo user number; omit for all users")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		client := newAPIClient(*baseURL, "")
+		payload, err := client.demoReset(ctx, *user, *secret)
+		if err != nil {
+			return err
+		}
+		return printRawJSON(a.stdout, payload)
+
+	default:
+		return fmt.Errorf("unknown demo subcommand %q", args[0])
+	}
 }
 
 func (a *cliApp) runAuth(ctx context.Context, args []string) error {

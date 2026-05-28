@@ -15,6 +15,16 @@ go build -o oa ./cmd/oa
 ./oa help
 ```
 
+## Operational checks
+
+```bash
+go run ./cmd/oa health --base-url http://localhost:8080
+go run ./cmd/oa demo status --base-url http://localhost:8080 --secret <demo-secret> --user 1
+go run ./cmd/oa demo reset --base-url http://localhost:8080 --secret <demo-secret> --user 1
+```
+
+`demo reset` accepts `--user 1` through `--user 4` for a single seeded demo user. Omit `--user` to reset all demo users.
+
 ## Bootstrap a token
 
 ```bash

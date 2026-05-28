@@ -127,6 +127,55 @@ func (c *apiClient) refreshAccessToken(ctx context.Context, refreshToken, tenant
 	return &resp, nil
 }
 
+func (c *apiClient) health(ctx context.Context) (string, error) {
+	payload, err := c.requestRaw(ctx, http.MethodGet, "/health", nil, "")
+	if err != nil {
+		return "", err
+	}
+	return string(payload), nil
+}
+
+func (c *apiClient) demoStatus(ctx context.Context, user int, secret string) (json.RawMessage, error) {
+	return c.demoRequest(ctx, http.MethodGet, "/api/demo/status?user="+strconv.Itoa(user), secret)
+}
+
+func (c *apiClient) demoReset(ctx context.Context, user int, secret string) (json.RawMessage, error) {
+	apiPath := "/api/demo/reset"
+	if user > 0 {
+		apiPath += "?user=" + strconv.Itoa(user)
+	}
+	return c.demoRequest(ctx, http.MethodPost, apiPath, secret)
+}
+
+func (c *apiClient) demoRequest(ctx context.Context, method, apiPath, secret string) (json.RawMessage, error) {
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+apiPath, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	if strings.TrimSpace(secret) != "" {
+		req.Header.Set("X-Demo-Secret", strings.TrimSpace(secret))
+	}
+
+	//nolint:gosec // The CLI intentionally talks to a user-configured Open Accounting base URL.
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request %s %s: %w", method, apiPath, err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, decodeAPIError(resp)
+	}
+	payload, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read demo response: %w", err)
+	}
+	return json.RawMessage(payload), nil
+}
+
 func (c *apiClient) getCurrentUser(ctx context.Context) (*currentUser, error) {
 	var resp currentUser
 	if err := c.request(ctx, http.MethodGet, "/api/v1/me", nil, c.apiToken, &resp); err != nil {

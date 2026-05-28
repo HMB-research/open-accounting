@@ -41,6 +41,15 @@ func printJSON(w io.Writer, value any) error {
 	return err
 }
 
+func printRawJSON(w io.Writer, payload json.RawMessage) error {
+	var value any
+	if err := json.Unmarshal(payload, &value); err != nil {
+		_, writeErr := fmt.Fprintln(w, string(payload))
+		return writeErr
+	}
+	return printJSON(w, value)
+}
+
 func printAPITokensTable(w io.Writer, tokens []apitoken.APIToken) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tNAME\tPREFIX\tEXPIRES\tLAST USED\tCREATED")
