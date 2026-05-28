@@ -319,7 +319,7 @@ open-accounting/
 
 ### Still missing for reliable production use
 - [ ] Historical payroll and broader external migration imports
-- [ ] Full document approval workflow, retention admin controls, and broader evidence policy enforcement
+- [ ] Document retention admin controls and broader evidence policy enforcement
 - [ ] Backup/restore verification and stronger auth/session controls
 - [ ] E-invoice, direct bank feeds, SEPA initiation, and automatic e-MTA submission
 

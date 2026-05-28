@@ -143,9 +143,12 @@ func (s *Service) ListReviewSummaries(ctx context.Context, schemaName, tenantID,
 				EntityID:           entityID,
 				MissingEvidence:    true,
 				HasPendingReview:   false,
+				HasRejected:        false,
 				TotalCount:         0,
 				PendingReviewCount: 0,
 				ReviewedCount:      0,
+				ApprovedCount:      0,
+				RejectedCount:      0,
 			}
 		}
 		result = append(result, summary)
@@ -155,19 +158,40 @@ func (s *Service) ListReviewSummaries(ctx context.Context, schemaName, tenantID,
 }
 
 func (s *Service) MarkDocumentReviewed(ctx context.Context, schemaName, tenantID, documentID, reviewedBy string) (*Document, error) {
+	return s.ReviewDocument(ctx, schemaName, tenantID, documentID, reviewedBy, &ReviewDocumentRequest{
+		ReviewStatus: ReviewStatusReviewed,
+	})
+}
+
+func (s *Service) ReviewDocument(ctx context.Context, schemaName, tenantID, documentID, reviewedBy string, req *ReviewDocumentRequest) (*Document, error) {
 	if strings.TrimSpace(reviewedBy) == "" {
 		return nil, fmt.Errorf("reviewed by user is required")
+	}
+
+	if req == nil {
+		return nil, fmt.Errorf("review request is required")
+	}
+	reviewStatus, err := normalizeReviewStatus(req.ReviewStatus)
+	if err != nil {
+		return nil, err
+	}
+	reviewNote := strings.TrimSpace(req.ReviewNote)
+	if len(reviewNote) > 2000 {
+		return nil, fmt.Errorf("review note must be 2000 characters or less")
+	}
+	if reviewStatus == ReviewStatusRejected && reviewNote == "" {
+		return nil, fmt.Errorf("review note is required when rejecting a document")
 	}
 
 	doc, err := s.repo.GetDocumentByID(ctx, schemaName, tenantID, strings.TrimSpace(documentID))
 	if err != nil {
 		return nil, err
 	}
-	if doc.ReviewStatus == ReviewStatusReviewed {
+	if doc.ReviewStatus == reviewStatus && strings.TrimSpace(doc.ReviewNote) == reviewNote {
 		return doc, nil
 	}
 
-	if err := s.repo.MarkDocumentReviewed(ctx, schemaName, tenantID, strings.TrimSpace(documentID), strings.TrimSpace(reviewedBy), time.Now().UTC()); err != nil {
+	if err := s.repo.ReviewDocument(ctx, schemaName, tenantID, strings.TrimSpace(documentID), reviewStatus, reviewNote, strings.TrimSpace(reviewedBy), time.Now().UTC()); err != nil {
 		return nil, err
 	}
 
@@ -236,6 +260,19 @@ func normalizeDocumentType(value string) (string, error) {
 		return DocumentTypeOther, nil
 	default:
 		return "", fmt.Errorf("unsupported document type")
+	}
+}
+
+func normalizeReviewStatus(value string) (string, error) {
+	switch strings.TrimSpace(strings.ToUpper(value)) {
+	case ReviewStatusReviewed:
+		return ReviewStatusReviewed, nil
+	case ReviewStatusApproved:
+		return ReviewStatusApproved, nil
+	case ReviewStatusRejected:
+		return ReviewStatusRejected, nil
+	default:
+		return "", fmt.Errorf("review_status must be REVIEWED, APPROVED, or REJECTED")
 	}
 }
 

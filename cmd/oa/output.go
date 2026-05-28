@@ -1055,18 +1055,21 @@ func printDocumentsTable(w io.Writer, docs []documents.Document) {
 
 func printDocumentReviewSummariesTable(w io.Writer, summaries []documents.ReviewSummary) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "ENTITY\tID\tTOTAL\tPENDING\tREVIEWED\tMISSING\tHAS PENDING")
+	_, _ = fmt.Fprintln(tw, "ENTITY\tID\tTOTAL\tPENDING\tREVIEWED\tAPPROVED\tREJECTED\tMISSING\tHAS PENDING\tHAS REJECTED")
 	for _, summary := range summaries {
 		_, _ = fmt.Fprintf(
 			tw,
-			"%s\t%s\t%d\t%d\t%d\t%t\t%t\n",
+			"%s\t%s\t%d\t%d\t%d\t%d\t%d\t%t\t%t\t%t\n",
 			summary.EntityType,
 			summary.EntityID,
 			summary.TotalCount,
 			summary.PendingReviewCount,
 			summary.ReviewedCount,
+			summary.ApprovedCount,
+			summary.RejectedCount,
 			summary.MissingEvidence,
 			summary.HasPendingReview,
+			summary.HasRejected,
 		)
 	}
 	_ = tw.Flush()

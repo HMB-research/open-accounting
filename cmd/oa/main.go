@@ -370,6 +370,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  documents review-summary  Summarize document review state")
 	_, _ = fmt.Fprintln(a.stdout, "  documents upload          Upload a document to a record")
 	_, _ = fmt.Fprintln(a.stdout, "  documents download        Download a document")
+	_, _ = fmt.Fprintln(a.stdout, "  documents review          Approve, reject, or mark a document reviewed")
 	_, _ = fmt.Fprintln(a.stdout, "  documents mark-reviewed   Mark a document as reviewed")
 	_, _ = fmt.Fprintln(a.stdout, "  documents delete          Delete a document")
 	_, _ = fmt.Fprintln(a.stdout, "  journal list              List journal entries")
@@ -8061,6 +8062,33 @@ func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, doc)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Marked document %s as reviewed\n", doc.ID)
+		return nil
+
+	case "review":
+		fs := flag.NewFlagSet("documents review", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		documentID := fs.String("id", "", "Document id")
+		reviewStatus := fs.String("status", "", "Review status: REVIEWED, APPROVED, or REJECTED")
+		reviewNote := fs.String("note", "", "Optional review note; required for rejected documents")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*documentID) == "" || strings.TrimSpace(*reviewStatus) == "" {
+			return errors.New("id and status are required")
+		}
+
+		doc, err := client.reviewDocument(ctx, cfg.TenantID, strings.TrimSpace(*documentID), &documents.ReviewDocumentRequest{
+			ReviewStatus: strings.ToUpper(strings.TrimSpace(*reviewStatus)),
+			ReviewNote:   strings.TrimSpace(*reviewNote),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, doc)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Reviewed document %s as %s\n", doc.ID, doc.ReviewStatus)
 		return nil
 
 	case "delete":

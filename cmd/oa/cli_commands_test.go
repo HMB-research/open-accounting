@@ -5129,8 +5129,11 @@ func TestCLIDocumentCommands(t *testing.T) {
 				"total_count":          2,
 				"pending_review_count": 1,
 				"reviewed_count":       1,
+				"approved_count":       0,
+				"rejected_count":       0,
 				"missing_evidence":     false,
 				"has_pending_review":   true,
+				"has_rejected":         false,
 			}})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents":
 			require.NoError(t, r.ParseMultipartForm(2<<20))
@@ -5174,6 +5177,25 @@ func TestCLIDocumentCommands(t *testing.T) {
 				"content_type":  "text/plain",
 				"file_size":     14,
 				"review_status": "REVIEWED",
+				"uploaded_by":   "user-1",
+				"created_at":    "2026-03-12T00:00:00Z",
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-2/review":
+			var req documents.ReviewDocumentRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, documents.ReviewStatusApproved, req.ReviewStatus)
+			assert.Equal(t, "Evidence accepted", req.ReviewNote)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":            "doc-2",
+				"tenant_id":     "tenant-1",
+				"entity_type":   "bank_transaction",
+				"entity_id":     "txn-1",
+				"document_type": "reconciliation_evidence",
+				"file_name":     "evidence.txt",
+				"content_type":  "text/plain",
+				"file_size":     14,
+				"review_status": "APPROVED",
+				"review_note":   "Evidence accepted",
 				"uploaded_by":   "user-1",
 				"created_at":    "2026-03-12T00:00:00Z",
 			})
@@ -5226,6 +5248,11 @@ func TestCLIDocumentCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"documents", "mark-reviewed", "--id", "doc-2"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Marked document doc-2 as reviewed")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"documents", "review", "--id", "doc-2", "--status", "approved", "--note", "Evidence accepted"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Reviewed document doc-2 as APPROVED")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"documents", "delete", "--id", "doc-2"})

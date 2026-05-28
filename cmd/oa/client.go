@@ -2344,6 +2344,14 @@ func (c *apiClient) markDocumentReviewed(ctx context.Context, tenantID, document
 	return &resp, nil
 }
 
+func (c *apiClient) reviewDocument(ctx context.Context, tenantID, documentID string, req *documents.ReviewDocumentRequest) (*documents.Document, error) {
+	var resp documents.Document
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "documents", documentID, "review"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) deleteDocument(ctx context.Context, tenantID, documentID string) error {
 	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "documents", documentID), nil, c.apiToken, nil)
 }

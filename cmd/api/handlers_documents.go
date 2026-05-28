@@ -130,6 +130,27 @@ func (h *Handlers) MarkDocumentReviewed(w http.ResponseWriter, r *http.Request) 
 	respondJSON(w, http.StatusOK, doc)
 }
 
+func (h *Handlers) ReviewDocument(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	documentID := chi.URLParam(r, "documentID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req documents.ReviewDocumentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	doc, err := h.documentsService.ReviewDocument(r.Context(), schemaName, tenantID, documentID, claims.UserID, &req)
+	if err != nil {
+		respondDocumentError(w, err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, doc)
+}
+
 func (h *Handlers) DownloadDocument(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	documentID := chi.URLParam(r, "documentID")
@@ -178,7 +199,8 @@ func respondDocumentError(w http.ResponseWriter, err error) {
 		strings.Contains(message, "required"),
 		strings.Contains(message, "empty"),
 		strings.Contains(message, "limit"),
-		strings.Contains(message, "invalid"):
+		strings.Contains(message, "invalid"),
+		strings.Contains(message, "must"):
 		respondError(w, http.StatusBadRequest, message)
 	default:
 		respondError(w, http.StatusInternalServerError, message)
