@@ -53,6 +53,18 @@ func TestGenerateCashFlowStatement(t *testing.T) {
 	assert.NotEmpty(t, result.OperatingActivities)
 }
 
+func TestGenerateCashFlowStatementRejectsInvertedPeriod(t *testing.T) {
+	svc := NewServiceWithRepository(NewMockRepository())
+
+	_, err := svc.GenerateCashFlowStatement(context.Background(), "tenant-1", "schema_tenant1", &CashFlowRequest{
+		StartDate: "2024-02-01",
+		EndDate:   "2024-01-31",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "end date must be on or after start date")
+}
+
 func TestCashFlowOperatingActivities(t *testing.T) {
 	ctx := context.Background()
 	mockRepo := NewMockRepository()

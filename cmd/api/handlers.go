@@ -1166,16 +1166,19 @@ func (h *Handlers) GetCashFlowStatement(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Validate date formats
-	_, err = time.Parse("2006-01-02", startDateStr)
+	startDate, err := time.Parse("2006-01-02", startDateStr)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "Invalid start_date format. Use YYYY-MM-DD")
 		return
 	}
 
-	_, err = time.Parse("2006-01-02", endDateStr)
+	endDate, err := time.Parse("2006-01-02", endDateStr)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "Invalid end_date format. Use YYYY-MM-DD")
+		return
+	}
+	if endDate.Before(startDate) {
+		respondError(w, http.StatusBadRequest, "end_date must be on or after start_date")
 		return
 	}
 
