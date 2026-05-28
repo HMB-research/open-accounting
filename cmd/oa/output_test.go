@@ -256,6 +256,34 @@ func TestPrintTables(t *testing.T) {
 	assert.Contains(t, summaryBuf.String(), "pay-1")
 	assert.Contains(t, summaryBuf.String(), "true")
 
+	var policyBuf bytes.Buffer
+	printDocumentEvidencePolicy(&policyBuf, []documents.EvidencePolicyResult{{
+		EntityType:         documents.EntityTypePayment,
+		EntityID:           "pay-1",
+		Compliant:          false,
+		MissingEvidence:    true,
+		DocumentTypeCounts: map[string]int{},
+		RuleResults: []documents.EvidencePolicyRuleResult{{
+			RuleIndex:       1,
+			DocumentTypes:   []string{documents.DocumentTypeReceipt},
+			RequiredCount:   1,
+			RequireApproved: true,
+			Compliant:       false,
+			Message:         "requires at least 1 approved documents for receipt; found 0",
+		}},
+		Violations: []documents.EvidencePolicyRuleResult{{
+			RuleIndex:       1,
+			DocumentTypes:   []string{documents.DocumentTypeReceipt},
+			RequiredCount:   1,
+			RequireApproved: true,
+			Compliant:       false,
+			Message:         "requires at least 1 approved documents for receipt; found 0",
+		}},
+	}})
+	assert.Contains(t, policyBuf.String(), "COMPLIANT")
+	assert.Contains(t, policyBuf.String(), "pay-1")
+	assert.Contains(t, policyBuf.String(), "requires at least 1 approved documents for receipt")
+
 	var retentionBuf bytes.Buffer
 	retentionUntil := now.AddDate(1, 0, 0)
 	printDocumentRetentionReview(&retentionBuf, &documents.RetentionReview{

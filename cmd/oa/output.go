@@ -1102,6 +1102,32 @@ func printDocumentReviewSummariesTable(w io.Writer, summaries []documents.Review
 	_ = tw.Flush()
 }
 
+func printDocumentEvidencePolicy(w io.Writer, results []documents.EvidencePolicyResult) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ENTITY\tID\tCOMPLIANT\tTOTAL\tPENDING\tAPPROVED\tREJECTED\tVIOLATIONS")
+	for _, result := range results {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%t\t%d\t%d\t%d\t%d\t%d\n",
+			result.EntityType,
+			result.EntityID,
+			result.Compliant,
+			result.TotalCount,
+			result.PendingReviewCount,
+			result.ApprovedCount,
+			result.RejectedCount,
+			len(result.Violations),
+		)
+	}
+	_ = tw.Flush()
+
+	for _, result := range results {
+		for _, violation := range result.Violations {
+			_, _ = fmt.Fprintf(w, "%s:%s rule %d: %s\n", result.EntityType, result.EntityID, violation.RuleIndex, violation.Message)
+		}
+	}
+}
+
 func printDocumentRetentionReview(w io.Writer, review *documents.RetentionReview) {
 	if review == nil {
 		return

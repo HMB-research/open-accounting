@@ -414,6 +414,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Post("/year-end-carry-forward/reverse", h.ReverseYearEndCarryForward)
 				r.Get("/documents", h.ListDocuments)
 				r.Post("/documents/review-summary", h.ListDocumentReviewSummaries)
+				r.Post("/documents/evidence-policy", h.EvaluateDocumentEvidencePolicy)
 				r.Get("/documents/retention", h.GetDocumentRetentionReview)
 				r.Post("/documents", h.UploadDocument)
 				r.Get("/documents/{documentID}/download", h.DownloadDocument)
