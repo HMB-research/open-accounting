@@ -32,6 +32,8 @@ Bearer auth supports two token types:
 - JWT access tokens from `/auth/login` and `/auth/refresh`
 - tenant-scoped API tokens created under `/tenants/{tenantId}/api-tokens`
 
+Refresh tokens are accepted only by `/auth/refresh`; they cannot authorize API requests. Access tokens cannot be used as refresh tokens.
+
 ### Register
 
 Create a new user account.
@@ -88,7 +90,7 @@ Content-Type: application/json
 
 ### Refresh Token
 
-Exchange refresh token for new access token.
+Exchange a refresh token for a new access token. The token must be a JWT refresh token issued by `/auth/login`; access tokens are rejected here.
 
 ```http
 POST /auth/refresh

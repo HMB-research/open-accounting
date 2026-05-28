@@ -111,7 +111,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 |---------|-------------|
 | **Tenant Isolation** | Schema-per-tenant for complete data separation |
 | **User Management** | Invite users, assign roles, manage permissions |
-| **JWT and API token auth** | JWT access/refresh tokens plus tenant-scoped API tokens for automation |
+| **JWT and API token auth** | Purpose-scoped JWT access/refresh tokens plus tenant-scoped API tokens for automation |
 | **RBAC** | Role-based access control with permission checks |
 | **API Rate Limiting** | Token bucket rate limiting with configurable thresholds |
 
@@ -312,6 +312,7 @@ open-accounting/
 - [x] Order management
 - [x] Fixed assets with depreciation tracking
 - [x] Tenant-scoped API token auth and Go CLI
+- [x] Access/refresh JWT purpose separation
 - [x] CSV import for chart of accounts, contacts, employees, invoices, and opening balances
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings

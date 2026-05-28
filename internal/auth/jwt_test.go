@@ -76,6 +76,7 @@ func TestGenerateAccessToken(t *testing.T) {
 			assert.Equal(t, tt.email, claims.Email)
 			assert.Equal(t, tt.tenantID, claims.TenantID)
 			assert.Equal(t, tt.role, claims.Role)
+			assert.Equal(t, TokenKindAccessToken, claims.TokenKind)
 		})
 	}
 }
@@ -93,6 +94,24 @@ func TestGenerateRefreshToken(t *testing.T) {
 	extractedUserID, err := service.ValidateRefreshToken(token)
 	require.NoError(t, err)
 	assert.Equal(t, userID, extractedUserID)
+}
+
+func TestTokenKindSeparation(t *testing.T) {
+	service := NewTokenService("test-secret", 15*time.Minute, 7*24*time.Hour)
+
+	accessToken, err := service.GenerateAccessToken("user-123", "test@example.com", "tenant-456", "admin")
+	require.NoError(t, err)
+
+	_, err = service.ValidateRefreshToken(accessToken)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid token kind")
+
+	refreshToken, err := service.GenerateRefreshToken("user-123")
+	require.NoError(t, err)
+
+	_, err = service.ValidateAccessToken(refreshToken)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid token kind")
 }
 
 func TestValidateAccessToken(t *testing.T) {
@@ -265,6 +284,18 @@ func TestMiddleware(t *testing.T) {
 	t.Run("invalid token", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		req.Header.Set("Authorization", "Bearer invalid-token")
+		w := httptest.NewRecorder()
+
+		middleware.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+	})
+
+	t.Run("refresh token cannot authorize requests", func(t *testing.T) {
+		token, _ := service.GenerateRefreshToken("user-123")
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
 		w := httptest.NewRecorder()
 
 		middleware.ServeHTTP(w, req)

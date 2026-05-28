@@ -127,7 +127,7 @@ Each tenant gets a dedicated PostgreSQL schema (e.g., `tenant_acme`) containing:
 }
 ```
 
-`token_kind` is `access_token` for JWT access tokens and `api_token` for tenant-scoped API tokens used by the CLI or automation.
+`token_kind` is enforced during validation: JWT access tokens must use `access_token`, JWT refresh tokens must use `refresh_token`, and tenant-scoped API tokens use `api_token` after lookup by the API token service. Refresh tokens are accepted only by `/auth/refresh`, and access tokens are rejected as refresh tokens.
 
 ### API Token Notes
 
