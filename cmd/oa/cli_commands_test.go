@@ -1103,6 +1103,143 @@ func TestCLIAssetCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Deleted asset asset-1")
 }
 
+func TestCLICostCenterCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	costCenterPayload := map[string]any{
+		"id":            "cc-1",
+		"tenant_id":     "tenant-1",
+		"code":          "CC001",
+		"name":          "Sales",
+		"description":   "Sales team",
+		"is_active":     true,
+		"budget_amount": "1000.00",
+		"budget_period": "MONTHLY",
+		"created_at":    "2026-03-15T12:00:00Z",
+		"updated_at":    "2026-03-15T12:00:00Z",
+	}
+	reportPayload := map[string]any{
+		"tenant_id":      "tenant-1",
+		"period_start":   "2026-03-01T00:00:00Z",
+		"period_end":     "2026-03-31T00:00:00Z",
+		"generated_at":   "2026-03-31T12:00:00Z",
+		"total_expenses": "250.00",
+		"total_budget":   "1000.00",
+		"cost_centers": []map[string]any{{
+			"cost_center":            costCenterPayload,
+			"total_expenses":         "250.00",
+			"budget_amount":          "1000.00",
+			"budget_used_percentage": "25.00",
+			"is_over_budget":         false,
+			"period_start":           "2026-03-01T00:00:00Z",
+			"period_end":             "2026-03-31T00:00:00Z",
+		}},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers":
+			require.Equal(t, "true", r.URL.Query().Get("active_only"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{costCenterPayload})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers":
+			var req accounting.CreateCostCenterRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "CC001", req.Code)
+			assert.Equal(t, "Sales", req.Name)
+			assert.True(t, req.IsActive)
+			require.NotNil(t, req.BudgetAmount)
+			assert.True(t, req.BudgetAmount.Equal(decimal.RequireFromString("1000.00")))
+			assert.Equal(t, accounting.BudgetPeriodMonthly, req.BudgetPeriod)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(costCenterPayload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/cc-1":
+			_ = json.NewEncoder(w).Encode(costCenterPayload)
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/cc-1":
+			var req accounting.UpdateCostCenterRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "CC002", req.Code)
+			assert.Equal(t, "Sales updated", req.Name)
+			require.NotNil(t, req.BudgetAmount)
+			assert.True(t, req.BudgetAmount.Equal(decimal.RequireFromString("1200.00")))
+			payload := map[string]any{}
+			for key, value := range costCenterPayload {
+				payload[key] = value
+			}
+			payload["code"] = "CC002"
+			payload["name"] = "Sales updated"
+			payload["budget_amount"] = "1200.00"
+			_ = json.NewEncoder(w).Encode(payload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/report":
+			require.Equal(t, "2026-03-01", r.URL.Query().Get("start_date"))
+			require.Equal(t, "2026-03-31", r.URL.Query().Get("end_date"))
+			_ = json.NewEncoder(w).Encode(reportPayload)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/cc-1":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"cost-centers", "list", "--active-only", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"code": "CC001"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"cost-centers", "create",
+		"--code", "CC001",
+		"--name", "Sales",
+		"--description", "Sales team",
+		"--budget-amount", "1000.00",
+		"--budget-period", "monthly",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created cost center CC001 Sales (cc-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"cost-centers", "get", "--id", "cc-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Cost center CC001 Sales")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"cost-centers", "update",
+		"--id", "cc-1",
+		"--code", "CC002",
+		"--name", "Sales updated",
+		"--budget-amount", "1200.00",
+		"--budget-period", "monthly",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Cost center CC002 Sales updated")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"cost-centers", "report", "--start", "2026-03-01", "--end", "2026-03-31"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Total expenses: 250")
+	assert.Contains(t, stdout.String(), "Sales")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"cost-centers", "delete", "--id", "cc-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Deleted cost center cc-1")
+}
+
 func TestCLIJournalEntryCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
@@ -2619,6 +2756,23 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	_, err = parseRequiredDisposalMethod("")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "method is required")
+
+	budgetPeriod, err := parseOptionalBudgetPeriod("quarterly")
+	require.NoError(t, err)
+	assert.Equal(t, accounting.BudgetPeriodQuarterly, budgetPeriod)
+
+	_, err = parseOptionalBudgetPeriod("bad")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid budget period")
+
+	optionalAmount, err := parseOptionalNonNegativeDecimalPtr("budget-amount", "12.50")
+	require.NoError(t, err)
+	require.NotNil(t, optionalAmount)
+	assert.True(t, optionalAmount.Equal(decimal.RequireFromString("12.50")))
+
+	optionalAmount, err = parseOptionalNonNegativeDecimalPtr("budget-amount", "")
+	require.NoError(t, err)
+	assert.Nil(t, optionalAmount)
 
 	var invoiceLines invoiceLineFlags
 	require.NoError(t, invoiceLines.Set("description=Service,quantity=1,unit_price=100,vat_rate=22"))

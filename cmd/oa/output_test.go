@@ -402,6 +402,61 @@ func TestPrintAssetOutputs(t *testing.T) {
 	assert.Contains(t, depreciationBuf.String(), "25")
 }
 
+func TestPrintCostCenterOutputs(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	budget := decimal.NewFromInt(1000)
+	spent := decimal.NewFromInt(250)
+	used := decimal.NewFromInt(25)
+	costCenter := accounting.CostCenter{
+		ID:           "cc-1",
+		TenantID:     "tenant-1",
+		Code:         "CC001",
+		Name:         "Sales",
+		Description:  "Sales team",
+		IsActive:     true,
+		BudgetAmount: &budget,
+		BudgetPeriod: accounting.BudgetPeriodMonthly,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+		TotalSpent:   &spent,
+		BudgetUsed:   &used,
+	}
+	report := accounting.CostCenterReport{
+		TenantID:      "tenant-1",
+		PeriodStart:   now,
+		PeriodEnd:     now.AddDate(0, 1, -1),
+		GeneratedAt:   now,
+		TotalExpenses: spent,
+		TotalBudget:   budget,
+		CostCenters: []accounting.CostCenterSummary{{
+			CostCenter:    costCenter,
+			TotalExpenses: spent,
+			BudgetAmount:  budget,
+			BudgetUsed:    used,
+			IsOverBudget:  false,
+			PeriodStart:   now,
+			PeriodEnd:     now.AddDate(0, 1, -1),
+		}},
+	}
+
+	var tableBuf bytes.Buffer
+	printCostCentersTable(&tableBuf, []accounting.CostCenter{costCenter})
+	assert.Contains(t, tableBuf.String(), "CC001")
+	assert.Contains(t, tableBuf.String(), "1000")
+
+	var detailBuf bytes.Buffer
+	printCostCenter(&detailBuf, &costCenter)
+	assert.Contains(t, detailBuf.String(), "Cost center CC001 Sales")
+	assert.Contains(t, detailBuf.String(), "Budget used: 25%")
+
+	var reportBuf bytes.Buffer
+	printCostCenterReport(&reportBuf, &report)
+	assert.Contains(t, reportBuf.String(), "Total expenses: 250")
+	assert.Contains(t, reportBuf.String(), "Sales")
+}
+
 func TestPrintPayrollOutputs(t *testing.T) {
 	t.Parallel()
 
