@@ -368,6 +368,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  reports balance-confirmation  Show one balance confirmation")
 	_, _ = fmt.Fprintln(a.stdout, "  documents list            List documents for a record")
 	_, _ = fmt.Fprintln(a.stdout, "  documents review-summary  Summarize document review state")
+	_, _ = fmt.Fprintln(a.stdout, "  documents retention       List retention-due documents")
 	_, _ = fmt.Fprintln(a.stdout, "  documents upload          Upload a document to a record")
 	_, _ = fmt.Fprintln(a.stdout, "  documents download        Download a document")
 	_, _ = fmt.Fprintln(a.stdout, "  documents review          Approve, reject, or mark a document reviewed")
@@ -7959,6 +7960,30 @@ func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, summaries)
 		}
 		printDocumentReviewSummariesTable(a.stdout, summaries)
+		return nil
+
+	case "retention":
+		fs := flag.NewFlagSet("documents retention", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asOf := fs.String("as-of", "", "As-of date in YYYY-MM-DD; defaults to today")
+		horizonDays := fs.Int("horizon-days", 30, "Include documents due within this many days")
+		includeMissing := fs.Bool("include-missing", false, "Include documents without retention_until")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *horizonDays < 0 {
+			return errors.New("horizon-days must be zero or greater")
+		}
+
+		review, err := client.getDocumentRetentionReview(ctx, cfg.TenantID, strings.TrimSpace(*asOf), *horizonDays, *includeMissing)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, review)
+		}
+		printDocumentRetentionReview(a.stdout, review)
 		return nil
 
 	case "upload":

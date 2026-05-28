@@ -711,6 +711,7 @@ go run ./cmd/oa documents upload \
   --notes "Matched against March bank statement" \
   --retention-until 2027-03-31
 go run ./cmd/oa documents review-summary --entity-type payment --entity-id <payment-id> --entity-id <payment-id>
+go run ./cmd/oa documents retention --as-of 2027-03-01 --horizon-days 45 --include-missing
 go run ./cmd/oa documents download --id <document-id> --output ./document.pdf
 go run ./cmd/oa documents review --id <document-id> --status APPROVED --note "Evidence accepted"
 go run ./cmd/oa documents review --id <document-id> --status REJECTED --note "Receipt does not match"
@@ -718,7 +719,7 @@ go run ./cmd/oa documents mark-reviewed --id <document-id>
 go run ./cmd/oa documents delete --id <document-id>
 ```
 
-`documents review` supports `REVIEWED`, `APPROVED`, and `REJECTED`; rejected documents require a review note. `documents download` uses the server-provided filename when `--output` is omitted. Use `--output -` to stream the document content to stdout.
+`documents retention` returns a tenant-wide queue of documents whose `retention_until` is due by the cutoff, with optional missing-retention records. `documents review` supports `REVIEWED`, `APPROVED`, and `REJECTED`; rejected documents require a review note. `documents download` uses the server-provided filename when `--output` is omitted. Use `--output -` to stream the document content to stdout.
 
 ## Journal entries
 

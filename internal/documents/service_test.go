@@ -41,6 +41,25 @@ func (m *mockRepository) ListDocuments(ctx context.Context, schemaName, tenantID
 	return result, nil
 }
 
+func (m *mockRepository) ListRetentionReviewDocuments(ctx context.Context, schemaName, tenantID string, cutoff time.Time, includeMissing bool) ([]Document, error) {
+	result := make([]Document, 0, len(m.docs))
+	for _, doc := range m.docs {
+		if doc.TenantID != tenantID {
+			continue
+		}
+		if doc.RetentionUntil == nil {
+			if includeMissing {
+				result = append(result, *doc)
+			}
+			continue
+		}
+		if !doc.RetentionUntil.After(cutoff) {
+			result = append(result, *doc)
+		}
+	}
+	return result, nil
+}
+
 func (m *mockRepository) ListReviewSummaries(ctx context.Context, schemaName, tenantID, entityType string, entityIDs []string) (map[string]ReviewSummary, error) {
 	result := make(map[string]ReviewSummary, len(entityIDs))
 	for _, entityID := range entityIDs {
@@ -203,6 +222,25 @@ func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 		ReviewStatus: ReviewStatusRejected,
 	}); err == nil {
 		t.Fatal("expected rejected documents to require a review note")
+	}
+
+	missingRetentionDoc := *doc
+	missingRetentionDoc.ID = "doc-missing-retention"
+	missingRetentionDoc.RetentionUntil = nil
+	missingRetentionDoc.ReviewStatus = ReviewStatusPending
+	repo.docs[missingRetentionDoc.ID] = &missingRetentionDoc
+
+	expiredDate := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	repo.docs[doc.ID].RetentionUntil = &expiredDate
+	retentionReview, err := svc.GetRetentionReview(context.Background(), "tenant_demo", "tenant-1", time.Date(2026, 3, 15, 8, 0, 0, 0, time.UTC), 30, true)
+	if err != nil {
+		t.Fatalf("GetRetentionReview failed: %v", err)
+	}
+	if retentionReview.TotalCount != 2 || retentionReview.ExpiredCount != 1 || retentionReview.MissingRetentionCount != 1 {
+		t.Fatalf("unexpected retention review: %#v", retentionReview)
+	}
+	if retentionReview.PendingReviewCount != 1 || retentionReview.RejectedCount != 1 {
+		t.Fatalf("unexpected retention review status counts: %#v", retentionReview)
 	}
 
 	summaries, err := svc.ListReviewSummaries(context.Background(), "tenant_demo", "tenant-1", EntityTypeBankTxn, []string{"txn-1", "txn-2"})

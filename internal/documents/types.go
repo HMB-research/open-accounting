@@ -74,3 +74,15 @@ type ReviewSummary struct {
 	HasPendingReview   bool   `json:"has_pending_review"`
 	HasRejected        bool   `json:"has_rejected"`
 }
+
+type RetentionReview struct {
+	AsOfDate              string     `json:"as_of_date"`
+	CutoffDate            string     `json:"cutoff_date"`
+	TotalCount            int        `json:"total_count"`
+	ExpiredCount          int        `json:"expired_count"`
+	DueSoonCount          int        `json:"due_soon_count"`
+	MissingRetentionCount int        `json:"missing_retention_count"`
+	PendingReviewCount    int        `json:"pending_review_count"`
+	RejectedCount         int        `json:"rejected_count"`
+	Documents             []Document `json:"documents"`
+}

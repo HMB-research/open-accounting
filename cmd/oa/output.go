@@ -1075,6 +1075,42 @@ func printDocumentReviewSummariesTable(w io.Writer, summaries []documents.Review
 	_ = tw.Flush()
 }
 
+func printDocumentRetentionReview(w io.Writer, review *documents.RetentionReview) {
+	if review == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "Document retention review as of %s, cutoff %s\n", review.AsOfDate, review.CutoffDate)
+	_, _ = fmt.Fprintf(w, "Total: %d, expired: %d, due soon: %d, missing retention: %d, pending review: %d, rejected: %d\n",
+		review.TotalCount,
+		review.ExpiredCount,
+		review.DueSoonCount,
+		review.MissingRetentionCount,
+		review.PendingReviewCount,
+		review.RejectedCount,
+	)
+	if len(review.Documents) == 0 {
+		return
+	}
+
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tENTITY\tTYPE\tFILE\tREVIEW\tRETENTION\tCREATED")
+	for _, doc := range review.Documents {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s:%s\t%s\t%s\t%s\t%s\t%s\n",
+			doc.ID,
+			doc.EntityType,
+			doc.EntityID,
+			doc.DocumentType,
+			doc.FileName,
+			doc.ReviewStatus,
+			formatTimePtr(doc.RetentionUntil),
+			doc.CreatedAt.Format(time.RFC3339),
+		)
+	}
+	_ = tw.Flush()
+}
+
 func printPaymentsTable(w io.Writer, paymentsList []payments.Payment) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tNUMBER\tTYPE\tDATE\tAMOUNT\tALLOCATED\tUNALLOCATED\tMETHOD\tREFERENCE")

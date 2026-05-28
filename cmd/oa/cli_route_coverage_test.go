@@ -554,6 +554,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 		})
 	case "/documents/review-summary":
 		return commandForMethod(method, map[string]string{"POST": "documents review-summary"})
+	case "/documents/retention":
+		return commandForMethod(method, map[string]string{"GET": "documents retention"})
 	case "/documents/{documentID}/download":
 		return commandForMethod(method, map[string]string{"GET": "documents download"})
 	case "/documents/{documentID}/review":

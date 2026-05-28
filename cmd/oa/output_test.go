@@ -255,6 +255,28 @@ func TestPrintTables(t *testing.T) {
 	}})
 	assert.Contains(t, summaryBuf.String(), "pay-1")
 	assert.Contains(t, summaryBuf.String(), "true")
+
+	var retentionBuf bytes.Buffer
+	retentionUntil := now.AddDate(1, 0, 0)
+	printDocumentRetentionReview(&retentionBuf, &documents.RetentionReview{
+		AsOfDate:              "2026-03-15",
+		CutoffDate:            "2026-04-14",
+		TotalCount:            1,
+		DueSoonCount:          1,
+		MissingRetentionCount: 0,
+		Documents: []documents.Document{{
+			ID:             "doc-1",
+			EntityType:     documents.EntityTypeBankTxn,
+			EntityID:       "txn-1",
+			DocumentType:   documents.DocumentTypeReconciliation,
+			FileName:       "statement.pdf",
+			ReviewStatus:   documents.ReviewStatusPending,
+			RetentionUntil: &retentionUntil,
+			CreatedAt:      now,
+		}},
+	})
+	assert.Contains(t, retentionBuf.String(), "Document retention review")
+	assert.Contains(t, retentionBuf.String(), "statement.pdf")
 }
 
 func TestPrintPaymentOutputs(t *testing.T) {

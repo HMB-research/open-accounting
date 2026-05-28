@@ -15,6 +15,7 @@ type Repository interface {
 	EntityExists(ctx context.Context, schemaName, tenantID, entityType, entityID string) (bool, error)
 	CreateDocument(ctx context.Context, schemaName string, doc *Document) error
 	ListDocuments(ctx context.Context, schemaName, tenantID, entityType, entityID string) ([]Document, error)
+	ListRetentionReviewDocuments(ctx context.Context, schemaName, tenantID string, cutoff time.Time, includeMissing bool) ([]Document, error)
 	ListReviewSummaries(ctx context.Context, schemaName, tenantID, entityType string, entityIDs []string) (map[string]ReviewSummary, error)
 	GetDocumentByID(ctx context.Context, schemaName, tenantID, documentID string) (*Document, error)
 	ReviewDocument(ctx context.Context, schemaName, tenantID, documentID, reviewStatus, reviewNote, reviewedBy string, reviewedAt time.Time) error
@@ -106,6 +107,45 @@ func (r *PostgresRepository) ListDocuments(ctx context.Context, schemaName, tena
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate documents: %w", err)
+	}
+
+	return docs, nil
+}
+
+func (r *PostgresRepository) ListRetentionReviewDocuments(ctx context.Context, schemaName, tenantID string, cutoff time.Time, includeMissing bool) ([]Document, error) {
+	table, err := database.QualifiedTable(schemaName, "documents")
+	if err != nil {
+		return nil, fmt.Errorf("qualify documents table: %w", err)
+	}
+
+	rows, err := r.db.Query(ctx, fmt.Sprintf(`
+		SELECT id, tenant_id, entity_type, entity_id, document_type, file_name, content_type, file_size, storage_key,
+		       COALESCE(notes, ''), retention_until, review_status, COALESCE(review_note, ''), reviewed_by, reviewed_at, uploaded_by, created_at
+		FROM %s
+		WHERE tenant_id = $1
+		  AND (retention_until <= $2 OR ($3::boolean AND retention_until IS NULL))
+		ORDER BY retention_until ASC NULLS FIRST, created_at DESC, file_name ASC
+	`, table), tenantID, cutoff, includeMissing)
+	if err != nil {
+		return nil, fmt.Errorf("list retention review documents: %w", err)
+	}
+	defer rows.Close()
+
+	var docs []Document
+	for rows.Next() {
+		var doc Document
+		if err := rows.Scan(
+			&doc.ID, &doc.TenantID, &doc.EntityType, &doc.EntityID, &doc.DocumentType, &doc.FileName,
+			&doc.ContentType, &doc.FileSize, &doc.StorageKey, &doc.Notes, &doc.RetentionUntil,
+			&doc.ReviewStatus, &doc.ReviewNote, &doc.ReviewedBy, &doc.ReviewedAt, &doc.UploadedBy, &doc.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan retention review document: %w", err)
+		}
+		docs = append(docs, doc)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate retention review documents: %w", err)
 	}
 
 	return docs, nil

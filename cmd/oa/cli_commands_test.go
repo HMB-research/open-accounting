@@ -5135,6 +5135,34 @@ func TestCLIDocumentCommands(t *testing.T) {
 				"has_pending_review":   true,
 				"has_rejected":         false,
 			}})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/documents/retention":
+			assert.Equal(t, "2027-03-01", r.URL.Query().Get("as_of"))
+			assert.Equal(t, "45", r.URL.Query().Get("horizon_days"))
+			assert.Equal(t, "true", r.URL.Query().Get("include_missing"))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"as_of_date":              "2027-03-01",
+				"cutoff_date":             "2027-04-15",
+				"total_count":             1,
+				"expired_count":           0,
+				"due_soon_count":          1,
+				"missing_retention_count": 0,
+				"pending_review_count":    1,
+				"rejected_count":          0,
+				"documents": []map[string]any{{
+					"id":              "doc-1",
+					"tenant_id":       "tenant-1",
+					"entity_type":     "payment",
+					"entity_id":       "pay-1",
+					"document_type":   "receipt",
+					"file_name":       "receipt.pdf",
+					"content_type":    "application/pdf",
+					"file_size":       1024,
+					"retention_until": "2027-03-31T00:00:00Z",
+					"review_status":   "PENDING",
+					"uploaded_by":     "user-1",
+					"created_at":      "2026-03-12T00:00:00Z",
+				}},
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents":
 			require.NoError(t, r.ParseMultipartForm(2<<20))
 			assert.Equal(t, "bank_transaction", r.FormValue("entity_type"))
@@ -5220,6 +5248,12 @@ func TestCLIDocumentCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "pay-1")
 	assert.Contains(t, stdout.String(), "true")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"documents", "retention", "--as-of", "2027-03-01", "--horizon-days", "45", "--include-missing"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Document retention review as of 2027-03-01")
+	assert.Contains(t, stdout.String(), "receipt.pdf")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{

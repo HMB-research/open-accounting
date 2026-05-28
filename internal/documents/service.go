@@ -157,10 +157,52 @@ func (s *Service) ListReviewSummaries(ctx context.Context, schemaName, tenantID,
 	return result, nil
 }
 
+func (s *Service) GetRetentionReview(ctx context.Context, schemaName, tenantID string, asOfDate time.Time, horizonDays int, includeMissing bool) (*RetentionReview, error) {
+	if horizonDays < 0 {
+		return nil, fmt.Errorf("horizon days must be zero or greater")
+	}
+	asOf := dateOnlyUTC(asOfDate)
+	cutoff := asOf.AddDate(0, 0, horizonDays)
+
+	docs, err := s.repo.ListRetentionReviewDocuments(ctx, schemaName, tenantID, cutoff, includeMissing)
+	if err != nil {
+		return nil, err
+	}
+
+	review := &RetentionReview{
+		AsOfDate:   asOf.Format("2006-01-02"),
+		CutoffDate: cutoff.Format("2006-01-02"),
+		TotalCount: len(docs),
+		Documents:  docs,
+	}
+	for _, doc := range docs {
+		if doc.RetentionUntil == nil {
+			review.MissingRetentionCount++
+		} else if dateOnlyUTC(*doc.RetentionUntil).After(asOf) {
+			review.DueSoonCount++
+		} else {
+			review.ExpiredCount++
+		}
+		if doc.ReviewStatus == ReviewStatusPending {
+			review.PendingReviewCount++
+		}
+		if doc.ReviewStatus == ReviewStatusRejected {
+			review.RejectedCount++
+		}
+	}
+
+	return review, nil
+}
+
 func (s *Service) MarkDocumentReviewed(ctx context.Context, schemaName, tenantID, documentID, reviewedBy string) (*Document, error) {
 	return s.ReviewDocument(ctx, schemaName, tenantID, documentID, reviewedBy, &ReviewDocumentRequest{
 		ReviewStatus: ReviewStatusReviewed,
 	})
+}
+
+func dateOnlyUTC(value time.Time) time.Time {
+	utc := value.UTC()
+	return time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 func (s *Service) ReviewDocument(ctx context.Context, schemaName, tenantID, documentID, reviewedBy string, req *ReviewDocumentRequest) (*Document, error) {
