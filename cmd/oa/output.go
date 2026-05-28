@@ -50,6 +50,22 @@ func printRawJSON(w io.Writer, payload json.RawMessage) error {
 	return printJSON(w, value)
 }
 
+func printLoginResponse(w io.Writer, resp *loginResponse) {
+	_, _ = fmt.Fprintf(w, "Access token: %s\n", resp.AccessToken)
+	if strings.TrimSpace(resp.RefreshToken) != "" {
+		_, _ = fmt.Fprintf(w, "Refresh token: %s\n", resp.RefreshToken)
+	}
+	if strings.TrimSpace(resp.TokenType) != "" {
+		_, _ = fmt.Fprintf(w, "Token type: %s\n", resp.TokenType)
+	}
+	if resp.ExpiresIn > 0 {
+		_, _ = fmt.Fprintf(w, "Expires in: %d seconds\n", resp.ExpiresIn)
+	}
+	if resp.User != nil {
+		_, _ = fmt.Fprintf(w, "User: %s <%s> (%s)\n", resp.User.Name, resp.User.Email, resp.User.ID)
+	}
+}
+
 func printAPITokensTable(w io.Writer, tokens []apitoken.APIToken) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tNAME\tPREFIX\tEXPIRES\tLAST USED\tCREATED")

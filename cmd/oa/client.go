@@ -90,12 +90,16 @@ func newAPIClient(baseURL, apiToken string) *apiClient {
 	}
 }
 
-func (c *apiClient) login(ctx context.Context, email, password string) (*loginResponse, error) {
+func (c *apiClient) login(ctx context.Context, email, password, tenantID string) (*loginResponse, error) {
 	var resp loginResponse
-	err := c.request(ctx, http.MethodPost, "/api/v1/auth/login", map[string]string{
+	req := map[string]string{
 		"email":    email,
 		"password": password,
-	}, "", &resp)
+	}
+	if strings.TrimSpace(tenantID) != "" {
+		req["tenant_id"] = strings.TrimSpace(tenantID)
+	}
+	err := c.request(ctx, http.MethodPost, "/api/v1/auth/login", req, "", &resp)
 	if err != nil {
 		return nil, err
 	}
