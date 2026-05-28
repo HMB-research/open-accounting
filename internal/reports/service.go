@@ -3,6 +3,7 @@ package reports
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -111,7 +112,7 @@ func (s *Service) classifyOperatingActivities(entries []JournalEntryWithLines) [
 			continue
 		}
 
-		if hasCashFlowAccount(entry.Lines, isFixedAssetAccount, isLoanAccount, isShareCapitalAccount, isDividendAccount) {
+		if hasCashFlowAccount(entry.Lines, isFixedAssetLine, isLoanLine, isShareCapitalLine, isDividendLine) {
 			continue
 		}
 
@@ -124,11 +125,11 @@ func (s *Service) classifyOperatingActivities(entries []JournalEntryWithLines) [
 
 		outflow := cashMovement.Abs()
 		switch {
-		case hasCashFlowAccount(entry.Lines, isInterestAccount):
+		case hasCashFlowAccount(entry.Lines, isInterestLine):
 			interestPaid = interestPaid.Add(outflow)
-		case hasCashFlowAccount(entry.Lines, isTaxAccount):
+		case hasCashFlowAccount(entry.Lines, isTaxLine):
 			taxes = taxes.Add(outflow)
-		case hasCashFlowAccount(entry.Lines, isWageAccount):
+		case hasCashFlowAccount(entry.Lines, isWageLine):
 			wages = wages.Add(outflow)
 		default:
 			if hasOperatingPayableOrExpense(entry.Lines) {
@@ -183,7 +184,6 @@ func (s *Service) classifyOperatingActivities(entries []JournalEntryWithLines) [
 }
 
 func (s *Service) classifyInvestingActivities(entries []JournalEntryWithLines) []CashFlowItem {
-	// Simplified - look for fixed asset related cash movements
 	var fixedAssets decimal.Decimal
 
 	for _, entry := range entries {
@@ -191,7 +191,7 @@ func (s *Service) classifyInvestingActivities(entries []JournalEntryWithLines) [
 		var isFixedAsset bool
 
 		for _, line := range entry.Lines {
-			if isFixedAssetAccount(line.AccountCode) {
+			if isFixedAssetLine(line) {
 				isFixedAsset = true
 			}
 		}
@@ -215,7 +215,6 @@ func (s *Service) classifyInvestingActivities(entries []JournalEntryWithLines) [
 }
 
 func (s *Service) classifyFinancingActivities(entries []JournalEntryWithLines) []CashFlowItem {
-	// Simplified - look for loan and equity related cash movements
 	var loans, shares, dividends decimal.Decimal
 
 	for _, entry := range entries {
@@ -223,13 +222,13 @@ func (s *Service) classifyFinancingActivities(entries []JournalEntryWithLines) [
 		var isLoan, isShare, isDividend bool
 
 		for _, line := range entry.Lines {
-			if isLoanAccount(line.AccountCode) {
+			if isLoanLine(line) {
 				isLoan = true
 			}
-			if isShareCapitalAccount(line.AccountCode) {
+			if isShareCapitalLine(line) {
 				isShare = true
 			}
-			if isDividendAccount(line.AccountCode) {
+			if isDividendLine(line) {
 				isDividend = true
 			}
 		}
@@ -296,20 +295,20 @@ func sumCashFlowItems(items []CashFlowItem) decimal.Decimal {
 func cashMovementForEntry(entry JournalEntryWithLines) decimal.Decimal {
 	cashMovement := decimal.Zero
 	for _, line := range entry.Lines {
-		if isCashAccount(line.AccountCode) {
+		if isCashLine(line) {
 			cashMovement = cashMovement.Add(line.Debit.Sub(line.Credit))
 		}
 	}
 	return cashMovement
 }
 
-func hasCashFlowAccount(lines []JournalLine, classifiers ...func(string) bool) bool {
+func hasCashFlowAccount(lines []JournalLine, classifiers ...func(JournalLine) bool) bool {
 	for _, line := range lines {
-		if isCashAccount(line.AccountCode) {
+		if isCashLine(line) {
 			continue
 		}
 		for _, classifier := range classifiers {
-			if classifier(line.AccountCode) {
+			if classifier(line) {
 				return true
 			}
 		}
@@ -319,10 +318,10 @@ func hasCashFlowAccount(lines []JournalLine, classifiers ...func(string) bool) b
 
 func hasRevenueOrReceivable(lines []JournalLine) bool {
 	for _, line := range lines {
-		if isCashAccount(line.AccountCode) {
+		if isCashLine(line) {
 			continue
 		}
-		if line.AccountType == "REVENUE" || isReceivableAccount(line.AccountCode) {
+		if line.AccountType == "REVENUE" || isReceivableLine(line) {
 			return true
 		}
 	}
@@ -331,10 +330,70 @@ func hasRevenueOrReceivable(lines []JournalLine) bool {
 
 func hasOperatingPayableOrExpense(lines []JournalLine) bool {
 	for _, line := range lines {
-		if isCashAccount(line.AccountCode) {
+		if isCashLine(line) {
 			continue
 		}
-		if line.AccountType == "EXPENSE" || isPayableAccount(line.AccountCode) || line.AccountType == "LIABILITY" {
+		if line.AccountType == "EXPENSE" || isPayableLine(line) || line.AccountType == "LIABILITY" {
+			return true
+		}
+	}
+	return false
+}
+
+func isCashLine(line JournalLine) bool {
+	return isCashAccount(line.AccountCode) ||
+		(line.AccountType == "ASSET" && accountNameContains(line, "cash", "bank", "checking", "kassa", "pank", "arveldus"))
+}
+
+func isFixedAssetLine(line JournalLine) bool {
+	return isFixedAssetAccount(line.AccountCode) ||
+		(line.AccountType == "ASSET" && accountNameContains(line, "fixed asset", "equipment", "tangible asset", "intangible asset", "põhivara", "materiaalse", "immateriaalse"))
+}
+
+func isLoanLine(line JournalLine) bool {
+	return isLoanAccount(line.AccountCode) ||
+		(line.AccountType == "LIABILITY" && accountNameContains(line, "loan", "borrowing", "laen"))
+}
+
+func isShareCapitalLine(line JournalLine) bool {
+	return isShareCapitalAccount(line.AccountCode) ||
+		(line.AccountType == "EQUITY" && accountNameContains(line, "share capital", "osakapital", "aktsiakapital"))
+}
+
+func isDividendLine(line JournalLine) bool {
+	return isDividendAccount(line.AccountCode) ||
+		((line.AccountType == "EQUITY" || line.AccountType == "LIABILITY") && accountNameContains(line, "dividend", "dividendid"))
+}
+
+func isReceivableLine(line JournalLine) bool {
+	return isReceivableAccount(line.AccountCode) ||
+		(line.AccountType == "ASSET" && accountNameContains(line, "receivable", "customer balance", "nõuded", "ostja"))
+}
+
+func isPayableLine(line JournalLine) bool {
+	return isPayableAccount(line.AccountCode) ||
+		(line.AccountType == "LIABILITY" && accountNameContains(line, "payable", "supplier", "vendor", "võlad", "hankija"))
+}
+
+func isWageLine(line JournalLine) bool {
+	return isWageAccount(line.AccountCode) ||
+		accountNameContains(line, "wage", "salary", "payroll", "palk", "töötasu")
+}
+
+func isTaxLine(line JournalLine) bool {
+	return isTaxAccount(line.AccountCode) ||
+		accountNameContains(line, "tax", "vat", "käibemaks", "maks")
+}
+
+func isInterestLine(line JournalLine) bool {
+	return isInterestAccount(line.AccountCode) ||
+		accountNameContains(line, "interest", "intress")
+}
+
+func accountNameContains(line JournalLine, terms ...string) bool {
+	name := strings.ToLower(line.AccountName)
+	for _, term := range terms {
+		if strings.Contains(name, term) {
 			return true
 		}
 	}
