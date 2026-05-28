@@ -2205,6 +2205,15 @@ Authorization: Bearer <token>
 
 ## Estonian Tax (KMD)
 
+### List KMD Declarations
+
+```http
+GET /tenants/{tenantId}/tax/kmd
+Authorization: Bearer <token>
+```
+
+Returns generated KMD declarations for the tenant.
+
 ### Generate KMD Declaration
 
 ```http
