@@ -96,7 +96,11 @@ func (r *PostgresRepository) EnsureSchema(ctx context.Context, schemaName string
 		CREATE INDEX IF NOT EXISTS idx_recurring_invoices_tenant ON %s.recurring_invoices(tenant_id);
 		CREATE INDEX IF NOT EXISTS idx_recurring_invoices_next_gen ON %s.recurring_invoices(next_generation_date) WHERE is_active = true;
 		CREATE INDEX IF NOT EXISTS idx_recurring_invoice_lines_recurring ON %s.recurring_invoice_lines(recurring_invoice_id);
-	`, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName))
+		ALTER TABLE %s.invoices
+			ADD COLUMN IF NOT EXISTS last_email_sent_at TIMESTAMPTZ,
+			ADD COLUMN IF NOT EXISTS last_email_status VARCHAR(20),
+			ADD COLUMN IF NOT EXISTS last_email_log_id UUID;
+	`, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName))
 	return err
 }
 
