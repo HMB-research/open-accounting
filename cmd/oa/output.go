@@ -913,6 +913,120 @@ func printPaymentAllocationsTable(w io.Writer, allocations []payments.PaymentAll
 	_ = tw.Flush()
 }
 
+func printOverdueInvoicesSummary(w io.Writer, summary *invoicing.OverdueInvoicesSummary) {
+	_, _ = fmt.Fprintf(w, "Overdue invoices as of %s\n", formatTime(summary.GeneratedAt))
+	_, _ = fmt.Fprintf(w, "Total overdue: %s\n", summary.TotalOverdue.String())
+	_, _ = fmt.Fprintf(w, "Invoices: %d\n", summary.InvoiceCount)
+	_, _ = fmt.Fprintf(w, "Contacts: %d\n", summary.ContactCount)
+	_, _ = fmt.Fprintf(w, "Average days overdue: %d\n", summary.AverageDaysOverdue)
+	if len(summary.Invoices) > 0 {
+		printOverdueInvoicesTable(w, summary.Invoices)
+	}
+}
+
+func printOverdueInvoicesTable(w io.Writer, invoices []invoicing.OverdueInvoice) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNUMBER\tCONTACT\tDUE\tOUTSTANDING\tCURRENCY\tDAYS\tREMINDERS")
+	for _, invoice := range invoices {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%d\t%d\n",
+			invoice.ID,
+			invoice.InvoiceNumber,
+			invoice.ContactName,
+			invoice.DueDate,
+			invoice.OutstandingAmount.String(),
+			invoice.Currency,
+			invoice.DaysOverdue,
+			invoice.ReminderCount,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printPaymentRemindersTable(w io.Writer, reminders []invoicing.PaymentReminder) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tINVOICE\tCONTACT\tNUMBER\tSTATUS\tSENT")
+	for _, reminder := range reminders {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%d\t%s\t%s\n",
+			reminder.ID,
+			reminder.InvoiceNumber,
+			reminder.ContactName,
+			reminder.ReminderNumber,
+			reminder.Status,
+			formatTimePtr(reminder.SentAt),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printReminderResult(w io.Writer, result *invoicing.ReminderResult) {
+	_, _ = fmt.Fprintf(w, "Reminder for invoice %s (%s)\n", result.InvoiceID, result.InvoiceNumber)
+	_, _ = fmt.Fprintf(w, "Success: %t\n", result.Success)
+	if strings.TrimSpace(result.ReminderID) != "" {
+		_, _ = fmt.Fprintf(w, "Reminder ID: %s\n", result.ReminderID)
+	}
+	if strings.TrimSpace(result.Message) != "" {
+		_, _ = fmt.Fprintf(w, "Message: %s\n", result.Message)
+	}
+}
+
+func printBulkReminderResult(w io.Writer, result *invoicing.BulkReminderResult) {
+	_, _ = fmt.Fprintf(w, "Bulk reminder result\n")
+	_, _ = fmt.Fprintf(w, "Requested: %d\n", result.TotalRequested)
+	_, _ = fmt.Fprintf(w, "Successful: %d\n", result.Successful)
+	_, _ = fmt.Fprintf(w, "Failed: %d\n", result.Failed)
+	for _, item := range result.Results {
+		_, _ = fmt.Fprintf(w, "- %s %s success=%t message=%s\n", item.InvoiceID, item.InvoiceNumber, item.Success, item.Message)
+	}
+}
+
+func printReminderRulesTable(w io.Writer, rules []invoicing.ReminderRule) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNAME\tTRIGGER\tOFFSET\tTEMPLATE\tACTIVE")
+	for _, rule := range rules {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%d\t%s\t%t\n",
+			rule.ID,
+			rule.Name,
+			rule.TriggerType,
+			rule.DaysOffset,
+			rule.EmailTemplateType,
+			rule.IsActive,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printReminderRule(w io.Writer, rule *invoicing.ReminderRule) {
+	_, _ = fmt.Fprintf(w, "Reminder rule %s (%s)\n", rule.Name, rule.ID)
+	_, _ = fmt.Fprintf(w, "Trigger: %s\n", rule.TriggerType)
+	_, _ = fmt.Fprintf(w, "Days offset: %d\n", rule.DaysOffset)
+	_, _ = fmt.Fprintf(w, "Template: %s\n", rule.EmailTemplateType)
+	_, _ = fmt.Fprintf(w, "Active: %t\n", rule.IsActive)
+}
+
+func printAutomatedReminderResultsTable(w io.Writer, results []invoicing.AutomatedReminderResult) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "RULE\tFOUND\tSENT\tSKIPPED\tFAILED\tRUN AT")
+	for _, result := range results {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%d\t%d\t%d\t%d\t%s\n",
+			result.RuleName,
+			result.InvoicesFound,
+			result.RemindersSent,
+			result.Skipped,
+			result.Failed,
+			formatTime(result.RunAt),
+		)
+	}
+	_ = tw.Flush()
+}
+
 func printBankAccountsTable(w io.Writer, accounts []banking.BankAccount) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tNAME\tACCOUNT\tBANK\tCURRENCY\tDEFAULT\tACTIVE\tBALANCE")

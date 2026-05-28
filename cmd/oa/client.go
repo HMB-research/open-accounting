@@ -349,6 +349,82 @@ func (c *apiClient) listUnallocatedPayments(ctx context.Context, tenantID string
 	return resp, nil
 }
 
+func (c *apiClient) getOverdueInvoices(ctx context.Context, tenantID string) (*invoicing.OverdueInvoicesSummary, error) {
+	var resp invoicing.OverdueInvoicesSummary
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "invoices", "overdue"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) sendPaymentReminder(ctx context.Context, tenantID string, req *invoicing.SendReminderRequest) (*invoicing.ReminderResult, error) {
+	var resp invoicing.ReminderResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "invoices", "reminders"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) sendBulkPaymentReminders(ctx context.Context, tenantID string, req *invoicing.SendBulkRemindersRequest) (*invoicing.BulkReminderResult, error) {
+	var resp invoicing.BulkReminderResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "invoices", "reminders", "bulk"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) listInvoiceReminderHistory(ctx context.Context, tenantID, invoiceID string) ([]invoicing.PaymentReminder, error) {
+	var resp []invoicing.PaymentReminder
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "invoices", invoiceID, "reminders"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) listReminderRules(ctx context.Context, tenantID string) ([]invoicing.ReminderRule, error) {
+	var resp []invoicing.ReminderRule
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "reminder-rules"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createReminderRule(ctx context.Context, tenantID string, req *invoicing.CreateReminderRuleRequest) (*invoicing.ReminderRule, error) {
+	var resp invoicing.ReminderRule
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "reminder-rules"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getReminderRule(ctx context.Context, tenantID, ruleID string) (*invoicing.ReminderRule, error) {
+	var resp invoicing.ReminderRule
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "reminder-rules", ruleID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) updateReminderRule(ctx context.Context, tenantID, ruleID string, req *invoicing.UpdateReminderRuleRequest) (*invoicing.ReminderRule, error) {
+	var resp invoicing.ReminderRule
+	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "reminder-rules", ruleID), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) deleteReminderRule(ctx context.Context, tenantID, ruleID string) error {
+	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "reminder-rules", ruleID), nil, c.apiToken, nil)
+}
+
+func (c *apiClient) triggerReminderRules(ctx context.Context, tenantID string) ([]invoicing.AutomatedReminderResult, error) {
+	var resp []invoicing.AutomatedReminderResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "reminder-rules", "trigger"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
 func (c *apiClient) listBankAccounts(ctx context.Context, tenantID string, activeOnly bool) ([]banking.BankAccount, error) {
 	values := url.Values{}
 	if activeOnly {

@@ -435,6 +435,29 @@ go run ./cmd/oa payments unallocated --type RECEIVED
 
 Use `--allocate invoice-id:amount` repeatedly on `payments create` to allocate a new payment to multiple invoices. Payment types are `RECEIVED` and `MADE`; `--json` is available on list, create, get, allocate, and unallocated commands.
 
+## Payment reminders
+
+```bash
+go run ./cmd/oa reminders overdue
+go run ./cmd/oa reminders send --invoice-id <invoice-id> --message "Please pay"
+go run ./cmd/oa reminders send-bulk --invoice-id <invoice-id> --invoice-id <invoice-id>
+go run ./cmd/oa reminders history --invoice-id <invoice-id>
+
+go run ./cmd/oa reminders rules list
+go run ./cmd/oa reminders rules create \
+  --name "Seven days overdue" \
+  --trigger-type AFTER_DUE \
+  --days-offset 7 \
+  --template-type OVERDUE_REMINDER \
+  --active true
+go run ./cmd/oa reminders rules get --id <rule-id>
+go run ./cmd/oa reminders rules update --id <rule-id> --name "Updated reminder" --active false
+go run ./cmd/oa reminders rules delete --id <rule-id>
+go run ./cmd/oa reminders rules trigger
+```
+
+Reminder trigger types are `BEFORE_DUE`, `ON_DUE`, and `AFTER_DUE`. Use `--json` on reminder reads and mutations for automation.
+
 ## Banking
 
 ```bash
