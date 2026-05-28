@@ -28,6 +28,22 @@ function createStatus(
     },
     net_income: new Decimal(600),
     existing_carry_forward: null,
+    close_pack_evidence_entity_id: "39b4b67a-4d8f-4a43-9fdf-59bfc6bb4f1b",
+    close_pack_evidence: {
+      entity_type: "year_end_close",
+      entity_id: "39b4b67a-4d8f-4a43-9fdf-59bfc6bb4f1b",
+      compliant: true,
+      total_count: 1,
+      pending_review_count: 0,
+      reviewed_count: 0,
+      approved_count: 1,
+      rejected_count: 0,
+      missing_evidence: false,
+      document_type_counts: { close_pack: 1 },
+      approved_document_type_counts: { close_pack: 1 },
+      rule_results: [],
+      violations: [],
+    },
     ...overrides,
   };
 }
@@ -48,6 +64,7 @@ describe("YearEndClosePanel", () => {
 
     render(YearEndClosePanel, {
       status: createStatus(),
+      tenantId: "tenant-1",
       periodEndDate: "2025-12-31",
       onrefresh,
       onsubmit,
@@ -58,6 +75,10 @@ describe("YearEndClosePanel", () => {
     expect(screen.getByText("Ready")).toBeInTheDocument();
     expect(screen.getByText("2025")).toBeInTheDocument();
     expect(screen.getByText("€600.00")).toBeInTheDocument();
+    expect(screen.getByText("Required approval pack")).toBeInTheDocument();
+    expect(
+      screen.getAllByText("1 approved close-pack document is attached."),
+    ).toHaveLength(2);
 
     await fireEvent.click(
       screen.getByRole("button", { name: "Refresh status" }),
@@ -93,6 +114,36 @@ describe("YearEndClosePanel", () => {
 
     expect(screen.getByText("Completed")).toBeInTheDocument();
     expect(screen.getByText(/JE-00100/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Run carry-forward" }),
+    ).toBeDisabled();
+  });
+
+  it("blocks carry-forward when close-pack evidence still needs approval", () => {
+    render(YearEndClosePanel, {
+      status: createStatus({
+        close_pack_evidence: {
+          entity_type: "year_end_close",
+          entity_id: "39b4b67a-4d8f-4a43-9fdf-59bfc6bb4f1b",
+          compliant: false,
+          total_count: 1,
+          pending_review_count: 1,
+          reviewed_count: 0,
+          approved_count: 0,
+          rejected_count: 0,
+          missing_evidence: false,
+          document_type_counts: { close_pack: 1 },
+          approved_document_type_counts: { close_pack: 0 },
+          rule_results: [],
+          violations: [],
+        },
+      }),
+      tenantId: "tenant-1",
+      periodEndDate: "2025-12-31",
+    });
+
+    expect(screen.getByText("Needs review")).toBeInTheDocument();
+    expect(screen.getByText("Approve close-pack evidence")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Run carry-forward" }),
     ).toBeDisabled();

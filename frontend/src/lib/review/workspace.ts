@@ -110,8 +110,11 @@ function missingDocumentSummary(entityID: string): DocumentReviewSummary {
 		total_count: 0,
 		pending_review_count: 0,
 		reviewed_count: 0,
+		approved_count: 0,
+		rejected_count: 0,
 		missing_evidence: true,
-		has_pending_review: false
+		has_pending_review: false,
+		has_rejected: false
 	};
 }
 

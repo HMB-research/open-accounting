@@ -567,6 +567,18 @@ class ApiClient {
     );
   }
 
+  async reviewDocument(
+    tenantId: string,
+    documentId: string,
+    data: ReviewDocumentRequest,
+  ) {
+    return this.request<DocumentAttachment>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/documents/${documentId}/review`,
+      data,
+    );
+  }
+
   async deleteDocument(tenantId: string, documentId: string) {
     return this.request<{ status: string }>(
       "DELETE",
@@ -2600,6 +2612,8 @@ export interface YearEndCloseStatus {
   retained_earnings_account?: AccountSummary | null;
   net_income: Decimal;
   existing_carry_forward?: JournalEntrySummary | null;
+  close_pack_evidence_entity_id?: string;
+  close_pack_evidence?: EvidencePolicyResult | null;
 }
 
 export interface CreateYearEndCarryForwardRequest {
@@ -2619,7 +2633,8 @@ export interface DocumentAttachment {
     | "journal_entry"
     | "payment"
     | "bank_transaction"
-    | "asset";
+    | "asset"
+    | "year_end_close";
   entity_id: string;
   document_type:
     | "supporting_document"
@@ -2628,17 +2643,24 @@ export interface DocumentAttachment {
     | "contract"
     | "asset_record"
     | "tax_support"
+    | "close_pack"
     | "other";
   file_name: string;
   content_type: string;
   file_size: number;
   notes?: string;
   retention_until?: string;
-  review_status: "PENDING" | "REVIEWED";
+  review_status: "PENDING" | "REVIEWED" | "APPROVED" | "REJECTED";
+  review_note?: string;
   reviewed_by?: string;
   reviewed_at?: string;
   uploaded_by: string;
   created_at: string;
+}
+
+export interface ReviewDocumentRequest {
+  review_status: "REVIEWED" | "APPROVED" | "REJECTED";
+  review_note?: string;
 }
 
 export interface DocumentReviewSummary {
@@ -2647,8 +2669,39 @@ export interface DocumentReviewSummary {
   total_count: number;
   pending_review_count: number;
   reviewed_count: number;
+  approved_count: number;
+  rejected_count: number;
   missing_evidence: boolean;
   has_pending_review: boolean;
+  has_rejected: boolean;
+}
+
+export interface EvidencePolicyRuleResult {
+  rule_index: number;
+  document_types?: DocumentAttachment["document_type"][];
+  required_count: number;
+  matching_count: number;
+  approved_matching_count: number;
+  accepted_count: number;
+  require_approved: boolean;
+  compliant: boolean;
+  message?: string;
+}
+
+export interface EvidencePolicyResult {
+  entity_type: DocumentAttachment["entity_type"];
+  entity_id: string;
+  compliant: boolean;
+  total_count: number;
+  pending_review_count: number;
+  reviewed_count: number;
+  approved_count: number;
+  rejected_count: number;
+  missing_evidence: boolean;
+  document_type_counts?: Partial<Record<DocumentAttachment["document_type"], number>>;
+  approved_document_type_counts?: Partial<Record<DocumentAttachment["document_type"], number>>;
+  rule_results?: EvidencePolicyRuleResult[];
+  violations?: EvidencePolicyRuleResult[];
 }
 
 export interface TenantMembership {

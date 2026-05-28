@@ -695,6 +695,37 @@ describe("API Client - Core Functionality", () => {
       expect(result.review_status).toBe("REVIEWED");
     });
 
+    it("should review a document with an explicit approval decision", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "doc-1",
+          review_status: "APPROVED",
+          review_note: "Evidence accepted",
+        }),
+      });
+
+      const result = await api.reviewDocument("tenant-123", "doc-1", {
+        review_status: "APPROVED",
+        review_note: "Evidence accepted",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/documents/doc-1/review",
+        ),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            review_status: "APPROVED",
+            review_note: "Evidence accepted",
+          }),
+        }),
+      );
+      expect(result.review_status).toBe("APPROVED");
+    });
+
     it("should delete a document", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

@@ -1,9 +1,11 @@
 <script lang="ts">
-	import type { YearEndCloseStatus } from '$lib/api';
+	import type { EvidencePolicyResult, YearEndCloseStatus } from '$lib/api';
+	import DocumentManager from '$lib/components/DocumentManager.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 
 	interface Props {
 		status: YearEndCloseStatus | null;
+		tenantId?: string;
 		periodEndDate: string;
 		currency?: string;
 		errorMessage?: string;
@@ -16,7 +18,7 @@
 	}
 
 	type ChecklistItem = {
-		id: 'year-end' | 'closed' | 'activity' | 'retained';
+		id: 'year-end' | 'closed' | 'activity' | 'retained' | 'evidence';
 		label: string;
 		description: string;
 		status: 'done' | 'pending';
@@ -24,6 +26,7 @@
 
 	let {
 		status,
+		tenantId = '',
 		periodEndDate,
 		currency = 'EUR',
 		errorMessage = '',
@@ -34,6 +37,8 @@
 		onsubmit,
 		onperiodenddatechange
 	}: Props = $props();
+
+	let showClosePackDocuments = $state(false);
 
 	function updatePeriodEndDate(event: Event) {
 		onperiodenddatechange?.((event.currentTarget as HTMLInputElement).value);
@@ -77,6 +82,49 @@
 		return Number(value);
 	}
 
+	function closePackApprovedCount(evidence: EvidencePolicyResult | null | undefined): number {
+		return evidence?.approved_document_type_counts?.close_pack ?? 0;
+	}
+
+	function closePackDocumentCount(evidence: EvidencePolicyResult | null | undefined): number {
+		return evidence?.document_type_counts?.close_pack ?? 0;
+	}
+
+	function getEvidenceDescription(currentStatus: YearEndCloseStatus): string {
+		const evidence = currentStatus.close_pack_evidence;
+		if (!currentStatus.close_pack_evidence_entity_id) {
+			return m.settings_yearEndChecklistEvidenceUnavailable();
+		}
+		if (evidence?.compliant) {
+			return m.settings_yearEndChecklistEvidenceDone({ count: closePackApprovedCount(evidence) || 1 });
+		}
+		const closePackCount = closePackDocumentCount(evidence);
+		if (closePackCount > 0) {
+			return m.settings_yearEndChecklistEvidencePendingApproval({ count: closePackCount });
+		}
+		return m.settings_yearEndChecklistEvidencePending();
+	}
+
+	function openClosePackDocuments() {
+		if (tenantId && status?.close_pack_evidence_entity_id) {
+			showClosePackDocuments = true;
+		}
+	}
+
+	function closeClosePackDocuments() {
+		showClosePackDocuments = false;
+	}
+
+	async function handleClosePackDocumentsChanged() {
+		await onrefresh?.();
+	}
+
+	let closePackEvidenceEntityId = $derived(status?.close_pack_evidence_entity_id || '');
+	let closePackEvidence = $derived(status?.close_pack_evidence ?? null);
+	let closePackCompliant = $derived(Boolean(closePackEvidence?.compliant));
+	let closePackEvidenceBlocking = $derived(Boolean(closePackEvidence && !closePackEvidence.compliant));
+	let carryForwardReady = $derived(Boolean(status?.carry_forward_ready && !closePackEvidenceBlocking));
+
 	let checklist = $derived.by<ChecklistItem[]>(() => {
 		if (!status) {
 			return [];
@@ -112,6 +160,12 @@
 					? m.settings_yearEndChecklistRetainedDone({ code: status.retained_earnings_account?.code || '' })
 					: m.settings_yearEndChecklistRetainedPending(),
 				status: status.has_retained_earnings_account ? 'done' : 'pending'
+			},
+			{
+				id: 'evidence',
+				label: m.settings_yearEndChecklistEvidence(),
+				description: getEvidenceDescription(status),
+				status: status.close_pack_evidence?.compliant ? 'done' : 'pending'
 			}
 		];
 	});
@@ -123,7 +177,7 @@
 		if (status.existing_carry_forward) {
 			return m.settings_yearEndStatusComplete();
 		}
-		if (status.carry_forward_ready) {
+		if (carryForwardReady) {
 			return m.settings_yearEndStatusReady();
 		}
 		return m.settings_yearEndStatusAttention();
@@ -133,11 +187,12 @@
 		if (!status) {
 			return 'muted';
 		}
-		if (status.existing_carry_forward || status.carry_forward_ready) {
+		if (status.existing_carry_forward || carryForwardReady) {
 			return 'success';
 		}
 		return 'warning';
 	});
+
 </script>
 
 <section class="card year-end-panel">
@@ -162,7 +217,7 @@
 			<button
 				type="button"
 				class="btn btn-primary"
-				disabled={isSubmitting || !status?.carry_forward_ready}
+				disabled={isSubmitting || !carryForwardReady}
 				onclick={onsubmit}
 			>
 				{isSubmitting ? m.settings_yearEndCarryForwardSubmitting() : m.settings_yearEndCarryForwardAction()}
@@ -212,6 +267,39 @@
 			</div>
 		</div>
 
+		<div class="year-end-evidence-card">
+			<div>
+				<span class="summary-label">{m.settings_yearEndEvidenceLabel()}</span>
+				<h4>{m.settings_yearEndEvidenceTitle()}</h4>
+				<p>{getEvidenceDescription(status)}</p>
+				{#if closePackEvidenceEntityId}
+					<code>{closePackEvidenceEntityId}</code>
+				{/if}
+			</div>
+			<div class="year-end-evidence-metrics" aria-label={m.settings_yearEndEvidenceMetrics()}>
+				<div>
+					<strong>{closePackDocumentCount(closePackEvidence)}</strong>
+					<span>{m.settings_yearEndEvidenceUploaded()}</span>
+				</div>
+				<div>
+					<strong>{closePackApprovedCount(closePackEvidence)}</strong>
+					<span>{m.settings_yearEndEvidenceApproved()}</span>
+				</div>
+				<div>
+					<strong>{closePackCompliant ? m.common_yes() : m.common_no()}</strong>
+					<span>{m.settings_yearEndEvidenceCompliant()}</span>
+				</div>
+			</div>
+			<button
+				type="button"
+				class="btn btn-secondary"
+				disabled={!tenantId || !closePackEvidenceEntityId}
+				onclick={openClosePackDocuments}
+			>
+				{m.settings_yearEndEvidenceManage()}
+			</button>
+		</div>
+
 		<div class="year-end-content-grid">
 			<div class="year-end-checklist">
 				<div class="year-end-subheader">
@@ -247,7 +335,7 @@
 							})}
 						</p>
 					</div>
-				{:else if status.carry_forward_ready}
+				{:else if carryForwardReady}
 					<div class="year-end-note success">
 						<strong>{m.settings_yearEndReadyTitle()}</strong>
 						<p>{m.settings_yearEndReadyDesc()}</p>
@@ -267,6 +355,11 @@
 						<strong>{m.settings_yearEndNoActivityTitle()}</strong>
 						<p>{m.settings_yearEndNoActivityDesc()}</p>
 					</div>
+				{:else if closePackEvidenceBlocking && status.has_retained_earnings_account}
+					<div class="year-end-note warning">
+						<strong>{m.settings_yearEndNeedsEvidenceTitle()}</strong>
+						<p>{m.settings_yearEndNeedsEvidenceDesc()}</p>
+					</div>
 				{:else}
 					<div class="year-end-note warning">
 						<strong>{m.settings_yearEndNeedsRetainedTitle()}</strong>
@@ -275,6 +368,16 @@
 				{/if}
 			</div>
 		</div>
+
+		<DocumentManager
+			open={showClosePackDocuments && Boolean(tenantId && closePackEvidenceEntityId)}
+			tenantId={tenantId}
+			entityType="year_end_close"
+			entityId={closePackEvidenceEntityId}
+			title={m.documents_yearEndCloseTitle({ date: formatDateLabel(status.period_end_date) })}
+			onClose={closeClosePackDocuments}
+			onchanged={handleClosePackDocumentsChanged}
+		/>
 	{/if}
 </section>
 
@@ -341,6 +444,63 @@
 		display: grid;
 		grid-template-columns: 1.35fr 1fr;
 		gap: 1rem;
+	}
+
+	.year-end-evidence-card {
+		display: grid;
+		grid-template-columns: minmax(0, 1.3fr) minmax(18rem, 0.85fr) auto;
+		align-items: center;
+		gap: 1rem;
+		margin-bottom: 1rem;
+		padding: 1rem;
+		border: 1px solid var(--color-border);
+		border-radius: 0.75rem;
+		background: color-mix(in srgb, var(--color-surface, white) 96%, var(--color-success, #16a34a) 4%);
+	}
+
+	.year-end-evidence-card h4 {
+		margin: 0.25rem 0;
+	}
+
+	.year-end-evidence-card p {
+		margin: 0;
+		color: var(--color-text-muted);
+	}
+
+	.year-end-evidence-card code {
+		display: inline-block;
+		margin-top: 0.6rem;
+		padding: 0.25rem 0.45rem;
+		border-radius: 0.4rem;
+		background: rgba(15, 23, 42, 0.06);
+		color: var(--color-text-muted);
+		font-size: 0.78rem;
+		word-break: break-all;
+	}
+
+	.year-end-evidence-metrics {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 0.6rem;
+	}
+
+	.year-end-evidence-metrics div {
+		padding: 0.7rem;
+		border: 1px solid var(--color-border);
+		border-radius: 0.65rem;
+		background: var(--color-surface, white);
+	}
+
+	.year-end-evidence-metrics strong {
+		display: block;
+		font-size: 1rem;
+	}
+
+	.year-end-evidence-metrics span {
+		display: block;
+		margin-top: 0.2rem;
+		color: var(--color-text-muted);
+		font-size: 0.78rem;
 	}
 
 	.year-end-checklist,
@@ -428,7 +588,8 @@
 
 	@media (max-width: 900px) {
 		.year-end-toolbar,
-		.year-end-content-grid {
+		.year-end-content-grid,
+		.year-end-evidence-card {
 			grid-template-columns: 1fr;
 			display: grid;
 		}
