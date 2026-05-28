@@ -347,6 +347,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  inventory products movements  List product stock movements")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory warehouses list List warehouses")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory warehouses create  Create a warehouse")
+	_, _ = fmt.Fprintln(a.stdout, "  inventory warehouses import  Import warehouses from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory warehouses get  Show one warehouse")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory warehouses update  Update a warehouse")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory warehouses delete  Delete a warehouse")
@@ -5778,6 +5779,35 @@ func (a *cliApp) runInventoryWarehouses(ctx context.Context, cfg *cliConfig, cli
 			return printJSON(a.stdout, warehouse)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Created warehouse %s %s (%s)\n", warehouse.Code, warehouse.Name, warehouse.ID)
+		return nil
+
+	case "import":
+		fs := flag.NewFlagSet("inventory warehouses import", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		filePath := fs.String("file", "", "CSV file path or - for stdin")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*filePath) == "" {
+			return errors.New("file is required")
+		}
+		content, fileName, err := readCSVInput(*filePath)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.importWarehouses(ctx, cfg.TenantID, &inventory.ImportWarehousesRequest{
+			CSVContent: content,
+			FileName:   fileName,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Processed %d rows, created %d warehouses, skipped %d rows\n", result.RowsProcessed, result.WarehousesCreated, result.RowsSkipped)
 		return nil
 
 	case "get":

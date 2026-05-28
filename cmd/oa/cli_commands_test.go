@@ -2104,6 +2104,7 @@ func TestCLIInventoryCommands(t *testing.T) {
 		"created_by":    "user-1",
 	}
 	importFile := writeTempCSV(t, "products.csv", "code,name,sales_price\nSKU-001,Widget,15.00\n")
+	warehouseImportFile := writeTempCSV(t, "warehouses.csv", "code,name,address,is_default\nMAIN,Main warehouse,Tallinn,true\n")
 	stockImportFile := writeTempCSV(t, "stock.csv", "product_code,warehouse_code,quantity\nSKU-001,MAIN,12\n")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2189,6 +2190,16 @@ func TestCLIInventoryCommands(t *testing.T) {
 			assert.True(t, req.IsDefault)
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(warehousePayload("Main warehouse"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses/import":
+			var req inventory.ImportWarehousesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "warehouses.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "MAIN")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed":     1,
+				"warehouses_created": 1,
+				"rows_skipped":       0,
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses/wh-1":
 			_ = json.NewEncoder(w).Encode(warehousePayload("Main warehouse"))
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses/wh-1":
@@ -2345,6 +2356,11 @@ func TestCLIInventoryCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"inventory", "warehouses", "create", "--code", "MAIN", "--name", "Main warehouse", "--address", "Tallinn", "--default"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created warehouse MAIN Main warehouse (wh-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "warehouses", "import", "--file", warehouseImportFile})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 warehouses, skipped 0 rows")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"inventory", "warehouses", "get", "--id", "wh-1"})

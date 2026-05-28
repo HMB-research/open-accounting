@@ -1422,6 +1422,39 @@ definitions:
       warehouse_ref:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_inventory.ImportWarehousesRequest:
+    properties:
+      csv_content:
+        type: string
+      file_name:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_inventory.ImportWarehousesResult:
+    properties:
+      errors:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.ImportWarehousesRowError'
+        type: array
+      file_name:
+        type: string
+      rows_processed:
+        type: integer
+      rows_skipped:
+        type: integer
+      warehouses_created:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_inventory.ImportWarehousesRowError:
+    properties:
+      code:
+        type: string
+      message:
+        type: string
+      name:
+        type: string
+      row:
+        type: integer
+    type: object
   github_com_HMB-research_open-accounting_internal_invoicing.AutomatedReminderResult:
     properties:
       errors:
@@ -11042,4 +11075,41 @@ paths:
       summary: Update user role
       tags:
       - Users
+  /tenants/{tenantID}/warehouses/import:
+    post:
+      consumes:
+      - application/json
+      description: Import warehouse master data from CSV, preserving warehouse codes
+        and active/default flags
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: CSV import payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.ImportWarehousesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.ImportWarehousesResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Import warehouses
+      tags:
+      - Inventory
 swagger: "2.0"

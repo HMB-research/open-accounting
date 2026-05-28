@@ -519,6 +519,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				// Inventory - Warehouses
 				r.Get("/warehouses", h.ListWarehouses)
 				r.Post("/warehouses", h.CreateWarehouse)
+				r.Post("/warehouses/import", h.ImportWarehouses)
 				r.Get("/warehouses/{warehouseID}", h.GetWarehouse)
 				r.Put("/warehouses/{warehouseID}", h.UpdateWarehouse)
 				r.Delete("/warehouses/{warehouseID}", h.DeleteWarehouse)

@@ -747,6 +747,59 @@ func TestService_ImportProductsCSV_DuplicateCode(t *testing.T) {
 	assert.Contains(t, result.Errors[0].Message, "duplicate code")
 }
 
+func TestService_ImportWarehousesCSV(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Warehouses["wh-existing"] = &Warehouse{
+		ID:       "wh-existing",
+		TenantID: "tenant-1",
+		Code:     "EXISTING",
+		Name:     "Existing warehouse",
+		IsActive: true,
+	}
+
+	result, err := ts.svc.ImportWarehousesCSV(ctx, "tenant-1", "test_schema", &ImportWarehousesRequest{
+		FileName: "warehouses.csv",
+		CSVContent: "warehouse_code,warehouse_name,address,default,status\n" +
+			"MAIN,Main warehouse,Tallinn,yes,ACTIVE\n" +
+			"SECOND,Secondary warehouse,Tartu,no,INACTIVE\n" +
+			"EXISTING,Duplicate warehouse,,no,ACTIVE\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "warehouses.csv", result.FileName)
+	assert.Equal(t, 3, result.RowsProcessed)
+	assert.Equal(t, 2, result.WarehousesCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, 4, result.Errors[0].Row)
+	assert.Contains(t, result.Errors[0].Message, "duplicate code")
+
+	var mainWarehouse *Warehouse
+	var secondaryWarehouse *Warehouse
+	for _, warehouse := range ts.repo.Warehouses {
+		switch warehouse.Code {
+		case "MAIN":
+			mainWarehouse = warehouse
+		case "SECOND":
+			secondaryWarehouse = warehouse
+		}
+	}
+
+	require.NotNil(t, mainWarehouse)
+	assert.Equal(t, "Main warehouse", mainWarehouse.Name)
+	assert.Equal(t, "Tallinn", mainWarehouse.Address)
+	assert.True(t, mainWarehouse.IsDefault)
+	assert.True(t, mainWarehouse.IsActive)
+
+	require.NotNil(t, secondaryWarehouse)
+	assert.Equal(t, "Secondary warehouse", secondaryWarehouse.Name)
+	assert.Equal(t, "Tartu", secondaryWarehouse.Address)
+	assert.False(t, secondaryWarehouse.IsDefault)
+	assert.False(t, secondaryWarehouse.IsActive)
+}
+
 func TestService_ImportStockAdjustmentsCSV(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()

@@ -1535,6 +1535,14 @@ func (c *apiClient) createWarehouse(ctx context.Context, tenantID string, req *i
 	return &resp, nil
 }
 
+func (c *apiClient) importWarehouses(ctx context.Context, tenantID string, req *inventory.ImportWarehousesRequest) (*inventory.ImportWarehousesResult, error) {
+	var resp inventory.ImportWarehousesResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "warehouses", "import"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) getWarehouse(ctx context.Context, tenantID, warehouseID string) (*inventory.Warehouse, error) {
 	var resp inventory.Warehouse
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "warehouses", warehouseID), nil, c.apiToken, &resp); err != nil {

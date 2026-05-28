@@ -4118,6 +4118,41 @@ func (h *Handlers) CreateWarehouse(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, warehouse)
 }
 
+// ImportWarehouses imports warehouse master data from CSV
+// @Summary Import warehouses
+// @Description Import warehouse master data from CSV, preserving warehouse codes and active/default flags
+// @Tags Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body inventory.ImportWarehousesRequest true "CSV import payload"
+// @Success 200 {object} inventory.ImportWarehousesResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/warehouses/import [post]
+func (h *Handlers) ImportWarehouses(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req inventory.ImportWarehousesRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+
+	result, err := h.inventoryService.ImportWarehousesCSV(r.Context(), tenantID, schemaName, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // GetWarehouse gets a warehouse by ID
 func (h *Handlers) GetWarehouse(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
