@@ -119,6 +119,20 @@ func TestImplementedCLIFlagSetsAreCovered(t *testing.T) {
 	require.Empty(t, missingUsage, "implemented CLI flag sets missing from oa help")
 }
 
+func TestKnownCLICommandPathsHaveFunctionalTests(t *testing.T) {
+	knownCommands := collectKnownCLICommandPaths(t)
+	testedCommands := collectFunctionallyTestedCLICommandPaths(t, knownCommands)
+
+	var untested []string
+	for command := range knownCommands {
+		if !testedCommands[command] {
+			untested = append(untested, command)
+		}
+	}
+	sort.Strings(untested)
+	require.Empty(t, untested, "known CLI commands missing app.run coverage in cli_commands_test.go")
+}
+
 func collectAPIRoutesFromSource(t *testing.T) []apiRoute {
 	t.Helper()
 
@@ -214,6 +228,48 @@ func collectImplementedCLIFlagSetCommands(t *testing.T) map[string]bool {
 	})
 	require.Greater(t, len(commands), 100, "implementation parser should see broad CLI flag set coverage")
 	return commands
+}
+
+func collectFunctionallyTestedCLICommandPaths(t *testing.T, knownCommands map[string]bool) map[string]bool {
+	t.Helper()
+
+	fileSet := token.NewFileSet()
+	file, err := parser.ParseFile(fileSet, "cli_commands_test.go", nil, 0)
+	require.NoError(t, err)
+
+	tested := map[string]bool{}
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || len(call.Args) < 2 {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || selector.Sel.Name != "run" {
+			return true
+		}
+		composite, ok := call.Args[1].(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+
+		tokens := make([]string, 0, len(composite.Elts))
+		for _, elt := range composite.Elts {
+			lit, ok := elt.(*ast.BasicLit)
+			if !ok {
+				continue
+			}
+			token, err := strconv.Unquote(lit.Value)
+			require.NoError(t, err)
+			tokens = append(tokens, token)
+		}
+		command, ok := resolveKnownCLICommandPath(knownCommands, strings.Join(tokens, " "))
+		if ok {
+			tested[command] = true
+		}
+		return true
+	})
+	require.Greater(t, len(tested), 100, "functional test parser should see broad CLI app.run coverage")
+	return tested
 }
 
 func mustStringArg(t *testing.T, expr ast.Expr) string {
