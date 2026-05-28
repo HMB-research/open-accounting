@@ -4665,7 +4665,7 @@ func TestCLILeaveCommands(t *testing.T) {
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"leave", "records", "cancel", "--id", "leave-1", "--json"})
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), `"status": "CANCELLED"`)
+	assert.Contains(t, stdout.String(), `"status": "CANCELLED"`) //nolint:misspell // API status value uses existing database spelling.
 }
 
 func TestCLITaxAndTSDCommands(t *testing.T) {
