@@ -850,6 +850,25 @@ func printDocumentsTable(w io.Writer, docs []documents.Document) {
 	_ = tw.Flush()
 }
 
+func printDocumentReviewSummariesTable(w io.Writer, summaries []documents.ReviewSummary) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ENTITY\tID\tTOTAL\tPENDING\tREVIEWED\tMISSING\tHAS PENDING")
+	for _, summary := range summaries {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%d\t%d\t%d\t%t\t%t\n",
+			summary.EntityType,
+			summary.EntityID,
+			summary.TotalCount,
+			summary.PendingReviewCount,
+			summary.ReviewedCount,
+			summary.MissingEvidence,
+			summary.HasPendingReview,
+		)
+	}
+	_ = tw.Flush()
+}
+
 func printPaymentsTable(w io.Writer, paymentsList []payments.Payment) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tNUMBER\tTYPE\tDATE\tAMOUNT\tALLOCATED\tUNALLOCATED\tMETHOD\tREFERENCE")

@@ -243,7 +243,9 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  reports aging             Show receivables or payables aging")
 	_, _ = fmt.Fprintln(a.stdout, "  reports balance-confirmations  Show balance confirmations")
 	_, _ = fmt.Fprintln(a.stdout, "  documents list            List documents for a record")
+	_, _ = fmt.Fprintln(a.stdout, "  documents review-summary  Summarize document review state")
 	_, _ = fmt.Fprintln(a.stdout, "  documents upload          Upload a document to a record")
+	_, _ = fmt.Fprintln(a.stdout, "  documents download        Download a document")
 	_, _ = fmt.Fprintln(a.stdout, "  documents mark-reviewed   Mark a document as reviewed")
 	_, _ = fmt.Fprintln(a.stdout, "  documents delete          Delete a document")
 	_, _ = fmt.Fprintln(a.stdout, "  journal list              List journal entries")
@@ -6587,6 +6589,36 @@ func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
 		printDocumentsTable(a.stdout, docs)
 		return nil
 
+	case "review-summary":
+		fs := flag.NewFlagSet("documents review-summary", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		entityType := fs.String("entity-type", "", "Entity type: invoice, journal_entry, payment, bank_transaction, asset")
+		entityIDs := stringListFlags{}
+		fs.Var(&entityIDs, "entity-id", "Entity id; repeatable")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*entityType) == "" {
+			return errors.New("entity-type is required")
+		}
+		if len(entityIDs) == 0 {
+			return errors.New("at least one entity-id is required")
+		}
+
+		summaries, err := client.listDocumentReviewSummaries(ctx, cfg.TenantID, &documentReviewSummaryRequest{
+			EntityType: strings.TrimSpace(*entityType),
+			EntityIDs:  []string(entityIDs),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, summaries)
+		}
+		printDocumentReviewSummariesTable(a.stdout, summaries)
+		return nil
+
 	case "upload":
 		fs := flag.NewFlagSet("documents upload", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
@@ -6633,6 +6665,39 @@ func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, doc)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Uploaded %s (%s) to %s %s\n", doc.FileName, doc.ID, doc.EntityType, doc.EntityID)
+		return nil
+
+	case "download":
+		fs := flag.NewFlagSet("documents download", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		documentID := fs.String("id", "", "Document id")
+		outputPath := fs.String("output", "", "Output path; defaults to downloaded file name, '-' for stdout")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*documentID) == "" {
+			return errors.New("id is required")
+		}
+
+		download, err := client.downloadDocument(ctx, cfg.TenantID, strings.TrimSpace(*documentID))
+		if err != nil {
+			return err
+		}
+		targetPath := strings.TrimSpace(*outputPath)
+		if targetPath == "" {
+			targetPath = download.FileName
+		}
+		if targetPath == "-" {
+			_, err := a.stdout.Write(download.Content)
+			return err
+		}
+		if strings.TrimSpace(targetPath) == "" {
+			targetPath = strings.TrimSpace(*documentID)
+		}
+		if err := os.WriteFile(targetPath, download.Content, 0o600); err != nil {
+			return fmt.Errorf("write document: %w", err)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Downloaded %s to %s (%d bytes)\n", strings.TrimSpace(*documentID), targetPath, len(download.Content))
 		return nil
 
 	case "mark-reviewed":

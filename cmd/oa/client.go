@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -61,6 +62,17 @@ type accountBalanceReport struct {
 type periodCloseMutationResponse struct {
 	Tenant *tenant.Tenant           `json:"tenant"`
 	Event  *tenant.PeriodCloseEvent `json:"event"`
+}
+
+type documentReviewSummaryRequest struct {
+	EntityType string   `json:"entity_type"`
+	EntityIDs  []string `json:"entity_ids"`
+}
+
+type downloadedDocument struct {
+	FileName    string
+	ContentType string
+	Content     []byte
 }
 
 func newAPIClient(baseURL, apiToken string) *apiClient {
@@ -1813,6 +1825,14 @@ func (c *apiClient) listDocuments(ctx context.Context, tenantID, entityType, ent
 	return resp, nil
 }
 
+func (c *apiClient) listDocumentReviewSummaries(ctx context.Context, tenantID string, req *documentReviewSummaryRequest) ([]documents.ReviewSummary, error) {
+	var resp []documents.ReviewSummary
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "documents", "review-summary"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
 func (c *apiClient) uploadDocument(ctx context.Context, tenantID string, req *documents.UploadDocumentRequest, fileContent []byte) (*documents.Document, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -1879,6 +1899,46 @@ func (c *apiClient) uploadDocument(ctx context.Context, tenantID string, req *do
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 	return &doc, nil
+}
+
+func (c *apiClient) downloadDocument(ctx context.Context, tenantID, documentID string) (*downloadedDocument, error) {
+	fullURL := c.baseURL + path.Join("/api/v1/tenants", tenantID, "documents", documentID, "download")
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	if strings.TrimSpace(c.apiToken) != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+strings.TrimSpace(c.apiToken))
+	}
+
+	//nolint:gosec // The CLI intentionally talks to a user-configured Open Accounting base URL.
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("request GET /api/v1/tenants/%s/documents/%s/download: %w", tenantID, documentID, err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, decodeAPIError(resp)
+	}
+
+	content, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read download response: %w", err)
+	}
+	fileName := documentID
+	if disposition := strings.TrimSpace(resp.Header.Get("Content-Disposition")); disposition != "" {
+		if _, params, err := mime.ParseMediaType(disposition); err == nil && strings.TrimSpace(params["filename"]) != "" {
+			fileName = strings.TrimSpace(params["filename"])
+		}
+	}
+	return &downloadedDocument{
+		FileName:    fileName,
+		ContentType: resp.Header.Get("Content-Type"),
+		Content:     content,
+	}, nil
 }
 
 func (c *apiClient) markDocumentReviewed(ctx context.Context, tenantID, documentID string) (*documents.Document, error) {

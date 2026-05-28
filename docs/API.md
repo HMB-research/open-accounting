@@ -366,6 +366,19 @@ GET /tenants/{tenantId}/documents/{documentId}/download
 Authorization: Bearer <token>
 ```
 
+#### Review Summary
+
+```http
+POST /tenants/{tenantId}/documents/review-summary
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "entity_type": "payment",
+  "entity_ids": ["<uuid>", "<uuid>"]
+}
+```
+
 #### Mark Document Reviewed
 
 ```http

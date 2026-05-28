@@ -125,6 +125,19 @@ func TestPrintTables(t *testing.T) {
 	}})
 	assert.Contains(t, documentBuf.String(), "ENTITY")
 	assert.Contains(t, documentBuf.String(), "statement.pdf")
+
+	var summaryBuf bytes.Buffer
+	printDocumentReviewSummariesTable(&summaryBuf, []documents.ReviewSummary{{
+		EntityType:         documents.EntityTypePayment,
+		EntityID:           "pay-1",
+		TotalCount:         2,
+		PendingReviewCount: 1,
+		ReviewedCount:      1,
+		MissingEvidence:    false,
+		HasPendingReview:   true,
+	}})
+	assert.Contains(t, summaryBuf.String(), "pay-1")
+	assert.Contains(t, summaryBuf.String(), "true")
 }
 
 func TestPrintPaymentOutputs(t *testing.T) {
