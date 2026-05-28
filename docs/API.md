@@ -500,6 +500,22 @@ Supported header aliases include `code` / `account_code`, `name` / `account_name
 
 ## Journal Entries
 
+### List Journal Entries
+
+```http
+GET /tenants/{tenantId}/journal-entries?limit=50
+Authorization: Bearer <token>
+```
+
+`limit` defaults to `50` and is capped at `200`.
+
+### Get Journal Entry
+
+```http
+GET /tenants/{tenantId}/journal-entries/{entryId}
+Authorization: Bearer <token>
+```
+
 ### Create Journal Entry
 
 ```http

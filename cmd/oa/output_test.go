@@ -404,6 +404,47 @@ func TestPrintReports(t *testing.T) {
 	assert.Contains(t, confirmationBuf.String(), "Total balance: 900")
 }
 
+func TestPrintJournalEntries(t *testing.T) {
+	t.Parallel()
+
+	entryDate := time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC)
+	entry := accounting.JournalEntry{
+		ID:          "je-1",
+		EntryNumber: "JE-2026-001",
+		EntryDate:   entryDate,
+		Description: "Manual accrual",
+		Reference:   "ACC-1",
+		Status:      accounting.StatusDraft,
+		Lines: []accounting.JournalEntryLine{
+			{
+				AccountID:   "acc-1",
+				Description: "Expense",
+				DebitAmount: decimal.NewFromInt(100),
+				Currency:    "EUR",
+				BaseDebit:   decimal.NewFromInt(100),
+				Account:     &accounting.Account{Code: "6000", Name: "Expenses"},
+			},
+			{
+				AccountID:    "acc-2",
+				Description:  "Accrual",
+				CreditAmount: decimal.NewFromInt(100),
+				Currency:     "EUR",
+				BaseCredit:   decimal.NewFromInt(100),
+			},
+		},
+	}
+
+	var entriesBuf bytes.Buffer
+	printJournalEntriesTable(&entriesBuf, []accounting.JournalEntry{entry})
+	assert.Contains(t, entriesBuf.String(), "JE-2026-001")
+	assert.Contains(t, entriesBuf.String(), "Manual accrual")
+
+	var entryBuf bytes.Buffer
+	printJournalEntry(&entryBuf, &entry)
+	assert.Contains(t, entryBuf.String(), "Balanced: true")
+	assert.Contains(t, entryBuf.String(), "6000 Expenses")
+}
+
 func TestPrintTaxReports(t *testing.T) {
 	t.Parallel()
 

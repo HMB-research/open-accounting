@@ -147,6 +147,11 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  documents upload          Upload a document to a record")
 	_, _ = fmt.Fprintln(a.stdout, "  documents mark-reviewed   Mark a document as reviewed")
 	_, _ = fmt.Fprintln(a.stdout, "  documents delete          Delete a document")
+	_, _ = fmt.Fprintln(a.stdout, "  journal list              List journal entries")
+	_, _ = fmt.Fprintln(a.stdout, "  journal create            Create a journal entry")
+	_, _ = fmt.Fprintln(a.stdout, "  journal get               Show one journal entry")
+	_, _ = fmt.Fprintln(a.stdout, "  journal post              Post a journal entry")
+	_, _ = fmt.Fprintln(a.stdout, "  journal void              Void a journal entry")
 	_, _ = fmt.Fprintln(a.stdout, "  journal import-opening-balances  Import opening balances from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "")
 	_, _ = fmt.Fprintln(a.stdout, "Environment overrides:")
@@ -1298,6 +1303,144 @@ func (a *cliApp) runJournal(ctx context.Context, args []string) error {
 	}
 
 	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("journal list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		limitFlag := fs.String("limit", "50", "Maximum entries to return")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		limit, err := parseRequiredPositiveInt("limit", *limitFlag)
+		if err != nil {
+			return err
+		}
+		if limit > 200 {
+			return errors.New("limit must be between 1 and 200")
+		}
+
+		entries, err := client.listJournalEntries(ctx, cfg.TenantID, limit)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, entries)
+		}
+		printJournalEntriesTable(a.stdout, entries)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("journal get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		entryID := fs.String("id", "", "Journal entry id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*entryID) == "" {
+			return errors.New("id is required")
+		}
+
+		entry, err := client.getJournalEntry(ctx, cfg.TenantID, strings.TrimSpace(*entryID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, entry)
+		}
+		printJournalEntry(a.stdout, entry)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("journal create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		entryDate := fs.String("entry-date", "", "Entry date in YYYY-MM-DD")
+		description := fs.String("description", "", "Journal entry description")
+		reference := fs.String("reference", "", "Reference")
+		sourceType := fs.String("source-type", "", "Source type")
+		sourceID := fs.String("source-id", "", "Source id")
+		lines := journalLineFlags{}
+		fs.Var(&lines, "line", "Line as comma-separated key=value pairs; repeatable")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		entryDateValue, err := parseRequiredDate("entry-date", *entryDate)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(*description) == "" {
+			return errors.New("description is required")
+		}
+		if len(lines) < 2 {
+			return errors.New("at least two lines are required")
+		}
+
+		entry, err := client.createJournalEntry(ctx, cfg.TenantID, &accounting.CreateJournalEntryRequest{
+			EntryDate:   entryDateValue,
+			Description: strings.TrimSpace(*description),
+			Reference:   strings.TrimSpace(*reference),
+			SourceType:  strings.TrimSpace(*sourceType),
+			SourceID:    optionalStringPtr(*sourceID),
+			Lines:       []accounting.CreateJournalEntryLineReq(lines),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, entry)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created journal entry %s (%s)\n", entry.EntryNumber, entry.ID)
+		return nil
+
+	case "post":
+		fs := flag.NewFlagSet("journal post", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		entryID := fs.String("id", "", "Journal entry id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*entryID) == "" {
+			return errors.New("id is required")
+		}
+
+		result, err := client.postJournalEntry(ctx, cfg.TenantID, strings.TrimSpace(*entryID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Posted journal entry %s\n", strings.TrimSpace(*entryID))
+		return nil
+
+	case "void":
+		fs := flag.NewFlagSet("journal void", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		entryID := fs.String("id", "", "Journal entry id")
+		reason := fs.String("reason", "", "Void reason")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*entryID) == "" {
+			return errors.New("id is required")
+		}
+		if strings.TrimSpace(*reason) == "" {
+			return errors.New("reason is required")
+		}
+
+		reversal, err := client.voidJournalEntry(ctx, cfg.TenantID, strings.TrimSpace(*entryID), strings.TrimSpace(*reason))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, reversal)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Voided journal entry %s with reversal %s\n", strings.TrimSpace(*entryID), reversal.EntryNumber)
+		return nil
+
 	case "import-opening-balances":
 		fs := flag.NewFlagSet("journal import-opening-balances", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
@@ -2469,6 +2612,83 @@ func (l *invoiceLineFlags) String() string {
 		descriptions = append(descriptions, line.Description)
 	}
 	return strings.Join(descriptions, ",")
+}
+
+type journalLineFlags []accounting.CreateJournalEntryLineReq
+
+func (l *journalLineFlags) Set(value string) error {
+	reader := csv.NewReader(strings.NewReader(value))
+	reader.TrimLeadingSpace = true
+	reader.FieldsPerRecord = -1
+	fields, err := reader.Read()
+	if err != nil {
+		return fmt.Errorf("parse line: %w", err)
+	}
+
+	values := make(map[string]string)
+	for _, field := range fields {
+		key, val, ok := strings.Cut(field, "=")
+		if !ok {
+			return fmt.Errorf("line field %q must be key=value", field)
+		}
+		normalizedKey := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(key)), "-", "_")
+		values[normalizedKey] = strings.TrimSpace(val)
+	}
+
+	accountID := strings.TrimSpace(values["account_id"])
+	if accountID == "" {
+		accountID = strings.TrimSpace(values["account"])
+	}
+	if accountID == "" {
+		return errors.New("line account_id is required")
+	}
+
+	debitAmount := decimal.Zero
+	if rawDebit := firstNonEmpty(values["debit_amount"], values["debit"]); rawDebit != "" {
+		debitAmount, err = parseRequiredNonNegativeDecimal("line debit_amount", rawDebit)
+		if err != nil {
+			return err
+		}
+	}
+	creditAmount := decimal.Zero
+	if rawCredit := firstNonEmpty(values["credit_amount"], values["credit"]); rawCredit != "" {
+		creditAmount, err = parseRequiredNonNegativeDecimal("line credit_amount", rawCredit)
+		if err != nil {
+			return err
+		}
+	}
+	if debitAmount.IsZero() == creditAmount.IsZero() {
+		return errors.New("line must have exactly one of debit or credit")
+	}
+
+	exchangeRate := decimal.Zero
+	if rawExchangeRate := firstNonEmpty(values["exchange_rate"], values["rate"]); rawExchangeRate != "" {
+		exchangeRate, err = parseRequiredPositiveDecimal("line exchange_rate", rawExchangeRate)
+		if err != nil {
+			return err
+		}
+	}
+
+	*l = append(*l, accounting.CreateJournalEntryLineReq{
+		AccountID:    accountID,
+		Description:  strings.TrimSpace(values["description"]),
+		DebitAmount:  debitAmount,
+		CreditAmount: creditAmount,
+		Currency:     strings.ToUpper(firstNonEmpty(values["currency"], "EUR")),
+		ExchangeRate: exchangeRate,
+	})
+	return nil
+}
+
+func (l *journalLineFlags) String() string {
+	if l == nil {
+		return ""
+	}
+	accounts := make([]string, 0, len(*l))
+	for _, line := range *l {
+		accounts = append(accounts, line.AccountID)
+	}
+	return strings.Join(accounts, ",")
 }
 
 type allocationFlags []payments.AllocationRequest

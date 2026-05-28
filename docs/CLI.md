@@ -250,6 +250,23 @@ go run ./cmd/oa documents mark-reviewed --id <document-id>
 go run ./cmd/oa documents delete --id <document-id>
 ```
 
+## Journal entries
+
+```bash
+go run ./cmd/oa journal list --limit 50
+go run ./cmd/oa journal create \
+  --entry-date 2026-03-31 \
+  --description "Manual accrual" \
+  --reference ACC-1 \
+  --line "account_id=<expense-account-id>,description=Expense,debit=100.00" \
+  --line "account_id=<accrual-account-id>,description=Accrual,credit=100.00"
+go run ./cmd/oa journal get --id <journal-entry-id>
+go run ./cmd/oa journal post --id <journal-entry-id>
+go run ./cmd/oa journal void --id <journal-entry-id> --reason "Duplicate entry"
+```
+
+Use `--line` repeatedly on `journal create`. Each line is comma-separated `key=value` pairs with `account_id` and exactly one of `debit` or `credit`; optional keys include `description`, `currency`, and `exchange_rate`.
+
 ## Opening balances
 
 ```bash

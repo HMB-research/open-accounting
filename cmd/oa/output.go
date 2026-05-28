@@ -177,6 +177,65 @@ func printInvoiceLinesTable(w io.Writer, lines []invoicing.InvoiceLine) {
 	_ = tw.Flush()
 }
 
+func printJournalEntriesTable(w io.Writer, entries []accounting.JournalEntry) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNUMBER\tDATE\tSTATUS\tDEBIT\tCREDIT\tREFERENCE\tDESCRIPTION")
+	for _, entry := range entries {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			entry.ID,
+			entry.EntryNumber,
+			formatDate(entry.EntryDate),
+			entry.Status,
+			entry.TotalDebits().String(),
+			entry.TotalCredits().String(),
+			entry.Reference,
+			entry.Description,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printJournalEntry(w io.Writer, entry *accounting.JournalEntry) {
+	_, _ = fmt.Fprintf(w, "Journal entry %s (%s)\n", entry.EntryNumber, entry.Status)
+	_, _ = fmt.Fprintf(w, "ID: %s\n", entry.ID)
+	_, _ = fmt.Fprintf(w, "Date: %s\n", formatDate(entry.EntryDate))
+	_, _ = fmt.Fprintf(w, "Description: %s\n", entry.Description)
+	if strings.TrimSpace(entry.Reference) != "" {
+		_, _ = fmt.Fprintf(w, "Reference: %s\n", entry.Reference)
+	}
+	if strings.TrimSpace(entry.SourceType) != "" {
+		_, _ = fmt.Fprintf(w, "Source: %s\n", entry.SourceType)
+	}
+	_, _ = fmt.Fprintf(w, "Total debits: %s\n", entry.TotalDebits().String())
+	_, _ = fmt.Fprintf(w, "Total credits: %s\n", entry.TotalCredits().String())
+	_, _ = fmt.Fprintf(w, "Balanced: %t\n", entry.IsBalanced())
+	if strings.TrimSpace(entry.VoidReason) != "" {
+		_, _ = fmt.Fprintf(w, "Void reason: %s\n", entry.VoidReason)
+	}
+	if len(entry.Lines) > 0 {
+		printJournalEntryLinesTable(w, entry.Lines)
+	}
+}
+
+func printJournalEntryLinesTable(w io.Writer, lines []accounting.JournalEntryLine) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ACCOUNT\tDESCRIPTION\tDEBIT\tCREDIT\tCURRENCY")
+	for _, line := range lines {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\n",
+			journalLineAccountLabel(line),
+			line.Description,
+			line.BaseDebit.String(),
+			line.BaseCredit.String(),
+			line.Currency,
+		)
+	}
+	_ = tw.Flush()
+}
+
 func printEmployeesTable(w io.Writer, employees []payroll.Employee) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tNUMBER\tNAME\tTYPE\tEMAIL\tACTIVE")
@@ -634,6 +693,16 @@ func invoiceContactLabel(invoice invoicing.Invoice) string {
 		return strings.TrimSpace(invoice.Contact.Name)
 	}
 	return invoice.ContactID
+}
+
+func journalLineAccountLabel(line accounting.JournalEntryLine) string {
+	if line.Account != nil {
+		label := strings.TrimSpace(strings.TrimSpace(line.Account.Code) + " " + strings.TrimSpace(line.Account.Name))
+		if label != "" {
+			return label
+		}
+	}
+	return line.AccountID
 }
 
 func titleLabel(value string) string {
