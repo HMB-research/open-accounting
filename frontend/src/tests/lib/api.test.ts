@@ -311,6 +311,32 @@ describe("API Client - Core Functionality", () => {
       expect(result).toHaveLength(1);
     });
 
+    it("should list tenant audit events", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            id: "audit-1",
+            action: "user_role_updated",
+            target_type: "user",
+            target_id: "user-2",
+            metadata: { new_role: "accountant" },
+          },
+        ],
+      });
+
+      const result = await api.listTenantAuditEvents("tenant-123", 25);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/audit-events?limit=25",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result[0].action).toBe("user_role_updated");
+    });
+
     it("should close a period", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
