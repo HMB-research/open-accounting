@@ -47,14 +47,22 @@ func (m *mockRepository) ListReviewSummaries(ctx context.Context, schemaName, te
 		total := 0
 		pending := 0
 		reviewed := 0
+		approved := 0
+		rejected := 0
 		for _, doc := range m.docs {
 			if doc.TenantID != tenantID || doc.EntityType != entityType || doc.EntityID != entityID {
 				continue
 			}
 			total++
 			switch doc.ReviewStatus {
-			case ReviewStatusReviewed:
+			case ReviewStatusReviewed, ReviewStatusApproved, ReviewStatusRejected:
 				reviewed++
+				if doc.ReviewStatus == ReviewStatusApproved {
+					approved++
+				}
+				if doc.ReviewStatus == ReviewStatusRejected {
+					rejected++
+				}
 			default:
 				pending++
 			}
@@ -68,8 +76,11 @@ func (m *mockRepository) ListReviewSummaries(ctx context.Context, schemaName, te
 			TotalCount:         total,
 			PendingReviewCount: pending,
 			ReviewedCount:      reviewed,
+			ApprovedCount:      approved,
+			RejectedCount:      rejected,
 			MissingEvidence:    false,
 			HasPendingReview:   pending > 0,
+			HasRejected:        rejected > 0,
 		}
 	}
 	return result, nil
@@ -83,12 +94,13 @@ func (m *mockRepository) GetDocumentByID(ctx context.Context, schemaName, tenant
 	return doc, nil
 }
 
-func (m *mockRepository) MarkDocumentReviewed(ctx context.Context, schemaName, tenantID, documentID, reviewedBy string, reviewedAt time.Time) error {
+func (m *mockRepository) ReviewDocument(ctx context.Context, schemaName, tenantID, documentID, reviewStatus, reviewNote, reviewedBy string, reviewedAt time.Time) error {
 	doc, ok := m.docs[documentID]
 	if !ok || doc.TenantID != tenantID {
 		return os.ErrNotExist
 	}
-	doc.ReviewStatus = ReviewStatusReviewed
+	doc.ReviewStatus = reviewStatus
+	doc.ReviewNote = reviewNote
 	doc.ReviewedBy = &reviewedBy
 	doc.ReviewedAt = &reviewedAt
 	return nil
@@ -174,6 +186,25 @@ func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 		t.Fatalf("expected reviewer-1, got %#v", reviewedDoc.ReviewedBy)
 	}
 
+	rejectedDoc, err := svc.ReviewDocument(context.Background(), "tenant_demo", "tenant-1", doc.ID, "reviewer-2", &ReviewDocumentRequest{
+		ReviewStatus: ReviewStatusRejected,
+		ReviewNote:   "Receipt does not match bank statement",
+	})
+	if err != nil {
+		t.Fatalf("ReviewDocument failed: %v", err)
+	}
+	if rejectedDoc.ReviewStatus != ReviewStatusRejected {
+		t.Fatalf("expected rejected status, got %q", rejectedDoc.ReviewStatus)
+	}
+	if rejectedDoc.ReviewNote != "Receipt does not match bank statement" {
+		t.Fatalf("unexpected review note %q", rejectedDoc.ReviewNote)
+	}
+	if _, err := svc.ReviewDocument(context.Background(), "tenant_demo", "tenant-1", doc.ID, "reviewer-2", &ReviewDocumentRequest{
+		ReviewStatus: ReviewStatusRejected,
+	}); err == nil {
+		t.Fatal("expected rejected documents to require a review note")
+	}
+
 	summaries, err := svc.ListReviewSummaries(context.Background(), "tenant_demo", "tenant-1", EntityTypeBankTxn, []string{"txn-1", "txn-2"})
 	if err != nil {
 		t.Fatalf("ListReviewSummaries failed: %v", err)
@@ -181,7 +212,7 @@ func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 	if len(summaries) != 2 {
 		t.Fatalf("expected 2 summaries, got %d", len(summaries))
 	}
-	if summaries[0].EntityID != "txn-1" || summaries[0].ReviewedCount != 1 {
+	if summaries[0].EntityID != "txn-1" || summaries[0].ReviewedCount != 1 || summaries[0].RejectedCount != 1 || !summaries[0].HasRejected {
 		t.Fatalf("unexpected first summary: %#v", summaries[0])
 	}
 	if summaries[1].EntityID != "txn-2" || !summaries[1].MissingEvidence {

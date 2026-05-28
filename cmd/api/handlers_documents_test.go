@@ -55,14 +55,22 @@ func (m *mockDocumentRepository) ListReviewSummaries(ctx context.Context, schema
 		total := 0
 		pending := 0
 		reviewed := 0
+		approved := 0
+		rejected := 0
 		for _, doc := range m.docs {
 			if doc.TenantID != tenantID || doc.EntityType != entityType || doc.EntityID != entityID {
 				continue
 			}
 			total++
 			switch doc.ReviewStatus {
-			case documents.ReviewStatusReviewed:
+			case documents.ReviewStatusReviewed, documents.ReviewStatusApproved, documents.ReviewStatusRejected:
 				reviewed++
+				if doc.ReviewStatus == documents.ReviewStatusApproved {
+					approved++
+				}
+				if doc.ReviewStatus == documents.ReviewStatusRejected {
+					rejected++
+				}
 			default:
 				pending++
 			}
@@ -73,8 +81,11 @@ func (m *mockDocumentRepository) ListReviewSummaries(ctx context.Context, schema
 			TotalCount:         total,
 			PendingReviewCount: pending,
 			ReviewedCount:      reviewed,
+			ApprovedCount:      approved,
+			RejectedCount:      rejected,
 			MissingEvidence:    total == 0,
 			HasPendingReview:   pending > 0,
+			HasRejected:        rejected > 0,
 		}
 	}
 	return result, nil
@@ -88,12 +99,13 @@ func (m *mockDocumentRepository) GetDocumentByID(ctx context.Context, schemaName
 	return doc, nil
 }
 
-func (m *mockDocumentRepository) MarkDocumentReviewed(ctx context.Context, schemaName, tenantID, documentID, reviewedBy string, reviewedAt time.Time) error {
+func (m *mockDocumentRepository) ReviewDocument(ctx context.Context, schemaName, tenantID, documentID, reviewStatus, reviewNote, reviewedBy string, reviewedAt time.Time) error {
 	doc, ok := m.docs[documentID]
 	if !ok || doc.TenantID != tenantID {
 		return io.EOF
 	}
-	doc.ReviewStatus = documents.ReviewStatusReviewed
+	doc.ReviewStatus = reviewStatus
+	doc.ReviewNote = reviewNote
 	doc.ReviewedBy = &reviewedBy
 	doc.ReviewedAt = &reviewedAt
 	return nil
@@ -194,6 +206,28 @@ func TestUploadListDownloadAndDeleteDocument(t *testing.T) {
 	require.Equal(t, documents.ReviewStatusReviewed, reviewed.ReviewStatus)
 	require.NotNil(t, reviewed.ReviewedBy)
 	require.Equal(t, "user-1", *reviewed.ReviewedBy)
+
+	approveReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/documents/"+uploaded.ID+"/review", map[string]any{
+		"review_status": "APPROVED",
+		"review_note":   "Evidence matches bank statement",
+	}, claims)
+	approveReq = withURLParams(approveReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
+	approveResp := httptest.NewRecorder()
+	h.ReviewDocument(approveResp, approveReq)
+	require.Equal(t, http.StatusOK, approveResp.Code)
+
+	var approved documents.Document
+	require.NoError(t, json.NewDecoder(approveResp.Body).Decode(&approved))
+	require.Equal(t, documents.ReviewStatusApproved, approved.ReviewStatus)
+	require.Equal(t, "Evidence matches bank statement", approved.ReviewNote)
+
+	rejectReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/documents/"+uploaded.ID+"/review", map[string]any{
+		"review_status": "REJECTED",
+	}, claims)
+	rejectReq = withURLParams(rejectReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
+	rejectResp := httptest.NewRecorder()
+	h.ReviewDocument(rejectResp, rejectReq)
+	require.Equal(t, http.StatusBadRequest, rejectResp.Code)
 
 	downloadReq := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/documents/"+uploaded.ID+"/download", nil, claims)
 	downloadReq = withURLParams(downloadReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})

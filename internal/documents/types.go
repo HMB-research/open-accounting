@@ -19,6 +19,8 @@ const (
 
 	ReviewStatusPending  = "PENDING"
 	ReviewStatusReviewed = "REVIEWED"
+	ReviewStatusApproved = "APPROVED"
+	ReviewStatusRejected = "REJECTED"
 
 	MaxDocumentSizeBytes = 10 << 20
 )
@@ -36,6 +38,7 @@ type Document struct {
 	Notes          string     `json:"notes,omitempty"`
 	RetentionUntil *time.Time `json:"retention_until,omitempty"`
 	ReviewStatus   string     `json:"review_status"`
+	ReviewNote     string     `json:"review_note,omitempty"`
 	ReviewedBy     *string    `json:"reviewed_by,omitempty"`
 	ReviewedAt     *time.Time `json:"reviewed_at,omitempty"`
 	UploadedBy     string     `json:"uploaded_by"`
@@ -54,12 +57,20 @@ type UploadDocumentRequest struct {
 	UploadedBy     string
 }
 
+type ReviewDocumentRequest struct {
+	ReviewStatus string `json:"review_status"`
+	ReviewNote   string `json:"review_note,omitempty"`
+}
+
 type ReviewSummary struct {
 	EntityType         string `json:"entity_type"`
 	EntityID           string `json:"entity_id"`
 	TotalCount         int    `json:"total_count"`
 	PendingReviewCount int    `json:"pending_review_count"`
 	ReviewedCount      int    `json:"reviewed_count"`
+	ApprovedCount      int    `json:"approved_count"`
+	RejectedCount      int    `json:"rejected_count"`
 	MissingEvidence    bool   `json:"missing_evidence"`
 	HasPendingReview   bool   `json:"has_pending_review"`
+	HasRejected        bool   `json:"has_rejected"`
 }

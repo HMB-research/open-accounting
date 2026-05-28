@@ -362,6 +362,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Post("/documents/review-summary", h.ListDocumentReviewSummaries)
 				r.Post("/documents", h.UploadDocument)
 				r.Get("/documents/{documentID}/download", h.DownloadDocument)
+				r.Post("/documents/{documentID}/review", h.ReviewDocument)
 				r.Post("/documents/{documentID}/mark-reviewed", h.MarkDocumentReviewed)
 				r.Delete("/documents/{documentID}", h.DeleteDocument)
 				r.Get("/api-tokens", h.ListAPITokens)

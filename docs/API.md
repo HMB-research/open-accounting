@@ -423,6 +423,21 @@ POST /tenants/{tenantId}/documents/{documentId}/mark-reviewed
 Authorization: Bearer <token>
 ```
 
+#### Review Document
+
+```http
+POST /tenants/{tenantId}/documents/{documentId}/review
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "review_status": "APPROVED",
+  "review_note": "Evidence accepted"
+}
+```
+
+Review statuses are `REVIEWED`, `APPROVED`, and `REJECTED`. Rejected documents require `review_note`; review summaries return approved and rejected counts in addition to pending and reviewed totals.
+
 #### Delete Document
 
 ```http
