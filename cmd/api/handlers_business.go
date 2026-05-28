@@ -3621,6 +3621,43 @@ func (h *Handlers) CreateAsset(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, asset)
 }
 
+// ImportAssets imports fixed assets from CSV
+// @Summary Import fixed assets
+// @Description Import fixed assets from CSV, preserving optional legacy asset numbers and cutover depreciation values
+// @Tags Fixed Assets
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body assets.ImportAssetsRequest true "CSV import payload"
+// @Success 200 {object} assets.ImportAssetsResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/assets/import [post]
+func (h *Handlers) ImportAssets(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req assets.ImportAssetsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+
+	req.UserID = claims.UserID
+	result, err := h.assetsService.ImportAssetsCSV(r.Context(), tenantID, schemaName, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // GetAsset returns a fixed asset by ID
 // @Summary Get fixed asset
 // @Description Get fixed asset details by ID

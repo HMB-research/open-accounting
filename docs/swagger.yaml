@@ -709,6 +709,39 @@ definitions:
       useful_life_months:
         type: integer
     type: object
+  github_com_HMB-research_open-accounting_internal_assets.ImportAssetsRequest:
+    properties:
+      csv_content:
+        type: string
+      file_name:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_assets.ImportAssetsResult:
+    properties:
+      assets_created:
+        type: integer
+      errors:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_assets.ImportAssetsRowError'
+        type: array
+      file_name:
+        type: string
+      rows_processed:
+        type: integer
+      rows_skipped:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_assets.ImportAssetsRowError:
+    properties:
+      asset_number:
+        type: string
+      message:
+        type: string
+      name:
+        type: string
+      row:
+        type: integer
+    type: object
   github_com_HMB-research_open-accounting_internal_assets.UpdateAssetRequest:
     properties:
       accumulated_depreciation_account_id:
@@ -5541,6 +5574,43 @@ paths:
       security:
       - BearerAuth: []
       summary: Dispose fixed asset
+      tags:
+      - Fixed Assets
+  /tenants/{tenantID}/assets/import:
+    post:
+      consumes:
+      - application/json
+      description: Import fixed assets from CSV, preserving optional legacy asset
+        numbers and cutover depreciation values
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: CSV import payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_assets.ImportAssetsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_assets.ImportAssetsResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Import fixed assets
       tags:
       - Fixed Assets
   /tenants/{tenantID}/bank-accounts:

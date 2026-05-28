@@ -325,6 +325,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  assets categories delete  Delete a fixed asset category")
 	_, _ = fmt.Fprintln(a.stdout, "  assets list               List fixed assets")
 	_, _ = fmt.Fprintln(a.stdout, "  assets create             Create a fixed asset")
+	_, _ = fmt.Fprintln(a.stdout, "  assets import             Import fixed assets from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  assets get                Show one fixed asset")
 	_, _ = fmt.Fprintln(a.stdout, "  assets update             Update a fixed asset")
 	_, _ = fmt.Fprintln(a.stdout, "  assets delete             Delete a draft fixed asset")
@@ -4762,6 +4763,35 @@ func (a *cliApp) runAssets(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, asset)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Created asset %s (%s)\n", asset.AssetNumber, asset.ID)
+		return nil
+
+	case "import":
+		fs := flag.NewFlagSet("assets import", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		filePath := fs.String("file", "", "CSV file path")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*filePath) == "" {
+			return errors.New("file is required")
+		}
+
+		content, fileName, err := readCSVInput(*filePath)
+		if err != nil {
+			return err
+		}
+		result, err := client.importAssets(ctx, cfg.TenantID, &assets.ImportAssetsRequest{
+			FileName:   fileName,
+			CSVContent: content,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Processed %d rows, created %d assets, skipped %d rows\n", result.RowsProcessed, result.AssetsCreated, result.RowsSkipped)
 		return nil
 
 	case "get":

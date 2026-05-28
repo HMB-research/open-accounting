@@ -198,6 +198,30 @@ type CreateAssetRequest struct {
 	UserID                        string             `json:"-"`
 }
 
+// ImportAssetsRequest contains CSV payload for fixed-asset migration.
+type ImportAssetsRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+	UserID     string `json:"-"`
+}
+
+// ImportAssetsResult summarizes a fixed-asset CSV import.
+type ImportAssetsResult struct {
+	FileName      string                 `json:"file_name,omitempty"`
+	RowsProcessed int                    `json:"rows_processed"`
+	AssetsCreated int                    `json:"assets_created"`
+	RowsSkipped   int                    `json:"rows_skipped"`
+	Errors        []ImportAssetsRowError `json:"errors,omitempty"`
+}
+
+// ImportAssetsRowError describes a row-level fixed-asset import failure.
+type ImportAssetsRowError struct {
+	Row         int    `json:"row"`
+	AssetNumber string `json:"asset_number,omitempty"`
+	Name        string `json:"name,omitempty"`
+	Message     string `json:"message"`
+}
+
 // UpdateAssetRequest is the request to update a fixed asset
 type UpdateAssetRequest struct {
 	Name                          string             `json:"name"`

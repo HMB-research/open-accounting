@@ -461,6 +461,47 @@ func TestCreateAsset(t *testing.T) {
 	}
 }
 
+func TestImportAssets(t *testing.T) {
+	h, repo, tenantRepo := setupAssetsTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	body := map[string]interface{}{
+		"file_name":   "assets.csv",
+		"csv_content": "asset_number,name,status,purchase_date,purchase_cost,accumulated_depreciation,book_value\nLEG-001,Laptop,ACTIVE,2025-01-10,1200.00,300.00,900.00\n",
+	}
+	bodyBytes, _ := json.Marshal(body)
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/assets/import", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.ImportAssets(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var result assets.ImportAssetsResult
+	err := json.Unmarshal(rr.Body.Bytes(), &result)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.AssetsCreated)
+	assert.Equal(t, 0, result.RowsSkipped)
+
+	require.Len(t, repo.assets, 1)
+	for _, asset := range repo.assets {
+		assert.Equal(t, "LEG-001", asset.AssetNumber)
+		assert.Equal(t, "Laptop", asset.Name)
+		assert.Equal(t, assets.AssetStatusActive, asset.Status)
+		assert.Equal(t, "user-1", asset.CreatedBy)
+		assert.True(t, asset.BookValue.Equal(decimal.RequireFromString("900.00")))
+	}
+}
+
 func TestGetAsset(t *testing.T) {
 	h, repo, tenantRepo := setupAssetsTestHandlers()
 

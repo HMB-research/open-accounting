@@ -92,7 +92,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 ### Fixed Assets
 | Feature | Description |
 |---------|-------------|
-| **Asset Tracking** | Register and track fixed assets with serial numbers and locations |
+| **Asset Tracking** | Register, import, and track fixed assets with serial numbers and locations |
 | **Asset Categories** | IT Equipment, Office Furniture, Vehicles, Software with depreciation settings |
 | **Depreciation** | Straight-line and declining balance methods with configurable useful life |
 | **Asset Lifecycle** | Draft → Active → Disposed/Sold/Scrapped status workflow |
@@ -217,6 +217,7 @@ go run ./cmd/oa contacts import --file ./contacts.csv
 go run ./cmd/oa employees import --file ./employees.csv
 go run ./cmd/oa payroll import-history --file ./payroll-history.csv
 go run ./cmd/oa payroll import-leave-balances --file ./leave-balances.csv
+go run ./cmd/oa assets import --file ./assets.csv
 go run ./cmd/oa documents upload --entity-type bank_transaction --entity-id <transaction-id> --file ./evidence.pdf --document-type reconciliation_evidence
 go run ./cmd/oa documents evidence-policy --entity-type bank_transaction --entity-id <transaction-id> --document-type reconciliation_evidence --require-approved
 go run ./cmd/oa journal import-opening-balances --file ./opening-balances.csv --entry-date 2026-01-01
@@ -316,7 +317,7 @@ open-accounting/
 - [x] Access/refresh JWT purpose separation
 - [x] Revocable, single-use refresh token sessions
 - [x] CLI/API refresh-session listing and revocation
-- [x] CSV import for chart of accounts, contacts, employees, invoices, and opening balances
+- [x] CSV import for chart of accounts, contacts, employees, invoices, fixed assets, and opening balances
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings
 - [x] Fiscal-year close readiness and retained-earnings carry-forward workflow
@@ -326,7 +327,7 @@ open-accounting/
 - [x] Backup creation and restore-drill scripts for self-hosted operations
 
 ### Still missing for reliable production use
-- [ ] Historical payroll and broader external migration imports
+- [ ] Remaining external migration imports beyond payroll, tax history, and fixed assets
 - [ ] Automated document policy enforcement in close packs and broader workflow blockers
 - [ ] Broader auth administration controls
 - [ ] E-invoice, direct bank feeds, SEPA initiation, and automatic e-MTA submission

@@ -429,6 +429,7 @@ go run ./cmd/oa assets create \
   --useful-life-months 36 \
   --residual-value 100.00 \
   --depreciation-start-date 2026-04-01
+go run ./cmd/oa assets import --file ./assets.csv
 go run ./cmd/oa assets get --id <asset-id>
 go run ./cmd/oa assets update --id <asset-id> --name Laptop --useful-life-months 48
 go run ./cmd/oa assets activate --id <asset-id>
@@ -438,7 +439,7 @@ go run ./cmd/oa assets depreciation --id <asset-id>
 go run ./cmd/oa assets delete --id <asset-id>
 ```
 
-Asset statuses are `DRAFT`, `ACTIVE`, `DISPOSED`, and `SOLD`. Depreciation methods are `STRAIGHT_LINE`, `DECLINING_BALANCE`, and `UNITS_OF_PRODUCTION`; disposal methods are `SOLD`, `SCRAPPED`, `DONATED`, and `LOST`.
+Asset statuses are `DRAFT`, `ACTIVE`, `DISPOSED`, and `SOLD`. Depreciation methods are `STRAIGHT_LINE`, `DECLINING_BALANCE`, and `UNITS_OF_PRODUCTION`; disposal methods are `SOLD`, `SCRAPPED`, `DONATED`, and `LOST`. Asset CSV imports require `name`, `purchase_date`, and `purchase_cost`; optional columns include `asset_number`, `category_id`, `category_name`, `status`, depreciation/book-value fields, disposal fields, and account IDs.
 
 ## Inventory
 
