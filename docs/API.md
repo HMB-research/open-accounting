@@ -677,6 +677,77 @@ Supported header aliases include `employee_number` / `employee_no`, `personal_co
 
 The importer creates employee records first and, when `base_salary` is provided, also creates a recurring base salary component in the same request.
 
+### List Payroll Runs
+
+```http
+GET /tenants/{tenantId}/payroll-runs
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `year` (integer): optional period-year filter
+
+### Create Payroll Run
+
+```http
+POST /tenants/{tenantId}/payroll-runs
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "period_year": 2026,
+  "period_month": 3,
+  "payment_date": "2026-03-31T00:00:00Z",
+  "notes": "March payroll"
+}
+```
+
+### Get Payroll Run
+
+```http
+GET /tenants/{tenantId}/payroll-runs/{runId}
+Authorization: Bearer <token>
+```
+
+### Calculate Payroll Run
+
+```http
+POST /tenants/{tenantId}/payroll-runs/{runId}/calculate
+Authorization: Bearer <token>
+```
+
+Calculates payslips for active employees that have salary setup.
+
+### Approve Payroll Run
+
+```http
+POST /tenants/{tenantId}/payroll-runs/{runId}/approve
+Authorization: Bearer <token>
+```
+
+Approves a calculated payroll run for payment and tax declaration workflows.
+
+### List Payroll Run Payslips
+
+```http
+GET /tenants/{tenantId}/payroll-runs/{runId}/payslips
+Authorization: Bearer <token>
+```
+
+### Payroll Tax Preview
+
+```http
+POST /tenants/{tenantId}/payroll/tax-preview
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "gross_salary": "3200.00",
+  "apply_basic_exemption": true,
+  "funded_pension_rate": "0.02"
+}
+```
+
 ### Import Historical Payroll
 
 ```http

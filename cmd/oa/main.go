@@ -100,6 +100,12 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  employees list            List employees")
 	_, _ = fmt.Fprintln(a.stdout, "  employees create          Create an employee")
 	_, _ = fmt.Fprintln(a.stdout, "  employees import          Import employees from CSV")
+	_, _ = fmt.Fprintln(a.stdout, "  payroll runs list         List payroll runs")
+	_, _ = fmt.Fprintln(a.stdout, "  payroll runs create       Create a payroll run")
+	_, _ = fmt.Fprintln(a.stdout, "  payroll runs calculate    Calculate payslips for a payroll run")
+	_, _ = fmt.Fprintln(a.stdout, "  payroll runs approve      Approve a payroll run")
+	_, _ = fmt.Fprintln(a.stdout, "  payroll runs payslips     List payslips for a payroll run")
+	_, _ = fmt.Fprintln(a.stdout, "  payroll tax-preview       Preview Estonian payroll taxes")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll import-history    Import historical payroll runs from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll import-leave-balances  Import leave balances from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  tsd list                  List TSD declarations")
@@ -793,6 +799,38 @@ func (a *cliApp) runPayroll(ctx context.Context, args []string) error {
 	}
 
 	switch args[0] {
+	case "runs":
+		return a.runPayrollRuns(ctx, cfg, client, args[1:])
+
+	case "tax-preview":
+		fs := flag.NewFlagSet("payroll tax-preview", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		grossSalary := fs.String("gross-salary", "", "Gross salary")
+		applyBasicExemption := fs.Bool("apply-basic-exemption", true, "Apply basic exemption")
+		fundedPensionRate := fs.String("funded-pension-rate", "0.02", "Funded pension rate")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		grossSalaryValue, err := decimal.NewFromString(strings.TrimSpace(*grossSalary))
+		if err != nil || grossSalaryValue.LessThanOrEqual(decimal.Zero) {
+			return errors.New("gross-salary must be a positive decimal")
+		}
+		fundedPensionValue, err := decimal.NewFromString(strings.TrimSpace(*fundedPensionRate))
+		if err != nil {
+			return fmt.Errorf("parse funded-pension-rate: %w", err)
+		}
+
+		calculation, err := client.calculateTaxPreview(ctx, cfg.TenantID, grossSalaryValue, *applyBasicExemption, fundedPensionValue)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, calculation)
+		}
+		printTaxCalculation(a.stdout, calculation)
+		return nil
+
 	case "import-history":
 		fs := flag.NewFlagSet("payroll import-history", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
@@ -865,6 +903,171 @@ func (a *cliApp) runPayroll(ctx context.Context, args []string) error {
 		return nil
 	default:
 		return fmt.Errorf("unknown payroll subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runPayrollRuns(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("payroll runs subcommand required")
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("payroll runs list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		yearFlag := fs.String("year", "", "Optional period year")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		year := 0
+		if strings.TrimSpace(*yearFlag) != "" {
+			parsed, err := parseRequiredPositiveInt("year", *yearFlag)
+			if err != nil {
+				return err
+			}
+			year = parsed
+		}
+
+		runs, err := client.listPayrollRuns(ctx, cfg.TenantID, year)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, runs)
+		}
+		printPayrollRunsTable(a.stdout, runs)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("payroll runs create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		yearFlag := fs.String("year", "", "Period year")
+		monthFlag := fs.String("month", "", "Period month")
+		paymentDate := fs.String("payment-date", "", "Optional payment date in YYYY-MM-DD")
+		notes := fs.String("notes", "", "Optional notes")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		year, month, err := parseYearMonthFlags(*yearFlag, *monthFlag)
+		if err != nil {
+			return err
+		}
+		var paymentDateValue *time.Time
+		if strings.TrimSpace(*paymentDate) != "" {
+			parsed, err := time.Parse("2006-01-02", strings.TrimSpace(*paymentDate))
+			if err != nil {
+				return fmt.Errorf("parse payment-date: %w", err)
+			}
+			paymentDateValue = &parsed
+		}
+
+		run, err := client.createPayrollRun(ctx, cfg.TenantID, &payroll.CreatePayrollRunRequest{
+			PeriodYear:  year,
+			PeriodMonth: month,
+			PaymentDate: paymentDateValue,
+			Notes:       strings.TrimSpace(*notes),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, run)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created payroll run %04d-%02d (%s)\n", run.PeriodYear, run.PeriodMonth, run.ID)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("payroll runs get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		runID := fs.String("id", "", "Payroll run id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*runID) == "" {
+			return errors.New("id is required")
+		}
+
+		run, err := client.getPayrollRun(ctx, cfg.TenantID, strings.TrimSpace(*runID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, run)
+		}
+		printPayrollRun(a.stdout, run)
+		return nil
+
+	case "calculate":
+		fs := flag.NewFlagSet("payroll runs calculate", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		runID := fs.String("id", "", "Payroll run id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*runID) == "" {
+			return errors.New("id is required")
+		}
+
+		run, err := client.calculatePayrollRun(ctx, cfg.TenantID, strings.TrimSpace(*runID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, run)
+		}
+		printPayrollRun(a.stdout, run)
+		return nil
+
+	case "approve":
+		fs := flag.NewFlagSet("payroll runs approve", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		runID := fs.String("id", "", "Payroll run id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*runID) == "" {
+			return errors.New("id is required")
+		}
+
+		result, err := client.approvePayrollRun(ctx, cfg.TenantID, strings.TrimSpace(*runID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Approved payroll run %s\n", strings.TrimSpace(*runID))
+		return nil
+
+	case "payslips":
+		fs := flag.NewFlagSet("payroll runs payslips", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		runID := fs.String("id", "", "Payroll run id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*runID) == "" {
+			return errors.New("id is required")
+		}
+
+		payslips, err := client.listPayslips(ctx, cfg.TenantID, strings.TrimSpace(*runID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, payslips)
+		}
+		printPayslipsTable(a.stdout, payslips)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown payroll runs subcommand %q", args[0])
 	}
 }
 

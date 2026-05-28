@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/analytics"
 	"github.com/HMB-research/open-accounting/internal/apitoken"
@@ -230,6 +232,72 @@ func (c *apiClient) importPayrollHistory(ctx context.Context, tenantID string, r
 func (c *apiClient) importLeaveBalances(ctx context.Context, tenantID string, req *payroll.ImportLeaveBalancesRequest) (*payroll.ImportLeaveBalancesResult, error) {
 	var resp payroll.ImportLeaveBalancesResult
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "leave-balances", "import"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) listPayrollRuns(ctx context.Context, tenantID string, year int) ([]payroll.PayrollRun, error) {
+	values := url.Values{}
+	if year > 0 {
+		values.Set("year", strconv.Itoa(year))
+	}
+
+	var resp []payroll.PayrollRun
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "payroll-runs"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createPayrollRun(ctx context.Context, tenantID string, req *payroll.CreatePayrollRunRequest) (*payroll.PayrollRun, error) {
+	var resp payroll.PayrollRun
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "payroll-runs"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getPayrollRun(ctx context.Context, tenantID, runID string) (*payroll.PayrollRun, error) {
+	var resp payroll.PayrollRun
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "payroll-runs", runID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) calculatePayrollRun(ctx context.Context, tenantID, runID string) (*payroll.PayrollRun, error) {
+	var resp payroll.PayrollRun
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "payroll-runs", runID, "calculate"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) approvePayrollRun(ctx context.Context, tenantID, runID string) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "payroll-runs", runID, "approve"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) listPayslips(ctx context.Context, tenantID, runID string) ([]payroll.Payslip, error) {
+	var resp []payroll.Payslip
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "payroll-runs", runID, "payslips"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) calculateTaxPreview(ctx context.Context, tenantID string, grossSalary decimal.Decimal, applyBasicExemption bool, fundedPensionRate decimal.Decimal) (*payroll.TaxCalculation, error) {
+	var resp payroll.TaxCalculation
+	body := map[string]any{
+		"gross_salary":          grossSalary,
+		"apply_basic_exemption": applyBasicExemption,
+		"funded_pension_rate":   fundedPensionRate,
+	}
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "payroll", "tax-preview"), body, c.apiToken, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
