@@ -94,6 +94,11 @@ func TestGenerateRefreshToken(t *testing.T) {
 	extractedUserID, err := service.ValidateRefreshToken(token)
 	require.NoError(t, err)
 	assert.Equal(t, userID, extractedUserID)
+
+	claims, err := service.ValidateRefreshTokenClaims(token)
+	require.NoError(t, err)
+	assert.Equal(t, TokenKindRefreshToken, claims.TokenKind)
+	assert.NotEmpty(t, claims.ID)
 }
 
 func TestTokenKindSeparation(t *testing.T) {

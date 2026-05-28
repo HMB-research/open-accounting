@@ -131,6 +131,12 @@ func (c *apiClient) refreshAccessToken(ctx context.Context, refreshToken, tenant
 	return &resp, nil
 }
 
+func (c *apiClient) logout(ctx context.Context, refreshToken string) error {
+	return c.request(ctx, http.MethodPost, "/api/v1/auth/logout", map[string]string{
+		"refresh_token": refreshToken,
+	}, "", nil)
+}
+
 func (c *apiClient) health(ctx context.Context) (string, error) {
 	payload, err := c.requestRaw(ctx, http.MethodGet, "/health", nil, "")
 	if err != nil {

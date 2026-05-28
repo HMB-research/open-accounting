@@ -111,7 +111,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 |---------|-------------|
 | **Tenant Isolation** | Schema-per-tenant for complete data separation |
 | **User Management** | Invite users, assign roles, manage permissions |
-| **JWT and API token auth** | Purpose-scoped JWT access/refresh tokens plus tenant-scoped API tokens for automation |
+| **JWT and API token auth** | Purpose-scoped JWT access/refresh tokens with revocable refresh sessions plus tenant-scoped API tokens for automation |
 | **RBAC** | Role-based access control with permission checks |
 | **API Rate Limiting** | Token bucket rate limiting with configurable thresholds |
 
@@ -313,6 +313,7 @@ open-accounting/
 - [x] Fixed assets with depreciation tracking
 - [x] Tenant-scoped API token auth and Go CLI
 - [x] Access/refresh JWT purpose separation
+- [x] Revocable, single-use refresh token sessions
 - [x] CSV import for chart of accounts, contacts, employees, invoices, and opening balances
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings
@@ -323,7 +324,7 @@ open-accounting/
 ### Still missing for reliable production use
 - [ ] Historical payroll and broader external migration imports
 - [ ] Broader document evidence policy enforcement
-- [ ] Stronger session controls
+- [ ] Broader auth/session administration controls
 - [ ] E-invoice, direct bank feeds, SEPA initiation, and automatic e-MTA submission
 
 ---

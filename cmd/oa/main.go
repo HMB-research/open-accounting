@@ -148,7 +148,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  auth refresh              Exchange a refresh token for an access token")
 	_, _ = fmt.Fprintln(a.stdout, "  auth tenants              List tenants for the current token")
 	_, _ = fmt.Fprintln(a.stdout, "  auth status               Show current CLI auth status")
-	_, _ = fmt.Fprintln(a.stdout, "  auth logout               Remove local CLI config")
+	_, _ = fmt.Fprintln(a.stdout, "  auth logout               Revoke a refresh token and remove local CLI config")
 	_, _ = fmt.Fprintln(a.stdout, "  tenant get                Show tenant details")
 	_, _ = fmt.Fprintln(a.stdout, "  tenant create             Create a tenant")
 	_, _ = fmt.Fprintln(a.stdout, "  tenant update             Update tenant settings")
@@ -643,6 +643,20 @@ func (a *cliApp) runAuth(ctx context.Context, args []string) error {
 		return nil
 
 	case "logout":
+		fs := flag.NewFlagSet("auth logout", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		baseURL := fs.String("base-url", defaultBaseURL(), "API base URL")
+		refreshToken := fs.String("refresh-token", "", "Refresh token to revoke on the server")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*refreshToken) != "" {
+			client := newAPIClient(*baseURL, "")
+			if err := client.logout(ctx, strings.TrimSpace(*refreshToken)); err != nil {
+				return err
+			}
+			_, _ = fmt.Fprintln(a.stdout, "Revoked refresh session")
+		}
 		if err := deleteConfig(); err != nil {
 			return err
 		}

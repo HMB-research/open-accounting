@@ -335,6 +335,59 @@ func (m *mockTenantRepository) addTestTenant(id, name, slug string) *tenant.Tena
 	return t
 }
 
+type mockRefreshSessionService struct {
+	sessions  map[string]mockRefreshSession
+	createErr error
+	rotateErr error
+	revokeErr error
+}
+
+type mockRefreshSession struct {
+	userID    string
+	tokenHash string
+	expiresAt time.Time
+	revoked   bool
+}
+
+func newMockRefreshSessionService() *mockRefreshSessionService {
+	return &mockRefreshSessionService{sessions: make(map[string]mockRefreshSession)}
+}
+
+func (m *mockRefreshSessionService) CreateRefreshSession(ctx context.Context, userID, tokenID, tokenHash string, expiresAt time.Time) error {
+	if m.createErr != nil {
+		return m.createErr
+	}
+	m.sessions[tokenID] = mockRefreshSession{userID: userID, tokenHash: tokenHash, expiresAt: expiresAt}
+	return nil
+}
+
+func (m *mockRefreshSessionService) RotateRefreshSession(ctx context.Context, userID, oldTokenID, oldTokenHash, newTokenID, newTokenHash string, newExpiresAt time.Time) error {
+	if m.rotateErr != nil {
+		return m.rotateErr
+	}
+	session, ok := m.sessions[oldTokenID]
+	if !ok || session.userID != userID || session.tokenHash != oldTokenHash || session.revoked || !session.expiresAt.After(time.Now()) {
+		return auth.ErrRefreshSessionInvalid
+	}
+	session.revoked = true
+	m.sessions[oldTokenID] = session
+	m.sessions[newTokenID] = mockRefreshSession{userID: userID, tokenHash: newTokenHash, expiresAt: newExpiresAt}
+	return nil
+}
+
+func (m *mockRefreshSessionService) RevokeRefreshSession(ctx context.Context, userID, tokenID, tokenHash string) error {
+	if m.revokeErr != nil {
+		return m.revokeErr
+	}
+	session, ok := m.sessions[tokenID]
+	if !ok || session.userID != userID || session.tokenHash != tokenHash || session.revoked || !session.expiresAt.After(time.Now()) {
+		return auth.ErrRefreshSessionInvalid
+	}
+	session.revoked = true
+	m.sessions[tokenID] = session
+	return nil
+}
+
 // =============================================================================
 // Test Setup Helpers
 // =============================================================================
@@ -346,11 +399,28 @@ func setupAuthTestHandlers() (*Handlers, *mockTenantRepository) {
 	tokenSvc := auth.NewTokenService("test-secret-key-for-testing-only", 15*time.Minute, 7*24*time.Hour)
 
 	h := &Handlers{
-		tenantService: tenantSvc,
-		tokenService:  tokenSvc,
+		tenantService:         tenantSvc,
+		tokenService:          tokenSvc,
+		refreshSessionService: newMockRefreshSessionService(),
 	}
 
 	return h, repo
+}
+
+func createMockRefreshSession(t *testing.T, h *Handlers, userID string) string {
+	t.Helper()
+
+	refreshToken, refreshClaims, err := h.generateRefreshTokenWithClaims(userID)
+	require.NoError(t, err)
+	err = h.refreshSessionService.CreateRefreshSession(
+		context.Background(),
+		userID,
+		refreshClaims.ID,
+		auth.HashRefreshToken(refreshToken),
+		refreshClaims.ExpiresAt.Time,
+	)
+	require.NoError(t, err)
+	return refreshToken
 }
 
 // =============================================================================
@@ -629,34 +699,35 @@ func TestLoginInvalidJSON(t *testing.T) {
 func TestRefreshToken(t *testing.T) {
 	tests := []struct {
 		name           string
-		setupMock      func(*mockTenantRepository, *auth.TokenService) map[string]string
+		setupMock      func(*testing.T, *mockTenantRepository, *Handlers) map[string]string
 		wantStatus     int
 		wantErrContain string
 		checkResponse  func(*testing.T, map[string]interface{})
 	}{
 		{
 			name: "valid refresh without tenant",
-			setupMock: func(m *mockTenantRepository, ts *auth.TokenService) map[string]string {
+			setupMock: func(t *testing.T, m *mockTenantRepository, h *Handlers) map[string]string {
 				m.addTestUser("user-1", "user@example.com", "Test User", "password123", true)
-				refreshToken, _ := ts.GenerateRefreshToken("user-1")
+				refreshToken := createMockRefreshSession(t, h, "user-1")
 				return map[string]string{"refresh_token": refreshToken}
 			},
 			wantStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, resp map[string]interface{}) {
 				assert.NotEmpty(t, resp["access_token"])
+				assert.NotEmpty(t, resp["refresh_token"])
 				assert.Equal(t, "Bearer", resp["token_type"])
 				assert.Equal(t, float64(900), resp["expires_in"])
 			},
 		},
 		{
 			name: "valid refresh with tenant",
-			setupMock: func(m *mockTenantRepository, ts *auth.TokenService) map[string]string {
+			setupMock: func(t *testing.T, m *mockTenantRepository, h *Handlers) map[string]string {
 				m.addTestUser("user-1", "user@example.com", "Test User", "password123", true)
 				m.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
 				m.tenantUsers["tenant-1"] = []tenant.TenantUser{
 					{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleAdmin},
 				}
-				refreshToken, _ := ts.GenerateRefreshToken("user-1")
+				refreshToken := createMockRefreshSession(t, h, "user-1")
 				return map[string]string{
 					"refresh_token": refreshToken,
 					"tenant_id":     "tenant-1",
@@ -669,7 +740,7 @@ func TestRefreshToken(t *testing.T) {
 		},
 		{
 			name: "invalid refresh token",
-			setupMock: func(m *mockTenantRepository, ts *auth.TokenService) map[string]string {
+			setupMock: func(t *testing.T, m *mockTenantRepository, h *Handlers) map[string]string {
 				return map[string]string{"refresh_token": "invalid-token"}
 			},
 			wantStatus:     http.StatusUnauthorized,
@@ -677,9 +748,9 @@ func TestRefreshToken(t *testing.T) {
 		},
 		{
 			name: "access token cannot be used as refresh token",
-			setupMock: func(m *mockTenantRepository, ts *auth.TokenService) map[string]string {
+			setupMock: func(t *testing.T, m *mockTenantRepository, h *Handlers) map[string]string {
 				m.addTestUser("user-1", "user@example.com", "Test User", "password123", true)
-				accessToken, _ := ts.GenerateAccessToken("user-1", "user@example.com", "", "")
+				accessToken, _ := h.tokenService.GenerateAccessToken("user-1", "user@example.com", "", "")
 				return map[string]string{"refresh_token": accessToken}
 			},
 			wantStatus:     http.StatusUnauthorized,
@@ -687,21 +758,31 @@ func TestRefreshToken(t *testing.T) {
 		},
 		{
 			name: "user not found",
-			setupMock: func(m *mockTenantRepository, ts *auth.TokenService) map[string]string {
+			setupMock: func(t *testing.T, m *mockTenantRepository, h *Handlers) map[string]string {
 				// Generate token for user that doesn't exist in repo
-				refreshToken, _ := ts.GenerateRefreshToken("nonexistent-user")
+				refreshToken := createMockRefreshSession(t, h, "nonexistent-user")
 				return map[string]string{"refresh_token": refreshToken}
 			},
 			wantStatus:     http.StatusUnauthorized,
 			wantErrContain: "not found",
 		},
 		{
+			name: "disabled user cannot refresh",
+			setupMock: func(t *testing.T, m *mockTenantRepository, h *Handlers) map[string]string {
+				m.addTestUser("user-1", "user@example.com", "Test User", "password123", false)
+				refreshToken := createMockRefreshSession(t, h, "user-1")
+				return map[string]string{"refresh_token": refreshToken}
+			},
+			wantStatus:     http.StatusForbidden,
+			wantErrContain: "disabled",
+		},
+		{
 			name: "refresh with tenant - no access",
-			setupMock: func(m *mockTenantRepository, ts *auth.TokenService) map[string]string {
+			setupMock: func(t *testing.T, m *mockTenantRepository, h *Handlers) map[string]string {
 				m.addTestUser("user-1", "user@example.com", "Test User", "password123", true)
 				m.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
 				// User is NOT a member of the tenant
-				refreshToken, _ := ts.GenerateRefreshToken("user-1")
+				refreshToken := createMockRefreshSession(t, h, "user-1")
 				return map[string]string{
 					"refresh_token": refreshToken,
 					"tenant_id":     "tenant-1",
@@ -718,7 +799,7 @@ func TestRefreshToken(t *testing.T) {
 
 			var body map[string]string
 			if tt.setupMock != nil {
-				body = tt.setupMock(repo, h.tokenService)
+				body = tt.setupMock(t, repo, h)
 			}
 
 			req := makeAuthenticatedRequest(http.MethodPost, "/auth/refresh", body, nil)
@@ -756,6 +837,57 @@ func TestRefreshTokenInvalidJSON(t *testing.T) {
 	h.RefreshToken(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestRefreshTokenRotatesSession(t *testing.T) {
+	h, repo := setupAuthTestHandlers()
+	repo.addTestUser("user-1", "user@example.com", "Test User", "password123", true)
+	refreshToken := createMockRefreshSession(t, h, "user-1")
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/auth/refresh", map[string]string{"refresh_token": refreshToken}, nil)
+	w := httptest.NewRecorder()
+	h.RefreshToken(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+
+	var resp map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	require.NotEmpty(t, resp["refresh_token"])
+	require.NotEqual(t, refreshToken, resp["refresh_token"])
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/auth/refresh", map[string]string{"refresh_token": refreshToken}, nil)
+	w = httptest.NewRecorder()
+	h.RefreshToken(w, req)
+	assert.Equal(t, http.StatusUnauthorized, w.Code, "response body: %s", w.Body.String())
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/auth/refresh", map[string]string{"refresh_token": resp["refresh_token"].(string)}, nil)
+	w = httptest.NewRecorder()
+	h.RefreshToken(w, req)
+	assert.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+}
+
+func TestLogoutRevokesRefreshSession(t *testing.T) {
+	h, repo := setupAuthTestHandlers()
+	repo.addTestUser("user-1", "user@example.com", "Test User", "password123", true)
+	refreshToken := createMockRefreshSession(t, h, "user-1")
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/auth/logout", map[string]string{"refresh_token": refreshToken}, nil)
+	w := httptest.NewRecorder()
+	h.Logout(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/auth/refresh", map[string]string{"refresh_token": refreshToken}, nil)
+	w = httptest.NewRecorder()
+	h.RefreshToken(w, req)
+	assert.Equal(t, http.StatusUnauthorized, w.Code, "response body: %s", w.Body.String())
+}
+
+func TestLogoutRejectsInvalidRefreshToken(t *testing.T) {
+	h, _ := setupAuthTestHandlers()
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/auth/logout", map[string]string{"refresh_token": "invalid-token"}, nil)
+	w := httptest.NewRecorder()
+	h.Logout(w, req)
+	assert.Equal(t, http.StatusUnauthorized, w.Code, "response body: %s", w.Body.String())
 }
 
 // =============================================================================

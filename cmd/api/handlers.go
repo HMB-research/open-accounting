@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -42,6 +43,7 @@ import (
 type Handlers struct {
 	pool                     *pgxpool.Pool
 	tokenService             *auth.TokenService
+	refreshSessionService    refreshSessionManager
 	apiTokenService          *apitoken.Service
 	tenantService            *tenant.Service
 	accountingService        *accounting.Service
@@ -67,6 +69,12 @@ type Handlers struct {
 	automatedReminderService *invoicing.AutomatedReminderService
 	costCenterService        *accounting.CostCenterService
 	interestService          *invoicing.InterestService
+}
+
+type refreshSessionManager interface {
+	CreateRefreshSession(ctx context.Context, userID, tokenID, tokenHash string, expiresAt time.Time) error
+	RotateRefreshSession(ctx context.Context, userID, oldTokenID, oldTokenHash, newTokenID, newTokenHash string, newExpiresAt time.Time) error
+	RevokeRefreshSession(ctx context.Context, userID, tokenID, tokenHash string) error
 }
 
 // getSchemaName returns the schema name for a tenant
@@ -239,9 +247,17 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	refreshToken, err := h.tokenService.GenerateRefreshToken(user.ID)
+	refreshToken, refreshClaims, err := h.generateRefreshTokenWithClaims(user.ID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to generate refresh token")
+		return
+	}
+	if h.refreshSessionService == nil {
+		respondError(w, http.StatusInternalServerError, "Refresh session service unavailable")
+		return
+	}
+	if err := h.refreshSessionService.CreateRefreshSession(r.Context(), user.ID, refreshClaims.ID, auth.HashRefreshToken(refreshToken), refreshClaims.ExpiresAt.Time); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to create refresh session")
 		return
 	}
 
@@ -278,15 +294,23 @@ func (h *Handlers) RefreshToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := h.tokenService.ValidateRefreshToken(req.RefreshToken)
+	refreshClaims, err := h.tokenService.ValidateRefreshTokenClaims(req.RefreshToken)
 	if err != nil {
 		respondError(w, http.StatusUnauthorized, "Invalid refresh token")
 		return
 	}
+	if h.refreshSessionService == nil {
+		respondError(w, http.StatusInternalServerError, "Refresh session service unavailable")
+		return
+	}
 
-	user, err := h.tenantService.GetUserByID(r.Context(), userID)
+	user, err := h.tenantService.GetUserByID(r.Context(), refreshClaims.Subject)
 	if err != nil {
 		respondError(w, http.StatusUnauthorized, "User not found")
+		return
+	}
+	if !user.IsActive {
+		respondError(w, http.StatusForbidden, "Account is disabled")
 		return
 	}
 
@@ -309,11 +333,88 @@ func (h *Handlers) RefreshToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	newRefreshToken, newRefreshClaims, err := h.generateRefreshTokenWithClaims(user.ID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to generate refresh token")
+		return
+	}
+	if err := h.refreshSessionService.RotateRefreshSession(
+		r.Context(),
+		user.ID,
+		refreshClaims.ID,
+		auth.HashRefreshToken(req.RefreshToken),
+		newRefreshClaims.ID,
+		auth.HashRefreshToken(newRefreshToken),
+		newRefreshClaims.ExpiresAt.Time,
+	); err != nil {
+		if errors.Is(err, auth.ErrRefreshSessionInvalid) {
+			respondError(w, http.StatusUnauthorized, "Invalid refresh token")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to rotate refresh session")
+		return
+	}
+
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"access_token": accessToken,
-		"token_type":   "Bearer",
-		"expires_in":   900,
+		"access_token":  accessToken,
+		"refresh_token": newRefreshToken,
+		"token_type":    "Bearer",
+		"expires_in":    900,
 	})
+}
+
+// Logout revokes a refresh token session
+// @Summary Revoke refresh token
+// @Description Revoke a refresh token session so it can no longer be used
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param request body object{refresh_token=string} true "Refresh token"
+// @Success 200 {object} object{status=string}
+// @Failure 401 {object} object{error=string}
+// @Router /auth/logout [post]
+func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	refreshClaims, err := h.tokenService.ValidateRefreshTokenClaims(req.RefreshToken)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "Invalid refresh token")
+		return
+	}
+	if h.refreshSessionService == nil {
+		respondError(w, http.StatusInternalServerError, "Refresh session service unavailable")
+		return
+	}
+
+	err = h.refreshSessionService.RevokeRefreshSession(r.Context(), refreshClaims.Subject, refreshClaims.ID, auth.HashRefreshToken(req.RefreshToken))
+	if err != nil {
+		if errors.Is(err, auth.ErrRefreshSessionInvalid) {
+			respondError(w, http.StatusUnauthorized, "Invalid refresh token")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to revoke refresh session")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
+}
+
+func (h *Handlers) generateRefreshTokenWithClaims(userID string) (string, *auth.RefreshClaims, error) {
+	refreshToken, err := h.tokenService.GenerateRefreshToken(userID)
+	if err != nil {
+		return "", nil, err
+	}
+	refreshClaims, err := h.tokenService.ValidateRefreshTokenClaims(refreshToken)
+	if err != nil {
+		return "", nil, err
+	}
+	return refreshToken, refreshClaims, nil
 }
 
 // GetCurrentUser returns the current authenticated user
