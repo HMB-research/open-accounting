@@ -46,6 +46,14 @@ func cashFlowStatementXLSX(report *reports.CashFlowStatement) ([]byte, error) {
 	return reportCSVBytesToXLSX("Cash Flow", content)
 }
 
+func accountBalanceXLSX(accountID, asOfDate, balance string) ([]byte, error) {
+	content, err := accountBalanceCSV(accountID, asOfDate, balance)
+	if err != nil {
+		return nil, err
+	}
+	return reportCSVBytesToXLSX("Account Balance", content)
+}
+
 func reportCSVBytesToXLSX(sheetName string, content []byte) ([]byte, error) {
 	rows, err := csv.NewReader(bytes.NewReader(content)).ReadAll()
 	if err != nil {

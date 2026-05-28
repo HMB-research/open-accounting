@@ -255,6 +255,47 @@ func TestReportHandlers(t *testing.T) {
 	h.GetAccountBalance(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/account-balance/cash?as_of_date=2026-02-28&format=csv", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"accountID": "cash",
+	})
+	rr = httptest.NewRecorder()
+	h.GetAccountBalance(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Header().Get("Content-Type"), "text/csv")
+	assert.Contains(t, rr.Body.String(), "account_id,as_of_date,balance")
+	assert.Contains(t, rr.Body.String(), "cash,2026-02-28,275")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/account-balance/cash?as_of_date=2026-02-28&format=xlsx", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"accountID": "cash",
+	})
+	rr = httptest.NewRecorder()
+	h.GetAccountBalance(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", rr.Header().Get("Content-Type"))
+	assert.Contains(t, rr.Header().Get("Content-Disposition"), "account-balance-cash-2026-02-28.xlsx")
+	requireXLSXContains(t, rr.Body.Bytes(), "account_id", "cash", "275")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/account-balance/cash?as_of_date=2026-02-28&format=pdf", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"accountID": "cash",
+	})
+	rr = httptest.NewRecorder()
+	h.GetAccountBalance(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	assert.Contains(t, rr.Header().Get("Content-Disposition"), "account-balance-cash-2026-02-28.pdf")
+	requirePDF(t, rr.Body.Bytes())
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/account-balance/cash?as_of_date=2026-02-28&format=xml", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"accountID": "cash",
+	})
+	rr = httptest.NewRecorder()
+	h.GetAccountBalance(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/account-balance/cash?as_of_date=bad-date", nil), map[string]string{
 		"tenantID":  "tenant-1",
 		"accountID": "cash",

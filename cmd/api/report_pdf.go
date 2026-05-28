@@ -55,6 +55,14 @@ func cashFlowStatementPDF(report *reports.CashFlowStatement) ([]byte, error) {
 	return reportCSVBytesToPDF("Cash Flow Statement", fmt.Sprintf("%s to %s", report.StartDate, report.EndDate), content)
 }
 
+func accountBalancePDF(accountID, asOfDate, balance string) ([]byte, error) {
+	content, err := accountBalanceCSV(accountID, asOfDate, balance)
+	if err != nil {
+		return nil, err
+	}
+	return reportCSVBytesToPDF("Account Balance", fmt.Sprintf("%s as of %s", accountID, asOfDate), content)
+}
+
 func agingReportPDF(report *analytics.AgingReport) ([]byte, error) {
 	return reportRowsPDF(reportPDFTitleCase(report.ReportType)+" Aging", "As of "+reportExportDate(report.AsOfDate), agingReportRows(report))
 }

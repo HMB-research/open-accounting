@@ -7969,11 +7969,39 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		accountID := fs.String("account-id", "", "Account id")
 		asOf := fs.String("as-of", "", "As-of date in YYYY-MM-DD")
 		asJSON := fs.Bool("json", false, "Output JSON")
+		asCSV := fs.Bool("csv", false, "Output CSV")
+		asXLSX := fs.Bool("xlsx", false, "Output XLSX")
+		asPDF := fs.Bool("pdf", false, "Output PDF")
+		outputPath := fs.String("output", "", "Optional CSV/XLSX/PDF output file path")
 		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *asPDF, *outputPath); err != nil {
 			return err
 		}
 		if strings.TrimSpace(*accountID) == "" {
 			return errors.New("account-id is required")
+		}
+		if *asCSV {
+			content, err := client.exportAccountBalanceReport(ctx, cfg.TenantID, strings.TrimSpace(*accountID), strings.TrimSpace(*asOf), "csv")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "account balance CSV")
+		}
+		if *asXLSX {
+			content, err := client.exportAccountBalanceReport(ctx, cfg.TenantID, strings.TrimSpace(*accountID), strings.TrimSpace(*asOf), "xlsx")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "account balance XLSX")
+		}
+		if *asPDF {
+			content, err := client.exportAccountBalanceReport(ctx, cfg.TenantID, strings.TrimSpace(*accountID), strings.TrimSpace(*asOf), "pdf")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "account balance PDF")
 		}
 
 		report, err := client.getAccountBalanceReport(ctx, cfg.TenantID, strings.TrimSpace(*accountID), strings.TrimSpace(*asOf))

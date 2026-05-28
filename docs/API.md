@@ -2383,6 +2383,7 @@ Authorization: Bearer <token>
 
 **Query Parameters:**
 - `as_of_date` (string): Date in YYYY-MM-DD format
+- `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
 
 ### Balance Sheet
 
