@@ -535,6 +535,72 @@ func TestPostgresRepository_GetPeriodBalances(t *testing.T) {
 	}
 }
 
+func TestPostgresRepository_GetPeriodBalancesExcludesYearEndCarryForwardSources(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	userID := testutil.CreateTestUser(t, pool, "periodbalances-yearend@example.com")
+	testutil.AddUserToTenant(t, pool, tenant.ID, userID, "admin")
+	repo := NewRepository(pool)
+	ctx := context.Background()
+
+	var revenueAccountID string
+	err := pool.QueryRow(ctx, `
+		SELECT id FROM `+tenant.SchemaName+`.accounts WHERE code = '4000' LIMIT 1
+	`).Scan(&revenueAccountID)
+	if err != nil {
+		t.Fatalf("failed to get revenue account: %v", err)
+	}
+
+	entryDate := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	normalAmount := decimal.NewFromInt(125)
+	excludedAmount := decimal.NewFromInt(500)
+	insertRevenueEntry := func(entryNumber, sourceType string, debitAmount, creditAmount decimal.Decimal) {
+		t.Helper()
+
+		entryID := uuid.New().String()
+		_, err := pool.Exec(ctx, `
+			INSERT INTO `+tenant.SchemaName+`.journal_entries
+			(id, tenant_id, entry_number, entry_date, description, source_type, status, created_by, created_at)
+			VALUES ($1, $2, $3, $4, 'Period Balance Source Filter Test', $5, 'POSTED', $6, NOW())
+		`, entryID, tenant.ID, entryNumber, entryDate, sourceType, userID)
+		if err != nil {
+			t.Fatalf("failed to create journal entry %s: %v", entryNumber, err)
+		}
+
+		_, err = pool.Exec(ctx, `
+			INSERT INTO `+tenant.SchemaName+`.journal_entry_lines
+			(id, tenant_id, journal_entry_id, account_id, debit_amount, credit_amount, currency, exchange_rate, base_debit, base_credit)
+			VALUES ($1, $2, $3, $4, $5, $6, 'EUR', 1, $5, $6)
+		`, uuid.New().String(), tenant.ID, entryID, revenueAccountID, debitAmount, creditAmount)
+		if err != nil {
+			t.Fatalf("failed to create journal entry line %s: %v", entryNumber, err)
+		}
+	}
+
+	insertRevenueEntry("JE-PERIOD-SOURCE-001", "", decimal.Zero, normalAmount)
+	insertRevenueEntry("JE-PERIOD-SOURCE-002", SourceTypeYearEndCarryForward, decimal.Zero, excludedAmount)
+	insertRevenueEntry("JE-PERIOD-SOURCE-003", SourceTypeYearEndCarryForwardReversal, excludedAmount, decimal.Zero)
+
+	balances, err := repo.GetPeriodBalances(ctx, tenant.SchemaName, tenant.ID, entryDate, entryDate)
+	if err != nil {
+		t.Fatalf("GetPeriodBalances failed: %v", err)
+	}
+
+	var revenueBalance *AccountBalance
+	for i := range balances {
+		if balances[i].AccountID == revenueAccountID {
+			revenueBalance = &balances[i]
+			break
+		}
+	}
+	if revenueBalance == nil {
+		t.Fatal("expected revenue account in period balances")
+	}
+	if !revenueBalance.NetBalance.Equal(normalAmount) {
+		t.Fatalf("expected only normal revenue %s, got %s", normalAmount, revenueBalance.NetBalance)
+	}
+}
+
 func TestPostgresRepository_GetPeriodBalances_Empty(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)

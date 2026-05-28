@@ -72,6 +72,40 @@ func (h *Handlers) CreateYearEndCarryForward(w http.ResponseWriter, r *http.Requ
 	respondJSON(w, http.StatusOK, result)
 }
 
+func (h *Handlers) ReverseYearEndCarryForward(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID, ok := h.authorizePeriodCloseMutation(w, r)
+	if !ok {
+		return
+	}
+
+	var req accounting.ReverseYearEndCarryForwardRequest
+	if !decodeJSONRequest(w, r, &req) {
+		return
+	}
+	req.UserID = userID
+
+	tenantRecord, err := h.tenantService.GetTenant(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Tenant not found")
+		return
+	}
+
+	result, err := h.accountingService.ReverseYearEndCarryForward(
+		r.Context(),
+		tenantRecord.SchemaName,
+		tenantID,
+		tenantRecord.Settings.FiscalYearStart,
+		tenantRecord.Settings.PeriodLockDate,
+		&req,
+	)
+	if err != nil {
+		respondYearEndCloseError(w, err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 func (h *Handlers) yearEndCarryForwardExists(r *http.Request, tenantRecord *tenant.Tenant, rawPeriodEndDate string) (bool, error) {
 	if h.accountingService == nil {
 		return false, nil
@@ -100,9 +134,17 @@ func respondYearEndCloseError(w http.ResponseWriter, err error) {
 		respondError(w, http.StatusBadRequest, err.Error())
 	case strings.Contains(err.Error(), "user_id is required"):
 		respondError(w, http.StatusBadRequest, err.Error())
+	case strings.Contains(err.Error(), "reason is required"):
+		respondError(w, http.StatusBadRequest, err.Error())
 	case strings.Contains(err.Error(), "fiscal year must be closed"):
 		respondError(w, http.StatusConflict, err.Error())
 	case strings.Contains(err.Error(), "carry-forward already exists"):
+		respondError(w, http.StatusConflict, err.Error())
+	case strings.Contains(err.Error(), "carry-forward does not exist"):
+		respondError(w, http.StatusConflict, err.Error())
+	case strings.Contains(err.Error(), "current status"):
+		respondError(w, http.StatusConflict, err.Error())
+	case strings.Contains(err.Error(), "not in posted status"):
 		respondError(w, http.StatusConflict, err.Error())
 	case strings.Contains(err.Error(), "retained earnings account is required"):
 		respondError(w, http.StatusConflict, err.Error())

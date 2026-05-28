@@ -323,6 +323,25 @@ Content-Type: application/json
 - a carry-forward cannot be posted twice for the same fiscal year
 - the journal entry is posted on the first day of the next fiscal year using `source_type = YEAR_END_CARRY_FORWARD`
 
+### Reverse Year-End Carry-Forward
+
+```http
+POST /tenants/{tenantId}/year-end-carry-forward/reverse
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "period_end_date": "2025-12-31",
+  "reason": "Late supplier accrual"
+}
+```
+
+- only roles with close permissions can perform this action
+- `reason` is required
+- the selected date must match the fiscal year-end
+- an existing posted carry-forward must exist for the fiscal year
+- the original carry-forward is voided and a posted reversal journal is created on the original carry-forward date using `source_type = YEAR_END_CARRY_FORWARD_REVERSAL`
+
 ### Period Lock Behavior
 
 When `settings.period_lock_date` is set, core write paths reject back-dated operations on or before the lock date with `409 Conflict`.
@@ -1861,6 +1880,7 @@ Reopen requests require a note. The API rejects fiscal-year reopen requests afte
 ```http
 GET /tenants/{tenantId}/year-end-close-status?period_end_date=2025-12-31
 POST /tenants/{tenantId}/year-end-carry-forward
+POST /tenants/{tenantId}/year-end-carry-forward/reverse
 Authorization: Bearer <token>
 ```
 
@@ -1869,6 +1889,15 @@ Create carry-forward:
 ```json
 {
   "period_end_date": "2025-12-31"
+}
+```
+
+Reverse carry-forward:
+
+```json
+{
+  "period_end_date": "2025-12-31",
+  "reason": "Late supplier accrual"
 }
 ```
 

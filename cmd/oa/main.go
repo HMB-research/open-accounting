@@ -269,6 +269,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  close reopen              Reopen an accounting period")
 	_, _ = fmt.Fprintln(a.stdout, "  close year-end-status     Show year-end close readiness")
 	_, _ = fmt.Fprintln(a.stdout, "  close carry-forward       Create year-end carry-forward entries")
+	_, _ = fmt.Fprintln(a.stdout, "  close reverse-carry-forward Reverse year-end carry-forward entries")
 	_, _ = fmt.Fprintln(a.stdout, "  banking accounts list     List bank accounts")
 	_, _ = fmt.Fprintln(a.stdout, "  banking accounts create   Create a bank account")
 	_, _ = fmt.Fprintln(a.stdout, "  banking accounts get      Show one bank account")
@@ -3127,6 +3128,34 @@ func (a *cliApp) runClose(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, result)
 		}
 		printYearEndCarryForwardResult(a.stdout, result)
+		return nil
+	case "reverse-carry-forward":
+		fs := flag.NewFlagSet("close reverse-carry-forward", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		periodEnd := fs.String("period-end", "", "Period end date, YYYY-MM-DD")
+		reason := fs.String("reason", "", "Reversal reason")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*periodEnd) == "" {
+			return errors.New("period-end is required")
+		}
+		if strings.TrimSpace(*reason) == "" {
+			return errors.New("reason is required")
+		}
+
+		result, err := client.reverseYearEndCarryForward(ctx, cfg.TenantID, &accounting.ReverseYearEndCarryForwardRequest{
+			PeriodEndDate: strings.TrimSpace(*periodEnd),
+			Reason:        strings.TrimSpace(*reason),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		printYearEndCarryForwardReversalResult(a.stdout, result)
 		return nil
 	default:
 		return fmt.Errorf("unknown close subcommand %q", args[0])

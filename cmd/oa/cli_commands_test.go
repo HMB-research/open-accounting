@@ -3410,6 +3410,21 @@ func TestCLICloseCommands(t *testing.T) {
 		},
 		"status": statusPayload,
 	}
+	reversalPayload := map[string]any{
+		"reversal_journal_entry": map[string]any{
+			"id":           "je-2",
+			"tenant_id":    "tenant-1",
+			"entry_number": "JE-2026-002",
+			"entry_date":   "2026-01-01T00:00:00Z",
+			"description":  "Reversal of year-end carry-forward",
+			"source_type":  "YEAR_END_CARRY_FORWARD_REVERSAL",
+			"status":       "POSTED",
+			"created_at":   now,
+			"created_by":   "user-1",
+			"lines":        []map[string]any{},
+		},
+		"status": statusPayload,
+	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -3439,6 +3454,12 @@ func TestCLICloseCommands(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "2025-12-31", req.PeriodEndDate)
 			_ = json.NewEncoder(w).Encode(carryForwardPayload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/year-end-carry-forward/reverse":
+			var req accounting.ReverseYearEndCarryForwardRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2025-12-31", req.PeriodEndDate)
+			assert.Equal(t, "Late supplier accrual", req.Reason)
+			_ = json.NewEncoder(w).Encode(reversalPayload)
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -3473,6 +3494,11 @@ func TestCLICloseCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"close", "carry-forward", "--period-end", "2025-12-31"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created year-end carry-forward JE-2026-001")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"close", "reverse-carry-forward", "--period-end", "2025-12-31", "--reason", "Late supplier accrual"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Reversed year-end carry-forward JE-2026-002")
 }
 
 func TestCLIBankingCommands(t *testing.T) {

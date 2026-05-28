@@ -529,6 +529,10 @@ func TestPrintCloseOutputs(t *testing.T) {
 		JournalEntry: &accounting.JournalEntry{ID: "je-1", EntryNumber: "JE-2026-001", Status: accounting.StatusPosted},
 		Status:       &status,
 	}
+	reversalResult := accounting.YearEndCarryForwardReversalResult{
+		ReversalJournalEntry: &accounting.JournalEntry{ID: "je-2", EntryNumber: "JE-2026-002", EntryDate: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Status: accounting.StatusPosted},
+		Status:               &status,
+	}
 
 	var eventsBuf bytes.Buffer
 	printPeriodCloseEventsTable(&eventsBuf, []tenant.PeriodCloseEvent{event})
@@ -552,6 +556,11 @@ func TestPrintCloseOutputs(t *testing.T) {
 	printYearEndCarryForwardResult(&resultBuf, &result)
 	assert.Contains(t, resultBuf.String(), "Created year-end carry-forward JE-2026-001")
 	assert.Contains(t, resultBuf.String(), "Status: POSTED")
+
+	var reversalBuf bytes.Buffer
+	printYearEndCarryForwardReversalResult(&reversalBuf, &reversalResult)
+	assert.Contains(t, reversalBuf.String(), "Reversed year-end carry-forward JE-2026-002")
+	assert.Contains(t, reversalBuf.String(), "Reversal date: 2026-01-01")
 }
 
 func TestPrintBankingOutputs(t *testing.T) {

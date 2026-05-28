@@ -1015,6 +1015,122 @@ func TestService_CreateYearEndCarryForwardRejectsNonYearEndDate(t *testing.T) {
 	assert.Contains(t, err.Error(), "must match the fiscal year end")
 }
 
+func TestService_ReverseYearEndCarryForward(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	svc := NewServiceWithRepo(nil, repo)
+
+	fiscalYearEndDate, err := time.Parse(yearEndDateLayout, "2025-12-31")
+	require.NoError(t, err)
+	sourceID := yearEndCarryForwardSourceID("tenant-1", fiscalYearEndDate)
+
+	repo.accounts["retained"] = &Account{
+		ID:          "retained",
+		TenantID:    "tenant-1",
+		Code:        "3200",
+		Name:        "Retained Earnings",
+		AccountType: AccountTypeEquity,
+		IsActive:    true,
+	}
+	repo.periodBalances = []AccountBalance{
+		{
+			AccountID:     "revenue-1",
+			AccountCode:   "4100",
+			AccountName:   "Sales Revenue",
+			AccountType:   AccountTypeRevenue,
+			CreditBalance: decimal.NewFromInt(1000),
+			NetBalance:    decimal.NewFromInt(1000),
+		},
+	}
+	repo.journalEntries["carry-forward"] = &JournalEntry{
+		ID:          "carry-forward",
+		TenantID:    "tenant-1",
+		EntryNumber: "JE-00042",
+		EntryDate:   fiscalYearEndDate.AddDate(0, 0, 1),
+		Description: "Year-end carry-forward",
+		Reference:   "CF-20251231",
+		SourceType:  SourceTypeYearEndCarryForward,
+		SourceID:    &sourceID,
+		Status:      StatusPosted,
+		Lines: []JournalEntryLine{
+			{
+				AccountID:    "revenue-1",
+				DebitAmount:  decimal.NewFromInt(1000),
+				BaseDebit:    decimal.NewFromInt(1000),
+				Currency:     "EUR",
+				ExchangeRate: decimal.NewFromInt(1),
+			},
+			{
+				AccountID:    "retained",
+				CreditAmount: decimal.NewFromInt(1000),
+				BaseCredit:   decimal.NewFromInt(1000),
+				Currency:     "EUR",
+				ExchangeRate: decimal.NewFromInt(1),
+			},
+		},
+	}
+
+	result, err := svc.ReverseYearEndCarryForward(ctx, "tenant_test", "tenant-1", 1, stringPtr("2025-12-31"), &ReverseYearEndCarryForwardRequest{
+		PeriodEndDate: "2025-12-31",
+		Reason:        "Late supplier accrual",
+		UserID:        "user-1",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.ReversalJournalEntry)
+	assert.Equal(t, SourceTypeYearEndCarryForwardReversal, result.ReversalJournalEntry.SourceType)
+	assert.Equal(t, "carry-forward", *result.ReversalJournalEntry.SourceID)
+	assert.Equal(t, "2026-01-01", result.ReversalJournalEntry.EntryDate.Format(yearEndDateLayout))
+	assert.Equal(t, StatusVoided, repo.journalEntries["carry-forward"].Status)
+	require.Len(t, result.ReversalJournalEntry.Lines, 2)
+	assert.True(t, result.ReversalJournalEntry.Lines[0].CreditAmount.Equal(decimal.NewFromInt(1000)))
+	assert.True(t, result.ReversalJournalEntry.Lines[1].DebitAmount.Equal(decimal.NewFromInt(1000)))
+	require.NotNil(t, result.Status)
+	assert.Nil(t, result.Status.ExistingCarryForward)
+	assert.True(t, result.Status.CarryForwardNeeded)
+}
+
+func TestService_ReverseYearEndCarryForwardRequiresExistingCarryForward(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	svc := NewServiceWithRepo(nil, repo)
+
+	repo.periodBalances = []AccountBalance{
+		{
+			AccountID:     "revenue-1",
+			AccountCode:   "4100",
+			AccountName:   "Sales Revenue",
+			AccountType:   AccountTypeRevenue,
+			CreditBalance: decimal.NewFromInt(100),
+			NetBalance:    decimal.NewFromInt(100),
+		},
+	}
+
+	_, err := svc.ReverseYearEndCarryForward(ctx, "tenant_test", "tenant-1", 1, stringPtr("2025-12-31"), &ReverseYearEndCarryForwardRequest{
+		PeriodEndDate: "2025-12-31",
+		Reason:        "Late supplier accrual",
+		UserID:        "user-1",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "carry-forward does not exist")
+}
+
+func TestService_ReverseYearEndCarryForwardRequiresReason(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	svc := NewServiceWithRepo(nil, repo)
+
+	_, err := svc.ReverseYearEndCarryForward(ctx, "tenant_test", "tenant-1", 1, stringPtr("2025-12-31"), &ReverseYearEndCarryForwardRequest{
+		PeriodEndDate: "2025-12-31",
+		UserID:        "user-1",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reason is required")
+}
+
 func TestCreateJournalEntryRequest(t *testing.T) {
 	sourceID := "inv-1"
 	req := CreateJournalEntryRequest{

@@ -140,6 +140,19 @@ func (m *mockYearEndAccountingRepository) GetPeriodBalances(ctx context.Context,
 }
 
 func (m *mockYearEndAccountingRepository) VoidJournalEntry(ctx context.Context, schemaName, tenantID, entryID, userID, reason string, reversal *accounting.JournalEntry) error {
+	entry, ok := m.journalEntries[entryID]
+	if !ok || entry.TenantID != tenantID {
+		return errors.New("entry not found or not in posted status")
+	}
+	if entry.Status != accounting.StatusPosted {
+		return errors.New("entry not found or not in posted status")
+	}
+	entry.Status = accounting.StatusVoided
+	entry.VoidReason = reason
+	if reversal != nil {
+		reversal.EntryNumber = "JE-00101"
+		m.journalEntries[reversal.ID] = reversal
+	}
 	return nil
 }
 
@@ -315,6 +328,98 @@ func TestCreateYearEndCarryForwardRequiresClosedYear(t *testing.T) {
 	err := json.NewDecoder(w.Body).Decode(&resp)
 	require.NoError(t, err)
 	assert.Contains(t, resp["error"], "fiscal year must be closed")
+}
+
+func TestReverseYearEndCarryForward(t *testing.T) {
+	h, repo, accountingRepo := setupTenantAccountingHandlers()
+	settings := tenant.DefaultSettings()
+	settings.PeriodLockDate = stringPtr("2025-12-31")
+	repo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		Name:       "Tenant",
+		Slug:       "tenant",
+		SchemaName: "tenant_tenant",
+		Settings:   settings,
+	}
+	repo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+		{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner},
+	}
+	accountingRepo.accounts["retained"] = &accounting.Account{
+		ID:          "retained",
+		TenantID:    "tenant-1",
+		Code:        "3200",
+		Name:        "Retained Earnings",
+		AccountType: accounting.AccountTypeEquity,
+		IsActive:    true,
+	}
+	accountingRepo.periodBalances = []accounting.AccountBalance{
+		{
+			AccountID:     "revenue-1",
+			AccountCode:   "4100",
+			AccountName:   "Sales Revenue",
+			AccountType:   accounting.AccountTypeRevenue,
+			CreditBalance: decimal.NewFromInt(1000),
+			NetBalance:    decimal.NewFromInt(1000),
+		},
+	}
+	fiscalYearEndDate, err := time.Parse("2006-01-02", "2025-12-31")
+	require.NoError(t, err)
+	sourceID := accounting.YearEndCarryForwardSourceID("tenant-1", fiscalYearEndDate)
+	accountingRepo.journalEntries["carry-forward"] = &accounting.JournalEntry{
+		ID:          "carry-forward",
+		TenantID:    "tenant-1",
+		EntryNumber: "JE-00088",
+		EntryDate:   fiscalYearEndDate.AddDate(0, 0, 1),
+		Description: "Year-end carry-forward",
+		Reference:   "CF-20251231",
+		SourceType:  accounting.SourceTypeYearEndCarryForward,
+		SourceID:    &sourceID,
+		Status:      accounting.StatusPosted,
+		Lines: []accounting.JournalEntryLine{
+			{
+				AccountID:    "revenue-1",
+				DebitAmount:  decimal.NewFromInt(1000),
+				BaseDebit:    decimal.NewFromInt(1000),
+				CreditAmount: decimal.Zero,
+				BaseCredit:   decimal.Zero,
+				Currency:     "EUR",
+				ExchangeRate: decimal.NewFromInt(1),
+			},
+			{
+				AccountID:    "retained",
+				DebitAmount:  decimal.Zero,
+				BaseDebit:    decimal.Zero,
+				CreditAmount: decimal.NewFromInt(1000),
+				BaseCredit:   decimal.NewFromInt(1000),
+				Currency:     "EUR",
+				ExchangeRate: decimal.NewFromInt(1),
+			},
+		},
+	}
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/year-end-carry-forward/reverse", map[string]interface{}{
+		"period_end_date": "2025-12-31",
+		"reason":          "Late supplier accrual",
+	}, &auth.Claims{
+		UserID: "user-1",
+		Email:  "user@example.com",
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	w := httptest.NewRecorder()
+
+	h.ReverseYearEndCarryForward(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	var resp accounting.YearEndCarryForwardReversalResult
+	err = json.NewDecoder(w.Body).Decode(&resp)
+	require.NoError(t, err)
+	require.NotNil(t, resp.ReversalJournalEntry)
+	assert.Equal(t, accounting.SourceTypeYearEndCarryForwardReversal, resp.ReversalJournalEntry.SourceType)
+	assert.Equal(t, "2026-01-01", resp.ReversalJournalEntry.EntryDate.Format("2006-01-02"))
+	assert.Equal(t, accounting.StatusVoided, accountingRepo.journalEntries["carry-forward"].Status)
+	require.NotNil(t, resp.Status)
+	assert.Nil(t, resp.Status.ExistingCarryForward)
+	assert.True(t, resp.Status.CarryForwardReady)
 }
 
 func TestReopenPeriodRejectsYearEndCarryForward(t *testing.T) {

@@ -459,7 +459,7 @@ func (r *Repository) GetPeriodBalances(ctx context.Context, schemaName, tenantID
 			LEFT JOIN %s.journal_entry_lines jel ON jel.account_id = a.id AND jel.tenant_id = a.tenant_id
 			LEFT JOIN %s.journal_entries je ON je.id = jel.journal_entry_id
 			WHERE a.tenant_id = $1
-			  AND (je.id IS NULL OR (je.entry_date >= $2 AND je.entry_date <= $3 AND je.status = 'POSTED' AND COALESCE(je.source_type, '') != $4))
+			  AND (je.id IS NULL OR (je.entry_date >= $2 AND je.entry_date <= $3 AND je.status = 'POSTED' AND COALESCE(je.source_type, '') NOT IN ($4, $5)))
 			  AND a.account_type IN ('REVENUE', 'EXPENSE')
 			GROUP BY a.id, a.code, a.name, a.account_type
 		)
@@ -477,7 +477,7 @@ func (r *Repository) GetPeriodBalances(ctx context.Context, schemaName, tenantID
 		FROM period_totals
 		WHERE total_debits != 0 OR total_credits != 0
 		ORDER BY account_type DESC, account_code
-	`, schemaName, schemaName, schemaName), tenantID, startDate, endDate, SourceTypeYearEndCarryForward)
+	`, schemaName, schemaName, schemaName), tenantID, startDate, endDate, SourceTypeYearEndCarryForward, SourceTypeYearEndCarryForwardReversal)
 	if err != nil {
 		return nil, fmt.Errorf("get period balances: %w", err)
 	}
