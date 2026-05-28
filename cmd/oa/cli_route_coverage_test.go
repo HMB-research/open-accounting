@@ -90,6 +90,35 @@ func TestCLIUsageListsKnownCommandPaths(t *testing.T) {
 	require.Empty(t, missing, "known CLI commands missing from oa help")
 }
 
+func TestImplementedCLIFlagSetsAreCovered(t *testing.T) {
+	knownCommands := collectKnownCLICommandPaths(t)
+	documentedCommands := collectDocumentedCLICommandPaths(t, knownCommands, readCLIReference(t))
+	usageCommands := collectCLIUsageCommandPaths(t, knownCommands)
+
+	var unknown []string
+	var undocumented []string
+	var missingUsage []string
+	for command := range collectImplementedCLIFlagSetCommands(t) {
+		if !knownCommands[command] {
+			unknown = append(unknown, command)
+			continue
+		}
+		if !documentedCommands[command] {
+			undocumented = append(undocumented, command)
+		}
+		if !usageCommands[command] {
+			missingUsage = append(missingUsage, command)
+		}
+	}
+
+	sort.Strings(unknown)
+	sort.Strings(undocumented)
+	sort.Strings(missingUsage)
+	require.Empty(t, unknown, "implemented CLI flag sets missing from known command coverage")
+	require.Empty(t, undocumented, "implemented CLI flag sets missing from docs/CLI.md")
+	require.Empty(t, missingUsage, "implemented CLI flag sets missing from oa help")
+}
+
 func collectAPIRoutesFromSource(t *testing.T) []apiRoute {
 	t.Helper()
 
@@ -152,6 +181,39 @@ func collectAPIRoutesFromSource(t *testing.T) []apiRoute {
 		return routes[i].String() < routes[j].String()
 	})
 	return routes
+}
+
+func collectImplementedCLIFlagSetCommands(t *testing.T) map[string]bool {
+	t.Helper()
+
+	fileSet := token.NewFileSet()
+	file, err := parser.ParseFile(fileSet, "main.go", nil, 0)
+	require.NoError(t, err)
+
+	commands := map[string]bool{}
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || selector.Sel.Name != "NewFlagSet" {
+			return true
+		}
+		lit, ok := call.Args[0].(*ast.BasicLit)
+		if !ok {
+			return true
+		}
+		command, err := strconv.Unquote(lit.Value)
+		require.NoError(t, err)
+		command = strings.TrimSpace(command)
+		if command != "" {
+			commands[command] = true
+		}
+		return true
+	})
+	require.Greater(t, len(commands), 100, "implementation parser should see broad CLI flag set coverage")
+	return commands
 }
 
 func mustStringArg(t *testing.T, expr ast.Expr) string {
