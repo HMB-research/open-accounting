@@ -424,7 +424,7 @@ func (r *GORMRepository) GetPeriodBalances(ctx context.Context, schemaName, tena
 			LEFT JOIN %s jel ON jel.account_id = a.id AND jel.tenant_id = a.tenant_id
 			LEFT JOIN %s je ON je.id = jel.journal_entry_id
 			WHERE a.tenant_id = ?
-			  AND (je.id IS NULL OR (je.entry_date >= ? AND je.entry_date <= ? AND je.status = 'POSTED' AND COALESCE(je.source_type, '') != ?))
+			  AND (je.id IS NULL OR (je.entry_date >= ? AND je.entry_date <= ? AND je.status = 'POSTED' AND COALESCE(je.source_type, '') NOT IN (?, ?)))
 			  AND a.account_type IN ('REVENUE', 'EXPENSE')
 			GROUP BY a.id, a.code, a.name, a.account_type
 		)
@@ -442,7 +442,7 @@ func (r *GORMRepository) GetPeriodBalances(ctx context.Context, schemaName, tena
 		FROM period_totals
 		WHERE total_debits != 0 OR total_credits != 0
 		ORDER BY account_type DESC, account_code
-	`, accountsTable, linesTable, entriesTable), tenantID, startDate, endDate, SourceTypeYearEndCarryForward).Scan(&results).Error
+	`, accountsTable, linesTable, entriesTable), tenantID, startDate, endDate, SourceTypeYearEndCarryForward, SourceTypeYearEndCarryForwardReversal).Scan(&results).Error
 	if err != nil {
 		return nil, fmt.Errorf("get period balances: %w", err)
 	}

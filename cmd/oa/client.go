@@ -871,6 +871,14 @@ func (c *apiClient) createYearEndCarryForward(ctx context.Context, tenantID stri
 	return &resp, nil
 }
 
+func (c *apiClient) reverseYearEndCarryForward(ctx context.Context, tenantID string, req *accounting.ReverseYearEndCarryForwardRequest) (*accounting.YearEndCarryForwardReversalResult, error) {
+	var resp accounting.YearEndCarryForwardReversalResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "year-end-carry-forward", "reverse"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) listBankAccounts(ctx context.Context, tenantID string, activeOnly bool) ([]banking.BankAccount, error) {
 	values := url.Values{}
 	if activeOnly {

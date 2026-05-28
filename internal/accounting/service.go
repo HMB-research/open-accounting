@@ -165,20 +165,25 @@ func (s *Service) VoidJournalEntry(ctx context.Context, schemaName, tenantID, en
 		return nil, err
 	}
 
+	return s.voidPostedJournalEntry(ctx, schemaName, tenantID, original, userID, reason, "VOID", time.Now(), fmt.Sprintf("Reversal of %s: %s", original.EntryNumber, reason))
+}
+
+func (s *Service) voidPostedJournalEntry(ctx context.Context, schemaName, tenantID string, original *JournalEntry, userID, reason, sourceType string, entryDate time.Time, description string) (*JournalEntry, error) {
 	if original.Status != StatusPosted {
 		return nil, fmt.Errorf("only posted entries can be voided, current status: %s", original.Status)
 	}
 
 	// Create reversing entry
 	now := time.Now()
+	sourceID := original.ID
 	reversal := &JournalEntry{
 		ID:          uuid.New().String(),
 		TenantID:    tenantID,
-		EntryDate:   time.Now(),
-		Description: fmt.Sprintf("Reversal of %s: %s", original.EntryNumber, reason),
+		EntryDate:   entryDate,
+		Description: description,
 		Reference:   original.EntryNumber,
-		SourceType:  "VOID",
-		SourceID:    &original.ID,
+		SourceType:  sourceType,
+		SourceID:    &sourceID,
 		Status:      StatusPosted,
 		PostedAt:    &now,
 		PostedBy:    &userID,
@@ -202,7 +207,7 @@ func (s *Service) VoidJournalEntry(ctx context.Context, schemaName, tenantID, en
 	}
 
 	// Void the entry and create reversal via repository
-	if err := s.repo.VoidJournalEntry(ctx, schemaName, tenantID, entryID, userID, reason, reversal); err != nil {
+	if err := s.repo.VoidJournalEntry(ctx, schemaName, tenantID, original.ID, userID, reason, reversal); err != nil {
 		return nil, err
 	}
 

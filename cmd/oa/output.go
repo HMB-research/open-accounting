@@ -1454,6 +1454,18 @@ func printYearEndCarryForwardResult(w io.Writer, result *accounting.YearEndCarry
 	}
 }
 
+func printYearEndCarryForwardReversalResult(w io.Writer, result *accounting.YearEndCarryForwardReversalResult) {
+	if result.ReversalJournalEntry != nil {
+		_, _ = fmt.Fprintf(w, "Reversed year-end carry-forward %s (%s)\n", result.ReversalJournalEntry.EntryNumber, result.ReversalJournalEntry.ID)
+		_, _ = fmt.Fprintf(w, "Status: %s\n", result.ReversalJournalEntry.Status)
+		_, _ = fmt.Fprintf(w, "Reversal date: %s\n", result.ReversalJournalEntry.EntryDate.Format("2006-01-02"))
+	}
+	if result.Status != nil {
+		_, _ = fmt.Fprintf(w, "Carry-forward ready: %t\n", result.Status.CarryForwardReady)
+		_, _ = fmt.Fprintf(w, "Carry-forward needed: %t\n", result.Status.CarryForwardNeeded)
+	}
+}
+
 func stringValue(value *string) string {
 	if value == nil {
 		return ""

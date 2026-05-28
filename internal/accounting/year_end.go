@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	SourceTypeYearEndCarryForward = "YEAR_END_CARRY_FORWARD"
-	yearEndDateLayout             = "2006-01-02"
+	SourceTypeYearEndCarryForward         = "YEAR_END_CARRY_FORWARD"
+	SourceTypeYearEndCarryForwardReversal = "YEAR_END_CARRY_FORWARD_REVERSAL"
+	yearEndDateLayout                     = "2006-01-02"
 )
 
 // AccountSummary is a lightweight account reference for workflow responses.
@@ -61,6 +62,19 @@ type CreateYearEndCarryForwardRequest struct {
 type YearEndCarryForwardResult struct {
 	JournalEntry *JournalEntry       `json:"journal_entry"`
 	Status       *YearEndCloseStatus `json:"status"`
+}
+
+// ReverseYearEndCarryForwardRequest requests reversal of an existing carry-forward journal.
+type ReverseYearEndCarryForwardRequest struct {
+	PeriodEndDate string `json:"period_end_date"`
+	Reason        string `json:"reason"`
+	UserID        string `json:"-"`
+}
+
+// YearEndCarryForwardReversalResult contains the reversal journal and refreshed status.
+type YearEndCarryForwardReversalResult struct {
+	ReversalJournalEntry *JournalEntry       `json:"reversal_journal_entry"`
+	Status               *YearEndCloseStatus `json:"status"`
 }
 
 // GetYearEndCloseStatus returns the carry-forward readiness state for a fiscal year.
@@ -219,6 +233,53 @@ func (s *Service) CreateYearEndCarryForward(ctx context.Context, schemaName, ten
 	return &YearEndCarryForwardResult{
 		JournalEntry: postedEntry,
 		Status:       updatedStatus,
+	}, nil
+}
+
+// ReverseYearEndCarryForward voids an existing year-end carry-forward journal entry.
+func (s *Service) ReverseYearEndCarryForward(ctx context.Context, schemaName, tenantID string, fiscalYearStartMonth int, lockedThroughDate *string, req *ReverseYearEndCarryForwardRequest) (*YearEndCarryForwardReversalResult, error) {
+	if req == nil {
+		return nil, fmt.Errorf("request is required")
+	}
+	if strings.TrimSpace(req.UserID) == "" {
+		return nil, fmt.Errorf("user_id is required")
+	}
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" {
+		return nil, fmt.Errorf("reason is required")
+	}
+
+	status, err := s.GetYearEndCloseStatus(ctx, schemaName, tenantID, fiscalYearStartMonth, req.PeriodEndDate, lockedThroughDate)
+	if err != nil {
+		return nil, err
+	}
+
+	if !status.IsFiscalYearEnd {
+		return nil, fmt.Errorf("period end date must match the fiscal year end")
+	}
+	if status.ExistingCarryForward == nil {
+		return nil, fmt.Errorf("carry-forward does not exist for fiscal year ending %s", status.FiscalYearEndDate)
+	}
+
+	original, err := s.repo.GetJournalEntryByID(ctx, schemaName, tenantID, status.ExistingCarryForward.ID)
+	if err != nil {
+		return nil, fmt.Errorf("load carry-forward journal entry: %w", err)
+	}
+
+	description := fmt.Sprintf("Reversal of year-end carry-forward %s: %s", original.EntryNumber, reason)
+	reversal, err := s.voidPostedJournalEntry(ctx, schemaName, tenantID, original, req.UserID, reason, SourceTypeYearEndCarryForwardReversal, original.EntryDate, description)
+	if err != nil {
+		return nil, fmt.Errorf("reverse carry-forward journal entry: %w", err)
+	}
+
+	updatedStatus, err := s.GetYearEndCloseStatus(ctx, schemaName, tenantID, fiscalYearStartMonth, req.PeriodEndDate, lockedThroughDate)
+	if err != nil {
+		return nil, err
+	}
+
+	return &YearEndCarryForwardReversalResult{
+		ReversalJournalEntry: reversal,
+		Status:               updatedStatus,
 	}, nil
 }
 

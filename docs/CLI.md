@@ -600,9 +600,10 @@ go run ./cmd/oa close period --period-end 2026-03-31 --note "March close"
 go run ./cmd/oa close reopen --period-end 2026-03-31 --note "Correcting late supplier invoice"
 go run ./cmd/oa close year-end-status --period-end 2025-12-31
 go run ./cmd/oa close carry-forward --period-end 2025-12-31
+go run ./cmd/oa close reverse-carry-forward --period-end 2025-12-31 --reason "Late supplier accrual"
 ```
 
-Period close and reopen operations require a user role that can manage close workflows. Reopening requires a note, and fiscal-year periods cannot be reopened after carry-forward has been posted. Use `--json` for automation.
+Period close and reopen operations require a user role that can manage close workflows. Reopening requires a note, and fiscal-year periods cannot be reopened after carry-forward has been posted unless the carry-forward is explicitly reversed first. Use `--json` for automation.
 
 ## Banking
 
