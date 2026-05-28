@@ -442,6 +442,13 @@ Content-Type: application/json
 }
 ```
 
+### Get Account
+
+```http
+GET /tenants/{tenantId}/accounts/{accountId}
+Authorization: Bearer <token>
+```
+
 ### Import Invoices
 
 ```http

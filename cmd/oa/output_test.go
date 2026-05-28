@@ -46,15 +46,22 @@ func TestPrintTables(t *testing.T) {
 	assert.Contains(t, tokenBuf.String(), "CLI")
 
 	var accountBuf bytes.Buffer
-	printAccountsTable(&accountBuf, []accounting.Account{{
+	account := accounting.Account{
 		ID:          "account-1",
 		Code:        "1000",
 		Name:        "Cash",
 		AccountType: accounting.AccountTypeAsset,
 		IsActive:    true,
-	}})
+		Description: "Cash on hand",
+	}
+	printAccountsTable(&accountBuf, []accounting.Account{account})
 	assert.Contains(t, accountBuf.String(), "CODE")
 	assert.Contains(t, accountBuf.String(), "1000")
+
+	var accountDetailBuf bytes.Buffer
+	printAccount(&accountDetailBuf, &account)
+	assert.Contains(t, accountDetailBuf.String(), "Account 1000 Cash")
+	assert.Contains(t, accountDetailBuf.String(), "Cash on hand")
 
 	var contactBuf bytes.Buffer
 	contact := contacts.Contact{

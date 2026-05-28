@@ -56,6 +56,19 @@ func printAccountsTable(w io.Writer, accounts []accounting.Account) {
 	_ = tw.Flush()
 }
 
+func printAccount(w io.Writer, account *accounting.Account) {
+	_, _ = fmt.Fprintf(w, "Account %s %s (%s)\n", account.Code, account.Name, account.AccountType)
+	_, _ = fmt.Fprintf(w, "ID: %s\n", account.ID)
+	if account.ParentID != nil && strings.TrimSpace(*account.ParentID) != "" {
+		_, _ = fmt.Fprintf(w, "Parent: %s\n", *account.ParentID)
+	}
+	_, _ = fmt.Fprintf(w, "Active: %t\n", account.IsActive)
+	_, _ = fmt.Fprintf(w, "System: %t\n", account.IsSystem)
+	if strings.TrimSpace(account.Description) != "" {
+		_, _ = fmt.Fprintf(w, "Description: %s\n", account.Description)
+	}
+}
+
 func printContactsTable(w io.Writer, contactsList []contacts.Contact) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tNAME\tTYPE\tEMAIL\tACTIVE")
