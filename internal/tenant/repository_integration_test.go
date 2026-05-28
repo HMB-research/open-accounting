@@ -398,6 +398,96 @@ func TestPostgresRepository_CreateAndGetUser(t *testing.T) {
 	}
 }
 
+func TestPostgresRepository_TenantAuditEvents(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	ownerID := uuid.New().String()
+	ownerEmail := "owner-" + uuid.New().String()[:8] + "@example.com"
+	_, err := pool.Exec(ctx, `
+		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
+		VALUES ($1, $2, 'hash', 'Owner', NOW(), NOW())
+	`, ownerID, ownerEmail)
+	if err != nil {
+		t.Fatalf("failed to create owner: %v", err)
+	}
+
+	settings := DefaultSettings()
+	settingsJSON, _ := json.Marshal(settings)
+	tenantID := uuid.New().String()
+	tenantRecord := &Tenant{
+		ID:         tenantID,
+		Name:       "Audit Tenant",
+		Slug:       "audit-" + tenantID[:8],
+		SchemaName: "audit_" + tenantID[:8],
+		Settings:   settings,
+		IsActive:   true,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}
+	if err := repo.CreateTenant(ctx, tenantRecord, settingsJSON, ownerID); err != nil {
+		t.Fatalf("CreateTenant failed: %v", err)
+	}
+
+	oldEvent := &TenantAuditEvent{
+		ID:          uuid.New().String(),
+		TenantID:    tenantID,
+		ActorUserID: ownerID,
+		Action:      AuditActionInvitationCreated,
+		TargetType:  AuditTargetInvitation,
+		TargetID:    "inv-1",
+		TargetEmail: "invitee@example.com",
+		Metadata:    map[string]string{"role": RoleViewer},
+		CreatedAt:   time.Now().Add(-1 * time.Hour),
+	}
+	newEvent := &TenantAuditEvent{
+		ID:          uuid.New().String(),
+		TenantID:    tenantID,
+		ActorUserID: ownerID,
+		Action:      AuditActionInvitationRevoked,
+		TargetType:  AuditTargetInvitation,
+		TargetID:    "inv-1",
+		Metadata:    map[string]string{},
+		CreatedAt:   time.Now(),
+	}
+
+	if err := repo.CreateTenantAuditEvent(ctx, oldEvent); err != nil {
+		t.Fatalf("CreateTenantAuditEvent failed: %v", err)
+	}
+	if err := repo.CreateTenantAuditEvent(ctx, newEvent); err != nil {
+		t.Fatalf("CreateTenantAuditEvent failed: %v", err)
+	}
+
+	events, err := repo.ListTenantAuditEvents(ctx, tenantID, 1)
+	if err != nil {
+		t.Fatalf("ListTenantAuditEvents failed: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Action != AuditActionInvitationRevoked {
+		t.Fatalf("expected latest event first, got %s", events[0].Action)
+	}
+	if events[0].ActorUserID != ownerID {
+		t.Fatalf("expected actor %s, got %s", ownerID, events[0].ActorUserID)
+	}
+
+	events, err = repo.ListTenantAuditEvents(ctx, tenantID, 10)
+	if err != nil {
+		t.Fatalf("ListTenantAuditEvents failed: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(events))
+	}
+	if events[1].TargetEmail != "invitee@example.com" {
+		t.Fatalf("expected target email to round trip, got %q", events[1].TargetEmail)
+	}
+	if events[1].Metadata["role"] != RoleViewer {
+		t.Fatalf("expected metadata to round trip, got %#v", events[1].Metadata)
+	}
+}
+
 func TestPostgresRepository_CompleteOnboarding(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	repo := NewPostgresRepository(pool)

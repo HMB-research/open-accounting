@@ -541,6 +541,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 	switch path {
 	case "/complete-onboarding":
 		return commandForMethod(method, map[string]string{"POST": "tenant complete-onboarding"})
+	case "/audit-events":
+		return commandForMethod(method, map[string]string{"GET": "tenant audit-events"})
 	case "/period-close-events":
 		return commandForMethod(method, map[string]string{"GET": "close events"})
 	case "/period-close":

@@ -22,6 +22,7 @@ type MockRepository struct {
 	tenantUsers       map[string][]TenantUser
 	invitations       map[string]*UserInvitation
 	periodCloseEvents map[string][]PeriodCloseEvent
+	auditEvents       map[string][]TenantAuditEvent
 
 	// Error injection
 	createTenantErr          error
@@ -47,6 +48,8 @@ type MockRepository struct {
 	listInvitationsErr       error
 	listPeriodCloseEventsErr error
 	getLatestCloseEventErr   error
+	createAuditEventErr      error
+	listAuditEventsErr       error
 	revokeInvitationErr      error
 	checkUserIsMemberErr     error
 	userIsMember             bool
@@ -59,6 +62,7 @@ func NewMockRepository() *MockRepository {
 		tenantUsers:       make(map[string][]TenantUser),
 		invitations:       make(map[string]*UserInvitation),
 		periodCloseEvents: make(map[string][]PeriodCloseEvent),
+		auditEvents:       make(map[string][]TenantAuditEvent),
 	}
 }
 
@@ -175,6 +179,25 @@ func (m *MockRepository) GetLatestCloseEventForPeriod(ctx context.Context, tenan
 		}
 	}
 	return nil, nil
+}
+
+func (m *MockRepository) CreateTenantAuditEvent(ctx context.Context, event *TenantAuditEvent) error {
+	if m.createAuditEventErr != nil {
+		return m.createAuditEventErr
+	}
+	m.auditEvents[event.TenantID] = append([]TenantAuditEvent{*event}, m.auditEvents[event.TenantID]...)
+	return nil
+}
+
+func (m *MockRepository) ListTenantAuditEvents(ctx context.Context, tenantID string, limit int) ([]TenantAuditEvent, error) {
+	if m.listAuditEventsErr != nil {
+		return nil, m.listAuditEventsErr
+	}
+	events := append([]TenantAuditEvent(nil), m.auditEvents[tenantID]...)
+	if limit > 0 && len(events) > limit {
+		events = events[:limit]
+	}
+	return events, nil
 }
 
 func (m *MockRepository) AddUserToTenant(ctx context.Context, tenantID, userID, role string) error {
@@ -1034,6 +1057,70 @@ func TestService_CompleteOnboarding(t *testing.T) {
 
 	tenant, _ := repo.GetTenant(context.Background(), "tenant-123")
 	assert.True(t, tenant.OnboardingCompleted)
+}
+
+func TestService_RecordTenantAuditEvent(t *testing.T) {
+	repo := NewMockRepository()
+	svc := NewServiceWithRepository(repo)
+
+	event := &TenantAuditEvent{
+		TenantID:    "tenant-1",
+		ActorUserID: "user-1",
+		Action:      AuditActionUserRoleUpdated,
+		TargetType:  AuditTargetUser,
+		TargetID:    "user-2",
+		Metadata: map[string]string{
+			"previous_role": RoleViewer,
+			"new_role":      RoleAccountant,
+		},
+	}
+
+	err := svc.RecordTenantAuditEvent(context.Background(), event)
+	require.NoError(t, err)
+	assert.NotEmpty(t, event.ID)
+	assert.False(t, event.CreatedAt.IsZero())
+
+	events, err := svc.ListTenantAuditEvents(context.Background(), "tenant-1", 10)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, AuditActionUserRoleUpdated, events[0].Action)
+	assert.Equal(t, "user-2", events[0].TargetID)
+	assert.Equal(t, RoleAccountant, events[0].Metadata["new_role"])
+}
+
+func TestService_RecordTenantAuditEventValidatesRequiredFields(t *testing.T) {
+	repo := NewMockRepository()
+	svc := NewServiceWithRepository(repo)
+
+	tests := []struct {
+		name       string
+		event      *TenantAuditEvent
+		errContain string
+	}{
+		{name: "nil event", event: nil, errContain: "audit event is required"},
+		{name: "tenant required", event: &TenantAuditEvent{Action: AuditActionUserRemoved, TargetType: AuditTargetUser, TargetID: "user-1"}, errContain: "tenant_id is required"},
+		{name: "action required", event: &TenantAuditEvent{TenantID: "tenant-1", TargetType: AuditTargetUser, TargetID: "user-1"}, errContain: "action is required"},
+		{name: "target type required", event: &TenantAuditEvent{TenantID: "tenant-1", Action: AuditActionUserRemoved, TargetID: "user-1"}, errContain: "target_type is required"},
+		{name: "target id required", event: &TenantAuditEvent{TenantID: "tenant-1", Action: AuditActionUserRemoved, TargetType: AuditTargetUser}, errContain: "target_id is required"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := svc.RecordTenantAuditEvent(context.Background(), tt.event)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.errContain)
+		})
+	}
+}
+
+func TestService_ListTenantAuditEventsRepositoryError(t *testing.T) {
+	repo := NewMockRepository()
+	repo.listAuditEventsErr = errors.New("database error")
+	svc := NewServiceWithRepository(repo)
+
+	_, err := svc.ListTenantAuditEvents(context.Background(), "tenant-1", 50)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "database error")
 }
 
 func TestService_ListUserTenants(t *testing.T) {

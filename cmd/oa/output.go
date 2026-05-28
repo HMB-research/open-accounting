@@ -172,6 +172,41 @@ func printInvitationsTable(w io.Writer, invitations []tenant.UserInvitation) {
 	_ = tw.Flush()
 }
 
+func printTenantAuditEventsTable(w io.Writer, events []tenant.TenantAuditEvent) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "CREATED\tACTION\tACTOR\tTARGET\tEMAIL\tMETADATA")
+	for _, event := range events {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			event.CreatedAt.Format(time.RFC3339),
+			event.Action,
+			event.ActorUserID,
+			event.TargetType+":"+event.TargetID,
+			event.TargetEmail,
+			formatStringMap(event.Metadata),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func formatStringMap(values map[string]string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+"="+values[key])
+	}
+	return strings.Join(parts, ", ")
+}
+
 func printTenantMembership(w io.Writer, membership *tenant.TenantMembership) {
 	_, _ = fmt.Fprintf(w, "Joined tenant %s (%s) as %s\n", membership.Tenant.Name, membership.Tenant.ID, membership.Role)
 	if strings.TrimSpace(membership.Tenant.Slug) != "" {

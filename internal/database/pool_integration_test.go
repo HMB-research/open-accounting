@@ -963,8 +963,10 @@ func TestQueries_VATRates(t *testing.T) {
 	uniqueRateType := "test_" + uuid.New().String()[:8]
 
 	// Create a VAT rate
+	var dbCurrentDate string
+	require.NoError(t, pool.QueryRow(ctx, "SELECT CURRENT_DATE::text").Scan(&dbCurrentDate))
 	validFrom := pgtype.Date{}
-	_ = validFrom.Scan(time.Now().Format("2006-01-02"))
+	require.NoError(t, validFrom.Scan(dbCurrentDate))
 
 	vatRate, err := q.CreateVATRate(ctx, &CreateVATRateParams{
 		CountryCode: "XX", // Use non-existent country to avoid conflicts

@@ -114,6 +114,22 @@ func TestPrintTables(t *testing.T) {
 	assert.Contains(t, invitationsBuf.String(), "new@example.com")
 	assert.Contains(t, invitationsBuf.String(), "Alpha")
 
+	var auditEventsBuf bytes.Buffer
+	printTenantAuditEventsTable(&auditEventsBuf, []tenant.TenantAuditEvent{{
+		ID:          "audit-1",
+		TenantID:    "tenant-1",
+		ActorUserID: "user-1",
+		Action:      tenant.AuditActionUserRoleUpdated,
+		TargetType:  tenant.AuditTargetUser,
+		TargetID:    "user-2",
+		TargetEmail: "target@example.com",
+		Metadata:    map[string]string{"new_role": tenant.RoleAccountant, "previous_role": tenant.RoleViewer},
+		CreatedAt:   now,
+	}})
+	assert.Contains(t, auditEventsBuf.String(), tenant.AuditActionUserRoleUpdated)
+	assert.Contains(t, auditEventsBuf.String(), "user:user-2")
+	assert.Contains(t, auditEventsBuf.String(), "new_role=accountant")
+
 	var membershipBuf bytes.Buffer
 	printTenantMembership(&membershipBuf, &tenant.TenantMembership{
 		Tenant: tenant.Tenant{ID: "tenant-1", Name: "Alpha", Slug: "alpha"},

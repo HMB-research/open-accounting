@@ -263,6 +263,19 @@ func (c *apiClient) completeTenantOnboarding(ctx context.Context, tenantID strin
 	return c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "complete-onboarding"), nil, c.apiToken, nil)
 }
 
+func (c *apiClient) listTenantAuditEvents(ctx context.Context, tenantID string, limit int) ([]tenant.TenantAuditEvent, error) {
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+
+	var resp []tenant.TenantAuditEvent
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "audit-events"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
 func (c *apiClient) listTenantUsers(ctx context.Context, tenantID string) ([]tenant.TenantUser, error) {
 	var resp []tenant.TenantUser
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "users"), nil, c.apiToken, &resp); err != nil {

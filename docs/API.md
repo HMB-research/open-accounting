@@ -2388,6 +2388,15 @@ GET /tenants/{tenantId}/users
 Authorization: Bearer <token>
 ```
 
+### List Tenant Audit Events
+
+```http
+GET /tenants/{tenantId}/audit-events?limit=50
+Authorization: Bearer <token>
+```
+
+Requires an owner or admin role. Returns recent tenant administration audit events for user role changes, user removals, invitation creation, and invitation revocation. `limit` defaults to `50` and must be between `1` and `200`.
+
 ### Remove Tenant User
 
 ```http
