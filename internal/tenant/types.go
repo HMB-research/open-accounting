@@ -79,6 +79,29 @@ type PeriodCloseEvent struct {
 	CreatedAt       time.Time `json:"created_at"`
 }
 
+const (
+	AuditActionUserRoleUpdated   = "user_role_updated"
+	AuditActionUserRemoved       = "user_removed"
+	AuditActionInvitationCreated = "invitation_created"
+	AuditActionInvitationRevoked = "invitation_revoked"
+
+	AuditTargetUser       = "user"
+	AuditTargetInvitation = "invitation"
+)
+
+// TenantAuditEvent records tenant administration and security-sensitive actions.
+type TenantAuditEvent struct {
+	ID          string            `json:"id"`
+	TenantID    string            `json:"tenant_id"`
+	ActorUserID string            `json:"actor_user_id,omitempty"`
+	Action      string            `json:"action"`
+	TargetType  string            `json:"target_type"`
+	TargetID    string            `json:"target_id"`
+	TargetEmail string            `json:"target_email,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+	CreatedAt   time.Time         `json:"created_at"`
+}
+
 // ClosePeriodRequest closes a month-end or year-end period.
 type ClosePeriodRequest struct {
 	PeriodEndDate   string `json:"period_end_date"`

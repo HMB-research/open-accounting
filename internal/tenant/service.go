@@ -193,6 +193,40 @@ func (s *Service) CompleteOnboarding(ctx context.Context, tenantID string) error
 	return s.repo.CompleteOnboarding(ctx, tenantID)
 }
 
+// RecordTenantAuditEvent records a tenant administration audit event.
+func (s *Service) RecordTenantAuditEvent(ctx context.Context, event *TenantAuditEvent) error {
+	if event == nil {
+		return fmt.Errorf("audit event is required")
+	}
+	if event.TenantID == "" {
+		return fmt.Errorf("tenant_id is required")
+	}
+	if event.Action == "" {
+		return fmt.Errorf("action is required")
+	}
+	if event.TargetType == "" {
+		return fmt.Errorf("target_type is required")
+	}
+	if event.TargetID == "" {
+		return fmt.Errorf("target_id is required")
+	}
+	if event.ID == "" {
+		event.ID = uuid.New().String()
+	}
+	if event.CreatedAt.IsZero() {
+		event.CreatedAt = time.Now()
+	}
+	if event.Metadata == nil {
+		event.Metadata = map[string]string{}
+	}
+	return s.repo.CreateTenantAuditEvent(ctx, event)
+}
+
+// ListTenantAuditEvents returns recent tenant administration audit events.
+func (s *Service) ListTenantAuditEvents(ctx context.Context, tenantID string, limit int) ([]TenantAuditEvent, error) {
+	return s.repo.ListTenantAuditEvents(ctx, tenantID, limit)
+}
+
 // AddUserToTenant adds a user to a tenant with a specified role
 func (s *Service) AddUserToTenant(ctx context.Context, tenantID, userID, role string) error {
 	return s.repo.AddUserToTenant(ctx, tenantID, userID, role)

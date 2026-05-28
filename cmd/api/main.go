@@ -690,6 +690,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/users", h.ListTenantUsers)
 				r.Delete("/users/{userID}", h.RemoveTenantUser)
 				r.Put("/users/{userID}/role", h.UpdateTenantUserRole)
+				r.Get("/audit-events", h.ListTenantAuditEvents)
 
 				// Invitations
 				r.Get("/invitations", h.ListInvitations)

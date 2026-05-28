@@ -156,6 +156,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  tenant create             Create a tenant")
 	_, _ = fmt.Fprintln(a.stdout, "  tenant update             Update tenant settings")
 	_, _ = fmt.Fprintln(a.stdout, "  tenant complete-onboarding  Mark onboarding complete")
+	_, _ = fmt.Fprintln(a.stdout, "  tenant audit-events       List tenant administration audit events")
 	_, _ = fmt.Fprintln(a.stdout, "  users list                List tenant users")
 	_, _ = fmt.Fprintln(a.stdout, "  users update-role         Update a tenant user role")
 	_, _ = fmt.Fprintln(a.stdout, "  users remove              Remove a tenant user")
@@ -872,6 +873,38 @@ func (a *cliApp) runTenant(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, map[string]any{"success": true, "tenant_id": targetTenantID})
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Marked tenant %s onboarding complete\n", targetTenantID)
+		return nil
+
+	case "audit-events":
+		cfg, client, err := a.loadAuthenticatedClient()
+		if err != nil {
+			return err
+		}
+
+		fs := flag.NewFlagSet("tenant audit-events", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		tenantID := fs.String("id", "", "Tenant id; defaults to configured tenant")
+		limit := fs.Int("limit", 50, "Maximum events to return")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *limit <= 0 || *limit > 200 {
+			return errors.New("limit must be between 1 and 200")
+		}
+		targetTenantID := strings.TrimSpace(*tenantID)
+		if targetTenantID == "" {
+			targetTenantID = cfg.TenantID
+		}
+
+		events, err := client.listTenantAuditEvents(ctx, targetTenantID, *limit)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, events)
+		}
+		printTenantAuditEventsTable(a.stdout, events)
 		return nil
 
 	default:

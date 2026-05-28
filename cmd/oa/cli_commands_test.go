@@ -429,6 +429,22 @@ func TestCLITenantCommands(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(tenantResponse("tenant-1", "Alpha Finance", "alpha", "finance@example.com", false))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/complete-onboarding":
 			_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/audit-events":
+			assert.Equal(t, "2", r.URL.Query().Get("limit"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"id":            "audit-1",
+				"tenant_id":     "tenant-1",
+				"actor_user_id": "user-1",
+				"action":        tenant.AuditActionUserRoleUpdated,
+				"target_type":   tenant.AuditTargetUser,
+				"target_id":     "user-2",
+				"target_email":  "target@example.com",
+				"metadata": map[string]string{
+					"previous_role": tenant.RoleViewer,
+					"new_role":      tenant.RoleAccountant,
+				},
+				"created_at": "2026-03-12T00:00:00Z",
+			}})
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -458,6 +474,12 @@ func TestCLITenantCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"tenant", "complete-onboarding"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Marked tenant tenant-1 onboarding complete")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tenant", "audit-events", "--limit", "2"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), tenant.AuditActionUserRoleUpdated)
+	assert.Contains(t, stdout.String(), "user:user-2")
 }
 
 func TestCLIUsersCommands(t *testing.T) {

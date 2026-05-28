@@ -23,6 +23,8 @@ type Repository interface {
 	CompleteOnboarding(ctx context.Context, tenantID string) error
 	ListPeriodCloseEvents(ctx context.Context, tenantID string, limit int) ([]PeriodCloseEvent, error)
 	GetLatestCloseEventForPeriod(ctx context.Context, tenantID, periodEndDate string) (*PeriodCloseEvent, error)
+	CreateTenantAuditEvent(ctx context.Context, event *TenantAuditEvent) error
+	ListTenantAuditEvents(ctx context.Context, tenantID string, limit int) ([]TenantAuditEvent, error)
 
 	// Tenant User operations
 	AddUserToTenant(ctx context.Context, tenantID, userID, role string) error

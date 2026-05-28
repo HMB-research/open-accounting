@@ -2073,6 +2073,47 @@ func (h *Handlers) ListTenantUsers(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, users)
 }
 
+// ListTenantAuditEvents returns tenant administration audit events
+// @Summary List tenant audit events
+// @Description Get recent tenant administration audit events
+// @Tags Users
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param limit query int false "Maximum events to return" default(50)
+// @Success 200 {array} tenant.TenantAuditEvent
+// @Failure 400 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/audit-events [get]
+func (h *Handlers) ListTenantAuditEvents(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+
+	if !auth.CanManageUsers(claims.Role) {
+		respondError(w, http.StatusForbidden, "Permission denied")
+		return
+	}
+
+	limit := 50
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed <= 0 || parsed > 200 {
+			respondError(w, http.StatusBadRequest, "Limit must be between 1 and 200")
+			return
+		}
+		limit = parsed
+	}
+
+	events, err := h.tenantService.ListTenantAuditEvents(r.Context(), tenantID, limit)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list audit events")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, events)
+}
+
 // RemoveTenantUser removes a user from a tenant
 // @Summary Remove user from tenant
 // @Description Remove a user from the tenant organization
@@ -2102,8 +2143,21 @@ func (h *Handlers) RemoveTenantUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	previousRole, _ := h.tenantService.GetUserRole(r.Context(), tenantID, userID)
 	if err := h.tenantService.RemoveTenantUser(r.Context(), tenantID, userID); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !h.recordTenantAuditEvent(w, r, &tenant.TenantAuditEvent{
+		TenantID:    tenantID,
+		ActorUserID: claims.UserID,
+		Action:      tenant.AuditActionUserRemoved,
+		TargetType:  tenant.AuditTargetUser,
+		TargetID:    userID,
+		Metadata: map[string]string{
+			"previous_role": previousRole,
+		},
+	}) {
 		return
 	}
 
@@ -2153,8 +2207,22 @@ func (h *Handlers) UpdateTenantUserRole(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	previousRole, _ := h.tenantService.GetUserRole(r.Context(), tenantID, userID)
 	if err := h.tenantService.UpdateTenantUserRole(r.Context(), tenantID, userID, req.Role); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !h.recordTenantAuditEvent(w, r, &tenant.TenantAuditEvent{
+		TenantID:    tenantID,
+		ActorUserID: claims.UserID,
+		Action:      tenant.AuditActionUserRoleUpdated,
+		TargetType:  tenant.AuditTargetUser,
+		TargetID:    userID,
+		Metadata: map[string]string{
+			"previous_role": previousRole,
+			"new_role":      req.Role,
+		},
+	}) {
 		return
 	}
 
@@ -2204,6 +2272,19 @@ func (h *Handlers) CreateInvitation(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !h.recordTenantAuditEvent(w, r, &tenant.TenantAuditEvent{
+		TenantID:    tenantID,
+		ActorUserID: claims.UserID,
+		Action:      tenant.AuditActionInvitationCreated,
+		TargetType:  tenant.AuditTargetInvitation,
+		TargetID:    invitation.ID,
+		TargetEmail: invitation.Email,
+		Metadata: map[string]string{
+			"role": invitation.Role,
+		},
+	}) {
 		return
 	}
 
@@ -2267,8 +2348,26 @@ func (h *Handlers) RevokeInvitation(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !h.recordTenantAuditEvent(w, r, &tenant.TenantAuditEvent{
+		TenantID:    tenantID,
+		ActorUserID: claims.UserID,
+		Action:      tenant.AuditActionInvitationRevoked,
+		TargetType:  tenant.AuditTargetInvitation,
+		TargetID:    invitationID,
+	}) {
+		return
+	}
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
+}
+
+func (h *Handlers) recordTenantAuditEvent(w http.ResponseWriter, r *http.Request, event *tenant.TenantAuditEvent) bool {
+	if err := h.tenantService.RecordTenantAuditEvent(r.Context(), event); err != nil {
+		log.Printf("Failed to record tenant audit event for tenant %s action %s: %v", event.TenantID, event.Action, err)
+		respondError(w, http.StatusInternalServerError, "Failed to record tenant audit event")
+		return false
+	}
+	return true
 }
 
 // GetInvitationByToken retrieves invitation details by token

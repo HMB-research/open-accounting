@@ -27,6 +27,7 @@ type mockTenantRepository struct {
 	tenantUsers       map[string][]tenant.TenantUser
 	invitations       map[string]*tenant.UserInvitation
 	periodCloseEvents map[string][]tenant.PeriodCloseEvent
+	auditEvents       map[string][]tenant.TenantAuditEvent
 
 	// Error injection
 	createTenantErr          error
@@ -40,6 +41,8 @@ type mockTenantRepository struct {
 	updateTenantWithEventErr error
 	listPeriodCloseEventsErr error
 	getLatestCloseEventErr   error
+	createAuditEventErr      error
+	listAuditEventsErr       error
 	completedOnboardings     []string
 }
 
@@ -50,6 +53,7 @@ func newMockTenantRepository() *mockTenantRepository {
 		tenantUsers:       make(map[string][]tenant.TenantUser),
 		invitations:       make(map[string]*tenant.UserInvitation),
 		periodCloseEvents: make(map[string][]tenant.PeriodCloseEvent),
+		auditEvents:       make(map[string][]tenant.TenantAuditEvent),
 	}
 }
 
@@ -158,6 +162,25 @@ func (m *mockTenantRepository) GetLatestCloseEventForPeriod(ctx context.Context,
 		}
 	}
 	return nil, nil
+}
+
+func (m *mockTenantRepository) CreateTenantAuditEvent(ctx context.Context, event *tenant.TenantAuditEvent) error {
+	if m.createAuditEventErr != nil {
+		return m.createAuditEventErr
+	}
+	m.auditEvents[event.TenantID] = append([]tenant.TenantAuditEvent{*event}, m.auditEvents[event.TenantID]...)
+	return nil
+}
+
+func (m *mockTenantRepository) ListTenantAuditEvents(ctx context.Context, tenantID string, limit int) ([]tenant.TenantAuditEvent, error) {
+	if m.listAuditEventsErr != nil {
+		return nil, m.listAuditEventsErr
+	}
+	events := append([]tenant.TenantAuditEvent(nil), m.auditEvents[tenantID]...)
+	if limit > 0 && len(events) > limit {
+		events = events[:limit]
+	}
+	return events, nil
 }
 
 func (m *mockTenantRepository) AddUserToTenant(ctx context.Context, tenantID, userID, role string) error {

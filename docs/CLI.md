@@ -121,9 +121,10 @@ go run ./cmd/oa tenant update \
   --name "Acme Finance" \
   --settings-json '{"email":"finance@acme.example","timezone":"Europe/Tallinn"}'
 go run ./cmd/oa tenant complete-onboarding
+go run ./cmd/oa tenant audit-events --limit 50
 ```
 
-Use `--id <tenant-id>` on `tenant get`, `tenant update`, and `tenant complete-onboarding` to target a tenant other than the configured one. Use `--settings-file ./tenant-settings.json` instead of `--settings-json` for larger settings payloads.
+Use `--id <tenant-id>` on `tenant get`, `tenant update`, `tenant complete-onboarding`, and `tenant audit-events` to target a tenant other than the configured one. Use `--settings-file ./tenant-settings.json` instead of `--settings-json` for larger settings payloads.
 
 ## Tenant users and invitations
 

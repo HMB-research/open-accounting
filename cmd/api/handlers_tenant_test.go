@@ -1110,6 +1110,213 @@ func TestListTenantUsers(t *testing.T) {
 	}
 }
 
+func TestListTenantAuditEvents(t *testing.T) {
+	now := time.Date(2026, 3, 12, 10, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name           string
+		tenantID       string
+		path           string
+		claims         *auth.Claims
+		setupMock      func(*mockTenantRepository)
+		wantStatus     int
+		wantErrContain string
+		checkResponse  func(*testing.T, []tenant.TenantAuditEvent)
+	}{
+		{
+			name:     "owner can list tenant audit events",
+			tenantID: "tenant-1",
+			path:     "/tenants/tenant-1/audit-events?limit=1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				Email:    "owner@example.com",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			setupMock: func(m *mockTenantRepository) {
+				m.auditEvents["tenant-1"] = []tenant.TenantAuditEvent{
+					{
+						ID:          "audit-2",
+						TenantID:    "tenant-1",
+						ActorUserID: "user-1",
+						Action:      tenant.AuditActionUserRoleUpdated,
+						TargetType:  tenant.AuditTargetUser,
+						TargetID:    "user-2",
+						Metadata:    map[string]string{"new_role": tenant.RoleAccountant},
+						CreatedAt:   now,
+					},
+					{
+						ID:        "audit-1",
+						TenantID:  "tenant-1",
+						Action:    tenant.AuditActionInvitationCreated,
+						TargetID:  "inv-1",
+						CreatedAt: now.Add(-time.Hour),
+					},
+				}
+			},
+			wantStatus: http.StatusOK,
+			checkResponse: func(t *testing.T, resp []tenant.TenantAuditEvent) {
+				require.Len(t, resp, 1)
+				assert.Equal(t, tenant.AuditActionUserRoleUpdated, resp[0].Action)
+				assert.Equal(t, "user-2", resp[0].TargetID)
+			},
+		},
+		{
+			name:     "viewer cannot list audit events",
+			tenantID: "tenant-1",
+			path:     "/tenants/tenant-1/audit-events",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				Email:    "viewer@example.com",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleViewer,
+			},
+			wantStatus:     http.StatusForbidden,
+			wantErrContain: "Permission denied",
+		},
+		{
+			name:     "invalid limit rejected",
+			tenantID: "tenant-1",
+			path:     "/tenants/tenant-1/audit-events?limit=201",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				Email:    "owner@example.com",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			wantStatus:     http.StatusBadRequest,
+			wantErrContain: "Limit must be between 1 and 200",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, repo := setupTenantTestHandlers()
+			if tt.setupMock != nil {
+				tt.setupMock(repo)
+			}
+
+			req := makeAuthenticatedRequest(http.MethodGet, tt.path, nil, tt.claims)
+			req = withURLParams(req, map[string]string{"tenantID": tt.tenantID})
+			w := httptest.NewRecorder()
+
+			h.ListTenantAuditEvents(w, req)
+
+			assert.Equal(t, tt.wantStatus, w.Code, "response body: %s", w.Body.String())
+
+			if tt.wantErrContain != "" {
+				var resp map[string]string
+				err := json.NewDecoder(w.Body).Decode(&resp)
+				require.NoError(t, err)
+				assert.Contains(t, resp["error"], tt.wantErrContain)
+			}
+
+			if tt.checkResponse != nil {
+				var resp []tenant.TenantAuditEvent
+				err := json.NewDecoder(w.Body).Decode(&resp)
+				require.NoError(t, err)
+				tt.checkResponse(t, resp)
+			}
+		})
+	}
+}
+
+func TestTenantAdministrationAuditEventsRecorded(t *testing.T) {
+	claims := &auth.Claims{
+		UserID:   "user-1",
+		Email:    "owner@example.com",
+		TenantID: "tenant-1",
+		Role:     tenant.RoleOwner,
+	}
+
+	t.Run("remove user", func(t *testing.T) {
+		h, repo := setupTenantTestHandlers()
+		repo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+			{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner},
+			{TenantID: "tenant-1", UserID: "user-2", Role: tenant.RoleViewer},
+		}
+
+		req := makeAuthenticatedRequest(http.MethodDelete, "/tenants/tenant-1/users/user-2", nil, claims)
+		req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "userID": "user-2"})
+		w := httptest.NewRecorder()
+
+		h.RemoveTenantUser(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+		require.Len(t, repo.auditEvents["tenant-1"], 1)
+		event := repo.auditEvents["tenant-1"][0]
+		assert.Equal(t, tenant.AuditActionUserRemoved, event.Action)
+		assert.Equal(t, "user-1", event.ActorUserID)
+		assert.Equal(t, "user-2", event.TargetID)
+		assert.Equal(t, tenant.RoleViewer, event.Metadata["previous_role"])
+	})
+
+	t.Run("update user role", func(t *testing.T) {
+		h, repo := setupTenantTestHandlers()
+		repo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+			{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner},
+			{TenantID: "tenant-1", UserID: "user-2", Role: tenant.RoleViewer},
+		}
+
+		req := makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1/users/user-2/role", map[string]string{"role": tenant.RoleAccountant}, claims)
+		req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "userID": "user-2"})
+		w := httptest.NewRecorder()
+
+		h.UpdateTenantUserRole(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+		require.Len(t, repo.auditEvents["tenant-1"], 1)
+		event := repo.auditEvents["tenant-1"][0]
+		assert.Equal(t, tenant.AuditActionUserRoleUpdated, event.Action)
+		assert.Equal(t, "user-2", event.TargetID)
+		assert.Equal(t, tenant.RoleViewer, event.Metadata["previous_role"])
+		assert.Equal(t, tenant.RoleAccountant, event.Metadata["new_role"])
+	})
+
+	t.Run("create invitation", func(t *testing.T) {
+		h, repo := setupTenantTestHandlers()
+		repo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+
+		req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/invitations", map[string]string{
+			"email": "newuser@example.com",
+			"role":  tenant.RoleViewer,
+		}, claims)
+		req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+		w := httptest.NewRecorder()
+
+		h.CreateInvitation(w, req)
+
+		require.Equal(t, http.StatusCreated, w.Code, "response body: %s", w.Body.String())
+		require.Len(t, repo.auditEvents["tenant-1"], 1)
+		event := repo.auditEvents["tenant-1"][0]
+		assert.Equal(t, tenant.AuditActionInvitationCreated, event.Action)
+		assert.Equal(t, tenant.AuditTargetInvitation, event.TargetType)
+		assert.Equal(t, "newuser@example.com", event.TargetEmail)
+		assert.Equal(t, tenant.RoleViewer, event.Metadata["role"])
+	})
+
+	t.Run("revoke invitation", func(t *testing.T) {
+		h, repo := setupTenantTestHandlers()
+		repo.invitations["token-1"] = &tenant.UserInvitation{
+			ID:       "inv-1",
+			TenantID: "tenant-1",
+			Token:    "token-1",
+		}
+
+		req := makeAuthenticatedRequest(http.MethodDelete, "/tenants/tenant-1/invitations/inv-1", nil, claims)
+		req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "invitationID": "inv-1"})
+		w := httptest.NewRecorder()
+
+		h.RevokeInvitation(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+		require.Len(t, repo.auditEvents["tenant-1"], 1)
+		event := repo.auditEvents["tenant-1"][0]
+		assert.Equal(t, tenant.AuditActionInvitationRevoked, event.Action)
+		assert.Equal(t, tenant.AuditTargetInvitation, event.TargetType)
+		assert.Equal(t, "inv-1", event.TargetID)
+	})
+}
+
 func TestRemoveTenantUser(t *testing.T) {
 	tests := []struct {
 		name           string
