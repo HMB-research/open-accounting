@@ -42,6 +42,20 @@ func TestPrintJSON(t *testing.T) {
 	err = printRawJSON(&buf, []byte(`{"status":"ok"}`))
 	require.NoError(t, err)
 	assert.Contains(t, buf.String(), "\"status\": \"ok\"")
+
+	buf.Reset()
+	printLoginResponse(&buf, &loginResponse{
+		AccessToken:  "jwt-123",
+		RefreshToken: "refresh-123",
+		TokenType:    "Bearer",
+		ExpiresIn:    900,
+		User:         &currentUser{ID: "user-1", Name: "CLI User", Email: "cli@example.com"},
+	})
+	assert.Contains(t, buf.String(), "Access token: jwt-123")
+	assert.Contains(t, buf.String(), "Refresh token: refresh-123")
+	assert.Contains(t, buf.String(), "Token type: Bearer")
+	assert.Contains(t, buf.String(), "Expires in: 900 seconds")
+	assert.Contains(t, buf.String(), "User: CLI User <cli@example.com> (user-1)")
 }
 
 func TestPrintTables(t *testing.T) {

@@ -34,6 +34,11 @@ go run ./cmd/oa auth register \
   --password 'your-password' \
   --name "Your Name"
 
+go run ./cmd/oa auth login \
+  --base-url http://localhost:8080 \
+  --email you@example.com \
+  --password 'your-password'
+
 go run ./cmd/oa auth init \
   --base-url http://localhost:8080 \
   --email you@example.com \
@@ -93,11 +98,12 @@ OA_TENANT_ID
 ```bash
 go run ./cmd/oa auth status
 go run ./cmd/oa auth tenants
+go run ./cmd/oa auth login --email you@example.com --password 'your-password' --tenant-id <tenant-id>
 go run ./cmd/oa auth refresh --refresh-token <refresh-token> --tenant-id <tenant-id>
 go run ./cmd/oa auth logout
 ```
 
-`auth refresh` prints a short-lived JWT access token. The normal automation flow still uses `auth init`, which stores a tenant-scoped API token.
+`auth login` and `auth refresh` print short-lived JWT tokens. The normal automation flow still uses `auth init`, which stores a tenant-scoped API token.
 
 ## Tenant administration
 

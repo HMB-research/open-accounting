@@ -142,6 +142,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  demo status               Show demo data status")
 	_, _ = fmt.Fprintln(a.stdout, "  demo reset                Reset demo data")
 	_, _ = fmt.Fprintln(a.stdout, "  auth register             Register a user")
+	_, _ = fmt.Fprintln(a.stdout, "  auth login                Log in and print JWT tokens")
 	_, _ = fmt.Fprintln(a.stdout, "  auth init                 Bootstrap and store a tenant-scoped API token")
 	_, _ = fmt.Fprintln(a.stdout, "  auth refresh              Exchange a refresh token for an access token")
 	_, _ = fmt.Fprintln(a.stdout, "  auth tenants              List tenants for the current token")
@@ -393,6 +394,36 @@ func (a *cliApp) runAuth(ctx context.Context, args []string) error {
 		_, _ = fmt.Fprintf(a.stdout, "Registered %s <%s> (%s)\n", user.Name, user.Email, user.ID)
 		return nil
 
+	case "login":
+		fs := flag.NewFlagSet("auth login", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		baseURL := fs.String("base-url", defaultBaseURL(), "API base URL")
+		email := fs.String("email", "", "User email")
+		password := fs.String("password", "", "User password")
+		passwordStdin := fs.Bool("password-stdin", false, "Read password from stdin")
+		tenantID := fs.String("tenant-id", "", "Optional tenant id for access-token context")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*email) == "" {
+			return errors.New("email is required")
+		}
+		passwordValue, err := resolvePassword(*password, *passwordStdin)
+		if err != nil {
+			return err
+		}
+		client := newAPIClient(*baseURL, "")
+		resp, err := client.login(ctx, strings.TrimSpace(*email), passwordValue, strings.TrimSpace(*tenantID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, resp)
+		}
+		printLoginResponse(a.stdout, resp)
+		return nil
+
 	case "init":
 		fs := flag.NewFlagSet("auth init", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
@@ -417,7 +448,7 @@ func (a *cliApp) runAuth(ctx context.Context, args []string) error {
 		}
 
 		client := newAPIClient(*baseURL, "")
-		loginResp, err := client.login(ctx, *email, passwordValue)
+		loginResp, err := client.login(ctx, *email, passwordValue, "")
 		if err != nil {
 			return err
 		}
@@ -476,10 +507,7 @@ func (a *cliApp) runAuth(ctx context.Context, args []string) error {
 		if *asJSON {
 			return printJSON(a.stdout, resp)
 		}
-		_, _ = fmt.Fprintf(a.stdout, "Access token: %s\n", resp.AccessToken)
-		if resp.ExpiresIn > 0 {
-			_, _ = fmt.Fprintf(a.stdout, "Expires in: %d seconds\n", resp.ExpiresIn)
-		}
+		printLoginResponse(a.stdout, resp)
 		return nil
 
 	case "tenants":

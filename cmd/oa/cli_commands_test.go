@@ -224,6 +224,23 @@ func TestCLIAuthPublicCommands(t *testing.T) {
 				"email": "new@example.com",
 				"name":  "New User",
 			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/login":
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "new@example.com", req["email"])
+			assert.Equal(t, "secret123", req["password"])
+			assert.Equal(t, "tenant-1", req["tenant_id"])
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"access_token":  "jwt-login",
+				"refresh_token": "refresh-login",
+				"token_type":    "Bearer",
+				"expires_in":    900,
+				"user": map[string]string{
+					"id":    "user-2",
+					"email": "new@example.com",
+					"name":  "New User",
+				},
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/refresh":
 			var req map[string]string
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -245,6 +262,13 @@ func TestCLIAuthPublicCommands(t *testing.T) {
 	err := app.run(context.Background(), []string{"auth", "register", "--base-url", server.URL, "--email", "new@example.com", "--password", "secret123", "--name", "New User"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Registered New User")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"auth", "login", "--base-url", server.URL, "--email", "new@example.com", "--password", "secret123", "--tenant-id", "tenant-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Access token: jwt-login")
+	assert.Contains(t, stdout.String(), "Refresh token: refresh-login")
+	assert.Contains(t, stdout.String(), "User: New User <new@example.com> (user-2)")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"auth", "refresh", "--base-url", server.URL, "--refresh-token", "refresh-123", "--tenant-id", "tenant-1"})
