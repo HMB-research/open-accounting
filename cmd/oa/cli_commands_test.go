@@ -214,6 +214,92 @@ func TestCLITokenCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Revoked token token-1")
 }
 
+func TestCLITenantCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	tenantResponse := func(id, name, slug, email string, onboardingComplete bool) map[string]any {
+		return map[string]any{
+			"id":                   id,
+			"name":                 name,
+			"slug":                 slug,
+			"schema_name":          "tenant_" + id,
+			"is_active":            true,
+			"onboarding_completed": onboardingComplete,
+			"settings": map[string]any{
+				"default_currency": "EUR",
+				"country_code":     "EE",
+				"timezone":         "Europe/Tallinn",
+				"email":            email,
+			},
+			"created_at": "2026-03-12T00:00:00Z",
+			"updated_at": "2026-03-12T00:00:00Z",
+		}
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1":
+			_ = json.NewEncoder(w).Encode(tenantResponse("tenant-1", "Alpha", "alpha", "finance@example.com", false))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants":
+			var req tenant.CreateTenantRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Beta", req.Name)
+			assert.Equal(t, "beta", req.Slug)
+			require.NotNil(t, req.Settings)
+			assert.Equal(t, "EUR", req.Settings.DefaultCurrency)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(tenantResponse("tenant-2", "Beta", "beta", "", false))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1":
+			var req tenant.UpdateTenantRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.NotNil(t, req.Name)
+			assert.Equal(t, "Alpha Finance", *req.Name)
+			require.NotNil(t, req.Settings)
+			assert.Equal(t, "finance@example.com", req.Settings.Email)
+			_ = json.NewEncoder(w).Encode(tenantResponse("tenant-1", "Alpha Finance", "alpha", "finance@example.com", false))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/complete-onboarding":
+			_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"tenant", "get"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Tenant Alpha")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tenant", "create", "--name", "Beta", "--slug", "beta", "--settings-json", `{"default_currency":"EUR","country_code":"EE","timezone":"Europe/Tallinn"}`})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Tenant Beta")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tenant", "update", "--name", "Alpha Finance", "--settings-json", `{"email":"finance@example.com","timezone":"Europe/Tallinn"}`})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Tenant Alpha Finance")
+	assert.Contains(t, stdout.String(), "finance@example.com")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tenant", "complete-onboarding"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Marked tenant tenant-1 onboarding complete")
+}
+
 func TestCLIAccountsCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
@@ -4400,6 +4486,10 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	err := app.runAuth(context.Background(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "auth subcommand required")
+
+	err = app.runTenant(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "tenant subcommand required")
 
 	err = app.runTokens(context.Background(), nil)
 	require.Error(t, err)

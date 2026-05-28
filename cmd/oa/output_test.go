@@ -53,6 +53,23 @@ func TestPrintTables(t *testing.T) {
 	assert.Contains(t, tokenBuf.String(), "ID")
 	assert.Contains(t, tokenBuf.String(), "CLI")
 
+	var tenantBuf bytes.Buffer
+	printTenant(&tenantBuf, &tenant.Tenant{
+		ID:                  "tenant-1",
+		Name:                "Alpha",
+		Slug:                "alpha",
+		IsActive:            true,
+		OnboardingCompleted: true,
+		Settings: tenant.TenantSettings{
+			DefaultCurrency: "EUR",
+			CountryCode:     "EE",
+			Timezone:        "Europe/Tallinn",
+			Email:           "finance@example.com",
+		},
+	})
+	assert.Contains(t, tenantBuf.String(), "Tenant Alpha")
+	assert.Contains(t, tenantBuf.String(), "finance@example.com")
+
 	var accountBuf bytes.Buffer
 	account := accounting.Account{
 		ID:          "account-1",

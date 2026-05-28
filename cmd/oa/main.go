@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -60,6 +61,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 	switch args[0] {
 	case "auth":
 		return a.runAuth(ctx, args[1:])
+	case "tenant", "tenants":
+		return a.runTenant(ctx, args[1:])
 	case "tokens":
 		return a.runTokens(ctx, args[1:])
 	case "accounts":
@@ -125,6 +128,10 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  auth init                 Bootstrap and store a tenant-scoped API token")
 	_, _ = fmt.Fprintln(a.stdout, "  auth status               Show current CLI auth status")
 	_, _ = fmt.Fprintln(a.stdout, "  auth logout               Remove local CLI config")
+	_, _ = fmt.Fprintln(a.stdout, "  tenant get                Show tenant details")
+	_, _ = fmt.Fprintln(a.stdout, "  tenant create             Create a tenant")
+	_, _ = fmt.Fprintln(a.stdout, "  tenant update             Update tenant settings")
+	_, _ = fmt.Fprintln(a.stdout, "  tenant complete-onboarding  Mark onboarding complete")
 	_, _ = fmt.Fprintln(a.stdout, "  tokens list               List API tokens for the configured tenant")
 	_, _ = fmt.Fprintln(a.stdout, "  tokens create             Create another API token")
 	_, _ = fmt.Fprintln(a.stdout, "  tokens revoke             Revoke an API token by id")
@@ -357,6 +364,153 @@ func (a *cliApp) runAuth(ctx context.Context, args []string) error {
 
 	default:
 		return fmt.Errorf("unknown auth subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runTenant(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("tenant subcommand required")
+	}
+
+	switch args[0] {
+	case "create":
+		_, client, err := a.loadTokenClient()
+		if err != nil {
+			return err
+		}
+
+		fs := flag.NewFlagSet("tenant create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		name := fs.String("name", "", "Tenant name")
+		slug := fs.String("slug", "", "Tenant slug")
+		settingsJSON := fs.String("settings-json", "", "Tenant settings JSON object")
+		settingsFile := fs.String("settings-file", "", "Path to tenant settings JSON file")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*name) == "" || strings.TrimSpace(*slug) == "" {
+			return errors.New("name and slug are required")
+		}
+		settings, err := parseTenantSettingsInput(*settingsJSON, *settingsFile)
+		if err != nil {
+			return err
+		}
+
+		created, err := client.createTenant(ctx, &tenant.CreateTenantRequest{
+			Name:     strings.TrimSpace(*name),
+			Slug:     strings.TrimSpace(*slug),
+			Settings: settings,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, created)
+		}
+		printTenant(a.stdout, created)
+		return nil
+
+	case "get":
+		cfg, client, err := a.loadAuthenticatedClient()
+		if err != nil {
+			return err
+		}
+
+		fs := flag.NewFlagSet("tenant get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		tenantID := fs.String("id", "", "Tenant id; defaults to configured tenant")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		targetTenantID := strings.TrimSpace(*tenantID)
+		if targetTenantID == "" {
+			targetTenantID = cfg.TenantID
+		}
+
+		record, err := client.getTenant(ctx, targetTenantID)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, record)
+		}
+		printTenant(a.stdout, record)
+		return nil
+
+	case "update":
+		cfg, client, err := a.loadAuthenticatedClient()
+		if err != nil {
+			return err
+		}
+
+		fs := flag.NewFlagSet("tenant update", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		tenantID := fs.String("id", "", "Tenant id; defaults to configured tenant")
+		name := fs.String("name", "", "New tenant name")
+		settingsJSON := fs.String("settings-json", "", "Tenant settings JSON object")
+		settingsFile := fs.String("settings-file", "", "Path to tenant settings JSON file")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		targetTenantID := strings.TrimSpace(*tenantID)
+		if targetTenantID == "" {
+			targetTenantID = cfg.TenantID
+		}
+		settings, err := parseTenantSettingsInput(*settingsJSON, *settingsFile)
+		if err != nil {
+			return err
+		}
+		nameValue := strings.TrimSpace(*name)
+		if nameValue == "" && settings == nil {
+			return errors.New("name, settings-json, or settings-file is required")
+		}
+		req := &tenant.UpdateTenantRequest{Settings: settings}
+		if nameValue != "" {
+			req.Name = &nameValue
+		}
+
+		updated, err := client.updateTenant(ctx, targetTenantID, req)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, updated)
+		}
+		printTenant(a.stdout, updated)
+		return nil
+
+	case "complete-onboarding":
+		cfg, client, err := a.loadAuthenticatedClient()
+		if err != nil {
+			return err
+		}
+
+		fs := flag.NewFlagSet("tenant complete-onboarding", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		tenantID := fs.String("id", "", "Tenant id; defaults to configured tenant")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		targetTenantID := strings.TrimSpace(*tenantID)
+		if targetTenantID == "" {
+			targetTenantID = cfg.TenantID
+		}
+
+		if err := client.completeTenantOnboarding(ctx, targetTenantID); err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, map[string]any{"success": true, "tenant_id": targetTenantID})
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Marked tenant %s onboarding complete\n", targetTenantID)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown tenant subcommand %q", args[0])
 	}
 }
 
@@ -6745,15 +6899,23 @@ func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
 }
 
 func (a *cliApp) loadAuthenticatedClient() (*cliConfig, *apiClient, error) {
+	cfg, client, err := a.loadTokenClient()
+	if err != nil {
+		return nil, nil, err
+	}
+	if strings.TrimSpace(cfg.TenantID) == "" {
+		return nil, nil, errors.New("no tenant configured, run `oa auth init` first")
+	}
+	return cfg, client, nil
+}
+
+func (a *cliApp) loadTokenClient() (*cliConfig, *apiClient, error) {
 	cfg, err := loadRuntimeConfig()
 	if err != nil {
 		return nil, nil, err
 	}
 	if strings.TrimSpace(cfg.APIToken) == "" {
 		return nil, nil, errors.New("no API token configured, run `oa auth init` first")
-	}
-	if strings.TrimSpace(cfg.TenantID) == "" {
-		return nil, nil, errors.New("no tenant configured, run `oa auth init` first")
 	}
 	return cfg, newAPIClient(cfg.BaseURL, cfg.APIToken), nil
 }
@@ -6776,6 +6938,32 @@ func resolvePassword(password string, passwordStdin bool) (string, error) {
 		return "", errors.New("password from stdin is empty")
 	}
 	return value, nil
+}
+
+func parseTenantSettingsInput(settingsJSON, settingsFile string) (*tenant.TenantSettings, error) {
+	settingsJSON = strings.TrimSpace(settingsJSON)
+	settingsFile = strings.TrimSpace(settingsFile)
+	if settingsJSON == "" && settingsFile == "" {
+		return nil, nil
+	}
+	if settingsJSON != "" && settingsFile != "" {
+		return nil, errors.New("use either settings-json or settings-file, not both")
+	}
+
+	payload := []byte(settingsJSON)
+	if settingsFile != "" {
+		content, err := os.ReadFile(settingsFile)
+		if err != nil {
+			return nil, fmt.Errorf("read settings file: %w", err)
+		}
+		payload = content
+	}
+
+	var settings tenant.TenantSettings
+	if err := json.Unmarshal(payload, &settings); err != nil {
+		return nil, fmt.Errorf("parse tenant settings JSON: %w", err)
+	}
+	return &settings, nil
 }
 
 func parseYearMonthFlags(yearValue, monthValue string) (int, int, error) {
