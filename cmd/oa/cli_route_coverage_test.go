@@ -1,0 +1,704 @@
+package main
+
+import (
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+type apiRoute struct {
+	Method string
+	Path   string
+}
+
+func (r apiRoute) String() string {
+	return r.Method + " " + r.Path
+}
+
+func TestCLIRouteCoverageAgainstAPISource(t *testing.T) {
+	routes := collectAPIRoutesFromSource(t)
+	require.Greater(t, len(routes), 100, "route source parser should see the API route table")
+	cliDoc := readCLIReference(t)
+
+	var missing []string
+	var undocumented []string
+	seen := make(map[apiRoute]bool, len(routes))
+	for _, route := range routes {
+		require.Falsef(t, seen[route], "duplicate API route discovered: %s", route.String())
+		seen[route] = true
+
+		command, ok := cliCommandForRoute(route)
+		if !ok {
+			missing = append(missing, route.String())
+			continue
+		}
+		if command == "" {
+			continue
+		}
+		if !strings.Contains(cliDoc, "go run ./cmd/oa "+command) {
+			undocumented = append(undocumented, fmt.Sprintf("%s -> %s", route.String(), command))
+		}
+	}
+
+	sort.Strings(missing)
+	sort.Strings(undocumented)
+	require.Empty(t, missing, "API routes without CLI coverage")
+	require.Empty(t, undocumented, "CLI-covered API routes missing from docs/CLI.md")
+}
+
+func collectAPIRoutesFromSource(t *testing.T) []apiRoute {
+	t.Helper()
+
+	sourcePath := filepath.Join("..", "api", "main.go")
+	fileSet := token.NewFileSet()
+	file, err := parser.ParseFile(fileSet, sourcePath, nil, 0)
+	require.NoError(t, err)
+
+	var routes []apiRoute
+	var walkBlock func(block *ast.BlockStmt, prefixes []string)
+	walkBlock = func(block *ast.BlockStmt, prefixes []string) {
+		if block == nil {
+			return
+		}
+		for _, stmt := range block.List {
+			exprStmt, ok := stmt.(*ast.ExprStmt)
+			if !ok {
+				continue
+			}
+			call, ok := exprStmt.X.(*ast.CallExpr)
+			if !ok {
+				continue
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				continue
+			}
+
+			switch selector.Sel.Name {
+			case "Route":
+				require.GreaterOrEqual(t, len(call.Args), 2)
+				prefix := mustStringArg(t, call.Args[0])
+				funcLit, ok := call.Args[1].(*ast.FuncLit)
+				require.True(t, ok, "expected func literal in Route call")
+				walkBlock(funcLit.Body, append(prefixes, prefix))
+			case "Group":
+				require.GreaterOrEqual(t, len(call.Args), 1)
+				funcLit, ok := call.Args[0].(*ast.FuncLit)
+				require.True(t, ok, "expected func literal in Group call")
+				walkBlock(funcLit.Body, prefixes)
+			case "Get", "Post", "Put", "Delete", "Patch":
+				require.GreaterOrEqual(t, len(call.Args), 1)
+				routes = append(routes, apiRoute{
+					Method: strings.ToUpper(selector.Sel.Name),
+					Path:   joinRoutePath(prefixes, mustStringArg(t, call.Args[0])),
+				})
+			}
+		}
+	}
+
+	for _, decl := range file.Decls {
+		funcDecl, ok := decl.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		walkBlock(funcDecl.Body, nil)
+	}
+
+	sort.Slice(routes, func(i, j int) bool {
+		return routes[i].String() < routes[j].String()
+	})
+	return routes
+}
+
+func mustStringArg(t *testing.T, expr ast.Expr) string {
+	t.Helper()
+
+	lit, ok := expr.(*ast.BasicLit)
+	require.True(t, ok, "expected string literal route path")
+	value, err := strconv.Unquote(lit.Value)
+	require.NoError(t, err)
+	return value
+}
+
+func joinRoutePath(prefixes []string, path string) string {
+	parts := make([]string, 0, len(prefixes)+1)
+	parts = append(parts, prefixes...)
+	parts = append(parts, path)
+
+	var joined strings.Builder
+	for _, part := range parts {
+		clean := strings.Trim(part, "/")
+		if clean == "" {
+			continue
+		}
+		joined.WriteString("/")
+		joined.WriteString(clean)
+	}
+	if joined.Len() == 0 {
+		return "/"
+	}
+	return joined.String()
+}
+
+func readCLIReference(t *testing.T) string {
+	t.Helper()
+
+	payload, err := os.ReadFile(filepath.Join("..", "..", "docs", "CLI.md"))
+	require.NoError(t, err)
+	return string(payload)
+}
+
+func cliCommandForRoute(route apiRoute) (string, bool) {
+	switch route {
+	case apiRoute{Method: "GET", Path: "/health"}:
+		return "health", true
+	case apiRoute{Method: "GET", Path: "/swagger/*"}:
+		return "", true
+	case apiRoute{Method: "GET", Path: "/api/demo/status"}:
+		return "demo status", true
+	case apiRoute{Method: "POST", Path: "/api/demo/reset"}:
+		return "demo reset", true
+	}
+
+	apiPath, ok := strings.CutPrefix(route.Path, "/api/v1")
+	if !ok {
+		return "", false
+	}
+
+	switch {
+	case strings.HasPrefix(apiPath, "/admin/"):
+		return adminCLICommand(route.Method, strings.TrimPrefix(apiPath, "/admin"))
+	case strings.HasPrefix(apiPath, "/tenants/{tenantID}/"):
+		return tenantCLICommand(route.Method, strings.TrimPrefix(apiPath, "/tenants/{tenantID}"))
+	}
+
+	switch apiPath {
+	case "/auth/register":
+		return commandForMethod(route.Method, map[string]string{"POST": "auth register"})
+	case "/auth/login":
+		return commandForMethod(route.Method, map[string]string{"POST": "auth login"})
+	case "/auth/refresh":
+		return commandForMethod(route.Method, map[string]string{"POST": "auth refresh"})
+	case "/invitations/{token}":
+		return commandForMethod(route.Method, map[string]string{"GET": "invitations get"})
+	case "/invitations/accept":
+		return commandForMethod(route.Method, map[string]string{"POST": "invitations accept"})
+	case "/me":
+		return commandForMethod(route.Method, map[string]string{"GET": "auth status"})
+	case "/me/tenants":
+		return commandForMethod(route.Method, map[string]string{"GET": "auth tenants"})
+	case "/tenants":
+		return commandForMethod(route.Method, map[string]string{"POST": "tenant create"})
+	case "/tenants/{tenantID}":
+		return commandForMethod(route.Method, map[string]string{
+			"GET": "tenant get",
+			"PUT": "tenant update",
+		})
+	default:
+		return "", false
+	}
+}
+
+func adminCLICommand(method, path string) (string, bool) {
+	switch path {
+	case "/plugin-registries":
+		return commandForMethod(method, map[string]string{
+			"GET":  "admin registries list",
+			"POST": "admin registries create",
+		})
+	case "/plugin-registries/{id}":
+		return commandForMethod(method, map[string]string{"DELETE": "admin registries delete"})
+	case "/plugin-registries/{id}/sync":
+		return commandForMethod(method, map[string]string{"POST": "admin registries sync"})
+	case "/plugins":
+		return commandForMethod(method, map[string]string{"GET": "admin plugins list"})
+	case "/plugins/search":
+		return commandForMethod(method, map[string]string{"GET": "admin plugins search"})
+	case "/plugins/permissions":
+		return commandForMethod(method, map[string]string{"GET": "admin plugins permissions"})
+	case "/plugins/install":
+		return commandForMethod(method, map[string]string{"POST": "admin plugins install"})
+	case "/plugins/{id}":
+		return commandForMethod(method, map[string]string{
+			"GET":    "admin plugins get",
+			"DELETE": "admin plugins uninstall",
+		})
+	case "/plugins/{id}/enable":
+		return commandForMethod(method, map[string]string{"POST": "admin plugins enable"})
+	case "/plugins/{id}/disable":
+		return commandForMethod(method, map[string]string{"POST": "admin plugins disable"})
+	default:
+		return "", false
+	}
+}
+
+func tenantCLICommand(method, path string) (string, bool) {
+	switch path {
+	case "/complete-onboarding":
+		return commandForMethod(method, map[string]string{"POST": "tenant complete-onboarding"})
+	case "/period-close-events":
+		return commandForMethod(method, map[string]string{"GET": "close events"})
+	case "/period-close":
+		return commandForMethod(method, map[string]string{"POST": "close period"})
+	case "/period-reopen":
+		return commandForMethod(method, map[string]string{"POST": "close reopen"})
+	case "/year-end-close-status":
+		return commandForMethod(method, map[string]string{"GET": "close year-end-status"})
+	case "/year-end-carry-forward":
+		return commandForMethod(method, map[string]string{"POST": "close carry-forward"})
+	case "/documents":
+		return commandForMethod(method, map[string]string{
+			"GET":  "documents list",
+			"POST": "documents upload",
+		})
+	case "/documents/review-summary":
+		return commandForMethod(method, map[string]string{"POST": "documents review-summary"})
+	case "/documents/{documentID}/download":
+		return commandForMethod(method, map[string]string{"GET": "documents download"})
+	case "/documents/{documentID}/mark-reviewed":
+		return commandForMethod(method, map[string]string{"POST": "documents mark-reviewed"})
+	case "/documents/{documentID}":
+		return commandForMethod(method, map[string]string{"DELETE": "documents delete"})
+	case "/api-tokens":
+		return commandForMethod(method, map[string]string{
+			"GET":  "tokens list",
+			"POST": "tokens create",
+		})
+	case "/api-tokens/{tokenID}":
+		return commandForMethod(method, map[string]string{"DELETE": "tokens revoke"})
+	case "/accounts":
+		return commandForMethod(method, map[string]string{
+			"GET":  "accounts list",
+			"POST": "accounts create",
+		})
+	case "/accounts/import":
+		return commandForMethod(method, map[string]string{"POST": "accounts import"})
+	case "/accounts/{accountID}":
+		return commandForMethod(method, map[string]string{"GET": "accounts get"})
+	case "/journal-entries":
+		return commandForMethod(method, map[string]string{
+			"GET":  "journal list",
+			"POST": "journal create",
+		})
+	case "/journal-entries/import-opening-balances":
+		return commandForMethod(method, map[string]string{"POST": "journal import-opening-balances"})
+	case "/journal-entries/{entryID}":
+		return commandForMethod(method, map[string]string{"GET": "journal get"})
+	case "/journal-entries/{entryID}/post":
+		return commandForMethod(method, map[string]string{"POST": "journal post"})
+	case "/journal-entries/{entryID}/void":
+		return commandForMethod(method, map[string]string{"POST": "journal void"})
+	case "/contacts":
+		return commandForMethod(method, map[string]string{
+			"GET":  "contacts list",
+			"POST": "contacts create",
+		})
+	case "/contacts/import":
+		return commandForMethod(method, map[string]string{"POST": "contacts import"})
+	case "/contacts/{contactID}":
+		return commandForMethod(method, map[string]string{
+			"GET":    "contacts get",
+			"PUT":    "contacts update",
+			"DELETE": "contacts delete",
+		})
+	case "/invoices":
+		return commandForMethod(method, map[string]string{
+			"GET":  "invoices list",
+			"POST": "invoices create",
+		})
+	case "/invoices/import":
+		return commandForMethod(method, map[string]string{"POST": "invoices import"})
+	case "/invoices/overdue":
+		return commandForMethod(method, map[string]string{"GET": "reminders overdue"})
+	case "/invoices/reminders":
+		return commandForMethod(method, map[string]string{"POST": "reminders send"})
+	case "/invoices/reminders/bulk":
+		return commandForMethod(method, map[string]string{"POST": "reminders send-bulk"})
+	case "/invoices/overdue-with-interest":
+		return commandForMethod(method, map[string]string{"GET": "interest overdue"})
+	case "/invoices/{invoiceID}":
+		return commandForMethod(method, map[string]string{"GET": "invoices get"})
+	case "/invoices/{invoiceID}/pdf":
+		return commandForMethod(method, map[string]string{"GET": "invoices pdf"})
+	case "/invoices/{invoiceID}/send":
+		return commandForMethod(method, map[string]string{"POST": "invoices send"})
+	case "/invoices/{invoiceID}/void":
+		return commandForMethod(method, map[string]string{"POST": "invoices void"})
+	case "/invoices/{invoiceID}/reminders":
+		return commandForMethod(method, map[string]string{"GET": "reminders history"})
+	case "/invoices/{invoiceID}/interest":
+		return commandForMethod(method, map[string]string{"GET": "interest invoice"})
+	case "/invoices/{invoiceID}/interest/history":
+		return commandForMethod(method, map[string]string{"GET": "interest history"})
+	case "/invoices/{invoiceID}/email":
+		return commandForMethod(method, map[string]string{"POST": "email invoice"})
+	case "/quotes":
+		return commandForMethod(method, map[string]string{
+			"GET":  "quotes list",
+			"POST": "quotes create",
+		})
+	case "/quotes/{quoteID}":
+		return commandForMethod(method, map[string]string{
+			"GET":    "quotes get",
+			"PUT":    "quotes update",
+			"DELETE": "quotes delete",
+		})
+	case "/quotes/{quoteID}/send":
+		return commandForMethod(method, map[string]string{"POST": "quotes send"})
+	case "/quotes/{quoteID}/accept":
+		return commandForMethod(method, map[string]string{"POST": "quotes accept"})
+	case "/quotes/{quoteID}/reject":
+		return commandForMethod(method, map[string]string{"POST": "quotes reject"})
+	case "/orders":
+		return commandForMethod(method, map[string]string{
+			"GET":  "orders list",
+			"POST": "orders create",
+		})
+	case "/orders/{orderID}":
+		return commandForMethod(method, map[string]string{
+			"GET":    "orders get",
+			"PUT":    "orders update",
+			"DELETE": "orders delete",
+		})
+	case "/orders/{orderID}/confirm":
+		return commandForMethod(method, map[string]string{"POST": "orders confirm"})
+	case "/orders/{orderID}/process":
+		return commandForMethod(method, map[string]string{"POST": "orders process"})
+	case "/orders/{orderID}/ship":
+		return commandForMethod(method, map[string]string{"POST": "orders ship"})
+	case "/orders/{orderID}/deliver":
+		return commandForMethod(method, map[string]string{"POST": "orders deliver"})
+	case "/orders/{orderID}/cancel":
+		return commandForMethod(method, map[string]string{"POST": "orders cancel"})
+	case "/asset-categories":
+		return commandForMethod(method, map[string]string{
+			"GET":  "assets categories list",
+			"POST": "assets categories create",
+		})
+	case "/asset-categories/{categoryID}":
+		return commandForMethod(method, map[string]string{
+			"GET":    "assets categories get",
+			"DELETE": "assets categories delete",
+		})
+	case "/assets":
+		return commandForMethod(method, map[string]string{
+			"GET":  "assets list",
+			"POST": "assets create",
+		})
+	case "/assets/{assetID}":
+		return commandForMethod(method, map[string]string{
+			"GET":    "assets get",
+			"PUT":    "assets update",
+			"DELETE": "assets delete",
+		})
+	case "/assets/{assetID}/activate":
+		return commandForMethod(method, map[string]string{"POST": "assets activate"})
+	case "/assets/{assetID}/dispose":
+		return commandForMethod(method, map[string]string{"POST": "assets dispose"})
+	case "/assets/{assetID}/depreciation":
+		return commandForMethod(method, map[string]string{
+			"GET":  "assets depreciation",
+			"POST": "assets depreciate",
+		})
+	case "/product-categories":
+		return commandForMethod(method, map[string]string{
+			"GET":  "inventory categories list",
+			"POST": "inventory categories create",
+		})
+	case "/product-categories/{categoryID}":
+		return commandForMethod(method, map[string]string{
+			"GET":    "inventory categories get",
+			"DELETE": "inventory categories delete",
+		})
+	case "/products":
+		return commandForMethod(method, map[string]string{
+			"GET":  "inventory products list",
+			"POST": "inventory products create",
+		})
+	case "/products/{productID}":
+		return commandForMethod(method, map[string]string{
+			"GET":    "inventory products get",
+			"PUT":    "inventory products update",
+			"DELETE": "inventory products delete",
+		})
+	case "/products/{productID}/stock-levels":
+		return commandForMethod(method, map[string]string{"GET": "inventory products stock-levels"})
+	case "/products/{productID}/movements":
+		return commandForMethod(method, map[string]string{"GET": "inventory products movements"})
+	case "/warehouses":
+		return commandForMethod(method, map[string]string{
+			"GET":  "inventory warehouses list",
+			"POST": "inventory warehouses create",
+		})
+	case "/warehouses/{warehouseID}":
+		return commandForMethod(method, map[string]string{
+			"GET":    "inventory warehouses get",
+			"PUT":    "inventory warehouses update",
+			"DELETE": "inventory warehouses delete",
+		})
+	case "/inventory/adjust":
+		return commandForMethod(method, map[string]string{"POST": "inventory adjust"})
+	case "/inventory/transfer":
+		return commandForMethod(method, map[string]string{"POST": "inventory transfer"})
+	case "/payments":
+		return commandForMethod(method, map[string]string{
+			"GET":  "payments list",
+			"POST": "payments create",
+		})
+	case "/payments/unallocated":
+		return commandForMethod(method, map[string]string{"GET": "payments unallocated"})
+	case "/payments/{paymentID}":
+		return commandForMethod(method, map[string]string{"GET": "payments get"})
+	case "/payments/{paymentID}/allocate":
+		return commandForMethod(method, map[string]string{"POST": "payments allocate"})
+	case "/payments/{paymentID}/email-receipt":
+		return commandForMethod(method, map[string]string{"POST": "email payment-receipt"})
+	case "/reports/trial-balance":
+		return commandForMethod(method, map[string]string{"GET": "reports trial-balance"})
+	case "/reports/account-balance/{accountID}":
+		return commandForMethod(method, map[string]string{"GET": "reports account-balance"})
+	case "/reports/balance-sheet":
+		return commandForMethod(method, map[string]string{"GET": "reports balance-sheet"})
+	case "/reports/income-statement":
+		return commandForMethod(method, map[string]string{"GET": "reports income-statement"})
+	case "/reports/cash-flow":
+		return commandForMethod(method, map[string]string{"GET": "reports cash-flow"})
+	case "/reports/balance-confirmations":
+		return commandForMethod(method, map[string]string{"GET": "reports balance-confirmations"})
+	case "/reports/balance-confirmations/{contactID}":
+		return commandForMethod(method, map[string]string{"GET": "reports balance-confirmation"})
+	case "/reports/aging/receivables":
+		return commandForMethod(method, map[string]string{"GET": "reports aging"})
+	case "/reports/aging/payables":
+		return commandForMethod(method, map[string]string{"GET": "reports aging"})
+	case "/cost-centers":
+		return commandForMethod(method, map[string]string{
+			"GET":  "cost-centers list",
+			"POST": "cost-centers create",
+		})
+	case "/cost-centers/report":
+		return commandForMethod(method, map[string]string{"GET": "cost-centers report"})
+	case "/cost-centers/{costCenterID}":
+		return commandForMethod(method, map[string]string{
+			"GET":    "cost-centers get",
+			"PUT":    "cost-centers update",
+			"DELETE": "cost-centers delete",
+		})
+	case "/analytics/dashboard":
+		return commandForMethod(method, map[string]string{"GET": "analytics dashboard"})
+	case "/analytics/revenue-expense":
+		return commandForMethod(method, map[string]string{"GET": "analytics revenue-expense"})
+	case "/analytics/cash-flow":
+		return commandForMethod(method, map[string]string{"GET": "analytics cash-flow"})
+	case "/analytics/activity":
+		return commandForMethod(method, map[string]string{"GET": "analytics activity"})
+	case "/recurring-invoices":
+		return commandForMethod(method, map[string]string{
+			"GET":  "recurring-invoices list",
+			"POST": "recurring-invoices create",
+		})
+	case "/recurring-invoices/from-invoice/{invoiceID}":
+		return commandForMethod(method, map[string]string{"POST": "recurring-invoices from-invoice"})
+	case "/recurring-invoices/generate-due":
+		return commandForMethod(method, map[string]string{"POST": "recurring-invoices generate-due"})
+	case "/recurring-invoices/{recurringID}":
+		return commandForMethod(method, map[string]string{
+			"GET":    "recurring-invoices get",
+			"PUT":    "recurring-invoices update",
+			"DELETE": "recurring-invoices delete",
+		})
+	case "/recurring-invoices/{recurringID}/pause":
+		return commandForMethod(method, map[string]string{"POST": "recurring-invoices pause"})
+	case "/recurring-invoices/{recurringID}/resume":
+		return commandForMethod(method, map[string]string{"POST": "recurring-invoices resume"})
+	case "/recurring-invoices/{recurringID}/generate":
+		return commandForMethod(method, map[string]string{"POST": "recurring-invoices generate"})
+	case "/settings/smtp":
+		return commandForMethod(method, map[string]string{
+			"GET": "email smtp get",
+			"PUT": "email smtp update",
+		})
+	case "/settings/smtp/test":
+		return commandForMethod(method, map[string]string{"POST": "email smtp test"})
+	case "/email-templates":
+		return commandForMethod(method, map[string]string{"GET": "email templates list"})
+	case "/email-templates/{templateType}":
+		return commandForMethod(method, map[string]string{"PUT": "email templates update"})
+	case "/email-log":
+		return commandForMethod(method, map[string]string{"GET": "email log"})
+	case "/reminder-rules":
+		return commandForMethod(method, map[string]string{
+			"GET":  "reminders rules list",
+			"POST": "reminders rules create",
+		})
+	case "/reminder-rules/trigger":
+		return commandForMethod(method, map[string]string{"POST": "reminders rules trigger"})
+	case "/reminder-rules/{ruleID}":
+		return commandForMethod(method, map[string]string{
+			"GET":    "reminders rules get",
+			"PUT":    "reminders rules update",
+			"DELETE": "reminders rules delete",
+		})
+	case "/settings/interest":
+		return commandForMethod(method, map[string]string{
+			"GET": "interest settings get",
+			"PUT": "interest settings update",
+		})
+	case "/bank-accounts":
+		return commandForMethod(method, map[string]string{
+			"GET":  "banking accounts list",
+			"POST": "banking accounts create",
+		})
+	case "/bank-accounts/{accountID}":
+		return commandForMethod(method, map[string]string{
+			"GET":    "banking accounts get",
+			"PUT":    "banking accounts update",
+			"DELETE": "banking accounts delete",
+		})
+	case "/bank-accounts/{accountID}/transactions":
+		return commandForMethod(method, map[string]string{"GET": "banking transactions list"})
+	case "/bank-accounts/{accountID}/import":
+		return commandForMethod(method, map[string]string{"POST": "banking transactions import"})
+	case "/bank-accounts/{accountID}/import-history":
+		return commandForMethod(method, map[string]string{"GET": "banking transactions import-history"})
+	case "/bank-transactions/{transactionID}":
+		return commandForMethod(method, map[string]string{"GET": "banking transactions get"})
+	case "/bank-transactions/{transactionID}/suggestions":
+		return commandForMethod(method, map[string]string{"GET": "banking transactions suggestions"})
+	case "/bank-transactions/{transactionID}/match":
+		return commandForMethod(method, map[string]string{"POST": "banking transactions match"})
+	case "/bank-transactions/{transactionID}/unmatch":
+		return commandForMethod(method, map[string]string{"POST": "banking transactions unmatch"})
+	case "/bank-transactions/{transactionID}/review":
+		return commandForMethod(method, map[string]string{"POST": "banking transactions review"})
+	case "/bank-transactions/{transactionID}/create-payment":
+		return commandForMethod(method, map[string]string{"POST": "banking transactions create-payment"})
+	case "/bank-accounts/{accountID}/reconciliations":
+		return commandForMethod(method, map[string]string{"GET": "banking reconciliations list"})
+	case "/bank-accounts/{accountID}/reconciliation":
+		return commandForMethod(method, map[string]string{"POST": "banking reconciliations create"})
+	case "/reconciliations/{reconciliationID}":
+		return commandForMethod(method, map[string]string{"GET": "banking reconciliations get"})
+	case "/reconciliations/{reconciliationID}/complete":
+		return commandForMethod(method, map[string]string{"POST": "banking reconciliations complete"})
+	case "/bank-accounts/{accountID}/auto-match":
+		return commandForMethod(method, map[string]string{"POST": "banking transactions auto-match"})
+	case "/tax/kmd":
+		return commandForMethod(method, map[string]string{
+			"GET":  "tax kmd list",
+			"POST": "tax kmd generate",
+		})
+	case "/tax/kmd/{year}/{month}/xml":
+		return commandForMethod(method, map[string]string{"GET": "tax kmd export-xml"})
+	case "/employees":
+		return commandForMethod(method, map[string]string{
+			"GET":  "employees list",
+			"POST": "employees create",
+		})
+	case "/employees/import":
+		return commandForMethod(method, map[string]string{"POST": "employees import"})
+	case "/employees/{employeeID}":
+		return commandForMethod(method, map[string]string{
+			"GET": "employees get",
+			"PUT": "employees update",
+		})
+	case "/employees/{employeeID}/salary":
+		return commandForMethod(method, map[string]string{"POST": "employees set-salary"})
+	case "/payroll-runs":
+		return commandForMethod(method, map[string]string{
+			"GET":  "payroll runs list",
+			"POST": "payroll runs create",
+		})
+	case "/payroll-runs/import-history":
+		return commandForMethod(method, map[string]string{"POST": "payroll import-history"})
+	case "/payroll-runs/{runID}":
+		return commandForMethod(method, map[string]string{"GET": "payroll runs get"})
+	case "/payroll-runs/{runID}/calculate":
+		return commandForMethod(method, map[string]string{"POST": "payroll runs calculate"})
+	case "/payroll-runs/{runID}/approve":
+		return commandForMethod(method, map[string]string{"POST": "payroll runs approve"})
+	case "/payroll-runs/{runID}/payslips":
+		return commandForMethod(method, map[string]string{"GET": "payroll runs payslips"})
+	case "/payroll-runs/{runID}/tsd":
+		return commandForMethod(method, map[string]string{"POST": "tsd generate"})
+	case "/payroll/tax-preview":
+		return commandForMethod(method, map[string]string{"POST": "payroll tax-preview"})
+	case "/absence-types":
+		return commandForMethod(method, map[string]string{"GET": "leave absence-types list"})
+	case "/absence-types/{typeID}":
+		return commandForMethod(method, map[string]string{"GET": "leave absence-types get"})
+	case "/employees/{employeeID}/leave-balances":
+		return commandForMethod(method, map[string]string{"GET": "leave balances list"})
+	case "/employees/{employeeID}/leave-balances/{year}":
+		return commandForMethod(method, map[string]string{"GET": "leave balances by-year"})
+	case "/employees/{employeeID}/leave-balances/{year}/{typeID}":
+		return commandForMethod(method, map[string]string{"PUT": "leave balances update"})
+	case "/employees/{employeeID}/leave-balances/{year}/initialize":
+		return commandForMethod(method, map[string]string{"POST": "leave balances initialize"})
+	case "/leave-balances/import":
+		return commandForMethod(method, map[string]string{"POST": "leave balances import"})
+	case "/leave-records":
+		return commandForMethod(method, map[string]string{
+			"GET":  "leave records list",
+			"POST": "leave records create",
+		})
+	case "/leave-records/{recordID}":
+		return commandForMethod(method, map[string]string{"GET": "leave records get"})
+	case "/leave-records/{recordID}/approve":
+		return commandForMethod(method, map[string]string{"POST": "leave records approve"})
+	case "/leave-records/{recordID}/reject":
+		return commandForMethod(method, map[string]string{"POST": "leave records reject"})
+	case "/leave-records/{recordID}/cancel":
+		return commandForMethod(method, map[string]string{"POST": "leave records cancel"})
+	case "/tsd":
+		return commandForMethod(method, map[string]string{"GET": "tsd list"})
+	case "/tsd/{year}/{month}":
+		return commandForMethod(method, map[string]string{"GET": "tsd get"})
+	case "/tsd/{year}/{month}/xml":
+		return commandForMethod(method, map[string]string{"GET": "tsd export-xml"})
+	case "/tsd/{year}/{month}/csv":
+		return commandForMethod(method, map[string]string{"GET": "tsd export-csv"})
+	case "/tsd/{year}/{month}/submit":
+		return commandForMethod(method, map[string]string{"POST": "tsd mark-submitted"})
+	case "/users":
+		return commandForMethod(method, map[string]string{"GET": "users list"})
+	case "/users/{userID}":
+		return commandForMethod(method, map[string]string{"DELETE": "users remove"})
+	case "/users/{userID}/role":
+		return commandForMethod(method, map[string]string{"PUT": "users update-role"})
+	case "/invitations":
+		return commandForMethod(method, map[string]string{
+			"GET":  "invitations list",
+			"POST": "invitations create",
+		})
+	case "/invitations/{invitationID}":
+		return commandForMethod(method, map[string]string{"DELETE": "invitations revoke"})
+	case "/plugins":
+		return commandForMethod(method, map[string]string{"GET": "plugins list"})
+	case "/plugins/{pluginID}/enable":
+		return commandForMethod(method, map[string]string{"POST": "plugins enable"})
+	case "/plugins/{pluginID}/disable":
+		return commandForMethod(method, map[string]string{"POST": "plugins disable"})
+	case "/plugins/{pluginID}/settings":
+		return commandForMethod(method, map[string]string{
+			"GET": "plugins settings get",
+			"PUT": "plugins settings update",
+		})
+	default:
+		return "", false
+	}
+}
+
+func commandForMethod(method string, commands map[string]string) (string, bool) {
+	command, ok := commands[method]
+	return command, ok
+}
