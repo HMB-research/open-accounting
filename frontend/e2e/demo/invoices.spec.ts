@@ -128,14 +128,7 @@ test.describe('Invoice Creation - Inline Contact Feature', () => {
 		await expect(modal).toBeVisible({ timeout: 5000 });
 
 		// Find the "+" button for adding new contact
-		const newContactBtn = modal.locator('.btn-new-contact, button:has-text("+")').first();
-
-		// Skip test if feature is not deployed
-		const isVisible = await newContactBtn.isVisible().catch(() => false);
-		if (!isVisible) {
-			test.skip(true, 'Inline contact feature not deployed yet');
-			return;
-		}
+		const newContactBtn = modal.locator('.btn-new-contact').first();
 
 		await expect(newContactBtn).toBeVisible();
 	});
@@ -150,17 +143,32 @@ test.describe('Invoice Creation - Inline Contact Feature', () => {
 
 		// Click the "+" button to open contact modal
 		const newContactBtn = modal.locator('.btn-new-contact');
-
-		// Skip test if feature is not deployed
-		const isVisible = await newContactBtn.isVisible().catch(() => false);
-		if (!isVisible) {
-			test.skip(true, 'Inline contact feature not deployed yet');
-			return;
-		}
+		await expect(newContactBtn).toBeVisible({ timeout: 5000 });
 
 		await newContactBtn.click();
 
 		// Verify contact modal is open
 		await expect(page.locator('h2', { hasText: /new contact|uus kontakt/i })).toBeVisible({ timeout: 5000 });
+	});
+
+	test('can create and select a new contact from invoice form', async ({ page }) => {
+		const newInvoiceBtn = page.getByRole('button', { name: /new invoice|uus arve|\+/i }).first();
+		await newInvoiceBtn.click();
+
+		const modal = page.locator('[role="dialog"], .modal').first();
+		await expect(modal).toBeVisible({ timeout: 5000 });
+
+		await modal.locator('.btn-new-contact').click();
+
+		const contactName = `Inline Contact ${Date.now()}`;
+		const contactEmail = `inline-${Date.now()}@example.com`;
+		await expect(page.locator('#create-contact-title')).toBeVisible({ timeout: 5000 });
+		await page.locator('#contact-name').fill(contactName);
+		await page.locator('#contact-email').fill(contactEmail);
+		await page.getByRole('button', { name: /create|loo/i }).last().click();
+
+		await expect(page.locator('#create-contact-title')).not.toBeVisible({ timeout: 10000 });
+		await expect(modal.locator('#contact')).toHaveValue(/.+/, { timeout: 5000 });
+		await expect(modal.locator('#contact')).toContainText(contactName);
 	});
 });
