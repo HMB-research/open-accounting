@@ -1621,6 +1621,78 @@ Authorization: Bearer <token>
 
 ---
 
+## Payment Reminders
+
+### Overdue Invoices
+
+```http
+GET /tenants/{tenantId}/invoices/overdue
+Authorization: Bearer <token>
+```
+
+Returns overdue invoices with outstanding amount, contact details, days overdue, and prior reminder count.
+
+### Send Reminder
+
+```http
+POST /tenants/{tenantId}/invoices/reminders
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "invoice_id": "uuid",
+  "message": "Please pay"
+}
+```
+
+### Send Bulk Reminders
+
+```http
+POST /tenants/{tenantId}/invoices/reminders/bulk
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "invoice_ids": ["uuid-1", "uuid-2"],
+  "message": "Please pay"
+}
+```
+
+### Invoice Reminder History
+
+```http
+GET /tenants/{tenantId}/invoices/{invoiceId}/reminders
+Authorization: Bearer <token>
+```
+
+### Reminder Rules
+
+```http
+GET /tenants/{tenantId}/reminder-rules
+POST /tenants/{tenantId}/reminder-rules
+GET /tenants/{tenantId}/reminder-rules/{ruleId}
+PUT /tenants/{tenantId}/reminder-rules/{ruleId}
+DELETE /tenants/{tenantId}/reminder-rules/{ruleId}
+POST /tenants/{tenantId}/reminder-rules/trigger
+Authorization: Bearer <token>
+```
+
+Create a reminder rule:
+
+```json
+{
+  "name": "Seven days overdue",
+  "trigger_type": "AFTER_DUE",
+  "days_offset": 7,
+  "email_template_type": "OVERDUE_REMINDER",
+  "is_active": true
+}
+```
+
+Trigger types are `BEFORE_DUE`, `ON_DUE`, and `AFTER_DUE`. Rule updates support `name`, `email_template_type`, and `is_active`.
+
+---
+
 ## Banking
 
 ### Bank Accounts

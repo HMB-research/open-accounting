@@ -79,6 +79,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runInvoices(ctx, args[1:])
 	case "payments":
 		return a.runPayments(ctx, args[1:])
+	case "reminders":
+		return a.runReminders(ctx, args[1:])
 	case "banking":
 		return a.runBanking(ctx, args[1:])
 	case "quotes":
@@ -166,6 +168,8 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  payments get              Show one payment")
 	_, _ = fmt.Fprintln(a.stdout, "  payments allocate         Allocate a payment to an invoice")
 	_, _ = fmt.Fprintln(a.stdout, "  payments unallocated      List unallocated payments")
+	_, _ = fmt.Fprintln(a.stdout, "  reminders overdue         List overdue invoices for reminders")
+	_, _ = fmt.Fprintln(a.stdout, "  reminders rules list      List automated reminder rules")
 	_, _ = fmt.Fprintln(a.stdout, "  banking accounts list     List bank accounts")
 	_, _ = fmt.Fprintln(a.stdout, "  banking transactions list List bank transactions")
 	_, _ = fmt.Fprintln(a.stdout, "  banking reconciliations list  List bank reconciliations")
@@ -1228,6 +1232,288 @@ func (a *cliApp) runPayments(ctx context.Context, args []string) error {
 
 	default:
 		return fmt.Errorf("unknown payments subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runReminders(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("reminders subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "overdue":
+		fs := flag.NewFlagSet("reminders overdue", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		summary, err := client.getOverdueInvoices(ctx, cfg.TenantID)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, summary)
+		}
+		printOverdueInvoicesSummary(a.stdout, summary)
+		return nil
+
+	case "send":
+		fs := flag.NewFlagSet("reminders send", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		invoiceID := fs.String("invoice-id", "", "Invoice id")
+		message := fs.String("message", "", "Optional reminder message")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*invoiceID) == "" {
+			return errors.New("invoice-id is required")
+		}
+
+		result, err := client.sendPaymentReminder(ctx, cfg.TenantID, &invoicing.SendReminderRequest{
+			InvoiceID: strings.TrimSpace(*invoiceID),
+			Message:   strings.TrimSpace(*message),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		printReminderResult(a.stdout, result)
+		return nil
+
+	case "send-bulk":
+		fs := flag.NewFlagSet("reminders send-bulk", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		invoiceIDs := stringListFlags{}
+		fs.Var(&invoiceIDs, "invoice-id", "Invoice id; repeatable")
+		message := fs.String("message", "", "Optional reminder message")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if len(invoiceIDs) == 0 {
+			return errors.New("at least one invoice-id is required")
+		}
+
+		result, err := client.sendBulkPaymentReminders(ctx, cfg.TenantID, &invoicing.SendBulkRemindersRequest{
+			InvoiceIDs: invoiceIDs,
+			Message:    strings.TrimSpace(*message),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		printBulkReminderResult(a.stdout, result)
+		return nil
+
+	case "history":
+		fs := flag.NewFlagSet("reminders history", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		invoiceID := fs.String("invoice-id", "", "Invoice id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*invoiceID) == "" {
+			return errors.New("invoice-id is required")
+		}
+
+		reminders, err := client.listInvoiceReminderHistory(ctx, cfg.TenantID, strings.TrimSpace(*invoiceID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, reminders)
+		}
+		printPaymentRemindersTable(a.stdout, reminders)
+		return nil
+
+	case "rules":
+		return a.runReminderRules(ctx, cfg, client, args[1:])
+
+	default:
+		return fmt.Errorf("unknown reminders subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runReminderRules(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("reminders rules subcommand required")
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("reminders rules list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		rules, err := client.listReminderRules(ctx, cfg.TenantID)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, rules)
+		}
+		printReminderRulesTable(a.stdout, rules)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("reminders rules create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		name := fs.String("name", "", "Rule name")
+		triggerTypeFlag := fs.String("trigger-type", "", "Trigger type: BEFORE_DUE, ON_DUE, AFTER_DUE")
+		daysOffsetFlag := fs.String("days-offset", "", "Days from due date")
+		templateType := fs.String("template-type", "OVERDUE_REMINDER", "Email template type")
+		activeFlag := fs.String("active", "true", "Set active state: true or false")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*name) == "" {
+			return errors.New("name is required")
+		}
+		triggerType, err := parseRequiredReminderTriggerType(*triggerTypeFlag)
+		if err != nil {
+			return err
+		}
+		daysOffset, err := parseRequiredNonNegativeInt("days-offset", *daysOffsetFlag)
+		if err != nil {
+			return err
+		}
+		active, err := strconv.ParseBool(strings.TrimSpace(*activeFlag))
+		if err != nil {
+			return fmt.Errorf("parse active: %w", err)
+		}
+
+		rule, err := client.createReminderRule(ctx, cfg.TenantID, &invoicing.CreateReminderRuleRequest{
+			Name:              strings.TrimSpace(*name),
+			TriggerType:       triggerType,
+			DaysOffset:        daysOffset,
+			EmailTemplateType: strings.TrimSpace(*templateType),
+			IsActive:          active,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, rule)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created reminder rule %s (%s)\n", rule.Name, rule.ID)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("reminders rules get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		ruleID := fs.String("id", "", "Reminder rule id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*ruleID) == "" {
+			return errors.New("id is required")
+		}
+
+		rule, err := client.getReminderRule(ctx, cfg.TenantID, strings.TrimSpace(*ruleID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, rule)
+		}
+		printReminderRule(a.stdout, rule)
+		return nil
+
+	case "update":
+		fs := flag.NewFlagSet("reminders rules update", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		ruleID := fs.String("id", "", "Reminder rule id")
+		name := fs.String("name", "", "Rule name")
+		templateType := fs.String("template-type", "", "Email template type")
+		activeFlag := fs.String("active", "", "Set active state: true or false")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*ruleID) == "" {
+			return errors.New("id is required")
+		}
+		active, err := parseOptionalBoolPtr("active", *activeFlag)
+		if err != nil {
+			return err
+		}
+		req := &invoicing.UpdateReminderRuleRequest{
+			Name:              optionalStringPtr(*name),
+			EmailTemplateType: optionalStringPtr(*templateType),
+			IsActive:          active,
+		}
+		if req.Name == nil && req.EmailTemplateType == nil && req.IsActive == nil {
+			return errors.New("name, template-type, or active is required")
+		}
+
+		rule, err := client.updateReminderRule(ctx, cfg.TenantID, strings.TrimSpace(*ruleID), req)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, rule)
+		}
+		printReminderRule(a.stdout, rule)
+		return nil
+
+	case "delete":
+		fs := flag.NewFlagSet("reminders rules delete", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		ruleID := fs.String("id", "", "Reminder rule id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*ruleID) == "" {
+			return errors.New("id is required")
+		}
+
+		if err := client.deleteReminderRule(ctx, cfg.TenantID, strings.TrimSpace(*ruleID)); err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, map[string]string{"status": "deleted"})
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Deleted reminder rule %s\n", strings.TrimSpace(*ruleID))
+		return nil
+
+	case "trigger":
+		fs := flag.NewFlagSet("reminders rules trigger", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		results, err := client.triggerReminderRules(ctx, cfg.TenantID)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, results)
+		}
+		printAutomatedReminderResultsTable(a.stdout, results)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown reminders rules subcommand %q", args[0])
 	}
 }
 
@@ -6206,6 +6492,19 @@ func parseRequiredPaymentType(value string) (payments.PaymentType, error) {
 	}
 }
 
+func parseRequiredReminderTriggerType(value string) (invoicing.TriggerType, error) {
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	switch invoicing.TriggerType(normalized) {
+	case invoicing.TriggerBeforeDue, invoicing.TriggerOnDue, invoicing.TriggerAfterDue:
+		return invoicing.TriggerType(normalized), nil
+	default:
+		if normalized == "" {
+			return "", errors.New("trigger-type is required")
+		}
+		return "", fmt.Errorf("invalid reminder trigger type %q", value)
+	}
+}
+
 func optionalStringPtr(value string) *string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
@@ -6640,6 +6939,24 @@ func (a *allocationFlags) String() string {
 		values = append(values, allocation.InvoiceID+":"+allocation.Amount.String())
 	}
 	return strings.Join(values, ",")
+}
+
+type stringListFlags []string
+
+func (f *stringListFlags) Set(value string) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return errors.New("value cannot be empty")
+	}
+	*f = append(*f, trimmed)
+	return nil
+}
+
+func (f *stringListFlags) String() string {
+	if f == nil {
+		return ""
+	}
+	return strings.Join(*f, ",")
 }
 
 func writeExportOutput(w io.Writer, outputPath string, content []byte, description string) error {

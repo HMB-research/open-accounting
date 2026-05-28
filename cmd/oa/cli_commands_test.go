@@ -2251,6 +2251,216 @@ func TestCLIPaymentCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "PMT-00002")
 }
 
+func TestCLIReminderCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	now := "2026-03-15T12:00:00Z"
+	overduePayload := map[string]any{
+		"total_overdue":        "500.00",
+		"invoice_count":        1,
+		"contact_count":        1,
+		"average_days_overdue": 14,
+		"generated_at":         now,
+		"invoices": []map[string]any{{
+			"id":                 "inv-1",
+			"invoice_number":     "INV-00001",
+			"contact_id":         "contact-1",
+			"contact_name":       "Acme",
+			"contact_email":      "billing@example.com",
+			"issue_date":         "2026-02-01",
+			"due_date":           "2026-03-01",
+			"total":              "600.00",
+			"amount_paid":        "100.00",
+			"outstanding_amount": "500.00",
+			"currency":           "EUR",
+			"days_overdue":       14,
+			"reminder_count":     1,
+			"last_reminder_at":   now,
+		}},
+	}
+	reminderResult := map[string]any{
+		"invoice_id":     "inv-1",
+		"invoice_number": "INV-00001",
+		"success":        true,
+		"message":        "Reminder #2 sent successfully",
+		"reminder_id":    "rem-2",
+	}
+	bulkResult := map[string]any{
+		"total_requested": 2,
+		"successful":      2,
+		"failed":          0,
+		"results": []map[string]any{
+			reminderResult,
+			{
+				"invoice_id":     "inv-2",
+				"invoice_number": "INV-00002",
+				"success":        true,
+				"message":        "Reminder #1 sent successfully",
+				"reminder_id":    "rem-3",
+			},
+		},
+	}
+	historyPayload := []map[string]any{{
+		"id":              "rem-1",
+		"tenant_id":       "tenant-1",
+		"invoice_id":      "inv-1",
+		"invoice_number":  "INV-00001",
+		"contact_id":      "contact-1",
+		"contact_name":    "Acme",
+		"contact_email":   "billing@example.com",
+		"reminder_number": 1,
+		"status":          "SENT",
+		"sent_at":         now,
+		"created_at":      now,
+		"updated_at":      now,
+	}}
+	rulePayload := func(name string, active bool) map[string]any {
+		return map[string]any{
+			"id":                  "rule-1",
+			"tenant_id":           "tenant-1",
+			"name":                name,
+			"trigger_type":        "AFTER_DUE",
+			"days_offset":         7,
+			"email_template_type": "OVERDUE_REMINDER",
+			"is_active":           active,
+			"created_at":          now,
+			"updated_at":          now,
+		}
+	}
+	triggerPayload := []map[string]any{{
+		"tenant_id":      "tenant-1",
+		"rule_id":        "rule-1",
+		"rule_name":      "Seven days overdue",
+		"invoices_found": 2,
+		"reminders_sent": 1,
+		"skipped":        1,
+		"failed":         0,
+		"run_at":         now,
+	}}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/overdue":
+			_ = json.NewEncoder(w).Encode(overduePayload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/reminders":
+			var req invoicing.SendReminderRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "inv-1", req.InvoiceID)
+			assert.Equal(t, "Please pay", req.Message)
+			_ = json.NewEncoder(w).Encode(reminderResult)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/reminders/bulk":
+			var req invoicing.SendBulkRemindersRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, []string{"inv-1", "inv-2"}, req.InvoiceIDs)
+			assert.Equal(t, "Please pay", req.Message)
+			_ = json.NewEncoder(w).Encode(bulkResult)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/inv-1/reminders":
+			_ = json.NewEncoder(w).Encode(historyPayload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reminder-rules":
+			_ = json.NewEncoder(w).Encode([]map[string]any{rulePayload("Seven days overdue", true)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/reminder-rules":
+			var req invoicing.CreateReminderRuleRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Seven days overdue", req.Name)
+			assert.Equal(t, invoicing.TriggerAfterDue, req.TriggerType)
+			assert.Equal(t, 7, req.DaysOffset)
+			assert.Equal(t, "OVERDUE_REMINDER", req.EmailTemplateType)
+			assert.True(t, req.IsActive)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(rulePayload("Seven days overdue", true))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reminder-rules/rule-1":
+			_ = json.NewEncoder(w).Encode(rulePayload("Seven days overdue", true))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/reminder-rules/rule-1":
+			var req invoicing.UpdateReminderRuleRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.NotNil(t, req.Name)
+			assert.Equal(t, "Updated reminder", *req.Name)
+			require.NotNil(t, req.EmailTemplateType)
+			assert.Equal(t, "CUSTOM_TEMPLATE", *req.EmailTemplateType)
+			require.NotNil(t, req.IsActive)
+			assert.False(t, *req.IsActive)
+			_ = json.NewEncoder(w).Encode(rulePayload("Updated reminder", false))
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/reminder-rules/rule-1":
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/reminder-rules/trigger":
+			_ = json.NewEncoder(w).Encode(triggerPayload)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"reminders", "overdue", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"invoice_number": "INV-00001"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reminders", "send", "--invoice-id", "inv-1", "--message", "Please pay"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Reminder ID: rem-2")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reminders", "send-bulk", "--invoice-id", "inv-1", "--invoice-id", "inv-2", "--message", "Please pay"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Successful: 2")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reminders", "history", "--invoice-id", "inv-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "rem-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reminders", "rules", "list", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Seven days overdue"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"reminders", "rules", "create",
+		"--name", "Seven days overdue",
+		"--trigger-type", "after_due",
+		"--days-offset", "7",
+		"--template-type", "OVERDUE_REMINDER",
+		"--active", "true",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created reminder rule Seven days overdue (rule-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reminders", "rules", "get", "--id", "rule-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Reminder rule Seven days overdue")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reminders", "rules", "update", "--id", "rule-1", "--name", "Updated reminder", "--template-type", "CUSTOM_TEMPLATE", "--active", "false"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Active: false")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reminders", "rules", "delete", "--id", "rule-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Deleted reminder rule rule-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reminders", "rules", "trigger"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Seven days overdue")
+}
+
 func TestCLIBankingCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
@@ -3802,6 +4012,14 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "payments subcommand required")
 
+	err = app.runReminders(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reminders subcommand required")
+
+	err = app.runReminderRules(context.Background(), &cliConfig{}, &apiClient{}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reminders rules subcommand required")
+
 	err = app.runBanking(context.Background(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "banking subcommand required")
@@ -4064,6 +4282,18 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid payment type")
 
+	reminderTriggerType, err := parseRequiredReminderTriggerType("after_due")
+	require.NoError(t, err)
+	assert.Equal(t, invoicing.TriggerAfterDue, reminderTriggerType)
+
+	_, err = parseRequiredReminderTriggerType("")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "trigger-type is required")
+
+	_, err = parseRequiredReminderTriggerType("unknown")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid reminder trigger type")
+
 	bankStatus, err := parseOptionalBankTransactionStatus("matched")
 	require.NoError(t, err)
 	assert.Equal(t, banking.StatusMatched, bankStatus)
@@ -4098,6 +4328,15 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	err = allocations.Set("bad")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invoice-id:amount")
+
+	var invoiceIDs stringListFlags
+	require.NoError(t, invoiceIDs.Set(" inv-1 "))
+	require.NoError(t, invoiceIDs.Set("inv-2"))
+	assert.Equal(t, "inv-1,inv-2", invoiceIDs.String())
+
+	err = invoiceIDs.Set(" ")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "value cannot be empty")
 
 	var exportBuf strings.Builder
 	err = writeExportOutput(&exportBuf, "", []byte("raw export"), "Raw")

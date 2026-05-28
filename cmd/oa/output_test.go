@@ -170,6 +170,89 @@ func TestPrintPaymentOutputs(t *testing.T) {
 	assert.Contains(t, paymentBuf.String(), "inv-1")
 }
 
+func TestPrintReminderOutputs(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	ruleID := "rule-1"
+	summary := invoicing.OverdueInvoicesSummary{
+		TotalOverdue:       decimal.NewFromInt(500),
+		InvoiceCount:       1,
+		ContactCount:       1,
+		AverageDaysOverdue: 12,
+		GeneratedAt:        now,
+		Invoices: []invoicing.OverdueInvoice{{
+			ID:                "inv-1",
+			InvoiceNumber:     "INV-00001",
+			ContactName:       "Acme",
+			DueDate:           "2026-03-01",
+			OutstandingAmount: decimal.NewFromInt(500),
+			Currency:          "EUR",
+			DaysOverdue:       14,
+			ReminderCount:     1,
+		}},
+	}
+	reminder := invoicing.PaymentReminder{
+		ID:             "rem-1",
+		InvoiceID:      "inv-1",
+		InvoiceNumber:  "INV-00001",
+		ContactName:    "Acme",
+		RuleID:         &ruleID,
+		ReminderNumber: 2,
+		Status:         invoicing.ReminderStatusSent,
+		SentAt:         &now,
+	}
+	rule := invoicing.ReminderRule{
+		ID:                "rule-1",
+		Name:              "Seven days overdue",
+		TriggerType:       invoicing.TriggerAfterDue,
+		DaysOffset:        7,
+		EmailTemplateType: "OVERDUE_REMINDER",
+		IsActive:          true,
+	}
+	triggerResult := invoicing.AutomatedReminderResult{
+		RuleName:      "Seven days overdue",
+		InvoicesFound: 2,
+		RemindersSent: 1,
+		Skipped:       1,
+		RunAt:         now,
+	}
+
+	var overdueBuf bytes.Buffer
+	printOverdueInvoicesSummary(&overdueBuf, &summary)
+	assert.Contains(t, overdueBuf.String(), "Total overdue: 500")
+	assert.Contains(t, overdueBuf.String(), "INV-00001")
+
+	var remindersBuf bytes.Buffer
+	printPaymentRemindersTable(&remindersBuf, []invoicing.PaymentReminder{reminder})
+	assert.Contains(t, remindersBuf.String(), "INV-00001")
+	assert.Contains(t, remindersBuf.String(), "SENT")
+
+	var resultBuf bytes.Buffer
+	printReminderResult(&resultBuf, &invoicing.ReminderResult{InvoiceID: "inv-1", InvoiceNumber: "INV-00001", Success: true, ReminderID: "rem-1", Message: "sent"})
+	assert.Contains(t, resultBuf.String(), "Reminder ID: rem-1")
+
+	var bulkBuf bytes.Buffer
+	printBulkReminderResult(&bulkBuf, &invoicing.BulkReminderResult{TotalRequested: 2, Successful: 1, Failed: 1, Results: []invoicing.ReminderResult{{InvoiceID: "inv-1", InvoiceNumber: "INV-00001", Success: true, Message: "sent"}}})
+	assert.Contains(t, bulkBuf.String(), "Requested: 2")
+	assert.Contains(t, bulkBuf.String(), "INV-00001")
+
+	var rulesBuf bytes.Buffer
+	printReminderRulesTable(&rulesBuf, []invoicing.ReminderRule{rule})
+	assert.Contains(t, rulesBuf.String(), "Seven days overdue")
+	assert.Contains(t, rulesBuf.String(), "AFTER_DUE")
+
+	var ruleBuf bytes.Buffer
+	printReminderRule(&ruleBuf, &rule)
+	assert.Contains(t, ruleBuf.String(), "Reminder rule Seven days overdue")
+	assert.Contains(t, ruleBuf.String(), "Active: true")
+
+	var triggerBuf bytes.Buffer
+	printAutomatedReminderResultsTable(&triggerBuf, []invoicing.AutomatedReminderResult{triggerResult})
+	assert.Contains(t, triggerBuf.String(), "Seven days overdue")
+	assert.Contains(t, triggerBuf.String(), "1")
+}
+
 func TestPrintBankingOutputs(t *testing.T) {
 	t.Parallel()
 
