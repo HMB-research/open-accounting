@@ -27,6 +27,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
+	"github.com/HMB-research/open-accounting/internal/plugin"
 	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/tenant"
@@ -455,6 +456,258 @@ func TestCLIInvitationCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"invitations", "accept", "--token", "public-token", "--name", "New User", "--password", "secret", "--base-url", server.URL})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Joined tenant Alpha")
+}
+
+func TestCLIPluginCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	const pluginID = "11111111-1111-1111-1111-111111111111"
+	const tenantUUID = "22222222-2222-2222-2222-222222222222"
+	const tenantPluginID = "33333333-3333-3333-3333-333333333333"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/plugins":
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"id":         tenantPluginID,
+				"tenant_id":  tenantUUID,
+				"plugin_id":  pluginID,
+				"is_enabled": true,
+				"settings":   map[string]any{"threshold": 5},
+				"created_at": "2026-03-12T00:00:00Z",
+				"updated_at": "2026-03-12T00:00:00Z",
+				"plugin": map[string]any{
+					"id":                  pluginID,
+					"name":                "vat-tools",
+					"display_name":        "VAT Tools",
+					"version":             "1.0.0",
+					"repository_url":      "https://github.com/example/vat-tools",
+					"repository_type":     "github",
+					"state":               "enabled",
+					"granted_permissions": []string{"invoices:read"},
+					"manifest":            map[string]any{},
+					"installed_at":        "2026-03-12T00:00:00Z",
+					"updated_at":          "2026-03-12T00:00:00Z",
+				},
+			}})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/enable":
+			var req plugin.TenantPluginSettingsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.JSONEq(t, `{"threshold":5}`, string(req.Settings))
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "enabled"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/disable":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "disabled"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/settings":
+			_, _ = w.Write([]byte(`{"threshold":5}`))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/settings":
+			var settings map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&settings))
+			assert.Equal(t, float64(8), settings["threshold"])
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"plugins", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "VAT Tools")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"plugins", "enable", "--id", pluginID, "--settings-json", `{"threshold":5}`})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Enabled tenant plugin")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"plugins", "settings", "get", "--id", pluginID})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"threshold": 5`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"plugins", "settings", "update", "--id", pluginID, "--settings-json", `{"threshold":8}`})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Updated tenant plugin")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"plugins", "disable", "--id", pluginID})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Disabled tenant plugin")
+}
+
+func TestCLIAdminPluginCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		APIToken: "oa_saved_token",
+	}))
+
+	const pluginID = "11111111-1111-1111-1111-111111111111"
+	const registryID = "44444444-4444-4444-4444-444444444444"
+
+	pluginResponse := map[string]any{
+		"id":                  pluginID,
+		"name":                "vat-tools",
+		"display_name":        "VAT Tools",
+		"version":             "1.0.0",
+		"repository_url":      "https://github.com/example/vat-tools",
+		"repository_type":     "github",
+		"state":               "enabled",
+		"granted_permissions": []string{"invoices:read"},
+		"manifest":            map[string]any{},
+		"installed_at":        "2026-03-12T00:00:00Z",
+		"updated_at":          "2026-03-12T00:00:00Z",
+	}
+	registryResponse := map[string]any{
+		"id":          registryID,
+		"name":        "Official",
+		"url":         "https://plugins.example.com",
+		"description": "Official plugins",
+		"is_official": false,
+		"is_active":   true,
+		"created_at":  "2026-03-12T00:00:00Z",
+		"updated_at":  "2026-03-12T00:00:00Z",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/plugin-registries":
+			_ = json.NewEncoder(w).Encode([]map[string]any{registryResponse})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/plugin-registries":
+			var req plugin.CreateRegistryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Official", req.Name)
+			assert.Equal(t, "https://plugins.example.com", req.URL)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(registryResponse)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/plugin-registries/"+registryID+"/sync":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "synced"})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/admin/plugin-registries/"+registryID:
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/plugins":
+			_ = json.NewEncoder(w).Encode([]map[string]any{pluginResponse})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/plugins/search":
+			assert.Equal(t, "vat", r.URL.Query().Get("q"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"plugin": map[string]any{
+					"name":         "vat-tools",
+					"display_name": "VAT Tools",
+					"repository":   "https://github.com/example/vat-tools",
+					"version":      "1.0.0",
+				},
+				"registry": "Official",
+			}})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/plugins/permissions":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"invoices:read": map[string]any{
+					"name":        "invoices:read",
+					"category":    "data",
+					"risk":        "low",
+					"description": "Read invoices",
+				},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/plugins/install":
+			var req plugin.InstallPluginRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "https://github.com/example/vat-tools", req.RepositoryURL)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(pluginResponse)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/plugins/"+pluginID:
+			_ = json.NewEncoder(w).Encode(pluginResponse)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/plugins/"+pluginID+"/enable":
+			var req plugin.EnablePluginRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, []string{"invoices:read"}, req.GrantedPermissions)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "enabled"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/plugins/"+pluginID+"/disable":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "disabled"})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/admin/plugins/"+pluginID:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"admin", "registries", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Official")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"admin", "registries", "create", "--name", "Official", "--url", "https://plugins.example.com"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Official")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"admin", "registries", "sync", "--id", registryID})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Synced plugin registry")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"admin", "registries", "delete", "--id", registryID})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Removed plugin registry")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"admin", "plugins", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "VAT Tools")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"admin", "plugins", "search", "--q", "vat"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "VAT Tools")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"admin", "plugins", "permissions"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "invoices:read")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"admin", "plugins", "install", "--repository-url", "https://github.com/example/vat-tools"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "VAT Tools")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"admin", "plugins", "get", "--id", pluginID})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "VAT Tools")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"admin", "plugins", "enable", "--id", pluginID, "--permission", "invoices:read"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Enabled plugin")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"admin", "plugins", "disable", "--id", pluginID})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Disabled plugin")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"admin", "plugins", "uninstall", "--id", pluginID})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Uninstalled plugin")
 }
 
 func TestCLIAccountsCommands(t *testing.T) {
@@ -4655,6 +4908,14 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	err = app.runInvitations(context.Background(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invitations subcommand required")
+
+	err = app.runPlugins(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "plugins subcommand required")
+
+	err = app.runAdmin(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "admin subcommand required")
 
 	err = app.runTokens(context.Background(), nil)
 	require.Error(t, err)

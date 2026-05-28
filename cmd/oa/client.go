@@ -30,6 +30,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
+	"github.com/HMB-research/open-accounting/internal/plugin"
 	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/reports"
@@ -191,6 +192,110 @@ func (c *apiClient) acceptInvitation(ctx context.Context, req *tenant.AcceptInvi
 		return nil, err
 	}
 	return &resp, nil
+}
+
+func (c *apiClient) listPluginRegistries(ctx context.Context) ([]plugin.Registry, error) {
+	var resp []plugin.Registry
+	if err := c.request(ctx, http.MethodGet, "/api/v1/admin/plugin-registries", nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) addPluginRegistry(ctx context.Context, req *plugin.CreateRegistryRequest) (*plugin.Registry, error) {
+	var resp plugin.Registry
+	if err := c.request(ctx, http.MethodPost, "/api/v1/admin/plugin-registries", req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) removePluginRegistry(ctx context.Context, registryID string) error {
+	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/admin/plugin-registries", registryID), nil, c.apiToken, nil)
+}
+
+func (c *apiClient) syncPluginRegistry(ctx context.Context, registryID string) error {
+	return c.request(ctx, http.MethodPost, path.Join("/api/v1/admin/plugin-registries", registryID, "sync"), nil, c.apiToken, nil)
+}
+
+func (c *apiClient) listAdminPlugins(ctx context.Context) ([]plugin.Plugin, error) {
+	var resp []plugin.Plugin
+	if err := c.request(ctx, http.MethodGet, "/api/v1/admin/plugins", nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) searchAdminPlugins(ctx context.Context, query string) ([]plugin.PluginSearchResult, error) {
+	var resp []plugin.PluginSearchResult
+	if err := c.request(ctx, http.MethodGet, "/api/v1/admin/plugins/search?q="+url.QueryEscape(query), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) getAdminPlugin(ctx context.Context, pluginID string) (*plugin.Plugin, error) {
+	var resp plugin.Plugin
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/admin/plugins", pluginID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) installAdminPlugin(ctx context.Context, req *plugin.InstallPluginRequest) (*plugin.Plugin, error) {
+	var resp plugin.Plugin
+	if err := c.request(ctx, http.MethodPost, "/api/v1/admin/plugins/install", req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) enableAdminPlugin(ctx context.Context, pluginID string, permissions []string) error {
+	return c.request(ctx, http.MethodPost, path.Join("/api/v1/admin/plugins", pluginID, "enable"), &plugin.EnablePluginRequest{GrantedPermissions: permissions}, c.apiToken, nil)
+}
+
+func (c *apiClient) disableAdminPlugin(ctx context.Context, pluginID string) error {
+	return c.request(ctx, http.MethodPost, path.Join("/api/v1/admin/plugins", pluginID, "disable"), nil, c.apiToken, nil)
+}
+
+func (c *apiClient) uninstallAdminPlugin(ctx context.Context, pluginID string) error {
+	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/admin/plugins", pluginID), nil, c.apiToken, nil)
+}
+
+func (c *apiClient) listPluginPermissions(ctx context.Context) (map[string]plugin.Permission, error) {
+	var resp map[string]plugin.Permission
+	if err := c.request(ctx, http.MethodGet, "/api/v1/admin/plugins/permissions", nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) listTenantPlugins(ctx context.Context, tenantID string) ([]plugin.TenantPlugin, error) {
+	var resp []plugin.TenantPlugin
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "plugins"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) enableTenantPlugin(ctx context.Context, tenantID, pluginID string, settings json.RawMessage) error {
+	return c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "plugins", pluginID, "enable"), &plugin.TenantPluginSettingsRequest{Settings: settings}, c.apiToken, nil)
+}
+
+func (c *apiClient) disableTenantPlugin(ctx context.Context, tenantID, pluginID string) error {
+	return c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "plugins", pluginID, "disable"), nil, c.apiToken, nil)
+}
+
+func (c *apiClient) getTenantPluginSettings(ctx context.Context, tenantID, pluginID string) (json.RawMessage, error) {
+	payload, err := c.requestRaw(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "plugins", pluginID, "settings"), nil, c.apiToken)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(payload), nil
+}
+
+func (c *apiClient) updateTenantPluginSettings(ctx context.Context, tenantID, pluginID string, settings json.RawMessage) error {
+	return c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "plugins", pluginID, "settings"), settings, c.apiToken, nil)
 }
 
 func (c *apiClient) createAPIToken(ctx context.Context, tenantID string, req *apitoken.CreateRequest, bearerToken string) (*apitoken.CreateResult, error) {

@@ -115,6 +115,32 @@ go run ./cmd/oa invitations accept \
 
 Use `--password-stdin` on `invitations accept` to avoid placing a new-user password in shell history.
 
+## Plugins
+
+```bash
+go run ./cmd/oa plugins list
+go run ./cmd/oa plugins enable --id <plugin-id> --settings-json '{"enabled":true}'
+go run ./cmd/oa plugins settings get --id <plugin-id>
+go run ./cmd/oa plugins settings update --id <plugin-id> --settings-file ./plugin-settings.json
+go run ./cmd/oa plugins disable --id <plugin-id>
+
+go run ./cmd/oa admin registries list
+go run ./cmd/oa admin registries create --name Official --url https://plugins.example.com
+go run ./cmd/oa admin registries sync --id <registry-id>
+go run ./cmd/oa admin registries delete --id <registry-id>
+
+go run ./cmd/oa admin plugins list
+go run ./cmd/oa admin plugins search --q vat
+go run ./cmd/oa admin plugins permissions
+go run ./cmd/oa admin plugins install --repository-url https://github.com/example/plugin
+go run ./cmd/oa admin plugins get --id <plugin-id>
+go run ./cmd/oa admin plugins enable --id <plugin-id> --permission invoices:read
+go run ./cmd/oa admin plugins disable --id <plugin-id>
+go run ./cmd/oa admin plugins uninstall --id <plugin-id>
+```
+
+Use `--permission` repeatedly when enabling an instance-level plugin with multiple permissions.
+
 ## Manage API tokens
 
 ```bash

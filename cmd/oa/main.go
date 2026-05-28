@@ -29,6 +29,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
+	"github.com/HMB-research/open-accounting/internal/plugin"
 	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/tax"
@@ -67,6 +68,10 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runUsers(ctx, args[1:])
 	case "invitations":
 		return a.runInvitations(ctx, args[1:])
+	case "plugins":
+		return a.runPlugins(ctx, args[1:])
+	case "admin":
+		return a.runAdmin(ctx, args[1:])
 	case "tokens":
 		return a.runTokens(ctx, args[1:])
 	case "accounts":
@@ -142,6 +147,10 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  invitations list          List pending tenant invitations")
 	_, _ = fmt.Fprintln(a.stdout, "  invitations create        Invite a user")
 	_, _ = fmt.Fprintln(a.stdout, "  invitations accept        Accept an invitation token")
+	_, _ = fmt.Fprintln(a.stdout, "  plugins list              List tenant plugins")
+	_, _ = fmt.Fprintln(a.stdout, "  plugins settings get      Show tenant plugin settings")
+	_, _ = fmt.Fprintln(a.stdout, "  admin plugins list        List installed plugins")
+	_, _ = fmt.Fprintln(a.stdout, "  admin registries list     List plugin registries")
 	_, _ = fmt.Fprintln(a.stdout, "  tokens list               List API tokens for the configured tenant")
 	_, _ = fmt.Fprintln(a.stdout, "  tokens create             Create another API token")
 	_, _ = fmt.Fprintln(a.stdout, "  tokens revoke             Revoke an API token by id")
@@ -745,6 +754,405 @@ func (a *cliApp) runInvitations(ctx context.Context, args []string) error {
 
 	default:
 		return fmt.Errorf("unknown invitations subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runPlugins(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("plugins subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("plugins list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		plugins, err := client.listTenantPlugins(ctx, cfg.TenantID)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, plugins)
+		}
+		printTenantPluginsTable(a.stdout, plugins)
+		return nil
+
+	case "enable":
+		fs := flag.NewFlagSet("plugins enable", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		pluginID := fs.String("id", "", "Plugin id")
+		settingsJSON := fs.String("settings-json", "", "Tenant plugin settings JSON object")
+		settingsFile := fs.String("settings-file", "", "Path to tenant plugin settings JSON file")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*pluginID) == "" {
+			return errors.New("id is required")
+		}
+		settings, err := parseRawJSONInput(*settingsJSON, *settingsFile, "{}")
+		if err != nil {
+			return err
+		}
+
+		if err := client.enableTenantPlugin(ctx, cfg.TenantID, strings.TrimSpace(*pluginID), settings); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Enabled tenant plugin %s\n", strings.TrimSpace(*pluginID))
+		return nil
+
+	case "disable":
+		fs := flag.NewFlagSet("plugins disable", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		pluginID := fs.String("id", "", "Plugin id")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*pluginID) == "" {
+			return errors.New("id is required")
+		}
+
+		if err := client.disableTenantPlugin(ctx, cfg.TenantID, strings.TrimSpace(*pluginID)); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Disabled tenant plugin %s\n", strings.TrimSpace(*pluginID))
+		return nil
+
+	case "settings":
+		return a.runPluginSettings(ctx, cfg, client, args[1:])
+
+	default:
+		return fmt.Errorf("unknown plugins subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runPluginSettings(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("plugins settings subcommand required")
+	}
+
+	switch args[0] {
+	case "get":
+		fs := flag.NewFlagSet("plugins settings get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		pluginID := fs.String("id", "", "Plugin id")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*pluginID) == "" {
+			return errors.New("id is required")
+		}
+
+		settings, err := client.getTenantPluginSettings(ctx, cfg.TenantID, strings.TrimSpace(*pluginID))
+		if err != nil {
+			return err
+		}
+		var value any
+		if err := json.Unmarshal(settings, &value); err == nil {
+			return printJSON(a.stdout, value)
+		}
+		_, err = fmt.Fprintln(a.stdout, string(settings))
+		return err
+
+	case "update":
+		fs := flag.NewFlagSet("plugins settings update", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		pluginID := fs.String("id", "", "Plugin id")
+		settingsJSON := fs.String("settings-json", "", "Tenant plugin settings JSON object")
+		settingsFile := fs.String("settings-file", "", "Path to tenant plugin settings JSON file")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*pluginID) == "" {
+			return errors.New("id is required")
+		}
+		settings, err := parseRawJSONInput(*settingsJSON, *settingsFile, "")
+		if err != nil {
+			return err
+		}
+		if len(settings) == 0 {
+			return errors.New("settings-json or settings-file is required")
+		}
+
+		if err := client.updateTenantPluginSettings(ctx, cfg.TenantID, strings.TrimSpace(*pluginID), settings); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Updated tenant plugin %s settings\n", strings.TrimSpace(*pluginID))
+		return nil
+
+	default:
+		return fmt.Errorf("unknown plugins settings subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runAdmin(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("admin subcommand required")
+	}
+	_, client, err := a.loadTokenClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "plugins":
+		return a.runAdminPlugins(ctx, client, args[1:])
+	case "registries", "plugin-registries":
+		return a.runAdminPluginRegistries(ctx, client, args[1:])
+	default:
+		return fmt.Errorf("unknown admin subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runAdminPluginRegistries(ctx context.Context, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("admin registries subcommand required")
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("admin registries list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		registries, err := client.listPluginRegistries(ctx)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, registries)
+		}
+		printPluginRegistriesTable(a.stdout, registries)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("admin registries create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		name := fs.String("name", "", "Registry name")
+		registryURL := fs.String("url", "", "Registry URL")
+		description := fs.String("description", "", "Registry description")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*name) == "" || strings.TrimSpace(*registryURL) == "" {
+			return errors.New("name and url are required")
+		}
+		registry, err := client.addPluginRegistry(ctx, &plugin.CreateRegistryRequest{
+			Name:        strings.TrimSpace(*name),
+			URL:         strings.TrimSpace(*registryURL),
+			Description: strings.TrimSpace(*description),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, registry)
+		}
+		printPluginRegistriesTable(a.stdout, []plugin.Registry{*registry})
+		return nil
+
+	case "delete", "remove":
+		fs := flag.NewFlagSet("admin registries delete", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		registryID := fs.String("id", "", "Registry id")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*registryID) == "" {
+			return errors.New("id is required")
+		}
+		if err := client.removePluginRegistry(ctx, strings.TrimSpace(*registryID)); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Removed plugin registry %s\n", strings.TrimSpace(*registryID))
+		return nil
+
+	case "sync":
+		fs := flag.NewFlagSet("admin registries sync", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		registryID := fs.String("id", "", "Registry id")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*registryID) == "" {
+			return errors.New("id is required")
+		}
+		if err := client.syncPluginRegistry(ctx, strings.TrimSpace(*registryID)); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Synced plugin registry %s\n", strings.TrimSpace(*registryID))
+		return nil
+
+	default:
+		return fmt.Errorf("unknown admin registries subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runAdminPlugins(ctx context.Context, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("admin plugins subcommand required")
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("admin plugins list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		plugins, err := client.listAdminPlugins(ctx)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, plugins)
+		}
+		printPluginsTable(a.stdout, plugins)
+		return nil
+
+	case "search":
+		fs := flag.NewFlagSet("admin plugins search", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		query := fs.String("q", "", "Search query")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*query) == "" {
+			return errors.New("q is required")
+		}
+		results, err := client.searchAdminPlugins(ctx, strings.TrimSpace(*query))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, results)
+		}
+		printPluginSearchResultsTable(a.stdout, results)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("admin plugins get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		pluginID := fs.String("id", "", "Plugin id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*pluginID) == "" {
+			return errors.New("id is required")
+		}
+		item, err := client.getAdminPlugin(ctx, strings.TrimSpace(*pluginID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, item)
+		}
+		printPluginsTable(a.stdout, []plugin.Plugin{*item})
+		return nil
+
+	case "install":
+		fs := flag.NewFlagSet("admin plugins install", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		repositoryURL := fs.String("repository-url", "", "Plugin repository URL")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*repositoryURL) == "" {
+			return errors.New("repository-url is required")
+		}
+		item, err := client.installAdminPlugin(ctx, &plugin.InstallPluginRequest{RepositoryURL: strings.TrimSpace(*repositoryURL)})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, item)
+		}
+		printPluginsTable(a.stdout, []plugin.Plugin{*item})
+		return nil
+
+	case "permissions":
+		fs := flag.NewFlagSet("admin plugins permissions", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		permissions, err := client.listPluginPermissions(ctx)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, permissions)
+		}
+		printPluginPermissionsTable(a.stdout, permissions)
+		return nil
+
+	case "enable":
+		fs := flag.NewFlagSet("admin plugins enable", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		pluginID := fs.String("id", "", "Plugin id")
+		permissions := stringListFlags{}
+		fs.Var(&permissions, "permission", "Permission to grant; repeatable")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*pluginID) == "" {
+			return errors.New("id is required")
+		}
+		if err := client.enableAdminPlugin(ctx, strings.TrimSpace(*pluginID), []string(permissions)); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Enabled plugin %s\n", strings.TrimSpace(*pluginID))
+		return nil
+
+	case "disable":
+		fs := flag.NewFlagSet("admin plugins disable", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		pluginID := fs.String("id", "", "Plugin id")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*pluginID) == "" {
+			return errors.New("id is required")
+		}
+		if err := client.disableAdminPlugin(ctx, strings.TrimSpace(*pluginID)); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Disabled plugin %s\n", strings.TrimSpace(*pluginID))
+		return nil
+
+	case "uninstall":
+		fs := flag.NewFlagSet("admin plugins uninstall", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		pluginID := fs.String("id", "", "Plugin id")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*pluginID) == "" {
+			return errors.New("id is required")
+		}
+		if err := client.uninstallAdminPlugin(ctx, strings.TrimSpace(*pluginID)); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Uninstalled plugin %s\n", strings.TrimSpace(*pluginID))
+		return nil
+
+	default:
+		return fmt.Errorf("unknown admin plugins subcommand %q", args[0])
 	}
 }
 
@@ -7209,6 +7617,35 @@ func parseTenantSettingsInput(settingsJSON, settingsFile string) (*tenant.Tenant
 		return nil, fmt.Errorf("parse tenant settings JSON: %w", err)
 	}
 	return &settings, nil
+}
+
+func parseRawJSONInput(inlineJSON, filePath, defaultJSON string) (json.RawMessage, error) {
+	inlineJSON = strings.TrimSpace(inlineJSON)
+	filePath = strings.TrimSpace(filePath)
+	if inlineJSON == "" && filePath == "" {
+		if strings.TrimSpace(defaultJSON) == "" {
+			return nil, nil
+		}
+		return json.RawMessage(defaultJSON), nil
+	}
+	if inlineJSON != "" && filePath != "" {
+		return nil, errors.New("use either settings-json or settings-file, not both")
+	}
+
+	payload := []byte(inlineJSON)
+	if filePath != "" {
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("read settings file: %w", err)
+		}
+		payload = content
+	}
+
+	var value any
+	if err := json.Unmarshal(payload, &value); err != nil {
+		return nil, fmt.Errorf("parse JSON: %w", err)
+	}
+	return json.RawMessage(payload), nil
 }
 
 func parseYearMonthFlags(yearValue, monthValue string) (int, int, error) {
