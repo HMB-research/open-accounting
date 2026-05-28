@@ -798,3 +798,41 @@ func TestListProductCategories(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, result, 1)
 }
+
+func TestImportProductCategories(t *testing.T) {
+	h, repo, tenantRepo := setupInventoryTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	body := map[string]interface{}{
+		"file_name":   "categories.csv",
+		"csv_content": "name,description\nParts,Spare parts\n",
+	}
+	bodyBytes, _ := json.Marshal(body)
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/product-categories/import", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.ImportProductCategories(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var result inventory.ImportProductCategoriesResult
+	err := json.Unmarshal(rr.Body.Bytes(), &result)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.CategoriesCreated)
+	assert.Equal(t, 0, result.RowsSkipped)
+
+	require.Len(t, repo.categories, 1)
+	for _, category := range repo.categories {
+		assert.Equal(t, "Parts", category.Name)
+		assert.Equal(t, "Spare parts", category.Description)
+	}
+}

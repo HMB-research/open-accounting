@@ -2103,6 +2103,7 @@ func TestCLIInventoryCommands(t *testing.T) {
 		"created_at":    "2026-03-15T12:00:00Z",
 		"created_by":    "user-1",
 	}
+	categoryImportFile := writeTempCSV(t, "categories.csv", "name,description\nParts,Spare parts\n")
 	importFile := writeTempCSV(t, "products.csv", "code,name,sales_price\nSKU-001,Widget,15.00\n")
 	warehouseImportFile := writeTempCSV(t, "warehouses.csv", "code,name,address,is_default\nMAIN,Main warehouse,Tallinn,true\n")
 	stockImportFile := writeTempCSV(t, "stock.csv", "product_code,warehouse_code,quantity\nSKU-001,MAIN,12\n")
@@ -2122,6 +2123,16 @@ func TestCLIInventoryCommands(t *testing.T) {
 			assert.Equal(t, "parent-1", req.ParentID)
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(categoryPayload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/product-categories/import":
+			var req inventory.ImportProductCategoriesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "categories.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "Parts")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed":     1,
+				"categories_created": 1,
+				"rows_skipped":       0,
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/product-categories/cat-1":
 			_ = json.NewEncoder(w).Encode(categoryPayload)
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/product-categories/cat-1":
@@ -2258,6 +2269,11 @@ func TestCLIInventoryCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"inventory", "categories", "create", "--name", "Parts", "--description", "Spare parts", "--parent-id", "parent-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created product category Parts (cat-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "categories", "import", "--file", categoryImportFile})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 product categories, skipped 0 rows")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"inventory", "categories", "get", "--id", "cat-1"})

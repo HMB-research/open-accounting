@@ -1522,12 +1522,26 @@ Recording depreciation uses the current month according to the server-side servi
 ```http
 GET /tenants/{tenantId}/product-categories
 POST /tenants/{tenantId}/product-categories
+POST /tenants/{tenantId}/product-categories/import
 GET /tenants/{tenantId}/product-categories/{categoryId}
 DELETE /tenants/{tenantId}/product-categories/{categoryId}
 Authorization: Bearer <token>
 ```
 
 Create category payloads accept `name`, optional `description`, and optional `parent_id`.
+
+```http
+POST /tenants/{tenantId}/product-categories/import
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "file_name": "categories.csv",
+  "csv_content": "name,description,parent_name\nParts,Spare parts,\nFasteners,Bolts and screws,Parts\n"
+}
+```
+
+Category CSV imports require `name`. Optional columns include `description`, `parent_id`, and `parent_name`; parent names can reference existing categories or earlier rows in the same import.
 
 ### List Products
 

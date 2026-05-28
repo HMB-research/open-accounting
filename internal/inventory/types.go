@@ -207,6 +207,28 @@ type CreateCategoryRequest struct {
 	ParentID    string `json:"parent_id,omitempty"`
 }
 
+// ImportProductCategoriesRequest contains CSV payload for product category migration.
+type ImportProductCategoriesRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+}
+
+// ImportProductCategoriesResult summarizes a product category CSV import.
+type ImportProductCategoriesResult struct {
+	FileName          string                            `json:"file_name,omitempty"`
+	RowsProcessed     int                               `json:"rows_processed"`
+	CategoriesCreated int                               `json:"categories_created"`
+	RowsSkipped       int                               `json:"rows_skipped"`
+	Errors            []ImportProductCategoriesRowError `json:"errors,omitempty"`
+}
+
+// ImportProductCategoriesRowError describes a row-level product category import failure.
+type ImportProductCategoriesRowError struct {
+	Row     int    `json:"row"`
+	Name    string `json:"name,omitempty"`
+	Message string `json:"message"`
+}
+
 // CreateWarehouseRequest represents a request to create a warehouse
 type CreateWarehouseRequest struct {
 	Code      string `json:"code"`

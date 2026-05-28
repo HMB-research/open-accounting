@@ -720,6 +720,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 			"GET":  "inventory categories list",
 			"POST": "inventory categories create",
 		})
+	case "/product-categories/import":
+		return commandForMethod(method, map[string]string{"POST": "inventory categories import"})
 	case "/product-categories/{categoryID}":
 		return commandForMethod(method, map[string]string{
 			"GET":    "inventory categories get",

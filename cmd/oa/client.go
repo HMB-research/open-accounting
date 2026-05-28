@@ -1417,6 +1417,14 @@ func (c *apiClient) createProductCategory(ctx context.Context, tenantID string, 
 	return &resp, nil
 }
 
+func (c *apiClient) importProductCategories(ctx context.Context, tenantID string, req *inventory.ImportProductCategoriesRequest) (*inventory.ImportProductCategoriesResult, error) {
+	var resp inventory.ImportProductCategoriesResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "product-categories", "import"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) getProductCategory(ctx context.Context, tenantID, categoryID string) (*inventory.ProductCategory, error) {
 	var resp inventory.ProductCategory
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "product-categories", categoryID), nil, c.apiToken, &resp); err != nil {
