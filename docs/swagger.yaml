@@ -906,6 +906,8 @@ definitions:
     - FollowUpReadyToMatch
   github_com_HMB-research_open-accounting_internal_banking.ImportCSVRequest:
     properties:
+      file_name:
+        type: string
       skip_duplicates:
         type: boolean
       transactions:
@@ -3437,6 +3439,45 @@ definitions:
     properties:
       month:
         type: integer
+      year:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_tax.ImportKMDHistoryRequest:
+    properties:
+      csv_content:
+        type: string
+      file_name:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_tax.ImportKMDHistoryResult:
+    properties:
+      declarations_created:
+        type: integer
+      errors:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tax.ImportKMDHistoryRowError'
+        type: array
+      file_name:
+        type: string
+      rows_imported:
+        type: integer
+      rows_processed:
+        type: integer
+      rows_skipped:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_tax.ImportKMDHistoryRowError:
+    properties:
+      description:
+        type: string
+      message:
+        type: string
+      month:
+        type: integer
+      row:
+        type: integer
+      row_code:
+        type: string
       year:
         type: integer
     type: object
@@ -10225,6 +10266,42 @@ paths:
       security:
       - BearerAuth: []
       summary: Export KMD to XML
+      tags:
+      - Tax
+  /tenants/{tenantID}/tax/kmd/import-history:
+    post:
+      consumes:
+      - application/json
+      description: Import historical Estonian VAT declarations (KMD) from CSV data
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: CSV import payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tax.ImportKMDHistoryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tax.ImportKMDHistoryResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Import historical KMD declarations
       tags:
       - Tax
   /tenants/{tenantID}/tsd:

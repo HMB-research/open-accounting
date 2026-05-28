@@ -10337,6 +10337,63 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/tax/kmd/import-history": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Import historical Estonian VAT declarations (KMD) from CSV data",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tax"
+                ],
+                "summary": "Import historical KMD declarations",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "CSV import payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_tax.ImportKMDHistoryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_tax.ImportKMDHistoryResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/tax/kmd/{year}/{month}/xml": {
             "get": {
                 "security": [
@@ -12306,6 +12363,9 @@ const docTemplate = `{
         "github_com_HMB-research_open-accounting_internal_banking.ImportCSVRequest": {
             "type": "object",
             "properties": {
+                "file_name": {
+                    "type": "string"
+                },
                 "skip_duplicates": {
                     "type": "boolean"
                 },
@@ -16074,6 +16134,66 @@ const docTemplate = `{
             "properties": {
                 "month": {
                     "type": "integer"
+                },
+                "year": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_tax.ImportKMDHistoryRequest": {
+            "type": "object",
+            "properties": {
+                "csv_content": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_tax.ImportKMDHistoryResult": {
+            "type": "object",
+            "properties": {
+                "declarations_created": {
+                    "type": "integer"
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_tax.ImportKMDHistoryRowError"
+                    }
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "rows_imported": {
+                    "type": "integer"
+                },
+                "rows_processed": {
+                    "type": "integer"
+                },
+                "rows_skipped": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_tax.ImportKMDHistoryRowError": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "month": {
+                    "type": "integer"
+                },
+                "row": {
+                    "type": "integer"
+                },
+                "row_code": {
+                    "type": "string"
                 },
                 "year": {
                     "type": "integer"

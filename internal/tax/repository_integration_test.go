@@ -378,6 +378,88 @@ func TestPostgresRepository_SaveDeclaration_Update(t *testing.T) {
 	}
 }
 
+func TestPostgresRepository_SaveDeclaration_UpdateWithDifferentIDReplacesRows(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	err := repo.EnsureSchema(ctx, tenant.SchemaName)
+	if err != nil {
+		t.Fatalf("EnsureSchema failed: %v", err)
+	}
+
+	now := time.Now().UTC()
+	originalID := uuid.New().String()
+	decl := &KMDDeclaration{
+		ID:             originalID,
+		TenantID:       tenant.ID,
+		Year:           now.Year(),
+		Month:          8,
+		TotalOutputVAT: decimal.NewFromFloat(220),
+		TotalInputVAT:  decimal.NewFromFloat(0),
+		Status:         "DRAFT",
+		Rows: []KMDRow{{
+			Code:        KMDRow1,
+			Description: "Taxable sales",
+			TaxBase:     decimal.NewFromFloat(1000),
+			TaxAmount:   decimal.NewFromFloat(220),
+		}},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	err = repo.SaveDeclaration(ctx, tenant.SchemaName, decl)
+	if err != nil {
+		t.Fatalf("SaveDeclaration (initial) failed: %v", err)
+	}
+
+	submittedAt := now.AddDate(0, 1, 0)
+	replacement := &KMDDeclaration{
+		ID:             uuid.New().String(),
+		TenantID:       tenant.ID,
+		Year:           now.Year(),
+		Month:          8,
+		TotalOutputVAT: decimal.NewFromFloat(0),
+		TotalInputVAT:  decimal.NewFromFloat(80),
+		Status:         "ACCEPTED",
+		SubmittedAt:    &submittedAt,
+		Rows: []KMDRow{{
+			Code:        KMDRow4,
+			Description: "Input VAT",
+			TaxBase:     decimal.NewFromFloat(363.64),
+			TaxAmount:   decimal.NewFromFloat(80),
+		}},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	err = repo.SaveDeclaration(ctx, tenant.SchemaName, replacement)
+	if err != nil {
+		t.Fatalf("SaveDeclaration (replacement) failed: %v", err)
+	}
+	if replacement.ID != originalID {
+		t.Fatalf("expected replacement ID to reuse existing declaration ID %s, got %s", originalID, replacement.ID)
+	}
+
+	retrieved, err := repo.GetDeclaration(ctx, tenant.SchemaName, tenant.ID, now.Year(), 8)
+	if err != nil {
+		t.Fatalf("GetDeclaration failed: %v", err)
+	}
+	if retrieved == nil {
+		t.Fatal("expected KMD declaration, got nil")
+	}
+	if retrieved.Status != "ACCEPTED" {
+		t.Errorf("expected status ACCEPTED, got %s", retrieved.Status)
+	}
+	if retrieved.SubmittedAt == nil {
+		t.Fatal("expected submitted_at to be persisted")
+	}
+	if len(retrieved.Rows) != 1 || retrieved.Rows[0].Code != KMDRow4 {
+		t.Fatalf("expected old rows to be replaced with row 4, got %#v", retrieved.Rows)
+	}
+}
+
 func TestPostgresRepository_ListDeclarations_Empty(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)

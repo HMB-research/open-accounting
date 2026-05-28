@@ -296,8 +296,12 @@ Omit `--output` on export commands to write the raw XML or CSV to stdout. Use `-
 ```bash
 go run ./cmd/oa tax kmd list
 go run ./cmd/oa tax kmd generate --year 2026 --month 3
+go run ./cmd/oa tax kmd import-history --file ./kmd-history.csv
+go run ./cmd/oa tax kmd import-history --file ./kmd-history.csv --json
 go run ./cmd/oa tax kmd export-xml --year 2026 --month 3 --output ./kmd-2026-03.xml
 ```
+
+Historical KMD import expects `year`, `month`, and `row_code` columns, plus optional `tax_base`, `tax_amount`, `status`, `submitted_at`, `description`, `total_output_vat`, and `total_input_vat` columns. Existing declaration periods are skipped instead of overwritten.
 
 KMD export writes e-MTA XML. Omit `--output` to stream the XML to stdout.
 

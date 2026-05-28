@@ -26,6 +26,7 @@ type mockTaxRepository struct {
 	queryVATDataErr        error
 	saveDeclarationErr     error
 	getDeclarationResult   *tax.KMDDeclaration
+	existingDeclarations   map[string]*tax.KMDDeclaration
 	getDeclarationErr      error
 	listDeclarationsResult []tax.KMDDeclaration
 	listDeclarationsErr    error
@@ -54,6 +55,9 @@ func (m *mockTaxRepository) SaveDeclaration(ctx context.Context, schemaName stri
 func (m *mockTaxRepository) GetDeclaration(ctx context.Context, schemaName, tenantID string, year, month int) (*tax.KMDDeclaration, error) {
 	if m.getDeclarationErr != nil {
 		return nil, m.getDeclarationErr
+	}
+	if m.existingDeclarations != nil {
+		return m.existingDeclarations[fmt.Sprintf("%04d-%02d", year, month)], nil
 	}
 	return m.getDeclarationResult, nil
 }
@@ -156,6 +160,28 @@ func TestKMDHandlers(t *testing.T) {
 	assert.Contains(t, rr.Header().Get("Content-Disposition"), "KMD_2025_2.xml")
 	assert.Contains(t, rr.Body.String(), "<regNr>12345678</regNr>")
 	assert.Contains(t, rr.Body.String(), "<periood>2025-02</periood>")
+}
+
+func TestKMDImportHistoryHandler(t *testing.T) {
+	h, tenantRepo, taxRepo := setupTaxHandlers()
+	tenantRepo.addTestTenant("tenant-1", "Tax Tenant", "tax-tenant")
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/tax/kmd/import-history", map[string]any{
+		"file_name":   "kmd-history.csv",
+		"csv_content": "year,month,row_code,tax_base,tax_amount\n2025,12,1,1000.00,220.00\n",
+	}, nil)
+	rr := httptest.NewRecorder()
+
+	h.HandleImportKMDHistory(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var result tax.ImportKMDHistoryResult
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&result))
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.DeclarationsCreated)
+	assert.Equal(t, 1, result.RowsImported)
+	require.Len(t, taxRepo.savedDeclarations, 1)
+	assert.Equal(t, 2025, taxRepo.savedDeclarations[0].Year)
 }
 
 func TestKMDHandlersValidationAndErrorPaths(t *testing.T) {

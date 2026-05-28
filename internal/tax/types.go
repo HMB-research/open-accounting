@@ -71,6 +71,33 @@ type CreateKMDRequest struct {
 	Month int `json:"month"`
 }
 
+// ImportKMDHistoryRequest contains CSV payload for historical KMD declarations.
+// Each CSV row represents one KMD row inside a declaration period.
+type ImportKMDHistoryRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+}
+
+// ImportKMDHistoryResult summarizes a historical KMD declaration import.
+type ImportKMDHistoryResult struct {
+	FileName            string                     `json:"file_name,omitempty"`
+	RowsProcessed       int                        `json:"rows_processed"`
+	DeclarationsCreated int                        `json:"declarations_created"`
+	RowsImported        int                        `json:"rows_imported"`
+	RowsSkipped         int                        `json:"rows_skipped"`
+	Errors              []ImportKMDHistoryRowError `json:"errors,omitempty"`
+}
+
+// ImportKMDHistoryRowError describes a row-level historical KMD import failure.
+type ImportKMDHistoryRowError struct {
+	Row         int    `json:"row"`
+	Year        int    `json:"year,omitempty"`
+	Month       int    `json:"month,omitempty"`
+	RowCode     string `json:"row_code,omitempty"`
+	Description string `json:"description,omitempty"`
+	Message     string `json:"message"`
+}
+
 // KMDExportFormat represents export formats
 type KMDExportFormat string
 

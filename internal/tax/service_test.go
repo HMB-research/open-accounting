@@ -3,6 +3,7 @@ package tax
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ type MockRepository struct {
 	queryVATDataErr        error
 	saveDeclarationErr     error
 	getDeclarationResult   *KMDDeclaration
+	existingDeclarations   map[string]*KMDDeclaration
 	getDeclarationErr      error
 	listDeclarationsResult []KMDDeclaration
 	listDeclarationsErr    error
@@ -46,6 +48,9 @@ func (m *MockRepository) SaveDeclaration(ctx context.Context, schemaName string,
 func (m *MockRepository) GetDeclaration(ctx context.Context, schemaName, tenantID string, year, month int) (*KMDDeclaration, error) {
 	if m.getDeclarationErr != nil {
 		return nil, m.getDeclarationErr
+	}
+	if m.existingDeclarations != nil {
+		return m.existingDeclarations[fmt.Sprintf("%04d-%02d", year, month)], nil
 	}
 	return m.getDeclarationResult, nil
 }

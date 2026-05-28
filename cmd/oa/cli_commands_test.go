@@ -30,6 +30,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/plugin"
 	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/recurring"
+	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -4678,6 +4679,8 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 		APIToken:   "oa_saved_token",
 	}))
 
+	kmdFile := writeTempCSV(t, "kmd-history.csv", "year,month,row_code,tax_base,tax_amount\n2025,12,1,1000.00,220.00\n")
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
 
@@ -4798,6 +4801,18 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 				"created_at": "2026-03-31T12:00:00Z",
 				"updated_at": "2026-03-31T12:00:00Z",
 			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd/import-history":
+			w.Header().Set("Content-Type", "application/json")
+			var req tax.ImportKMDHistoryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "kmd-history.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "1000.00")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed":       1,
+				"declarations_created": 1,
+				"rows_imported":        1,
+				"rows_skipped":         0,
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd/2026/3/xml":
 			w.Header().Set("Content-Type", "application/xml")
 			_, _ = w.Write([]byte("<KMD>ok</KMD>"))
@@ -4854,6 +4869,11 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "KMD 2026-03")
 	assert.Contains(t, stdout.String(), "Payable: 140")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tax", "kmd", "import-history", "--file", kmdFile})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 KMD declarations, imported 1 rows, skipped 0 rows")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"tax", "kmd", "export-xml", "--year", "2026", "--month", "3"})
