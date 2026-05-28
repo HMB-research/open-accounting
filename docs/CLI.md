@@ -104,6 +104,9 @@ go run ./cmd/oa accounts import --file ./accounts.csv
 go run ./cmd/oa contacts list
 go run ./cmd/oa contacts list --type CUSTOMER --search Nordic
 go run ./cmd/oa contacts create --name "New Customer" --type CUSTOMER --email customer@example.com
+go run ./cmd/oa contacts get --id <contact-id>
+go run ./cmd/oa contacts update --id <contact-id> --email billing@example.com --payment-terms-days 30
+go run ./cmd/oa contacts delete --id <contact-id>
 go run ./cmd/oa contacts import --file ./contacts.csv
 ```
 

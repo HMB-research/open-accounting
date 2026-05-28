@@ -100,6 +100,9 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  accounts import           Import accounts from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  contacts list             List contacts")
 	_, _ = fmt.Fprintln(a.stdout, "  contacts create           Create a contact")
+	_, _ = fmt.Fprintln(a.stdout, "  contacts get              Show one contact")
+	_, _ = fmt.Fprintln(a.stdout, "  contacts update           Update a contact")
+	_, _ = fmt.Fprintln(a.stdout, "  contacts delete           Delete a contact")
 	_, _ = fmt.Fprintln(a.stdout, "  contacts import           Import contacts from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  employees list            List employees")
 	_, _ = fmt.Fprintln(a.stdout, "  employees create          Create an employee")
@@ -478,9 +481,14 @@ func (a *cliApp) runContacts(ctx context.Context, args []string) error {
 		phone := fs.String("phone", "", "Phone")
 		regCode := fs.String("reg-code", "", "Registration code")
 		vatNumber := fs.String("vat-number", "", "VAT number")
+		addressLine1 := fs.String("address-line1", "", "Address line 1")
+		addressLine2 := fs.String("address-line2", "", "Address line 2")
+		city := fs.String("city", "", "City")
+		postalCode := fs.String("postal-code", "", "Postal code")
 		countryCode := fs.String("country-code", "EE", "Country code")
 		paymentTermsDays := fs.Int("payment-terms-days", 14, "Payment terms in days")
 		creditLimit := fs.String("credit-limit", "", "Credit limit")
+		defaultAccountID := fs.String("default-account-id", "", "Default account id")
 		notes := fs.String("notes", "", "Notes")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
@@ -507,9 +515,14 @@ func (a *cliApp) runContacts(ctx context.Context, args []string) error {
 			VATNumber:        strings.TrimSpace(*vatNumber),
 			Email:            strings.TrimSpace(*email),
 			Phone:            strings.TrimSpace(*phone),
+			AddressLine1:     strings.TrimSpace(*addressLine1),
+			AddressLine2:     strings.TrimSpace(*addressLine2),
+			City:             strings.TrimSpace(*city),
+			PostalCode:       strings.TrimSpace(*postalCode),
 			CountryCode:      strings.ToUpper(strings.TrimSpace(*countryCode)),
 			PaymentTermsDays: *paymentTermsDays,
 			CreditLimit:      creditLimitValue,
+			DefaultAccountID: optionalStringPtr(*defaultAccountID),
 			Notes:            strings.TrimSpace(*notes),
 		})
 		if err != nil {
@@ -519,6 +532,123 @@ func (a *cliApp) runContacts(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, contact)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Created contact %s (%s)\n", contact.Name, contact.ID)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("contacts get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		contactID := fs.String("id", "", "Contact id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*contactID) == "" {
+			return errors.New("id is required")
+		}
+
+		contact, err := client.getContact(ctx, cfg.TenantID, strings.TrimSpace(*contactID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, contact)
+		}
+		printContact(a.stdout, contact)
+		return nil
+
+	case "update":
+		fs := flag.NewFlagSet("contacts update", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		contactID := fs.String("id", "", "Contact id")
+		name := fs.String("name", "", "Contact name")
+		email := fs.String("email", "", "Email")
+		phone := fs.String("phone", "", "Phone")
+		regCode := fs.String("reg-code", "", "Registration code")
+		vatNumber := fs.String("vat-number", "", "VAT number")
+		addressLine1 := fs.String("address-line1", "", "Address line 1")
+		addressLine2 := fs.String("address-line2", "", "Address line 2")
+		city := fs.String("city", "", "City")
+		postalCode := fs.String("postal-code", "", "Postal code")
+		countryCode := fs.String("country-code", "", "Country code")
+		paymentTermsDays := fs.String("payment-terms-days", "", "Payment terms in days")
+		creditLimit := fs.String("credit-limit", "", "Credit limit")
+		defaultAccountID := fs.String("default-account-id", "", "Default account id")
+		notes := fs.String("notes", "", "Notes")
+		active := fs.String("active", "", "Set active state: true or false")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*contactID) == "" {
+			return errors.New("id is required")
+		}
+
+		req := &contacts.UpdateContactRequest{
+			Name:             optionalStringPtr(*name),
+			RegCode:          optionalStringPtr(*regCode),
+			VATNumber:        optionalStringPtr(*vatNumber),
+			Email:            optionalStringPtr(*email),
+			Phone:            optionalStringPtr(*phone),
+			AddressLine1:     optionalStringPtr(*addressLine1),
+			AddressLine2:     optionalStringPtr(*addressLine2),
+			City:             optionalStringPtr(*city),
+			PostalCode:       optionalStringPtr(*postalCode),
+			CountryCode:      optionalUpperStringPtr(*countryCode),
+			DefaultAccountID: optionalStringPtr(*defaultAccountID),
+			Notes:            optionalStringPtr(*notes),
+		}
+		if strings.TrimSpace(*paymentTermsDays) != "" {
+			parsed, err := parseRequiredNonNegativeInt("payment-terms-days", *paymentTermsDays)
+			if err != nil {
+				return err
+			}
+			req.PaymentTermsDays = &parsed
+		}
+		if strings.TrimSpace(*creditLimit) != "" {
+			parsed, err := decimal.NewFromString(strings.TrimSpace(*creditLimit))
+			if err != nil {
+				return fmt.Errorf("parse credit limit: %w", err)
+			}
+			req.CreditLimit = &parsed
+		}
+		if strings.TrimSpace(*active) != "" {
+			parsed, err := strconv.ParseBool(strings.TrimSpace(*active))
+			if err != nil {
+				return fmt.Errorf("parse active: %w", err)
+			}
+			req.IsActive = &parsed
+		}
+
+		contact, err := client.updateContact(ctx, cfg.TenantID, strings.TrimSpace(*contactID), req)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, contact)
+		}
+		printContact(a.stdout, contact)
+		return nil
+
+	case "delete":
+		fs := flag.NewFlagSet("contacts delete", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		contactID := fs.String("id", "", "Contact id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*contactID) == "" {
+			return errors.New("id is required")
+		}
+
+		result, err := client.deleteContact(ctx, cfg.TenantID, strings.TrimSpace(*contactID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Deleted contact %s\n", strings.TrimSpace(*contactID))
 		return nil
 
 	case "import":
@@ -2125,6 +2255,21 @@ func parseRequiredPositiveInt(name, value string) (int, error) {
 	return parsed, nil
 }
 
+func parseRequiredNonNegativeInt(name, value string) (int, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return 0, fmt.Errorf("%s is required", name)
+	}
+	parsed, err := strconv.Atoi(trimmed)
+	if err != nil {
+		return 0, fmt.Errorf("parse %s: %w", name, err)
+	}
+	if parsed < 0 {
+		return 0, fmt.Errorf("%s must be non-negative", name)
+	}
+	return parsed, nil
+}
+
 func parseRequiredPositiveDecimal(name, value string) (decimal.Decimal, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
@@ -2214,6 +2359,15 @@ func optionalStringPtr(value string) *string {
 		return nil
 	}
 	return &trimmed
+}
+
+func optionalUpperStringPtr(value string) *string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	upper := strings.ToUpper(trimmed)
+	return &upper
 }
 
 func firstNonEmpty(values ...string) string {

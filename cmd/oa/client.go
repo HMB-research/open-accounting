@@ -169,6 +169,30 @@ func (c *apiClient) createContact(ctx context.Context, tenantID string, req *con
 	return &resp, nil
 }
 
+func (c *apiClient) getContact(ctx context.Context, tenantID, contactID string) (*contacts.Contact, error) {
+	var resp contacts.Contact
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "contacts", contactID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) updateContact(ctx context.Context, tenantID, contactID string, req *contacts.UpdateContactRequest) (*contacts.Contact, error) {
+	var resp contacts.Contact
+	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "contacts", contactID), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) deleteContact(ctx context.Context, tenantID, contactID string) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "contacts", contactID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
 func (c *apiClient) importContacts(ctx context.Context, tenantID string, req *contacts.ImportContactsRequest) (*contacts.ImportContactsResult, error) {
 	var resp contacts.ImportContactsResult
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "contacts", "import"), req, c.apiToken, &resp); err != nil {

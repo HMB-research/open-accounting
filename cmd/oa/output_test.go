@@ -57,15 +57,23 @@ func TestPrintTables(t *testing.T) {
 	assert.Contains(t, accountBuf.String(), "1000")
 
 	var contactBuf bytes.Buffer
-	printContactsTable(&contactBuf, []contacts.Contact{{
+	contact := contacts.Contact{
 		ID:          "contact-1",
 		Name:        "Acme Corp",
 		ContactType: contacts.ContactTypeCustomer,
 		Email:       "hello@example.com",
+		Phone:       "+372 555 1234",
+		CountryCode: "EE",
 		IsActive:    true,
-	}})
+	}
+	printContactsTable(&contactBuf, []contacts.Contact{contact})
 	assert.Contains(t, contactBuf.String(), "NAME")
 	assert.Contains(t, contactBuf.String(), "Acme Corp")
+
+	var contactDetailBuf bytes.Buffer
+	printContact(&contactDetailBuf, &contact)
+	assert.Contains(t, contactDetailBuf.String(), "Contact Acme Corp")
+	assert.Contains(t, contactDetailBuf.String(), "hello@example.com")
 
 	var employeeBuf bytes.Buffer
 	printEmployeesTable(&employeeBuf, []payroll.Employee{{
