@@ -65,8 +65,10 @@ func (h *Handlers) UploadDocument(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
 
-	r.Body = http.MaxBytesReader(w, r.Body, documents.MaxDocumentSizeBytes+(1<<20))
-	if err := r.ParseMultipartForm(documents.MaxDocumentSizeBytes + (1 << 20)); err != nil {
+	const maxDocumentUploadPayloadBytes = documents.MaxDocumentSizeBytes + (1 << 20)
+	r.Body = http.MaxBytesReader(w, r.Body, maxDocumentUploadPayloadBytes)
+	// #nosec G120 -- MaxBytesReader caps the request body at this same bounded payload limit.
+	if err := r.ParseMultipartForm(maxDocumentUploadPayloadBytes); err != nil {
 		respondError(w, http.StatusBadRequest, "Invalid multipart form payload")
 		return
 	}
