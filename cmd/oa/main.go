@@ -275,6 +275,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  close year-end-status     Show year-end close readiness")
 	_, _ = fmt.Fprintln(a.stdout, "  close year-end-pack       Show year-end close pack")
 	_, _ = fmt.Fprintln(a.stdout, "  close year-end-audit      Show year-end close audit evidence")
+	_, _ = fmt.Fprintln(a.stdout, "  close year-end-archive    Download year-end close audit archive")
 	_, _ = fmt.Fprintln(a.stdout, "  close carry-forward       Create year-end carry-forward entries")
 	_, _ = fmt.Fprintln(a.stdout, "  close reverse-carry-forward Reverse year-end carry-forward entries")
 	_, _ = fmt.Fprintln(a.stdout, "  banking accounts list     List bank accounts")
@@ -3297,6 +3298,36 @@ func (a *cliApp) runClose(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, audit)
 		}
 		printYearEndCloseAuditEvidence(a.stdout, audit)
+		return nil
+	case "year-end-archive":
+		fs := flag.NewFlagSet("close year-end-archive", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		periodEnd := fs.String("period-end", "", "Period end date, YYYY-MM-DD")
+		outputPath := fs.String("output", "", "Output path; defaults to year-end-close-audit-<period-end>.zip, '-' for stdout")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		normalizedPeriodEnd := strings.TrimSpace(*periodEnd)
+		if normalizedPeriodEnd == "" {
+			return errors.New("period-end is required")
+		}
+
+		archive, err := client.downloadYearEndCloseAuditArchive(ctx, cfg.TenantID, normalizedPeriodEnd)
+		if err != nil {
+			return err
+		}
+		targetPath := strings.TrimSpace(*outputPath)
+		if targetPath == "" {
+			targetPath = fmt.Sprintf("year-end-close-audit-%s.zip", normalizedPeriodEnd)
+		}
+		if targetPath == "-" {
+			_, err := a.stdout.Write(archive)
+			return err
+		}
+		if err := os.WriteFile(targetPath, archive, 0o600); err != nil {
+			return fmt.Errorf("write year-end audit archive: %w", err)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Downloaded year-end close audit archive to %s (%d bytes)\n", targetPath, len(archive))
 		return nil
 	case "carry-forward":
 		fs := flag.NewFlagSet("close carry-forward", flag.ContinueOnError)

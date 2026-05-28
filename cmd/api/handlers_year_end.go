@@ -1,9 +1,13 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -139,47 +143,64 @@ func (h *Handlers) GetYearEndCloseAuditEvidence(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	pack, err := h.accountingService.GetYearEndClosePack(
-		r.Context(),
-		routeCtx.schemaName,
-		routeCtx.tenantID,
-		tenantRecord.Settings.FiscalYearStart,
-		periodEndDate,
-		tenantRecord.Settings.PeriodLockDate,
-	)
+	audit, err := h.buildYearEndCloseAuditEvidence(r.Context(), tenantRecord, periodEndDate)
 	if err != nil {
 		respondYearEndCloseError(w, err)
 		return
 	}
-	var attachedDocuments []documents.Document
-	var evidencePolicy *documents.EvidencePolicyResult
-	if pack.Status != nil {
-		if err := h.attachYearEndCloseEvidenceStatus(r.Context(), routeCtx.schemaName, routeCtx.tenantID, pack.Status); err != nil {
-			respondError(w, http.StatusInternalServerError, "Failed to evaluate close-pack evidence")
-			return
-		}
-		evidencePolicy = pack.Status.ClosePackEvidence
-		if h.documentsService != nil && strings.TrimSpace(pack.Status.ClosePackEvidenceEntityID) != "" {
-			attachedDocuments, err = h.documentsService.ListDocuments(
-				r.Context(),
-				routeCtx.schemaName,
-				routeCtx.tenantID,
-				documents.EntityTypeYearEndClose,
-				pack.Status.ClosePackEvidenceEntityID,
-			)
-			if err != nil {
-				respondDocumentError(w, err)
-				return
-			}
-		}
+
+	respondJSON(w, http.StatusOK, audit)
+}
+
+// DownloadYearEndCloseAuditArchive returns a ZIP archive with close-pack audit manifest and attached evidence files.
+// @Summary Download year-end close audit archive
+// @Description Download a ZIP archive containing year-end close pack metadata, evidence-policy results, and close-pack documents
+// @Tags Period Close
+// @Produce application/zip
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param period_end_date query string true "Fiscal year-end date (YYYY-MM-DD)"
+// @Success 200 {file} binary
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/year-end-close-audit-archive [get]
+func (h *Handlers) DownloadYearEndCloseAuditArchive(w http.ResponseWriter, r *http.Request) {
+	routeCtx := h.tenantContextFromRequest(r)
+	periodEndDate := strings.TrimSpace(r.URL.Query().Get("period_end_date"))
+	if periodEndDate == "" {
+		respondError(w, http.StatusBadRequest, "period end date is required")
+		return
+	}
+	if h.documentsService == nil {
+		respondError(w, http.StatusInternalServerError, "Document storage is not configured")
+		return
 	}
 
-	respondJSON(w, http.StatusOK, &accounting.YearEndCloseAuditEvidence{
-		Pack:           pack,
-		EvidencePolicy: evidencePolicy,
-		Documents:      attachedDocuments,
-		GeneratedAt:    time.Now().UTC(),
-	})
+	tenantRecord, err := h.tenantService.GetTenant(r.Context(), routeCtx.tenantID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Tenant not found")
+		return
+	}
+
+	audit, err := h.buildYearEndCloseAuditEvidence(r.Context(), tenantRecord, periodEndDate)
+	if err != nil {
+		respondYearEndCloseError(w, err)
+		return
+	}
+	archive, err := h.buildYearEndCloseAuditArchive(r.Context(), tenantRecord, audit)
+	if err != nil {
+		respondDocumentError(w, err)
+		return
+	}
+
+	fileName := fmt.Sprintf("year-end-close-audit-%s.zip", safeArchiveFileName(periodEndDate))
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileName))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(archive)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(archive)
 }
 
 // CreateYearEndCarryForward creates and posts a fiscal year-end carry-forward journal.
@@ -308,6 +329,117 @@ func (h *Handlers) yearEndCarryForwardExists(r *http.Request, tenantRecord *tena
 	}
 
 	return status.IsFiscalYearEnd && status.ExistingCarryForward != nil, nil
+}
+
+func (h *Handlers) buildYearEndCloseAuditEvidence(ctx context.Context, tenantRecord *tenant.Tenant, periodEndDate string) (*accounting.YearEndCloseAuditEvidence, error) {
+	pack, err := h.accountingService.GetYearEndClosePack(
+		ctx,
+		tenantRecord.SchemaName,
+		tenantRecord.ID,
+		tenantRecord.Settings.FiscalYearStart,
+		periodEndDate,
+		tenantRecord.Settings.PeriodLockDate,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var attachedDocuments []documents.Document
+	var evidencePolicy *documents.EvidencePolicyResult
+	if pack.Status != nil {
+		if err := h.attachYearEndCloseEvidenceStatus(ctx, tenantRecord.SchemaName, tenantRecord.ID, pack.Status); err != nil {
+			return nil, fmt.Errorf("evaluate close-pack evidence: %w", err)
+		}
+		evidencePolicy = pack.Status.ClosePackEvidence
+		if h.documentsService != nil && strings.TrimSpace(pack.Status.ClosePackEvidenceEntityID) != "" {
+			attachedDocuments, err = h.documentsService.ListDocuments(
+				ctx,
+				tenantRecord.SchemaName,
+				tenantRecord.ID,
+				documents.EntityTypeYearEndClose,
+				pack.Status.ClosePackEvidenceEntityID,
+			)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return &accounting.YearEndCloseAuditEvidence{
+		Pack:           pack,
+		EvidencePolicy: evidencePolicy,
+		Documents:      attachedDocuments,
+		GeneratedAt:    time.Now().UTC(),
+	}, nil
+}
+
+func (h *Handlers) buildYearEndCloseAuditArchive(ctx context.Context, tenantRecord *tenant.Tenant, audit *accounting.YearEndCloseAuditEvidence) ([]byte, error) {
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+
+	manifest, err := json.MarshalIndent(audit, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("encode audit manifest: %w", err)
+	}
+	manifestFile, err := writer.Create("manifest.json")
+	if err != nil {
+		return nil, fmt.Errorf("create audit manifest: %w", err)
+	}
+	if _, err := manifestFile.Write(manifest); err != nil {
+		return nil, fmt.Errorf("write audit manifest: %w", err)
+	}
+
+	for _, doc := range audit.Documents {
+		docInfo, reader, err := h.documentsService.OpenDocument(ctx, tenantRecord.SchemaName, tenantRecord.ID, doc.ID)
+		if err != nil {
+			_ = writer.Close()
+			return nil, err
+		}
+		fileName := fmt.Sprintf("documents/%s-%s", safeArchiveFileName(docInfo.ID), safeArchiveFileName(docInfo.FileName))
+		docFile, err := writer.Create(fileName)
+		if err != nil {
+			_ = reader.Close()
+			_ = writer.Close()
+			return nil, fmt.Errorf("create archive document entry: %w", err)
+		}
+		if _, err := io.Copy(docFile, reader); err != nil {
+			_ = reader.Close()
+			_ = writer.Close()
+			return nil, fmt.Errorf("write archive document entry: %w", err)
+		}
+		if err := reader.Close(); err != nil {
+			_ = writer.Close()
+			return nil, fmt.Errorf("close document reader: %w", err)
+		}
+	}
+
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("close audit archive: %w", err)
+	}
+	return buffer.Bytes(), nil
+}
+
+func safeArchiveFileName(value string) string {
+	var b strings.Builder
+	for _, r := range strings.TrimSpace(value) {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '.', r == '_', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	result := strings.Trim(b.String(), "._-")
+	if result == "" {
+		return "file"
+	}
+	return result
 }
 
 func (h *Handlers) requireApprovedYearEndClosePackEvidence(ctx context.Context, tenantRecord *tenant.Tenant, rawPeriodEndDate string) error {

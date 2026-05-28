@@ -1,9 +1,12 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -334,7 +337,9 @@ func TestGetYearEndClosePack(t *testing.T) {
 func TestGetYearEndCloseAuditEvidenceIncludesClosePackDocuments(t *testing.T) {
 	h, repo, accountingRepo := setupTenantAccountingHandlers()
 	docRepo := newMockDocumentRepository()
-	h.documentsService = documents.NewService(docRepo, nil)
+	store, err := documents.NewLocalStore(t.TempDir())
+	require.NoError(t, err)
+	h.documentsService = documents.NewService(docRepo, store)
 
 	settings := tenant.DefaultSettings()
 	settings.PeriodLockDate = stringPtr("2025-12-31")
@@ -365,6 +370,7 @@ func TestGetYearEndCloseAuditEvidenceIncludesClosePackDocuments(t *testing.T) {
 	}
 	entityID, err := accounting.YearEndCloseEvidenceEntityID("tenant-1", "2025-12-31")
 	require.NoError(t, err)
+	storageKey := "tenant-1/year-end/doc-close-pack.pdf"
 	docRepo.docs["doc-close-pack"] = &documents.Document{
 		ID:           "doc-close-pack",
 		TenantID:     "tenant-1",
@@ -374,10 +380,12 @@ func TestGetYearEndCloseAuditEvidenceIncludesClosePackDocuments(t *testing.T) {
 		FileName:     "close-pack.pdf",
 		ContentType:  "application/pdf",
 		FileSize:     4096,
+		StorageKey:   storageKey,
 		ReviewStatus: documents.ReviewStatusApproved,
 		UploadedBy:   "user-1",
 		CreatedAt:    time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC),
 	}
+	require.NoError(t, store.Save(context.Background(), storageKey, bytes.NewBufferString("close pack pdf")))
 
 	req := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/year-end-close-audit-evidence?period_end_date=2025-12-31", nil, &auth.Claims{
 		UserID: "user-1",
@@ -398,6 +406,32 @@ func TestGetYearEndCloseAuditEvidenceIncludesClosePackDocuments(t *testing.T) {
 	require.Len(t, resp.Documents, 1)
 	assert.Equal(t, "close-pack.pdf", resp.Documents[0].FileName)
 	assert.Equal(t, entityID, resp.Pack.Status.ClosePackEvidenceEntityID)
+
+	archiveReq := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/year-end-close-audit-archive?period_end_date=2025-12-31", nil, &auth.Claims{
+		UserID: "user-1",
+		Email:  "user@example.com",
+	})
+	archiveReq = withURLParams(archiveReq, map[string]string{"tenantID": "tenant-1"})
+	archiveResp := httptest.NewRecorder()
+
+	h.DownloadYearEndCloseAuditArchive(archiveResp, archiveReq)
+
+	require.Equal(t, http.StatusOK, archiveResp.Code, "response body: %s", archiveResp.Body.String())
+	assert.Equal(t, "application/zip", archiveResp.Header().Get("Content-Type"))
+	reader, err := zip.NewReader(bytes.NewReader(archiveResp.Body.Bytes()), int64(archiveResp.Body.Len()))
+	require.NoError(t, err)
+	entries := map[string]string{}
+	for _, file := range reader.File {
+		rc, err := file.Open()
+		require.NoError(t, err)
+		payload, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		require.NoError(t, rc.Close())
+		entries[file.Name] = string(payload)
+	}
+	assert.Contains(t, entries, "manifest.json")
+	assert.Contains(t, entries["manifest.json"], "close-pack.pdf")
+	assert.Equal(t, "close pack pdf", entries["documents/doc-close-pack-close-pack.pdf"])
 }
 
 func TestCreateYearEndCarryForward(t *testing.T) {

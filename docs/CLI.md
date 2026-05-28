@@ -628,11 +628,12 @@ go run ./cmd/oa close reopen --period-end 2026-03-31 --note "Correcting late sup
 go run ./cmd/oa close year-end-status --period-end 2025-12-31
 go run ./cmd/oa close year-end-pack --period-end 2025-12-31
 go run ./cmd/oa close year-end-audit --period-end 2025-12-31
+go run ./cmd/oa close year-end-archive --period-end 2025-12-31 --output ./year-end-audit.zip
 go run ./cmd/oa close carry-forward --period-end 2025-12-31
 go run ./cmd/oa close reverse-carry-forward --period-end 2025-12-31 --reason "Late supplier accrual"
 ```
 
-Period close and reopen operations require a user role that can manage close workflows. Fiscal-year close requires `--reviewer-sign-off` plus approved `close_pack` evidence attached to the `year_end_close` entity printed by `close year-end-status` or `close year-end-pack`; carry-forward requires that approved close-pack evidence too. Reopening requires a note, and fiscal-year periods cannot be reopened after carry-forward has been posted unless the carry-forward is explicitly reversed first. `close year-end-pack` returns the readiness status plus year-end trial balance, balance sheet, and income statement. `close year-end-audit` adds close-pack evidence-policy status and attached close-pack document metadata for auditor handoff. Use `--json` for automation.
+Period close and reopen operations require a user role that can manage close workflows. Fiscal-year close requires `--reviewer-sign-off` plus approved `close_pack` evidence attached to the `year_end_close` entity printed by `close year-end-status` or `close year-end-pack`; carry-forward requires that approved close-pack evidence too. Reopening requires a note, and fiscal-year periods cannot be reopened after carry-forward has been posted unless the carry-forward is explicitly reversed first. `close year-end-pack` returns the readiness status plus year-end trial balance, balance sheet, and income statement. `close year-end-audit` adds close-pack evidence-policy status and attached close-pack document metadata for auditor handoff. `close year-end-archive` downloads a ZIP with `manifest.json` and attached close-pack files. Use `--json` for automation where available.
 
 ## Banking
 

@@ -331,6 +331,7 @@ Content-Type: application/json
 GET /tenants/{tenantId}/year-end-close-status?period_end_date=2025-12-31
 GET /tenants/{tenantId}/year-end-close-pack?period_end_date=2025-12-31
 GET /tenants/{tenantId}/year-end-close-audit-evidence?period_end_date=2025-12-31
+GET /tenants/{tenantId}/year-end-close-audit-archive?period_end_date=2025-12-31
 Authorization: Bearer <token>
 ```
 
@@ -345,7 +346,7 @@ Returns the fiscal-year readiness summary for the selected date, including:
 - the `close_pack_evidence_entity_id` used for required close-pack evidence
 - approved close-pack evidence compliance when document evidence is configured
 
-The close pack endpoint adds the year-end trial balance, balance sheet, and income statement to the readiness summary. The audit evidence endpoint returns that close pack plus the close-pack evidence-policy result and attached close-pack document metadata for reviewer/auditor handoff.
+The close pack endpoint adds the year-end trial balance, balance sheet, and income statement to the readiness summary. The audit evidence endpoint returns that close pack plus the close-pack evidence-policy result and attached close-pack document metadata for reviewer/auditor handoff. The audit archive endpoint returns a ZIP with `manifest.json` plus attached close-pack document files.
 
 Before a fiscal-year close with reviewer sign-off, upload and approve at least one `close_pack` document against the returned `year_end_close` evidence entity. The same approved close-pack evidence is also required before posting year-end carry-forward.
 
@@ -2174,12 +2175,13 @@ Fiscal-year close requests require `reviewer_sign_off=true` and approved `close_
 GET /tenants/{tenantId}/year-end-close-status?period_end_date=2025-12-31
 GET /tenants/{tenantId}/year-end-close-pack?period_end_date=2025-12-31
 GET /tenants/{tenantId}/year-end-close-audit-evidence?period_end_date=2025-12-31
+GET /tenants/{tenantId}/year-end-close-audit-archive?period_end_date=2025-12-31
 POST /tenants/{tenantId}/year-end-carry-forward
 POST /tenants/{tenantId}/year-end-carry-forward/reverse
 Authorization: Bearer <token>
 ```
 
-The close pack returns the readiness status plus year-end trial balance, balance sheet, and income statement for the selected fiscal year. The audit evidence endpoint adds the close-pack evidence-policy result and attached close-pack document metadata. Year-end carry-forward requires the fiscal year to be closed and the same approved close-pack evidence to be present.
+The close pack returns the readiness status plus year-end trial balance, balance sheet, and income statement for the selected fiscal year. The audit evidence endpoint adds the close-pack evidence-policy result and attached close-pack document metadata. The audit archive endpoint returns that evidence as a ZIP with a JSON manifest and attached close-pack files. Year-end carry-forward requires the fiscal year to be closed and the same approved close-pack evidence to be present.
 
 Create carry-forward:
 
