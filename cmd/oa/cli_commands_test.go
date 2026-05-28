@@ -2499,6 +2499,11 @@ func TestCLICostCenterCommands(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/report":
 			require.Equal(t, "2026-03-01", r.URL.Query().Get("start_date"))
 			require.Equal(t, "2026-03-31", r.URL.Query().Get("end_date"))
+			if r.URL.Query().Get("format") == "csv" {
+				w.Header().Set("Content-Type", "text/csv")
+				_, _ = w.Write([]byte("row_type,code,total_expenses\ncost_center,CC001,250.00\n"))
+				return
+			}
 			_ = json.NewEncoder(w).Encode(reportPayload)
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/cc-1":
 			w.WriteHeader(http.StatusNoContent)
@@ -2555,6 +2560,12 @@ func TestCLICostCenterCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Total expenses: 250")
 	assert.Contains(t, stdout.String(), "Sales")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"cost-centers", "report", "--start", "2026-03-01", "--end", "2026-03-31", "--csv"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "row_type,code,total_expenses")
+	assert.Contains(t, stdout.String(), "CC001")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"cost-centers", "delete", "--id", "cc-1"})

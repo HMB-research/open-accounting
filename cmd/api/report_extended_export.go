@@ -3,9 +3,13 @@ package main
 import (
 	"bytes"
 	"encoding/csv"
+	"fmt"
 	"strconv"
 	"time"
 
+	"github.com/shopspring/decimal"
+
+	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/analytics"
 	"github.com/HMB-research/open-accounting/internal/reports"
 )
@@ -32,6 +36,14 @@ func balanceConfirmationCSV(report *reports.BalanceConfirmation) ([]byte, error)
 
 func balanceConfirmationXLSX(report *reports.BalanceConfirmation) ([]byte, error) {
 	return reportRowsXLSX("Balance Confirmation", balanceConfirmationRows(report))
+}
+
+func costCenterReportCSV(report *accounting.CostCenterReport) ([]byte, error) {
+	return rowsToCSV(costCenterReportRows(report))
+}
+
+func costCenterReportXLSX(report *accounting.CostCenterReport) ([]byte, error) {
+	return reportRowsXLSX("Cost Center Report", costCenterReportRows(report))
 }
 
 func rowsToCSV(rows [][]string) ([]byte, error) {
@@ -233,6 +245,58 @@ func balanceConfirmationRows(report *reports.BalanceConfirmation) [][]string {
 			intString(invoice.DaysOverdue),
 		})
 	}
+	return rows
+}
+
+func costCenterReportRows(report *accounting.CostCenterReport) [][]string {
+	periodStart := reportExportDate(report.PeriodStart)
+	periodEnd := reportExportDate(report.PeriodEnd)
+	rows := [][]string{{
+		"row_type",
+		"period_start",
+		"period_end",
+		"cost_center_id",
+		"code",
+		"name",
+		"total_expenses",
+		"budget_amount",
+		"budget_used_percentage",
+		"is_over_budget",
+	}}
+	for _, summary := range report.CostCenters {
+		rows = append(rows, []string{
+			"cost_center",
+			periodStart,
+			periodEnd,
+			summary.CostCenter.ID,
+			summary.CostCenter.Code,
+			summary.CostCenter.Name,
+			summary.TotalExpenses.String(),
+			summary.BudgetAmount.String(),
+			summary.BudgetUsed.String(),
+			fmt.Sprintf("%t", summary.IsOverBudget),
+		})
+	}
+
+	totalBudgetUsed := "0"
+	totalOverBudget := false
+	if report.TotalBudget.IsPositive() {
+		totalBudgetUsed = report.TotalExpenses.Div(report.TotalBudget).Mul(decimal.NewFromInt(100)).String()
+		totalOverBudget = report.TotalExpenses.GreaterThan(report.TotalBudget)
+	}
+	rows = append(rows, []string{
+		"total",
+		periodStart,
+		periodEnd,
+		"",
+		"TOTAL",
+		"Total",
+		report.TotalExpenses.String(),
+		report.TotalBudget.String(),
+		totalBudgetUsed,
+		fmt.Sprintf("%t", totalOverBudget),
+	})
+
 	return rows
 }
 

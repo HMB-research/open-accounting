@@ -1744,9 +1744,11 @@ Authorization: Bearer <token>
 ### Cost Center Report
 
 ```http
-GET /tenants/{tenantId}/cost-centers/report?start_date=2026-03-01&end_date=2026-03-31
+GET /tenants/{tenantId}/cost-centers/report?start_date=2026-03-01&end_date=2026-03-31&format=csv
 Authorization: Bearer <token>
 ```
+
+Report `format` defaults to JSON and also supports `csv`, `xlsx`, and `pdf`.
 
 Budget periods are `MONTHLY`, `QUARTERLY`, and `ANNUAL`.
 

@@ -4500,6 +4500,83 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/cost-centers/report": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get cost center budget and expense report, with optional CSV, XLSX, or PDF export",
+                "produces": [
+                    "application/json",
+                    "text/csv",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/pdf"
+                ],
+                "tags": [
+                    "Cost Centers"
+                ],
+                "summary": "Get cost center budget report",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "start_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "end_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Response format: json, csv, xlsx, or pdf",
+                        "name": "format",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CostCenterReport"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/email-log": {
             "get": {
                 "security": [
@@ -11824,6 +11901,125 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "total_liabilities": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.BudgetPeriod": {
+            "type": "string",
+            "enum": [
+                "MONTHLY",
+                "QUARTERLY",
+                "ANNUAL"
+            ],
+            "x-enum-varnames": [
+                "BudgetPeriodMonthly",
+                "BudgetPeriodQuarterly",
+                "BudgetPeriodAnnual"
+            ]
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.CostCenter": {
+            "type": "object",
+            "properties": {
+                "budget_amount": {
+                    "type": "number"
+                },
+                "budget_period": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.BudgetPeriod"
+                },
+                "budget_used_percentage": {
+                    "type": "number"
+                },
+                "children": {
+                    "description": "Computed fields for reports",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CostCenter"
+                    }
+                },
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parent_id": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "total_spent": {
+                    "type": "number"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.CostCenterReport": {
+            "type": "object",
+            "properties": {
+                "cost_centers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CostCenterSummary"
+                    }
+                },
+                "generated_at": {
+                    "type": "string"
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "total_budget": {
+                    "type": "number"
+                },
+                "total_expenses": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.CostCenterSummary": {
+            "type": "object",
+            "properties": {
+                "budget_amount": {
+                    "type": "number"
+                },
+                "budget_used_percentage": {
+                    "type": "number"
+                },
+                "cost_center": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CostCenter"
+                },
+                "is_over_budget": {
+                    "type": "boolean"
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
+                    "type": "string"
+                },
+                "total_expenses": {
                     "type": "number"
                 }
             }

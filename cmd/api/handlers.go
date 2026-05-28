@@ -2516,16 +2516,34 @@ func (h *Handlers) DeleteCostCenter(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetCostCenterReport handles GET /tenants/{tenantID}/cost-centers/report
+// @Summary Get cost center budget report
+// @Description Get cost center budget and expense report, with optional CSV, XLSX, or PDF export
+// @Tags Cost Centers
+// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param start_date query string false "Start date (YYYY-MM-DD)"
+// @Param end_date query string false "End date (YYYY-MM-DD)"
+// @Param format query string false "Response format: json, csv, xlsx, or pdf"
+// @Success 200 {object} accounting.CostCenterReport
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/cost-centers/report [get]
 func (h *Handlers) GetCostCenterReport(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	format, err := reportResponseFormat(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	// Parse date range from query params
 	startStr := r.URL.Query().Get("start_date")
 	endStr := r.URL.Query().Get("end_date")
 
 	var start, end time.Time
-	var err error
 
 	if startStr != "" {
 		start, err = time.Parse("2006-01-02", startStr)
@@ -2553,6 +2571,34 @@ func (h *Handlers) GetCostCenterReport(w http.ResponseWriter, r *http.Request) {
 	report, err := h.costCenterService.GetCostCenterReport(r.Context(), schemaName, tenantID, start, end)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if format == "csv" {
+		content, err := costCenterReportCSV(report)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export cost center report CSV")
+			return
+		}
+		respondReportCSV(w, fmt.Sprintf("cost-center-report-%s-%s.csv", reportExportDate(report.PeriodStart), reportExportDate(report.PeriodEnd)), content)
+		return
+	}
+	if format == "xlsx" {
+		content, err := costCenterReportXLSX(report)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export cost center report XLSX")
+			return
+		}
+		respondReportXLSX(w, fmt.Sprintf("cost-center-report-%s-%s.xlsx", reportExportDate(report.PeriodStart), reportExportDate(report.PeriodEnd)), content)
+		return
+	}
+	if format == "pdf" {
+		content, err := costCenterReportPDF(report)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export cost center report PDF")
+			return
+		}
+		respondReportPDF(w, fmt.Sprintf("cost-center-report-%s-%s.pdf", reportExportDate(report.PeriodStart), reportExportDate(report.PeriodEnd)), content)
 		return
 	}
 

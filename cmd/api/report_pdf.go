@@ -67,6 +67,10 @@ func balanceConfirmationPDF(report *reports.BalanceConfirmation) ([]byte, error)
 	return reportRowsPDF("Balance Confirmation", fmt.Sprintf("%s %s as of %s", report.ContactName, report.Type, report.AsOfDate), balanceConfirmationRows(report))
 }
 
+func costCenterReportPDF(report *accounting.CostCenterReport) ([]byte, error) {
+	return reportRowsPDF("Cost Center Report", fmt.Sprintf("%s to %s", reportExportDate(report.PeriodStart), reportExportDate(report.PeriodEnd)), costCenterReportRows(report))
+}
+
 func reportCSVBytesToPDF(title, subtitle string, content []byte) ([]byte, error) {
 	reader := csv.NewReader(bytes.NewReader(content))
 	rows, err := reader.ReadAll()
