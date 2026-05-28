@@ -337,6 +337,130 @@ describe("API Client - Core Functionality", () => {
       expect(result[0].action).toBe("user_role_updated");
     });
 
+    it("should list tenant users", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            tenant_id: "tenant-123",
+            user_id: "user-1",
+            role: "owner",
+            is_default: true,
+            created_at: "2026-03-12T10:00:00Z",
+          },
+        ],
+      });
+
+      const result = await api.listTenantUsers("tenant-123");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/users"),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result[0].role).toBe("owner");
+    });
+
+    it("should update and remove tenant users", async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ status: "updated" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ status: "removed" }),
+        });
+
+      await api.updateTenantUserRole("tenant-123", "user-2", "accountant");
+      await api.removeTenantUser("tenant-123", "user-2");
+
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/users/user-2/role",
+        ),
+        expect.objectContaining({
+          method: "PUT",
+          body: JSON.stringify({ role: "accountant" }),
+        }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining("/api/v1/tenants/tenant-123/users/user-2"),
+        expect.objectContaining({ method: "DELETE" }),
+      );
+    });
+
+    it("should manage tenant invitations", async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: "inv-1",
+              tenant_id: "tenant-123",
+              email: "new@example.com",
+              role: "viewer",
+              invited_by: "user-1",
+              expires_at: "2026-03-19T10:00:00Z",
+              created_at: "2026-03-12T10:00:00Z",
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 201,
+          json: async () => ({
+            id: "inv-2",
+            tenant_id: "tenant-123",
+            email: "accountant@example.com",
+            role: "accountant",
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ status: "revoked" }),
+        });
+
+      const invitations = await api.listInvitations("tenant-123");
+      const invitation = await api.createInvitation("tenant-123", {
+        email: "accountant@example.com",
+        role: "accountant",
+      });
+      await api.revokeInvitation("tenant-123", "inv-1");
+
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining("/api/v1/tenants/tenant-123/invitations"),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining("/api/v1/tenants/tenant-123/invitations"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            email: "accountant@example.com",
+            role: "accountant",
+          }),
+        }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        3,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/invitations/inv-1",
+        ),
+        expect.objectContaining({ method: "DELETE" }),
+      );
+      expect(invitations[0].email).toBe("new@example.com");
+      expect(invitation.role).toBe("accountant");
+    });
+
     it("should close a period", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
