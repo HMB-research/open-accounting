@@ -1705,6 +1705,7 @@ Authorization: Bearer <token>
 
 ```http
 POST /tenants/{tenantId}/cost-centers
+POST /tenants/{tenantId}/cost-centers/import
 Authorization: Bearer <token>
 Content-Type: application/json
 
@@ -1717,6 +1718,19 @@ Content-Type: application/json
   "budget_period": "MONTHLY"
 }
 ```
+
+```http
+POST /tenants/{tenantId}/cost-centers/import
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "file_name": "cost-centers.csv",
+  "csv_content": "code,name,parent_code,budget_amount,budget_period\nSALES,Sales,,1000.00,MONTHLY\nONLINE,Online sales,SALES,500.00,MONTHLY\n"
+}
+```
+
+Cost center CSV imports require `code` and `name`. Optional columns include `description`, `parent_id`, `parent_code`, `budget_amount`, `budget_period`, `status`, and `is_active`; parent codes can reference existing cost centers or rows in the same import.
 
 ### Get, Update, and Delete Cost Center
 

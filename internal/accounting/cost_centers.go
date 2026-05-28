@@ -66,6 +66,29 @@ type CreateCostCenterRequest struct {
 	BudgetPeriod BudgetPeriod     `json:"budget_period,omitempty"`
 }
 
+// ImportCostCentersRequest contains CSV payload for cost center migration.
+type ImportCostCentersRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+}
+
+// ImportCostCentersResult summarizes a cost center CSV import.
+type ImportCostCentersResult struct {
+	FileName           string                      `json:"file_name,omitempty"`
+	RowsProcessed      int                         `json:"rows_processed"`
+	CostCentersCreated int                         `json:"cost_centers_created"`
+	RowsSkipped        int                         `json:"rows_skipped"`
+	Errors             []ImportCostCentersRowError `json:"errors,omitempty"`
+}
+
+// ImportCostCentersRowError describes a row-level cost center import failure.
+type ImportCostCentersRowError struct {
+	Row     int    `json:"row"`
+	Code    string `json:"code,omitempty"`
+	Name    string `json:"name,omitempty"`
+	Message string `json:"message"`
+}
+
 // UpdateCostCenterRequest is the request to update a cost center
 type UpdateCostCenterRequest struct {
 	Code         string           `json:"code"`

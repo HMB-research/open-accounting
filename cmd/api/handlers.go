@@ -2432,6 +2432,41 @@ func (h *Handlers) CreateCostCenter(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, cc)
 }
 
+// ImportCostCenters handles POST /tenants/{tenantID}/cost-centers/import
+// @Summary Import cost centers
+// @Description Import cost center master data from CSV and resolve parent cost centers by code
+// @Tags Cost Centers
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body accounting.ImportCostCentersRequest true "CSV import payload"
+// @Success 200 {object} accounting.ImportCostCentersResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/cost-centers/import [post]
+func (h *Handlers) ImportCostCenters(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req accounting.ImportCostCentersRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+
+	result, err := h.costCenterService.ImportCostCentersCSV(r.Context(), schemaName, tenantID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // UpdateCostCenter handles PUT /tenants/{tenantID}/cost-centers/{costCenterID}
 func (h *Handlers) UpdateCostCenter(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")

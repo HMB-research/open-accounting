@@ -2448,6 +2448,7 @@ func TestCLICostCenterCommands(t *testing.T) {
 			"period_end":             "2026-03-31T00:00:00Z",
 		}},
 	}
+	importFile := writeTempCSV(t, "cost-centers.csv", "code,name,budget_amount\nCC001,Sales,1000.00\n")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -2468,6 +2469,16 @@ func TestCLICostCenterCommands(t *testing.T) {
 			assert.Equal(t, accounting.BudgetPeriodMonthly, req.BudgetPeriod)
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(costCenterPayload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/import":
+			var req accounting.ImportCostCentersRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "cost-centers.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "CC001")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed":       1,
+				"cost_centers_created": 1,
+				"rows_skipped":         0,
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/cc-1":
 			_ = json.NewEncoder(w).Encode(costCenterPayload)
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/cc-1":
@@ -2516,6 +2527,11 @@ func TestCLICostCenterCommands(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created cost center CC001 Sales (cc-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"cost-centers", "import", "--file", importFile})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 cost centers, skipped 0 rows")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"cost-centers", "get", "--id", "cc-1"})
