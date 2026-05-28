@@ -1533,6 +1533,21 @@ func printYearEndCloseStatus(w io.Writer, status *accounting.YearEndCloseStatus)
 	}
 }
 
+func printYearEndClosePack(w io.Writer, pack *accounting.YearEndClosePack) {
+	if pack.Status != nil {
+		printYearEndCloseStatus(w, pack.Status)
+	}
+	if pack.TrialBalance != nil {
+		_, _ = fmt.Fprintf(w, "Trial balance: debits %s, credits %s, balanced %t\n", pack.TrialBalance.TotalDebits.String(), pack.TrialBalance.TotalCredits.String(), pack.TrialBalance.IsBalanced)
+	}
+	if pack.BalanceSheet != nil {
+		_, _ = fmt.Fprintf(w, "Balance sheet: assets %s, liabilities %s, equity %s, balanced %t\n", pack.BalanceSheet.TotalAssets.String(), pack.BalanceSheet.TotalLiabilities.String(), pack.BalanceSheet.TotalEquity.String(), pack.BalanceSheet.IsBalanced)
+	}
+	if pack.IncomeStatement != nil {
+		_, _ = fmt.Fprintf(w, "Income statement: revenue %s, expenses %s, net income %s\n", pack.IncomeStatement.TotalRevenue.String(), pack.IncomeStatement.TotalExpenses.String(), pack.IncomeStatement.NetIncome.String())
+	}
+}
+
 func printYearEndCarryForwardResult(w io.Writer, result *accounting.YearEndCarryForwardResult) {
 	if result.JournalEntry != nil {
 		_, _ = fmt.Fprintf(w, "Created year-end carry-forward %s (%s)\n", result.JournalEntry.EntryNumber, result.JournalEntry.ID)

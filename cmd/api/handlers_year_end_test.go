@@ -129,7 +129,10 @@ func (m *mockYearEndAccountingRepository) GetAccountBalance(ctx context.Context,
 }
 
 func (m *mockYearEndAccountingRepository) GetTrialBalance(ctx context.Context, schemaName, tenantID string, asOfDate time.Time) ([]accounting.AccountBalance, error) {
-	return nil, nil
+	if m.periodBalanceErr != nil {
+		return nil, m.periodBalanceErr
+	}
+	return m.periodBalances, nil
 }
 
 func (m *mockYearEndAccountingRepository) GetPeriodBalances(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]accounting.AccountBalance, error) {
@@ -213,6 +216,67 @@ func TestGetYearEndCloseStatus(t *testing.T) {
 	assert.True(t, resp.PeriodClosed)
 	assert.True(t, resp.CarryForwardReady)
 	assert.Equal(t, "2026-01-01", resp.CarryForwardDate)
+}
+
+func TestGetYearEndClosePack(t *testing.T) {
+	h, repo, accountingRepo := setupTenantAccountingHandlers()
+	settings := tenant.DefaultSettings()
+	settings.PeriodLockDate = stringPtr("2025-12-31")
+	repo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		Name:       "Tenant",
+		Slug:       "tenant",
+		SchemaName: "tenant_tenant",
+		Settings:   settings,
+	}
+	accountingRepo.accounts["retained"] = &accounting.Account{
+		ID:          "retained",
+		TenantID:    "tenant-1",
+		Code:        "3200",
+		Name:        "Retained Earnings",
+		AccountType: accounting.AccountTypeEquity,
+		IsActive:    true,
+	}
+	accountingRepo.periodBalances = []accounting.AccountBalance{
+		{
+			AccountID:     "revenue-1",
+			AccountCode:   "4100",
+			AccountName:   "Sales Revenue",
+			AccountType:   accounting.AccountTypeRevenue,
+			CreditBalance: decimal.NewFromInt(1000),
+			NetBalance:    decimal.NewFromInt(-1000),
+		},
+		{
+			AccountID:    "expense-1",
+			AccountCode:  "5100",
+			AccountName:  "Operating Expenses",
+			AccountType:  accounting.AccountTypeExpense,
+			DebitBalance: decimal.NewFromInt(250),
+			NetBalance:   decimal.NewFromInt(250),
+		},
+	}
+
+	req := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/year-end-close-pack?period_end_date=2025-12-31", nil, &auth.Claims{
+		UserID: "user-1",
+		Email:  "user@example.com",
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	w := httptest.NewRecorder()
+
+	h.GetYearEndClosePack(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	var resp accounting.YearEndClosePack
+	err := json.NewDecoder(w.Body).Decode(&resp)
+	require.NoError(t, err)
+	require.NotNil(t, resp.Status)
+	require.NotNil(t, resp.TrialBalance)
+	require.NotNil(t, resp.BalanceSheet)
+	require.NotNil(t, resp.IncomeStatement)
+	assert.Equal(t, "2025", resp.Status.FiscalYearLabel)
+	assert.True(t, resp.IncomeStatement.NetIncome.Equal(decimal.NewFromInt(750)))
+	assert.True(t, resp.TrialBalance.TotalDebits.Equal(decimal.NewFromInt(250)))
+	assert.True(t, resp.TrialBalance.TotalCredits.Equal(decimal.NewFromInt(1000)))
 }
 
 func TestCreateYearEndCarryForward(t *testing.T) {

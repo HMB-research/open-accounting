@@ -52,6 +52,50 @@ func (h *Handlers) GetYearEndCloseStatus(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, http.StatusOK, status)
 }
 
+// GetYearEndClosePack returns close readiness with year-end financial reports.
+// @Summary Get year-end close pack
+// @Description Get year-end close readiness plus trial balance, balance sheet, and income statement for the fiscal year
+// @Tags Period Close
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param period_end_date query string true "Fiscal year-end date (YYYY-MM-DD)"
+// @Success 200 {object} accounting.YearEndClosePack
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/year-end-close-pack [get]
+func (h *Handlers) GetYearEndClosePack(w http.ResponseWriter, r *http.Request) {
+	routeCtx := h.tenantContextFromRequest(r)
+	periodEndDate := strings.TrimSpace(r.URL.Query().Get("period_end_date"))
+	if periodEndDate == "" {
+		respondError(w, http.StatusBadRequest, "period end date is required")
+		return
+	}
+
+	tenantRecord, err := h.tenantService.GetTenant(r.Context(), routeCtx.tenantID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Tenant not found")
+		return
+	}
+
+	pack, err := h.accountingService.GetYearEndClosePack(
+		r.Context(),
+		routeCtx.schemaName,
+		routeCtx.tenantID,
+		tenantRecord.Settings.FiscalYearStart,
+		periodEndDate,
+		tenantRecord.Settings.PeriodLockDate,
+	)
+	if err != nil {
+		respondYearEndCloseError(w, err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, pack)
+}
+
 // CreateYearEndCarryForward creates and posts a fiscal year-end carry-forward journal.
 // @Summary Create year-end carry-forward
 // @Description Create and post retained-earnings carry-forward journal entries after the fiscal year has been closed

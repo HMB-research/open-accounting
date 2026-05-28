@@ -904,6 +904,69 @@ func TestService_GetYearEndCloseStatusDetectsExistingCarryForward(t *testing.T) 
 	assert.Equal(t, "JE-00042", status.ExistingCarryForward.EntryNumber)
 }
 
+func TestService_GetYearEndClosePack(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	svc := NewServiceWithRepo(nil, repo)
+
+	repo.accounts["retained"] = &Account{
+		ID:          "retained",
+		TenantID:    "tenant-1",
+		Code:        "3200",
+		Name:        "Retained Earnings",
+		AccountType: AccountTypeEquity,
+		IsActive:    true,
+	}
+	repo.balances = []AccountBalance{
+		{
+			AccountID:    "asset-1",
+			AccountCode:  "1000",
+			AccountName:  "Bank",
+			AccountType:  AccountTypeAsset,
+			DebitBalance: decimal.NewFromInt(1000),
+			NetBalance:   decimal.NewFromInt(1000),
+		},
+		{
+			AccountID:     "equity-1",
+			AccountCode:   "3000",
+			AccountName:   "Equity",
+			AccountType:   AccountTypeEquity,
+			CreditBalance: decimal.NewFromInt(1000),
+			NetBalance:    decimal.NewFromInt(-1000),
+		},
+	}
+	repo.periodBalances = []AccountBalance{
+		{
+			AccountID:     "revenue-1",
+			AccountCode:   "4100",
+			AccountName:   "Sales Revenue",
+			AccountType:   AccountTypeRevenue,
+			CreditBalance: decimal.NewFromInt(1000),
+			NetBalance:    decimal.NewFromInt(1000),
+		},
+		{
+			AccountID:    "expense-1",
+			AccountCode:  "5100",
+			AccountName:  "Salary Expenses",
+			AccountType:  AccountTypeExpense,
+			DebitBalance: decimal.NewFromInt(400),
+			NetBalance:   decimal.NewFromInt(400),
+		},
+	}
+
+	pack, err := svc.GetYearEndClosePack(ctx, "tenant_test", "tenant-1", 1, "2025-12-31", stringPtr("2025-12-31"))
+
+	require.NoError(t, err)
+	require.NotNil(t, pack.Status)
+	require.NotNil(t, pack.TrialBalance)
+	require.NotNil(t, pack.BalanceSheet)
+	require.NotNil(t, pack.IncomeStatement)
+	assert.Equal(t, "2025", pack.Status.FiscalYearLabel)
+	assert.True(t, pack.TrialBalance.IsBalanced)
+	assert.True(t, pack.BalanceSheet.TotalAssets.Equal(decimal.NewFromInt(1000)))
+	assert.True(t, pack.IncomeStatement.NetIncome.Equal(decimal.NewFromInt(600)))
+}
+
 func TestService_CreateYearEndCarryForward(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()

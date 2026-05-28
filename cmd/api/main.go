@@ -410,6 +410,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Post("/period-close", h.ClosePeriod)
 				r.Post("/period-reopen", h.ReopenPeriod)
 				r.Get("/year-end-close-status", h.GetYearEndCloseStatus)
+				r.Get("/year-end-close-pack", h.GetYearEndClosePack)
 				r.Post("/year-end-carry-forward", h.CreateYearEndCarryForward)
 				r.Post("/year-end-carry-forward/reverse", h.ReverseYearEndCarryForward)
 				r.Get("/documents", h.ListDocuments)

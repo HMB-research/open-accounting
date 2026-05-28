@@ -11906,6 +11906,91 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/year-end-close-pack": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get year-end close readiness plus trial balance, balance sheet, and income statement for the fiscal year",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Period Close"
+                ],
+                "summary": "Get year-end close pack",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Fiscal year-end date (YYYY-MM-DD)",
+                        "name": "period_end_date",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndClosePack"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/year-end-close-status": {
             "get": {
                 "security": [
@@ -12758,6 +12843,26 @@ const docTemplate = `{
                 },
                 "status": {
                     "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndCloseStatus"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.YearEndClosePack": {
+            "type": "object",
+            "properties": {
+                "balance_sheet": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.BalanceSheet"
+                },
+                "generated_at": {
+                    "type": "string"
+                },
+                "income_statement": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.IncomeStatement"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndCloseStatus"
+                },
+                "trial_balance": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.TrialBalance"
                 }
             }
         },
