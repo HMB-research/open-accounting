@@ -3904,6 +3904,11 @@ func TestCLIReportsCommands(t *testing.T) {
 				_, _ = w.Write([]byte("account_code,account_name,account_type,debit_balance,credit_balance,net_balance\n1000,Cash,ASSET,500.00,0.00,500.00\n"))
 				return
 			}
+			if r.URL.Query().Get("format") == "xlsx" {
+				w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+				_, _ = w.Write([]byte("xlsx-trial-balance"))
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"tenant_id":     "tenant-1",
 				"as_of_date":    "2026-03-31T00:00:00Z",
@@ -4054,6 +4059,15 @@ func TestCLIReportsCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"reports", "trial-balance", "--as-of", "2026-03-31", "--csv"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "account_code,account_name")
+
+	stdout.Reset()
+	trialBalanceXLSXPath := filepath.Join(t.TempDir(), "trial-balance.xlsx")
+	err = app.run(context.Background(), []string{"reports", "trial-balance", "--as-of", "2026-03-31", "--xlsx", "--output", trialBalanceXLSXPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote trial balance XLSX")
+	trialBalanceXLSX, err := os.ReadFile(trialBalanceXLSXPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("xlsx-trial-balance"), trialBalanceXLSX)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"reports", "account-balance", "--account-id", "acc-1", "--as-of", "2026-03-31"})

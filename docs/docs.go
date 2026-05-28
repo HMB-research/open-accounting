@@ -9807,7 +9807,8 @@ const docTemplate = `{
                 "description": "Get balance sheet report as of a specific date",
                 "produces": [
                     "application/json",
-                    "text/csv"
+                    "text/csv",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 ],
                 "tags": [
                     "Reports"
@@ -9829,7 +9830,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Response format: json or csv",
+                        "description": "Response format: json, csv, or xlsx",
                         "name": "format",
                         "in": "query"
                     }
@@ -9876,7 +9877,8 @@ const docTemplate = `{
                 "description": "Get cash flow statement report for a specific period (Estonian standard)",
                 "produces": [
                     "application/json",
-                    "text/csv"
+                    "text/csv",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 ],
                 "tags": [
                     "Reports"
@@ -9906,7 +9908,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Response format: json or csv",
+                        "description": "Response format: json, csv, or xlsx",
                         "name": "format",
                         "in": "query"
                     }
@@ -9953,7 +9955,8 @@ const docTemplate = `{
                 "description": "Get income statement (P\u0026L) report for a specific period",
                 "produces": [
                     "application/json",
-                    "text/csv"
+                    "text/csv",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 ],
                 "tags": [
                     "Reports"
@@ -9983,7 +9986,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Response format: json or csv",
+                        "description": "Response format: json, csv, or xlsx",
                         "name": "format",
                         "in": "query"
                     }
@@ -10030,7 +10033,8 @@ const docTemplate = `{
                 "description": "Get trial balance report as of a specific date",
                 "produces": [
                     "application/json",
-                    "text/csv"
+                    "text/csv",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 ],
                 "tags": [
                     "Reports"
@@ -10052,7 +10056,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Response format: json or csv",
+                        "description": "Response format: json, csv, or xlsx",
                         "name": "format",
                         "in": "query"
                     }

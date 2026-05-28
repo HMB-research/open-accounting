@@ -2151,7 +2151,7 @@ Authorization: Bearer <token>
 
 **Query Parameters:**
 - `as_of_date` (string): Date in YYYY-MM-DD format
-- `format` (string): `json` (default) or `csv`
+- `format` (string): `json` (default), `csv`, or `xlsx`
 
 ### Account Balance
 
@@ -2172,7 +2172,7 @@ Authorization: Bearer <token>
 
 **Query Parameters:**
 - `as_of` (string): Date in YYYY-MM-DD format
-- `format` (string): `json` (default) or `csv`
+- `format` (string): `json` (default), `csv`, or `xlsx`
 
 ### Income Statement
 
@@ -2184,7 +2184,7 @@ Authorization: Bearer <token>
 **Query Parameters:**
 - `start` (string, required): Start date in YYYY-MM-DD format
 - `end` (string, required): End date in YYYY-MM-DD format
-- `format` (string): `json` (default) or `csv`
+- `format` (string): `json` (default), `csv`, or `xlsx`
 
 ### Cash Flow Statement
 
@@ -2192,6 +2192,11 @@ Authorization: Bearer <token>
 GET /tenants/{tenantId}/reports/cash-flow
 Authorization: Bearer <token>
 ```
+
+**Query Parameters:**
+- `start_date` (string, required): Start date in YYYY-MM-DD format
+- `end_date` (string, required): End date in YYYY-MM-DD format
+- `format` (string): `json` (default), `csv`, or `xlsx`
 
 **Query Parameters:**
 - `start_date` (string, required): Start date in YYYY-MM-DD format

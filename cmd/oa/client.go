@@ -1974,6 +1974,14 @@ func (c *apiClient) exportTrialBalanceCSV(ctx context.Context, tenantID, asOfDat
 	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "trial-balance"), values), nil, c.apiToken)
 }
 
+func (c *apiClient) exportTrialBalanceXLSX(ctx context.Context, tenantID, asOfDate string) ([]byte, error) {
+	values := url.Values{"format": []string{"xlsx"}}
+	if strings.TrimSpace(asOfDate) != "" {
+		values.Set("as_of_date", strings.TrimSpace(asOfDate))
+	}
+	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "trial-balance"), values), nil, c.apiToken)
+}
+
 func (c *apiClient) getAccountBalanceReport(ctx context.Context, tenantID, accountID, asOfDate string) (*accountBalanceReport, error) {
 	values := url.Values{}
 	if strings.TrimSpace(asOfDate) != "" {
@@ -2008,6 +2016,14 @@ func (c *apiClient) exportBalanceSheetCSV(ctx context.Context, tenantID, asOfDat
 	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "balance-sheet"), values), nil, c.apiToken)
 }
 
+func (c *apiClient) exportBalanceSheetXLSX(ctx context.Context, tenantID, asOfDate string) ([]byte, error) {
+	values := url.Values{"format": []string{"xlsx"}}
+	if strings.TrimSpace(asOfDate) != "" {
+		values.Set("as_of", strings.TrimSpace(asOfDate))
+	}
+	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "balance-sheet"), values), nil, c.apiToken)
+}
+
 func (c *apiClient) getIncomeStatement(ctx context.Context, tenantID, startDate, endDate string) (*accounting.IncomeStatement, error) {
 	values := url.Values{}
 	values.Set("start", strings.TrimSpace(startDate))
@@ -2027,6 +2043,13 @@ func (c *apiClient) exportIncomeStatementCSV(ctx context.Context, tenantID, star
 	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "income-statement"), values), nil, c.apiToken)
 }
 
+func (c *apiClient) exportIncomeStatementXLSX(ctx context.Context, tenantID, startDate, endDate string) ([]byte, error) {
+	values := url.Values{"format": []string{"xlsx"}}
+	values.Set("start", strings.TrimSpace(startDate))
+	values.Set("end", strings.TrimSpace(endDate))
+	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "income-statement"), values), nil, c.apiToken)
+}
+
 func (c *apiClient) getCashFlowStatement(ctx context.Context, tenantID, startDate, endDate string) (*reports.CashFlowStatement, error) {
 	values := url.Values{}
 	values.Set("start_date", strings.TrimSpace(startDate))
@@ -2041,6 +2064,13 @@ func (c *apiClient) getCashFlowStatement(ctx context.Context, tenantID, startDat
 
 func (c *apiClient) exportCashFlowStatementCSV(ctx context.Context, tenantID, startDate, endDate string) ([]byte, error) {
 	values := url.Values{"format": []string{"csv"}}
+	values.Set("start_date", strings.TrimSpace(startDate))
+	values.Set("end_date", strings.TrimSpace(endDate))
+	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "cash-flow"), values), nil, c.apiToken)
+}
+
+func (c *apiClient) exportCashFlowStatementXLSX(ctx context.Context, tenantID, startDate, endDate string) ([]byte, error) {
+	values := url.Values{"format": []string{"xlsx"}}
 	values.Set("start_date", strings.TrimSpace(startDate))
 	values.Set("end_date", strings.TrimSpace(endDate))
 	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "cash-flow"), values), nil, c.apiToken)
