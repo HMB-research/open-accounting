@@ -69,6 +69,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runEmployees(ctx, args[1:])
 	case "payroll":
 		return a.runPayroll(ctx, args[1:])
+	case "leave":
+		return a.runLeave(ctx, args[1:])
 	case "tsd":
 		return a.runTSD(ctx, args[1:])
 	case "tax":
@@ -141,6 +143,9 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  payroll tax-preview       Preview Estonian payroll taxes")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll import-history    Import historical payroll runs from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll import-leave-balances  Import leave balances from CSV")
+	_, _ = fmt.Fprintln(a.stdout, "  leave absence-types list  List absence types")
+	_, _ = fmt.Fprintln(a.stdout, "  leave balances list       List employee leave balances")
+	_, _ = fmt.Fprintln(a.stdout, "  leave records list        List leave records")
 	_, _ = fmt.Fprintln(a.stdout, "  tsd list                  List TSD declarations")
 	_, _ = fmt.Fprintln(a.stdout, "  tsd get                   Show one TSD declaration")
 	_, _ = fmt.Fprintln(a.stdout, "  tsd generate              Generate TSD from a payroll run")
@@ -4350,6 +4355,446 @@ func (a *cliApp) runEmployees(ctx context.Context, args []string) error {
 
 	default:
 		return fmt.Errorf("unknown employees subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runLeave(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("leave subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "absence-types":
+		return a.runLeaveAbsenceTypes(ctx, cfg, client, args[1:])
+	case "balances":
+		return a.runLeaveBalances(ctx, cfg, client, args[1:])
+	case "records":
+		return a.runLeaveRecords(ctx, cfg, client, args[1:])
+	default:
+		return fmt.Errorf("unknown leave subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runLeaveAbsenceTypes(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("leave absence-types subcommand required")
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("leave absence-types list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		activeOnly := fs.Bool("active-only", false, "List only active absence types")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		types, err := client.listAbsenceTypes(ctx, cfg.TenantID, *activeOnly)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, types)
+		}
+		printAbsenceTypesTable(a.stdout, types)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("leave absence-types get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		typeID := fs.String("id", "", "Absence type id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*typeID) == "" {
+			return errors.New("id is required")
+		}
+
+		absenceType, err := client.getAbsenceType(ctx, cfg.TenantID, strings.TrimSpace(*typeID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, absenceType)
+		}
+		printAbsenceType(a.stdout, absenceType)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown leave absence-types subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runLeaveBalances(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("leave balances subcommand required")
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("leave balances list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		employeeID := fs.String("employee-id", "", "Employee id")
+		yearFlag := fs.String("year", "", "Balance year")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*employeeID) == "" {
+			return errors.New("employee-id is required")
+		}
+		year, err := parseOptionalInt(*yearFlag)
+		if err != nil {
+			return err
+		}
+
+		balances, err := client.listLeaveBalances(ctx, cfg.TenantID, strings.TrimSpace(*employeeID), year)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, balances)
+		}
+		printLeaveBalancesTable(a.stdout, balances)
+		return nil
+
+	case "by-year":
+		fs := flag.NewFlagSet("leave balances by-year", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		employeeID := fs.String("employee-id", "", "Employee id")
+		yearFlag := fs.String("year", "", "Balance year")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*employeeID) == "" {
+			return errors.New("employee-id is required")
+		}
+		year, err := parseRequiredPositiveInt("year", *yearFlag)
+		if err != nil {
+			return err
+		}
+
+		balances, err := client.getLeaveBalancesByYear(ctx, cfg.TenantID, strings.TrimSpace(*employeeID), year)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, balances)
+		}
+		printLeaveBalancesTable(a.stdout, balances)
+		return nil
+
+	case "update":
+		fs := flag.NewFlagSet("leave balances update", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		employeeID := fs.String("employee-id", "", "Employee id")
+		absenceTypeID := fs.String("absence-type-id", "", "Absence type id")
+		yearFlag := fs.String("year", "", "Balance year")
+		entitledDaysFlag := fs.String("entitled-days", "", "Entitled days")
+		carryoverDaysFlag := fs.String("carryover-days", "", "Carryover days")
+		notes := fs.String("notes", "", "Notes")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*employeeID) == "" {
+			return errors.New("employee-id is required")
+		}
+		if strings.TrimSpace(*absenceTypeID) == "" {
+			return errors.New("absence-type-id is required")
+		}
+		year, err := parseRequiredPositiveInt("year", *yearFlag)
+		if err != nil {
+			return err
+		}
+		entitledDays, err := parseOptionalNonNegativeDecimalPtr("entitled-days", *entitledDaysFlag)
+		if err != nil {
+			return err
+		}
+		carryoverDays, err := parseOptionalNonNegativeDecimalPtr("carryover-days", *carryoverDaysFlag)
+		if err != nil {
+			return err
+		}
+		if entitledDays == nil && carryoverDays == nil && strings.TrimSpace(*notes) == "" {
+			return errors.New("entitled-days, carryover-days, or notes is required")
+		}
+
+		balance, err := client.updateLeaveBalance(ctx, cfg.TenantID, strings.TrimSpace(*employeeID), year, strings.TrimSpace(*absenceTypeID), &payroll.UpdateLeaveBalanceRequest{
+			EntitledDays:  entitledDays,
+			CarryoverDays: carryoverDays,
+			Notes:         strings.TrimSpace(*notes),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, balance)
+		}
+		printLeaveBalancesTable(a.stdout, []payroll.LeaveBalance{*balance})
+		return nil
+
+	case "initialize":
+		fs := flag.NewFlagSet("leave balances initialize", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		employeeID := fs.String("employee-id", "", "Employee id")
+		yearFlag := fs.String("year", "", "Balance year")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*employeeID) == "" {
+			return errors.New("employee-id is required")
+		}
+		year, err := parseRequiredPositiveInt("year", *yearFlag)
+		if err != nil {
+			return err
+		}
+
+		balances, err := client.initializeLeaveBalances(ctx, cfg.TenantID, strings.TrimSpace(*employeeID), year)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, balances)
+		}
+		printLeaveBalancesTable(a.stdout, balances)
+		return nil
+
+	case "import":
+		fs := flag.NewFlagSet("leave balances import", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		filePath := fs.String("file", "", "CSV file path")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*filePath) == "" {
+			return errors.New("file is required")
+		}
+
+		content, fileName, err := readCSVInput(*filePath)
+		if err != nil {
+			return err
+		}
+		result, err := client.importLeaveBalances(ctx, cfg.TenantID, &payroll.ImportLeaveBalancesRequest{
+			FileName:   fileName,
+			CSVContent: content,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(
+			a.stdout,
+			"Processed %d rows, created %d leave balances, updated %d leave balances, skipped %d rows\n",
+			result.RowsProcessed,
+			result.LeaveBalancesCreated,
+			result.LeaveBalancesUpdated,
+			result.RowsSkipped,
+		)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown leave balances subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runLeaveRecords(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("leave records subcommand required")
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("leave records list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		employeeID := fs.String("employee-id", "", "Employee id")
+		yearFlag := fs.String("year", "", "Record year")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		year, err := parseOptionalInt(*yearFlag)
+		if err != nil {
+			return err
+		}
+
+		records, err := client.listLeaveRecords(ctx, cfg.TenantID, strings.TrimSpace(*employeeID), year)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, records)
+		}
+		printLeaveRecordsTable(a.stdout, records)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("leave records create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		employeeID := fs.String("employee-id", "", "Employee id")
+		absenceTypeID := fs.String("absence-type-id", "", "Absence type id")
+		startDate := fs.String("start-date", "", "Start date in YYYY-MM-DD")
+		endDate := fs.String("end-date", "", "End date in YYYY-MM-DD")
+		totalDaysFlag := fs.String("total-days", "", "Total calendar days")
+		workingDaysFlag := fs.String("working-days", "", "Working days")
+		documentNumber := fs.String("document-number", "", "Document number")
+		documentDate := fs.String("document-date", "", "Document date in YYYY-MM-DD")
+		notes := fs.String("notes", "", "Notes")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*employeeID) == "" {
+			return errors.New("employee-id is required")
+		}
+		if strings.TrimSpace(*absenceTypeID) == "" {
+			return errors.New("absence-type-id is required")
+		}
+		start, err := parseRequiredDate("start-date", *startDate)
+		if err != nil {
+			return err
+		}
+		end, err := parseRequiredDate("end-date", *endDate)
+		if err != nil {
+			return err
+		}
+		totalDays, err := parseRequiredPositiveDecimal("total-days", *totalDaysFlag)
+		if err != nil {
+			return err
+		}
+		workingDays, err := parseRequiredPositiveDecimal("working-days", *workingDaysFlag)
+		if err != nil {
+			return err
+		}
+		docDate, err := parseOptionalDate("document-date", *documentDate)
+		if err != nil {
+			return err
+		}
+
+		record, err := client.createLeaveRecord(ctx, cfg.TenantID, &payroll.CreateLeaveRecordRequest{
+			EmployeeID:     strings.TrimSpace(*employeeID),
+			AbsenceTypeID:  strings.TrimSpace(*absenceTypeID),
+			StartDate:      start,
+			EndDate:        end,
+			TotalDays:      totalDays,
+			WorkingDays:    workingDays,
+			DocumentNumber: strings.TrimSpace(*documentNumber),
+			DocumentDate:   docDate,
+			Notes:          strings.TrimSpace(*notes),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, record)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created leave record %s\n", record.ID)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("leave records get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		recordID := fs.String("id", "", "Leave record id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*recordID) == "" {
+			return errors.New("id is required")
+		}
+
+		record, err := client.getLeaveRecord(ctx, cfg.TenantID, strings.TrimSpace(*recordID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, record)
+		}
+		printLeaveRecord(a.stdout, record)
+		return nil
+
+	case "approve":
+		fs := flag.NewFlagSet("leave records approve", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		recordID := fs.String("id", "", "Leave record id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*recordID) == "" {
+			return errors.New("id is required")
+		}
+
+		record, err := client.approveLeaveRecord(ctx, cfg.TenantID, strings.TrimSpace(*recordID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, record)
+		}
+		printLeaveRecord(a.stdout, record)
+		return nil
+
+	case "reject":
+		fs := flag.NewFlagSet("leave records reject", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		recordID := fs.String("id", "", "Leave record id")
+		reason := fs.String("reason", "", "Rejection reason")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*recordID) == "" {
+			return errors.New("id is required")
+		}
+		if strings.TrimSpace(*reason) == "" {
+			return errors.New("reason is required")
+		}
+
+		record, err := client.rejectLeaveRecord(ctx, cfg.TenantID, strings.TrimSpace(*recordID), &payroll.RejectLeaveRequest{Reason: strings.TrimSpace(*reason)})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, record)
+		}
+		printLeaveRecord(a.stdout, record)
+		return nil
+
+	case "cancel":
+		fs := flag.NewFlagSet("leave records cancel", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		recordID := fs.String("id", "", "Leave record id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*recordID) == "" {
+			return errors.New("id is required")
+		}
+
+		record, err := client.cancelLeaveRecord(ctx, cfg.TenantID, strings.TrimSpace(*recordID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, record)
+		}
+		printLeaveRecord(a.stdout, record)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown leave records subcommand %q", args[0])
 	}
 }
 

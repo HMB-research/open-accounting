@@ -3231,6 +3231,220 @@ func TestCLIPayrollImportLeaveBalancesCommand(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 leave balances, updated 0 leave balances, skipped 0 rows")
 }
 
+func TestCLILeaveCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	leaveFile := writeTempCSV(t, "leave-balances.csv", "year,employee_number,absence_type_code,entitled_days\n2026,EMP-100,ANNUAL_LEAVE,28\n")
+	absenceTypePayload := map[string]any{
+		"id":                    "type-1",
+		"tenant_id":             "tenant-1",
+		"code":                  "ANNUAL_LEAVE",
+		"name":                  "Annual leave",
+		"name_et":               "Pohipuhkus",
+		"description":           "Paid annual leave",
+		"is_paid":               true,
+		"affects_salary":        false,
+		"requires_document":     false,
+		"default_days_per_year": "28.00",
+		"max_carryover_days":    "5.00",
+		"is_system":             true,
+		"is_active":             true,
+		"sort_order":            1,
+		"created_at":            "2026-01-01T00:00:00Z",
+		"updated_at":            "2026-01-01T00:00:00Z",
+	}
+	balancePayload := func(entitled string) map[string]any {
+		return map[string]any{
+			"id":              "balance-1",
+			"tenant_id":       "tenant-1",
+			"employee_id":     "emp-1",
+			"absence_type_id": "type-1",
+			"year":            2026,
+			"entitled_days":   entitled,
+			"carryover_days":  "2.00",
+			"used_days":       "5.00",
+			"pending_days":    "1.00",
+			"remaining_days":  "24.00",
+			"notes":           "Imported",
+			"created_at":      "2026-01-01T00:00:00Z",
+			"updated_at":      "2026-01-01T00:00:00Z",
+			"absence_type":    absenceTypePayload,
+		}
+	}
+	leaveRecordPayload := func(status string) map[string]any {
+		payload := map[string]any{
+			"id":               "leave-1",
+			"tenant_id":        "tenant-1",
+			"employee_id":      "emp-1",
+			"absence_type_id":  "type-1",
+			"start_date":       "2026-03-15T00:00:00Z",
+			"end_date":         "2026-03-19T00:00:00Z",
+			"total_days":       "5.00",
+			"working_days":     "3.00",
+			"status":           status,
+			"document_number":  "DOC-1",
+			"document_date":    "2026-03-14T00:00:00Z",
+			"requested_at":     "2026-03-01T12:00:00Z",
+			"requested_by":     "user-1",
+			"notes":            "Spring break",
+			"created_at":       "2026-03-01T12:00:00Z",
+			"updated_at":       "2026-03-01T12:00:00Z",
+			"absence_type":     absenceTypePayload,
+			"employee":         map[string]any{"id": "emp-1", "first_name": "Mari", "last_name": "Maasikas"},
+			"rejection_reason": "",
+		}
+		if status == string(payroll.LeaveRejected) {
+			payload["rejection_reason"] = "Staffing shortage"
+		}
+		return payload
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/absence-types":
+			require.Equal(t, "true", r.URL.Query().Get("active_only"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{absenceTypePayload})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/absence-types/type-1":
+			_ = json.NewEncoder(w).Encode(absenceTypePayload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-1/leave-balances":
+			require.Equal(t, "2026", r.URL.Query().Get("year"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{balancePayload("28.00")})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-1/leave-balances/2026":
+			_ = json.NewEncoder(w).Encode([]map[string]any{balancePayload("28.00")})
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-1/leave-balances/2026/type-1":
+			var req payroll.UpdateLeaveBalanceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.NotNil(t, req.EntitledDays)
+			assert.True(t, req.EntitledDays.Equal(decimal.RequireFromString("30.00")))
+			require.NotNil(t, req.CarryoverDays)
+			assert.True(t, req.CarryoverDays.Equal(decimal.RequireFromString("3.00")))
+			assert.Equal(t, "Manual correction", req.Notes)
+			_ = json.NewEncoder(w).Encode(balancePayload("30.00"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-1/leave-balances/2026/initialize":
+			_ = json.NewEncoder(w).Encode([]map[string]any{balancePayload("28.00")})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/leave-balances/import":
+			var req payroll.ImportLeaveBalancesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "leave-balances.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "ANNUAL_LEAVE")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed":         1,
+				"leave_balances_created": 1,
+				"leave_balances_updated": 0,
+				"rows_skipped":           0,
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/leave-records":
+			require.Equal(t, "emp-1", r.URL.Query().Get("employee_id"))
+			require.Equal(t, "2026", r.URL.Query().Get("year"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{leaveRecordPayload(string(payroll.LeavePending))})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/leave-records":
+			var req payroll.CreateLeaveRecordRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "emp-1", req.EmployeeID)
+			assert.Equal(t, "type-1", req.AbsenceTypeID)
+			assert.Equal(t, "2026-03-15", req.StartDate.Format("2006-01-02"))
+			assert.True(t, req.TotalDays.Equal(decimal.RequireFromString("5.00")))
+			assert.True(t, req.WorkingDays.Equal(decimal.RequireFromString("3.00")))
+			assert.Equal(t, "DOC-1", req.DocumentNumber)
+			require.NotNil(t, req.DocumentDate)
+			assert.Equal(t, "2026-03-14", req.DocumentDate.Format("2006-01-02"))
+			_ = json.NewEncoder(w).Encode(leaveRecordPayload(string(payroll.LeavePending)))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/leave-records/leave-1":
+			_ = json.NewEncoder(w).Encode(leaveRecordPayload(string(payroll.LeavePending)))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/leave-records/leave-1/approve":
+			_ = json.NewEncoder(w).Encode(leaveRecordPayload(string(payroll.LeaveApproved)))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/leave-records/leave-1/reject":
+			var req payroll.RejectLeaveRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Staffing shortage", req.Reason)
+			_ = json.NewEncoder(w).Encode(leaveRecordPayload(string(payroll.LeaveRejected)))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/leave-records/leave-1/cancel":
+			_ = json.NewEncoder(w).Encode(leaveRecordPayload(string(payroll.LeaveCanceled)))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"leave", "absence-types", "list", "--active-only", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"code": "ANNUAL_LEAVE"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "absence-types", "get", "--id", "type-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Absence type ANNUAL_LEAVE Annual leave")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "balances", "list", "--employee-id", "emp-1", "--year", "2026"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "ANNUAL_LEAVE")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "balances", "by-year", "--employee-id", "emp-1", "--year", "2026", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"remaining_days": "24"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "balances", "update", "--employee-id", "emp-1", "--absence-type-id", "type-1", "--year", "2026", "--entitled-days", "30.00", "--carryover-days", "3.00", "--notes", "Manual correction"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "30")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "balances", "initialize", "--employee-id", "emp-1", "--year", "2026"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "ANNUAL_LEAVE")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "balances", "import", "--file", leaveFile})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 leave balances")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "records", "list", "--employee-id", "emp-1", "--year", "2026"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Mari Maasikas")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "records", "create", "--employee-id", "emp-1", "--absence-type-id", "type-1", "--start-date", "2026-03-15", "--end-date", "2026-03-19", "--total-days", "5.00", "--working-days", "3.00", "--document-number", "DOC-1", "--document-date", "2026-03-14", "--notes", "Spring break"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created leave record leave-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "records", "get", "--id", "leave-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Leave record leave-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "records", "approve", "--id", "leave-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "APPROVED")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "records", "reject", "--id", "leave-1", "--reason", "Staffing shortage"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Staffing shortage")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "records", "cancel", "--id", "leave-1", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "CANCELLED"`)
+}
+
 func TestCLITaxAndTSDCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
@@ -3563,6 +3777,22 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	err = app.runEmployees(context.Background(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "employees subcommand required")
+
+	err = app.runLeave(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "leave subcommand required")
+
+	err = app.runLeaveAbsenceTypes(context.Background(), &cliConfig{}, &apiClient{}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "leave absence-types subcommand required")
+
+	err = app.runLeaveBalances(context.Background(), &cliConfig{}, &apiClient{}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "leave balances subcommand required")
+
+	err = app.runLeaveRecords(context.Background(), &cliConfig{}, &apiClient{}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "leave records subcommand required")
 
 	err = app.runInvoices(context.Background(), nil)
 	require.Error(t, err)

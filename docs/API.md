@@ -902,6 +902,81 @@ Employee matching supports the same identifiers as historical payroll import. Ab
 
 ---
 
+## Leave Management
+
+### Absence Types
+
+```http
+GET /tenants/{tenantId}/absence-types?active_only=true
+GET /tenants/{tenantId}/absence-types/{typeId}
+Authorization: Bearer <token>
+```
+
+Absence types define paid or unpaid leave categories, default entitlement days, carryover caps, document requirements, and Estonian reporting codes.
+
+### Leave Balances
+
+```http
+GET /tenants/{tenantId}/employees/{employeeId}/leave-balances?year=2026
+GET /tenants/{tenantId}/employees/{employeeId}/leave-balances/{year}
+PUT /tenants/{tenantId}/employees/{employeeId}/leave-balances/{year}/{typeId}
+POST /tenants/{tenantId}/employees/{employeeId}/leave-balances/{year}/initialize
+POST /tenants/{tenantId}/leave-balances/import
+Authorization: Bearer <token>
+```
+
+Update a leave balance:
+
+```json
+{
+  "entitled_days": "28.00",
+  "carryover_days": "2.00",
+  "notes": "Imported balance correction"
+}
+```
+
+Initialize creates missing balances for the employee and year using active absence types. Import uses the CSV payload documented in the Payroll section.
+
+### Leave Records
+
+```http
+GET /tenants/{tenantId}/leave-records?employee_id=uuid&year=2026
+POST /tenants/{tenantId}/leave-records
+GET /tenants/{tenantId}/leave-records/{recordId}
+POST /tenants/{tenantId}/leave-records/{recordId}/approve
+POST /tenants/{tenantId}/leave-records/{recordId}/reject
+POST /tenants/{tenantId}/leave-records/{recordId}/cancel
+Authorization: Bearer <token>
+```
+
+Create a leave record:
+
+```json
+{
+  "employee_id": "uuid",
+  "absence_type_id": "uuid",
+  "start_date": "2026-07-01T00:00:00Z",
+  "end_date": "2026-07-05T00:00:00Z",
+  "total_days": "5.00",
+  "working_days": "3.00",
+  "document_number": "DOC-1",
+  "document_date": "2026-06-30T00:00:00Z",
+  "notes": "Summer leave"
+}
+```
+
+Reject a leave record:
+
+```json
+{
+  "reason": "Staffing shortage"
+}
+```
+
+Leave record statuses are `PENDING`, `APPROVED`, `REJECTED`, and `CANCELLED`.
+
+---
+
 ## Invoices
 
 ### List Invoices

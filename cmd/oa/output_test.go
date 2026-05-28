@@ -838,6 +838,88 @@ func TestPrintPayrollOutputs(t *testing.T) {
 	assert.Equal(t, "-", formatDatePtr(nil))
 }
 
+func TestPrintLeaveOutputs(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	absenceType := payroll.AbsenceType{
+		ID:                 "type-1",
+		TenantID:           "tenant-1",
+		Code:               "ANNUAL_LEAVE",
+		Name:               "Annual leave",
+		NameET:             "Pohipuhkus",
+		Description:        "Paid annual leave",
+		IsPaid:             true,
+		AffectsSalary:      false,
+		RequiresDocument:   false,
+		DefaultDaysPerYear: decimal.NewFromInt(28),
+		MaxCarryoverDays:   decimal.NewFromInt(5),
+		IsActive:           true,
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+	employee := payroll.Employee{
+		ID:        "emp-1",
+		FirstName: "Mari",
+		LastName:  "Maasikas",
+	}
+	balance := payroll.LeaveBalance{
+		ID:            "balance-1",
+		TenantID:      "tenant-1",
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		Year:          2026,
+		EntitledDays:  decimal.NewFromInt(28),
+		CarryoverDays: decimal.NewFromInt(2),
+		UsedDays:      decimal.NewFromInt(5),
+		PendingDays:   decimal.NewFromInt(1),
+		RemainingDays: decimal.NewFromInt(24),
+		AbsenceType:   &absenceType,
+	}
+	record := payroll.LeaveRecord{
+		ID:             "leave-1",
+		TenantID:       "tenant-1",
+		EmployeeID:     "emp-1",
+		AbsenceTypeID:  "type-1",
+		StartDate:      now,
+		EndDate:        now.AddDate(0, 0, 4),
+		TotalDays:      decimal.NewFromInt(5),
+		WorkingDays:    decimal.NewFromInt(3),
+		Status:         payroll.LeavePending,
+		DocumentNumber: "DOC-1",
+		DocumentDate:   &now,
+		Notes:          "Spring break",
+		AbsenceType:    &absenceType,
+		Employee:       &employee,
+	}
+
+	var typesBuf bytes.Buffer
+	printAbsenceTypesTable(&typesBuf, []payroll.AbsenceType{absenceType})
+	assert.Contains(t, typesBuf.String(), "ANNUAL_LEAVE")
+	assert.Contains(t, typesBuf.String(), "28")
+
+	var typeBuf bytes.Buffer
+	printAbsenceType(&typeBuf, &absenceType)
+	assert.Contains(t, typeBuf.String(), "Absence type ANNUAL_LEAVE Annual leave")
+	assert.Contains(t, typeBuf.String(), "Paid annual leave")
+
+	var balancesBuf bytes.Buffer
+	printLeaveBalancesTable(&balancesBuf, []payroll.LeaveBalance{balance})
+	assert.Contains(t, balancesBuf.String(), "ANNUAL_LEAVE")
+	assert.Contains(t, balancesBuf.String(), "24")
+
+	var recordsBuf bytes.Buffer
+	printLeaveRecordsTable(&recordsBuf, []payroll.LeaveRecord{record})
+	assert.Contains(t, recordsBuf.String(), "Mari Maasikas")
+	assert.Contains(t, recordsBuf.String(), "PENDING")
+
+	var recordBuf bytes.Buffer
+	printLeaveRecord(&recordBuf, &record)
+	assert.Contains(t, recordBuf.String(), "Leave record leave-1")
+	assert.Contains(t, recordBuf.String(), "Document number: DOC-1")
+	assert.Contains(t, recordBuf.String(), "Spring break")
+}
+
 func TestPrintReports(t *testing.T) {
 	t.Parallel()
 

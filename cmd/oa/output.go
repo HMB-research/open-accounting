@@ -1076,6 +1076,105 @@ func printBankReconciliation(w io.Writer, reconciliation *banking.BankReconcilia
 	_, _ = fmt.Fprintf(w, "Completed: %s\n", formatTimePtr(reconciliation.CompletedAt))
 }
 
+func printAbsenceTypesTable(w io.Writer, types []payroll.AbsenceType) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tCODE\tNAME\tPAID\tACTIVE\tDEFAULT DAYS")
+	for _, absenceType := range types {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%t\t%t\t%s\n",
+			absenceType.ID,
+			absenceType.Code,
+			absenceType.Name,
+			absenceType.IsPaid,
+			absenceType.IsActive,
+			absenceType.DefaultDaysPerYear.String(),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printAbsenceType(w io.Writer, absenceType *payroll.AbsenceType) {
+	_, _ = fmt.Fprintf(w, "Absence type %s %s\n", absenceType.Code, absenceType.Name)
+	_, _ = fmt.Fprintf(w, "ID: %s\n", absenceType.ID)
+	if strings.TrimSpace(absenceType.NameET) != "" {
+		_, _ = fmt.Fprintf(w, "Name ET: %s\n", absenceType.NameET)
+	}
+	if strings.TrimSpace(absenceType.Description) != "" {
+		_, _ = fmt.Fprintf(w, "Description: %s\n", absenceType.Description)
+	}
+	_, _ = fmt.Fprintf(w, "Paid: %t\n", absenceType.IsPaid)
+	_, _ = fmt.Fprintf(w, "Affects salary: %t\n", absenceType.AffectsSalary)
+	_, _ = fmt.Fprintf(w, "Requires document: %t\n", absenceType.RequiresDocument)
+	if strings.TrimSpace(absenceType.DocumentType) != "" {
+		_, _ = fmt.Fprintf(w, "Document type: %s\n", absenceType.DocumentType)
+	}
+	_, _ = fmt.Fprintf(w, "Default days per year: %s\n", absenceType.DefaultDaysPerYear.String())
+	_, _ = fmt.Fprintf(w, "Max carryover days: %s\n", absenceType.MaxCarryoverDays.String())
+	_, _ = fmt.Fprintf(w, "Active: %t\n", absenceType.IsActive)
+}
+
+func printLeaveBalancesTable(w io.Writer, balances []payroll.LeaveBalance) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "EMPLOYEE\tYEAR\tTYPE\tENTITLED\tCARRYOVER\tUSED\tPENDING\tREMAINING")
+	for _, balance := range balances {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			balance.EmployeeID,
+			balance.Year,
+			leaveAbsenceTypeLabel(balance.AbsenceTypeID, balance.AbsenceType),
+			balance.EntitledDays.String(),
+			balance.CarryoverDays.String(),
+			balance.UsedDays.String(),
+			balance.PendingDays.String(),
+			balance.RemainingDays.String(),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printLeaveRecordsTable(w io.Writer, records []payroll.LeaveRecord) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tEMPLOYEE\tTYPE\tSTART\tEND\tWORKING DAYS\tSTATUS")
+	for _, record := range records {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			record.ID,
+			leaveEmployeeLabel(record.EmployeeID, record.Employee),
+			leaveAbsenceTypeLabel(record.AbsenceTypeID, record.AbsenceType),
+			formatDate(record.StartDate),
+			formatDate(record.EndDate),
+			record.WorkingDays.String(),
+			record.Status,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printLeaveRecord(w io.Writer, record *payroll.LeaveRecord) {
+	_, _ = fmt.Fprintf(w, "Leave record %s (%s)\n", record.ID, record.Status)
+	_, _ = fmt.Fprintf(w, "Employee: %s\n", leaveEmployeeLabel(record.EmployeeID, record.Employee))
+	_, _ = fmt.Fprintf(w, "Absence type: %s\n", leaveAbsenceTypeLabel(record.AbsenceTypeID, record.AbsenceType))
+	_, _ = fmt.Fprintf(w, "Start: %s\n", formatDate(record.StartDate))
+	_, _ = fmt.Fprintf(w, "End: %s\n", formatDate(record.EndDate))
+	_, _ = fmt.Fprintf(w, "Total days: %s\n", record.TotalDays.String())
+	_, _ = fmt.Fprintf(w, "Working days: %s\n", record.WorkingDays.String())
+	if strings.TrimSpace(record.DocumentNumber) != "" {
+		_, _ = fmt.Fprintf(w, "Document number: %s\n", record.DocumentNumber)
+	}
+	if record.DocumentDate != nil {
+		_, _ = fmt.Fprintf(w, "Document date: %s\n", formatDatePtr(record.DocumentDate))
+	}
+	if strings.TrimSpace(record.RejectionReason) != "" {
+		_, _ = fmt.Fprintf(w, "Rejection reason: %s\n", record.RejectionReason)
+	}
+	if strings.TrimSpace(record.Notes) != "" {
+		_, _ = fmt.Fprintf(w, "Notes: %s\n", record.Notes)
+	}
+}
+
 func printPayrollRunsTable(w io.Writer, runs []payroll.PayrollRun) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tPERIOD\tSTATUS\tPAYMENT DATE\tGROSS\tNET\tEMPLOYER COST")
@@ -1490,6 +1589,30 @@ func payslipEmployeeName(payslip payroll.Payslip) string {
 		return payslip.EmployeeID
 	}
 	return strings.TrimSpace(payslip.Employee.FullName())
+}
+
+func leaveEmployeeLabel(employeeID string, employee *payroll.Employee) string {
+	if employee == nil {
+		return employeeID
+	}
+	name := strings.TrimSpace(employee.FullName())
+	if name == "" {
+		return employeeID
+	}
+	return name
+}
+
+func leaveAbsenceTypeLabel(absenceTypeID string, absenceType *payroll.AbsenceType) string {
+	if absenceType == nil {
+		return absenceTypeID
+	}
+	if strings.TrimSpace(absenceType.Code) != "" {
+		return strings.TrimSpace(absenceType.Code)
+	}
+	if strings.TrimSpace(absenceType.Name) != "" {
+		return strings.TrimSpace(absenceType.Name)
+	}
+	return absenceTypeID
 }
 
 func invoiceContactLabel(invoice invoicing.Invoice) string {
