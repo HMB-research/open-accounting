@@ -916,12 +916,76 @@ GET /tenants/{tenantId}/reports/account-balance/{accountId}
 Authorization: Bearer <token>
 ```
 
+**Query Parameters:**
+- `as_of_date` (string): Date in YYYY-MM-DD format
+
+### Balance Sheet
+
+```http
+GET /tenants/{tenantId}/reports/balance-sheet
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `as_of` (string): Date in YYYY-MM-DD format
+
+### Income Statement
+
+```http
+GET /tenants/{tenantId}/reports/income-statement
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `start` (string, required): Start date in YYYY-MM-DD format
+- `end` (string, required): End date in YYYY-MM-DD format
+
+### Cash Flow Statement
+
+```http
+GET /tenants/{tenantId}/reports/cash-flow
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `start_date` (string, required): Start date in YYYY-MM-DD format
+- `end_date` (string, required): End date in YYYY-MM-DD format
+
 ### Receivables Aging
 
 ```http
 GET /tenants/{tenantId}/reports/aging/receivables
 Authorization: Bearer <token>
 ```
+
+### Payables Aging
+
+```http
+GET /tenants/{tenantId}/reports/aging/payables
+Authorization: Bearer <token>
+```
+
+### Balance Confirmation Summary
+
+```http
+GET /tenants/{tenantId}/reports/balance-confirmations
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `type` (string, required): `RECEIVABLE` or `PAYABLE`
+- `as_of_date` (string, required): Date in YYYY-MM-DD format
+
+### Contact Balance Confirmation
+
+```http
+GET /tenants/{tenantId}/reports/balance-confirmations/{contactId}
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `type` (string, required): `RECEIVABLE` or `PAYABLE`
+- `as_of_date` (string, required): Date in YYYY-MM-DD format
 
 ---
 

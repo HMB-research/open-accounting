@@ -5,14 +5,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
+	"github.com/HMB-research/open-accounting/internal/analytics"
 	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/payroll"
+	"github.com/HMB-research/open-accounting/internal/reports"
 )
 
 func TestPrintJSON(t *testing.T) {
@@ -88,6 +91,134 @@ func TestPrintTables(t *testing.T) {
 	assert.Contains(t, documentBuf.String(), "statement.pdf")
 }
 
+func TestPrintReports(t *testing.T) {
+	t.Parallel()
+
+	asOf := time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC)
+	balances := []accounting.AccountBalance{{
+		AccountID:     "account-1",
+		AccountCode:   "1000",
+		AccountName:   "Cash",
+		AccountType:   accounting.AccountTypeAsset,
+		DebitBalance:  decimal.NewFromInt(500),
+		CreditBalance: decimal.Zero,
+		NetBalance:    decimal.NewFromInt(500),
+	}}
+
+	var trialBuf bytes.Buffer
+	printTrialBalance(&trialBuf, &accounting.TrialBalance{
+		AsOfDate:     asOf,
+		Accounts:     balances,
+		TotalDebits:  decimal.NewFromInt(500),
+		TotalCredits: decimal.NewFromInt(500),
+		IsBalanced:   true,
+	})
+	assert.Contains(t, trialBuf.String(), "Trial balance as of 2026-03-31")
+	assert.Contains(t, trialBuf.String(), "1000")
+
+	var accountBalanceBuf bytes.Buffer
+	printAccountBalance(&accountBalanceBuf, &accountBalanceReport{
+		AccountID: "account-1",
+		AsOfDate:  "2026-03-31",
+		Balance:   "500.00",
+	})
+	assert.Contains(t, accountBalanceBuf.String(), "ACCOUNT ID")
+	assert.Contains(t, accountBalanceBuf.String(), "500.00")
+
+	var balanceSheetBuf bytes.Buffer
+	printBalanceSheet(&balanceSheetBuf, &accounting.BalanceSheet{
+		AsOfDate:         asOf,
+		Assets:           balances,
+		TotalAssets:      decimal.NewFromInt(500),
+		TotalLiabilities: decimal.NewFromInt(200),
+		TotalEquity:      decimal.NewFromInt(300),
+		IsBalanced:       true,
+	})
+	assert.Contains(t, balanceSheetBuf.String(), "Balance sheet as of 2026-03-31")
+	assert.Contains(t, balanceSheetBuf.String(), "Total assets: 500")
+
+	var incomeBuf bytes.Buffer
+	printIncomeStatement(&incomeBuf, &accounting.IncomeStatement{
+		StartDate:     asOf,
+		EndDate:       asOf,
+		Revenue:       balances,
+		TotalRevenue:  decimal.NewFromInt(1200),
+		TotalExpenses: decimal.NewFromInt(700),
+		NetIncome:     decimal.NewFromInt(500),
+	})
+	assert.Contains(t, incomeBuf.String(), "Income statement")
+	assert.Contains(t, incomeBuf.String(), "Net income: 500")
+
+	var cashFlowBuf bytes.Buffer
+	printCashFlowStatement(&cashFlowBuf, &reports.CashFlowStatement{
+		StartDate: "2026-01-01",
+		EndDate:   "2026-03-31",
+		OperatingActivities: []reports.CashFlowItem{{
+			Code:        reports.CFOperTotal,
+			Description: "Operating total",
+			Amount:      decimal.NewFromInt(500),
+		}},
+		ClosingCash: decimal.NewFromInt(500),
+	})
+	assert.Contains(t, cashFlowBuf.String(), "Cash flow 2026-01-01 to 2026-03-31")
+	assert.Contains(t, cashFlowBuf.String(), "Closing cash: 500")
+
+	var agingBuf bytes.Buffer
+	printAgingReport(&agingBuf, &analytics.AgingReport{
+		ReportType: "receivables",
+		AsOfDate:   asOf,
+		Total:      decimal.NewFromInt(900),
+		Buckets: []analytics.AgingBucket{{
+			Label:  "Current",
+			Amount: decimal.NewFromInt(900),
+			Count:  2,
+		}},
+		ByContact: []analytics.ContactAging{{
+			ContactName: "Acme",
+			Total:       decimal.NewFromInt(900),
+		}},
+	})
+	assert.Contains(t, agingBuf.String(), "Receivables aging")
+	assert.Contains(t, agingBuf.String(), "Acme")
+
+	var confirmationSummaryBuf bytes.Buffer
+	printBalanceConfirmationSummary(&confirmationSummaryBuf, &reports.BalanceConfirmationSummary{
+		Type:         reports.BalanceTypeReceivable,
+		AsOfDate:     "2026-03-31",
+		TotalBalance: decimal.NewFromInt(900),
+		ContactCount: 1,
+		InvoiceCount: 2,
+		Contacts: []reports.ContactBalance{{
+			ContactName:  "Acme",
+			ContactCode:  "CUST-1",
+			ContactEmail: "billing@example.com",
+			Balance:      decimal.NewFromInt(900),
+			InvoiceCount: 2,
+		}},
+	})
+	assert.Contains(t, confirmationSummaryBuf.String(), "RECEIVABLE balance confirmations")
+	assert.Contains(t, confirmationSummaryBuf.String(), "Total balance: 900")
+
+	var confirmationBuf bytes.Buffer
+	printBalanceConfirmation(&confirmationBuf, &reports.BalanceConfirmation{
+		Type:         reports.BalanceTypeReceivable,
+		ContactName:  "Acme",
+		AsOfDate:     "2026-03-31",
+		TotalBalance: decimal.NewFromInt(900),
+		Invoices: []reports.BalanceInvoice{{
+			InvoiceNumber:     "INV-1",
+			InvoiceDate:       "2026-03-01",
+			DueDate:           "2026-03-15",
+			TotalAmount:       decimal.NewFromInt(1000),
+			AmountPaid:        decimal.NewFromInt(100),
+			OutstandingAmount: decimal.NewFromInt(900),
+			DaysOverdue:       16,
+		}},
+	})
+	assert.Contains(t, confirmationBuf.String(), "INV-1")
+	assert.Contains(t, confirmationBuf.String(), "Total balance: 900")
+}
+
 func TestFormatHelpers(t *testing.T) {
 	t.Parallel()
 
@@ -95,6 +226,9 @@ func TestFormatHelpers(t *testing.T) {
 
 	now := time.Date(2026, 3, 12, 10, 0, 0, 0, time.UTC)
 	assert.Equal(t, now.Format(time.RFC3339), formatTimePtr(&now))
+	assert.Equal(t, "2026-03-12", formatDate(now))
+	assert.Equal(t, "-", formatDate(time.Time{}))
+	assert.Equal(t, "Receivables", titleLabel("receivables"))
 
 	assert.Equal(t, "oa_token_12345...", tokenPreview("oa_token_1234567890"))
 	assert.Equal(t, "short-token", tokenPreview("short-token"))

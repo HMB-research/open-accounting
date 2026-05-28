@@ -15,11 +15,13 @@ import (
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
+	"github.com/HMB-research/open-accounting/internal/analytics"
 	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/payroll"
+	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -37,6 +39,12 @@ type currentUser struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
 	Name  string `json:"name"`
+}
+
+type accountBalanceReport struct {
+	AccountID string `json:"account_id"`
+	AsOfDate  string `json:"as_of_date"`
+	Balance   string `json:"balance"`
 }
 
 func newAPIClient(baseURL, apiToken string) *apiClient {
@@ -226,6 +234,101 @@ func (c *apiClient) importLeaveBalances(ctx context.Context, tenantID string, re
 	return &resp, nil
 }
 
+func (c *apiClient) getTrialBalance(ctx context.Context, tenantID, asOfDate string) (*accounting.TrialBalance, error) {
+	values := url.Values{}
+	if strings.TrimSpace(asOfDate) != "" {
+		values.Set("as_of_date", strings.TrimSpace(asOfDate))
+	}
+
+	var resp accounting.TrialBalance
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "trial-balance"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getAccountBalanceReport(ctx context.Context, tenantID, accountID, asOfDate string) (*accountBalanceReport, error) {
+	values := url.Values{}
+	if strings.TrimSpace(asOfDate) != "" {
+		values.Set("as_of_date", strings.TrimSpace(asOfDate))
+	}
+
+	var resp accountBalanceReport
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "account-balance", accountID), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getBalanceSheet(ctx context.Context, tenantID, asOfDate string) (*accounting.BalanceSheet, error) {
+	values := url.Values{}
+	if strings.TrimSpace(asOfDate) != "" {
+		values.Set("as_of", strings.TrimSpace(asOfDate))
+	}
+
+	var resp accounting.BalanceSheet
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "balance-sheet"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getIncomeStatement(ctx context.Context, tenantID, startDate, endDate string) (*accounting.IncomeStatement, error) {
+	values := url.Values{}
+	values.Set("start", strings.TrimSpace(startDate))
+	values.Set("end", strings.TrimSpace(endDate))
+
+	var resp accounting.IncomeStatement
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "income-statement"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getCashFlowStatement(ctx context.Context, tenantID, startDate, endDate string) (*reports.CashFlowStatement, error) {
+	values := url.Values{}
+	values.Set("start_date", strings.TrimSpace(startDate))
+	values.Set("end_date", strings.TrimSpace(endDate))
+
+	var resp reports.CashFlowStatement
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "cash-flow"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getBalanceConfirmationSummary(ctx context.Context, tenantID, balanceType, asOfDate string) (*reports.BalanceConfirmationSummary, error) {
+	values := url.Values{}
+	values.Set("type", strings.TrimSpace(balanceType))
+	values.Set("as_of_date", strings.TrimSpace(asOfDate))
+
+	var resp reports.BalanceConfirmationSummary
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "balance-confirmations"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getBalanceConfirmation(ctx context.Context, tenantID, contactID, balanceType, asOfDate string) (*reports.BalanceConfirmation, error) {
+	values := url.Values{}
+	values.Set("type", strings.TrimSpace(balanceType))
+	values.Set("as_of_date", strings.TrimSpace(asOfDate))
+
+	var resp reports.BalanceConfirmation
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "balance-confirmations", contactID), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getAgingReport(ctx context.Context, tenantID, reportType string) (*analytics.AgingReport, error) {
+	var resp analytics.AgingReport
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "reports", "aging", reportType), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) listDocuments(ctx context.Context, tenantID, entityType, entityID string) ([]documents.Document, error) {
 	values := url.Values{}
 	values.Set("entity_type", entityType)
@@ -393,4 +496,11 @@ func parseOptionalInt(value string) (int, error) {
 		return 0, fmt.Errorf("parse integer %q: %w", value, err)
 	}
 	return parsed, nil
+}
+
+func withQuery(apiPath string, values url.Values) string {
+	if encoded := values.Encode(); encoded != "" {
+		return apiPath + "?" + encoded
+	}
+	return apiPath
 }
