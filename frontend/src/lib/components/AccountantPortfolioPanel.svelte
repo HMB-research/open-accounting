@@ -281,7 +281,7 @@
 
 					{#if priorityItems.length > 0}
 						<ul class="portfolio-list">
-							{#each priorityItems as item}
+							{#each priorityItems as item (item.membership.tenant.id)}
 								<li class:current={item.isCurrent}>
 									<div class="portfolio-list-copy">
 										<div class="portfolio-tenant-head">

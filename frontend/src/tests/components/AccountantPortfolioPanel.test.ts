@@ -197,7 +197,7 @@ describe('AccountantPortfolioPanel', () => {
 				...createMembership('tenant-1', 'Acme Corp').tenant,
 				settings: {
 					...createMembership('tenant-1', 'Acme Corp').tenant.settings,
-					period_lock_date: '2026-02-28'
+					period_lock_date: '2099-12-31'
 				}
 			}
 		});
@@ -206,7 +206,7 @@ describe('AccountantPortfolioPanel', () => {
 				...createMembership('tenant-2', 'Beta Ltd').tenant,
 				settings: {
 					...createMembership('tenant-2', 'Beta Ltd').tenant.settings,
-					period_lock_date: '2026-02-28'
+					period_lock_date: '2099-12-31'
 				}
 			}
 		});
@@ -227,8 +227,8 @@ describe('AccountantPortfolioPanel', () => {
 				tenant_id: 'tenant-1',
 				action: 'close',
 				close_kind: 'month_end',
-				period_end_date: '2026-02-28',
-				lock_date_after: '2026-02-28',
+				period_end_date: '2099-12-31',
+				lock_date_after: '2099-12-31',
 				performed_by: 'user-1',
 				created_at: '2026-03-01T00:00:00Z'
 			}
