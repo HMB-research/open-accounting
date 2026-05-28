@@ -1,234 +1,150 @@
-# Demo E2E Testing - Ralph Loop Workflow
+# Demo E2E Testing
 
-> "Me fail tests? That's unpossible!" - Ralph Wiggum
->
-> The Ralph Loop keeps running tests until they pass. Simple. Persistent. Unstoppable.
+This guide describes the local and CI Playwright suites that verify the resettable demo environment.
 
-This document describes how to run and verify demo data presence across all views using Playwright E2E tests in a persistent loop that doesn't give up until everything works.
+## What The Suite Covers
 
-## Overview
+The demo E2E tests verify:
 
-The **Ralph Loop** is a simple testing pattern:
-1. Run tests
-2. If tests fail → re-seed demo data → wait → retry
-3. Repeat until ALL tests pass
-4. Never give up (up to 50 attempts by default)
+1. Demo users can authenticate and reuse saved browser state.
+2. Seeded demo tenants contain representative accounting data.
+3. Core pages render data or the expected empty state without API errors.
+4. Critical workflows are reachable from the UI: accounting, invoicing, banking, payroll, tax, reports, settings, and admin plugin screens.
+5. Mobile and tablet viewports remain usable for the covered pages.
 
-The demo E2E tests verify that:
-1. All demo accounts (demo2, demo3, demo4) are properly seeded
-2. Every view in the application displays actual data (not empty states)
-3. Demo reset functionality works correctly and is idempotent
+## Local Demo Environment
 
-## Quick Start
-
-### Prerequisites
-
-1. Backend running with demo mode enabled:
-   ```bash
-   DEMO_MODE=true DEMO_RESET_SECRET=test-demo-secret ./api
-   ```
-
-2. Frontend dev server running:
-   ```bash
-   cd frontend && bun run dev
-   ```
-
-3. Environment variables set:
-   ```bash
-   export BASE_URL=http://localhost:5173
-   export PUBLIC_API_URL=http://localhost:8080
-   export DEMO_RESET_SECRET=test-demo-secret
-   ```
-
-### Run Data Verification Tests Once
+Start a local API with demo reset enabled before running Playwright:
 
 ```bash
-cd frontend
-bun run test:e2e:demo:verify
+docker-compose up -d db
+export DATABASE_URL="postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable"
+go run ./cmd/migrate -db "$DATABASE_URL" -path migrations -direction up
+DEMO_MODE=true DEMO_RESET_SECRET=test-demo-secret go run ./cmd/api
 ```
 
-### Run the Ralph Loop (Retry Until Pass)
+Seed or reset demo data:
 
 ```bash
-cd frontend
-bun run test:e2e:demo:loop:verify
+curl -X POST http://localhost:8080/api/demo/reset \
+  -H "Content-Type: application/json" \
+  -H "X-Demo-Secret: test-demo-secret"
 ```
 
-The Ralph Loop will:
-1. Run the data verification tests
-2. If tests fail → call `/api/demo/reset` to re-seed data
-3. Wait 5 seconds
-4. Retry (up to 50 times by default)
-5. Exit with success ONLY when ALL tests pass
-
-```
-┌─────────────────────────────────────────┐
-│           THE RALPH LOOP                │
-│                                         │
-│    ┌──────────┐                        │
-│    │Run Tests │◄────────────┐          │
-│    └────┬─────┘             │          │
-│         │                   │          │
-│         ▼                   │          │
-│    ┌──────────┐      ┌──────┴─────┐    │
-│    │ Pass?    │──No──►Re-seed Data│    │
-│    └────┬─────┘      └────────────┘    │
-│         │Yes                            │
-│         ▼                               │
-│    ┌──────────┐                        │
-│    │ SUCCESS! │                        │
-│    └──────────┘                        │
-└─────────────────────────────────────────┘
-```
-
-## Test Structure
-
-### Demo User Assignment
-
-Tests run in parallel with 3 workers, each using a dedicated demo user:
-
-| Worker | Email | Tenant ID |
-|--------|-------|-----------|
-| 0 | demo2@example.com | b0000000-0000-0000-0002-000000000001 |
-| 1 | demo3@example.com | b0000000-0000-0000-0003-000000000001 |
-| 2 | demo4@example.com | b0000000-0000-0000-0004-000000000001 |
-
-**Note:** demo1@example.com is reserved for end users (README documentation).
-
-### Test Files
-
-| File | Purpose |
-|------|---------|
-| `e2e/demo/data-verification.spec.ts` | Strict tests that FAIL if any view is empty |
-| `e2e/demo/reset.spec.ts` | Tests demo reset functionality |
-| `e2e/demo/quotes.spec.ts` | Quotes view structure and filtering tests |
-| `e2e/demo/orders.spec.ts` | Orders view structure and filtering tests |
-| `e2e/demo/fixed-assets.spec.ts` | Fixed assets view structure and filtering tests |
-| `e2e/demo/*.spec.ts` | Individual view tests |
-| `e2e/demo-all-views.spec.ts` | Comprehensive page load tests |
-
-## Data Verification Tests
-
-The `data-verification.spec.ts` file contains strict tests that verify actual data presence:
-
-### Views Tested
-
-| View | Expected Data |
-|------|---------------|
-| Dashboard | Charts with data, summary cards |
-| Accounts | 33+ chart of accounts entries |
-| Journal | 4+ journal entries |
-| Contacts | 7 contacts (TechStart, Nordic, etc.) |
-| Invoices | 9 invoices with INV-* numbers |
-| Quotes | 4 quotes with QT-* numbers |
-| Orders | 3 orders with ORD-* numbers |
-| Fixed Assets | 6 assets with FA-* numbers |
-| Payments | 4+ payments |
-| Employees | 5 employees (Maria, Jaan, Anna, etc.) |
-| Payroll | 3 payroll runs (2024-10, 11, 12) |
-| Recurring | 3 recurring invoices |
-| Banking | 2 bank accounts |
-| Reports | Report type options |
-| TSD | 3 TSD declarations |
-
-### What Makes a Test Fail
-
-Tests will FAIL if:
-- A table shows 0 rows
-- Empty state message is visible ("No entries", "Create first")
-- Error messages appear
-- Expected data identifiers are missing
-
-## Ralph Loop Script
-
-The `scripts/test-loop.sh` script implements the Ralph Loop:
-
-### Usage
+Playwright starts the SvelteKit dev server automatically for localhost targets. Override the frontend or API URL if needed:
 
 ```bash
-# Run all demo tests with up to 50 retries
-./scripts/test-loop.sh 50
-
-# Run specific test file
-./scripts/test-loop.sh 20 data-verification
-
-# Run tests matching pattern
-./scripts/test-loop.sh 10 "banking"
+export BASE_URL=http://localhost:5173
+export PUBLIC_API_URL=http://localhost:8080
+export DEMO_RESET_SECRET=test-demo-secret
 ```
 
-### Environment Variables
+## Commands
+
+Run commands from `frontend/`.
+
+| Command | Purpose |
+|---------|---------|
+| `bun run test:e2e:smoke` | Blocking CI smoke suite for the core accountant flow |
+| `bun run test:e2e:verify` | Strict seeded-data verification tests |
+| `bun run test:e2e` | Full Playwright suite from `playwright.demo.config.ts` |
+| `bun run test:e2e:ui` | Playwright UI mode |
+| `bun run test:e2e:debug` | Playwright debug mode |
+| `bun run test:e2e:loop` | Retry the full demo suite against an existing environment |
+| `bun run test:e2e:loop:verify` | Retry only the seeded-data verification tests |
+
+To run only the main demo project without the smoke project:
+
+```bash
+bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium
+```
+
+To run reset-idempotency tests locally, keep `CI` unset because `e2e/demo/reset.spec.ts` intentionally skips in CI:
+
+```bash
+DEMO_RESET_SECRET=test-demo-secret \
+PUBLIC_API_URL=http://localhost:8080 \
+bunx playwright test --config=playwright.demo.config.ts e2e/demo/reset.spec.ts
+```
+
+## Retry Loop
+
+`scripts/test-loop.sh` assumes the frontend/API/database environment is already available. It retries failed demo tests and calls `/api/demo/reset` between attempts.
+
+```bash
+# Run all demo tests with up to 10 attempts
+../scripts/test-loop.sh 10
+
+# Run a specific test file with up to 20 attempts
+../scripts/test-loop.sh 20 e2e/demo/data-verification.spec.ts
+
+# Run tests matching a Playwright file/filter argument
+../scripts/test-loop.sh 5 banking
+```
+
+The loop uses these environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BASE_URL` | http://localhost:5173 | Frontend URL |
-| `PUBLIC_API_URL` | http://localhost:8080 | Backend API URL |
-| `DEMO_RESET_SECRET` | test-demo-secret | Secret for demo reset API |
+| `BASE_URL` | `http://localhost:5173` | Frontend URL |
+| `PUBLIC_API_URL` | `http://localhost:8080` | Backend API URL |
+| `DEMO_RESET_SECRET` | `test-demo-secret` | Secret for the demo reset API |
 
-### How the Ralph Loop Works
+## Demo Users
 
-1. Run Playwright tests
-2. If ALL pass → Exit with success (exit code 0)
-3. If ANY fail:
-   - Call `/api/demo/reset` to re-seed demo data
-   - Wait 5 seconds
-   - Increment attempt counter
-   - Go back to step 1
-4. If max attempts reached → Exit with failure (exit code 1)
+The auth setup project authenticates all four demo users and stores state under `frontend/.auth/`.
 
-## Troubleshooting
+| Worker | Email | Tenant ID |
+|--------|-------|-----------|
+| 0 | `demo1@example.com` | `b0000000-0000-0000-0001-000000000001` |
+| 1 | `demo2@example.com` | `b0000000-0000-0000-0002-000000000001` |
+| 2 | `demo3@example.com` | `b0000000-0000-0000-0003-000000000001` |
+| 3 | `demo4@example.com` | `b0000000-0000-0000-0004-000000000001` |
 
-### Tests Fail with "Login failed"
+## Seeded Data Checks
 
-1. Verify backend is running with `DEMO_MODE=true`
-2. Check demo users are seeded: `curl localhost:8080/api/demo/status?user=2`
-3. Trigger manual reset: `curl -X POST localhost:8080/api/demo/reset -H "X-Demo-Secret: test-demo-secret"`
+`e2e/demo/data-verification.spec.ts` checks the seeded dataset through both UI and API paths.
 
-### Tests Fail with Empty Data
-
-1. Check API status endpoint returns data counts > 0
-2. Verify tenant ID is being passed in URL
-3. Check browser console for API errors
-
-### Tests Timeout
-
-1. Increase timeout in `playwright.demo.config.ts`
-2. Check network connectivity to backend
-3. Verify frontend is building/serving correctly
+| Area | Expected seeded data |
+|------|----------------------|
+| Accounts | 33 chart of accounts entries |
+| Journal | 16 journal entries |
+| Contacts | 7 contacts |
+| Invoices | 9 invoices |
+| Payments | 4 payments |
+| Employees | 5 employees |
+| Payroll | 3 payroll runs |
+| Recurring invoices | 3 recurring invoices |
+| Banking | 2 bank accounts |
+| TSD | 3 declarations |
 
 ## CI Integration
 
-The CI workflow `e2e-demo-local` job:
+The GitHub Actions `e2e-smoke` job is blocking. It starts PostgreSQL, builds the API and migration binaries, runs migrations, starts the API in demo mode, seeds demo data through `/api/demo/reset`, and runs:
 
-1. Starts PostgreSQL
-2. Builds and runs backend with `DEMO_MODE=true`
-3. Seeds demo data via `/api/demo/reset`
-4. Builds frontend
-5. Runs demo E2E tests
+```bash
+cd frontend
+CI=true \
+BASE_URL=http://localhost:5173 \
+PUBLIC_API_URL=http://localhost:8080 \
+DEMO_RESET_SECRET=test-demo-secret \
+bun run test:e2e:smoke
+```
 
-See `.github/workflows/ci.yml` for the full configuration.
+The broader `e2e` job runs the full `demo-chromium` project in shards and is informational.
 
-## Adding New Tests
+## Troubleshooting
 
-When adding new data verification tests:
+If login fails, verify the API is in demo mode and the reset endpoint succeeded:
 
-1. Add test to `e2e/demo/data-verification.spec.ts`
-2. Use strict assertions that FAIL on empty data
-3. Include meaningful error messages
-4. Update `EXPECTED_DEMO_DATA` in `e2e/demo/api.ts` if counts change
+```bash
+curl http://localhost:8080/health
+curl http://localhost:8080/api/demo/status?user=2
+curl -X POST http://localhost:8080/api/demo/reset -H "X-Demo-Secret: test-demo-secret"
+```
 
-Example:
+If Playwright cannot start the frontend because a port is busy, choose another local port:
 
-```typescript
-test('New view shows data (not empty)', async ({ page }, testInfo) => {
-  await navigateTo(page, '/new-view', testInfo);
-
-  const tableRows = page.locator('table tbody tr');
-  const rowCount = await tableRows.count();
-  expect(rowCount, 'New view must have rows (expected X)').toBeGreaterThanOrEqual(1);
-
-  // Verify NOT showing empty state
-  const emptyState = page.getByText(/no.*data|create.*first/i);
-  const isEmpty = await emptyState.isVisible().catch(() => false);
-  expect(isEmpty, 'Should NOT show empty state').toBeFalsy();
-});
+```bash
+BASE_URL=http://localhost:5185 bun run test:e2e:smoke
 ```

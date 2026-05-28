@@ -144,8 +144,8 @@ cd frontend
 # All browsers
 bun run test:e2e
 
-# Specific browser
-bun run test:e2e:chromium
+# Blocking smoke suite
+bun run test:e2e:smoke
 
 # Mobile only
 bunx playwright test --project='Mobile Chrome'
