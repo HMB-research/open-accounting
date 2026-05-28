@@ -2140,6 +2140,26 @@ func TestCLIInventoryCommands(t *testing.T) {
 		"available_qty": "10.00",
 		"last_updated":  "2026-03-15T12:00:00Z",
 	}
+	reservedStockLevelPayload := map[string]any{
+		"id":            "stock-1",
+		"tenant_id":     "tenant-1",
+		"product_id":    "prod-1",
+		"warehouse_id":  "wh-1",
+		"quantity":      "12.00",
+		"reserved_qty":  "5.00",
+		"available_qty": "7.00",
+		"last_updated":  "2026-03-15T12:00:00Z",
+	}
+	releasedStockLevelPayload := map[string]any{
+		"id":            "stock-1",
+		"tenant_id":     "tenant-1",
+		"product_id":    "prod-1",
+		"warehouse_id":  "wh-1",
+		"quantity":      "12.00",
+		"reserved_qty":  "3.00",
+		"available_qty": "9.00",
+		"last_updated":  "2026-03-15T12:00:00Z",
+	}
 	movementPayload := map[string]any{
 		"id":            "mov-1",
 		"tenant_id":     "tenant-1",
@@ -2303,6 +2323,22 @@ func TestCLIInventoryCommands(t *testing.T) {
 			assert.Equal(t, "3", req.Quantity)
 			assert.Equal(t, "Move to branch", req.Notes)
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "transferred"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/reserve":
+			var req inventory.StockReservationRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "prod-1", req.ProductID)
+			assert.Equal(t, "wh-1", req.WarehouseID)
+			assert.Equal(t, "3", req.Quantity)
+			assert.Equal(t, "Sales order allocation", req.Reason)
+			_ = json.NewEncoder(w).Encode(reservedStockLevelPayload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/release":
+			var req inventory.StockReservationRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "prod-1", req.ProductID)
+			assert.Equal(t, "wh-1", req.WarehouseID)
+			assert.Equal(t, "2", req.Quantity)
+			assert.Equal(t, "Order canceled", req.Reason)
+			_ = json.NewEncoder(w).Encode(releasedStockLevelPayload)
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -2459,6 +2495,16 @@ func TestCLIInventoryCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"inventory", "transfer", "--product-id", "prod-1", "--from-warehouse-id", "wh-1", "--to-warehouse-id", "wh-2", "--quantity", "3.00", "--notes", "Move to branch", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"status": "transferred"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "reserve", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "3.00", "--reason", "Sales order allocation"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Reserved 3 of product prod-1 in warehouse wh-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "release", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "2.00", "--reason", "Order canceled", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"reserved_qty": "3"`)
 }
 
 func TestCLICostCenterCommands(t *testing.T) {

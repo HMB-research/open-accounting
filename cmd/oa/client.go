@@ -1641,6 +1641,22 @@ func (c *apiClient) transferStock(ctx context.Context, tenantID string, req *inv
 	return resp, nil
 }
 
+func (c *apiClient) reserveStock(ctx context.Context, tenantID string, req *inventory.StockReservationRequest) (*inventory.StockLevel, error) {
+	var resp inventory.StockLevel
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "inventory", "reserve"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) releaseStock(ctx context.Context, tenantID string, req *inventory.StockReservationRequest) (*inventory.StockLevel, error) {
+	var resp inventory.StockLevel
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "inventory", "release"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) listCostCenters(ctx context.Context, tenantID string, activeOnly bool) ([]accounting.CostCenter, error) {
 	values := url.Values{}
 	if activeOnly {
@@ -2545,6 +2561,7 @@ func (c *apiClient) request(ctx context.Context, method, apiPath string, body an
 		bodyReader = bytes.NewReader(payload)
 	}
 
+	//nolint:gosec // The CLI intentionally talks to a user-configured Open Accounting base URL.
 	req, err := http.NewRequestWithContext(ctx, method, fullURL, bodyReader)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
@@ -2557,7 +2574,6 @@ func (c *apiClient) request(ctx context.Context, method, apiPath string, body an
 		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(bearerToken))
 	}
 
-	//nolint:gosec // The CLI intentionally talks to a user-configured Open Accounting base URL.
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("request %s %s: %w", method, apiPath, err)

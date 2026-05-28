@@ -770,6 +770,130 @@ func TestImportStockAdjustments(t *testing.T) {
 	assert.True(t, repo.products["prod-1"].CurrentStock.Equal(decimal.NewFromInt(12)))
 }
 
+func TestReserveAndReleaseStock(t *testing.T) {
+	h, repo, tenantRepo := setupInventoryTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	repo.products["prod-1"] = &inventory.Product{
+		ID:           "prod-1",
+		TenantID:     "tenant-1",
+		Name:         "Product A",
+		CurrentStock: decimal.NewFromInt(12),
+	}
+	repo.warehouses["wh-1"] = &inventory.Warehouse{
+		ID:       "wh-1",
+		TenantID: "tenant-1",
+		Name:     "Main Warehouse",
+	}
+	repo.stockLevels["prod-1-wh-1"] = &inventory.StockLevel{
+		ID:           "stock-1",
+		TenantID:     "tenant-1",
+		ProductID:    "prod-1",
+		WarehouseID:  "wh-1",
+		Quantity:     decimal.NewFromInt(12),
+		ReservedQty:  decimal.NewFromInt(2),
+		AvailableQty: decimal.NewFromInt(10),
+	}
+
+	claims := createTestClaims("user-1", "test@example.com", "tenant-1", "owner")
+
+	reserveBody, _ := json.Marshal(map[string]interface{}{
+		"product_id":   "prod-1",
+		"warehouse_id": "wh-1",
+		"quantity":     "3",
+		"reason":       "Sales order allocation",
+	})
+	reserveReq := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/inventory/reserve", bytes.NewReader(reserveBody))
+	reserveReq.Header.Set("Content-Type", "application/json")
+	reserveReq = withURLParams(reserveReq, map[string]string{"tenantID": "tenant-1"})
+	reserveCtx := contextWithClaims(reserveReq.Context(), claims)
+	reserveCtx = contextWithPlainClaims(reserveCtx, claims)
+	reserveReq = reserveReq.WithContext(reserveCtx)
+
+	reserveRR := httptest.NewRecorder()
+	h.ReserveStock(reserveRR, reserveReq)
+
+	require.Equal(t, http.StatusOK, reserveRR.Code)
+	var reservedLevel inventory.StockLevel
+	require.NoError(t, json.Unmarshal(reserveRR.Body.Bytes(), &reservedLevel))
+	assert.True(t, reservedLevel.ReservedQty.Equal(decimal.NewFromInt(5)))
+	assert.True(t, reservedLevel.AvailableQty.Equal(decimal.NewFromInt(7)))
+
+	releaseBody, _ := json.Marshal(map[string]interface{}{
+		"product_id":   "prod-1",
+		"warehouse_id": "wh-1",
+		"quantity":     "2",
+		"reason":       "Order canceled",
+	})
+	releaseReq := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/inventory/release", bytes.NewReader(releaseBody))
+	releaseReq.Header.Set("Content-Type", "application/json")
+	releaseReq = withURLParams(releaseReq, map[string]string{"tenantID": "tenant-1"})
+	releaseCtx := contextWithClaims(releaseReq.Context(), claims)
+	releaseCtx = contextWithPlainClaims(releaseCtx, claims)
+	releaseReq = releaseReq.WithContext(releaseCtx)
+
+	releaseRR := httptest.NewRecorder()
+	h.ReleaseStock(releaseRR, releaseReq)
+
+	require.Equal(t, http.StatusOK, releaseRR.Code)
+	var releasedLevel inventory.StockLevel
+	require.NoError(t, json.Unmarshal(releaseRR.Body.Bytes(), &releasedLevel))
+	assert.True(t, releasedLevel.ReservedQty.Equal(decimal.NewFromInt(3)))
+	assert.True(t, releasedLevel.AvailableQty.Equal(decimal.NewFromInt(9)))
+}
+
+func TestReleaseStockRejectsOverRelease(t *testing.T) {
+	h, repo, tenantRepo := setupInventoryTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	repo.products["prod-1"] = &inventory.Product{
+		ID:       "prod-1",
+		TenantID: "tenant-1",
+		Name:     "Product A",
+	}
+	repo.warehouses["wh-1"] = &inventory.Warehouse{
+		ID:       "wh-1",
+		TenantID: "tenant-1",
+		Name:     "Main Warehouse",
+	}
+	repo.stockLevels["prod-1-wh-1"] = &inventory.StockLevel{
+		ID:           "stock-1",
+		TenantID:     "tenant-1",
+		ProductID:    "prod-1",
+		WarehouseID:  "wh-1",
+		Quantity:     decimal.NewFromInt(5),
+		ReservedQty:  decimal.NewFromInt(1),
+		AvailableQty: decimal.NewFromInt(4),
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"product_id":   "prod-1",
+		"warehouse_id": "wh-1",
+		"quantity":     "2",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/inventory/release", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	claims := createTestClaims("user-1", "test@example.com", "tenant-1", "owner")
+	ctx := contextWithClaims(req.Context(), claims)
+	ctx = contextWithPlainClaims(ctx, claims)
+	req = req.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+	h.ReleaseStock(rr, req)
+
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "cannot release more than reserved stock")
+}
+
 func TestListProductCategories(t *testing.T) {
 	h, repo, tenantRepo := setupInventoryTestHandlers()
 

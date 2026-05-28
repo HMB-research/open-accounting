@@ -1357,6 +1357,154 @@ func TestService_TransferStock(t *testing.T) {
 	assert.True(t, product.CurrentStock.Equal(decimal.NewFromInt(100)))
 }
 
+func TestService_ReserveStock(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products["p1"] = &Product{
+		ID:           "p1",
+		TenantID:     "tenant-1",
+		Name:         "Widget",
+		CurrentStock: decimal.NewFromInt(20),
+	}
+	ts.repo.Warehouses["wh-1"] = &Warehouse{
+		ID:       "wh-1",
+		TenantID: "tenant-1",
+		Name:     "Main",
+		IsActive: true,
+	}
+	ts.repo.StockLevels["p1-wh-1"] = &StockLevel{
+		ID:           "sl-1",
+		TenantID:     "tenant-1",
+		ProductID:    "p1",
+		WarehouseID:  "wh-1",
+		Quantity:     decimal.NewFromInt(20),
+		ReservedQty:  decimal.NewFromInt(5),
+		AvailableQty: decimal.NewFromInt(15),
+	}
+
+	level, err := ts.svc.ReserveStock(ctx, "tenant-1", "test_schema", &StockReservationRequest{
+		ProductID:   "p1",
+		WarehouseID: "wh-1",
+		Quantity:    "4",
+		Reason:      "Sales order allocation",
+		UserID:      "user-1",
+	})
+	require.NoError(t, err)
+	assert.True(t, level.Quantity.Equal(decimal.NewFromInt(20)))
+	assert.True(t, level.ReservedQty.Equal(decimal.NewFromInt(9)))
+	assert.True(t, level.AvailableQty.Equal(decimal.NewFromInt(11)))
+	assert.Empty(t, ts.repo.Movements["p1"])
+
+	product, err := ts.repo.GetProductByID(ctx, "test_schema", "tenant-1", "p1")
+	require.NoError(t, err)
+	assert.True(t, product.CurrentStock.Equal(decimal.NewFromInt(20)))
+}
+
+func TestService_ReserveStock_InsufficientAvailableStock(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products["p1"] = &Product{ID: "p1", TenantID: "tenant-1", Name: "Widget"}
+	ts.repo.Warehouses["wh-1"] = &Warehouse{ID: "wh-1", TenantID: "tenant-1", Name: "Main", IsActive: true}
+	ts.repo.StockLevels["p1-wh-1"] = &StockLevel{
+		ID:           "sl-1",
+		TenantID:     "tenant-1",
+		ProductID:    "p1",
+		WarehouseID:  "wh-1",
+		Quantity:     decimal.NewFromInt(8),
+		ReservedQty:  decimal.NewFromInt(6),
+		AvailableQty: decimal.NewFromInt(2),
+	}
+
+	_, err := ts.svc.ReserveStock(ctx, "tenant-1", "test_schema", &StockReservationRequest{
+		ProductID:   "p1",
+		WarehouseID: "wh-1",
+		Quantity:    "3",
+		UserID:      "user-1",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "insufficient available stock")
+
+	level := ts.repo.StockLevels["p1-wh-1"]
+	assert.True(t, level.ReservedQty.Equal(decimal.NewFromInt(6)))
+	assert.True(t, level.AvailableQty.Equal(decimal.NewFromInt(2)))
+}
+
+func TestService_ReleaseStock(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products["p1"] = &Product{
+		ID:           "p1",
+		TenantID:     "tenant-1",
+		Name:         "Widget",
+		CurrentStock: decimal.NewFromInt(20),
+	}
+	ts.repo.Warehouses["wh-1"] = &Warehouse{
+		ID:       "wh-1",
+		TenantID: "tenant-1",
+		Name:     "Main",
+		IsActive: true,
+	}
+	ts.repo.StockLevels["p1-wh-1"] = &StockLevel{
+		ID:           "sl-1",
+		TenantID:     "tenant-1",
+		ProductID:    "p1",
+		WarehouseID:  "wh-1",
+		Quantity:     decimal.NewFromInt(20),
+		ReservedQty:  decimal.NewFromInt(8),
+		AvailableQty: decimal.NewFromInt(12),
+	}
+
+	level, err := ts.svc.ReleaseStock(ctx, "tenant-1", "test_schema", &StockReservationRequest{
+		ProductID:   "p1",
+		WarehouseID: "wh-1",
+		Quantity:    "5",
+		Reason:      "Order canceled",
+		UserID:      "user-1",
+	})
+	require.NoError(t, err)
+	assert.True(t, level.Quantity.Equal(decimal.NewFromInt(20)))
+	assert.True(t, level.ReservedQty.Equal(decimal.NewFromInt(3)))
+	assert.True(t, level.AvailableQty.Equal(decimal.NewFromInt(17)))
+	assert.Empty(t, ts.repo.Movements["p1"])
+
+	product, err := ts.repo.GetProductByID(ctx, "test_schema", "tenant-1", "p1")
+	require.NoError(t, err)
+	assert.True(t, product.CurrentStock.Equal(decimal.NewFromInt(20)))
+}
+
+func TestService_ReleaseStock_TooMuch(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products["p1"] = &Product{ID: "p1", TenantID: "tenant-1", Name: "Widget"}
+	ts.repo.Warehouses["wh-1"] = &Warehouse{ID: "wh-1", TenantID: "tenant-1", Name: "Main", IsActive: true}
+	ts.repo.StockLevels["p1-wh-1"] = &StockLevel{
+		ID:           "sl-1",
+		TenantID:     "tenant-1",
+		ProductID:    "p1",
+		WarehouseID:  "wh-1",
+		Quantity:     decimal.NewFromInt(8),
+		ReservedQty:  decimal.NewFromInt(2),
+		AvailableQty: decimal.NewFromInt(6),
+	}
+
+	_, err := ts.svc.ReleaseStock(ctx, "tenant-1", "test_schema", &StockReservationRequest{
+		ProductID:   "p1",
+		WarehouseID: "wh-1",
+		Quantity:    "3",
+		UserID:      "user-1",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot release more than reserved stock")
+
+	level := ts.repo.StockLevels["p1-wh-1"]
+	assert.True(t, level.ReservedQty.Equal(decimal.NewFromInt(2)))
+	assert.True(t, level.AvailableQty.Equal(decimal.NewFromInt(6)))
+}
+
 func TestService_TransferStock_InsufficientSourceStock(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()

@@ -4469,6 +4469,60 @@ func (h *Handlers) TransferStock(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"status": "transferred"})
 }
 
+// ReserveStock reserves available stock in a warehouse.
+func (h *Handlers) ReserveStock(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	claims, ok := r.Context().Value("claims").(*auth.Claims)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Invalid or missing authentication")
+		return
+	}
+
+	var req inventory.StockReservationRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	req.UserID = claims.UserID
+
+	level, err := h.inventoryService.ReserveStock(r.Context(), tenantID, schemaName, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("Failed to reserve stock: %v", err))
+		return
+	}
+
+	respondJSON(w, http.StatusOK, level)
+}
+
+// ReleaseStock releases reserved stock back to available quantity.
+func (h *Handlers) ReleaseStock(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	claims, ok := r.Context().Value("claims").(*auth.Claims)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Invalid or missing authentication")
+		return
+	}
+
+	var req inventory.StockReservationRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	req.UserID = claims.UserID
+
+	level, err := h.inventoryService.ReleaseStock(r.Context(), tenantID, schemaName, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("Failed to release stock: %v", err))
+		return
+	}
+
+	respondJSON(w, http.StatusOK, level)
+}
+
 // =============================================================================
 // ABSENCE / LEAVE MANAGEMENT HANDLERS
 // =============================================================================

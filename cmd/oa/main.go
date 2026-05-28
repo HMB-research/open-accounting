@@ -360,6 +360,8 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  inventory adjust          Adjust product stock")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory stock import    Import stock adjustments from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory transfer        Transfer stock between warehouses")
+	_, _ = fmt.Fprintln(a.stdout, "  inventory reserve         Reserve available warehouse stock")
+	_, _ = fmt.Fprintln(a.stdout, "  inventory release         Release reserved warehouse stock")
 	_, _ = fmt.Fprintln(a.stdout, "  cost-centers list         List cost centers")
 	_, _ = fmt.Fprintln(a.stdout, "  cost-centers create       Create a cost center")
 	_, _ = fmt.Fprintln(a.stdout, "  cost-centers import       Import cost centers from CSV")
@@ -5386,6 +5388,80 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, result)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Transferred %s of product %s from %s to %s\n", quantity.String(), strings.TrimSpace(*productID), strings.TrimSpace(*fromWarehouseID), strings.TrimSpace(*toWarehouseID))
+		return nil
+
+	case "reserve":
+		fs := flag.NewFlagSet("inventory reserve", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		productID := fs.String("product-id", "", "Product id")
+		warehouseID := fs.String("warehouse-id", "", "Warehouse id")
+		quantityFlag := fs.String("quantity", "", "Quantity to reserve")
+		reason := fs.String("reason", "", "Reservation reason")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*productID) == "" {
+			return errors.New("product-id is required")
+		}
+		if strings.TrimSpace(*warehouseID) == "" {
+			return errors.New("warehouse-id is required")
+		}
+		quantity, err := parseRequiredPositiveDecimal("quantity", *quantityFlag)
+		if err != nil {
+			return err
+		}
+
+		level, err := client.reserveStock(ctx, cfg.TenantID, &inventory.StockReservationRequest{
+			ProductID:   strings.TrimSpace(*productID),
+			WarehouseID: strings.TrimSpace(*warehouseID),
+			Quantity:    quantity.String(),
+			Reason:      strings.TrimSpace(*reason),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, level)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Reserved %s of product %s in warehouse %s\n", quantity.String(), strings.TrimSpace(*productID), strings.TrimSpace(*warehouseID))
+		return nil
+
+	case "release":
+		fs := flag.NewFlagSet("inventory release", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		productID := fs.String("product-id", "", "Product id")
+		warehouseID := fs.String("warehouse-id", "", "Warehouse id")
+		quantityFlag := fs.String("quantity", "", "Quantity to release")
+		reason := fs.String("reason", "", "Release reason")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*productID) == "" {
+			return errors.New("product-id is required")
+		}
+		if strings.TrimSpace(*warehouseID) == "" {
+			return errors.New("warehouse-id is required")
+		}
+		quantity, err := parseRequiredPositiveDecimal("quantity", *quantityFlag)
+		if err != nil {
+			return err
+		}
+
+		level, err := client.releaseStock(ctx, cfg.TenantID, &inventory.StockReservationRequest{
+			ProductID:   strings.TrimSpace(*productID),
+			WarehouseID: strings.TrimSpace(*warehouseID),
+			Quantity:    quantity.String(),
+			Reason:      strings.TrimSpace(*reason),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, level)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Released %s of product %s in warehouse %s\n", quantity.String(), strings.TrimSpace(*productID), strings.TrimSpace(*warehouseID))
 		return nil
 
 	default:
