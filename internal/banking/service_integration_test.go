@@ -100,7 +100,6 @@ func TestService_ImportCSV(t *testing.T) {
 }
 
 func TestService_ImportCSV_WithDuplicateSkip(t *testing.T) {
-	t.Skip("duplicate detection requires external_id matching, not date/amount")
 	service, tenant, bankAccountID := setupBankingServiceTest(t)
 	ctx := context.Background()
 
@@ -136,6 +135,30 @@ func TestService_ImportCSV_WithDuplicateSkip(t *testing.T) {
 	}
 	if result2.TransactionsImported != 0 {
 		t.Errorf("expected 0 transactions imported, got %d", result2.TransactionsImported)
+	}
+}
+
+func TestService_ImportCSV_WithDuplicateSkipSameFile(t *testing.T) {
+	service, tenant, bankAccountID := setupBankingServiceTest(t)
+	ctx := context.Background()
+
+	csvContent := `Date,Amount,Description
+2025-01-15,1000.00,Customer Payment
+2025-01-15,1000.00,Customer Payment`
+
+	reader := strings.NewReader(csvContent)
+	mapping := DefaultGenericMapping()
+
+	result, err := service.ImportCSV(ctx, tenant.SchemaName, tenant.ID, bankAccountID, reader, "same_file.csv", mapping, true)
+	if err != nil {
+		t.Fatalf("ImportCSV failed: %v", err)
+	}
+
+	if result.TransactionsImported != 1 {
+		t.Errorf("expected 1 transaction imported, got %d", result.TransactionsImported)
+	}
+	if result.DuplicatesSkipped != 1 {
+		t.Errorf("expected 1 duplicate skipped, got %d", result.DuplicatesSkipped)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
 )
 
@@ -207,7 +208,7 @@ func (s *Service) ImportCSV(ctx context.Context, schemaName, tenantID, bankAccou
 
 		// Check for duplicate
 		if skipDuplicates {
-			isDuplicate, err := s.isTransactionDuplicate(ctx, tx, schemaName, bankAccountID, transactionDate, amount, reference, externalID)
+			isDuplicate, err := s.isTransactionDuplicate(ctx, tx, schemaName, tenantID, bankAccountID, transactionDate, amount, reference, externalID)
 			if err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("Row %d: duplicate check failed: %v", rowNum, err))
 				rowNum++
@@ -301,7 +302,7 @@ func (s *Service) ImportTransactions(ctx context.Context, schemaName, tenantID, 
 
 		// Check for duplicate
 		if req.SkipDuplicates {
-			isDuplicate, err := s.isTransactionDuplicate(ctx, tx, schemaName, bankAccountID, transactionDate, amount, row.Reference, row.ExternalID)
+			isDuplicate, err := s.isTransactionDuplicate(ctx, tx, schemaName, tenantID, bankAccountID, transactionDate, amount, row.Reference, row.ExternalID)
 			if err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("Row %d: duplicate check failed: %v", i+1, err))
 				continue
@@ -344,15 +345,23 @@ func (s *Service) ImportTransactions(ctx context.Context, schemaName, tenantID, 
 	return result, nil
 }
 
-func (s *Service) isTransactionDuplicate(ctx context.Context, tx interface{}, schemaName, bankAccountID string, date time.Time, amount decimal.Decimal, reference, externalID string) (bool, error) {
+type duplicateQueryer interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+func (s *Service) isTransactionDuplicate(ctx context.Context, q duplicateQueryer, schemaName, tenantID, bankAccountID string, date time.Time, amount decimal.Decimal, reference, externalID string) (bool, error) {
+	if q == nil {
+		q = s.db
+	}
+
 	var count int
 
 	// If we have an external ID, check for exact match
 	if externalID != "" {
-		err := s.db.QueryRow(ctx, fmt.Sprintf(`
+		err := q.QueryRow(ctx, fmt.Sprintf(`
 			SELECT COUNT(*) FROM %s.bank_transactions
-			WHERE bank_account_id = $1 AND external_id = $2
-		`, schemaName), bankAccountID, externalID).Scan(&count)
+			WHERE tenant_id = $1 AND bank_account_id = $2 AND external_id = $3
+		`, schemaName), tenantID, bankAccountID, externalID).Scan(&count)
 		if err != nil {
 			return false, err
 		}
@@ -363,10 +372,10 @@ func (s *Service) isTransactionDuplicate(ctx context.Context, tx interface{}, sc
 
 	// Check for same date, amount, and reference
 	if reference != "" {
-		err := s.db.QueryRow(ctx, fmt.Sprintf(`
+		err := q.QueryRow(ctx, fmt.Sprintf(`
 			SELECT COUNT(*) FROM %s.bank_transactions
-			WHERE bank_account_id = $1 AND transaction_date = $2 AND amount = $3 AND reference = $4
-		`, schemaName), bankAccountID, date, amount, reference).Scan(&count)
+			WHERE tenant_id = $1 AND bank_account_id = $2 AND transaction_date = $3 AND amount = $4 AND reference = $5
+		`, schemaName), tenantID, bankAccountID, date, amount, reference).Scan(&count)
 		if err != nil {
 			return false, err
 		}
@@ -375,7 +384,14 @@ func (s *Service) isTransactionDuplicate(ctx context.Context, tx interface{}, sc
 		}
 	}
 
-	return false, nil
+	err := q.QueryRow(ctx, fmt.Sprintf(`
+		SELECT COUNT(*) FROM %s.bank_transactions
+		WHERE tenant_id = $1 AND bank_account_id = $2 AND transaction_date = $3 AND amount = $4
+	`, schemaName), tenantID, bankAccountID, date, amount).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func parseAmount(s, decimalSep, thousandsSep string) (decimal.Decimal, error) {
