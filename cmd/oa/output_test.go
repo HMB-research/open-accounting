@@ -553,14 +553,15 @@ func TestPrintCloseOutputs(t *testing.T) {
 	lockBefore := "2026-02-28"
 	lockAfter := "2026-03-31"
 	event := tenant.PeriodCloseEvent{
-		ID:             "close-1",
-		Action:         tenant.PeriodCloseActionClose,
-		CloseKind:      tenant.PeriodCloseKindMonthEnd,
-		PeriodEndDate:  "2026-03-31",
-		LockDateBefore: &lockBefore,
-		LockDateAfter:  &lockAfter,
-		Note:           "March close",
-		CreatedAt:      now,
+		ID:              "close-1",
+		Action:          tenant.PeriodCloseActionClose,
+		CloseKind:       tenant.PeriodCloseKindMonthEnd,
+		PeriodEndDate:   "2026-03-31",
+		LockDateBefore:  &lockBefore,
+		LockDateAfter:   &lockAfter,
+		Note:            "March close",
+		ReviewerSignOff: true,
+		CreatedAt:       now,
 	}
 	status := accounting.YearEndCloseStatus{
 		PeriodEndDate:              "2025-12-31",
@@ -606,6 +607,7 @@ func TestPrintCloseOutputs(t *testing.T) {
 	var eventsBuf bytes.Buffer
 	printPeriodCloseEventsTable(&eventsBuf, []tenant.PeriodCloseEvent{event})
 	assert.Contains(t, eventsBuf.String(), "close-1")
+	assert.Contains(t, eventsBuf.String(), "true")
 	assert.Contains(t, eventsBuf.String(), "March close")
 
 	var mutationBuf bytes.Buffer
@@ -614,6 +616,7 @@ func TestPrintCloseOutputs(t *testing.T) {
 		Event:  &event,
 	})
 	assert.Contains(t, mutationBuf.String(), "Closed period")
+	assert.Contains(t, mutationBuf.String(), "Reviewer sign-off: true")
 	assert.Contains(t, mutationBuf.String(), "Tenant lock date: 2026-03-31")
 
 	var statusBuf bytes.Buffer

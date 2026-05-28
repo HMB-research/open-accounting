@@ -799,10 +799,40 @@ func TestService_ClosePeriod(t *testing.T) {
 	assert.Equal(t, PeriodCloseActionClose, event.Action)
 	assert.Equal(t, PeriodCloseKindMonthEnd, event.CloseKind)
 	assert.Equal(t, "2026-01-31", event.PeriodEndDate)
+	assert.False(t, event.ReviewerSignOff)
 	assert.Nil(t, event.LockDateBefore)
 	require.NotNil(t, event.LockDateAfter)
 	assert.Equal(t, "2026-01-31", *event.LockDateAfter)
 	require.Len(t, repo.periodCloseEvents["tenant-123"], 1)
+}
+
+func TestService_ClosePeriodYearEndRequiresReviewerSignOff(t *testing.T) {
+	repo := NewMockRepository()
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: DefaultSettings(),
+	})
+	svc := NewServiceWithRepository(repo)
+
+	_, _, err := svc.ClosePeriod(context.Background(), "tenant-123", "user-123", &ClosePeriodRequest{
+		PeriodEndDate: "2026-12-31",
+		Note:          "Year-end reviewed",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reviewer sign-off")
+
+	updatedTenant, event, err := svc.ClosePeriod(context.Background(), "tenant-123", "user-123", &ClosePeriodRequest{
+		PeriodEndDate:   "2026-12-31",
+		Note:            "Year-end reviewed",
+		ReviewerSignOff: true,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updatedTenant.Settings.PeriodLockDate)
+	assert.Equal(t, "2026-12-31", *updatedTenant.Settings.PeriodLockDate)
+	assert.Equal(t, PeriodCloseKindYearEnd, event.CloseKind)
+	assert.True(t, event.ReviewerSignOff)
 }
 
 func TestService_ClosePeriodRejectsInvalidDate(t *testing.T) {

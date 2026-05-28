@@ -728,12 +728,27 @@ func TestClosePeriod(t *testing.T) {
 		body           map[string]interface{}
 		wantStatus     int
 		wantErrContain string
+		wantSignOff    bool
 	}{
 		{
 			name:       "accountant can close period",
 			role:       tenant.RoleAccountant,
 			body:       map[string]interface{}{"period_end_date": "2026-01-31", "note": "Month-end close"},
 			wantStatus: http.StatusOK,
+		},
+		{
+			name:           "year-end close requires reviewer sign-off",
+			role:           tenant.RoleOwner,
+			body:           map[string]interface{}{"period_end_date": "2026-12-31", "note": "Year-end close"},
+			wantStatus:     http.StatusBadRequest,
+			wantErrContain: "reviewer sign-off",
+		},
+		{
+			name:        "year-end close records reviewer sign-off",
+			role:        tenant.RoleOwner,
+			body:        map[string]interface{}{"period_end_date": "2026-12-31", "note": "Year-end close", "reviewer_sign_off": true},
+			wantStatus:  http.StatusOK,
+			wantSignOff: true,
 		},
 		{
 			name:           "viewer cannot close period",
@@ -784,8 +799,9 @@ func TestClosePeriod(t *testing.T) {
 			err := json.NewDecoder(w.Body).Decode(&resp)
 			require.NoError(t, err)
 			require.NotNil(t, resp.Tenant.Settings.PeriodLockDate)
-			assert.Equal(t, "2026-01-31", *resp.Tenant.Settings.PeriodLockDate)
+			assert.Equal(t, tt.body["period_end_date"], *resp.Tenant.Settings.PeriodLockDate)
 			assert.Equal(t, tenant.PeriodCloseActionClose, resp.Event.Action)
+			assert.Equal(t, tt.wantSignOff, resp.Event.ReviewerSignOff)
 		})
 	}
 }

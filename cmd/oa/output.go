@@ -1479,17 +1479,18 @@ func printInvoiceInterestHistoryTable(w io.Writer, history []invoicing.InvoiceIn
 
 func printPeriodCloseEventsTable(w io.Writer, events []tenant.PeriodCloseEvent) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "ID\tACTION\tKIND\tPERIOD END\tLOCK BEFORE\tLOCK AFTER\tNOTE\tCREATED")
+	_, _ = fmt.Fprintln(tw, "ID\tACTION\tKIND\tPERIOD END\tLOCK BEFORE\tLOCK AFTER\tSIGNOFF\tNOTE\tCREATED")
 	for _, event := range events {
 		_, _ = fmt.Fprintf(
 			tw,
-			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%s\t%s\t%s\t%s\t%t\t%s\t%s\n",
 			event.ID,
 			event.Action,
 			event.CloseKind,
 			event.PeriodEndDate,
 			stringValue(event.LockDateBefore),
 			stringValue(event.LockDateAfter),
+			event.ReviewerSignOff,
 			event.Note,
 			formatTime(event.CreatedAt),
 		)
@@ -1505,6 +1506,9 @@ func printPeriodCloseMutationResponse(w io.Writer, title string, resp *periodClo
 		_, _ = fmt.Fprintf(w, "Kind: %s\n", resp.Event.CloseKind)
 		_, _ = fmt.Fprintf(w, "Lock before: %s\n", stringValue(resp.Event.LockDateBefore))
 		_, _ = fmt.Fprintf(w, "Lock after: %s\n", stringValue(resp.Event.LockDateAfter))
+		if resp.Event.ReviewerSignOff {
+			_, _ = fmt.Fprintln(w, "Reviewer sign-off: true")
+		}
 		if strings.TrimSpace(resp.Event.Note) != "" {
 			_, _ = fmt.Fprintf(w, "Note: %s\n", resp.Event.Note)
 		}
