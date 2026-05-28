@@ -418,6 +418,34 @@ func (c *apiClient) createEmployee(ctx context.Context, tenantID string, req *pa
 	return &resp, nil
 }
 
+func (c *apiClient) getEmployee(ctx context.Context, tenantID, employeeID string) (*payroll.Employee, error) {
+	var resp payroll.Employee
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "employees", employeeID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) updateEmployee(ctx context.Context, tenantID, employeeID string, req *payroll.UpdateEmployeeRequest) (*payroll.Employee, error) {
+	var resp payroll.Employee
+	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "employees", employeeID), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) setBaseSalary(ctx context.Context, tenantID, employeeID string, amount decimal.Decimal, effectiveFrom time.Time) (map[string]string, error) {
+	var resp map[string]string
+	body := map[string]any{
+		"amount":         amount,
+		"effective_from": effectiveFrom,
+	}
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "employees", employeeID, "salary"), body, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
 func (c *apiClient) importEmployees(ctx context.Context, tenantID string, req *payroll.ImportEmployeesRequest) (*payroll.ImportEmployeesResult, error) {
 	var resp payroll.ImportEmployeesResult
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "employees", "import"), req, c.apiToken, &resp); err != nil {

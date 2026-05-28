@@ -122,6 +122,9 @@ go run ./cmd/oa employees create \
   --last-name Maasikas \
   --start-date 2026-01-15 \
   --employment-type FULL_TIME
+go run ./cmd/oa employees get --id <employee-id>
+go run ./cmd/oa employees update --id <employee-id> --department Finance --active true
+go run ./cmd/oa employees set-salary --id <employee-id> --amount 3200.00 --effective-from 2026-03-01
 go run ./cmd/oa employees import --file ./employees.csv
 ```
 

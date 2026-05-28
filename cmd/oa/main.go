@@ -107,6 +107,9 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  contacts import           Import contacts from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  employees list            List employees")
 	_, _ = fmt.Fprintln(a.stdout, "  employees create          Create an employee")
+	_, _ = fmt.Fprintln(a.stdout, "  employees get             Show one employee")
+	_, _ = fmt.Fprintln(a.stdout, "  employees update          Update an employee")
+	_, _ = fmt.Fprintln(a.stdout, "  employees set-salary      Set an employee base salary")
 	_, _ = fmt.Fprintln(a.stdout, "  employees import          Import employees from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll runs list         List payroll runs")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll runs create       Create a payroll run")
@@ -1250,6 +1253,149 @@ func (a *cliApp) runEmployees(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, employee)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Created employee %s (%s)\n", employee.FullName(), employee.ID)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("employees get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		employeeID := fs.String("id", "", "Employee id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*employeeID) == "" {
+			return errors.New("id is required")
+		}
+
+		employee, err := client.getEmployee(ctx, cfg.TenantID, strings.TrimSpace(*employeeID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, employee)
+		}
+		printEmployee(a.stdout, employee)
+		return nil
+
+	case "update":
+		fs := flag.NewFlagSet("employees update", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		employeeID := fs.String("id", "", "Employee id")
+		employeeNumber := fs.String("employee-number", "", "Employee number")
+		firstName := fs.String("first-name", "", "First name")
+		lastName := fs.String("last-name", "", "Last name")
+		personalCode := fs.String("personal-code", "", "Personal code")
+		email := fs.String("email", "", "Email")
+		phone := fs.String("phone", "", "Phone")
+		address := fs.String("address", "", "Address")
+		bankAccount := fs.String("bank-account", "", "IBAN")
+		endDate := fs.String("end-date", "", "Employment end date in YYYY-MM-DD")
+		position := fs.String("position", "", "Position")
+		department := fs.String("department", "", "Department")
+		employmentType := fs.String("employment-type", "", "Employment type: FULL_TIME, PART_TIME, CONTRACT")
+		applyBasicExemption := fs.String("apply-basic-exemption", "", "Apply basic exemption: true or false")
+		basicExemptionAmount := fs.String("basic-exemption-amount", "", "Basic exemption amount")
+		fundedPensionRate := fs.String("funded-pension-rate", "", "Funded pension rate")
+		active := fs.String("active", "", "Set active state: true or false")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*employeeID) == "" {
+			return errors.New("id is required")
+		}
+
+		req := &payroll.UpdateEmployeeRequest{
+			EmployeeNumber: strings.TrimSpace(*employeeNumber),
+			FirstName:      strings.TrimSpace(*firstName),
+			LastName:       strings.TrimSpace(*lastName),
+			PersonalCode:   strings.TrimSpace(*personalCode),
+			Email:          strings.TrimSpace(*email),
+			Phone:          strings.TrimSpace(*phone),
+			Address:        strings.TrimSpace(*address),
+			BankAccount:    strings.TrimSpace(*bankAccount),
+			Position:       strings.TrimSpace(*position),
+			Department:     strings.TrimSpace(*department),
+		}
+		if strings.TrimSpace(*employmentType) != "" {
+			req.EmploymentType = payroll.EmploymentType(strings.ToUpper(strings.TrimSpace(*employmentType)))
+		}
+		if strings.TrimSpace(*endDate) != "" {
+			parsed, err := parseRequiredDate("end-date", *endDate)
+			if err != nil {
+				return err
+			}
+			req.EndDate = &parsed
+		}
+		if strings.TrimSpace(*applyBasicExemption) != "" {
+			parsed, err := strconv.ParseBool(strings.TrimSpace(*applyBasicExemption))
+			if err != nil {
+				return fmt.Errorf("parse apply-basic-exemption: %w", err)
+			}
+			req.ApplyBasicExemption = &parsed
+		}
+		if strings.TrimSpace(*basicExemptionAmount) != "" {
+			parsed, err := decimal.NewFromString(strings.TrimSpace(*basicExemptionAmount))
+			if err != nil {
+				return fmt.Errorf("parse basic-exemption-amount: %w", err)
+			}
+			req.BasicExemptionAmount = &parsed
+		}
+		if strings.TrimSpace(*fundedPensionRate) != "" {
+			parsed, err := decimal.NewFromString(strings.TrimSpace(*fundedPensionRate))
+			if err != nil {
+				return fmt.Errorf("parse funded-pension-rate: %w", err)
+			}
+			req.FundedPensionRate = &parsed
+		}
+		if strings.TrimSpace(*active) != "" {
+			parsed, err := strconv.ParseBool(strings.TrimSpace(*active))
+			if err != nil {
+				return fmt.Errorf("parse active: %w", err)
+			}
+			req.IsActive = &parsed
+		}
+
+		employee, err := client.updateEmployee(ctx, cfg.TenantID, strings.TrimSpace(*employeeID), req)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, employee)
+		}
+		printEmployee(a.stdout, employee)
+		return nil
+
+	case "set-salary":
+		fs := flag.NewFlagSet("employees set-salary", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		employeeID := fs.String("id", "", "Employee id")
+		amountFlag := fs.String("amount", "", "Base salary amount")
+		effectiveFrom := fs.String("effective-from", "", "Effective date in YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*employeeID) == "" {
+			return errors.New("id is required")
+		}
+		amount, err := parseRequiredPositiveDecimal("amount", *amountFlag)
+		if err != nil {
+			return err
+		}
+		effectiveFromValue, err := parseRequiredDate("effective-from", *effectiveFrom)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.setBaseSalary(ctx, cfg.TenantID, strings.TrimSpace(*employeeID), amount, effectiveFromValue)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Set base salary for employee %s to %s\n", strings.TrimSpace(*employeeID), amount.String())
 		return nil
 
 	case "import":

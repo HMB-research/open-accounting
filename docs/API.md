@@ -703,6 +703,40 @@ Content-Type: application/json
 }
 ```
 
+### Get Employee
+
+```http
+GET /tenants/{tenantId}/employees/{employeeId}
+Authorization: Bearer <token>
+```
+
+### Update Employee
+
+```http
+PUT /tenants/{tenantId}/employees/{employeeId}
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "department": "Finance",
+  "apply_basic_exemption": false,
+  "is_active": true
+}
+```
+
+### Set Base Salary
+
+```http
+POST /tenants/{tenantId}/employees/{employeeId}/salary
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "amount": "3200.00",
+  "effective_from": "2026-03-01T00:00:00Z"
+}
+```
+
 ### Import Employees
 
 ```http
