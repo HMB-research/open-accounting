@@ -56,7 +56,14 @@ func (s *Service) GenerateCashFlowStatement(ctx context.Context, tenantID, schem
 	if err != nil {
 		return nil, fmt.Errorf("get opening cash: %w", err)
 	}
-	mappingOverrides := newCashFlowMappingOverrides(req.MappingOverrides)
+	persistentMapping, err := s.repo.GetCashFlowMappingOverrides(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("get cash flow mapping: %w", err)
+	}
+	mappingOverrides, err := newEffectiveCashFlowMappingOverrides(persistentMapping, req.MappingOverrides)
+	if err != nil {
+		return nil, err
+	}
 
 	// Classify and aggregate cash flows
 	var operating []CashFlowItem
@@ -133,6 +140,45 @@ func NormalizeCashFlowMethod(method string) (string, error) {
 	}
 }
 
+// GetCashFlowMapping returns tenant-level cash-flow account-code mappings.
+func (s *Service) GetCashFlowMapping(ctx context.Context, tenantID string) (*CashFlowMappingOverrides, error) {
+	mapping, err := s.repo.GetCashFlowMappingOverrides(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("get cash flow mapping: %w", err)
+	}
+	normalized, err := NormalizeCashFlowMappingOverrides(mapping)
+	if err != nil {
+		return nil, err
+	}
+	return &normalized, nil
+}
+
+// UpdateCashFlowMapping replaces tenant-level cash-flow account-code mappings.
+func (s *Service) UpdateCashFlowMapping(ctx context.Context, tenantID string, mapping CashFlowMappingOverrides) (*CashFlowMappingOverrides, error) {
+	normalized, err := NormalizeCashFlowMappingOverrides(mapping)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := s.repo.UpdateCashFlowMappingOverrides(ctx, tenantID, normalized)
+	if err != nil {
+		return nil, fmt.Errorf("update cash flow mapping: %w", err)
+	}
+	normalizedUpdated, err := NormalizeCashFlowMappingOverrides(updated)
+	if err != nil {
+		return nil, err
+	}
+	return &normalizedUpdated, nil
+}
+
+// NormalizeCashFlowMappingOverrides trims, uppercases, sorts, deduplicates, and validates cash-flow mappings.
+func NormalizeCashFlowMappingOverrides(overrides CashFlowMappingOverrides) (CashFlowMappingOverrides, error) {
+	mapping := newCashFlowMappingOverrides(overrides)
+	if err := mapping.validateNoConflicts(); err != nil {
+		return CashFlowMappingOverrides{}, err
+	}
+	return mapping.value(), nil
+}
+
 type cashFlowMappingOverrides struct {
 	operating map[string]struct{}
 	investing map[string]struct{}
@@ -164,15 +210,36 @@ func normalizeAccountCode(code string) string {
 	return strings.ToUpper(strings.TrimSpace(code))
 }
 
-func (o cashFlowMappingOverrides) response() *CashFlowMappingOverrides {
-	if len(o.operating) == 0 && len(o.investing) == 0 && len(o.financing) == 0 {
-		return nil
+func newEffectiveCashFlowMappingOverrides(persistent, request CashFlowMappingOverrides) (cashFlowMappingOverrides, error) {
+	normalizedPersistent, err := NormalizeCashFlowMappingOverrides(persistent)
+	if err != nil {
+		return cashFlowMappingOverrides{}, err
 	}
-	return &CashFlowMappingOverrides{
+	normalizedRequest, err := NormalizeCashFlowMappingOverrides(request)
+	if err != nil {
+		return cashFlowMappingOverrides{}, err
+	}
+
+	result := newCashFlowMappingOverrides(normalizedPersistent)
+	requestOverrides := newCashFlowMappingOverrides(normalizedRequest)
+	result.applyRequestOverrides(requestOverrides)
+	return result, nil
+}
+
+func (o cashFlowMappingOverrides) value() CashFlowMappingOverrides {
+	return CashFlowMappingOverrides{
 		OperatingAccountCodes: sortedAccountCodes(o.operating),
 		InvestingAccountCodes: sortedAccountCodes(o.investing),
 		FinancingAccountCodes: sortedAccountCodes(o.financing),
 	}
+}
+
+func (o cashFlowMappingOverrides) response() *CashFlowMappingOverrides {
+	if len(o.operating) == 0 && len(o.investing) == 0 && len(o.financing) == 0 {
+		return nil
+	}
+	value := o.value()
+	return &value
 }
 
 func sortedAccountCodes(codeSet map[string]struct{}) []string {
@@ -190,6 +257,42 @@ func sortedAccountCodes(codeSet map[string]struct{}) []string {
 func (o cashFlowMappingOverrides) hasAccount(codeSet map[string]struct{}, line JournalLine) bool {
 	_, ok := codeSet[normalizeAccountCode(line.AccountCode)]
 	return ok
+}
+
+func (o cashFlowMappingOverrides) validateNoConflicts() error {
+	seen := make(map[string]string, len(o.operating)+len(o.investing)+len(o.financing))
+	for section, codeSet := range map[string]map[string]struct{}{
+		"operating": o.operating,
+		"investing": o.investing,
+		"financing": o.financing,
+	} {
+		for code := range codeSet {
+			if previous, ok := seen[code]; ok {
+				return fmt.Errorf("cash flow mapping account code %s cannot be assigned to both %s and %s", code, previous, section)
+			}
+			seen[code] = section
+		}
+	}
+	return nil
+}
+
+func (o *cashFlowMappingOverrides) applyRequestOverrides(request cashFlowMappingOverrides) {
+	for code := range request.operating {
+		o.moveAccount(code, o.operating)
+	}
+	for code := range request.investing {
+		o.moveAccount(code, o.investing)
+	}
+	for code := range request.financing {
+		o.moveAccount(code, o.financing)
+	}
+}
+
+func (o *cashFlowMappingOverrides) moveAccount(code string, target map[string]struct{}) {
+	delete(o.operating, code)
+	delete(o.investing, code)
+	delete(o.financing, code)
+	target[code] = struct{}{}
 }
 
 func (o cashFlowMappingOverrides) isOperatingOverride(line JournalLine) bool {

@@ -2474,6 +2474,25 @@ Authorization: Bearer <token>
 - `operating_accounts`, `investing_accounts`, `financing_accounts` (string): Comma-separated account codes to force into a cash-flow section for this request.
 - `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
 
+### Cash Flow Mapping
+
+```http
+GET /tenants/{tenantId}/reports/cash-flow/mapping
+PUT /tenants/{tenantId}/reports/cash-flow/mapping
+Authorization: Bearer <token>
+```
+
+Stores tenant-level account-code mappings under tenant settings. Request-level cash-flow query parameters still take precedence for one-off reports.
+
+**PUT Body:**
+```json
+{
+  "operating_account_codes": ["PREPAY"],
+  "investing_account_codes": ["CAPEX-1"],
+  "financing_account_codes": ["FOUNDERS"]
+}
+```
+
 ### Receivables Aging
 
 ```http

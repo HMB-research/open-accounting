@@ -2123,6 +2123,20 @@ func printCashFlowStatement(w io.Writer, report *reports.CashFlowStatement) {
 	_, _ = fmt.Fprintf(w, "Closing cash: %s\n", report.ClosingCash.String())
 }
 
+func printCashFlowMapping(w io.Writer, mapping *reports.CashFlowMappingOverrides) {
+	_, _ = fmt.Fprintln(w, "Cash flow mapping")
+	_, _ = fmt.Fprintf(w, "Operating accounts: %s\n", formatAccountCodeList(mapping.OperatingAccountCodes))
+	_, _ = fmt.Fprintf(w, "Investing accounts: %s\n", formatAccountCodeList(mapping.InvestingAccountCodes))
+	_, _ = fmt.Fprintf(w, "Financing accounts: %s\n", formatAccountCodeList(mapping.FinancingAccountCodes))
+}
+
+func formatAccountCodeList(codes []string) string {
+	if len(codes) == 0 {
+		return "-"
+	}
+	return strings.Join(codes, ", ")
+}
+
 func printAgingReport(w io.Writer, report *analytics.AgingReport) {
 	_, _ = fmt.Fprintf(w, "%s aging as of %s\n", titleLabel(report.ReportType), formatDate(report.AsOfDate))
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)

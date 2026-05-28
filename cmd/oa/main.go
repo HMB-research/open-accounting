@@ -380,6 +380,8 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  reports balance-sheet     Show balance sheet")
 	_, _ = fmt.Fprintln(a.stdout, "  reports income-statement  Show income statement")
 	_, _ = fmt.Fprintln(a.stdout, "  reports cash-flow         Show cash flow statement")
+	_, _ = fmt.Fprintln(a.stdout, "  reports cash-flow-mapping get  Show saved cash-flow account mappings")
+	_, _ = fmt.Fprintln(a.stdout, "  reports cash-flow-mapping update  Update saved cash-flow account mappings")
 	_, _ = fmt.Fprintln(a.stdout, "  reports aging             Show receivables or payables aging")
 	_, _ = fmt.Fprintln(a.stdout, "  reports balance-confirmations  Show balance confirmations")
 	_, _ = fmt.Fprintln(a.stdout, "  reports balance-confirmation  Show one balance confirmation")
@@ -8246,6 +8248,10 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 			InvestingAccountCodes: splitCSVFlag(*investingAccounts),
 			FinancingAccountCodes: splitCSVFlag(*financingAccounts),
 		}
+		mappingOverrides, err = reports.NormalizeCashFlowMappingOverrides(mappingOverrides)
+		if err != nil {
+			return err
+		}
 		if *asCSV {
 			content, err := client.exportCashFlowStatementCSV(ctx, cfg.TenantID, strings.TrimSpace(*startDate), strings.TrimSpace(*endDate), method, mappingOverrides)
 			if err != nil {
@@ -8277,6 +8283,9 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 		}
 		printCashFlowStatement(a.stdout, report)
 		return nil
+
+	case "cash-flow-mapping":
+		return a.runCashFlowMapping(ctx, cfg, client, args[1:])
 
 	case "aging":
 		fs := flag.NewFlagSet("reports aging", flag.ContinueOnError)
@@ -8448,6 +8457,62 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 
 	default:
 		return fmt.Errorf("unknown reports subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runCashFlowMapping(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("reports cash-flow-mapping subcommand required")
+	}
+
+	switch args[0] {
+	case "get":
+		fs := flag.NewFlagSet("reports cash-flow-mapping get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		mapping, err := client.getCashFlowMapping(ctx, cfg.TenantID)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, mapping)
+		}
+		printCashFlowMapping(a.stdout, mapping)
+		return nil
+	case "update":
+		fs := flag.NewFlagSet("reports cash-flow-mapping update", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		operatingAccounts := fs.String("operating-accounts", "", "Comma-separated account codes to force into operating cash flow")
+		investingAccounts := fs.String("investing-accounts", "", "Comma-separated account codes to force into investing cash flow")
+		financingAccounts := fs.String("financing-accounts", "", "Comma-separated account codes to force into financing cash flow")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		mapping, err := reports.NormalizeCashFlowMappingOverrides(reports.CashFlowMappingOverrides{
+			OperatingAccountCodes: splitCSVFlag(*operatingAccounts),
+			InvestingAccountCodes: splitCSVFlag(*investingAccounts),
+			FinancingAccountCodes: splitCSVFlag(*financingAccounts),
+		})
+		if err != nil {
+			return err
+		}
+		updated, err := client.updateCashFlowMapping(ctx, cfg.TenantID, mapping)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, updated)
+		}
+		printCashFlowMapping(a.stdout, updated)
+		return nil
+	default:
+		return fmt.Errorf("unknown reports cash-flow-mapping subcommand %q", args[0])
 	}
 }
 

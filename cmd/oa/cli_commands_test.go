@@ -30,6 +30,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/plugin"
 	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/recurring"
+	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -4391,6 +4392,19 @@ func TestCLIReportsCommands(t *testing.T) {
 				"closing_cash":         "500.00",
 				"generated_at":         "2026-03-31T12:00:00Z",
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/cash-flow/mapping":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"operating_account_codes": []string{"PREPAY"},
+				"investing_account_codes": []string{"CAPEX-1"},
+				"financing_account_codes": []string{"FOUNDERS"},
+			})
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/reports/cash-flow/mapping":
+			var req reports.CashFlowMappingOverrides
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, []string{"PREPAY"}, req.OperatingAccountCodes)
+			assert.Equal(t, []string{"CAPEX-1"}, req.InvestingAccountCodes)
+			assert.Equal(t, []string{"FOUNDERS"}, req.FinancingAccountCodes)
+			_ = json.NewEncoder(w).Encode(req)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/aging/receivables":
 			if r.URL.Query().Get("format") == "csv" {
 				w.Header().Set("Content-Type", "text/csv")
@@ -4593,6 +4607,24 @@ func TestCLIReportsCommands(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"method": "direct"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "cash-flow-mapping", "get"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Operating accounts: PREPAY")
+	assert.Contains(t, stdout.String(), "Investing accounts: CAPEX-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"reports", "cash-flow-mapping", "update",
+		"--operating-accounts", "prepay",
+		"--investing-accounts", "capex-1",
+		"--financing-accounts", "founders",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"operating_account_codes":`)
+	assert.Contains(t, stdout.String(), `"PREPAY"`)
 
 	stdout.Reset()
 	cashFlowCSVPath := filepath.Join(t.TempDir(), "cash-flow.csv")

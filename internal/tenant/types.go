@@ -44,6 +44,16 @@ type TenantSettings struct {
 	// Late payment interest settings
 	// Rate is expressed as daily rate (e.g., 0.0005 = 0.05% per day ≈ 18% annually)
 	LatePaymentInterestRate float64 `json:"late_payment_interest_rate,omitempty"`
+
+	// Cash-flow account-code mapping settings
+	CashFlowMapping *CashFlowMappingSettings `json:"cash_flow_mapping,omitempty"`
+}
+
+// CashFlowMappingSettings stores tenant-level cash-flow account-code mappings.
+type CashFlowMappingSettings struct {
+	OperatingAccountCodes []string `json:"operating_account_codes,omitempty"`
+	InvestingAccountCodes []string `json:"investing_account_codes,omitempty"`
+	FinancingAccountCodes []string `json:"financing_account_codes,omitempty"`
 }
 
 const (
