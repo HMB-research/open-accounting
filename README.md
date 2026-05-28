@@ -317,11 +317,12 @@ open-accounting/
 - [x] Close/reopen workflow with audit trail in API and company settings
 - [x] Fiscal-year close readiness and retained-earnings carry-forward workflow
 - [x] Document attachments for invoices, journal entries, payments, bank transactions, and fixed assets
+- [x] Backup creation and restore-drill scripts for self-hosted operations
 
 ### Still missing for reliable production use
 - [ ] Historical payroll and broader external migration imports
 - [ ] Broader document evidence policy enforcement
-- [ ] Backup/restore verification and stronger session controls
+- [ ] Stronger session controls
 - [ ] E-invoice, direct bank feeds, SEPA initiation, and automatic e-MTA submission
 
 ---

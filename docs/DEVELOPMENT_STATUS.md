@@ -59,6 +59,7 @@ Still not done:
 | Plugin marketplace | `Beta` | Registry, install, permission, tenant enablement, and settings flows exist. Backend hook/route runtime execution is not implemented and is now rejected explicitly instead of silently no-oping; frontend slots are metadata-only and render host fallback content until a frontend runtime exists. |
 | Inventory and warehouse flows | `Beta` | Inventory structures exist, but the module is not yet complete enough to market as finished. |
 | Core accountant smoke E2E gate | `Working` | CI now blocks on auth setup plus invoices, reports, banking, and payroll route coverage. |
+| Backup and restore drills | `Beta` | Operator scripts now create PostgreSQL custom-format backups with checksums and restore them into a separate drill database with core table and migration verification. Offsite storage, monitoring, and scheduled restore drills remain deployment responsibilities. |
 | Demo seeded flows and broad view coverage | `Demo-only` | Useful for demos and regression checks, not the same as release-quality smoke coverage. |
 | Historical payroll, KMD history, and broader incumbent-system migration imports | `Beta` | Employee master-data import, finalized historical payroll run/payslip CSV import, leave-balance CSV import, and row-level KMD history import now exist. Full incumbent-system cutover paths are still missing. |
 | Broader document retention and reconciliation evidence workflow | `Beta` | Reconciliation evidence can now be attached to bank transactions and assets with document type, review status, approval/rejection decisions, review notes, retention metadata, and tenant-wide retention review. Policy automation is still missing. |
@@ -80,6 +81,7 @@ Still not done:
 3. Extend the new accountant portfolio rollup into deeper exception actions beyond banking, including dedicated accounting follow-up workflows.
 4. Add policy automation on top of the document approval, retention review, and reconciliation-evidence layer.
 5. Add stronger session management and remaining auth hardening.
+6. Add backup monitoring/offsite storage guidance around the new backup and restore-drill scripts.
 
 ## Related Docs
 
