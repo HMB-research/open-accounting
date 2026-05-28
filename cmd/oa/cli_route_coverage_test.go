@@ -55,6 +55,21 @@ func TestCLIRouteCoverageAgainstAPISource(t *testing.T) {
 	require.Empty(t, undocumented, "CLI-covered API routes missing from docs/CLI.md")
 }
 
+func TestCLIReferenceExamplesUseKnownCommandPaths(t *testing.T) {
+	knownCommands := collectKnownCLICommandPaths(t)
+	examples := collectCLIReferenceExampleCommands(readCLIReference(t))
+	require.Greater(t, len(examples), 100, "CLI guide should include broad command examples")
+
+	var unknown []string
+	for _, example := range examples {
+		if _, ok := resolveKnownCLICommandPath(knownCommands, example); !ok {
+			unknown = append(unknown, example)
+		}
+	}
+	sort.Strings(unknown)
+	require.Empty(t, unknown, "docs/CLI.md examples with unknown command paths")
+}
+
 func collectAPIRoutesFromSource(t *testing.T) []apiRoute {
 	t.Helper()
 
@@ -155,6 +170,64 @@ func readCLIReference(t *testing.T) string {
 	payload, err := os.ReadFile(filepath.Join("..", "..", "docs", "CLI.md"))
 	require.NoError(t, err)
 	return string(payload)
+}
+
+func collectKnownCLICommandPaths(t *testing.T) map[string]bool {
+	t.Helper()
+
+	commands := map[string]bool{
+		"help":                          true,
+		"auth init":                     true,
+		"auth logout":                   true,
+		"payroll import-leave-balances": true,
+	}
+	for _, route := range collectAPIRoutesFromSource(t) {
+		command, ok := cliCommandForRoute(route)
+		if !ok || command == "" {
+			continue
+		}
+		commands[command] = true
+	}
+	return commands
+}
+
+func collectCLIReferenceExampleCommands(reference string) []string {
+	const marker = "go run ./cmd/oa "
+
+	var commands []string
+	for _, line := range strings.Split(reference, "\n") {
+		_, rawCommand, ok := strings.Cut(line, marker)
+		if !ok {
+			continue
+		}
+		rawCommand = strings.TrimSpace(rawCommand)
+		if rawCommand == "" {
+			continue
+		}
+		commands = append(commands, rawCommand)
+	}
+	return commands
+}
+
+func resolveKnownCLICommandPath(knownCommands map[string]bool, rawCommand string) (string, bool) {
+	tokens := strings.Fields(rawCommand)
+	cleanTokens := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		token = strings.TrimRight(token, `\`)
+		token = strings.TrimSpace(token)
+		if token == "" {
+			continue
+		}
+		cleanTokens = append(cleanTokens, token)
+	}
+
+	for length := len(cleanTokens); length > 0; length-- {
+		candidate := strings.Join(cleanTokens[:length], " ")
+		if knownCommands[candidate] {
+			return candidate, true
+		}
+	}
+	return "", false
 }
 
 func cliCommandForRoute(route apiRoute) (string, bool) {
