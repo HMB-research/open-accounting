@@ -18,12 +18,15 @@
 Full local baseline last completed on 2026-05-28:
 
 - `go test ./...` passes
+- `golangci-lint run` passes
 - `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)` passes against a fresh PostgreSQL database
+- `cd frontend && bun run lint` passes
 - `cd frontend && bun run check` passes with 0 errors and 0 warnings
 - `cd frontend && bun run test` passes with 21 files and 493 tests
 - `cd frontend && bun run build` passes
 - `cd frontend && bun run test:e2e:smoke` passes against a fresh locally seeded demo environment
 - `cd frontend && bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium --workers=1` passes against a fresh locally seeded demo environment with 250 passed and 12 intentionally skipped reset tests under `CI=true`
+- Frontend lint is now blocking in CI
 - Backend integration tests are now blocking in CI
 - Core accountant smoke E2E is now blocking in CI
 

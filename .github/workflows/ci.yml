@@ -271,6 +271,10 @@ jobs:
         working-directory: frontend
         run: bun install --frozen-lockfile
 
+      - name: Lint
+        working-directory: frontend
+        run: bun run lint
+
       - name: Type check
         working-directory: frontend
         run: bun run check

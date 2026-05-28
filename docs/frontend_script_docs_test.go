@@ -14,6 +14,9 @@ import (
 func TestDocumentedFrontendScriptsExist(t *testing.T) {
 	scripts := readFrontendScripts(t)
 	checkedFiles := []string{
+		filepath.Join("..", "README.md"),
+		filepath.Join("..", "CONTRIBUTING.md"),
+		"DEVELOPMENT_STATUS.md",
 		"demo-e2e-testing.md",
 		"RALPH_HOOK_SETUP.md",
 		"ralph-wiggum-loop.md",
