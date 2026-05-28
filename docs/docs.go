@@ -10719,6 +10719,12 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "Cash flow method: direct or indirect",
+                        "name": "method",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "Response format: json, csv, xlsx, or pdf",
                         "name": "format",
                         "in": "query"
@@ -18222,6 +18228,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.CashFlowItem"
                     }
+                },
+                "method": {
+                    "type": "string"
                 },
                 "net_cash_change": {
                     "type": "number"

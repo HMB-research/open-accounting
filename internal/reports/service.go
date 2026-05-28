@@ -27,6 +27,11 @@ func NewServiceWithRepository(repo Repository) *Service {
 
 // GenerateCashFlowStatement generates a cash flow statement for the given period
 func (s *Service) GenerateCashFlowStatement(ctx context.Context, tenantID, schemaName string, req *CashFlowRequest) (*CashFlowStatement, error) {
+	method, err := NormalizeCashFlowMethod(req.Method)
+	if err != nil {
+		return nil, err
+	}
+
 	startDate, err := time.Parse("2006-01-02", req.StartDate)
 	if err != nil {
 		return nil, fmt.Errorf("invalid start date: %w", err)
@@ -52,7 +57,12 @@ func (s *Service) GenerateCashFlowStatement(ctx context.Context, tenantID, schem
 	}
 
 	// Classify and aggregate cash flows
-	operating := s.classifyOperatingActivities(entries)
+	var operating []CashFlowItem
+	if method == CashFlowMethodIndirect {
+		operating = s.classifyOperatingActivitiesIndirect(entries)
+	} else {
+		operating = s.classifyOperatingActivities(entries)
+	}
 	investing := s.classifyInvestingActivities(entries)
 	financing := s.classifyFinancingActivities(entries)
 
@@ -90,6 +100,7 @@ func (s *Service) GenerateCashFlowStatement(ctx context.Context, tenantID, schem
 		TenantID:            tenantID,
 		StartDate:           req.StartDate,
 		EndDate:             req.EndDate,
+		Method:              method,
 		OperatingActivities: operating,
 		InvestingActivities: investing,
 		FinancingActivities: financing,
@@ -101,6 +112,22 @@ func (s *Service) GenerateCashFlowStatement(ctx context.Context, tenantID, schem
 		ClosingCash:         openingCash.Add(netChange),
 		GeneratedAt:         time.Now(),
 	}, nil
+}
+
+const (
+	CashFlowMethodDirect   = "direct"
+	CashFlowMethodIndirect = "indirect"
+)
+
+func NormalizeCashFlowMethod(method string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(method)) {
+	case "", CashFlowMethodDirect:
+		return CashFlowMethodDirect, nil
+	case CashFlowMethodIndirect:
+		return CashFlowMethodIndirect, nil
+	default:
+		return "", fmt.Errorf("cash flow method must be direct or indirect")
+	}
 }
 
 func (s *Service) classifyOperatingActivities(entries []JournalEntryWithLines) []CashFlowItem {
@@ -177,6 +204,75 @@ func (s *Service) classifyOperatingActivities(entries []JournalEntryWithLines) [
 			Description:   "Interest paid",
 			DescriptionET: "Makstud intressid",
 			Amount:        interestPaid.Neg(),
+		})
+	}
+
+	return items
+}
+
+func (s *Service) classifyOperatingActivitiesIndirect(entries []JournalEntryWithLines) []CashFlowItem {
+	var netIncome, depreciation, receivablesDelta, inventoryDelta, payablesDelta decimal.Decimal
+
+	for _, entry := range entries {
+		for _, line := range entry.Lines {
+			if isCashLine(line) {
+				continue
+			}
+
+			switch {
+			case line.AccountType == "REVENUE":
+				netIncome = netIncome.Add(line.Credit.Sub(line.Debit))
+			case line.AccountType == "EXPENSE":
+				netIncome = netIncome.Add(line.Credit.Sub(line.Debit))
+				if isDepreciationLine(line) {
+					depreciation = depreciation.Add(line.Debit.Sub(line.Credit))
+				}
+			case isReceivableLine(line):
+				receivablesDelta = receivablesDelta.Add(line.Debit.Sub(line.Credit))
+			case isInventoryLine(line):
+				inventoryDelta = inventoryDelta.Add(line.Debit.Sub(line.Credit))
+			case isPayableLine(line):
+				payablesDelta = payablesDelta.Add(line.Credit.Sub(line.Debit))
+			}
+		}
+	}
+
+	items := []CashFlowItem{{
+		Code:          CFOperNetIncome,
+		Description:   "Net income",
+		DescriptionET: "Aruandeperioodi kasum või kahjum",
+		Amount:        netIncome,
+	}}
+	if !depreciation.IsZero() {
+		items = append(items, CashFlowItem{
+			Code:          CFOperDepreciation,
+			Description:   "Depreciation and amortization",
+			DescriptionET: "Kulum ja amortisatsioon",
+			Amount:        depreciation,
+		})
+	}
+	if !receivablesDelta.IsZero() {
+		items = append(items, CashFlowItem{
+			Code:          CFOperReceivables,
+			Description:   "Change in receivables",
+			DescriptionET: "Nõuete muutus",
+			Amount:        receivablesDelta.Neg(),
+		})
+	}
+	if !inventoryDelta.IsZero() {
+		items = append(items, CashFlowItem{
+			Code:          CFOperInventory,
+			Description:   "Change in inventory",
+			DescriptionET: "Varude muutus",
+			Amount:        inventoryDelta.Neg(),
+		})
+	}
+	if !payablesDelta.IsZero() {
+		items = append(items, CashFlowItem{
+			Code:          CFOperPayables,
+			Description:   "Change in payables",
+			DescriptionET: "Võlgnevuste muutus",
+			Amount:        payablesDelta,
 		})
 	}
 
@@ -336,6 +432,9 @@ func hasOperatingPayableOrExpense(lines []JournalLine) bool {
 		if line.AccountType == "EXPENSE" || isPayableLine(line) || line.AccountType == "LIABILITY" {
 			return true
 		}
+		if isInventoryLine(line) {
+			return true
+		}
 	}
 	return false
 }
@@ -390,6 +489,16 @@ func isInterestLine(line JournalLine) bool {
 		accountNameContains(line, "interest", "intress")
 }
 
+func isDepreciationLine(line JournalLine) bool {
+	return isDepreciationAccount(line.AccountCode) ||
+		accountNameContains(line, "depreciation", "amortization", "kulum", "amortisatsioon")
+}
+
+func isInventoryLine(line JournalLine) bool {
+	return isInventoryAccount(line.AccountCode) ||
+		(line.AccountType == "ASSET" && accountNameContains(line, "inventory", "stock", "varud", "kaubad"))
+}
+
 func accountNameContains(line JournalLine, terms ...string) bool {
 	name := strings.ToLower(line.AccountName)
 	for _, term := range terms {
@@ -440,6 +549,14 @@ func isTaxAccount(code string) bool {
 
 func isInterestAccount(code string) bool {
 	return len(code) >= 4 && code[:2] == "57"
+}
+
+func isDepreciationAccount(code string) bool {
+	return len(code) >= 4 && code[:2] == "56"
+}
+
+func isInventoryAccount(code string) bool {
+	return len(code) >= 4 && code[:2] == "13"
 }
 
 // GetBalanceConfirmationSummary generates a summary of all balances for receivables or payables

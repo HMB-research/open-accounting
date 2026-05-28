@@ -1406,6 +1406,7 @@ func (h *Handlers) GetIncomeStatement(w http.ResponseWriter, r *http.Request) {
 // @Param tenantID path string true "Tenant ID"
 // @Param start_date query string true "Start date (YYYY-MM-DD)"
 // @Param end_date query string true "End date (YYYY-MM-DD)"
+// @Param method query string false "Cash flow method: direct or indirect"
 // @Param format query string false "Response format: json, csv, xlsx, or pdf"
 // @Success 200 {object} reports.CashFlowStatement
 // @Failure 400 {object} object{error=string}
@@ -1422,6 +1423,11 @@ func (h *Handlers) GetCashFlowStatement(w http.ResponseWriter, r *http.Request) 
 
 	startDateStr := r.URL.Query().Get("start_date")
 	endDateStr := r.URL.Query().Get("end_date")
+	method, err := reports.NormalizeCashFlowMethod(r.URL.Query().Get("method"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	if startDateStr == "" || endDateStr == "" {
 		respondError(w, http.StatusBadRequest, "start_date and end_date parameters are required")
@@ -1448,6 +1454,7 @@ func (h *Handlers) GetCashFlowStatement(w http.ResponseWriter, r *http.Request) 
 	req := &reports.CashFlowRequest{
 		StartDate: startDateStr,
 		EndDate:   endDateStr,
+		Method:    method,
 	}
 
 	result, err := h.reportsService.GenerateCashFlowStatement(r.Context(), tenantID, schemaName, req)

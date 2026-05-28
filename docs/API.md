@@ -2459,6 +2459,7 @@ Authorization: Bearer <token>
 **Query Parameters:**
 - `start_date` (string, required): Start date in YYYY-MM-DD format
 - `end_date` (string, required): End date in YYYY-MM-DD format
+- `method` (string): `direct` (default) or `indirect`. Indirect operating cash flow starts with net income and adjusts for depreciation/amortization plus receivables, inventory, and payables deltas.
 - `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
 
 ### Receivables Aging

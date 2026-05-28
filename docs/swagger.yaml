@@ -3984,6 +3984,8 @@ definitions:
         items:
           $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_reports.CashFlowItem'
         type: array
+      method:
+        type: string
       net_cash_change:
         type: number
       opening_cash:
@@ -11060,6 +11062,10 @@ paths:
         in: query
         name: end_date
         required: true
+        type: string
+      - description: 'Cash flow method: direct or indirect'
+        in: query
+        name: method
         type: string
       - description: 'Response format: json, csv, xlsx, or pdf'
         in: query

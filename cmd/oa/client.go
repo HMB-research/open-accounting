@@ -2238,10 +2238,8 @@ func (c *apiClient) exportIncomeStatementPDF(ctx context.Context, tenantID, star
 	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "income-statement"), values), nil, c.apiToken)
 }
 
-func (c *apiClient) getCashFlowStatement(ctx context.Context, tenantID, startDate, endDate string) (*reports.CashFlowStatement, error) {
-	values := url.Values{}
-	values.Set("start_date", strings.TrimSpace(startDate))
-	values.Set("end_date", strings.TrimSpace(endDate))
+func (c *apiClient) getCashFlowStatement(ctx context.Context, tenantID, startDate, endDate, method string) (*reports.CashFlowStatement, error) {
+	values := cashFlowStatementQuery(startDate, endDate, method)
 
 	var resp reports.CashFlowStatement
 	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "cash-flow"), values), nil, c.apiToken, &resp); err != nil {
@@ -2250,25 +2248,32 @@ func (c *apiClient) getCashFlowStatement(ctx context.Context, tenantID, startDat
 	return &resp, nil
 }
 
-func (c *apiClient) exportCashFlowStatementCSV(ctx context.Context, tenantID, startDate, endDate string) ([]byte, error) {
-	values := url.Values{"format": []string{"csv"}}
-	values.Set("start_date", strings.TrimSpace(startDate))
-	values.Set("end_date", strings.TrimSpace(endDate))
+func (c *apiClient) exportCashFlowStatementCSV(ctx context.Context, tenantID, startDate, endDate, method string) ([]byte, error) {
+	values := cashFlowStatementQuery(startDate, endDate, method)
+	values.Set("format", "csv")
 	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "cash-flow"), values), nil, c.apiToken)
 }
 
-func (c *apiClient) exportCashFlowStatementXLSX(ctx context.Context, tenantID, startDate, endDate string) ([]byte, error) {
-	values := url.Values{"format": []string{"xlsx"}}
-	values.Set("start_date", strings.TrimSpace(startDate))
-	values.Set("end_date", strings.TrimSpace(endDate))
+func (c *apiClient) exportCashFlowStatementXLSX(ctx context.Context, tenantID, startDate, endDate, method string) ([]byte, error) {
+	values := cashFlowStatementQuery(startDate, endDate, method)
+	values.Set("format", "xlsx")
 	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "cash-flow"), values), nil, c.apiToken)
 }
 
-func (c *apiClient) exportCashFlowStatementPDF(ctx context.Context, tenantID, startDate, endDate string) ([]byte, error) {
-	values := url.Values{"format": []string{"pdf"}}
+func (c *apiClient) exportCashFlowStatementPDF(ctx context.Context, tenantID, startDate, endDate, method string) ([]byte, error) {
+	values := cashFlowStatementQuery(startDate, endDate, method)
+	values.Set("format", "pdf")
+	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "cash-flow"), values), nil, c.apiToken)
+}
+
+func cashFlowStatementQuery(startDate, endDate, method string) url.Values {
+	values := url.Values{}
 	values.Set("start_date", strings.TrimSpace(startDate))
 	values.Set("end_date", strings.TrimSpace(endDate))
-	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "cash-flow"), values), nil, c.apiToken)
+	if strings.TrimSpace(method) != "" {
+		values.Set("method", strings.TrimSpace(method))
+	}
+	return values
 }
 
 func (c *apiClient) getBalanceConfirmationSummary(ctx context.Context, tenantID, balanceType, asOfDate string) (*reports.BalanceConfirmationSummary, error) {

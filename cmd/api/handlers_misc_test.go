@@ -146,6 +146,17 @@ func TestExtendedReportHandlers(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.GetCashFlowStatement(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
+	var cashFlow reports.CashFlowStatement
+	assert.NoError(t, json.NewDecoder(rr.Body).Decode(&cashFlow))
+	assert.Equal(t, reports.CashFlowMethodDirect, cashFlow.Method)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=2026-01-31&method=indirect", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCashFlowStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	cashFlow = reports.CashFlowStatement{}
+	assert.NoError(t, json.NewDecoder(rr.Body).Decode(&cashFlow))
+	assert.Equal(t, reports.CashFlowMethodIndirect, cashFlow.Method)
 
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=2026-01-31&format=csv", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
@@ -179,6 +190,12 @@ func TestExtendedReportHandlers(t *testing.T) {
 	h.GetCashFlowStatement(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 	assert.Contains(t, rr.Body.String(), "end_date must be on or after start_date")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=2026-01-31&method=bad", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCashFlowStatement(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "cash flow method")
 
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-confirmations?type=RECEIVABLE&as_of_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
