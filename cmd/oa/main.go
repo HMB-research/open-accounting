@@ -310,6 +310,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  orders create             Create an order")
 	_, _ = fmt.Fprintln(a.stdout, "  orders import             Import orders from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  orders get                Show one order")
+	_, _ = fmt.Fprintln(a.stdout, "  orders stock-check        Check order stock availability")
 	_, _ = fmt.Fprintln(a.stdout, "  orders update             Update an order")
 	_, _ = fmt.Fprintln(a.stdout, "  orders delete             Delete a pending order")
 	_, _ = fmt.Fprintln(a.stdout, "  orders confirm            Mark an order confirmed")
@@ -4386,6 +4387,29 @@ func (a *cliApp) runOrders(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, order)
 		}
 		printOrder(a.stdout, order)
+		return nil
+
+	case "stock-check":
+		fs := flag.NewFlagSet("orders stock-check", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		orderID := fs.String("id", "", "Order id")
+		warehouseID := fs.String("warehouse-id", "", "Warehouse id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*orderID) == "" {
+			return errors.New("id is required")
+		}
+
+		check, err := client.checkOrderStock(ctx, cfg.TenantID, strings.TrimSpace(*orderID), strings.TrimSpace(*warehouseID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, check)
+		}
+		printOrderStockCheck(a.stdout, check)
 		return nil
 
 	case "update":

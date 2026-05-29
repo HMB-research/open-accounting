@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -415,6 +416,126 @@ func TestGetOrder(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCheckOrderStock(t *testing.T) {
+	h, repo, tenantRepo := setupOrdersTestHandlers()
+	inventoryRepo := newMockInventoryRepository()
+	h.inventoryService = inventory.NewServiceWithRepository(inventoryRepo)
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	productID := "prod-1"
+	shortProductID := "prod-2"
+	serviceID := "service-1"
+	missingProductID := "missing-product"
+	repo.orders["order-1"] = &orders.Order{
+		ID:          "order-1",
+		TenantID:    "tenant-1",
+		OrderNumber: "ORD-001",
+		ContactID:   "contact-1",
+		Status:      orders.OrderStatusConfirmed,
+		Lines: []orders.OrderLine{
+			{ID: "line-1", LineNumber: 1, Description: "Tracked goods", Quantity: decimal.NewFromInt(5), ProductID: &productID},
+			{ID: "line-2", LineNumber: 2, Description: "Duplicate tracked goods", Quantity: decimal.NewFromInt(4), ProductID: &productID},
+			{ID: "line-3", LineNumber: 3, Description: "Short goods", Quantity: decimal.NewFromInt(4), ProductID: &shortProductID},
+			{ID: "line-4", LineNumber: 4, Description: "Service", Quantity: decimal.NewFromInt(2), ProductID: &serviceID},
+			{ID: "line-5", LineNumber: 5, Description: "Missing product", Quantity: decimal.NewFromInt(2), ProductID: &missingProductID},
+			{ID: "line-6", LineNumber: 6, Description: "Free text", Quantity: decimal.NewFromInt(1)},
+		},
+	}
+	inventoryRepo.warehouses["wh-1"] = &inventory.Warehouse{ID: "wh-1", TenantID: "tenant-1", Code: "MAIN", Name: "Main", IsActive: true}
+	inventoryRepo.warehouses["wh-2"] = &inventory.Warehouse{ID: "wh-2", TenantID: "tenant-1", Code: "SEC", Name: "Secondary", IsActive: true}
+	inventoryRepo.products["prod-1"] = &inventory.Product{
+		ID:             "prod-1",
+		TenantID:       "tenant-1",
+		Code:           "PROD-001",
+		Name:           "Widget",
+		ProductType:    inventory.ProductTypeGoods,
+		TrackInventory: true,
+		IsActive:       true,
+	}
+	inventoryRepo.products["prod-2"] = &inventory.Product{
+		ID:             "prod-2",
+		TenantID:       "tenant-1",
+		Code:           "PROD-002",
+		Name:           "Short widget",
+		ProductType:    inventory.ProductTypeGoods,
+		TrackInventory: true,
+		IsActive:       true,
+	}
+	inventoryRepo.products["service-1"] = &inventory.Product{
+		ID:             "service-1",
+		TenantID:       "tenant-1",
+		Code:           "SERV-001",
+		Name:           "Service",
+		ProductType:    inventory.ProductTypeService,
+		TrackInventory: false,
+		IsActive:       true,
+	}
+	inventoryRepo.stockLevels["prod-1-wh-1"] = &inventory.StockLevel{ID: "sl-1", TenantID: "tenant-1", ProductID: "prod-1", WarehouseID: "wh-1", AvailableQty: decimal.NewFromInt(3)}
+	inventoryRepo.stockLevels["prod-1-wh-2"] = &inventory.StockLevel{ID: "sl-2", TenantID: "tenant-1", ProductID: "prod-1", WarehouseID: "wh-2", AvailableQty: decimal.NewFromInt(5)}
+	inventoryRepo.stockLevels["prod-2-wh-1"] = &inventory.StockLevel{ID: "sl-3", TenantID: "tenant-1", ProductID: "prod-2", WarehouseID: "wh-1", AvailableQty: decimal.NewFromInt(1)}
+
+	req := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/orders/order-1/stock-check", nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.CheckOrderStock(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	var result orders.OrderStockCheck
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &result))
+	assert.Equal(t, "order-1", result.OrderID)
+	assert.Equal(t, "ORD-001", result.OrderNumber)
+	assert.False(t, result.Ready)
+	require.Len(t, result.Lines, 6)
+	assert.Equal(t, orders.OrderStockLineStatusAvailable, result.Lines[0].Status)
+	assert.True(t, result.Lines[0].AvailableQty.Equal(decimal.NewFromInt(8)))
+	assert.True(t, result.Lines[0].ShortageQty.IsZero())
+	assert.Equal(t, orders.OrderStockLineStatusShortage, result.Lines[1].Status)
+	assert.True(t, result.Lines[1].AvailableQty.Equal(decimal.NewFromInt(3)))
+	assert.True(t, result.Lines[1].ShortageQty.Equal(decimal.NewFromInt(1)))
+	assert.Equal(t, orders.OrderStockLineStatusShortage, result.Lines[2].Status)
+	assert.True(t, result.Lines[2].AvailableQty.Equal(decimal.NewFromInt(1)))
+	assert.True(t, result.Lines[2].ShortageQty.Equal(decimal.NewFromInt(3)))
+	assert.Equal(t, orders.OrderStockLineStatusNotTracked, result.Lines[3].Status)
+	assert.Equal(t, orders.OrderStockLineStatusProductNotFound, result.Lines[4].Status)
+	assert.True(t, result.Lines[4].ShortageQty.Equal(decimal.NewFromInt(2)))
+	assert.Equal(t, orders.OrderStockLineStatusNotTracked, result.Lines[5].Status)
+
+	warehouseReq := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/orders/order-1/stock-check?warehouse_id=wh-1", nil)
+	warehouseReq = withURLParams(warehouseReq, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+	warehouseReq = warehouseReq.WithContext(contextWithClaims(warehouseReq.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	warehouseResp := httptest.NewRecorder()
+	h.CheckOrderStock(warehouseResp, warehouseReq)
+
+	require.Equal(t, http.StatusOK, warehouseResp.Code)
+	var warehouseResult orders.OrderStockCheck
+	require.NoError(t, json.Unmarshal(warehouseResp.Body.Bytes(), &warehouseResult))
+	assert.Equal(t, "wh-1", warehouseResult.WarehouseID)
+	require.Len(t, warehouseResult.Lines, 6)
+	assert.Equal(t, orders.OrderStockLineStatusShortage, warehouseResult.Lines[0].Status)
+	assert.True(t, warehouseResult.Lines[0].AvailableQty.Equal(decimal.NewFromInt(3)))
+	assert.True(t, warehouseResult.Lines[0].ShortageQty.Equal(decimal.NewFromInt(2)))
+	assert.Equal(t, orders.OrderStockLineStatusShortage, warehouseResult.Lines[1].Status)
+	assert.True(t, warehouseResult.Lines[1].AvailableQty.IsZero())
+	assert.True(t, warehouseResult.Lines[1].ShortageQty.Equal(decimal.NewFromInt(4)))
+
+	badWarehouseReq := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/orders/order-1/stock-check?warehouse_id=missing", nil)
+	badWarehouseReq = withURLParams(badWarehouseReq, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+	badWarehouseReq = badWarehouseReq.WithContext(contextWithClaims(badWarehouseReq.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	badWarehouseResp := httptest.NewRecorder()
+	h.CheckOrderStock(badWarehouseResp, badWarehouseReq)
+
+	assert.Equal(t, http.StatusBadRequest, badWarehouseResp.Code)
+	assert.Contains(t, badWarehouseResp.Body.String(), "Warehouse not found")
 }
 
 func TestUpdateOrder(t *testing.T) {

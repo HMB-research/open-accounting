@@ -3502,6 +3502,125 @@ func (h *Handlers) GetOrder(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, order)
 }
 
+// CheckOrderStock reports whether tracked order lines have enough available stock.
+// @Summary Check order stock availability
+// @Description Check whether an order can be fulfilled from all warehouses or one warehouse without mutating stock
+// @Tags Orders
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param orderID path string true "Order ID"
+// @Param warehouse_id query string false "Warehouse ID to check; omit to sum all warehouses"
+// @Success 200 {object} orders.OrderStockCheck
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/orders/{orderID}/stock-check [get]
+func (h *Handlers) CheckOrderStock(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	orderID := chi.URLParam(r, "orderID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+	warehouseID := strings.TrimSpace(r.URL.Query().Get("warehouse_id"))
+
+	if h.inventoryService == nil {
+		respondError(w, http.StatusInternalServerError, "Inventory service unavailable")
+		return
+	}
+	if warehouseID != "" {
+		if _, err := h.inventoryService.GetWarehouseByID(r.Context(), tenantID, schemaName, warehouseID); err != nil {
+			respondError(w, http.StatusBadRequest, "Warehouse not found")
+			return
+		}
+	}
+
+	check, err := h.buildOrderStockCheck(r.Context(), tenantID, schemaName, orderID, warehouseID)
+	if err != nil {
+		if errors.Is(err, orders.ErrOrderNotFound) {
+			respondError(w, http.StatusNotFound, "Order not found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to check order stock")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, check)
+}
+
+func (h *Handlers) buildOrderStockCheck(ctx context.Context, tenantID, schemaName, orderID, warehouseID string) (*orders.OrderStockCheck, error) {
+	order, err := h.ordersService.GetByID(ctx, tenantID, schemaName, orderID)
+	if err != nil {
+		return nil, err
+	}
+
+	check := &orders.OrderStockCheck{
+		OrderID:     order.ID,
+		OrderNumber: order.OrderNumber,
+		WarehouseID: warehouseID,
+		Ready:       true,
+		Lines:       make([]orders.OrderStockCheckLine, 0, len(order.Lines)),
+	}
+	remainingAvailableByProduct := map[string]decimal.Decimal{}
+	loadedAvailabilityByProduct := map[string]bool{}
+
+	for _, line := range order.Lines {
+		checkLine := orders.OrderStockCheckLine{
+			LineID:      line.ID,
+			LineNumber:  line.LineNumber,
+			Description: line.Description,
+			RequiredQty: line.Quantity,
+			Status:      orders.OrderStockLineStatusNotTracked,
+		}
+		if line.ProductID == nil || strings.TrimSpace(*line.ProductID) == "" {
+			check.Lines = append(check.Lines, checkLine)
+			continue
+		}
+
+		productID := strings.TrimSpace(*line.ProductID)
+		checkLine.ProductID = productID
+		product, err := h.inventoryService.GetProductByID(ctx, tenantID, schemaName, productID)
+		if err != nil {
+			checkLine.Status = orders.OrderStockLineStatusProductNotFound
+			checkLine.ShortageQty = line.Quantity
+			check.Ready = false
+			check.Lines = append(check.Lines, checkLine)
+			continue
+		}
+		checkLine.ProductCode = product.Code
+		checkLine.ProductName = product.Name
+		if product.ProductType != inventory.ProductTypeGoods || !product.TrackInventory {
+			check.Lines = append(check.Lines, checkLine)
+			continue
+		}
+
+		if !loadedAvailabilityByProduct[product.ID] {
+			levels, err := h.inventoryService.GetStockLevels(ctx, tenantID, schemaName, product.ID)
+			if err != nil {
+				return nil, err
+			}
+			for _, level := range levels {
+				if warehouseID != "" && level.WarehouseID != warehouseID {
+					continue
+				}
+				remainingAvailableByProduct[product.ID] = remainingAvailableByProduct[product.ID].Add(level.AvailableQty)
+			}
+			loadedAvailabilityByProduct[product.ID] = true
+		}
+
+		checkLine.AvailableQty = remainingAvailableByProduct[product.ID]
+		if checkLine.AvailableQty.LessThan(line.Quantity) {
+			checkLine.Status = orders.OrderStockLineStatusShortage
+			checkLine.ShortageQty = line.Quantity.Sub(checkLine.AvailableQty)
+			remainingAvailableByProduct[product.ID] = decimal.Zero
+			check.Ready = false
+		} else {
+			checkLine.Status = orders.OrderStockLineStatusAvailable
+			remainingAvailableByProduct[product.ID] = checkLine.AvailableQty.Sub(line.Quantity)
+		}
+		check.Lines = append(check.Lines, checkLine)
+	}
+
+	return check, nil
+}
+
 // UpdateOrder updates an order
 // @Summary Update order
 // @Description Update a pending or confirmed order
