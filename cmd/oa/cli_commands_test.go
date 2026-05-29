@@ -5395,6 +5395,61 @@ func TestCLIReportsCommands(t *testing.T) {
 				}},
 				"generated_at": "2026-03-31T12:00:00Z",
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/customer-profitability":
+			require.Equal(t, "2026-01-01", r.URL.Query().Get("start_date"))
+			require.Equal(t, "2026-03-31", r.URL.Query().Get("end_date"))
+			if r.URL.Query().Get("format") == "csv" {
+				w.Header().Set("Content-Type", "text/csv")
+				_, _ = w.Write([]byte("row_type,start_date,end_date,invoice_number,contact_name,product_name,margin\nline,2026-01-01,2026-03-31,INV-1,Acme,Widget,700.00\n"))
+				return
+			}
+			if r.URL.Query().Get("format") == "xlsx" {
+				w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+				_, _ = w.Write([]byte("xlsx-customer-profitability"))
+				return
+			}
+			if r.URL.Query().Get("format") == "pdf" {
+				w.Header().Set("Content-Type", "application/pdf")
+				_, _ = w.Write([]byte("%PDF customer profitability"))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tenant_id":      "tenant-1",
+				"start_date":     "2026-01-01",
+				"end_date":       "2026-03-31",
+				"total_revenue":  "1000.00",
+				"total_cost":     "300.00",
+				"total_margin":   "700.00",
+				"margin_percent": "70.00",
+				"line_count":     1,
+				"by_contact": []map[string]any{{
+					"contact_id":     "contact-1",
+					"contact_name":   "Acme",
+					"revenue":        "1000.00",
+					"cost":           "300.00",
+					"margin":         "700.00",
+					"margin_percent": "70.00",
+					"line_count":     1,
+				}},
+				"lines": []map[string]any{{
+					"invoice_id":     "invoice-1",
+					"invoice_number": "INV-1",
+					"invoice_date":   "2026-03-01",
+					"contact_id":     "contact-1",
+					"contact_name":   "Acme",
+					"product_id":     "product-1",
+					"product_code":   "SKU-1",
+					"product_name":   "Widget",
+					"description":    "Widget sale",
+					"quantity":       "2.00",
+					"revenue":        "1000.00",
+					"unit_cost":      "150.00",
+					"cost":           "300.00",
+					"margin":         "700.00",
+					"margin_percent": "70.00",
+				}},
+				"generated_at": "2026-03-31T12:00:00Z",
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/budget-vs-actual":
 			require.Equal(t, "2026-03-01", r.URL.Query().Get("start_date"))
 			require.Equal(t, "2026-03-31", r.URL.Query().Get("end_date"))
@@ -5729,6 +5784,47 @@ func TestCLIReportsCommands(t *testing.T) {
 	salesMarginPDF, err := os.ReadFile(salesMarginPDFPath)
 	require.NoError(t, err)
 	assert.Equal(t, []byte("%PDF sales margin"), salesMarginPDF)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "customer-profitability", "--start", "2026-01-01", "--end", "2026-03-31"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Customer profitability from 2026-01-01 to 2026-03-31")
+	assert.Contains(t, stdout.String(), "By customer:")
+	assert.Contains(t, stdout.String(), "Acme")
+	assert.Contains(t, stdout.String(), "Total profit: 700")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "customer-profitability", "--start", "2026-01-01", "--end", "2026-03-31", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"by_contact":`)
+	assert.Contains(t, stdout.String(), `"contact_name": "Acme"`)
+
+	stdout.Reset()
+	customerProfitabilityCSVPath := filepath.Join(t.TempDir(), "customer-profitability.csv")
+	err = app.run(context.Background(), []string{"reports", "customer-profitability", "--start", "2026-01-01", "--end", "2026-03-31", "--csv", "--output", customerProfitabilityCSVPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote customer profitability CSV")
+	customerProfitabilityCSV, err := os.ReadFile(customerProfitabilityCSVPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(customerProfitabilityCSV), "Acme")
+
+	stdout.Reset()
+	customerProfitabilityXLSXPath := filepath.Join(t.TempDir(), "customer-profitability.xlsx")
+	err = app.run(context.Background(), []string{"reports", "customer-profitability", "--start", "2026-01-01", "--end", "2026-03-31", "--xlsx", "--output", customerProfitabilityXLSXPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote customer profitability XLSX")
+	customerProfitabilityXLSX, err := os.ReadFile(customerProfitabilityXLSXPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("xlsx-customer-profitability"), customerProfitabilityXLSX)
+
+	stdout.Reset()
+	customerProfitabilityPDFPath := filepath.Join(t.TempDir(), "customer-profitability.pdf")
+	err = app.run(context.Background(), []string{"reports", "customer-profitability", "--start", "2026-01-01", "--end", "2026-03-31", "--pdf", "--output", customerProfitabilityPDFPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote customer profitability PDF")
+	customerProfitabilityPDF, err := os.ReadFile(customerProfitabilityPDFPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("%PDF customer profitability"), customerProfitabilityPDF)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"reports", "budget-vs-actual", "--start", "2026-03-01", "--end", "2026-03-31"})

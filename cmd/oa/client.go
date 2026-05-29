@@ -2616,19 +2616,35 @@ func contactStatementQuery(balanceType, startDate, endDate string) url.Values {
 }
 
 func (c *apiClient) getSalesMarginReport(ctx context.Context, tenantID, startDate, endDate string) (*reports.SalesMarginReport, error) {
+	return c.getSalesMarginLikeReport(ctx, tenantID, "sales-margin", startDate, endDate)
+}
+
+func (c *apiClient) exportSalesMarginReport(ctx context.Context, tenantID, startDate, endDate, format string) ([]byte, error) {
+	return c.exportSalesMarginLikeReport(ctx, tenantID, "sales-margin", startDate, endDate, format)
+}
+
+func (c *apiClient) getCustomerProfitabilityReport(ctx context.Context, tenantID, startDate, endDate string) (*reports.SalesMarginReport, error) {
+	return c.getSalesMarginLikeReport(ctx, tenantID, "customer-profitability", startDate, endDate)
+}
+
+func (c *apiClient) exportCustomerProfitabilityReport(ctx context.Context, tenantID, startDate, endDate, format string) ([]byte, error) {
+	return c.exportSalesMarginLikeReport(ctx, tenantID, "customer-profitability", startDate, endDate, format)
+}
+
+func (c *apiClient) getSalesMarginLikeReport(ctx context.Context, tenantID, reportPath, startDate, endDate string) (*reports.SalesMarginReport, error) {
 	values := salesMarginQuery(startDate, endDate)
 
 	var resp reports.SalesMarginReport
-	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "sales-margin"), values), nil, c.apiToken, &resp); err != nil {
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", reportPath), values), nil, c.apiToken, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
 }
 
-func (c *apiClient) exportSalesMarginReport(ctx context.Context, tenantID, startDate, endDate, format string) ([]byte, error) {
+func (c *apiClient) exportSalesMarginLikeReport(ctx context.Context, tenantID, reportPath, startDate, endDate, format string) ([]byte, error) {
 	values := salesMarginQuery(startDate, endDate)
 	values.Set("format", strings.TrimSpace(format))
-	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "sales-margin"), values), nil, c.apiToken)
+	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", reportPath), values), nil, c.apiToken)
 }
 
 func salesMarginQuery(startDate, endDate string) url.Values {

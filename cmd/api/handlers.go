@@ -2324,6 +2324,28 @@ func contactStatementRequestFromQuery(contactID string, r *http.Request) (*repor
 // @Failure 500 {object} object{error=string}
 // @Router /tenants/{tenantID}/reports/sales-margin [get]
 func (h *Handlers) GetSalesMarginReport(w http.ResponseWriter, r *http.Request) {
+	h.getSalesMarginLikeReport(w, r, "sales margin", "sales-margin")
+}
+
+// GetCustomerProfitabilityReport returns customer profitability reporting for a period
+// @Summary Get customer profitability report
+// @Description Get customer-level revenue, estimated product cost, margin, and supporting sales invoice line detail
+// @Tags Reports
+// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param start_date query string true "Start date (YYYY-MM-DD)"
+// @Param end_date query string true "End date (YYYY-MM-DD)"
+// @Param format query string false "Response format: json, csv, xlsx, or pdf"
+// @Success 200 {object} reports.SalesMarginReport
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/reports/customer-profitability [get]
+func (h *Handlers) GetCustomerProfitabilityReport(w http.ResponseWriter, r *http.Request) {
+	h.getSalesMarginLikeReport(w, r, "customer profitability", "customer-profitability")
+}
+
+func (h *Handlers) getSalesMarginLikeReport(w http.ResponseWriter, r *http.Request, reportName, fileStemPrefix string) {
 	tenantID := chi.URLParam(r, "tenantID")
 
 	format, err := reportResponseFormat(r)
@@ -2341,16 +2363,16 @@ func (h *Handlers) GetSalesMarginReport(w http.ResponseWriter, r *http.Request) 
 	schemaName := h.getSchemaName(r.Context(), tenantID)
 	result, err := h.reportsService.GetSalesMarginReport(r.Context(), tenantID, schemaName, req)
 	if err != nil {
-		log.Error().Err(err).Str("tenant", tenantID).Msg("Failed to get sales margin report")
-		respondError(w, http.StatusInternalServerError, "Failed to get sales margin report")
+		log.Error().Err(err).Str("tenant", tenantID).Str("report", reportName).Msg("Failed to get report")
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get %s report", reportName))
 		return
 	}
 
-	fileStem := fmt.Sprintf("sales-margin-%s-%s", req.StartDate, req.EndDate)
+	fileStem := fmt.Sprintf("%s-%s-%s", fileStemPrefix, req.StartDate, req.EndDate)
 	if format == "csv" {
 		content, err := salesMarginCSV(result)
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, "Failed to export sales margin CSV")
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to export %s CSV", reportName))
 			return
 		}
 		respondReportCSV(w, fileStem+".csv", content)
@@ -2359,7 +2381,7 @@ func (h *Handlers) GetSalesMarginReport(w http.ResponseWriter, r *http.Request) 
 	if format == "xlsx" {
 		content, err := salesMarginXLSX(result)
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, "Failed to export sales margin XLSX")
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to export %s XLSX", reportName))
 			return
 		}
 		respondReportXLSX(w, fileStem+".xlsx", content)
@@ -2368,7 +2390,7 @@ func (h *Handlers) GetSalesMarginReport(w http.ResponseWriter, r *http.Request) 
 	if format == "pdf" {
 		content, err := salesMarginPDF(result)
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, "Failed to export sales margin PDF")
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to export %s PDF", reportName))
 			return
 		}
 		respondReportPDF(w, fileStem+".pdf", content)
