@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog/log"
 
+	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/recurring"
 )
@@ -24,10 +26,17 @@ type AutomatedReminderService interface {
 	ProcessRemindersForTenant(ctx context.Context, tenantID, schemaName, companyName string) ([]invoicing.AutomatedReminderResult, error)
 }
 
+// RecurringJournalEntryService defines the interface for recurring journal entry generation.
+type RecurringJournalEntryService interface {
+	GenerateDueJournalEntryTemplates(ctx context.Context, schemaName, tenantID string, req *accounting.GenerateDueJournalEntryTemplatesRequest) ([]accounting.JournalEntryTemplateGenerationResult, error)
+}
+
 // Config holds scheduler configuration
 type Config struct {
 	// Schedule in cron format (e.g., "0 6 * * *" for 6:00 AM daily)
 	RecurringInvoiceSchedule string
+	// Schedule for recurring journal entry generation
+	RecurringJournalEntrySchedule string
 	// Schedule for payment reminders
 	ReminderSchedule string
 	// Whether the scheduler is enabled
@@ -37,21 +46,23 @@ type Config struct {
 // DefaultConfig returns default scheduler configuration
 func DefaultConfig() Config {
 	return Config{
-		RecurringInvoiceSchedule: "0 6 * * *", // 6:00 AM daily
-		ReminderSchedule:         "0 9 * * *", // 9:00 AM daily
-		Enabled:                  true,
+		RecurringInvoiceSchedule:      "0 6 * * *",  // 6:00 AM daily
+		RecurringJournalEntrySchedule: "15 6 * * *", // 6:15 AM daily
+		ReminderSchedule:              "0 9 * * *",  // 9:00 AM daily
+		Enabled:                       true,
 	}
 }
 
 // Scheduler manages background jobs
 type Scheduler struct {
-	cron      *cron.Cron
-	repo      Repository
-	recurring RecurringService
-	reminder  AutomatedReminderService
-	config    Config
-	running   bool
-	mu        sync.Mutex
+	cron           *cron.Cron
+	repo           Repository
+	recurring      RecurringService
+	journalEntries RecurringJournalEntryService
+	reminder       AutomatedReminderService
+	config         Config
+	running        bool
+	mu             sync.Mutex
 }
 
 // NewScheduler creates a new scheduler instance
@@ -76,6 +87,11 @@ func NewSchedulerWithRepository(repo Repository, recurringService RecurringServi
 	}
 }
 
+// SetRecurringJournalEntryService enables scheduled recurring journal entry generation.
+func (s *Scheduler) SetRecurringJournalEntryService(service RecurringJournalEntryService) {
+	s.journalEntries = service
+}
+
 // Start starts the scheduler
 func (s *Scheduler) Start() error {
 	s.mu.Lock()
@@ -98,6 +114,16 @@ func (s *Scheduler) Start() error {
 		return fmt.Errorf("failed to add recurring invoice job: %w", err)
 	}
 
+	// Add recurring journal entry generation job
+	if s.journalEntries != nil && s.config.RecurringJournalEntrySchedule != "" {
+		journalSchedule := "0 " + s.config.RecurringJournalEntrySchedule
+		_, err := s.cron.AddFunc(journalSchedule, s.generateDueJournalEntries)
+		if err != nil {
+			return fmt.Errorf("failed to add recurring journal entry job: %w", err)
+		}
+		log.Info().Str("schedule", s.config.RecurringJournalEntrySchedule).Msg("Recurring journal entry job scheduled")
+	}
+
 	// Add payment reminder job
 	if s.reminder != nil && s.config.ReminderSchedule != "" {
 		reminderSchedule := "0 " + s.config.ReminderSchedule
@@ -113,6 +139,7 @@ func (s *Scheduler) Start() error {
 
 	log.Info().
 		Str("recurring_schedule", s.config.RecurringInvoiceSchedule).
+		Str("recurring_journal_schedule", s.config.RecurringJournalEntrySchedule).
 		Str("reminder_schedule", s.config.ReminderSchedule).
 		Msg("Scheduler started")
 
@@ -188,6 +215,85 @@ func (s *Scheduler) generateDueInvoices() {
 		Msg("Completed scheduled recurring invoice generation")
 }
 
+// generateDueJournalEntries generates all due recurring journal entries for all tenants.
+func (s *Scheduler) generateDueJournalEntries() {
+	if s.journalEntries == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+
+	log.Info().Msg("Starting scheduled recurring journal entry generation")
+
+	tenants, err := s.repo.ListActiveTenants(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to get tenants for scheduled journal entry generation")
+		return
+	}
+
+	totalGenerated := 0
+	totalErrors := 0
+
+	for _, t := range tenants {
+		lockDate := parseTenantPeriodLockDate(t)
+		results, err := s.journalEntries.GenerateDueJournalEntryTemplates(ctx, t.SchemaName, t.ID, &accounting.GenerateDueJournalEntryTemplatesRequest{
+			UserID:         "system",
+			PeriodLockDate: lockDate,
+		})
+		if err != nil {
+			log.Error().
+				Err(err).
+				Str("tenant_id", t.ID).
+				Msg("Failed to generate due journal entries for tenant")
+			totalErrors++
+			continue
+		}
+
+		for _, result := range results {
+			if result.Status == "error" {
+				totalErrors++
+				log.Warn().
+					Str("tenant_id", t.ID).
+					Str("template_id", result.TemplateID).
+					Str("error", result.Error).
+					Msg("Recurring journal template generation failed")
+				continue
+			}
+			totalGenerated++
+			log.Info().
+				Str("tenant_id", t.ID).
+				Str("template_id", result.TemplateID).
+				Str("template_name", result.TemplateName).
+				Str("entry_id", result.GeneratedEntryID).
+				Str("entry_number", result.GeneratedEntryNumber).
+				Msg("Generated journal entry from recurring template")
+		}
+	}
+
+	log.Info().
+		Int("journal_entries_generated", totalGenerated).
+		Int("tenant_or_template_errors", totalErrors).
+		Msg("Completed scheduled recurring journal entry generation")
+}
+
+func parseTenantPeriodLockDate(t TenantInfo) *time.Time {
+	raw := strings.TrimSpace(t.PeriodLockDate)
+	if raw == "" {
+		return nil
+	}
+	lockDate, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		log.Warn().
+			Err(err).
+			Str("tenant_id", t.ID).
+			Str("period_lock_date", raw).
+			Msg("Ignoring invalid tenant period lock date for scheduled journal generation")
+		return nil
+	}
+	return &lockDate
+}
+
 // processPaymentReminders sends automated payment reminders for all tenants
 func (s *Scheduler) processPaymentReminders() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
@@ -247,6 +353,11 @@ func (s *Scheduler) RunNow() {
 // RunRemindersNow manually triggers the payment reminder processing
 func (s *Scheduler) RunRemindersNow() {
 	s.processPaymentReminders()
+}
+
+// RunJournalEntriesNow manually triggers recurring journal entry generation.
+func (s *Scheduler) RunJournalEntriesNow() {
+	s.generateDueJournalEntries()
 }
 
 // IsRunning returns whether the scheduler is currently running

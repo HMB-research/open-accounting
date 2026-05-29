@@ -9,9 +9,10 @@ import (
 
 // TenantInfo contains minimal tenant information for scheduling
 type TenantInfo struct {
-	ID          string
-	SchemaName  string
-	CompanyName string // Needed for email templates
+	ID             string
+	SchemaName     string
+	CompanyName    string // Needed for email templates
+	PeriodLockDate string
 }
 
 // Repository defines the interface for scheduler data access
@@ -32,7 +33,7 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 // ListActiveTenants returns all active tenants for scheduled job processing
 func (r *PostgresRepository) ListActiveTenants(ctx context.Context) ([]TenantInfo, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, schema_name, COALESCE(name, '') FROM tenants WHERE is_active = true
+		SELECT id, schema_name, COALESCE(name, ''), COALESCE(settings->>'period_lock_date', '') FROM tenants WHERE is_active = true
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("list active tenants: %w", err)
@@ -42,7 +43,7 @@ func (r *PostgresRepository) ListActiveTenants(ctx context.Context) ([]TenantInf
 	var tenants []TenantInfo
 	for rows.Next() {
 		var t TenantInfo
-		if err := rows.Scan(&t.ID, &t.SchemaName, &t.CompanyName); err != nil {
+		if err := rows.Scan(&t.ID, &t.SchemaName, &t.CompanyName, &t.PeriodLockDate); err != nil {
 			return nil, fmt.Errorf("scan tenant: %w", err)
 		}
 		tenants = append(tenants, t)

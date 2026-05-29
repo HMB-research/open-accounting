@@ -132,16 +132,20 @@ func main() {
 		log.Warn().Err(err).Msg("Failed to load some plugins")
 	}
 
-	// Initialize and start scheduler for recurring invoice generation
+	// Initialize and start scheduler for recurring work
 	schedulerConfig := scheduler.DefaultConfig()
 	if schedule := os.Getenv("RECURRING_INVOICE_SCHEDULE"); schedule != "" {
 		schedulerConfig.RecurringInvoiceSchedule = schedule
 	}
+	if schedule := os.Getenv("RECURRING_JOURNAL_ENTRY_SCHEDULE"); schedule != "" {
+		schedulerConfig.RecurringJournalEntrySchedule = schedule
+	}
 	if os.Getenv("SCHEDULER_ENABLED") == "false" {
 		schedulerConfig.Enabled = false
 	}
-	invoiceScheduler := scheduler.NewScheduler(pool, recurringService, automatedReminderService, schedulerConfig)
-	if err := invoiceScheduler.Start(); err != nil {
+	appScheduler := scheduler.NewScheduler(pool, recurringService, automatedReminderService, schedulerConfig)
+	appScheduler.SetRecurringJournalEntryService(accountingService)
+	if err := appScheduler.Start(); err != nil {
 		log.Warn().Err(err).Msg("Failed to start scheduler")
 	}
 
@@ -198,7 +202,7 @@ func main() {
 		log.Info().Msg("Shutting down server...")
 
 		// Stop the scheduler first
-		schedulerCtx := invoiceScheduler.Stop()
+		schedulerCtx := appScheduler.Stop()
 		<-schedulerCtx.Done()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

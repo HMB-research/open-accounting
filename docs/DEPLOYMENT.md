@@ -23,6 +23,9 @@ This guide covers deploying Open Accounting to production environments.
 | `CORS_DEBUG` | No | Enable verbose CORS logging | `true` |
 | `LOG_LEVEL` | No | Log verbosity (trace, debug, info, warn, error) | `debug` |
 | `DEMO_RESET_SECRET` | No | Secret key for demo reset endpoint | `your-reset-secret` |
+| `SCHEDULER_ENABLED` | No | Enable recurring invoice, recurring journal entry, and payment reminder scheduler jobs | `true` |
+| `RECURRING_INVOICE_SCHEDULE` | No | Cron schedule for recurring invoice generation | `0 6 * * *` |
+| `RECURRING_JOURNAL_ENTRY_SCHEDULE` | No | Cron schedule for recurring journal entry generation | `15 6 * * *` |
 
 When `APP_ENV=production`, startup fails if `JWT_SECRET` is missing or shorter than 32 characters, or if `ALLOWED_ORIGINS` is empty. Production mode also uses only the configured origins instead of appending localhost development origins.
 

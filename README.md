@@ -291,6 +291,9 @@ open-accounting/
 | `APP_ENV` | Set to `production` to enable production config validation | unset |
 | `JWT_SECRET` | JWT signing key, min 32 chars when `APP_ENV=production` | development-only fallback outside production |
 | `ALLOWED_ORIGINS` | CORS allowed origins; required in production | local dev origins outside production |
+| `SCHEDULER_ENABLED` | Enable recurring invoice, recurring journal, and reminder scheduler jobs | `true` |
+| `RECURRING_INVOICE_SCHEDULE` | Cron schedule for recurring invoice generation | `0 6 * * *` |
+| `RECURRING_JOURNAL_ENTRY_SCHEDULE` | Cron schedule for recurring journal entry generation | `15 6 * * *` |
 
 ---
 
