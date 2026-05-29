@@ -748,6 +748,80 @@ func TestCalculatePayroll_Success(t *testing.T) {
 	assert.True(t, run.TotalGross.Equal(decimal.NewFromFloat(2000)))
 }
 
+func TestProcessPayrollRun_CalculateOnly(t *testing.T) {
+	repo := NewMockRepository()
+	uuidGen := &MockUUIDGenerator{prefix: "process"}
+	service := NewServiceWithRepository(repo, uuidGen)
+	ctx := context.Background()
+
+	repo.PayrollRuns["run-1"] = &PayrollRun{
+		ID:          "run-1",
+		TenantID:    "tenant-1",
+		PeriodYear:  2026,
+		PeriodMonth: 3,
+		Status:      PayrollDraft,
+	}
+	repo.Employees["emp-1"] = &Employee{
+		ID:                   "emp-1",
+		TenantID:             "tenant-1",
+		FirstName:            "Mari",
+		LastName:             "Maasikas",
+		IsActive:             true,
+		ApplyBasicExemption:  true,
+		BasicExemptionAmount: DefaultBasicExemption,
+		FundedPensionRate:    FundedPensionRateDefault,
+	}
+	repo.Salaries["emp-1"] = decimal.NewFromFloat(3200)
+
+	result, err := service.ProcessPayrollRun(ctx, "test_schema", "tenant-1", "run-1", "approver-1", nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, result.PayrollRun)
+	assert.Equal(t, 1, result.PayslipCount)
+	assert.False(t, result.Approved)
+	assert.Equal(t, PayrollCalculated, result.PayrollRun.Status)
+	assert.True(t, result.PayrollRun.TotalGross.Equal(decimal.NewFromFloat(3200)))
+	assert.True(t, repo.mockTx.CommitCalled)
+}
+
+func TestProcessPayrollRun_CalculatesAndApproves(t *testing.T) {
+	repo := NewMockRepository()
+	uuidGen := &MockUUIDGenerator{prefix: "process"}
+	service := NewServiceWithRepository(repo, uuidGen)
+	ctx := context.Background()
+
+	repo.PayrollRuns["run-1"] = &PayrollRun{
+		ID:          "run-1",
+		TenantID:    "tenant-1",
+		PeriodYear:  2026,
+		PeriodMonth: 3,
+		Status:      PayrollDraft,
+	}
+	repo.Employees["emp-1"] = &Employee{
+		ID:                   "emp-1",
+		TenantID:             "tenant-1",
+		FirstName:            "Mari",
+		LastName:             "Maasikas",
+		IsActive:             true,
+		ApplyBasicExemption:  true,
+		BasicExemptionAmount: DefaultBasicExemption,
+		FundedPensionRate:    FundedPensionRateDefault,
+	}
+	repo.Salaries["emp-1"] = decimal.NewFromFloat(3200)
+
+	result, err := service.ProcessPayrollRun(ctx, "test_schema", "tenant-1", "run-1", "approver-1", &ProcessPayrollRunRequest{Approve: true})
+
+	require.NoError(t, err)
+	require.NotNil(t, result.PayrollRun)
+	assert.Equal(t, 1, result.PayslipCount)
+	assert.True(t, result.Approved)
+	assert.Equal(t, PayrollApproved, result.PayrollRun.Status)
+	assert.Equal(t, "approver-1", result.PayrollRun.ApprovedBy)
+	assert.NotNil(t, result.PayrollRun.ApprovedAt)
+	assert.True(t, result.PayrollRun.TotalNet.GreaterThan(decimal.Zero))
+	assert.True(t, repo.mockTx.CommitCalled)
+}
+
 func TestCalculatePayroll_NotDraftStatus(t *testing.T) {
 	repo := NewMockRepository()
 	uuidGen := &MockUUIDGenerator{prefix: "test"}

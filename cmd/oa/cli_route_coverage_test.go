@@ -1010,6 +1010,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 		return commandForMethod(method, map[string]string{"GET": "payroll runs get"})
 	case "/payroll-runs/{runID}/calculate":
 		return commandForMethod(method, map[string]string{"POST": "payroll runs calculate"})
+	case "/payroll-runs/{runID}/process":
+		return commandForMethod(method, map[string]string{"POST": "payroll runs process"})
 	case "/payroll-runs/{runID}/approve":
 		return commandForMethod(method, map[string]string{"POST": "payroll runs approve"})
 	case "/payroll-runs/{runID}/payslips":

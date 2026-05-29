@@ -244,6 +244,18 @@ type CreatePayrollRunRequest struct {
 	Notes       string     `json:"notes,omitempty"`
 }
 
+// ProcessPayrollRunRequest is the request to bulk-process a payroll run.
+type ProcessPayrollRunRequest struct {
+	Approve bool `json:"approve,omitempty"`
+}
+
+// PayrollRunProcessResult is returned after bulk payroll processing.
+type PayrollRunProcessResult struct {
+	PayrollRun   *PayrollRun `json:"payroll_run"`
+	PayslipCount int         `json:"payslip_count"`
+	Approved     bool        `json:"approved"`
+}
+
 // UpdateEmployeeRequest is the request to update an employee
 type UpdateEmployeeRequest struct {
 	EmployeeNumber       string           `json:"employee_number,omitempty"`

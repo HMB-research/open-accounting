@@ -3506,6 +3506,15 @@ definitions:
       updated_at:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_payroll.PayrollRunProcessResult:
+    properties:
+      approved:
+        type: boolean
+      payroll_run:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.PayrollRun'
+      payslip_count:
+        type: integer
+    type: object
   github_com_HMB-research_open-accounting_internal_payroll.PayrollStatus:
     enum:
     - DRAFT
@@ -3568,6 +3577,11 @@ definitions:
         type: number
       unemployment_insurance_employer:
         type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_payroll.ProcessPayrollRunRequest:
+    properties:
+      approve:
+        type: boolean
     type: object
   github_com_HMB-research_open-accounting_internal_payroll.RejectLeaveRequest:
     properties:
@@ -10994,6 +11008,47 @@ paths:
       security:
       - BearerAuth: []
       summary: Get payslips
+      tags:
+      - Payroll
+  /tenants/{tenantID}/payroll-runs/{runID}/process:
+    post:
+      consumes:
+      - application/json
+      description: Bulk-calculate payslips for all active employees in a payroll run
+        and optionally approve it
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Payroll Run ID
+        in: path
+        name: runID
+        required: true
+        type: string
+      - description: Bulk payroll processing options
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.ProcessPayrollRunRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.PayrollRunProcessResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Process payroll run
       tags:
       - Payroll
   /tenants/{tenantID}/payroll-runs/{runID}/tsd:

@@ -2781,6 +2781,42 @@ func (h *Handlers) CalculatePayroll(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, run)
 }
 
+// ProcessPayrollRun bulk-calculates a payroll run and optionally approves it.
+// @Summary Process payroll run
+// @Description Bulk-calculate payslips for all active employees in a payroll run and optionally approve it
+// @Tags Payroll
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param runID path string true "Payroll Run ID"
+// @Param request body payroll.ProcessPayrollRunRequest false "Bulk payroll processing options"
+// @Success 200 {object} payroll.PayrollRunProcessResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/payroll-runs/{runID}/process [post]
+func (h *Handlers) ProcessPayrollRun(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	runID := chi.URLParam(r, "runID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req payroll.ProcessPayrollRunRequest
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := decodeJSON(r, &req); err != nil {
+			respondError(w, http.StatusBadRequest, "Invalid request body")
+			return
+		}
+	}
+
+	result, err := h.payrollService.ProcessPayrollRun(r.Context(), schemaName, tenantID, runID, claims.UserID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // ApprovePayroll approves a calculated payroll run
 // @Summary Approve payroll
 // @Description Approve a calculated payroll run for payment

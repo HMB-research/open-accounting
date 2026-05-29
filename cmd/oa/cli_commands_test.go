@@ -5652,6 +5652,15 @@ func TestCLIPayrollRunCommands(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(payload)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-1/calculate":
 			_ = json.NewEncoder(w).Encode(payrollRunPayload("run-1", "CALCULATED", 2026, 3))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-1/process":
+			var req payroll.ProcessPayrollRunRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.True(t, req.Approve)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"payroll_run":   payrollRunPayload("run-1", "APPROVED", 2026, 3),
+				"payslip_count": 1,
+				"approved":      true,
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-1/approve":
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "approved"})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-1/payslips":
@@ -5738,6 +5747,12 @@ func TestCLIPayrollRunCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"payroll", "runs", "calculate", "--id", "run-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "CALCULATED")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payroll", "runs", "process", "--id", "run-1", "--approve"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Processed payroll run run-1 with 1 payslips")
+	assert.Contains(t, stdout.String(), "Payroll run was approved")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"payroll", "runs", "approve", "--id", "run-1"})
