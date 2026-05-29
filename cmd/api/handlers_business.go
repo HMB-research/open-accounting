@@ -3654,6 +3654,145 @@ func (h *Handlers) ListOrderStockReservations(w http.ResponseWriter, r *http.Req
 	respondJSON(w, http.StatusOK, reservations)
 }
 
+// GetOrderPickList returns warehouse picking readiness for an order.
+// @Summary Get order pick list
+// @Description Build a warehouse pick list from persisted order stock reservations
+// @Tags Orders
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param orderID path string true "Order ID"
+// @Param warehouse_id query string true "Warehouse ID"
+// @Success 200 {object} orders.OrderPickList
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/orders/{orderID}/pick-list [get]
+func (h *Handlers) GetOrderPickList(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	orderID := chi.URLParam(r, "orderID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+	warehouseID := strings.TrimSpace(r.URL.Query().Get("warehouse_id"))
+
+	if h.inventoryService == nil {
+		respondError(w, http.StatusInternalServerError, "Inventory service unavailable")
+		return
+	}
+	if warehouseID == "" {
+		respondError(w, http.StatusBadRequest, "warehouse_id is required")
+		return
+	}
+	if _, err := h.inventoryService.GetWarehouseByID(r.Context(), tenantID, schemaName, warehouseID); err != nil {
+		respondError(w, http.StatusBadRequest, "Warehouse not found")
+		return
+	}
+
+	pickList, err := h.buildOrderPickList(r.Context(), tenantID, schemaName, orderID, warehouseID)
+	if err != nil {
+		if errors.Is(err, orders.ErrOrderNotFound) {
+			respondError(w, http.StatusNotFound, "Order not found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to build order pick list")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, pickList)
+}
+
+func (h *Handlers) buildOrderPickList(ctx context.Context, tenantID, schemaName, orderID, warehouseID string) (*orders.OrderPickList, error) {
+	order, err := h.ordersService.GetByID(ctx, tenantID, schemaName, orderID)
+	if err != nil {
+		return nil, err
+	}
+	reservations, err := h.ordersService.ListStockReservations(ctx, tenantID, schemaName, orderID)
+	if err != nil {
+		return nil, err
+	}
+
+	remainingReservedByProduct := map[string]decimal.Decimal{}
+	for _, reservation := range reservations {
+		if reservation.WarehouseID != warehouseID || reservation.Status != orders.OrderStockReservationStatusReserved {
+			continue
+		}
+		remainingReservedByProduct[reservation.ProductID] = remainingReservedByProduct[reservation.ProductID].Add(reservation.Quantity)
+	}
+
+	pickList := &orders.OrderPickList{
+		OrderID:     order.ID,
+		OrderNumber: order.OrderNumber,
+		WarehouseID: warehouseID,
+		Ready:       true,
+		Lines:       make([]orders.OrderPickListLine, 0, len(order.Lines)),
+	}
+	availableByProduct := map[string]decimal.Decimal{}
+	loadedAvailabilityByProduct := map[string]bool{}
+
+	for _, line := range order.Lines {
+		pickLine := orders.OrderPickListLine{
+			LineID:      line.ID,
+			LineNumber:  line.LineNumber,
+			Description: line.Description,
+			RequiredQty: line.Quantity,
+			Status:      orders.OrderPickListLineStatusNotTracked,
+		}
+		if line.ProductID == nil || strings.TrimSpace(*line.ProductID) == "" {
+			pickList.Lines = append(pickList.Lines, pickLine)
+			continue
+		}
+
+		productID := strings.TrimSpace(*line.ProductID)
+		pickLine.ProductID = productID
+		product, err := h.inventoryService.GetProductByID(ctx, tenantID, schemaName, productID)
+		if err != nil {
+			pickLine.Status = orders.OrderPickListLineStatusProductNotFound
+			pickLine.ShortageQty = line.Quantity
+			pickList.Ready = false
+			pickList.Lines = append(pickList.Lines, pickLine)
+			continue
+		}
+		pickLine.ProductCode = product.Code
+		pickLine.ProductName = product.Name
+		if product.ProductType != inventory.ProductTypeGoods || !product.TrackInventory {
+			pickList.Lines = append(pickList.Lines, pickLine)
+			continue
+		}
+
+		if !loadedAvailabilityByProduct[product.ID] {
+			levels, err := h.inventoryService.GetStockLevels(ctx, tenantID, schemaName, product.ID)
+			if err != nil {
+				return nil, err
+			}
+			for _, level := range levels {
+				if level.WarehouseID == warehouseID {
+					availableByProduct[product.ID] = availableByProduct[product.ID].Add(level.AvailableQty)
+				}
+			}
+			loadedAvailabilityByProduct[product.ID] = true
+		}
+
+		pickLine.AvailableQty = availableByProduct[product.ID]
+		pickLine.ReservedQty = remainingReservedByProduct[product.ID]
+		if pickLine.ReservedQty.GreaterThanOrEqual(line.Quantity) {
+			pickLine.Status = orders.OrderPickListLineStatusReady
+			pickLine.PickQty = line.Quantity
+			remainingReservedByProduct[product.ID] = pickLine.ReservedQty.Sub(line.Quantity)
+		} else {
+			pickLine.PickQty = pickLine.ReservedQty
+			pickLine.ShortageQty = line.Quantity.Sub(pickLine.ReservedQty)
+			remainingReservedByProduct[product.ID] = decimal.Zero
+			pickList.Ready = false
+			if pickLine.ReservedQty.IsZero() {
+				pickLine.Status = orders.OrderPickListLineStatusUnreserved
+			} else {
+				pickLine.Status = orders.OrderPickListLineStatusShortage
+			}
+		}
+		pickList.Lines = append(pickList.Lines, pickLine)
+	}
+
+	return pickList, nil
+}
+
 // ReserveOrderStock reserves the tracked product quantities required by an order.
 // @Summary Reserve order stock
 // @Description Reserve tracked goods for an order from one warehouse without shipping stock

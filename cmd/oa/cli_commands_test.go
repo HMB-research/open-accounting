@@ -1493,6 +1493,27 @@ func TestCLIOrderCommands(t *testing.T) {
 				Reason:      "Pick list",
 				UpdatedAt:   time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC),
 			}})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1/pick-list":
+			require.Equal(t, "wh-1", r.URL.Query().Get("warehouse_id"))
+			_ = json.NewEncoder(w).Encode(orders.OrderPickList{
+				OrderID:     "order-1",
+				OrderNumber: "ORD-00001",
+				WarehouseID: "wh-1",
+				Ready:       true,
+				Lines: []orders.OrderPickListLine{{
+					LineID:       "line-1",
+					LineNumber:   1,
+					Description:  "Consulting",
+					ProductID:    "prod-1",
+					ProductCode:  "PROD-001",
+					ProductName:  "Consulting pack",
+					RequiredQty:  decimal.RequireFromString("2.00"),
+					ReservedQty:  decimal.RequireFromString("2.00"),
+					PickQty:      decimal.RequireFromString("2.00"),
+					AvailableQty: decimal.RequireFromString("4.00"),
+					Status:       orders.OrderPickListLineStatusReady,
+				}},
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1/reserve-stock":
 			var req orders.OrderStockReservationRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -1614,6 +1635,12 @@ func TestCLIOrderCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "reservation-1")
 	assert.Contains(t, stdout.String(), "RESERVED")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"orders", "pick-list", "--id", "order-1", "--warehouse-id", "wh-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Order pick list ORD-00001")
+	assert.Contains(t, stdout.String(), "READY")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"orders", "reserve-stock", "--id", "order-1", "--warehouse-id", "wh-1", "--reason", "Pick list"})

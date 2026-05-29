@@ -206,6 +206,14 @@ const (
 )
 
 const (
+	OrderPickListLineStatusReady           = "READY"
+	OrderPickListLineStatusUnreserved      = "UNRESERVED"
+	OrderPickListLineStatusShortage        = "SHORTAGE"
+	OrderPickListLineStatusNotTracked      = "NOT_TRACKED"
+	OrderPickListLineStatusProductNotFound = "PRODUCT_NOT_FOUND"
+)
+
+const (
 	OrderStockReservationActionReserve  = "RESERVE"
 	OrderStockReservationActionRelease  = "RELEASE"
 	OrderStockReservationStatusReserved = "RESERVED"
@@ -247,6 +255,31 @@ type OrderStockCheckLine struct {
 	ProductCode  string          `json:"product_code,omitempty"`
 	ProductName  string          `json:"product_name,omitempty"`
 	RequiredQty  decimal.Decimal `json:"required_qty"`
+	AvailableQty decimal.Decimal `json:"available_qty"`
+	ShortageQty  decimal.Decimal `json:"shortage_qty"`
+	Status       string          `json:"status"`
+}
+
+// OrderPickList summarizes warehouse picking readiness for an order.
+type OrderPickList struct {
+	OrderID     string              `json:"order_id"`
+	OrderNumber string              `json:"order_number"`
+	WarehouseID string              `json:"warehouse_id"`
+	Ready       bool                `json:"ready"`
+	Lines       []OrderPickListLine `json:"lines"`
+}
+
+// OrderPickListLine describes one order line on a warehouse pick list.
+type OrderPickListLine struct {
+	LineID       string          `json:"line_id"`
+	LineNumber   int             `json:"line_number"`
+	Description  string          `json:"description"`
+	ProductID    string          `json:"product_id,omitempty"`
+	ProductCode  string          `json:"product_code,omitempty"`
+	ProductName  string          `json:"product_name,omitempty"`
+	RequiredQty  decimal.Decimal `json:"required_qty"`
+	ReservedQty  decimal.Decimal `json:"reserved_qty"`
+	PickQty      decimal.Decimal `json:"pick_qty"`
 	AvailableQty decimal.Decimal `json:"available_qty"`
 	ShortageQty  decimal.Decimal `json:"shortage_qty"`
 	Status       string          `json:"status"`

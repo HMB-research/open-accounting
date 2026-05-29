@@ -677,6 +677,25 @@ func TestReserveAndReleaseOrderStock(t *testing.T) {
 	require.Len(t, listed, 1)
 	assert.True(t, listed[0].Quantity.Equal(decimal.NewFromInt(5)))
 
+	pickReq := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/orders/order-1/pick-list?warehouse_id=wh-1", nil)
+	pickReq = withURLParams(pickReq, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+	pickReq = pickReq.WithContext(contextWithClaims(pickReq.Context(), claims))
+
+	pickResp := httptest.NewRecorder()
+	h.GetOrderPickList(pickResp, pickReq)
+
+	require.Equal(t, http.StatusOK, pickResp.Code)
+	var pickList orders.OrderPickList
+	require.NoError(t, json.Unmarshal(pickResp.Body.Bytes(), &pickList))
+	assert.True(t, pickList.Ready)
+	require.Len(t, pickList.Lines, 2)
+	assert.Equal(t, orders.OrderPickListLineStatusReady, pickList.Lines[0].Status)
+	assert.True(t, pickList.Lines[0].PickQty.Equal(decimal.NewFromInt(3)))
+	assert.True(t, pickList.Lines[0].ReservedQty.Equal(decimal.NewFromInt(5)))
+	assert.Equal(t, orders.OrderPickListLineStatusReady, pickList.Lines[1].Status)
+	assert.True(t, pickList.Lines[1].PickQty.Equal(decimal.NewFromInt(2)))
+	assert.True(t, pickList.Lines[1].ReservedQty.Equal(decimal.NewFromInt(2)))
+
 	releaseBody, _ := json.Marshal(orders.OrderStockReservationRequest{WarehouseID: "wh-1", Reason: "Order canceled"})
 	releaseReq := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/orders/order-1/release-stock", bytes.NewReader(releaseBody))
 	releaseReq.Header.Set("Content-Type", "application/json")
