@@ -402,6 +402,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  reports balance-confirmation  Show one balance confirmation")
 	_, _ = fmt.Fprintln(a.stdout, "  reports contact-statement  Show one customer or supplier period statement")
 	_, _ = fmt.Fprintln(a.stdout, "  reports sales-margin      Show sales margin by invoice line")
+	_, _ = fmt.Fprintln(a.stdout, "  reports budget-vs-actual  Show budget versus actual expenses")
 	_, _ = fmt.Fprintln(a.stdout, "  documents list            List documents for a record")
 	_, _ = fmt.Fprintln(a.stdout, "  documents review-summary  Summarize document review state")
 	_, _ = fmt.Fprintln(a.stdout, "  documents review-queue    List documents waiting for reviewer action")
@@ -9247,6 +9248,66 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, report)
 		}
 		printSalesMarginReport(a.stdout, report)
+		return nil
+
+	case "budget-vs-actual":
+		fs := flag.NewFlagSet("reports budget-vs-actual", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		startDate := fs.String("start", "", "Start date in YYYY-MM-DD")
+		endDate := fs.String("end", "", "End date in YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		asCSV := fs.Bool("csv", false, "Output CSV")
+		asXLSX := fs.Bool("xlsx", false, "Output XLSX")
+		asPDF := fs.Bool("pdf", false, "Output PDF")
+		outputPath := fs.String("output", "", "Optional CSV/XLSX/PDF output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *asPDF, *outputPath); err != nil {
+			return err
+		}
+		startDateValue, err := parseOptionalDate("start", *startDate)
+		if err != nil {
+			return err
+		}
+		endDateValue, err := parseOptionalDate("end", *endDate)
+		if err != nil {
+			return err
+		}
+		if startDateValue != nil && endDateValue != nil && endDateValue.Before(*startDateValue) {
+			return errors.New("end must be on or after start")
+		}
+
+		if *asCSV {
+			content, err := client.exportBudgetVsActualReport(ctx, cfg.TenantID, startDateValue, endDateValue, "csv")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "budget vs actual CSV")
+		}
+		if *asXLSX {
+			content, err := client.exportBudgetVsActualReport(ctx, cfg.TenantID, startDateValue, endDateValue, "xlsx")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "budget vs actual XLSX")
+		}
+		if *asPDF {
+			content, err := client.exportBudgetVsActualReport(ctx, cfg.TenantID, startDateValue, endDateValue, "pdf")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "budget vs actual PDF")
+		}
+
+		report, err := client.getBudgetVsActualReport(ctx, cfg.TenantID, startDateValue, endDateValue)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, report)
+		}
+		printBudgetVsActualReport(a.stdout, report)
 		return nil
 
 	default:

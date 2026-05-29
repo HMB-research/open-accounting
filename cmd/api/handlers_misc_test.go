@@ -555,6 +555,14 @@ func TestReminderAndCostCenterHandlers(t *testing.T) {
 	assert.Contains(t, rr.Body.String(), "OPS-2")
 	assert.Contains(t, rr.Body.String(), "total")
 
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/budget-vs-actual?start_date=2026-01-01&end_date=2026-01-31&format=csv", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetBudgetVsActualReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Header().Get("Content-Type"), "text/csv")
+	assert.Contains(t, rr.Header().Get("Content-Disposition"), "budget-vs-actual-2026-01-01-2026-01-31.csv")
+	assert.Contains(t, rr.Body.String(), "cost_center")
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/cost-centers/report?format=xml", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.GetCostCenterReport(rr, req)
@@ -563,6 +571,11 @@ func TestReminderAndCostCenterHandlers(t *testing.T) {
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/cost-centers/report?start_date=bad-date", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.GetCostCenterReport(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/budget-vs-actual?start_date=2026-02-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetBudgetVsActualReport(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 
 	req = makeAuthenticatedRequest(http.MethodDelete, "/tenants/tenant-1/cost-centers/cc-1", nil, nil)

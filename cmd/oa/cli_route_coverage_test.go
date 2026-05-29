@@ -852,6 +852,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 		return commandForMethod(method, map[string]string{"GET": "reports contact-statement"})
 	case "/reports/sales-margin":
 		return commandForMethod(method, map[string]string{"GET": "reports sales-margin"})
+	case "/reports/budget-vs-actual":
+		return commandForMethod(method, map[string]string{"GET": "reports budget-vs-actual"})
 	case "/reports/aging/receivables":
 		return commandForMethod(method, map[string]string{"GET": "reports aging"})
 	case "/reports/aging/payables":

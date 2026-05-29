@@ -2745,6 +2745,20 @@ Returns sales invoice line revenue, estimated product cost from product purchase
 - `end_date` (string, required): End date in YYYY-MM-DD format
 - `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
 
+### Budget vs Actual
+
+```http
+GET /tenants/{tenantId}/reports/budget-vs-actual
+Authorization: Bearer <token>
+```
+
+Returns cost-center budget, actual expense, budget-used percentage, and over-budget flags for the requested period.
+
+**Query Parameters:**
+- `start_date` (string): Start date in YYYY-MM-DD format. Defaults to the start of the current year.
+- `end_date` (string): End date in YYYY-MM-DD format. Defaults to today.
+- `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
+
 ---
 
 ## Estonian Tax (KMD)

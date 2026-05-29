@@ -2794,7 +2794,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Mark a draft fixed asset as active",
+                "description": "Mark a draft fixed asset as active after approved asset evidence is attached",
                 "produces": [
                     "application/json"
                 ],
@@ -2832,6 +2832,17 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "type": "object",
                             "properties": {
@@ -4654,6 +4665,86 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/documents/review-queue": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List documents by review status with optional entity and document type filters",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Documents"
+                ],
+                "summary": "Get document review queue",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Entity type filter",
+                        "name": "entity_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Document type filter",
+                        "name": "document_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Review status: PENDING, REVIEWED, APPROVED, REJECTED, or ALL",
+                        "name": "review_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum documents to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.ReviewQueue"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/email-log": {
             "get": {
                 "security": [
@@ -5454,7 +5545,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Return valued on-hand stock for tracked goods using standard-cost or weighted-average valuation",
+                "description": "Return valued on-hand stock for tracked goods using standard-cost, weighted-average, or FIFO valuation",
                 "produces": [
                     "application/json"
                 ],
@@ -5478,7 +5569,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Valuation method: standard-cost or weighted-average",
+                        "description": "Valuation method: standard-cost, weighted-average, or fifo",
                         "name": "method",
                         "in": "query"
                     }
@@ -6738,7 +6829,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Post a draft journal entry to finalize it",
+                "description": "Post a draft journal entry to finalize it. Entries marked requires_evidence need approved supporting, receipt, or tax evidence first.",
                 "produces": [
                     "application/json"
                 ],
@@ -6845,6 +6936,377 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/journal-entry-templates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List reusable balanced journal entry templates for a tenant",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Journal Entries"
+                ],
+                "summary": "List journal entry templates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Filter for active templates only",
+                        "name": "active_only",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplate"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a reusable balanced journal entry template",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Journal Entries"
+                ],
+                "summary": "Create journal entry template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Journal entry template details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CreateJournalEntryTemplateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplate"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/journal-entry-templates/generate-due": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Generate entries for active recurring templates due by as_of_date",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Journal Entries"
+                ],
+                "summary": "Generate due recurring journal entry templates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Due generation details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.GenerateDueJournalEntryTemplatesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplateGenerationResult"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/journal-entry-templates/{templateID}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get one reusable journal entry template with lines",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Journal Entries"
+                ],
+                "summary": "Get journal entry template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Template ID",
+                        "name": "templateID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplate"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/journal-entry-templates/{templateID}/apply": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a draft or posted journal entry from a reusable template",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Journal Entries"
+                ],
+                "summary": "Apply journal entry template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Template ID",
+                        "name": "templateID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Template application details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ApplyJournalEntryTemplateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntry"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/journal-entry-templates/{templateID}/generate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Generate an entry from one recurring template and advance its next generation date",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Journal Entries"
+                ],
+                "summary": "Generate recurring journal entry template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Template ID",
+                        "name": "templateID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Recurring generation details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.GenerateJournalEntryTemplateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplateGenerationResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "type": "object",
                             "properties": {
@@ -7727,6 +8189,76 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/orders/{orderID}/pick-list": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Build a warehouse pick list from persisted order stock reservations",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orders"
+                ],
+                "summary": "Get order pick list",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "orderID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Warehouse ID",
+                        "name": "warehouse_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderPickList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/orders/{orderID}/process": {
             "post": {
                 "security": [
@@ -7784,6 +8316,156 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/orders/{orderID}/release-stock": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Release tracked goods for an order from one warehouse back to available stock",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orders"
+                ],
+                "summary": "Release order stock",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "orderID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Warehouse release request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderStockReservationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderStockReservationResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/orders/{orderID}/reserve-stock": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Reserve tracked goods for an order from one warehouse without shipping stock",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orders"
+                ],
+                "summary": "Reserve order stock",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "orderID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Warehouse reservation request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderStockReservationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderStockReservationResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/orders/{orderID}/ship": {
             "post": {
                 "security": [
@@ -7829,6 +8511,130 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/orders/{orderID}/stock-check": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Check whether an order can be fulfilled from all warehouses or one warehouse without mutating stock",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orders"
+                ],
+                "summary": "Check order stock availability",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "orderID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Warehouse ID to check; omit to sum all warehouses",
+                        "name": "warehouse_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderStockCheck"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/orders/{orderID}/stock-reservations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List current product and warehouse stock reservations recorded for an order",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orders"
+                ],
+                "summary": "List order stock reservations",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "orderID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderStockReservation"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "type": "object",
                             "properties": {
@@ -10890,6 +11696,83 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/reports/budget-vs-actual": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get budget versus actual expenses by cost center, with optional CSV, XLSX, or PDF export",
+                "produces": [
+                    "application/json",
+                    "text/csv",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/pdf"
+                ],
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Get budget vs actual report",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "start_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "end_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Response format: json, csv, xlsx, or pdf",
+                        "name": "format",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CostCenterReport"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/reports/cash-flow": {
             "get": {
                 "security": [
@@ -11104,6 +11987,99 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/reports/contact-statements/{contactID}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get opening balance, invoice/payment activity, and closing balance for one customer or supplier over a period",
+                "produces": [
+                    "application/json",
+                    "text/csv",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/pdf"
+                ],
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Get contact statement",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Contact ID",
+                        "name": "contactID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Statement type (RECEIVABLE or PAYABLE)",
+                        "name": "type",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "start_date",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "end_date",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Response format: json, csv, xlsx, or pdf",
+                        "name": "format",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.ContactStatement"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/reports/income-statement": {
             "get": {
                 "security": [
@@ -11156,6 +12132,85 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.IncomeStatement"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/reports/sales-margin": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get sales invoice revenue, estimated product cost, and margin by invoice line",
+                "produces": [
+                    "application/json",
+                    "text/csv",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/pdf"
+                ],
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Get sales margin report",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "start_date",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "end_date",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Response format: json, csv, xlsx, or pdf",
+                        "name": "format",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.SalesMarginReport"
                         }
                     },
                     "400": {
@@ -12434,6 +13489,176 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/year-end-close-audit-archive": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Download a ZIP archive containing year-end close pack metadata, evidence-policy results, and close-pack documents",
+                "produces": [
+                    "application/zip"
+                ],
+                "tags": [
+                    "Period Close"
+                ],
+                "summary": "Download year-end close audit archive",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Fiscal year-end date (YYYY-MM-DD)",
+                        "name": "period_end_date",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/year-end-close-audit-evidence": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get year-end close readiness, core reports, close-pack evidence policy, and attached close-pack document metadata",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Period Close"
+                ],
+                "summary": "Get year-end close audit evidence",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Fiscal year-end date (YYYY-MM-DD)",
+                        "name": "period_end_date",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndCloseAuditEvidence"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/year-end-close-pack": {
             "get": {
                 "security": [
@@ -12750,6 +13975,23 @@ const docTemplate = `{
                 "AccountTypeExpense"
             ]
         },
+        "github_com_HMB-research_open-accounting_internal_accounting.ApplyJournalEntryTemplateRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "entry_date": {
+                    "type": "string"
+                },
+                "post": {
+                    "type": "boolean"
+                },
+                "reference": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_accounting.BalanceSheet": {
             "type": "object",
             "properties": {
@@ -12977,10 +14219,48 @@ const docTemplate = `{
                 "reference": {
                     "type": "string"
                 },
+                "requires_evidence": {
+                    "type": "boolean"
+                },
                 "source_id": {
                     "type": "string"
                 },
                 "source_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.CreateJournalEntryTemplateRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "frequency": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplateFrequency"
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CreateJournalEntryLineReq"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_generation_date": {
+                    "type": "string"
+                },
+                "reference": {
+                    "type": "string"
+                },
+                "requires_evidence": {
+                    "type": "boolean"
+                },
+                "start_date": {
                     "type": "string"
                 }
             }
@@ -12990,6 +14270,28 @@ const docTemplate = `{
             "properties": {
                 "period_end_date": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.GenerateDueJournalEntryTemplatesRequest": {
+            "type": "object",
+            "properties": {
+                "as_of_date": {
+                    "type": "string"
+                },
+                "post": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.GenerateJournalEntryTemplateRequest": {
+            "type": "object",
+            "properties": {
+                "entry_date": {
+                    "type": "string"
+                },
+                "post": {
+                    "type": "boolean"
                 }
             }
         },
@@ -13281,6 +14583,9 @@ const docTemplate = `{
                 "reference": {
                     "type": "string"
                 },
+                "requires_evidence": {
+                    "type": "boolean"
+                },
                 "source_id": {
                     "type": "string"
                 },
@@ -13381,6 +14686,146 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplate": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "frequency": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplateFrequency"
+                },
+                "generated_count": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "last_generated_at": {
+                    "type": "string"
+                },
+                "line_count": {
+                    "type": "integer"
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplateLine"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_generation_date": {
+                    "type": "string"
+                },
+                "reference": {
+                    "type": "string"
+                },
+                "requires_evidence": {
+                    "type": "boolean"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplateFrequency": {
+            "type": "string",
+            "enum": [
+                "WEEKLY",
+                "BIWEEKLY",
+                "MONTHLY",
+                "QUARTERLY",
+                "YEARLY"
+            ],
+            "x-enum-varnames": [
+                "JournalEntryTemplateFrequencyWeekly",
+                "JournalEntryTemplateFrequencyBiweekly",
+                "JournalEntryTemplateFrequencyMonthly",
+                "JournalEntryTemplateFrequencyQuarterly",
+                "JournalEntryTemplateFrequencyYearly"
+            ]
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplateGenerationResult": {
+            "type": "object",
+            "properties": {
+                "entry_date": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "generated_entry_id": {
+                    "type": "string"
+                },
+                "generated_entry_number": {
+                    "type": "string"
+                },
+                "next_generation_date": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "template_id": {
+                    "type": "string"
+                },
+                "template_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplateLine": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string"
+                },
+                "credit_amount": {
+                    "type": "number"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "debit_amount": {
+                    "type": "number"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "exchange_rate": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "line_number": {
+                    "type": "integer"
+                },
+                "template_id": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_accounting.ReverseYearEndCarryForwardRequest": {
             "type": "object",
             "properties": {
@@ -13440,6 +14885,26 @@ const docTemplate = `{
                 },
                 "status": {
                     "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndCloseStatus"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.YearEndCloseAuditEvidence": {
+            "type": "object",
+            "properties": {
+                "documents": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.Document"
+                    }
+                },
+                "evidence_policy": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyResult"
+                },
+                "generated_at": {
+                    "type": "string"
+                },
+                "pack": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndClosePack"
                 }
             }
         },
@@ -14795,6 +16260,59 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_documents.Document": {
+            "type": "object",
+            "properties": {
+                "content_type": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "document_type": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "file_size": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "retention_until": {
+                    "type": "string"
+                },
+                "review_note": {
+                    "type": "string"
+                },
+                "review_status": {
+                    "type": "string"
+                },
+                "reviewed_at": {
+                    "type": "string"
+                },
+                "reviewed_by": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "uploaded_by": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyResult": {
             "type": "object",
             "properties": {
@@ -14882,6 +16400,44 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "rule_index": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_documents.ReviewQueue": {
+            "type": "object",
+            "properties": {
+                "approved_count": {
+                    "type": "integer"
+                },
+                "document_type": {
+                    "type": "string"
+                },
+                "documents": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.Document"
+                    }
+                },
+                "entity_type": {
+                    "type": "string"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "pending_review_count": {
+                    "type": "integer"
+                },
+                "rejected_count": {
+                    "type": "integer"
+                },
+                "review_status": {
+                    "type": "string"
+                },
+                "reviewed_count": {
+                    "type": "integer"
+                },
+                "total_count": {
                     "type": "integer"
                 }
             }
@@ -15041,6 +16597,9 @@ const docTemplate = `{
                 },
                 "recipient_name": {
                     "type": "string"
+                },
+                "require_approved_evidence": {
+                    "type": "boolean"
                 },
                 "subject": {
                     "type": "string"
@@ -16334,6 +17893,70 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_orders.OrderPickList": {
+            "type": "object",
+            "properties": {
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderPickListLine"
+                    }
+                },
+                "order_id": {
+                    "type": "string"
+                },
+                "order_number": {
+                    "type": "string"
+                },
+                "ready": {
+                    "type": "boolean"
+                },
+                "warehouse_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_orders.OrderPickListLine": {
+            "type": "object",
+            "properties": {
+                "available_qty": {
+                    "type": "number"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "line_id": {
+                    "type": "string"
+                },
+                "line_number": {
+                    "type": "integer"
+                },
+                "pick_qty": {
+                    "type": "number"
+                },
+                "product_code": {
+                    "type": "string"
+                },
+                "product_id": {
+                    "type": "string"
+                },
+                "product_name": {
+                    "type": "string"
+                },
+                "required_qty": {
+                    "type": "number"
+                },
+                "reserved_qty": {
+                    "type": "number"
+                },
+                "shortage_qty": {
+                    "type": "number"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_orders.OrderStatus": {
             "type": "string",
             "enum": [
@@ -16352,6 +17975,168 @@ const docTemplate = `{
                 "OrderStatusDelivered",
                 "OrderStatusCanceled"
             ]
+        },
+        "github_com_HMB-research_open-accounting_internal_orders.OrderStockCheck": {
+            "type": "object",
+            "properties": {
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderStockCheckLine"
+                    }
+                },
+                "order_id": {
+                    "type": "string"
+                },
+                "order_number": {
+                    "type": "string"
+                },
+                "ready": {
+                    "type": "boolean"
+                },
+                "warehouse_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_orders.OrderStockCheckLine": {
+            "type": "object",
+            "properties": {
+                "available_qty": {
+                    "type": "number"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "line_id": {
+                    "type": "string"
+                },
+                "line_number": {
+                    "type": "integer"
+                },
+                "product_code": {
+                    "type": "string"
+                },
+                "product_id": {
+                    "type": "string"
+                },
+                "product_name": {
+                    "type": "string"
+                },
+                "required_qty": {
+                    "type": "number"
+                },
+                "shortage_qty": {
+                    "type": "number"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_orders.OrderStockReservation": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "order_id": {
+                    "type": "string"
+                },
+                "product_id": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "number"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "released_at": {
+                    "type": "string"
+                },
+                "released_by": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "warehouse_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_orders.OrderStockReservationLine": {
+            "type": "object",
+            "properties": {
+                "available_qty": {
+                    "type": "number"
+                },
+                "product_code": {
+                    "type": "string"
+                },
+                "product_id": {
+                    "type": "string"
+                },
+                "product_name": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "number"
+                },
+                "reserved_qty": {
+                    "type": "number"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_orders.OrderStockReservationRequest": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                },
+                "warehouse_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_orders.OrderStockReservationResult": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderStockReservationLine"
+                    }
+                },
+                "order_id": {
+                    "type": "string"
+                },
+                "order_number": {
+                    "type": "string"
+                },
+                "warehouse_id": {
+                    "type": "string"
+                }
+            }
         },
         "github_com_HMB-research_open-accounting_internal_orders.UpdateOrderRequest": {
             "type": "object",
@@ -18794,6 +20579,223 @@ const docTemplate = `{
                 },
                 "oldest_invoice": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_reports.ContactStatement": {
+            "type": "object",
+            "properties": {
+                "closing_balance": {
+                    "type": "number"
+                },
+                "contact_code": {
+                    "type": "string"
+                },
+                "contact_email": {
+                    "type": "string"
+                },
+                "contact_id": {
+                    "type": "string"
+                },
+                "contact_name": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.ContactStatementEntry"
+                    }
+                },
+                "generated_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "opening_balance": {
+                    "type": "number"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "total_invoiced": {
+                    "type": "number"
+                },
+                "total_paid": {
+                    "type": "number"
+                },
+                "type": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.BalanceConfirmationType"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_reports.ContactStatementEntry": {
+            "type": "object",
+            "properties": {
+                "balance": {
+                    "type": "number"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "decrease_amount": {
+                    "type": "number"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "document_amount": {
+                    "type": "number"
+                },
+                "document_id": {
+                    "type": "string"
+                },
+                "document_number": {
+                    "type": "string"
+                },
+                "document_type": {
+                    "type": "string"
+                },
+                "due_date": {
+                    "type": "string"
+                },
+                "increase_amount": {
+                    "type": "number"
+                },
+                "reference": {
+                    "type": "string"
+                },
+                "statement_amount": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_reports.SalesMarginContact": {
+            "type": "object",
+            "properties": {
+                "contact_id": {
+                    "type": "string"
+                },
+                "contact_name": {
+                    "type": "string"
+                },
+                "cost": {
+                    "type": "number"
+                },
+                "line_count": {
+                    "type": "integer"
+                },
+                "margin": {
+                    "type": "number"
+                },
+                "margin_percent": {
+                    "type": "number"
+                },
+                "revenue": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_reports.SalesMarginLine": {
+            "type": "object",
+            "properties": {
+                "contact_id": {
+                    "type": "string"
+                },
+                "contact_name": {
+                    "type": "string"
+                },
+                "cost": {
+                    "type": "number"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "invoice_date": {
+                    "type": "string"
+                },
+                "invoice_id": {
+                    "type": "string"
+                },
+                "invoice_number": {
+                    "type": "string"
+                },
+                "margin": {
+                    "type": "number"
+                },
+                "margin_percent": {
+                    "type": "number"
+                },
+                "product_code": {
+                    "type": "string"
+                },
+                "product_id": {
+                    "type": "string"
+                },
+                "product_name": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "number"
+                },
+                "revenue": {
+                    "type": "number"
+                },
+                "unit_cost": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_reports.SalesMarginReport": {
+            "type": "object",
+            "properties": {
+                "by_contact": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.SalesMarginContact"
+                    }
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "generated_at": {
+                    "type": "string"
+                },
+                "line_count": {
+                    "type": "integer"
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.SalesMarginLine"
+                    }
+                },
+                "margin_percent": {
+                    "type": "number"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "total_cost": {
+                    "type": "number"
+                },
+                "total_margin": {
+                    "type": "number"
+                },
+                "total_revenue": {
+                    "type": "number"
                 }
             }
         },

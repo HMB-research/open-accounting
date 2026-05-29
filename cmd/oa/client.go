@@ -1832,6 +1832,34 @@ func (c *apiClient) exportCostCenterReport(ctx context.Context, tenantID string,
 	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "cost-centers", "report"), values), nil, c.apiToken)
 }
 
+func (c *apiClient) getBudgetVsActualReport(ctx context.Context, tenantID string, startDate, endDate *time.Time) (*accounting.CostCenterReport, error) {
+	values := url.Values{}
+	if startDate != nil {
+		values.Set("start_date", startDate.Format("2006-01-02"))
+	}
+	if endDate != nil {
+		values.Set("end_date", endDate.Format("2006-01-02"))
+	}
+
+	var resp accounting.CostCenterReport
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "budget-vs-actual"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) exportBudgetVsActualReport(ctx context.Context, tenantID string, startDate, endDate *time.Time, format string) ([]byte, error) {
+	values := url.Values{}
+	if startDate != nil {
+		values.Set("start_date", startDate.Format("2006-01-02"))
+	}
+	if endDate != nil {
+		values.Set("end_date", endDate.Format("2006-01-02"))
+	}
+	values.Set("format", strings.TrimSpace(format))
+	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "budget-vs-actual"), values), nil, c.apiToken)
+}
+
 func (c *apiClient) importOpeningBalances(ctx context.Context, tenantID string, req *accounting.ImportOpeningBalancesRequest) (*accounting.ImportOpeningBalancesResult, error) {
 	var resp accounting.ImportOpeningBalancesResult
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "journal-entries", "import-opening-balances"), req, c.apiToken, &resp); err != nil {

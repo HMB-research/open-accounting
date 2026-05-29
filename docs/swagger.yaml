@@ -96,6 +96,17 @@ definitions:
     - AccountTypeEquity
     - AccountTypeRevenue
     - AccountTypeExpense
+  github_com_HMB-research_open-accounting_internal_accounting.ApplyJournalEntryTemplateRequest:
+    properties:
+      description:
+        type: string
+      entry_date:
+        type: string
+      post:
+        type: boolean
+      reference:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_accounting.BalanceSheet:
     properties:
       as_of_date:
@@ -247,15 +258,54 @@ definitions:
         type: array
       reference:
         type: string
+      requires_evidence:
+        type: boolean
       source_id:
         type: string
       source_type:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.CreateJournalEntryTemplateRequest:
+    properties:
+      description:
+        type: string
+      end_date:
+        type: string
+      frequency:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplateFrequency'
+      lines:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CreateJournalEntryLineReq'
+        type: array
+      name:
+        type: string
+      next_generation_date:
+        type: string
+      reference:
+        type: string
+      requires_evidence:
+        type: boolean
+      start_date:
         type: string
     type: object
   github_com_HMB-research_open-accounting_internal_accounting.CreateYearEndCarryForwardRequest:
     properties:
       period_end_date:
         type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.GenerateDueJournalEntryTemplatesRequest:
+    properties:
+      as_of_date:
+        type: string
+      post:
+        type: boolean
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.GenerateJournalEntryTemplateRequest:
+    properties:
+      entry_date:
+        type: string
+      post:
+        type: boolean
     type: object
   github_com_HMB-research_open-accounting_internal_accounting.ImportAccountsRequest:
     properties:
@@ -445,6 +495,8 @@ definitions:
         type: string
       reference:
         type: string
+      requires_evidence:
+        type: boolean
       source_id:
         type: string
       source_type:
@@ -512,6 +564,101 @@ definitions:
       status:
         $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryStatus'
     type: object
+  github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplate:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      end_date:
+        type: string
+      frequency:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplateFrequency'
+      generated_count:
+        type: integer
+      id:
+        type: string
+      is_active:
+        type: boolean
+      last_generated_at:
+        type: string
+      line_count:
+        type: integer
+      lines:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplateLine'
+        type: array
+      name:
+        type: string
+      next_generation_date:
+        type: string
+      reference:
+        type: string
+      requires_evidence:
+        type: boolean
+      start_date:
+        type: string
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplateFrequency:
+    enum:
+    - WEEKLY
+    - BIWEEKLY
+    - MONTHLY
+    - QUARTERLY
+    - YEARLY
+    type: string
+    x-enum-varnames:
+    - JournalEntryTemplateFrequencyWeekly
+    - JournalEntryTemplateFrequencyBiweekly
+    - JournalEntryTemplateFrequencyMonthly
+    - JournalEntryTemplateFrequencyQuarterly
+    - JournalEntryTemplateFrequencyYearly
+  github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplateGenerationResult:
+    properties:
+      entry_date:
+        type: string
+      error:
+        type: string
+      generated_entry_id:
+        type: string
+      generated_entry_number:
+        type: string
+      next_generation_date:
+        type: string
+      status:
+        type: string
+      template_id:
+        type: string
+      template_name:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplateLine:
+    properties:
+      account_id:
+        type: string
+      credit_amount:
+        type: number
+      currency:
+        type: string
+      debit_amount:
+        type: number
+      description:
+        type: string
+      exchange_rate:
+        type: number
+      id:
+        type: string
+      line_number:
+        type: integer
+      template_id:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_accounting.ReverseYearEndCarryForwardRequest:
     properties:
       period_end_date:
@@ -551,6 +698,19 @@ definitions:
         $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntry'
       status:
         $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndCloseStatus'
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.YearEndCloseAuditEvidence:
+    properties:
+      documents:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.Document'
+        type: array
+      evidence_policy:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyResult'
+      generated_at:
+        type: string
+      pack:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndClosePack'
     type: object
   github_com_HMB-research_open-accounting_internal_accounting.YearEndClosePack:
     properties:
@@ -1455,6 +1615,41 @@ definitions:
       vat_number:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_documents.Document:
+    properties:
+      content_type:
+        type: string
+      created_at:
+        type: string
+      document_type:
+        type: string
+      entity_id:
+        type: string
+      entity_type:
+        type: string
+      file_name:
+        type: string
+      file_size:
+        type: integer
+      id:
+        type: string
+      notes:
+        type: string
+      retention_until:
+        type: string
+      review_note:
+        type: string
+      review_status:
+        type: string
+      reviewed_at:
+        type: string
+      reviewed_by:
+        type: string
+      tenant_id:
+        type: string
+      uploaded_by:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyResult:
     properties:
       approved_count:
@@ -1513,6 +1708,31 @@ definitions:
       required_count:
         type: integer
       rule_index:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_documents.ReviewQueue:
+    properties:
+      approved_count:
+        type: integer
+      document_type:
+        type: string
+      documents:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.Document'
+        type: array
+      entity_type:
+        type: string
+      limit:
+        type: integer
+      pending_review_count:
+        type: integer
+      rejected_count:
+        type: integer
+      review_status:
+        type: string
+      reviewed_count:
+        type: integer
+      total_count:
         type: integer
     type: object
   github_com_HMB-research_open-accounting_internal_email.EmailLog:
@@ -1619,6 +1839,8 @@ definitions:
         type: string
       recipient_name:
         type: string
+      require_approved_evidence:
+        type: boolean
       subject:
         type: string
     type: object
@@ -2477,6 +2699,48 @@ definitions:
       vat_rate:
         type: number
     type: object
+  github_com_HMB-research_open-accounting_internal_orders.OrderPickList:
+    properties:
+      lines:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderPickListLine'
+        type: array
+      order_id:
+        type: string
+      order_number:
+        type: string
+      ready:
+        type: boolean
+      warehouse_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_orders.OrderPickListLine:
+    properties:
+      available_qty:
+        type: number
+      description:
+        type: string
+      line_id:
+        type: string
+      line_number:
+        type: integer
+      pick_qty:
+        type: number
+      product_code:
+        type: string
+      product_id:
+        type: string
+      product_name:
+        type: string
+      required_qty:
+        type: number
+      reserved_qty:
+        type: number
+      shortage_qty:
+        type: number
+      status:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_orders.OrderStatus:
     enum:
     - PENDING
@@ -2493,6 +2757,112 @@ definitions:
     - OrderStatusShipped
     - OrderStatusDelivered
     - OrderStatusCanceled
+  github_com_HMB-research_open-accounting_internal_orders.OrderStockCheck:
+    properties:
+      lines:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderStockCheckLine'
+        type: array
+      order_id:
+        type: string
+      order_number:
+        type: string
+      ready:
+        type: boolean
+      warehouse_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_orders.OrderStockCheckLine:
+    properties:
+      available_qty:
+        type: number
+      description:
+        type: string
+      line_id:
+        type: string
+      line_number:
+        type: integer
+      product_code:
+        type: string
+      product_id:
+        type: string
+      product_name:
+        type: string
+      required_qty:
+        type: number
+      shortage_qty:
+        type: number
+      status:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_orders.OrderStockReservation:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      id:
+        type: string
+      order_id:
+        type: string
+      product_id:
+        type: string
+      quantity:
+        type: number
+      reason:
+        type: string
+      released_at:
+        type: string
+      released_by:
+        type: string
+      status:
+        type: string
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      warehouse_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_orders.OrderStockReservationLine:
+    properties:
+      available_qty:
+        type: number
+      product_code:
+        type: string
+      product_id:
+        type: string
+      product_name:
+        type: string
+      quantity:
+        type: number
+      reserved_qty:
+        type: number
+      status:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_orders.OrderStockReservationRequest:
+    properties:
+      reason:
+        type: string
+      warehouse_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_orders.OrderStockReservationResult:
+    properties:
+      action:
+        type: string
+      lines:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderStockReservationLine'
+        type: array
+      order_id:
+        type: string
+      order_number:
+        type: string
+      warehouse_id:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_orders.UpdateOrderRequest:
     properties:
       contact_id:
@@ -4131,6 +4501,149 @@ definitions:
         type: integer
       oldest_invoice:
         type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_reports.ContactStatement:
+    properties:
+      closing_balance:
+        type: number
+      contact_code:
+        type: string
+      contact_email:
+        type: string
+      contact_id:
+        type: string
+      contact_name:
+        type: string
+      end_date:
+        type: string
+      entries:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_reports.ContactStatementEntry'
+        type: array
+      generated_at:
+        type: string
+      id:
+        type: string
+      opening_balance:
+        type: number
+      start_date:
+        type: string
+      tenant_id:
+        type: string
+      total_invoiced:
+        type: number
+      total_paid:
+        type: number
+      type:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_reports.BalanceConfirmationType'
+    type: object
+  github_com_HMB-research_open-accounting_internal_reports.ContactStatementEntry:
+    properties:
+      balance:
+        type: number
+      currency:
+        type: string
+      date:
+        type: string
+      decrease_amount:
+        type: number
+      description:
+        type: string
+      document_amount:
+        type: number
+      document_id:
+        type: string
+      document_number:
+        type: string
+      document_type:
+        type: string
+      due_date:
+        type: string
+      increase_amount:
+        type: number
+      reference:
+        type: string
+      statement_amount:
+        type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_reports.SalesMarginContact:
+    properties:
+      contact_id:
+        type: string
+      contact_name:
+        type: string
+      cost:
+        type: number
+      line_count:
+        type: integer
+      margin:
+        type: number
+      margin_percent:
+        type: number
+      revenue:
+        type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_reports.SalesMarginLine:
+    properties:
+      contact_id:
+        type: string
+      contact_name:
+        type: string
+      cost:
+        type: number
+      description:
+        type: string
+      invoice_date:
+        type: string
+      invoice_id:
+        type: string
+      invoice_number:
+        type: string
+      margin:
+        type: number
+      margin_percent:
+        type: number
+      product_code:
+        type: string
+      product_id:
+        type: string
+      product_name:
+        type: string
+      quantity:
+        type: number
+      revenue:
+        type: number
+      unit_cost:
+        type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_reports.SalesMarginReport:
+    properties:
+      by_contact:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_reports.SalesMarginContact'
+        type: array
+      end_date:
+        type: string
+      generated_at:
+        type: string
+      line_count:
+        type: integer
+      lines:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_reports.SalesMarginLine'
+        type: array
+      margin_percent:
+        type: number
+      start_date:
+        type: string
+      tenant_id:
+        type: string
+      total_cost:
+        type: number
+      total_margin:
+        type: number
+      total_revenue:
+        type: number
     type: object
   github_com_HMB-research_open-accounting_internal_reports.UpdateCashFlowMappingRequest:
     properties:
@@ -6135,7 +6648,8 @@ paths:
       - Fixed Assets
   /tenants/{tenantID}/assets/{assetID}/activate:
     post:
-      description: Mark a draft fixed asset as active
+      description: Mark a draft fixed asset as active after approved asset evidence
+        is attached
       parameters:
       - description: Tenant ID
         in: path
@@ -6159,6 +6673,13 @@ paths:
             type: object
         "400":
           description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
           schema:
             properties:
               error:
@@ -7361,6 +7882,58 @@ paths:
       summary: Get cost center budget report
       tags:
       - Cost Centers
+  /tenants/{tenantID}/documents/review-queue:
+    get:
+      description: List documents by review status with optional entity and document
+        type filters
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Entity type filter
+        in: query
+        name: entity_type
+        type: string
+      - description: Document type filter
+        in: query
+        name: document_type
+        type: string
+      - description: 'Review status: PENDING, REVIEWED, APPROVED, REJECTED, or ALL'
+        in: query
+        name: review_status
+        type: string
+      - description: Maximum documents to return
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.ReviewQueue'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get document review queue
+      tags:
+      - Documents
   /tenants/{tenantID}/email-log:
     get:
       description: Get the email sending history for a tenant
@@ -7871,8 +8444,8 @@ paths:
       - Inventory
   /tenants/{tenantID}/inventory/valuation:
     get:
-      description: Return valued on-hand stock for tracked goods using standard-cost
-        or weighted-average valuation
+      description: Return valued on-hand stock for tracked goods using standard-cost,
+        weighted-average, or FIFO valuation
       parameters:
       - description: Tenant ID
         in: path
@@ -7883,7 +8456,7 @@ paths:
         in: query
         name: warehouse_id
         type: string
-      - description: 'Valuation method: standard-cost or weighted-average'
+      - description: 'Valuation method: standard-cost, weighted-average, or fifo'
         in: query
         name: method
         type: string
@@ -8602,7 +9175,8 @@ paths:
       - Journal Entries
   /tenants/{tenantID}/journal-entries/{entryID}/post:
     post:
-      description: Post a draft journal entry to finalize it
+      description: Post a draft journal entry to finalize it. Entries marked requires_evidence
+        need approved supporting, receipt, or tax evidence first.
       parameters:
       - description: Tenant ID
         in: path
@@ -8766,6 +9340,243 @@ paths:
       security:
       - BearerAuth: []
       summary: Import opening balances
+      tags:
+      - Journal Entries
+  /tenants/{tenantID}/journal-entry-templates:
+    get:
+      description: List reusable balanced journal entry templates for a tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Filter for active templates only
+        in: query
+        name: active_only
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplate'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List journal entry templates
+      tags:
+      - Journal Entries
+    post:
+      consumes:
+      - application/json
+      description: Create a reusable balanced journal entry template
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Journal entry template details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CreateJournalEntryTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplate'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create journal entry template
+      tags:
+      - Journal Entries
+  /tenants/{tenantID}/journal-entry-templates/{templateID}:
+    get:
+      description: Get one reusable journal entry template with lines
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Template ID
+        in: path
+        name: templateID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplate'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get journal entry template
+      tags:
+      - Journal Entries
+  /tenants/{tenantID}/journal-entry-templates/{templateID}/apply:
+    post:
+      consumes:
+      - application/json
+      description: Create a draft or posted journal entry from a reusable template
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Template ID
+        in: path
+        name: templateID
+        required: true
+        type: string
+      - description: Template application details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ApplyJournalEntryTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntry'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Apply journal entry template
+      tags:
+      - Journal Entries
+  /tenants/{tenantID}/journal-entry-templates/{templateID}/generate:
+    post:
+      consumes:
+      - application/json
+      description: Generate an entry from one recurring template and advance its next
+        generation date
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Template ID
+        in: path
+        name: templateID
+        required: true
+        type: string
+      - description: Recurring generation details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.GenerateJournalEntryTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplateGenerationResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Generate recurring journal entry template
+      tags:
+      - Journal Entries
+  /tenants/{tenantID}/journal-entry-templates/generate-due:
+    post:
+      consumes:
+      - application/json
+      description: Generate entries for active recurring templates due by as_of_date
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Due generation details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.GenerateDueJournalEntryTemplatesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryTemplateGenerationResult'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Generate due recurring journal entry templates
       tags:
       - Journal Entries
   /tenants/{tenantID}/leave-balances/import:
@@ -9286,6 +10097,51 @@ paths:
       summary: Deliver order
       tags:
       - Orders
+  /tenants/{tenantID}/orders/{orderID}/pick-list:
+    get:
+      description: Build a warehouse pick list from persisted order stock reservations
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Order ID
+        in: path
+        name: orderID
+        required: true
+        type: string
+      - description: Warehouse ID
+        in: query
+        name: warehouse_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderPickList'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get order pick list
+      tags:
+      - Orders
   /tenants/{tenantID}/orders/{orderID}/process:
     post:
       description: Mark a confirmed order as processing
@@ -9322,6 +10178,104 @@ paths:
       summary: Process order
       tags:
       - Orders
+  /tenants/{tenantID}/orders/{orderID}/release-stock:
+    post:
+      consumes:
+      - application/json
+      description: Release tracked goods for an order from one warehouse back to available
+        stock
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Order ID
+        in: path
+        name: orderID
+        required: true
+        type: string
+      - description: Warehouse release request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderStockReservationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderStockReservationResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Release order stock
+      tags:
+      - Orders
+  /tenants/{tenantID}/orders/{orderID}/reserve-stock:
+    post:
+      consumes:
+      - application/json
+      description: Reserve tracked goods for an order from one warehouse without shipping
+        stock
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Order ID
+        in: path
+        name: orderID
+        required: true
+        type: string
+      - description: Warehouse reservation request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderStockReservationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderStockReservationResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Reserve order stock
+      tags:
+      - Orders
   /tenants/{tenantID}/orders/{orderID}/ship:
     post:
       description: Mark an order as shipped
@@ -9356,6 +10310,87 @@ paths:
       security:
       - BearerAuth: []
       summary: Ship order
+      tags:
+      - Orders
+  /tenants/{tenantID}/orders/{orderID}/stock-check:
+    get:
+      description: Check whether an order can be fulfilled from all warehouses or
+        one warehouse without mutating stock
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Order ID
+        in: path
+        name: orderID
+        required: true
+        type: string
+      - description: Warehouse ID to check; omit to sum all warehouses
+        in: query
+        name: warehouse_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderStockCheck'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Check order stock availability
+      tags:
+      - Orders
+  /tenants/{tenantID}/orders/{orderID}/stock-reservations:
+    get:
+      description: List current product and warehouse stock reservations recorded
+        for an order
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Order ID
+        in: path
+        name: orderID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderStockReservation'
+            type: array
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List order stock reservations
       tags:
       - Orders
   /tenants/{tenantID}/orders/import:
@@ -11347,6 +12382,57 @@ paths:
       summary: Get balance sheet
       tags:
       - Reports
+  /tenants/{tenantID}/reports/budget-vs-actual:
+    get:
+      description: Get budget versus actual expenses by cost center, with optional
+        CSV, XLSX, or PDF export
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Start date (YYYY-MM-DD)
+        in: query
+        name: start_date
+        type: string
+      - description: End date (YYYY-MM-DD)
+        in: query
+        name: end_date
+        type: string
+      - description: 'Response format: json, csv, xlsx, or pdf'
+        in: query
+        name: format
+        type: string
+      produces:
+      - application/json
+      - text/csv
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CostCenterReport'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get budget vs actual report
+      tags:
+      - Reports
   /tenants/{tenantID}/reports/cash-flow:
     get:
       description: Get cash flow statement report for a specific period (Estonian
@@ -11486,6 +12572,69 @@ paths:
       summary: Update cash flow mapping
       tags:
       - Reports
+  /tenants/{tenantID}/reports/contact-statements/{contactID}:
+    get:
+      description: Get opening balance, invoice/payment activity, and closing balance
+        for one customer or supplier over a period
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Contact ID
+        in: path
+        name: contactID
+        required: true
+        type: string
+      - description: Statement type (RECEIVABLE or PAYABLE)
+        in: query
+        name: type
+        required: true
+        type: string
+      - description: Start date (YYYY-MM-DD)
+        in: query
+        name: start_date
+        required: true
+        type: string
+      - description: End date (YYYY-MM-DD)
+        in: query
+        name: end_date
+        required: true
+        type: string
+      - description: 'Response format: json, csv, xlsx, or pdf'
+        in: query
+        name: format
+        type: string
+      produces:
+      - application/json
+      - text/csv
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_reports.ContactStatement'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get contact statement
+      tags:
+      - Reports
   /tenants/{tenantID}/reports/income-statement:
     get:
       description: Get income statement (P&L) report for a specific period
@@ -11536,6 +12685,59 @@ paths:
       security:
       - BearerAuth: []
       summary: Get income statement
+      tags:
+      - Reports
+  /tenants/{tenantID}/reports/sales-margin:
+    get:
+      description: Get sales invoice revenue, estimated product cost, and margin by
+        invoice line
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Start date (YYYY-MM-DD)
+        in: query
+        name: start_date
+        required: true
+        type: string
+      - description: End date (YYYY-MM-DD)
+        in: query
+        name: end_date
+        required: true
+        type: string
+      - description: 'Response format: json, csv, xlsx, or pdf'
+        in: query
+        name: format
+        type: string
+      produces:
+      - application/json
+      - text/csv
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_reports.SalesMarginReport'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get sales margin report
       tags:
       - Reports
   /tenants/{tenantID}/reports/trial-balance:
@@ -12334,6 +13536,116 @@ paths:
       security:
       - BearerAuth: []
       summary: Reverse year-end carry-forward
+      tags:
+      - Period Close
+  /tenants/{tenantID}/year-end-close-audit-archive:
+    get:
+      description: Download a ZIP archive containing year-end close pack metadata,
+        evidence-policy results, and close-pack documents
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Fiscal year-end date (YYYY-MM-DD)
+        in: query
+        name: period_end_date
+        required: true
+        type: string
+      produces:
+      - application/zip
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Download year-end close audit archive
+      tags:
+      - Period Close
+  /tenants/{tenantID}/year-end-close-audit-evidence:
+    get:
+      description: Get year-end close readiness, core reports, close-pack evidence
+        policy, and attached close-pack document metadata
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Fiscal year-end date (YYYY-MM-DD)
+        in: query
+        name: period_end_date
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndCloseAuditEvidence'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get year-end close audit evidence
       tags:
       - Period Close
   /tenants/{tenantID}/year-end-close-pack:

@@ -1161,7 +1161,15 @@ func printCostCenter(w io.Writer, costCenter *accounting.CostCenter) {
 }
 
 func printCostCenterReport(w io.Writer, report *accounting.CostCenterReport) {
-	_, _ = fmt.Fprintf(w, "Cost center report %s..%s\n", formatDate(report.PeriodStart), formatDate(report.PeriodEnd))
+	printCostCenterBudgetReport(w, report, "Cost center report")
+}
+
+func printBudgetVsActualReport(w io.Writer, report *accounting.CostCenterReport) {
+	printCostCenterBudgetReport(w, report, "Budget vs actual report")
+}
+
+func printCostCenterBudgetReport(w io.Writer, report *accounting.CostCenterReport, title string) {
+	_, _ = fmt.Fprintf(w, "%s %s..%s\n", title, formatDate(report.PeriodStart), formatDate(report.PeriodEnd))
 	_, _ = fmt.Fprintf(w, "Total expenses: %s\n", report.TotalExpenses.String())
 	_, _ = fmt.Fprintf(w, "Total budget: %s\n", report.TotalBudget.String())
 	if len(report.CostCenters) == 0 {

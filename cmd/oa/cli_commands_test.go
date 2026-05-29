@@ -4695,6 +4695,35 @@ func TestCLIReportsCommands(t *testing.T) {
 		APIToken:   "oa_saved_token",
 	}))
 
+	budgetCostCenterPayload := map[string]any{
+		"id":            "cc-1",
+		"tenant_id":     "tenant-1",
+		"code":          "OPS",
+		"name":          "Operations",
+		"is_active":     true,
+		"budget_amount": "1000.00",
+		"budget_period": "MONTHLY",
+		"created_at":    "2026-03-15T12:00:00Z",
+		"updated_at":    "2026-03-15T12:00:00Z",
+	}
+	budgetReportPayload := map[string]any{
+		"tenant_id":      "tenant-1",
+		"period_start":   "2026-03-01T00:00:00Z",
+		"period_end":     "2026-03-31T00:00:00Z",
+		"generated_at":   "2026-03-31T12:00:00Z",
+		"total_expenses": "250.00",
+		"total_budget":   "1000.00",
+		"cost_centers": []map[string]any{{
+			"cost_center":            budgetCostCenterPayload,
+			"total_expenses":         "250.00",
+			"budget_amount":          "1000.00",
+			"budget_used_percentage": "25.00",
+			"is_over_budget":         false,
+			"period_start":           "2026-03-01T00:00:00Z",
+			"period_end":             "2026-03-31T00:00:00Z",
+		}},
+	}
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
@@ -5029,6 +5058,25 @@ func TestCLIReportsCommands(t *testing.T) {
 				}},
 				"generated_at": "2026-03-31T12:00:00Z",
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/budget-vs-actual":
+			require.Equal(t, "2026-03-01", r.URL.Query().Get("start_date"))
+			require.Equal(t, "2026-03-31", r.URL.Query().Get("end_date"))
+			if r.URL.Query().Get("format") == "csv" {
+				w.Header().Set("Content-Type", "text/csv")
+				_, _ = w.Write([]byte("row_type,code,total_expenses,budget_amount\ncost_center,OPS,250.00,1000.00\n"))
+				return
+			}
+			if r.URL.Query().Get("format") == "xlsx" {
+				w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+				_, _ = w.Write([]byte("xlsx-budget-vs-actual"))
+				return
+			}
+			if r.URL.Query().Get("format") == "pdf" {
+				w.Header().Set("Content-Type", "application/pdf")
+				_, _ = w.Write([]byte("%PDF budget vs actual"))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(budgetReportPayload)
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -5320,6 +5368,40 @@ func TestCLIReportsCommands(t *testing.T) {
 	salesMarginPDF, err := os.ReadFile(salesMarginPDFPath)
 	require.NoError(t, err)
 	assert.Equal(t, []byte("%PDF sales margin"), salesMarginPDF)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "budget-vs-actual", "--start", "2026-03-01", "--end", "2026-03-31"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Budget vs actual report 2026-03-01..2026-03-31")
+	assert.Contains(t, stdout.String(), "Total budget: 1000")
+	assert.Contains(t, stdout.String(), "OPS")
+
+	stdout.Reset()
+	budgetVsActualCSVPath := filepath.Join(t.TempDir(), "budget-vs-actual.csv")
+	err = app.run(context.Background(), []string{"reports", "budget-vs-actual", "--start", "2026-03-01", "--end", "2026-03-31", "--csv", "--output", budgetVsActualCSVPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote budget vs actual CSV")
+	budgetVsActualCSV, err := os.ReadFile(budgetVsActualCSVPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(budgetVsActualCSV), "OPS")
+
+	stdout.Reset()
+	budgetVsActualXLSXPath := filepath.Join(t.TempDir(), "budget-vs-actual.xlsx")
+	err = app.run(context.Background(), []string{"reports", "budget-vs-actual", "--start", "2026-03-01", "--end", "2026-03-31", "--xlsx", "--output", budgetVsActualXLSXPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote budget vs actual XLSX")
+	budgetVsActualXLSX, err := os.ReadFile(budgetVsActualXLSXPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("xlsx-budget-vs-actual"), budgetVsActualXLSX)
+
+	stdout.Reset()
+	budgetVsActualPDFPath := filepath.Join(t.TempDir(), "budget-vs-actual.pdf")
+	err = app.run(context.Background(), []string{"reports", "budget-vs-actual", "--start", "2026-03-01", "--end", "2026-03-31", "--pdf", "--output", budgetVsActualPDFPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote budget vs actual PDF")
+	budgetVsActualPDF, err := os.ReadFile(budgetVsActualPDFPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("%PDF budget vs actual"), budgetVsActualPDF)
 }
 
 func TestCLIEmployeesCommands(t *testing.T) {
