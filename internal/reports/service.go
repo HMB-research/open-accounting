@@ -836,3 +836,88 @@ func (s *Service) GetBalanceConfirmation(ctx context.Context, tenantID, schemaNa
 		GeneratedAt:  time.Now(),
 	}, nil
 }
+
+// GetContactStatement generates a contact activity statement for a period.
+func (s *Service) GetContactStatement(ctx context.Context, tenantID, schemaName string, req *ContactStatementRequest) (*ContactStatement, error) {
+	if strings.TrimSpace(req.ContactID) == "" {
+		return nil, fmt.Errorf("contact_id is required")
+	}
+
+	startDate, err := time.Parse("2006-01-02", req.StartDate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid start_date: %w", err)
+	}
+	endDate, err := time.Parse("2006-01-02", req.EndDate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid end_date: %w", err)
+	}
+	if endDate.Before(startDate) {
+		return nil, fmt.Errorf("end_date must be on or after start_date")
+	}
+
+	balanceType, invoiceType, paymentType, err := contactStatementKinds(req.Type)
+	if err != nil {
+		return nil, err
+	}
+
+	contact, err := s.repo.GetContact(ctx, schemaName, tenantID, strings.TrimSpace(req.ContactID))
+	if err != nil {
+		return nil, fmt.Errorf("get contact: %w", err)
+	}
+
+	openingBalance, err := s.repo.GetContactStatementOpeningBalance(ctx, schemaName, tenantID, contact.ID, invoiceType, paymentType, startDate)
+	if err != nil {
+		return nil, fmt.Errorf("get contact statement opening balance: %w", err)
+	}
+
+	entries, err := s.repo.GetContactStatementEntries(ctx, schemaName, tenantID, contact.ID, invoiceType, paymentType, startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("get contact statement entries: %w", err)
+	}
+
+	runningBalance := openingBalance
+	var totalInvoiced decimal.Decimal
+	var totalPaid decimal.Decimal
+	for i := range entries {
+		amount := entries[i].StatementAmount
+		if amount.GreaterThanOrEqual(decimal.Zero) {
+			entries[i].IncreaseAmount = amount
+			totalInvoiced = totalInvoiced.Add(amount)
+		} else {
+			decrease := amount.Abs()
+			entries[i].DecreaseAmount = decrease
+			totalPaid = totalPaid.Add(decrease)
+		}
+		runningBalance = runningBalance.Add(amount)
+		entries[i].Balance = runningBalance
+	}
+
+	return &ContactStatement{
+		ID:             fmt.Sprintf("%s-%s-%s-%s", contact.ID, balanceType, req.StartDate, req.EndDate),
+		TenantID:       tenantID,
+		ContactID:      contact.ID,
+		ContactName:    contact.Name,
+		ContactCode:    contact.Code,
+		ContactEmail:   contact.Email,
+		Type:           balanceType,
+		StartDate:      req.StartDate,
+		EndDate:        req.EndDate,
+		OpeningBalance: openingBalance,
+		ClosingBalance: runningBalance,
+		TotalInvoiced:  totalInvoiced,
+		TotalPaid:      totalPaid,
+		Entries:        entries,
+		GeneratedAt:    time.Now(),
+	}, nil
+}
+
+func contactStatementKinds(rawType string) (BalanceConfirmationType, string, string, error) {
+	switch strings.ToUpper(strings.TrimSpace(rawType)) {
+	case string(BalanceTypeReceivable):
+		return BalanceTypeReceivable, "SALES", "RECEIVED", nil
+	case string(BalanceTypePayable):
+		return BalanceTypePayable, "PURCHASE", "MADE", nil
+	default:
+		return "", "", "", fmt.Errorf("type must be RECEIVABLE or PAYABLE")
+	}
+}

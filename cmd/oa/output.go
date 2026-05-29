@@ -2483,6 +2483,30 @@ func printBalanceConfirmation(w io.Writer, report *reports.BalanceConfirmation) 
 	_, _ = fmt.Fprintf(w, "Total balance: %s\n", report.TotalBalance.String())
 }
 
+func printContactStatement(w io.Writer, report *reports.ContactStatement) {
+	_, _ = fmt.Fprintf(w, "%s contact statement for %s from %s to %s\n", report.Type, report.ContactName, report.StartDate, report.EndDate)
+	_, _ = fmt.Fprintf(w, "Opening balance: %s\n", report.OpeningBalance.String())
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "DATE\tTYPE\tDOCUMENT\tDUE\tINCREASE\tDECREASE\tBALANCE")
+	for _, entry := range report.Entries {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			entry.Date,
+			entry.DocumentType,
+			entry.DocumentNumber,
+			entry.DueDate,
+			entry.IncreaseAmount.String(),
+			entry.DecreaseAmount.String(),
+			entry.Balance.String(),
+		)
+	}
+	_ = tw.Flush()
+	_, _ = fmt.Fprintf(w, "Total invoiced: %s\n", report.TotalInvoiced.String())
+	_, _ = fmt.Fprintf(w, "Total paid: %s\n", report.TotalPaid.String())
+	_, _ = fmt.Fprintf(w, "Closing balance: %s\n", report.ClosingBalance.String())
+}
+
 func printAccountBalances(w io.Writer, balances []accounting.AccountBalance) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "CODE\tNAME\tTYPE\tDEBIT\tCREDIT\tNET")

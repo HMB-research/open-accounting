@@ -1863,6 +1863,119 @@ func (h *Handlers) GetBalanceConfirmation(w http.ResponseWriter, r *http.Request
 	respondJSON(w, http.StatusOK, result)
 }
 
+// GetContactStatement returns periodic statement activity for one customer or supplier
+// @Summary Get contact statement
+// @Description Get opening balance, invoice/payment activity, and closing balance for one customer or supplier over a period
+// @Tags Reports
+// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param contactID path string true "Contact ID"
+// @Param type query string true "Statement type (RECEIVABLE or PAYABLE)"
+// @Param start_date query string true "Start date (YYYY-MM-DD)"
+// @Param end_date query string true "End date (YYYY-MM-DD)"
+// @Param format query string false "Response format: json, csv, xlsx, or pdf"
+// @Success 200 {object} reports.ContactStatement
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/reports/contact-statements/{contactID} [get]
+func (h *Handlers) GetContactStatement(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	contactID := chi.URLParam(r, "contactID")
+
+	format, err := reportResponseFormat(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	req, err := contactStatementRequestFromQuery(contactID, r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+	result, err := h.reportsService.GetContactStatement(r.Context(), tenantID, schemaName, req)
+	if err != nil {
+		log.Error().Err(err).Str("tenant", tenantID).Str("contact", contactID).Msg("Failed to get contact statement")
+		respondError(w, http.StatusInternalServerError, "Failed to get contact statement")
+		return
+	}
+
+	fileStem := fmt.Sprintf("contact-statement-%s-%s-%s", contactID, req.StartDate, req.EndDate)
+	if format == "csv" {
+		content, err := contactStatementCSV(result)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export contact statement CSV")
+			return
+		}
+		respondReportCSV(w, fileStem+".csv", content)
+		return
+	}
+	if format == "xlsx" {
+		content, err := contactStatementXLSX(result)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export contact statement XLSX")
+			return
+		}
+		respondReportXLSX(w, fileStem+".xlsx", content)
+		return
+	}
+	if format == "pdf" {
+		content, err := contactStatementPDF(result)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export contact statement PDF")
+			return
+		}
+		respondReportPDF(w, fileStem+".pdf", content)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+func contactStatementRequestFromQuery(contactID string, r *http.Request) (*reports.ContactStatementRequest, error) {
+	balanceType := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("type")))
+	if balanceType == "" {
+		return nil, fmt.Errorf("type parameter is required (RECEIVABLE or PAYABLE)")
+	}
+	if balanceType != string(reports.BalanceTypeReceivable) && balanceType != string(reports.BalanceTypePayable) {
+		return nil, fmt.Errorf("type must be RECEIVABLE or PAYABLE")
+	}
+
+	startDate := strings.TrimSpace(r.URL.Query().Get("start_date"))
+	if startDate == "" {
+		return nil, fmt.Errorf("start_date parameter is required")
+	}
+	parsedStart, err := time.Parse("2006-01-02", startDate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid start_date format. Use YYYY-MM-DD")
+	}
+
+	endDate := strings.TrimSpace(r.URL.Query().Get("end_date"))
+	if endDate == "" {
+		return nil, fmt.Errorf("end_date parameter is required")
+	}
+	parsedEnd, err := time.Parse("2006-01-02", endDate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid end_date format. Use YYYY-MM-DD")
+	}
+	if parsedEnd.Before(parsedStart) {
+		return nil, fmt.Errorf("end_date must be on or after start_date")
+	}
+
+	if strings.TrimSpace(contactID) == "" {
+		return nil, fmt.Errorf("contactID path parameter is required")
+	}
+	return &reports.ContactStatementRequest{
+		ContactID: strings.TrimSpace(contactID),
+		Type:      balanceType,
+		StartDate: startDate,
+		EndDate:   endDate,
+	}, nil
+}
+
 // GetOverdueInvoices returns a summary of all overdue invoices for payment reminders
 // @Summary Get overdue invoices
 // @Description Get a summary of all overdue sales invoices for sending payment reminders

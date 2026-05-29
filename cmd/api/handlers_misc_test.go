@@ -149,6 +149,28 @@ func TestExtendedReportHandlers(t *testing.T) {
 		Currency:          "EUR",
 		DaysOverdue:       10,
 	}}
+	reportsRepo.ContactStatementOpening = decimal.NewFromInt(100)
+	reportsRepo.ContactStatementEntries = []reports.ContactStatementEntry{
+		{
+			Date:            "2026-01-05",
+			DocumentType:    "INVOICE",
+			DocumentID:      "inv-1",
+			DocumentNumber:  "INV-001",
+			DueDate:         "2026-01-15",
+			Currency:        "EUR",
+			DocumentAmount:  decimal.NewFromInt(250),
+			StatementAmount: decimal.NewFromInt(250),
+		},
+		{
+			Date:            "2026-01-20",
+			DocumentType:    "PAYMENT",
+			DocumentID:      "pay-1",
+			DocumentNumber:  "PMT-001",
+			Currency:        "EUR",
+			DocumentAmount:  decimal.NewFromInt(50),
+			StatementAmount: decimal.NewFromInt(-50),
+		},
+	}
 
 	req := withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
 	rr := httptest.NewRecorder()
@@ -327,6 +349,54 @@ func TestExtendedReportHandlers(t *testing.T) {
 	})
 	rr = httptest.NewRecorder()
 	h.GetBalanceConfirmation(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/contact-statements/contact-1?type=RECEIVABLE&start_date=2026-01-01&end_date=2026-01-31", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"contactID": "contact-1",
+	})
+	rr = httptest.NewRecorder()
+	h.GetContactStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	var statement reports.ContactStatement
+	assert.NoError(t, json.NewDecoder(rr.Body).Decode(&statement))
+	assert.True(t, statement.ClosingBalance.Equal(decimal.NewFromInt(300)))
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/contact-statements/contact-1?type=RECEIVABLE&start_date=2026-01-01&end_date=2026-01-31&format=csv", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"contactID": "contact-1",
+	})
+	rr = httptest.NewRecorder()
+	h.GetContactStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "row_type,type,start_date")
+	assert.Contains(t, rr.Body.String(), "PMT-001")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/contact-statements/contact-1?type=RECEIVABLE&start_date=2026-01-01&end_date=2026-01-31&format=xlsx", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"contactID": "contact-1",
+	})
+	rr = httptest.NewRecorder()
+	h.GetContactStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	requireXLSXContains(t, rr.Body.Bytes(), "PMT-001")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/contact-statements/contact-1?type=RECEIVABLE&start_date=2026-01-01&end_date=2026-01-31&format=pdf", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"contactID": "contact-1",
+	})
+	rr = httptest.NewRecorder()
+	h.GetContactStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	requirePDF(t, rr.Body.Bytes())
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/contact-statements/contact-1?type=RECEIVABLE&start_date=2026-02-01&end_date=2026-01-31", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"contactID": "contact-1",
+	})
+	rr = httptest.NewRecorder()
+	h.GetContactStatement(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
 

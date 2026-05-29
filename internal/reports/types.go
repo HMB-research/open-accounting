@@ -149,6 +149,14 @@ type BalanceConfirmationRequest struct {
 	AsOfDate  string `json:"as_of_date"`           // Date for balance calculation
 }
 
+// ContactStatementRequest represents a request to generate a contact activity statement.
+type ContactStatementRequest struct {
+	ContactID string `json:"contact_id"`
+	Type      string `json:"type"`       // "RECEIVABLE" or "PAYABLE"
+	StartDate string `json:"start_date"` // Start date for statement activity
+	EndDate   string `json:"end_date"`   // End date for statement activity
+}
+
 // BalanceConfirmationSummary represents a summary of all balances for a type
 type BalanceConfirmationSummary struct {
 	Type         BalanceConfirmationType `json:"type"`
@@ -169,4 +177,40 @@ type ContactBalance struct {
 	Balance       decimal.Decimal `json:"balance"`
 	InvoiceCount  int             `json:"invoice_count"`
 	OldestInvoice string          `json:"oldest_invoice,omitempty"`
+}
+
+// ContactStatement represents a customer or supplier statement for a period.
+type ContactStatement struct {
+	ID             string                  `json:"id"`
+	TenantID       string                  `json:"tenant_id"`
+	ContactID      string                  `json:"contact_id"`
+	ContactName    string                  `json:"contact_name"`
+	ContactCode    string                  `json:"contact_code,omitempty"`
+	ContactEmail   string                  `json:"contact_email,omitempty"`
+	Type           BalanceConfirmationType `json:"type"`
+	StartDate      string                  `json:"start_date"`
+	EndDate        string                  `json:"end_date"`
+	OpeningBalance decimal.Decimal         `json:"opening_balance"`
+	ClosingBalance decimal.Decimal         `json:"closing_balance"`
+	TotalInvoiced  decimal.Decimal         `json:"total_invoiced"`
+	TotalPaid      decimal.Decimal         `json:"total_paid"`
+	Entries        []ContactStatementEntry `json:"entries"`
+	GeneratedAt    time.Time               `json:"generated_at"`
+}
+
+// ContactStatementEntry represents one invoice or payment row on a contact statement.
+type ContactStatementEntry struct {
+	Date            string          `json:"date"`
+	DocumentType    string          `json:"document_type"`
+	DocumentID      string          `json:"document_id"`
+	DocumentNumber  string          `json:"document_number"`
+	DueDate         string          `json:"due_date,omitempty"`
+	Description     string          `json:"description,omitempty"`
+	Reference       string          `json:"reference,omitempty"`
+	Currency        string          `json:"currency"`
+	DocumentAmount  decimal.Decimal `json:"document_amount"`
+	StatementAmount decimal.Decimal `json:"statement_amount"`
+	IncreaseAmount  decimal.Decimal `json:"increase_amount"`
+	DecreaseAmount  decimal.Decimal `json:"decrease_amount"`
+	Balance         decimal.Decimal `json:"balance"`
 }

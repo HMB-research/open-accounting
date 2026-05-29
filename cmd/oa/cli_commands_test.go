@@ -4774,6 +4774,51 @@ func TestCLIReportsCommands(t *testing.T) {
 				}},
 				"generated_at": "2026-03-31T12:00:00Z",
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/contact-statements/contact-1":
+			require.Equal(t, "RECEIVABLE", r.URL.Query().Get("type"))
+			require.Equal(t, "2026-01-01", r.URL.Query().Get("start_date"))
+			require.Equal(t, "2026-01-31", r.URL.Query().Get("end_date"))
+			if r.URL.Query().Get("format") == "csv" {
+				w.Header().Set("Content-Type", "text/csv")
+				_, _ = w.Write([]byte("row_type,type,start_date,end_date,document_number,balance\nentry,RECEIVABLE,2026-01-01,2026-01-31,PMT-1,1050.00\n"))
+				return
+			}
+			if r.URL.Query().Get("format") == "xlsx" {
+				w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+				_, _ = w.Write([]byte("xlsx-contact-statement"))
+				return
+			}
+			if r.URL.Query().Get("format") == "pdf" {
+				w.Header().Set("Content-Type", "application/pdf")
+				_, _ = w.Write([]byte("%PDF contact statement"))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":              "statement-1",
+				"tenant_id":       "tenant-1",
+				"contact_id":      "contact-1",
+				"contact_name":    "Acme",
+				"contact_code":    "CUST-1",
+				"type":            "RECEIVABLE",
+				"start_date":      "2026-01-01",
+				"end_date":        "2026-01-31",
+				"opening_balance": "100.00",
+				"closing_balance": "1050.00",
+				"total_invoiced":  "1000.00",
+				"total_paid":      "50.00",
+				"entries": []map[string]any{{
+					"date":             "2026-01-20",
+					"document_type":    "PAYMENT",
+					"document_id":      "pay-1",
+					"document_number":  "PMT-1",
+					"currency":         "EUR",
+					"document_amount":  "50.00",
+					"statement_amount": "-50.00",
+					"decrease_amount":  "50.00",
+					"balance":          "1050.00",
+				}},
+				"generated_at": "2026-03-31T12:00:00Z",
+			})
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -4996,6 +5041,40 @@ func TestCLIReportsCommands(t *testing.T) {
 	confirmationPDF, err := os.ReadFile(confirmationPDFPath)
 	require.NoError(t, err)
 	assert.Equal(t, []byte("%PDF balance confirmation"), confirmationPDF)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "contact-statement", "--contact-id", "contact-1", "--type", "RECEIVABLE", "--start", "2026-01-01", "--end", "2026-01-31"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Opening balance: 100")
+	assert.Contains(t, stdout.String(), "PMT-1")
+	assert.Contains(t, stdout.String(), "Closing balance: 1050")
+
+	stdout.Reset()
+	contactStatementCSVPath := filepath.Join(t.TempDir(), "contact-statement.csv")
+	err = app.run(context.Background(), []string{"reports", "contact-statement", "--contact-id", "contact-1", "--type", "RECEIVABLE", "--start", "2026-01-01", "--end", "2026-01-31", "--csv", "--output", contactStatementCSVPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote contact statement CSV")
+	contactStatementCSV, err := os.ReadFile(contactStatementCSVPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(contactStatementCSV), "PMT-1")
+
+	stdout.Reset()
+	contactStatementXLSXPath := filepath.Join(t.TempDir(), "contact-statement.xlsx")
+	err = app.run(context.Background(), []string{"reports", "contact-statement", "--contact-id", "contact-1", "--type", "RECEIVABLE", "--start", "2026-01-01", "--end", "2026-01-31", "--xlsx", "--output", contactStatementXLSXPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote contact statement XLSX")
+	contactStatementXLSX, err := os.ReadFile(contactStatementXLSXPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("xlsx-contact-statement"), contactStatementXLSX)
+
+	stdout.Reset()
+	contactStatementPDFPath := filepath.Join(t.TempDir(), "contact-statement.pdf")
+	err = app.run(context.Background(), []string{"reports", "contact-statement", "--contact-id", "contact-1", "--type", "RECEIVABLE", "--start", "2026-01-01", "--end", "2026-01-31", "--pdf", "--output", contactStatementPDFPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote contact statement PDF")
+	contactStatementPDF, err := os.ReadFile(contactStatementPDFPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("%PDF contact statement"), contactStatementPDF)
 }
 
 func TestCLIEmployeesCommands(t *testing.T) {

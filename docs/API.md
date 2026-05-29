@@ -2652,6 +2652,21 @@ Authorization: Bearer <token>
 - `as_of_date` (string, required): Date in YYYY-MM-DD format
 - `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
 
+### Contact Statement
+
+```http
+GET /tenants/{tenantId}/reports/contact-statements/{contactId}
+Authorization: Bearer <token>
+```
+
+Returns one customer or supplier statement with opening balance, period invoices, period payments, and closing balance.
+
+**Query Parameters:**
+- `type` (string, required): `RECEIVABLE` for customer statements or `PAYABLE` for supplier statements
+- `start_date` (string, required): Start date in YYYY-MM-DD format
+- `end_date` (string, required): End date in YYYY-MM-DD format
+- `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
+
 ---
 
 ## Estonian Tax (KMD)

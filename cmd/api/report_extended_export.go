@@ -38,6 +38,14 @@ func balanceConfirmationXLSX(report *reports.BalanceConfirmation) ([]byte, error
 	return reportRowsXLSX("Balance Confirmation", balanceConfirmationRows(report))
 }
 
+func contactStatementCSV(report *reports.ContactStatement) ([]byte, error) {
+	return rowsToCSV(contactStatementRows(report))
+}
+
+func contactStatementXLSX(report *reports.ContactStatement) ([]byte, error) {
+	return reportRowsXLSX("Contact Statement", contactStatementRows(report))
+}
+
 func costCenterReportCSV(report *accounting.CostCenterReport) ([]byte, error) {
 	return rowsToCSV(costCenterReportRows(report))
 }
@@ -243,6 +251,93 @@ func balanceConfirmationRows(report *reports.BalanceConfirmation) [][]string {
 			invoice.OutstandingAmount.String(),
 			invoice.Currency,
 			intString(invoice.DaysOverdue),
+		})
+	}
+	return rows
+}
+
+func contactStatementRows(report *reports.ContactStatement) [][]string {
+	rows := [][]string{{
+		"row_type",
+		"type",
+		"start_date",
+		"end_date",
+		"contact_id",
+		"contact_name",
+		"contact_code",
+		"contact_email",
+		"opening_balance",
+		"closing_balance",
+		"total_invoiced",
+		"total_paid",
+		"date",
+		"document_type",
+		"document_id",
+		"document_number",
+		"due_date",
+		"description",
+		"reference",
+		"currency",
+		"document_amount",
+		"statement_amount",
+		"increase_amount",
+		"decrease_amount",
+		"balance",
+	}}
+	rows = append(rows, []string{
+		"summary",
+		string(report.Type),
+		report.StartDate,
+		report.EndDate,
+		report.ContactID,
+		report.ContactName,
+		report.ContactCode,
+		report.ContactEmail,
+		report.OpeningBalance.String(),
+		report.ClosingBalance.String(),
+		report.TotalInvoiced.String(),
+		report.TotalPaid.String(),
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+	})
+	for _, entry := range report.Entries {
+		rows = append(rows, []string{
+			"entry",
+			string(report.Type),
+			report.StartDate,
+			report.EndDate,
+			report.ContactID,
+			report.ContactName,
+			report.ContactCode,
+			report.ContactEmail,
+			"",
+			"",
+			"",
+			"",
+			entry.Date,
+			entry.DocumentType,
+			entry.DocumentID,
+			entry.DocumentNumber,
+			entry.DueDate,
+			entry.Description,
+			entry.Reference,
+			entry.Currency,
+			entry.DocumentAmount.String(),
+			entry.StatementAmount.String(),
+			entry.IncreaseAmount.String(),
+			entry.DecreaseAmount.String(),
+			entry.Balance.String(),
 		})
 	}
 	return rows
