@@ -41,7 +41,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Auto-generated entries | ✅ | ✅ | ✅ | Implemented |
 | Entry numbering | ✅ | ✅ | ✅ | Implemented |
 | Entry reversal/void | ✅ | ✅ | ✅ | Implemented |
-| Recurring entries | ✅ | ✅ | ❌ | **Gap** |
+| Recurring entries | ✅ | ✅ | ⚠️ | Partial: recurring journal templates can generate single or due-batch entries through API/CLI; background scheduler/UI polish remains |
 | Entry templates | ✅ | ✅ | ✅ | Implemented through reusable balanced journal entry templates with API/CLI apply workflow |
 | Multi-currency entries | ✅ | ✅ | ⚠️ | Partial |
 

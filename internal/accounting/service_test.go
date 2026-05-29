@@ -161,6 +161,35 @@ func (m *MockRepository) GetJournalEntryTemplateByID(ctx context.Context, schema
 	return template, nil
 }
 
+func (m *MockRepository) GetDueJournalEntryTemplateIDs(ctx context.Context, schemaName, tenantID string, asOfDate time.Time) ([]string, error) {
+	var ids []string
+	for _, template := range m.templates {
+		if template.TenantID != tenantID || !template.IsActive || !template.IsRecurring() || template.NextGenerationDate == nil {
+			continue
+		}
+		if template.NextGenerationDate.After(asOfDate) {
+			continue
+		}
+		if template.EndDate != nil && template.NextGenerationDate.After(*template.EndDate) {
+			continue
+		}
+		ids = append(ids, template.ID)
+	}
+	return ids, nil
+}
+
+func (m *MockRepository) UpdateJournalEntryTemplateAfterGeneration(ctx context.Context, schemaName, tenantID, templateID string, nextDate time.Time, generatedAt time.Time) error {
+	template, ok := m.templates[templateID]
+	if !ok || template.TenantID != tenantID {
+		return errors.New("journal entry template not found")
+	}
+	template.NextGenerationDate = &nextDate
+	template.LastGeneratedAt = &generatedAt
+	template.GeneratedCount++
+	template.UpdatedAt = generatedAt
+	return nil
+}
+
 func (m *MockRepository) UpdateJournalEntryStatus(ctx context.Context, schemaName, tenantID, entryID string, status JournalEntryStatus, userID string) error {
 	if m.updateStatusErr != nil {
 		return m.updateStatusErr
@@ -616,6 +645,47 @@ func TestService_JournalEntryTemplateValidation(t *testing.T) {
 		UserID:    "user-1",
 	})
 	require.ErrorIs(t, err, ErrTemplateEvidenceAutoPost)
+}
+
+func TestService_RecurringJournalEntryTemplateGeneration(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	svc := NewServiceWithRepo(nil, repo)
+	schemaName := "tenant_test"
+	startDate := time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC)
+
+	template, err := svc.CreateJournalEntryTemplate(ctx, schemaName, "tenant-1", &CreateJournalEntryTemplateRequest{
+		Name:        "Monthly depreciation",
+		Description: "Monthly depreciation",
+		Frequency:   JournalEntryTemplateFrequencyMonthly,
+		StartDate:   &startDate,
+		Lines: []CreateJournalEntryLineReq{
+			{AccountID: "depreciation-expense", DebitAmount: decimal.RequireFromString("250.00")},
+			{AccountID: "accumulated-depreciation", CreditAmount: decimal.RequireFromString("250.00")},
+		},
+		UserID: "user-1",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, template.NextGenerationDate)
+	assert.Equal(t, "2026-04-30", template.NextGenerationDate.Format("2006-01-02"))
+
+	result, err := svc.GenerateJournalEntryTemplate(ctx, schemaName, "tenant-1", template.ID, &GenerateJournalEntryTemplateRequest{
+		UserID: "user-1",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "generated", result.Status)
+	assert.Equal(t, "JE-00001", result.GeneratedEntryNumber)
+	require.NotNil(t, result.NextGenerationDate)
+	assert.Equal(t, "2026-05-30", result.NextGenerationDate.Format("2006-01-02"))
+	assert.Equal(t, 1, repo.templates[template.ID].GeneratedCount)
+
+	dueResults, err := svc.GenerateDueJournalEntryTemplates(ctx, schemaName, "tenant-1", &GenerateDueJournalEntryTemplatesRequest{
+		AsOfDate: result.NextGenerationDate,
+		UserID:   "user-1",
+	})
+	require.NoError(t, err)
+	require.Len(t, dueResults, 1)
+	assert.Equal(t, "generated", dueResults[0].Status)
 }
 
 func TestService_PostJournalEntry(t *testing.T) {

@@ -246,16 +246,20 @@ func TestPostgresRepository_JournalEntryTemplates(t *testing.T) {
 		t.Fatalf("failed to get expense account: %v", err)
 	}
 
+	startDate := time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC)
 	template := &JournalEntryTemplate{
-		ID:          uuid.New().String(),
-		TenantID:    tenant.ID,
-		Name:        "Monthly office supplies",
-		Description: "Monthly office supplies accrual",
-		Reference:   "SUPPLIES",
-		IsActive:    true,
-		CreatedAt:   time.Now(),
-		CreatedBy:   userID,
-		UpdatedAt:   time.Now(),
+		ID:                 uuid.New().String(),
+		TenantID:           tenant.ID,
+		Name:               "Monthly office supplies",
+		Description:        "Monthly office supplies accrual",
+		Reference:          "SUPPLIES",
+		IsActive:           true,
+		Frequency:          JournalEntryTemplateFrequencyMonthly,
+		StartDate:          &startDate,
+		NextGenerationDate: &startDate,
+		CreatedAt:          time.Now(),
+		CreatedBy:          userID,
+		UpdatedAt:          time.Now(),
 		Lines: []JournalEntryTemplateLine{
 			{
 				ID:           uuid.New().String(),
@@ -298,6 +302,30 @@ func TestPostgresRepository_JournalEntryTemplates(t *testing.T) {
 	}
 	if reloaded.Name != template.Name || len(reloaded.Lines) != 2 {
 		t.Fatalf("unexpected reloaded template: %#v", reloaded)
+	}
+	if reloaded.Frequency != JournalEntryTemplateFrequencyMonthly || reloaded.NextGenerationDate == nil {
+		t.Fatalf("expected monthly recurring template, got %#v", reloaded)
+	}
+
+	dueIDs, err := repo.GetDueJournalEntryTemplateIDs(ctx, tenant.SchemaName, tenant.ID, time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("GetDueJournalEntryTemplateIDs failed: %v", err)
+	}
+	if len(dueIDs) != 1 || dueIDs[0] != template.ID {
+		t.Fatalf("expected due template %s, got %#v", template.ID, dueIDs)
+	}
+
+	nextDate := time.Date(2026, 5, 30, 0, 0, 0, 0, time.UTC)
+	generatedAt := time.Now()
+	if err := repo.UpdateJournalEntryTemplateAfterGeneration(ctx, tenant.SchemaName, tenant.ID, template.ID, nextDate, generatedAt); err != nil {
+		t.Fatalf("UpdateJournalEntryTemplateAfterGeneration failed: %v", err)
+	}
+	advanced, err := repo.GetJournalEntryTemplateByID(ctx, tenant.SchemaName, tenant.ID, template.ID)
+	if err != nil {
+		t.Fatalf("GetJournalEntryTemplateByID after update failed: %v", err)
+	}
+	if advanced.NextGenerationDate == nil || !advanced.NextGenerationDate.Equal(nextDate) || advanced.GeneratedCount != 1 {
+		t.Fatalf("expected advanced template, got %#v", advanced)
 	}
 }
 

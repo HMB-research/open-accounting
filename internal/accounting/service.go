@@ -19,6 +19,8 @@ type JournalEntryTemplateRepository interface {
 	CreateJournalEntryTemplate(ctx context.Context, schemaName string, template *JournalEntryTemplate) error
 	ListJournalEntryTemplates(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]JournalEntryTemplate, error)
 	GetJournalEntryTemplateByID(ctx context.Context, schemaName, tenantID, templateID string) (*JournalEntryTemplate, error)
+	GetDueJournalEntryTemplateIDs(ctx context.Context, schemaName, tenantID string, asOfDate time.Time) ([]string, error)
+	UpdateJournalEntryTemplateAfterGeneration(ctx context.Context, schemaName, tenantID, templateID string, nextDate time.Time, generatedAt time.Time) error
 }
 
 var (
@@ -167,17 +169,22 @@ func (s *Service) CreateJournalEntryTemplate(ctx context.Context, schemaName, te
 
 	now := time.Now()
 	template := &JournalEntryTemplate{
-		ID:               uuid.New().String(),
-		TenantID:         tenantID,
-		Name:             strings.TrimSpace(req.Name),
-		Description:      strings.TrimSpace(req.Description),
-		Reference:        strings.TrimSpace(req.Reference),
-		RequiresEvidence: req.RequiresEvidence,
-		IsActive:         true,
-		CreatedAt:        now,
-		CreatedBy:        req.UserID,
-		UpdatedAt:        now,
+		ID:                 uuid.New().String(),
+		TenantID:           tenantID,
+		Name:               strings.TrimSpace(req.Name),
+		Description:        strings.TrimSpace(req.Description),
+		Reference:          strings.TrimSpace(req.Reference),
+		RequiresEvidence:   req.RequiresEvidence,
+		IsActive:           true,
+		Frequency:          req.Frequency,
+		StartDate:          cloneTemplateDate(req.StartDate),
+		EndDate:            cloneTemplateDate(req.EndDate),
+		NextGenerationDate: cloneTemplateDate(req.NextGenerationDate),
+		CreatedAt:          now,
+		CreatedBy:          req.UserID,
+		UpdatedAt:          now,
 	}
+	normalizeJournalEntryTemplateSchedule(template)
 	for i, reqLine := range req.Lines {
 		line := newJournalEntryTemplateLine(template.ID, i+1, reqLine)
 		template.Lines = append(template.Lines, line)
@@ -272,6 +279,88 @@ func (s *Service) ApplyJournalEntryTemplate(ctx context.Context, schemaName, ten
 	return s.GetJournalEntry(ctx, schemaName, tenantID, entry.ID)
 }
 
+// GenerateJournalEntryTemplate generates one due recurring journal template and advances its schedule.
+func (s *Service) GenerateJournalEntryTemplate(ctx context.Context, schemaName, tenantID, templateID string, req *GenerateJournalEntryTemplateRequest) (*JournalEntryTemplateGenerationResult, error) {
+	repo, err := s.templateRepository()
+	if err != nil {
+		return nil, err
+	}
+
+	template, err := s.GetJournalEntryTemplate(ctx, schemaName, tenantID, templateID)
+	if err != nil {
+		return nil, err
+	}
+	entryDate, err := recurringTemplateEntryDate(template, req.EntryDate)
+	if err != nil {
+		return nil, err
+	}
+	if req.PeriodLockDate != nil && !entryDate.After(*req.PeriodLockDate) {
+		return nil, fmt.Errorf("period locked through %s; recurring template date %s must be later", req.PeriodLockDate.Format("2006-01-02"), entryDate.Format("2006-01-02"))
+	}
+
+	entry, err := s.ApplyJournalEntryTemplate(ctx, schemaName, tenantID, templateID, &ApplyJournalEntryTemplateRequest{
+		EntryDate: entryDate,
+		Post:      req.Post,
+		UserID:    req.UserID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	nextDate := normalizeJournalTemplateDate(template.CalculateNextDate(entryDate))
+	generatedAt := time.Now()
+	if err := repo.UpdateJournalEntryTemplateAfterGeneration(ctx, schemaName, tenantID, templateID, nextDate, generatedAt); err != nil {
+		return nil, fmt.Errorf("update recurring journal template: %w", err)
+	}
+
+	return &JournalEntryTemplateGenerationResult{
+		TemplateID:           template.ID,
+		TemplateName:         template.Name,
+		GeneratedEntryID:     entry.ID,
+		GeneratedEntryNumber: entry.EntryNumber,
+		EntryDate:            &entryDate,
+		NextGenerationDate:   &nextDate,
+		Status:               "generated",
+	}, nil
+}
+
+// GenerateDueJournalEntryTemplates generates all recurring journal templates due by a date.
+func (s *Service) GenerateDueJournalEntryTemplates(ctx context.Context, schemaName, tenantID string, req *GenerateDueJournalEntryTemplatesRequest) ([]JournalEntryTemplateGenerationResult, error) {
+	repo, err := s.templateRepository()
+	if err != nil {
+		return nil, err
+	}
+	asOfDate := time.Now()
+	if req.AsOfDate != nil {
+		asOfDate = *req.AsOfDate
+	}
+	asOfDate = normalizeJournalTemplateDate(asOfDate)
+
+	ids, err := repo.GetDueJournalEntryTemplateIDs(ctx, schemaName, tenantID, asOfDate)
+	if err != nil {
+		return nil, fmt.Errorf("list due recurring journal templates: %w", err)
+	}
+
+	results := make([]JournalEntryTemplateGenerationResult, 0, len(ids))
+	for _, id := range ids {
+		result, err := s.GenerateJournalEntryTemplate(ctx, schemaName, tenantID, id, &GenerateJournalEntryTemplateRequest{
+			Post:           req.Post,
+			UserID:         req.UserID,
+			PeriodLockDate: req.PeriodLockDate,
+		})
+		if err != nil {
+			results = append(results, JournalEntryTemplateGenerationResult{
+				TemplateID: id,
+				Status:     "error",
+				Error:      err.Error(),
+			})
+			continue
+		}
+		results = append(results, *result)
+	}
+	return results, nil
+}
+
 func (s *Service) templateRepository() (JournalEntryTemplateRepository, error) {
 	repo, ok := s.repo.(JournalEntryTemplateRepository)
 	if !ok {
@@ -303,6 +392,9 @@ func newJournalEntryTemplateLine(templateID string, lineNumber int, reqLine Crea
 }
 
 func validateJournalEntryTemplate(template *JournalEntryTemplate) error {
+	if err := validateJournalEntryTemplateSchedule(template); err != nil {
+		return err
+	}
 	entry := &JournalEntry{Lines: make([]JournalEntryLine, 0, len(template.Lines))}
 	for _, templateLine := range template.Lines {
 		if strings.TrimSpace(templateLine.AccountID) == "" {
@@ -320,6 +412,72 @@ func validateJournalEntryTemplate(template *JournalEntryTemplate) error {
 		})
 	}
 	return entry.Validate()
+}
+
+func validateJournalEntryTemplateSchedule(template *JournalEntryTemplate) error {
+	if template.Frequency == "" {
+		return nil
+	}
+	if !isValidJournalEntryTemplateFrequency(template.Frequency) {
+		return errors.New("invalid journal entry template frequency")
+	}
+	if template.StartDate == nil {
+		return errors.New("start_date is required for recurring journal entry templates")
+	}
+	if template.EndDate != nil && template.EndDate.Before(*template.StartDate) {
+		return errors.New("end_date cannot be before start_date")
+	}
+	if template.NextGenerationDate == nil {
+		return errors.New("next_generation_date is required for recurring journal entry templates")
+	}
+	if template.NextGenerationDate.Before(*template.StartDate) {
+		return errors.New("next_generation_date cannot be before start_date")
+	}
+	return nil
+}
+
+func normalizeJournalEntryTemplateSchedule(template *JournalEntryTemplate) {
+	template.StartDate = cloneTemplateDate(template.StartDate)
+	template.EndDate = cloneTemplateDate(template.EndDate)
+	template.NextGenerationDate = cloneTemplateDate(template.NextGenerationDate)
+	if template.Frequency != "" && template.NextGenerationDate == nil && template.StartDate != nil {
+		next := *template.StartDate
+		template.NextGenerationDate = &next
+	}
+}
+
+func recurringTemplateEntryDate(template *JournalEntryTemplate, requested *time.Time) (time.Time, error) {
+	if !template.IsRecurring() {
+		return time.Time{}, errors.New("journal entry template is not recurring")
+	}
+	var entryDate time.Time
+	if requested != nil {
+		entryDate = *requested
+	} else if template.NextGenerationDate != nil {
+		entryDate = *template.NextGenerationDate
+	} else if template.StartDate != nil {
+		entryDate = *template.StartDate
+	} else {
+		return time.Time{}, errors.New("recurring journal entry template has no next generation date")
+	}
+	entryDate = normalizeJournalTemplateDate(entryDate)
+	if template.EndDate != nil && entryDate.After(*template.EndDate) {
+		return time.Time{}, fmt.Errorf("recurring journal entry template ended on %s", template.EndDate.Format("2006-01-02"))
+	}
+	return entryDate, nil
+}
+
+func cloneTemplateDate(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	normalized := normalizeJournalTemplateDate(*value)
+	return &normalized
+}
+
+func normalizeJournalTemplateDate(value time.Time) time.Time {
+	utc := value.UTC()
+	return time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 // PostJournalEntry posts a draft journal entry

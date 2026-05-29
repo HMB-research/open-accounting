@@ -1316,6 +1316,25 @@ func journalTemplateTotalCredit(lines []accounting.JournalEntryTemplateLine) dec
 	return total
 }
 
+func printJournalEntryTemplateGenerationResults(w io.Writer, results []accounting.JournalEntryTemplateGenerationResult) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "TEMPLATE\tENTRY\tNUMBER\tENTRY DATE\tNEXT DATE\tSTATUS\tERROR")
+	for _, result := range results {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			result.TemplateID,
+			result.GeneratedEntryID,
+			result.GeneratedEntryNumber,
+			formatDatePtr(result.EntryDate),
+			formatDatePtr(result.NextGenerationDate),
+			result.Status,
+			result.Error,
+		)
+	}
+	_ = tw.Flush()
+}
+
 func printEmployeesTable(w io.Writer, employees []payroll.Employee) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tNUMBER\tNAME\tTYPE\tEMAIL\tACTIVE")

@@ -724,6 +724,8 @@ GET /tenants/{tenantId}/journal-entry-templates?active_only=true
 GET /tenants/{tenantId}/journal-entry-templates/{templateId}
 POST /tenants/{tenantId}/journal-entry-templates
 POST /tenants/{tenantId}/journal-entry-templates/{templateId}/apply
+POST /tenants/{tenantId}/journal-entry-templates/{templateId}/generate
+POST /tenants/{tenantId}/journal-entry-templates/generate-due
 Authorization: Bearer <token>
 ```
 
@@ -735,6 +737,8 @@ Create templates with the same line format as manual journal entries:
   "description": "Monthly rent accrual",
   "reference": "RENT",
   "requires_evidence": false,
+  "frequency": "MONTHLY",
+  "start_date": "2026-04-30T00:00:00Z",
   "lines": [
     {"account_id": "expense-account-id", "description": "Rent expense", "debit_amount": "500.00"},
     {"account_id": "accrual-account-id", "description": "Accrued rent", "credit_amount": "500.00"}
@@ -742,18 +746,38 @@ Create templates with the same line format as manual journal entries:
 }
 ```
 
-Apply a template to create a draft or posted journal entry:
+Omit `frequency` for an on-demand template. Recurring frequencies are `WEEKLY`, `BIWEEKLY`, `MONTHLY`, `QUARTERLY`, and `YEARLY`; `start_date` is required for recurring templates and becomes the first `next_generation_date` unless an explicit `next_generation_date` is supplied.
+
+Apply a template to create a draft or posted journal entry without advancing recurring schedule metadata:
 
 ```json
 {
-  "entry_date": "2026-04-30",
+  "entry_date": "2026-04-30T00:00:00Z",
   "description": "April rent accrual",
   "reference": "RENT-APR",
   "post": true
 }
 ```
 
-Templates marked `requires_evidence` can be applied as drafts, but cannot be auto-posted because the generated entry needs approved evidence before posting.
+Generate recurring templates when the schedule should advance:
+
+```json
+{
+  "entry_date": "2026-04-30T00:00:00Z",
+  "post": true
+}
+```
+
+For all due templates:
+
+```json
+{
+  "as_of_date": "2026-05-31T00:00:00Z",
+  "post": false
+}
+```
+
+Templates marked `requires_evidence` can be applied or generated as drafts, but cannot be auto-posted because the generated entry needs approved evidence before posting. Due generation returns one result per template and reports per-template errors, including closed-period conflicts.
 
 ### Import Opening Balances
 

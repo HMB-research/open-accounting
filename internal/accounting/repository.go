@@ -387,11 +387,15 @@ func (r *Repository) CreateJournalEntryTemplate(ctx context.Context, schemaName 
 
 	_, err = tx.Exec(ctx, fmt.Sprintf(`
 		INSERT INTO %s.journal_entry_templates (
-			id, tenant_id, name, description, reference, requires_evidence, is_active, created_at, created_by, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			id, tenant_id, name, description, reference, requires_evidence, is_active,
+			frequency, start_date, end_date, next_generation_date, last_generated_at, generated_count,
+			created_at, created_by, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 	`, schemaName),
 		template.ID, template.TenantID, template.Name, template.Description, template.Reference,
-		template.RequiresEvidence, template.IsActive, template.CreatedAt, template.CreatedBy, template.UpdatedAt,
+		template.RequiresEvidence, template.IsActive, template.Frequency, template.StartDate, template.EndDate,
+		template.NextGenerationDate, template.LastGeneratedAt, template.GeneratedCount,
+		template.CreatedAt, template.CreatedBy, template.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("insert journal entry template: %w", err)
@@ -427,7 +431,9 @@ func (r *Repository) CreateJournalEntryTemplate(ctx context.Context, schemaName 
 func (r *Repository) ListJournalEntryTemplates(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]JournalEntryTemplate, error) {
 	query := fmt.Sprintf(`
 		SELECT t.id, t.tenant_id, t.name, COALESCE(t.description, ''), COALESCE(t.reference, ''),
-		       COALESCE(t.requires_evidence, FALSE), COALESCE(t.is_active, TRUE), COUNT(l.id) AS line_count,
+		       COALESCE(t.requires_evidence, FALSE), COALESCE(t.is_active, TRUE),
+		       COALESCE(t.frequency, ''), t.start_date, t.end_date, t.next_generation_date, t.last_generated_at,
+		       COALESCE(t.generated_count, 0), COUNT(l.id) AS line_count,
 		       t.created_at, t.created_by, t.updated_at
 		FROM %s.journal_entry_templates t
 		LEFT JOIN %s.journal_entry_template_lines l ON l.template_id = t.id
@@ -437,7 +443,9 @@ func (r *Repository) ListJournalEntryTemplates(ctx context.Context, schemaName, 
 		query += " AND t.is_active = TRUE"
 	}
 	query += `
-		GROUP BY t.id, t.tenant_id, t.name, t.description, t.reference, t.requires_evidence, t.is_active, t.created_at, t.created_by, t.updated_at
+		GROUP BY t.id, t.tenant_id, t.name, t.description, t.reference, t.requires_evidence, t.is_active,
+		         t.frequency, t.start_date, t.end_date, t.next_generation_date, t.last_generated_at,
+		         t.generated_count, t.created_at, t.created_by, t.updated_at
 		ORDER BY t.name
 	`
 
@@ -452,7 +460,9 @@ func (r *Repository) ListJournalEntryTemplates(ctx context.Context, schemaName, 
 		var template JournalEntryTemplate
 		if err := rows.Scan(
 			&template.ID, &template.TenantID, &template.Name, &template.Description, &template.Reference,
-			&template.RequiresEvidence, &template.IsActive, &template.LineCount,
+			&template.RequiresEvidence, &template.IsActive, &template.Frequency, &template.StartDate,
+			&template.EndDate, &template.NextGenerationDate, &template.LastGeneratedAt,
+			&template.GeneratedCount, &template.LineCount,
 			&template.CreatedAt, &template.CreatedBy, &template.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan journal entry template: %w", err)
@@ -470,12 +480,16 @@ func (r *Repository) GetJournalEntryTemplateByID(ctx context.Context, schemaName
 	var template JournalEntryTemplate
 	err := r.db.QueryRow(ctx, fmt.Sprintf(`
 		SELECT id, tenant_id, name, COALESCE(description, ''), COALESCE(reference, ''),
-		       COALESCE(requires_evidence, FALSE), COALESCE(is_active, TRUE), created_at, created_by, updated_at
+		       COALESCE(requires_evidence, FALSE), COALESCE(is_active, TRUE),
+		       COALESCE(frequency, ''), start_date, end_date, next_generation_date, last_generated_at,
+		       COALESCE(generated_count, 0), created_at, created_by, updated_at
 		FROM %s.journal_entry_templates
 		WHERE id = $1 AND tenant_id = $2
 	`, schemaName), templateID, tenantID).Scan(
 		&template.ID, &template.TenantID, &template.Name, &template.Description, &template.Reference,
-		&template.RequiresEvidence, &template.IsActive, &template.CreatedAt, &template.CreatedBy, &template.UpdatedAt,
+		&template.RequiresEvidence, &template.IsActive, &template.Frequency, &template.StartDate,
+		&template.EndDate, &template.NextGenerationDate, &template.LastGeneratedAt, &template.GeneratedCount,
+		&template.CreatedAt, &template.CreatedBy, &template.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("journal entry template not found: %s", templateID)
@@ -511,6 +525,57 @@ func (r *Repository) GetJournalEntryTemplateByID(ctx context.Context, schemaName
 	}
 	template.LineCount = len(template.Lines)
 	return &template, nil
+}
+
+// GetDueJournalEntryTemplateIDs returns active recurring templates due by a date.
+func (r *Repository) GetDueJournalEntryTemplateIDs(ctx context.Context, schemaName, tenantID string, asOfDate time.Time) ([]string, error) {
+	rows, err := r.db.Query(ctx, fmt.Sprintf(`
+		SELECT id
+		FROM %s.journal_entry_templates
+		WHERE tenant_id = $1
+		  AND is_active = TRUE
+		  AND COALESCE(frequency, '') != ''
+		  AND next_generation_date IS NOT NULL
+		  AND next_generation_date <= $2
+		  AND (end_date IS NULL OR next_generation_date <= end_date)
+		ORDER BY next_generation_date, name
+	`, schemaName), tenantID, asOfDate)
+	if err != nil {
+		return nil, fmt.Errorf("list due journal entry templates: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan due journal entry template: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate due journal entry templates: %w", err)
+	}
+	return ids, nil
+}
+
+// UpdateJournalEntryTemplateAfterGeneration advances recurring template schedule metadata.
+func (r *Repository) UpdateJournalEntryTemplateAfterGeneration(ctx context.Context, schemaName, tenantID, templateID string, nextDate time.Time, generatedAt time.Time) error {
+	result, err := r.db.Exec(ctx, fmt.Sprintf(`
+		UPDATE %s.journal_entry_templates
+		SET next_generation_date = $1,
+		    last_generated_at = $2,
+		    generated_count = COALESCE(generated_count, 0) + 1,
+		    updated_at = $2
+		WHERE id = $3 AND tenant_id = $4
+	`, schemaName), nextDate, generatedAt, templateID, tenantID)
+	if err != nil {
+		return fmt.Errorf("update journal entry template after generation: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("journal entry template not found: %s", templateID)
+	}
+	return nil
 }
 
 // GetAccountBalance retrieves the balance of an account as of a date

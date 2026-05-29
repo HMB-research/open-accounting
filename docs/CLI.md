@@ -840,6 +840,8 @@ go run ./cmd/oa journal templates create \
   --name "Monthly rent accrual" \
   --description "Monthly rent accrual" \
   --reference RENT \
+  --frequency MONTHLY \
+  --start-date 2026-04-30 \
   --line "account_id=<expense-account-id>,description=Rent expense,debit=500.00" \
   --line "account_id=<accrual-account-id>,description=Accrued rent,credit=500.00"
 go run ./cmd/oa journal templates get --id <template-id>
@@ -849,10 +851,12 @@ go run ./cmd/oa journal templates apply \
   --description "April rent accrual" \
   --reference RENT-APR \
   --post
+go run ./cmd/oa journal templates generate --id <template-id> --post
+go run ./cmd/oa journal templates generate-due --as-of 2026-05-31
 ```
 
 Use `--line` repeatedly on `journal create`. Each line is comma-separated `key=value` pairs with `account_id` and exactly one of `debit` or `credit`; optional keys include `description`, `currency`, and `exchange_rate`. Use `--requires-evidence` for manual adjustments that must have approved `supporting_document`, `receipt`, or `tax_support` evidence attached before posting.
-`journal templates create` uses the same `--line` syntax. Applying a template with `--post` creates and posts the generated entry; templates that require evidence can only generate drafts.
+`journal templates create` uses the same `--line` syntax. Add `--frequency` with `--start-date` for recurring templates; supported frequencies are `WEEKLY`, `BIWEEKLY`, `MONTHLY`, `QUARTERLY`, and `YEARLY`. `journal templates apply` creates an on-demand entry without advancing the schedule. `journal templates generate` and `generate-due` advance recurring schedules. Templates that require evidence can only generate drafts.
 `journal import` expects grouped CSV rows with `entry_reference`, `entry_date`, `account_code`, `debit`, and `credit`; optional columns include `entry_description`, `line_description`, `currency`, `exchange_rate`, `source_type`, and `source_id`.
 
 ## Opening balances

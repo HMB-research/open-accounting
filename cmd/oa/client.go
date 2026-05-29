@@ -1906,6 +1906,22 @@ func (c *apiClient) getJournalEntryTemplate(ctx context.Context, tenantID, templ
 	return &resp, nil
 }
 
+func (c *apiClient) generateJournalEntryTemplate(ctx context.Context, tenantID, templateID string, req *accounting.GenerateJournalEntryTemplateRequest) (*accounting.JournalEntryTemplateGenerationResult, error) {
+	var resp accounting.JournalEntryTemplateGenerationResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "journal-entry-templates", templateID, "generate"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) generateDueJournalEntryTemplates(ctx context.Context, tenantID string, req *accounting.GenerateDueJournalEntryTemplatesRequest) ([]accounting.JournalEntryTemplateGenerationResult, error) {
+	var resp []accounting.JournalEntryTemplateGenerationResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "journal-entry-templates", "generate-due"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
 func (c *apiClient) applyJournalEntryTemplate(ctx context.Context, tenantID, templateID string, req *accounting.ApplyJournalEntryTemplateRequest) (*accounting.JournalEntry, error) {
 	var resp accounting.JournalEntry
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "journal-entry-templates", templateID, "apply"), req, c.apiToken, &resp); err != nil {

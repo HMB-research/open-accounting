@@ -38,6 +38,17 @@ const (
 	SourceTypeJournalTemplate = "JOURNAL_TEMPLATE"
 )
 
+// JournalEntryTemplateFrequency represents how often a recurring journal template is generated.
+type JournalEntryTemplateFrequency string
+
+const (
+	JournalEntryTemplateFrequencyWeekly    JournalEntryTemplateFrequency = "WEEKLY"
+	JournalEntryTemplateFrequencyBiweekly  JournalEntryTemplateFrequency = "BIWEEKLY"
+	JournalEntryTemplateFrequencyMonthly   JournalEntryTemplateFrequency = "MONTHLY"
+	JournalEntryTemplateFrequencyQuarterly JournalEntryTemplateFrequency = "QUARTERLY"
+	JournalEntryTemplateFrequencyYearly    JournalEntryTemplateFrequency = "YEARLY"
+)
+
 // Account represents a GL account in the chart of accounts
 type Account struct {
 	ID          string      `json:"id"`
@@ -244,18 +255,24 @@ type CreateJournalEntryLineReq struct {
 
 // JournalEntryTemplate represents a reusable balanced journal entry pattern.
 type JournalEntryTemplate struct {
-	ID               string                     `json:"id"`
-	TenantID         string                     `json:"tenant_id"`
-	Name             string                     `json:"name"`
-	Description      string                     `json:"description"`
-	Reference        string                     `json:"reference,omitempty"`
-	RequiresEvidence bool                       `json:"requires_evidence"`
-	IsActive         bool                       `json:"is_active"`
-	LineCount        int                        `json:"line_count"`
-	Lines            []JournalEntryTemplateLine `json:"lines,omitempty"`
-	CreatedAt        time.Time                  `json:"created_at"`
-	CreatedBy        string                     `json:"created_by"`
-	UpdatedAt        time.Time                  `json:"updated_at"`
+	ID                 string                        `json:"id"`
+	TenantID           string                        `json:"tenant_id"`
+	Name               string                        `json:"name"`
+	Description        string                        `json:"description"`
+	Reference          string                        `json:"reference,omitempty"`
+	RequiresEvidence   bool                          `json:"requires_evidence"`
+	IsActive           bool                          `json:"is_active"`
+	Frequency          JournalEntryTemplateFrequency `json:"frequency,omitempty"`
+	StartDate          *time.Time                    `json:"start_date,omitempty"`
+	EndDate            *time.Time                    `json:"end_date,omitempty"`
+	NextGenerationDate *time.Time                    `json:"next_generation_date,omitempty"`
+	LastGeneratedAt    *time.Time                    `json:"last_generated_at,omitempty"`
+	GeneratedCount     int                           `json:"generated_count"`
+	LineCount          int                           `json:"line_count"`
+	Lines              []JournalEntryTemplateLine    `json:"lines,omitempty"`
+	CreatedAt          time.Time                     `json:"created_at"`
+	CreatedBy          string                        `json:"created_by"`
+	UpdatedAt          time.Time                     `json:"updated_at"`
 }
 
 // JournalEntryTemplateLine is one line in a reusable journal entry template.
@@ -271,14 +288,50 @@ type JournalEntryTemplateLine struct {
 	ExchangeRate decimal.Decimal `json:"exchange_rate"`
 }
 
+// IsRecurring returns true when the template has a recurrence schedule.
+func (t *JournalEntryTemplate) IsRecurring() bool {
+	return t != nil && t.Frequency != ""
+}
+
+// CalculateNextDate returns the next scheduled generation date.
+func (t *JournalEntryTemplate) CalculateNextDate(from time.Time) time.Time {
+	switch t.Frequency {
+	case JournalEntryTemplateFrequencyWeekly:
+		return from.AddDate(0, 0, 7)
+	case JournalEntryTemplateFrequencyBiweekly:
+		return from.AddDate(0, 0, 14)
+	case JournalEntryTemplateFrequencyMonthly:
+		return from.AddDate(0, 1, 0)
+	case JournalEntryTemplateFrequencyQuarterly:
+		return from.AddDate(0, 3, 0)
+	case JournalEntryTemplateFrequencyYearly:
+		return from.AddDate(1, 0, 0)
+	default:
+		return from.AddDate(0, 1, 0)
+	}
+}
+
+func isValidJournalEntryTemplateFrequency(frequency JournalEntryTemplateFrequency) bool {
+	switch frequency {
+	case JournalEntryTemplateFrequencyWeekly, JournalEntryTemplateFrequencyBiweekly, JournalEntryTemplateFrequencyMonthly, JournalEntryTemplateFrequencyQuarterly, JournalEntryTemplateFrequencyYearly:
+		return true
+	default:
+		return false
+	}
+}
+
 // CreateJournalEntryTemplateRequest is the request to create a journal entry template.
 type CreateJournalEntryTemplateRequest struct {
-	Name             string                      `json:"name"`
-	Description      string                      `json:"description"`
-	Reference        string                      `json:"reference,omitempty"`
-	RequiresEvidence bool                        `json:"requires_evidence,omitempty"`
-	Lines            []CreateJournalEntryLineReq `json:"lines"`
-	UserID           string                      `json:"-"`
+	Name               string                        `json:"name"`
+	Description        string                        `json:"description"`
+	Reference          string                        `json:"reference,omitempty"`
+	RequiresEvidence   bool                          `json:"requires_evidence,omitempty"`
+	Frequency          JournalEntryTemplateFrequency `json:"frequency,omitempty"`
+	StartDate          *time.Time                    `json:"start_date,omitempty"`
+	EndDate            *time.Time                    `json:"end_date,omitempty"`
+	NextGenerationDate *time.Time                    `json:"next_generation_date,omitempty"`
+	Lines              []CreateJournalEntryLineReq   `json:"lines"`
+	UserID             string                        `json:"-"`
 }
 
 // ApplyJournalEntryTemplateRequest creates a journal entry from a template.
@@ -288,6 +341,34 @@ type ApplyJournalEntryTemplateRequest struct {
 	Reference   string    `json:"reference,omitempty"`
 	Post        bool      `json:"post,omitempty"`
 	UserID      string    `json:"-"`
+}
+
+// GenerateJournalEntryTemplateRequest generates and advances a recurring journal template.
+type GenerateJournalEntryTemplateRequest struct {
+	EntryDate      *time.Time `json:"entry_date,omitempty"`
+	Post           bool       `json:"post,omitempty"`
+	UserID         string     `json:"-"`
+	PeriodLockDate *time.Time `json:"-"`
+}
+
+// GenerateDueJournalEntryTemplatesRequest generates all recurring templates due by a date.
+type GenerateDueJournalEntryTemplatesRequest struct {
+	AsOfDate       *time.Time `json:"as_of_date,omitempty"`
+	Post           bool       `json:"post,omitempty"`
+	UserID         string     `json:"-"`
+	PeriodLockDate *time.Time `json:"-"`
+}
+
+// JournalEntryTemplateGenerationResult describes one recurring template generation attempt.
+type JournalEntryTemplateGenerationResult struct {
+	TemplateID           string     `json:"template_id"`
+	TemplateName         string     `json:"template_name,omitempty"`
+	GeneratedEntryID     string     `json:"generated_entry_id,omitempty"`
+	GeneratedEntryNumber string     `json:"generated_entry_number,omitempty"`
+	EntryDate            *time.Time `json:"entry_date,omitempty"`
+	NextGenerationDate   *time.Time `json:"next_generation_date,omitempty"`
+	Status               string     `json:"status"`
+	Error                string     `json:"error,omitempty"`
 }
 
 // AccountBalance represents an account's balance at a point in time

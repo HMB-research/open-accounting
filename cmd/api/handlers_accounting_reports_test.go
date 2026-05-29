@@ -183,6 +183,8 @@ func TestJournalEntryTemplateHandlers_CreateListGetAndApply(t *testing.T) {
 		"name":        "Monthly rent accrual",
 		"description": "Monthly rent accrual",
 		"reference":   "RENT",
+		"frequency":   "MONTHLY",
+		"start_date":  "2026-04-30T00:00:00Z",
 		"lines": []map[string]interface{}{
 			{"account_id": "rent-expense", "description": "Rent expense", "debit_amount": "500.00"},
 			{"account_id": "accruals", "description": "Accrued rent", "credit_amount": "500.00"},
@@ -232,6 +234,33 @@ func TestJournalEntryTemplateHandlers_CreateListGetAndApply(t *testing.T) {
 	assert.Equal(t, accounting.StatusPosted, entry.Status)
 	assert.Equal(t, accounting.SourceTypeJournalTemplate, entry.SourceType)
 	assert.Equal(t, "April rent accrual", entry.Description)
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entry-templates/"+created.ID+"/generate", map[string]interface{}{
+		"post": true,
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "templateID": created.ID})
+	rr = httptest.NewRecorder()
+	h.GenerateJournalEntryTemplate(rr, req)
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+
+	var generation accounting.JournalEntryTemplateGenerationResult
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &generation))
+	assert.Equal(t, "generated", generation.Status)
+	require.NotNil(t, generation.NextGenerationDate)
+	assert.Equal(t, "2026-05-30", generation.NextGenerationDate.Format("2006-01-02"))
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entry-templates/generate-due", map[string]interface{}{
+		"as_of_date": "2026-05-30T00:00:00Z",
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GenerateDueJournalEntryTemplates(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var generations []accounting.JournalEntryTemplateGenerationResult
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &generations))
+	require.Len(t, generations, 1)
+	assert.Equal(t, "generated", generations[0].Status)
 }
 
 func TestPostJournalEntryRequiresApprovedEvidence(t *testing.T) {
