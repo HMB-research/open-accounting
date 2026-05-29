@@ -672,6 +672,7 @@ Content-Type: application/json
   "entry_date": "2025-01-15",
   "description": "Office supplies purchase",
   "reference": "INV-001",
+  "requires_evidence": true,
   "lines": [
     {
       "account_id": "uuid",
@@ -689,11 +690,11 @@ Content-Type: application/json
 }
 ```
 
-**Note:** Debits must equal credits.
+**Note:** Debits must equal credits. When `requires_evidence` is true, posting is blocked until the journal entry has at least one approved `supporting_document`, `receipt`, or `tax_support` document attached.
 
 ### Post Journal Entry
 
-Finalize a draft entry (makes it immutable).
+Finalize a draft entry (makes it immutable). Entries marked `requires_evidence` must pass approved journal-entry evidence policy first.
 
 ```http
 POST /tenants/{tenantId}/journal-entries/{entryId}/post

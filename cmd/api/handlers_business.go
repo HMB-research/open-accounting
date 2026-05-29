@@ -36,6 +36,7 @@ import (
 var (
 	errApprovedReconciliationEvidenceRequired  = errors.New("approved reconciliation evidence is required")
 	errApprovedAssetActivationEvidenceRequired = errors.New("approved asset activation evidence is required")
+	errApprovedJournalEntryEvidenceRequired    = errors.New("approved journal-entry evidence is required")
 )
 
 // =============================================================================

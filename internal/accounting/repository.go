@@ -117,7 +117,8 @@ func (r *Repository) ListJournalEntries(ctx context.Context, schemaName, tenantI
 
 	rows, err := r.db.Query(ctx, fmt.Sprintf(`
 		SELECT id, tenant_id, entry_number, entry_date, description, COALESCE(reference, ''), COALESCE(source_type, ''), source_id,
-		       status, posted_at, posted_by, voided_at, voided_by, COALESCE(void_reason, ''), created_at, created_by
+		       COALESCE(requires_evidence, FALSE), status, posted_at, posted_by, voided_at, voided_by,
+		       COALESCE(void_reason, ''), created_at, created_by
 		FROM %s.journal_entries
 		WHERE tenant_id = $1
 		ORDER BY entry_date DESC, created_at DESC
@@ -136,7 +137,7 @@ func (r *Repository) ListJournalEntries(ctx context.Context, schemaName, tenantI
 		var je JournalEntry
 		if err := rows.Scan(
 			&je.ID, &je.TenantID, &je.EntryNumber, &je.EntryDate, &je.Description, &je.Reference,
-			&je.SourceType, &je.SourceID, &je.Status, &je.PostedAt, &je.PostedBy,
+			&je.SourceType, &je.SourceID, &je.RequiresEvidence, &je.Status, &je.PostedAt, &je.PostedBy,
 			&je.VoidedAt, &je.VoidedBy, &je.VoidReason, &je.CreatedAt, &je.CreatedBy,
 		); err != nil {
 			return nil, fmt.Errorf("scan journal entry: %w", err)
@@ -195,12 +196,13 @@ func (r *Repository) GetJournalEntryByID(ctx context.Context, schemaName, tenant
 	var je JournalEntry
 	err := r.db.QueryRow(ctx, fmt.Sprintf(`
 		SELECT id, tenant_id, entry_number, entry_date, description, reference, source_type, source_id,
-		       status, posted_at, posted_by, voided_at, voided_by, COALESCE(void_reason, ''), created_at, created_by
+		       COALESCE(requires_evidence, FALSE), status, posted_at, posted_by, voided_at, voided_by,
+		       COALESCE(void_reason, ''), created_at, created_by
 		FROM %s.journal_entries
 		WHERE id = $1 AND tenant_id = $2
 	`, schemaName), entryID, tenantID).Scan(
 		&je.ID, &je.TenantID, &je.EntryNumber, &je.EntryDate, &je.Description, &je.Reference,
-		&je.SourceType, &je.SourceID, &je.Status, &je.PostedAt, &je.PostedBy,
+		&je.SourceType, &je.SourceID, &je.RequiresEvidence, &je.Status, &je.PostedAt, &je.PostedBy,
 		&je.VoidedAt, &je.VoidedBy, &je.VoidReason, &je.CreatedAt, &je.CreatedBy,
 	)
 	if err == pgx.ErrNoRows {
@@ -304,10 +306,10 @@ func (r *Repository) CreateJournalEntryTx(ctx context.Context, schemaName string
 	// Insert entry
 	_, err = tx.Exec(ctx, fmt.Sprintf(`
 		INSERT INTO %s.journal_entries (id, tenant_id, entry_number, entry_date, description, reference,
-		                             source_type, source_id, status, created_at, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		                             source_type, source_id, requires_evidence, status, created_at, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`, schemaName), je.ID, je.TenantID, je.EntryNumber, je.EntryDate, je.Description, je.Reference,
-		je.SourceType, je.SourceID, je.Status, je.CreatedAt, je.CreatedBy)
+		je.SourceType, je.SourceID, je.RequiresEvidence, je.Status, je.CreatedAt, je.CreatedBy)
 	if err != nil {
 		return fmt.Errorf("insert journal entry: %w", err)
 	}

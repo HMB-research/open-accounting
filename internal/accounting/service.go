@@ -87,16 +87,17 @@ func (s *Service) ListJournalEntries(ctx context.Context, schemaName, tenantID s
 // CreateJournalEntry creates a new journal entry
 func (s *Service) CreateJournalEntry(ctx context.Context, schemaName, tenantID string, req *CreateJournalEntryRequest) (*JournalEntry, error) {
 	entry := &JournalEntry{
-		ID:          uuid.New().String(),
-		TenantID:    tenantID,
-		EntryDate:   req.EntryDate,
-		Description: req.Description,
-		Reference:   req.Reference,
-		SourceType:  req.SourceType,
-		SourceID:    req.SourceID,
-		Status:      StatusDraft,
-		CreatedAt:   time.Now(),
-		CreatedBy:   req.UserID,
+		ID:               uuid.New().String(),
+		TenantID:         tenantID,
+		EntryDate:        req.EntryDate,
+		Description:      req.Description,
+		Reference:        req.Reference,
+		SourceType:       req.SourceType,
+		SourceID:         req.SourceID,
+		RequiresEvidence: req.RequiresEvidence,
+		Status:           StatusDraft,
+		CreatedAt:        time.Now(),
+		CreatedBy:        req.UserID,
 	}
 
 	// Convert request lines to entry lines

@@ -1061,7 +1061,7 @@ func (h *Handlers) CreateJournalEntry(w http.ResponseWriter, r *http.Request) {
 
 // PostJournalEntry posts a draft journal entry
 // @Summary Post journal entry
-// @Description Post a draft journal entry to finalize it
+// @Description Post a draft journal entry to finalize it. Entries marked requires_evidence need approved supporting, receipt, or tax evidence first.
 // @Tags Journal Entries
 // @Produce json
 // @Security BearerAuth
@@ -1086,6 +1086,15 @@ func (h *Handlers) PostJournalEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := h.requireApprovedJournalEntryEvidence(r.Context(), schemaName, tenantID, entry); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, errApprovedJournalEntryEvidenceRequired) {
+			status = http.StatusConflict
+		}
+		respondError(w, status, err.Error())
+		return
+	}
+
 	err = h.accountingService.PostJournalEntry(r.Context(), schemaName, tenantID, entryID, claims.UserID)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
@@ -1093,6 +1102,34 @@ func (h *Handlers) PostJournalEntry(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "posted"})
+}
+
+func (h *Handlers) requireApprovedJournalEntryEvidence(ctx context.Context, schemaName, tenantID string, entry *accounting.JournalEntry) error {
+	if h.documentsService == nil || entry == nil || !entry.RequiresEvidence {
+		return nil
+	}
+
+	results, err := h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
+		EntityType: documents.EntityTypeJournalEntry,
+		EntityIDs:  []string{entry.ID},
+		Rules: []documents.EvidencePolicyRule{{
+			DocumentTypes: []string{
+				documents.DocumentTypeSupportingDocument,
+				documents.DocumentTypeReceipt,
+				documents.DocumentTypeTaxSupport,
+			},
+			MinCount:        1,
+			RequireApproved: true,
+		}},
+	})
+	if err != nil {
+		return fmt.Errorf("evaluate journal-entry evidence: %w", err)
+	}
+	if len(results) == 0 || !results[0].Compliant {
+		return fmt.Errorf("%w before posting journal entry %s", errApprovedJournalEntryEvidenceRequired, entry.ID)
+	}
+
+	return nil
 }
 
 // VoidJournalEntry voids a posted journal entry

@@ -2941,16 +2941,17 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 
 	journalPayload := func(id, number string, status accounting.JournalEntryStatus) map[string]any {
 		return map[string]any{
-			"id":           id,
-			"tenant_id":    "tenant-1",
-			"entry_number": number,
-			"entry_date":   "2026-03-31T00:00:00Z",
-			"description":  "Manual accrual",
-			"reference":    "ACC-1",
-			"source_type":  "MANUAL",
-			"status":       status,
-			"created_at":   "2026-03-31T12:00:00Z",
-			"created_by":   "user-1",
+			"id":                id,
+			"tenant_id":         "tenant-1",
+			"entry_number":      number,
+			"entry_date":        "2026-03-31T00:00:00Z",
+			"description":       "Manual accrual",
+			"reference":         "ACC-1",
+			"source_type":       "MANUAL",
+			"requires_evidence": true,
+			"status":            status,
+			"created_at":        "2026-03-31T12:00:00Z",
+			"created_by":        "user-1",
 			"lines": []map[string]any{
 				{
 					"id":               "line-1",
@@ -2997,6 +2998,7 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 			assert.Equal(t, "2026-03-31", req.EntryDate.Format("2006-01-02"))
 			assert.Equal(t, "Manual accrual", req.Description)
 			assert.Equal(t, "ACC-1", req.Reference)
+			assert.True(t, req.RequiresEvidence)
 			require.Len(t, req.Lines, 2)
 			assert.Equal(t, "acc-1", req.Lines[0].AccountID)
 			assert.True(t, req.Lines[0].DebitAmount.Equal(decimal.RequireFromString("100.00")))
@@ -3051,11 +3053,13 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 		"--description", "Manual accrual",
 		"--reference", "ACC-1",
 		"--source-type", "MANUAL",
+		"--requires-evidence",
 		"--line", "account_id=acc-1,description=Expense,debit=100.00",
 		"--line", "account_id=acc-2,description=Accrual,credit=100.00",
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created journal entry JE-2026-001 (je-1)")
+	assert.Contains(t, stdout.String(), "Approved evidence required before posting")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"journal", "import", "--file", journalImportFile, "--source-type", "LEGACY_GL", "--post"})
@@ -3066,6 +3070,7 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"journal", "get", "--id", "je-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Journal entry JE-2026-001")
+	assert.Contains(t, stdout.String(), "Requires evidence: true")
 	assert.Contains(t, stdout.String(), "Balanced: true")
 
 	stdout.Reset()
