@@ -2429,6 +2429,20 @@ func (c *apiClient) getIncomeStatement(ctx context.Context, tenantID, startDate,
 	return &resp, nil
 }
 
+func (c *apiClient) getAnnualReport(ctx context.Context, tenantID, periodEndDate, cashFlowMethod string) (*reports.AnnualReport, error) {
+	values := url.Values{}
+	values.Set("period_end_date", strings.TrimSpace(periodEndDate))
+	if strings.TrimSpace(cashFlowMethod) != "" {
+		values.Set("cash_flow_method", strings.TrimSpace(cashFlowMethod))
+	}
+
+	var resp reports.AnnualReport
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "annual"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) exportIncomeStatementCSV(ctx context.Context, tenantID, startDate, endDate string) ([]byte, error) {
 	values := url.Values{"format": []string{"csv"}}
 	values.Set("start", strings.TrimSpace(startDate))

@@ -20,6 +20,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -332,6 +333,96 @@ func TestGetYearEndClosePack(t *testing.T) {
 	assert.True(t, resp.IncomeStatement.NetIncome.Equal(decimal.NewFromInt(750)))
 	assert.True(t, resp.TrialBalance.TotalDebits.Equal(decimal.NewFromInt(250)))
 	assert.True(t, resp.TrialBalance.TotalCredits.Equal(decimal.NewFromInt(1000)))
+}
+
+func TestGetAnnualReport(t *testing.T) {
+	h, repo, accountingRepo := setupTenantAccountingHandlers()
+	reportsRepo := reports.NewMockRepository()
+	h.reportsService = reports.NewServiceWithRepository(reportsRepo)
+
+	settings := tenant.DefaultSettings()
+	settings.PeriodLockDate = stringPtr("2025-12-31")
+	repo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		Name:       "Tenant",
+		Slug:       "tenant",
+		SchemaName: "tenant_tenant",
+		Settings:   settings,
+	}
+	accountingRepo.accounts["retained"] = &accounting.Account{
+		ID:          "retained",
+		TenantID:    "tenant-1",
+		Code:        "3200",
+		Name:        "Retained Earnings",
+		AccountType: accounting.AccountTypeEquity,
+		IsActive:    true,
+	}
+	accountingRepo.periodBalances = []accounting.AccountBalance{
+		{
+			AccountID:    "asset-1",
+			AccountCode:  "1000",
+			AccountName:  "Bank",
+			AccountType:  accounting.AccountTypeAsset,
+			DebitBalance: decimal.NewFromInt(600),
+			NetBalance:   decimal.NewFromInt(600),
+		},
+		{
+			AccountID:     "equity-1",
+			AccountCode:   "3200",
+			AccountName:   "Retained Earnings",
+			AccountType:   accounting.AccountTypeEquity,
+			CreditBalance: decimal.NewFromInt(600),
+			NetBalance:    decimal.NewFromInt(-600),
+		},
+		{
+			AccountID:     "revenue-1",
+			AccountCode:   "4100",
+			AccountName:   "Sales Revenue",
+			AccountType:   accounting.AccountTypeRevenue,
+			CreditBalance: decimal.NewFromInt(1000),
+			NetBalance:    decimal.NewFromInt(-1000),
+		},
+		{
+			AccountID:    "expense-1",
+			AccountCode:  "5100",
+			AccountName:  "Operating Expenses",
+			AccountType:  accounting.AccountTypeExpense,
+			DebitBalance: decimal.NewFromInt(400),
+			NetBalance:   decimal.NewFromInt(400),
+		},
+	}
+	reportsRepo.JournalEntries = []reports.JournalEntryWithLines{{
+		ID:        "je-1",
+		EntryDate: time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC),
+		Lines: []reports.JournalLine{
+			{AccountCode: "1000", AccountName: "Bank", AccountType: "ASSET", Debit: decimal.NewFromInt(600)},
+			{AccountCode: "4100", AccountName: "Sales Revenue", AccountType: "REVENUE", Credit: decimal.NewFromInt(600)},
+		},
+	}}
+
+	req := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/reports/annual?period_end_date=2025-12-31&cash_flow_method=direct", nil, &auth.Claims{
+		UserID: "user-1",
+		Email:  "user@example.com",
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	w := httptest.NewRecorder()
+
+	h.GetAnnualReport(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	var resp reports.AnnualReport
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	require.NotNil(t, resp.CloseStatus)
+	require.NotNil(t, resp.TrialBalance)
+	require.NotNil(t, resp.BalanceSheet)
+	require.NotNil(t, resp.IncomeStatement)
+	require.NotNil(t, resp.CashFlowStatement)
+	assert.Equal(t, "2025", resp.FiscalYearLabel)
+	assert.Equal(t, "2025-01-01", resp.FiscalYearStartDate)
+	assert.Equal(t, "2025-12-31", resp.FiscalYearEndDate)
+	assert.True(t, resp.IncomeStatement.NetIncome.Equal(decimal.NewFromInt(600)))
+	assert.Equal(t, reports.CashFlowMethodDirect, resp.CashFlowStatement.Method)
+	assert.True(t, resp.CashFlowStatement.NetCashChange.Equal(decimal.NewFromInt(600)))
 }
 
 func TestGetYearEndCloseAuditEvidenceIncludesClosePackDocuments(t *testing.T) {

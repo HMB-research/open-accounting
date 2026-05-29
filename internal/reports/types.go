@@ -3,8 +3,24 @@ package reports
 import (
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/shopspring/decimal"
 )
+
+// AnnualReport bundles the fiscal-year close pack with a cash-flow statement.
+type AnnualReport struct {
+	TenantID            string                         `json:"tenant_id"`
+	PeriodEndDate       string                         `json:"period_end_date"`
+	FiscalYearLabel     string                         `json:"fiscal_year_label"`
+	FiscalYearStartDate string                         `json:"fiscal_year_start_date"`
+	FiscalYearEndDate   string                         `json:"fiscal_year_end_date"`
+	CloseStatus         *accounting.YearEndCloseStatus `json:"close_status"`
+	TrialBalance        *accounting.TrialBalance       `json:"trial_balance"`
+	BalanceSheet        *accounting.BalanceSheet       `json:"balance_sheet"`
+	IncomeStatement     *accounting.IncomeStatement    `json:"income_statement"`
+	CashFlowStatement   *CashFlowStatement             `json:"cash_flow_statement"`
+	GeneratedAt         time.Time                      `json:"generated_at"`
+}
 
 // CashFlowStatement represents an Estonian-standard cash flow statement
 type CashFlowStatement struct {

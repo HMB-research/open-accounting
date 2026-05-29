@@ -11580,6 +11580,97 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/reports/annual": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get year-end close readiness plus trial balance, balance sheet, income statement, and cash flow for the fiscal year",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Get annual report",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Fiscal year-end date (YYYY-MM-DD)",
+                        "name": "period_end_date",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cash flow method: direct or indirect",
+                        "name": "cash_flow_method",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.AnnualReport"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/reports/balance-confirmations": {
             "get": {
                 "security": [
@@ -20621,6 +20712,44 @@ const docTemplate = `{
                 "send_email_on_generation": {
                     "description": "Email configuration",
                     "type": "boolean"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_reports.AnnualReport": {
+            "type": "object",
+            "properties": {
+                "balance_sheet": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.BalanceSheet"
+                },
+                "cash_flow_statement": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.CashFlowStatement"
+                },
+                "close_status": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndCloseStatus"
+                },
+                "fiscal_year_end_date": {
+                    "type": "string"
+                },
+                "fiscal_year_label": {
+                    "type": "string"
+                },
+                "fiscal_year_start_date": {
+                    "type": "string"
+                },
+                "generated_at": {
+                    "type": "string"
+                },
+                "income_statement": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.IncomeStatement"
+                },
+                "period_end_date": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "trial_balance": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.TrialBalance"
                 }
             }
         },

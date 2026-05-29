@@ -673,6 +673,27 @@ func TestPrintCloseOutputs(t *testing.T) {
 	assert.Contains(t, packBuf.String(), "Trial balance: debits 1000")
 	assert.Contains(t, packBuf.String(), "Income statement: revenue 2000")
 
+	var annualBuf bytes.Buffer
+	printAnnualReport(&annualBuf, &reports.AnnualReport{
+		TenantID:            "tenant-1",
+		PeriodEndDate:       "2025-12-31",
+		FiscalYearLabel:     "2025",
+		FiscalYearStartDate: "2025-01-01",
+		FiscalYearEndDate:   "2025-12-31",
+		CloseStatus:         &status,
+		TrialBalance:        closePack.TrialBalance,
+		BalanceSheet:        closePack.BalanceSheet,
+		IncomeStatement:     closePack.IncomeStatement,
+		CashFlowStatement: &reports.CashFlowStatement{
+			Method:        reports.CashFlowMethodIndirect,
+			NetCashChange: decimal.NewFromInt(700),
+			ClosingCash:   decimal.NewFromInt(1700),
+		},
+	})
+	assert.Contains(t, annualBuf.String(), "Annual report 2025")
+	assert.Contains(t, annualBuf.String(), "Fiscal year: 2025-01-01 to 2025-12-31")
+	assert.Contains(t, annualBuf.String(), "Cash flow: method indirect")
+
 	var auditBuf bytes.Buffer
 	printYearEndCloseAuditEvidence(&auditBuf, &accounting.YearEndCloseAuditEvidence{
 		Pack:           &closePack,

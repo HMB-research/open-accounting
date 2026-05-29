@@ -397,6 +397,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  reports account-balance   Show one account balance")
 	_, _ = fmt.Fprintln(a.stdout, "  reports balance-sheet     Show balance sheet")
 	_, _ = fmt.Fprintln(a.stdout, "  reports income-statement  Show income statement")
+	_, _ = fmt.Fprintln(a.stdout, "  reports annual            Show annual report pack")
 	_, _ = fmt.Fprintln(a.stdout, "  reports cash-flow         Show cash flow statement")
 	_, _ = fmt.Fprintln(a.stdout, "  reports cash-flow-mapping get  Show saved cash-flow account mappings")
 	_, _ = fmt.Fprintln(a.stdout, "  reports cash-flow-mapping update  Update saved cash-flow account mappings")
@@ -8989,6 +8990,32 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, report)
 		}
 		printIncomeStatement(a.stdout, report)
+		return nil
+
+	case "annual":
+		fs := flag.NewFlagSet("reports annual", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		periodEnd := fs.String("period-end", "", "Fiscal year-end date in YYYY-MM-DD")
+		methodFlag := fs.String("cash-flow-method", reports.CashFlowMethodDirect, "Cash flow method: direct or indirect")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*periodEnd) == "" {
+			return errors.New("period-end is required")
+		}
+		method, err := reports.NormalizeCashFlowMethod(*methodFlag)
+		if err != nil {
+			return err
+		}
+		report, err := client.getAnnualReport(ctx, cfg.TenantID, strings.TrimSpace(*periodEnd), method)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, report)
+		}
+		printAnnualReport(a.stdout, report)
 		return nil
 
 	case "cash-flow":

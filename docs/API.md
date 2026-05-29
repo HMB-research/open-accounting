@@ -2681,6 +2681,19 @@ Authorization: Bearer <token>
 - `end` (string, required): End date in YYYY-MM-DD format
 - `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
 
+### Annual Report
+
+```http
+GET /tenants/{tenantId}/reports/annual
+Authorization: Bearer <token>
+```
+
+Builds a fiscal-year annual report pack from the year-end close readiness, trial balance, balance sheet, income statement, and cash-flow statement.
+
+**Query Parameters:**
+- `period_end_date` (string, required): Fiscal year-end date in YYYY-MM-DD format
+- `cash_flow_method` (string): `direct` (default) or `indirect`
+
 ### Cash Flow Statement
 
 ```http

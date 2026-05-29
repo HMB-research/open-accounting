@@ -189,7 +189,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 
 | Feature | Merit | SmartAccounts | Open Accounting | Status |
 |---------|-------|---------------|-----------------|--------|
-| Annual report generation | ✅ | ✅ | ❌ | **Gap** |
+| Annual report generation | ✅ | ✅ | ✅ | Implemented as annual report pack; e-äriregister submission remains blocked |
 | e-äriregister submission | ✅ | ✅ | ❌ | **Blocker** |
 
 ---
