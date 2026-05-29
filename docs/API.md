@@ -2187,7 +2187,7 @@ Send an invoice email:
 }
 ```
 
-Payment receipt emails use the same recipient, subject, and message fields without `attach_pdf`.
+Payment receipt emails use the same recipient, subject, and message fields without `attach_pdf`. Add `"require_approved_evidence": true` to require at least one approved `receipt`, `supporting_document`, or `tax_support` document attached to the payment before sending; missing approved evidence returns `409 Conflict`.
 
 ---
 

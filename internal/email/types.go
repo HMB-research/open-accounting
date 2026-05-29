@@ -101,10 +101,11 @@ func (r *SendInvoiceRequest) Validate() error {
 
 // SendPaymentReceiptRequest represents a request to send a payment receipt
 type SendPaymentReceiptRequest struct {
-	RecipientEmail string `json:"recipient_email"`
-	RecipientName  string `json:"recipient_name,omitempty"`
-	Subject        string `json:"subject,omitempty"`
-	Message        string `json:"message,omitempty"`
+	RecipientEmail          string `json:"recipient_email"`
+	RecipientName           string `json:"recipient_name,omitempty"`
+	Subject                 string `json:"subject,omitempty"`
+	Message                 string `json:"message,omitempty"`
+	RequireApprovedEvidence bool   `json:"require_approved_evidence,omitempty"`
 }
 
 // Validate validates the send payment receipt request

@@ -37,6 +37,7 @@ var (
 	errApprovedReconciliationEvidenceRequired  = errors.New("approved reconciliation evidence is required")
 	errApprovedAssetActivationEvidenceRequired = errors.New("approved asset activation evidence is required")
 	errApprovedJournalEntryEvidenceRequired    = errors.New("approved journal-entry evidence is required")
+	errApprovedPaymentReceiptEvidenceRequired  = errors.New("approved payment receipt evidence is required")
 )
 
 // =============================================================================
@@ -1340,6 +1341,15 @@ func (h *Handlers) EmailPaymentReceipt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := h.requireApprovedPaymentReceiptEvidence(r.Context(), schemaName, tenantID, paymentID, req.RequireApprovedEvidence); err != nil {
+		if errors.Is(err, errApprovedPaymentReceiptEvidenceRequired) {
+			respondError(w, http.StatusConflict, err.Error())
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to verify payment receipt evidence")
+		return
+	}
+
 	// Get tenant for company name
 	t, err := h.tenantService.GetTenant(r.Context(), tenantID)
 	if err != nil {
@@ -1385,6 +1395,38 @@ func (h *Handlers) EmailPaymentReceipt(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, result)
+}
+
+func (h *Handlers) requireApprovedPaymentReceiptEvidence(ctx context.Context, schemaName, tenantID, paymentID string, requireApproved bool) error {
+	if !requireApproved {
+		return nil
+	}
+	if h.documentsService == nil {
+		return fmt.Errorf("%w before sending payment receipt %s", errApprovedPaymentReceiptEvidenceRequired, paymentID)
+	}
+
+	results, err := h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
+		EntityType: documents.EntityTypePayment,
+		EntityIDs:  []string{paymentID},
+		Rules: []documents.EvidencePolicyRule{{
+			DocumentTypes: []string{
+				documents.DocumentTypeReceipt,
+				documents.DocumentTypeSupportingDocument,
+				documents.DocumentTypeTaxSupport,
+			},
+			MinCount:        1,
+			RequireApproved: true,
+		}},
+	})
+	if err != nil {
+		return fmt.Errorf("evaluate payment receipt evidence: %w", err)
+	}
+	for _, result := range results {
+		if !result.Compliant {
+			return fmt.Errorf("%w before sending payment receipt %s", errApprovedPaymentReceiptEvidenceRequired, paymentID)
+		}
+	}
+	return nil
 }
 
 // =============================================================================

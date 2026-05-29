@@ -627,9 +627,10 @@ go run ./cmd/oa email templates update \
 go run ./cmd/oa email log --limit 25
 go run ./cmd/oa email invoice --invoice-id <invoice-id> --recipient-email billing@example.com --attach-pdf
 go run ./cmd/oa email payment-receipt --payment-id <payment-id> --recipient-email billing@example.com
+go run ./cmd/oa email payment-receipt --payment-id <payment-id> --recipient-email billing@example.com --require-approved-evidence
 ```
 
-Template types are `INVOICE_SEND`, `PAYMENT_RECEIPT`, and `OVERDUE_REMINDER`. Use `--json` on email reads and mutations for automation.
+Template types are `INVOICE_SEND`, `PAYMENT_RECEIPT`, and `OVERDUE_REMINDER`. Payment receipt emails can require at least one approved `receipt`, `supporting_document`, or `tax_support` document attached to the payment by passing `--require-approved-evidence`. Use `--json` on email reads and mutations for automation.
 
 ## Interest
 
