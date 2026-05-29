@@ -1398,6 +1398,15 @@ Authorization: Bearer <token>
 
 Lists the persisted order-level stock reservations by product and warehouse. These records are updated by `reserve-stock` and `release-stock` and are separate from the aggregate warehouse `reserved_qty` total.
 
+### Get Order Pick List
+
+```http
+GET /tenants/{tenantId}/orders/{orderId}/pick-list?warehouse_id={warehouseId}
+Authorization: Bearer <token>
+```
+
+Builds a warehouse pick list from persisted order-level reservations. Repeated lines for the same product consume the reserved quantity cumulatively. Tracked product lines report `READY`, `SHORTAGE`, or `UNRESERVED`; service and free-text lines report `NOT_TRACKED`.
+
 ### Reserve Order Stock
 
 ```http

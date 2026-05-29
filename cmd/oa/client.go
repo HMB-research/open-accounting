@@ -1293,6 +1293,18 @@ func (c *apiClient) listOrderStockReservations(ctx context.Context, tenantID, or
 	return resp, nil
 }
 
+func (c *apiClient) getOrderPickList(ctx context.Context, tenantID, orderID, warehouseID string) (*orders.OrderPickList, error) {
+	values := url.Values{}
+	if strings.TrimSpace(warehouseID) != "" {
+		values.Set("warehouse_id", strings.TrimSpace(warehouseID))
+	}
+	var resp orders.OrderPickList
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "orders", orderID, "pick-list"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) updateOrder(ctx context.Context, tenantID, orderID string, req *orders.UpdateOrderRequest) (*orders.Order, error) {
 	var resp orders.Order
 	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "orders", orderID), req, c.apiToken, &resp); err != nil {

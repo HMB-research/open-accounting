@@ -612,6 +612,44 @@ func orderStockProductLabel(line orders.OrderStockCheckLine) string {
 	return line.Description
 }
 
+func printOrderPickList(w io.Writer, pickList *orders.OrderPickList) {
+	if pickList == nil {
+		return
+	}
+
+	_, _ = fmt.Fprintf(w, "Order pick list %s\n", pickList.OrderNumber)
+	_, _ = fmt.Fprintf(w, "Warehouse: %s\n", pickList.WarehouseID)
+	_, _ = fmt.Fprintf(w, "Ready: %t\n\n", pickList.Ready)
+
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "LINE\tPRODUCT\tREQUIRED\tRESERVED\tPICK\tAVAILABLE\tSHORTAGE\tSTATUS")
+	for _, line := range pickList.Lines {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			line.LineNumber,
+			orderPickListProductLabel(line),
+			line.RequiredQty.String(),
+			line.ReservedQty.String(),
+			line.PickQty.String(),
+			line.AvailableQty.String(),
+			line.ShortageQty.String(),
+			line.Status,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func orderPickListProductLabel(line orders.OrderPickListLine) string {
+	if strings.TrimSpace(line.ProductCode) != "" || strings.TrimSpace(line.ProductName) != "" {
+		return strings.TrimSpace(strings.TrimSpace(line.ProductCode) + " " + strings.TrimSpace(line.ProductName))
+	}
+	if strings.TrimSpace(line.ProductID) != "" {
+		return line.ProductID
+	}
+	return line.Description
+}
+
 func printOrderStockReservation(w io.Writer, result *orders.OrderStockReservationResult) {
 	if result == nil {
 		return
