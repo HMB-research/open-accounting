@@ -99,6 +99,47 @@ func (s *Service) GenerateKMD(ctx context.Context, tenantID, schemaName string, 
 	return decl, nil
 }
 
+// GenerateKMDINF generates a KMD INF appendix report for a VAT period.
+func (s *Service) GenerateKMDINF(ctx context.Context, tenantID, schemaName string, req *KMDINFReportRequest) (*KMDINFReport, error) {
+	if req == nil {
+		return nil, fmt.Errorf("request is required")
+	}
+	if req.Year < 2020 || req.Year > 2100 {
+		return nil, fmt.Errorf("invalid year")
+	}
+	if req.Month < 1 || req.Month > 12 {
+		return nil, fmt.Errorf("invalid month")
+	}
+
+	threshold := req.Threshold
+	if threshold.IsZero() {
+		threshold = KMDINFDefaultThreshold
+	}
+	if threshold.LessThanOrEqual(decimal.Zero) {
+		return nil, fmt.Errorf("threshold must be positive")
+	}
+
+	startDate := time.Date(req.Year, time.Month(req.Month), 1, 0, 0, 0, 0, time.UTC)
+	endDate := startDate.AddDate(0, 1, 0)
+
+	rows, err := s.repo.QueryKMDINFData(ctx, schemaName, tenantID, startDate, endDate, threshold)
+	if err != nil {
+		return nil, fmt.Errorf("query KMD INF data: %w", err)
+	}
+
+	report := &KMDINFReport{
+		TenantID:    tenantID,
+		Year:        req.Year,
+		Month:       req.Month,
+		Threshold:   threshold,
+		GeneratedAt: time.Now(),
+		Rows:        rows,
+		Summary:     summarizeKMDINFRows(rows),
+	}
+
+	return report, nil
+}
+
 // GetKMD retrieves a KMD declaration for a given period
 func (s *Service) GetKMD(ctx context.Context, tenantID, schemaName, yearStr, monthStr string) (*KMDDeclaration, error) {
 	year, err := strconv.Atoi(yearStr)
@@ -180,4 +221,37 @@ func aggregateVATByCode(entries []VATEntry) []KMDRow {
 		rows = append(rows, *row)
 	}
 	return rows
+}
+
+func summarizeKMDINFRows(rows []KMDINFReportRow) []KMDINFPartSummary {
+	parts := []KMDINFPart{KMDINFPartSales, KMDINFPartPurchases}
+	summaries := make(map[KMDINFPart]*KMDINFPartSummary, len(parts))
+	partnersByPart := make(map[KMDINFPart]map[string]bool, len(parts))
+	for _, part := range parts {
+		summaries[part] = &KMDINFPartSummary{Part: part}
+		partnersByPart[part] = make(map[string]bool)
+	}
+
+	for _, row := range rows {
+		summary, ok := summaries[row.Part]
+		if !ok {
+			summary = &KMDINFPartSummary{Part: row.Part}
+			summaries[row.Part] = summary
+			partnersByPart[row.Part] = make(map[string]bool)
+			parts = append(parts, row.Part)
+		}
+		summary.InvoiceCount++
+		summary.TaxableAmount = summary.TaxableAmount.Add(row.TaxableAmount)
+		summary.VATAmount = summary.VATAmount.Add(row.VATAmount)
+		summary.TotalAmount = summary.TotalAmount.Add(row.TotalAmount)
+		partnersByPart[row.Part][row.ContactID] = true
+	}
+
+	result := make([]KMDINFPartSummary, 0, len(parts))
+	for _, part := range parts {
+		summary := summaries[part]
+		summary.PartnerCount = len(partnersByPart[part])
+		result = append(result, *summary)
+	}
+	return result
 }

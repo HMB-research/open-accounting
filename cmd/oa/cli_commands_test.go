@@ -6214,6 +6214,38 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 				"rows_imported":        1,
 				"rows_skipped":         0,
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd/2026/3/inf":
+			w.Header().Set("Content-Type", "application/json")
+			assert.Equal(t, "1000", r.URL.Query().Get("threshold"))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tenant_id":    "tenant-1",
+				"year":         2026,
+				"month":        3,
+				"threshold":    "1000.00",
+				"generated_at": "2026-03-31T12:00:00Z",
+				"summary": []map[string]any{{
+					"part":           "A",
+					"partner_count":  1,
+					"invoice_count":  1,
+					"taxable_amount": "1200.00",
+					"vat_amount":     "264.00",
+					"total_amount":   "1464.00",
+				}},
+				"rows": []map[string]any{{
+					"part":                          "A",
+					"contact_id":                    "contact-1",
+					"contact_name":                  "Alpha OU",
+					"contact_reg_code":              "12345678",
+					"invoice_id":                    "invoice-1",
+					"invoice_number":                "INV-1",
+					"invoice_date":                  "2026-03-05T00:00:00Z",
+					"invoice_type":                  "SALES",
+					"taxable_amount":                "1200.00",
+					"vat_amount":                    "264.00",
+					"total_amount":                  "1464.00",
+					"partner_period_taxable_amount": "1200.00",
+				}},
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd/2026/3/xml":
 			w.Header().Set("Content-Type", "application/xml")
 			_, _ = w.Write([]byte("<KMD>ok</KMD>"))
@@ -6270,6 +6302,12 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "KMD 2026-03")
 	assert.Contains(t, stdout.String(), "Payable: 140")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tax", "kmd", "inf", "--year", "2026", "--month", "3", "--threshold", "1000"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "KMD INF 2026-03")
+	assert.Contains(t, stdout.String(), "Alpha OU")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"tax", "kmd", "import-history", "--file", kmdFile})

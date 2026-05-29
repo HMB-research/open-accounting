@@ -2827,6 +2827,15 @@ Content-Type: application/json
 }
 ```
 
+### Generate KMD INF Report
+
+```http
+GET /tenants/{tenantId}/tax/kmd/{year}/{month}/inf?threshold=1000
+Authorization: Bearer <token>
+```
+
+Generates KMD INF A/B appendix rows from domestic VAT-bearing sales and purchase invoices whose partner-period taxable total reaches the threshold excluding VAT. The default threshold is `1000`.
+
 ### Import Historical KMD Declarations
 
 ```http

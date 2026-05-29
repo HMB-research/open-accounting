@@ -1785,6 +1785,37 @@ func TestPrintTaxReports(t *testing.T) {
 	printKMDDeclaration(&kmdBuf, &kmd)
 	assert.Contains(t, kmdBuf.String(), "KMD 2026-03")
 	assert.Contains(t, kmdBuf.String(), "Taxable sales")
+
+	var infBuf bytes.Buffer
+	printKMDINFReport(&infBuf, &tax.KMDINFReport{
+		TenantID:    "tenant-1",
+		Year:        2026,
+		Month:       3,
+		Threshold:   decimal.NewFromInt(1000),
+		GeneratedAt: now,
+		Summary: []tax.KMDINFPartSummary{{
+			Part:          tax.KMDINFPartSales,
+			PartnerCount:  1,
+			InvoiceCount:  1,
+			TaxableAmount: decimal.NewFromInt(1200),
+			VATAmount:     decimal.NewFromInt(264),
+			TotalAmount:   decimal.NewFromInt(1464),
+		}},
+		Rows: []tax.KMDINFReportRow{{
+			Part:                       tax.KMDINFPartSales,
+			ContactName:                "Alpha OU",
+			ContactRegCode:             "12345678",
+			InvoiceNumber:              "INV-1",
+			InvoiceDate:                now,
+			TaxableAmount:              decimal.NewFromInt(1200),
+			VATAmount:                  decimal.NewFromInt(264),
+			TotalAmount:                decimal.NewFromInt(1464),
+			PartnerPeriodTaxableAmount: decimal.NewFromInt(1200),
+		}},
+	})
+	assert.Contains(t, infBuf.String(), "KMD INF 2026-03")
+	assert.Contains(t, infBuf.String(), "A sales")
+	assert.Contains(t, infBuf.String(), "Alpha OU")
 }
 
 func TestFormatHelpers(t *testing.T) {
