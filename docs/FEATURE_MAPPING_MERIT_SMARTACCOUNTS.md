@@ -157,6 +157,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Income Statement | ✅ | ✅ | ✅ | Implemented |
 | Cash Flow Statement | ✅ | ✅ | ⚠️ | Partial |
 | Aging reports | ✅ | ✅ | ⚠️ | Partial |
+| Sales margin reports | ✅ | ✅ | ✅ | Implemented through API/CLI CSV/XLSX/PDF exports |
 | Custom date ranges | ✅ | ✅ | ✅ | Implemented |
 
 ### 5.2 Management Reports
@@ -166,7 +167,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Dashboard analytics | ✅ | ✅ | ✅ | Implemented |
 | Revenue by period | ✅ | ✅ | ✅ | Implemented |
 | Expense breakdown | ✅ | ✅ | ✅ | Implemented |
-| Customer profitability | ✅ | ✅ | ❌ | **Gap** |
+| Customer profitability | ✅ | ✅ | ⚠️ | Partial: invoice-line sales margin is implemented; customer rollups remain thin |
 | Budget vs actual | ✅ | ✅ | ❌ | **Gap** |
 
 ---

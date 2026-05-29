@@ -1976,6 +1976,103 @@ func contactStatementRequestFromQuery(contactID string, r *http.Request) (*repor
 	}, nil
 }
 
+// GetSalesMarginReport returns sales margin reporting for a period
+// @Summary Get sales margin report
+// @Description Get sales invoice revenue, estimated product cost, and margin by invoice line
+// @Tags Reports
+// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param start_date query string true "Start date (YYYY-MM-DD)"
+// @Param end_date query string true "End date (YYYY-MM-DD)"
+// @Param format query string false "Response format: json, csv, xlsx, or pdf"
+// @Success 200 {object} reports.SalesMarginReport
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/reports/sales-margin [get]
+func (h *Handlers) GetSalesMarginReport(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+
+	format, err := reportResponseFormat(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	req, err := salesMarginRequestFromQuery(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+	result, err := h.reportsService.GetSalesMarginReport(r.Context(), tenantID, schemaName, req)
+	if err != nil {
+		log.Error().Err(err).Str("tenant", tenantID).Msg("Failed to get sales margin report")
+		respondError(w, http.StatusInternalServerError, "Failed to get sales margin report")
+		return
+	}
+
+	fileStem := fmt.Sprintf("sales-margin-%s-%s", req.StartDate, req.EndDate)
+	if format == "csv" {
+		content, err := salesMarginCSV(result)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export sales margin CSV")
+			return
+		}
+		respondReportCSV(w, fileStem+".csv", content)
+		return
+	}
+	if format == "xlsx" {
+		content, err := salesMarginXLSX(result)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export sales margin XLSX")
+			return
+		}
+		respondReportXLSX(w, fileStem+".xlsx", content)
+		return
+	}
+	if format == "pdf" {
+		content, err := salesMarginPDF(result)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to export sales margin PDF")
+			return
+		}
+		respondReportPDF(w, fileStem+".pdf", content)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+func salesMarginRequestFromQuery(r *http.Request) (*reports.SalesMarginRequest, error) {
+	startDate := strings.TrimSpace(r.URL.Query().Get("start_date"))
+	if startDate == "" {
+		return nil, fmt.Errorf("start_date parameter is required")
+	}
+	parsedStart, err := time.Parse("2006-01-02", startDate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid start_date format. Use YYYY-MM-DD")
+	}
+
+	endDate := strings.TrimSpace(r.URL.Query().Get("end_date"))
+	if endDate == "" {
+		return nil, fmt.Errorf("end_date parameter is required")
+	}
+	parsedEnd, err := time.Parse("2006-01-02", endDate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid end_date format. Use YYYY-MM-DD")
+	}
+	if parsedEnd.Before(parsedStart) {
+		return nil, fmt.Errorf("end_date must be on or after start_date")
+	}
+
+	return &reports.SalesMarginRequest{
+		StartDate: startDate,
+		EndDate:   endDate,
+	}, nil
+}
+
 // GetOverdueInvoices returns a summary of all overdue invoices for payment reminders
 // @Summary Get overdue invoices
 // @Description Get a summary of all overdue sales invoices for sending payment reminders

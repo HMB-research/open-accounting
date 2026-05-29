@@ -171,6 +171,21 @@ func TestExtendedReportHandlers(t *testing.T) {
 			StatementAmount: decimal.NewFromInt(-50),
 		},
 	}
+	reportsRepo.SalesMarginLines = []reports.SalesMarginLine{{
+		InvoiceID:     "inv-1",
+		InvoiceNumber: "INV-001",
+		InvoiceDate:   "2026-01-05",
+		ContactID:     "contact-1",
+		ContactName:   "Example Customer",
+		ProductID:     "prod-1",
+		ProductCode:   "SKU-1",
+		ProductName:   "Widget",
+		Description:   "Widget sale",
+		Quantity:      decimal.NewFromInt(2),
+		Revenue:       decimal.NewFromInt(250),
+		UnitCost:      decimal.NewFromInt(70),
+		Cost:          decimal.NewFromInt(140),
+	}}
 
 	req := withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
 	rr := httptest.NewRecorder()
@@ -397,6 +412,39 @@ func TestExtendedReportHandlers(t *testing.T) {
 	})
 	rr = httptest.NewRecorder()
 	h.GetContactStatement(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/sales-margin?start_date=2026-01-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetSalesMarginReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	var marginReport reports.SalesMarginReport
+	assert.NoError(t, json.NewDecoder(rr.Body).Decode(&marginReport))
+	assert.True(t, marginReport.TotalMargin.Equal(decimal.NewFromInt(110)))
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/sales-margin?start_date=2026-01-01&end_date=2026-01-31&format=csv", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetSalesMarginReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "row_type,start_date,end_date")
+	assert.Contains(t, rr.Body.String(), "Widget")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/sales-margin?start_date=2026-01-01&end_date=2026-01-31&format=xlsx", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetSalesMarginReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	requireXLSXContains(t, rr.Body.Bytes(), "Widget")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/sales-margin?start_date=2026-01-01&end_date=2026-01-31&format=pdf", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetSalesMarginReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	requirePDF(t, rr.Body.Bytes())
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/sales-margin?start_date=2026-02-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetSalesMarginReport(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
 

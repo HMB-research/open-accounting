@@ -921,3 +921,53 @@ func contactStatementKinds(rawType string) (BalanceConfirmationType, string, str
 		return "", "", "", fmt.Errorf("type must be RECEIVABLE or PAYABLE")
 	}
 }
+
+// GetSalesMarginReport generates sales margin reporting for a period.
+func (s *Service) GetSalesMarginReport(ctx context.Context, tenantID, schemaName string, req *SalesMarginRequest) (*SalesMarginReport, error) {
+	startDate, err := time.Parse("2006-01-02", req.StartDate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid start_date: %w", err)
+	}
+	endDate, err := time.Parse("2006-01-02", req.EndDate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid end_date: %w", err)
+	}
+	if endDate.Before(startDate) {
+		return nil, fmt.Errorf("end_date must be on or after start_date")
+	}
+
+	lines, err := s.repo.GetSalesMarginLines(ctx, schemaName, tenantID, startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("get sales margin lines: %w", err)
+	}
+
+	var totalRevenue decimal.Decimal
+	var totalCost decimal.Decimal
+	for i := range lines {
+		lines[i].Margin = lines[i].Revenue.Sub(lines[i].Cost)
+		lines[i].MarginPercent = calculateMarginPercent(lines[i].Margin, lines[i].Revenue)
+		totalRevenue = totalRevenue.Add(lines[i].Revenue)
+		totalCost = totalCost.Add(lines[i].Cost)
+	}
+	totalMargin := totalRevenue.Sub(totalCost)
+
+	return &SalesMarginReport{
+		TenantID:      tenantID,
+		StartDate:     req.StartDate,
+		EndDate:       req.EndDate,
+		TotalRevenue:  totalRevenue,
+		TotalCost:     totalCost,
+		TotalMargin:   totalMargin,
+		MarginPercent: calculateMarginPercent(totalMargin, totalRevenue),
+		LineCount:     len(lines),
+		Lines:         lines,
+		GeneratedAt:   time.Now(),
+	}, nil
+}
+
+func calculateMarginPercent(margin, revenue decimal.Decimal) decimal.Decimal {
+	if revenue.IsZero() {
+		return decimal.Zero
+	}
+	return margin.Div(revenue).Mul(decimal.NewFromInt(100)).Round(2)
+}

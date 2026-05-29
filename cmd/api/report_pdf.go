@@ -79,6 +79,10 @@ func contactStatementPDF(report *reports.ContactStatement) ([]byte, error) {
 	return reportRowsPDF("Contact Statement", fmt.Sprintf("%s %s from %s to %s", report.ContactName, report.Type, report.StartDate, report.EndDate), contactStatementRows(report))
 }
 
+func salesMarginPDF(report *reports.SalesMarginReport) ([]byte, error) {
+	return reportRowsPDF("Sales Margin", fmt.Sprintf("%s to %s", report.StartDate, report.EndDate), salesMarginRows(report))
+}
+
 func costCenterReportPDF(report *accounting.CostCenterReport) ([]byte, error) {
 	return reportRowsPDF("Cost Center Report", fmt.Sprintf("%s to %s", reportExportDate(report.PeriodStart), reportExportDate(report.PeriodEnd)), costCenterReportRows(report))
 }

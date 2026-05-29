@@ -401,6 +401,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  reports balance-confirmations  Show balance confirmations")
 	_, _ = fmt.Fprintln(a.stdout, "  reports balance-confirmation  Show one balance confirmation")
 	_, _ = fmt.Fprintln(a.stdout, "  reports contact-statement  Show one customer or supplier period statement")
+	_, _ = fmt.Fprintln(a.stdout, "  reports sales-margin      Show sales margin by invoice line")
 	_, _ = fmt.Fprintln(a.stdout, "  documents list            List documents for a record")
 	_, _ = fmt.Fprintln(a.stdout, "  documents review-summary  Summarize document review state")
 	_, _ = fmt.Fprintln(a.stdout, "  documents review-queue    List documents waiting for reviewer action")
@@ -8964,6 +8965,68 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, report)
 		}
 		printContactStatement(a.stdout, report)
+		return nil
+
+	case "sales-margin":
+		fs := flag.NewFlagSet("reports sales-margin", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		startDate := fs.String("start", "", "Start date in YYYY-MM-DD")
+		endDate := fs.String("end", "", "End date in YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		asCSV := fs.Bool("csv", false, "Output CSV")
+		asXLSX := fs.Bool("xlsx", false, "Output XLSX")
+		asPDF := fs.Bool("pdf", false, "Output PDF")
+		outputPath := fs.String("output", "", "Optional CSV/XLSX/PDF output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *asPDF, *outputPath); err != nil {
+			return err
+		}
+		startDateValue, err := parseRequiredDate("start", *startDate)
+		if err != nil {
+			return err
+		}
+		endDateValue, err := parseRequiredDate("end", *endDate)
+		if err != nil {
+			return err
+		}
+		if endDateValue.Before(startDateValue) {
+			return errors.New("end must be on or after start")
+		}
+		start := startDateValue.Format("2006-01-02")
+		end := endDateValue.Format("2006-01-02")
+
+		if *asCSV {
+			content, err := client.exportSalesMarginReport(ctx, cfg.TenantID, start, end, "csv")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "sales margin CSV")
+		}
+		if *asXLSX {
+			content, err := client.exportSalesMarginReport(ctx, cfg.TenantID, start, end, "xlsx")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "sales margin XLSX")
+		}
+		if *asPDF {
+			content, err := client.exportSalesMarginReport(ctx, cfg.TenantID, start, end, "pdf")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "sales margin PDF")
+		}
+
+		report, err := client.getSalesMarginReport(ctx, cfg.TenantID, start, end)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, report)
+		}
+		printSalesMarginReport(a.stdout, report)
 		return nil
 
 	default:
