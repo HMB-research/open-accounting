@@ -956,6 +956,17 @@ func tenantCLICommand(method, path string) (string, bool) {
 			"PUT":    "banking accounts update",
 			"DELETE": "banking accounts delete",
 		})
+	case "/bank-match-rules":
+		return commandForMethod(method, map[string]string{
+			"GET":  "banking match-rules list",
+			"POST": "banking match-rules create",
+		})
+	case "/bank-match-rules/{ruleID}":
+		return commandForMethod(method, map[string]string{
+			"GET":    "banking match-rules get",
+			"PUT":    "banking match-rules update",
+			"DELETE": "banking match-rules delete",
+		})
 	case "/bank-accounts/{accountID}/transactions":
 		return commandForMethod(method, map[string]string{"GET": "banking transactions list"})
 	case "/bank-accounts/{accountID}/import":

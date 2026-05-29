@@ -95,7 +95,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Manual transaction import | ✅ | ✅ | ✅ | Implemented |
 | CSV import | ✅ | ✅ | ✅ | Implemented |
 | Transaction matching | ✅ | ✅ | ✅ | Implemented |
-| Auto-matching rules | ✅ | ✅ | ⚠️ | Partial |
+| Auto-matching rules | ✅ | ✅ | ✅ | Implemented - persisted bank-account or tenant-wide rules tune match field, priority, confidence, date window, exact amount, active state, API, and CLI coverage |
 | Bank feed (Swedbank Gateway) | ❌ | ✅ | ❌ | **Blocker** |
 | Multi-bank support | ✅ | ✅ | ✅ | Implemented |
 

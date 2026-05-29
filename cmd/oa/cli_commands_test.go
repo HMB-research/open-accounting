@@ -4609,6 +4609,23 @@ func TestCLIBankingCommands(t *testing.T) {
 			"external_id":          "ext-1",
 		}
 	}
+	matchRulePayload := func(active bool) map[string]any {
+		return map[string]any{
+			"id":                   "rule-1",
+			"tenant_id":            "tenant-1",
+			"bank_account_id":      "bank-1",
+			"name":                 "Stripe receipts",
+			"priority":             10,
+			"match_field":          "DESCRIPTION",
+			"pattern":              "stripe",
+			"min_confidence":       0.85,
+			"max_date_diff_days":   3,
+			"require_exact_amount": true,
+			"is_active":            active,
+			"created_at":           "2026-03-15T12:00:00Z",
+			"updated_at":           "2026-03-15T12:00:00Z",
+		}
+	}
 	importPayload := map[string]any{
 		"import_id":             "import-1",
 		"transactions_imported": 1,
@@ -4684,6 +4701,43 @@ func TestCLIBankingCommands(t *testing.T) {
 			payload["bank_name"] = "SEB"
 			_ = json.NewEncoder(w).Encode(payload)
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-1":
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-match-rules":
+			require.Equal(t, "bank-1", r.URL.Query().Get("bank_account_id"))
+			require.Equal(t, "true", r.URL.Query().Get("active_only"))
+			require.Equal(t, "true", r.URL.Query().Get("include_global"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{matchRulePayload(true)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-match-rules":
+			var req banking.CreateBankMatchRuleRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.NotNil(t, req.BankAccountID)
+			assert.Equal(t, "bank-1", *req.BankAccountID)
+			assert.Equal(t, "Stripe receipts", req.Name)
+			assert.Equal(t, 10, req.Priority)
+			assert.Equal(t, banking.BankMatchFieldDescription, req.MatchField)
+			assert.Equal(t, "stripe", req.Pattern)
+			assert.Equal(t, 0.85, req.MinConfidence)
+			assert.Equal(t, 3, req.MaxDateDiffDays)
+			assert.True(t, req.RequireExactAmount)
+			require.NotNil(t, req.IsActive)
+			assert.True(t, *req.IsActive)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(matchRulePayload(true))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-match-rules/rule-1":
+			_ = json.NewEncoder(w).Encode(matchRulePayload(true))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/bank-match-rules/rule-1":
+			var req banking.UpdateBankMatchRuleRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.NotNil(t, req.Name)
+			assert.Equal(t, "Updated stripe", *req.Name)
+			assert.True(t, req.ClearBankAccount)
+			require.NotNil(t, req.IsActive)
+			assert.False(t, *req.IsActive)
+			payload := matchRulePayload(false)
+			payload["name"] = "Updated stripe"
+			delete(payload, "bank_account_id")
+			_ = json.NewEncoder(w).Encode(payload)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/bank-match-rules/rule-1":
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-1/transactions":
 			require.Equal(t, "UNMATCHED", r.URL.Query().Get("status"))
@@ -4774,6 +4828,33 @@ func TestCLIBankingCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"banking", "accounts", "delete", "--id", "bank-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Deleted bank account bank-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"banking", "match-rules", "list", "--bank-account-id", "bank-1", "--active-only", "--include-global", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Stripe receipts"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"banking", "match-rules", "create", "--name", "Stripe receipts", "--bank-account-id", "bank-1", "--priority", "10", "--field", "description", "--pattern", "stripe", "--min-confidence", "0.85", "--max-date-diff-days", "3", "--require-exact-amount"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created bank match rule Stripe receipts (rule-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"banking", "match-rules", "get", "--id", "rule-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Bank match rule Stripe receipts (rule-1)")
+	assert.Contains(t, stdout.String(), "Min confidence: 0.85")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"banking", "match-rules", "update", "--id", "rule-1", "--name", "Updated stripe", "--global", "--active", "false"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Bank match rule Updated stripe (rule-1)")
+	assert.Contains(t, stdout.String(), "Active: false")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"banking", "match-rules", "delete", "--id", "rule-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Deleted bank match rule rule-1")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"banking", "transactions", "list", "--account-id", "bank-1", "--status", "unmatched", "--from", "2026-03-01", "--to", "2026-03-31", "--json"})

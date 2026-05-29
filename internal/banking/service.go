@@ -105,7 +105,28 @@ func (s *Service) EnsureSchema(ctx context.Context, schemaName string) error {
 		CREATE INDEX IF NOT EXISTS idx_bank_reconciliations_status ON %s.bank_reconciliations(status);
 		CREATE INDEX IF NOT EXISTS idx_bank_imports_account ON %s.bank_statement_imports(bank_account_id);
 		CREATE INDEX IF NOT EXISTS idx_bank_transactions_follow_up_status ON %s.bank_transactions(follow_up_status);
-	`, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName)
+
+		CREATE TABLE IF NOT EXISTS %s.bank_match_rules (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			tenant_id UUID NOT NULL,
+			bank_account_id UUID REFERENCES %s.bank_accounts(id) ON DELETE CASCADE,
+			name VARCHAR(120) NOT NULL,
+			priority INTEGER NOT NULL DEFAULT 100,
+			match_field VARCHAR(30) NOT NULL,
+			pattern TEXT NOT NULL,
+			min_confidence DOUBLE PRECISION NOT NULL DEFAULT 0.7,
+			max_date_diff_days INTEGER NOT NULL DEFAULT 7,
+			require_exact_amount BOOLEAN NOT NULL DEFAULT false,
+			is_active BOOLEAN NOT NULL DEFAULT true,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			CONSTRAINT bank_match_rules_field_check CHECK (match_field IN ('DESCRIPTION', 'REFERENCE', 'COUNTERPARTY_NAME', 'COUNTERPARTY_ACCOUNT')),
+			CONSTRAINT bank_match_rules_confidence_check CHECK (min_confidence >= 0 AND min_confidence <= 1),
+			CONSTRAINT bank_match_rules_date_diff_check CHECK (max_date_diff_days >= 0 AND max_date_diff_days <= 90)
+		);
+		CREATE INDEX IF NOT EXISTS idx_bank_match_rules_tenant ON %s.bank_match_rules(tenant_id, is_active, priority);
+		CREATE INDEX IF NOT EXISTS idx_bank_match_rules_account ON %s.bank_match_rules(bank_account_id);
+	`, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName)
 
 	_, err := s.db.Exec(ctx, query)
 	return err
@@ -236,6 +257,188 @@ func (s *Service) DeleteBankAccount(ctx context.Context, schemaName, tenantID, a
 	}
 
 	return s.repo.DeleteBankAccount(ctx, schemaName, tenantID, accountID)
+}
+
+// =============================================================================
+// Bank Auto-Match Rule Operations
+// =============================================================================
+
+// CreateBankMatchRule creates a bank auto-match rule.
+func (s *Service) CreateBankMatchRule(ctx context.Context, schemaName, tenantID string, req *CreateBankMatchRuleRequest) (*BankMatchRule, error) {
+	if req == nil {
+		return nil, fmt.Errorf("bank match rule request is required")
+	}
+
+	bankAccountID, err := s.normalizeBankMatchRuleAccount(ctx, schemaName, tenantID, req.BankAccountID)
+	if err != nil {
+		return nil, err
+	}
+	matchField, err := NormalizeBankMatchField(string(req.MatchField))
+	if err != nil {
+		return nil, err
+	}
+	name, pattern, err := validateBankMatchRuleText(req.Name, req.Pattern)
+	if err != nil {
+		return nil, err
+	}
+
+	priority := req.Priority
+	if priority == 0 {
+		priority = 100
+	}
+	minConfidence := req.MinConfidence
+	if minConfidence == 0 {
+		minConfidence = 0.7
+	}
+	maxDateDiffDays := req.MaxDateDiffDays
+	if maxDateDiffDays == 0 {
+		maxDateDiffDays = DefaultMatcherConfig().MaxDateDiff
+	}
+	if err := validateBankMatchRuleNumbers(minConfidence, maxDateDiffDays); err != nil {
+		return nil, err
+	}
+	isActive := true
+	if req.IsActive != nil {
+		isActive = *req.IsActive
+	}
+
+	now := time.Now().UTC()
+	rule := &BankMatchRule{
+		ID:                 uuid.New().String(),
+		TenantID:           tenantID,
+		BankAccountID:      bankAccountID,
+		Name:               name,
+		Priority:           priority,
+		MatchField:         matchField,
+		Pattern:            pattern,
+		MinConfidence:      minConfidence,
+		MaxDateDiffDays:    maxDateDiffDays,
+		RequireExactAmount: req.RequireExactAmount,
+		IsActive:           isActive,
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+
+	if err := s.repo.CreateBankMatchRule(ctx, schemaName, rule); err != nil {
+		return nil, err
+	}
+	return rule, nil
+}
+
+// ListBankMatchRules lists bank auto-match rules.
+func (s *Service) ListBankMatchRules(ctx context.Context, schemaName, tenantID string, filter *BankMatchRuleFilter) ([]BankMatchRule, error) {
+	return s.repo.ListBankMatchRules(ctx, schemaName, tenantID, filter)
+}
+
+// GetBankMatchRule retrieves a bank auto-match rule.
+func (s *Service) GetBankMatchRule(ctx context.Context, schemaName, tenantID, ruleID string) (*BankMatchRule, error) {
+	return s.repo.GetBankMatchRule(ctx, schemaName, tenantID, ruleID)
+}
+
+// UpdateBankMatchRule updates a bank auto-match rule.
+func (s *Service) UpdateBankMatchRule(ctx context.Context, schemaName, tenantID, ruleID string, req *UpdateBankMatchRuleRequest) (*BankMatchRule, error) {
+	if req == nil {
+		return nil, fmt.Errorf("bank match rule request is required")
+	}
+	rule, err := s.repo.GetBankMatchRule(ctx, schemaName, tenantID, ruleID)
+	if err != nil {
+		return nil, err
+	}
+
+	if req.ClearBankAccount {
+		rule.BankAccountID = nil
+	} else if req.BankAccountID != nil {
+		rule.BankAccountID, err = s.normalizeBankMatchRuleAccount(ctx, schemaName, tenantID, req.BankAccountID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
+			return nil, fmt.Errorf("name is required")
+		}
+		rule.Name = name
+	}
+	if req.Priority != nil {
+		rule.Priority = *req.Priority
+	}
+	if req.MatchField != nil {
+		matchField, err := NormalizeBankMatchField(string(*req.MatchField))
+		if err != nil {
+			return nil, err
+		}
+		rule.MatchField = matchField
+	}
+	if req.Pattern != nil {
+		pattern := strings.TrimSpace(*req.Pattern)
+		if pattern == "" {
+			return nil, fmt.Errorf("pattern is required")
+		}
+		rule.Pattern = pattern
+	}
+	if req.MinConfidence != nil {
+		rule.MinConfidence = *req.MinConfidence
+	}
+	if req.MaxDateDiffDays != nil {
+		rule.MaxDateDiffDays = *req.MaxDateDiffDays
+	}
+	if req.RequireExactAmount != nil {
+		rule.RequireExactAmount = *req.RequireExactAmount
+	}
+	if req.IsActive != nil {
+		rule.IsActive = *req.IsActive
+	}
+	if err := validateBankMatchRuleNumbers(rule.MinConfidence, rule.MaxDateDiffDays); err != nil {
+		return nil, err
+	}
+
+	rule.UpdatedAt = time.Now().UTC()
+	if err := s.repo.UpdateBankMatchRule(ctx, schemaName, rule); err != nil {
+		return nil, err
+	}
+	return rule, nil
+}
+
+// DeleteBankMatchRule deletes a bank auto-match rule.
+func (s *Service) DeleteBankMatchRule(ctx context.Context, schemaName, tenantID, ruleID string) error {
+	return s.repo.DeleteBankMatchRule(ctx, schemaName, tenantID, ruleID)
+}
+
+func (s *Service) normalizeBankMatchRuleAccount(ctx context.Context, schemaName, tenantID string, bankAccountID *string) (*string, error) {
+	if bankAccountID == nil {
+		return nil, nil
+	}
+	trimmed := strings.TrimSpace(*bankAccountID)
+	if trimmed == "" {
+		return nil, nil
+	}
+	if _, err := s.repo.GetBankAccount(ctx, schemaName, tenantID, trimmed); err != nil {
+		return nil, err
+	}
+	return &trimmed, nil
+}
+
+func validateBankMatchRuleText(name, pattern string) (string, string, error) {
+	trimmedName := strings.TrimSpace(name)
+	if trimmedName == "" {
+		return "", "", fmt.Errorf("name is required")
+	}
+	trimmedPattern := strings.TrimSpace(pattern)
+	if trimmedPattern == "" {
+		return "", "", fmt.Errorf("pattern is required")
+	}
+	return trimmedName, trimmedPattern, nil
+}
+
+func validateBankMatchRuleNumbers(minConfidence float64, maxDateDiffDays int) error {
+	if minConfidence < 0 || minConfidence > 1 {
+		return fmt.Errorf("min confidence must be between 0 and 1")
+	}
+	if maxDateDiffDays < 0 || maxDateDiffDays > 90 {
+		return fmt.Errorf("max date diff days must be between 0 and 90")
+	}
+	return nil
 }
 
 // =============================================================================

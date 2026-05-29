@@ -181,6 +181,114 @@ func (r *GORMRepository) CalculateAccountBalance(ctx context.Context, schemaName
 	return result.Balance.Decimal, nil
 }
 
+// CreateBankMatchRule inserts a bank auto-match rule.
+func (r *GORMRepository) CreateBankMatchRule(ctx context.Context, schemaName string, rule *BankMatchRule) error {
+	db, err := r.tenantTable(ctx, schemaName, "bank_match_rules")
+	if err != nil {
+		return err
+	}
+
+	if err := db.Create(rule).Error; err != nil {
+		return fmt.Errorf("insert bank match rule: %w", err)
+	}
+	return nil
+}
+
+// GetBankMatchRule retrieves a bank auto-match rule by ID.
+func (r *GORMRepository) GetBankMatchRule(ctx context.Context, schemaName, tenantID, ruleID string) (*BankMatchRule, error) {
+	db, err := r.tenantTable(ctx, schemaName, "bank_match_rules")
+	if err != nil {
+		return nil, err
+	}
+
+	var rule BankMatchRule
+	err = db.Where("id = ? AND tenant_id = ?", ruleID, tenantID).Take(&rule).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrBankMatchRuleNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get bank match rule: %w", err)
+	}
+	return &rule, nil
+}
+
+// ListBankMatchRules lists bank auto-match rules for a tenant.
+func (r *GORMRepository) ListBankMatchRules(ctx context.Context, schemaName, tenantID string, filter *BankMatchRuleFilter) ([]BankMatchRule, error) {
+	db, err := r.tenantTable(ctx, schemaName, "bank_match_rules")
+	if err != nil {
+		return nil, err
+	}
+
+	query := db.Where("tenant_id = ?", tenantID)
+	if filter != nil {
+		if filter.ActiveOnly {
+			query = query.Where("is_active = ?", true)
+		}
+		if filter.BankAccountID != "" {
+			if filter.IncludeGlobal {
+				query = query.Where("(bank_account_id = ? OR bank_account_id IS NULL)", filter.BankAccountID)
+			} else {
+				query = query.Where("bank_account_id = ?", filter.BankAccountID)
+			}
+		}
+	}
+
+	var rules []BankMatchRule
+	if err := query.Order("priority ASC, name ASC, created_at ASC").Find(&rules).Error; err != nil {
+		return nil, fmt.Errorf("list bank match rules: %w", err)
+	}
+	if rules == nil {
+		rules = []BankMatchRule{}
+	}
+	return rules, nil
+}
+
+// UpdateBankMatchRule updates a bank auto-match rule.
+func (r *GORMRepository) UpdateBankMatchRule(ctx context.Context, schemaName string, rule *BankMatchRule) error {
+	db, err := r.tenantTable(ctx, schemaName, "bank_match_rules")
+	if err != nil {
+		return err
+	}
+
+	result := db.Where("id = ? AND tenant_id = ?", rule.ID, rule.TenantID).
+		Updates(map[string]interface{}{
+			"bank_account_id":      rule.BankAccountID,
+			"name":                 rule.Name,
+			"priority":             rule.Priority,
+			"match_field":          rule.MatchField,
+			"pattern":              rule.Pattern,
+			"min_confidence":       rule.MinConfidence,
+			"max_date_diff_days":   rule.MaxDateDiffDays,
+			"require_exact_amount": rule.RequireExactAmount,
+			"is_active":            rule.IsActive,
+			"updated_at":           rule.UpdatedAt,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("update bank match rule: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrBankMatchRuleNotFound
+	}
+	return nil
+}
+
+// DeleteBankMatchRule deletes a bank auto-match rule.
+func (r *GORMRepository) DeleteBankMatchRule(ctx context.Context, schemaName, tenantID, ruleID string) error {
+	db, err := r.tenantTable(ctx, schemaName, "bank_match_rules")
+	if err != nil {
+		return err
+	}
+
+	result := db.Where("id = ? AND tenant_id = ?", ruleID, tenantID).Delete(&BankMatchRule{})
+	if result.Error != nil {
+		return fmt.Errorf("delete bank match rule: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrBankMatchRuleNotFound
+	}
+	return nil
+}
+
 // ListTransactions lists bank transactions with filters
 func (r *GORMRepository) ListTransactions(ctx context.Context, schemaName, tenantID string, filter *TransactionFilter) ([]BankTransaction, error) {
 	db, err := r.tenantTable(ctx, schemaName, "bank_transactions")

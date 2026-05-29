@@ -2072,6 +2072,40 @@ func printBankAccount(w io.Writer, account *banking.BankAccount) {
 	}
 }
 
+func printBankMatchRulesTable(w io.Writer, rules []banking.BankMatchRule) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNAME\tACCOUNT\tPRIORITY\tFIELD\tPATTERN\tCONFIDENCE\tDATE DIFF\tEXACT\tACTIVE")
+	for _, rule := range rules {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%d\t%s\t%s\t%.2f\t%d\t%t\t%t\n",
+			rule.ID,
+			rule.Name,
+			stringValue(rule.BankAccountID),
+			rule.Priority,
+			rule.MatchField,
+			rule.Pattern,
+			rule.MinConfidence,
+			rule.MaxDateDiffDays,
+			rule.RequireExactAmount,
+			rule.IsActive,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printBankMatchRule(w io.Writer, rule *banking.BankMatchRule) {
+	_, _ = fmt.Fprintf(w, "Bank match rule %s (%s)\n", rule.Name, rule.ID)
+	_, _ = fmt.Fprintf(w, "Bank account: %s\n", stringValue(rule.BankAccountID))
+	_, _ = fmt.Fprintf(w, "Priority: %d\n", rule.Priority)
+	_, _ = fmt.Fprintf(w, "Field: %s\n", rule.MatchField)
+	_, _ = fmt.Fprintf(w, "Pattern: %s\n", rule.Pattern)
+	_, _ = fmt.Fprintf(w, "Min confidence: %.2f\n", rule.MinConfidence)
+	_, _ = fmt.Fprintf(w, "Max date diff days: %d\n", rule.MaxDateDiffDays)
+	_, _ = fmt.Fprintf(w, "Require exact amount: %t\n", rule.RequireExactAmount)
+	_, _ = fmt.Fprintf(w, "Active: %t\n", rule.IsActive)
+}
+
 func printBankTransactionsTable(w io.Writer, transactions []banking.BankTransaction) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tDATE\tAMOUNT\tCURRENCY\tSTATUS\tFOLLOW-UP\tCOUNTERPARTY\tREFERENCE\tDESCRIPTION")

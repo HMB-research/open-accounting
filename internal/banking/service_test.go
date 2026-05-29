@@ -3,6 +3,7 @@ package banking
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ type MockRepository struct {
 	transactions    map[string]*BankTransaction
 	reconciliations map[string]*BankReconciliation
 	imports         map[string]*BankStatementImport
+	matchRules      map[string]*BankMatchRule
 
 	// Function overrides for custom behavior
 	CreateBankAccountFn              func(ctx context.Context, schemaName string, account *BankAccount) error
@@ -25,6 +27,11 @@ type MockRepository struct {
 	UnsetDefaultAccountsFn           func(ctx context.Context, schemaName, tenantID string) error
 	CountTransactionsForAccountFn    func(ctx context.Context, schemaName, accountID string) (int, error)
 	CalculateAccountBalanceFn        func(ctx context.Context, schemaName, accountID string) (decimal.Decimal, error)
+	CreateBankMatchRuleFn            func(ctx context.Context, schemaName string, rule *BankMatchRule) error
+	GetBankMatchRuleFn               func(ctx context.Context, schemaName, tenantID, ruleID string) (*BankMatchRule, error)
+	ListBankMatchRulesFn             func(ctx context.Context, schemaName, tenantID string, filter *BankMatchRuleFilter) ([]BankMatchRule, error)
+	UpdateBankMatchRuleFn            func(ctx context.Context, schemaName string, rule *BankMatchRule) error
+	DeleteBankMatchRuleFn            func(ctx context.Context, schemaName, tenantID, ruleID string) error
 	ListTransactionsFn               func(ctx context.Context, schemaName, tenantID string, filter *TransactionFilter) ([]BankTransaction, error)
 	GetTransactionFn                 func(ctx context.Context, schemaName, tenantID, transactionID string) (*BankTransaction, error)
 	MatchTransactionFn               func(ctx context.Context, schemaName, tenantID, transactionID, paymentID string) error
@@ -44,6 +51,7 @@ func NewMockRepository() *MockRepository {
 		transactions:    make(map[string]*BankTransaction),
 		reconciliations: make(map[string]*BankReconciliation),
 		imports:         make(map[string]*BankStatementImport),
+		matchRules:      make(map[string]*BankMatchRule),
 	}
 }
 
@@ -142,6 +150,76 @@ func (m *MockRepository) CalculateAccountBalance(ctx context.Context, schemaName
 		}
 	}
 	return balance, nil
+}
+
+func (m *MockRepository) CreateBankMatchRule(ctx context.Context, schemaName string, rule *BankMatchRule) error {
+	if m.CreateBankMatchRuleFn != nil {
+		return m.CreateBankMatchRuleFn(ctx, schemaName, rule)
+	}
+	m.matchRules[rule.ID] = rule
+	return nil
+}
+
+func (m *MockRepository) GetBankMatchRule(ctx context.Context, schemaName, tenantID, ruleID string) (*BankMatchRule, error) {
+	if m.GetBankMatchRuleFn != nil {
+		return m.GetBankMatchRuleFn(ctx, schemaName, tenantID, ruleID)
+	}
+	rule, ok := m.matchRules[ruleID]
+	if !ok || rule.TenantID != tenantID {
+		return nil, ErrBankMatchRuleNotFound
+	}
+	return rule, nil
+}
+
+func (m *MockRepository) ListBankMatchRules(ctx context.Context, schemaName, tenantID string, filter *BankMatchRuleFilter) ([]BankMatchRule, error) {
+	if m.ListBankMatchRulesFn != nil {
+		return m.ListBankMatchRulesFn(ctx, schemaName, tenantID, filter)
+	}
+	var rules []BankMatchRule
+	for _, rule := range m.matchRules {
+		if rule.TenantID != tenantID {
+			continue
+		}
+		if filter != nil {
+			if filter.ActiveOnly && !rule.IsActive {
+				continue
+			}
+			if filter.BankAccountID != "" {
+				if rule.BankAccountID == nil {
+					if !filter.IncludeGlobal {
+						continue
+					}
+				} else if *rule.BankAccountID != filter.BankAccountID {
+					continue
+				}
+			}
+		}
+		rules = append(rules, *rule)
+	}
+	return rules, nil
+}
+
+func (m *MockRepository) UpdateBankMatchRule(ctx context.Context, schemaName string, rule *BankMatchRule) error {
+	if m.UpdateBankMatchRuleFn != nil {
+		return m.UpdateBankMatchRuleFn(ctx, schemaName, rule)
+	}
+	if _, ok := m.matchRules[rule.ID]; !ok {
+		return ErrBankMatchRuleNotFound
+	}
+	m.matchRules[rule.ID] = rule
+	return nil
+}
+
+func (m *MockRepository) DeleteBankMatchRule(ctx context.Context, schemaName, tenantID, ruleID string) error {
+	if m.DeleteBankMatchRuleFn != nil {
+		return m.DeleteBankMatchRuleFn(ctx, schemaName, tenantID, ruleID)
+	}
+	rule, ok := m.matchRules[ruleID]
+	if !ok || rule.TenantID != tenantID {
+		return ErrBankMatchRuleNotFound
+	}
+	delete(m.matchRules, ruleID)
+	return nil
 }
 
 func (m *MockRepository) ListTransactions(ctx context.Context, schemaName, tenantID string, filter *TransactionFilter) ([]BankTransaction, error) {
@@ -579,6 +657,146 @@ func TestService_UpdateBankAccount_NotFound(t *testing.T) {
 	_, err := service.UpdateBankAccount(ctx, testSchemaName, testTenantID, "nonexistent", &UpdateBankAccountRequest{Name: "Test"})
 	if err == nil {
 		t.Error("expected error for non-existent account")
+	}
+}
+
+func TestService_BankMatchRuleLifecycle(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo)
+	ctx := context.Background()
+	account := &BankAccount{
+		ID:       "bank-1",
+		TenantID: testTenantID,
+		Name:     "Main bank",
+	}
+	repo.accounts[account.ID] = account
+
+	rule, err := service.CreateBankMatchRule(ctx, testSchemaName, testTenantID, &CreateBankMatchRuleRequest{
+		BankAccountID:      &account.ID,
+		Name:               "Stripe receipts",
+		Priority:           10,
+		MatchField:         BankMatchFieldDescription,
+		Pattern:            "stripe",
+		MinConfidence:      0.85,
+		MaxDateDiffDays:    3,
+		RequireExactAmount: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateBankMatchRule failed: %v", err)
+	}
+	if rule.ID == "" {
+		t.Fatal("expected rule id")
+	}
+	if rule.BankAccountID == nil || *rule.BankAccountID != account.ID {
+		t.Fatalf("expected bank account id %s, got %#v", account.ID, rule.BankAccountID)
+	}
+	if !rule.IsActive {
+		t.Fatal("expected active rule by default")
+	}
+
+	listed, err := service.ListBankMatchRules(ctx, testSchemaName, testTenantID, &BankMatchRuleFilter{
+		BankAccountID: account.ID,
+		ActiveOnly:    true,
+	})
+	if err != nil {
+		t.Fatalf("ListBankMatchRules failed: %v", err)
+	}
+	if len(listed) != 1 || listed[0].ID != rule.ID {
+		t.Fatalf("expected created rule in filtered list, got %#v", listed)
+	}
+
+	newName := "Stripe exact receipts"
+	active := false
+	updated, err := service.UpdateBankMatchRule(ctx, testSchemaName, testTenantID, rule.ID, &UpdateBankMatchRuleRequest{
+		ClearBankAccount: true,
+		Name:             &newName,
+		IsActive:         &active,
+	})
+	if err != nil {
+		t.Fatalf("UpdateBankMatchRule failed: %v", err)
+	}
+	if updated.BankAccountID != nil {
+		t.Fatalf("expected tenant-wide rule after clearing account, got %#v", updated.BankAccountID)
+	}
+	if updated.Name != newName || updated.IsActive {
+		t.Fatalf("unexpected updated rule: %#v", updated)
+	}
+
+	got, err := service.GetBankMatchRule(ctx, testSchemaName, testTenantID, rule.ID)
+	if err != nil {
+		t.Fatalf("GetBankMatchRule failed: %v", err)
+	}
+	if got.Name != newName {
+		t.Fatalf("expected name %q, got %q", newName, got.Name)
+	}
+
+	if err := service.DeleteBankMatchRule(ctx, testSchemaName, testTenantID, rule.ID); err != nil {
+		t.Fatalf("DeleteBankMatchRule failed: %v", err)
+	}
+	if _, err := service.GetBankMatchRule(ctx, testSchemaName, testTenantID, rule.ID); !errors.Is(err, ErrBankMatchRuleNotFound) {
+		t.Fatalf("expected ErrBankMatchRuleNotFound after delete, got %v", err)
+	}
+}
+
+func TestService_CreateBankMatchRuleValidation(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo)
+	ctx := context.Background()
+
+	tests := []struct {
+		name      string
+		req       *CreateBankMatchRuleRequest
+		wantError string
+	}{
+		{
+			name:      "nil request",
+			req:       nil,
+			wantError: "bank match rule request is required",
+		},
+		{
+			name: "missing name",
+			req: &CreateBankMatchRuleRequest{
+				Pattern: "stripe",
+			},
+			wantError: "name is required",
+		},
+		{
+			name: "missing pattern",
+			req: &CreateBankMatchRuleRequest{
+				Name: "Stripe",
+			},
+			wantError: "pattern is required",
+		},
+		{
+			name: "invalid confidence",
+			req: &CreateBankMatchRuleRequest{
+				Name:          "Stripe",
+				Pattern:       "stripe",
+				MinConfidence: 1.5,
+			},
+			wantError: "min confidence",
+		},
+		{
+			name: "invalid field",
+			req: &CreateBankMatchRuleRequest{
+				Name:       "Stripe",
+				Pattern:    "stripe",
+				MatchField: "BAD_FIELD",
+			},
+			wantError: "invalid bank match field",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rule, err := service.CreateBankMatchRule(ctx, testSchemaName, testTenantID, tt.req)
+			if err == nil {
+				t.Fatalf("expected error, got rule %#v", rule)
+			}
+			if !strings.Contains(err.Error(), tt.wantError) {
+				t.Fatalf("expected error containing %q, got %v", tt.wantError, err)
+			}
+		})
 	}
 }
 

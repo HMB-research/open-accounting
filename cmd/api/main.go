@@ -643,6 +643,11 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				// Bank Accounts
 				r.Get("/bank-accounts", h.ListBankAccounts)
 				r.Post("/bank-accounts", h.CreateBankAccount)
+				r.Get("/bank-match-rules", h.ListBankMatchRules)
+				r.Post("/bank-match-rules", h.CreateBankMatchRule)
+				r.Get("/bank-match-rules/{ruleID}", h.GetBankMatchRule)
+				r.Put("/bank-match-rules/{ruleID}", h.UpdateBankMatchRule)
+				r.Delete("/bank-match-rules/{ruleID}", h.DeleteBankMatchRule)
 				r.Get("/bank-accounts/{accountID}", h.GetBankAccount)
 				r.Put("/bank-accounts/{accountID}", h.UpdateBankAccount)
 				r.Delete("/bank-accounts/{accountID}", h.DeleteBankAccount)

@@ -2483,6 +2483,37 @@ Create a bank account:
 
 Update supports `name`, `bank_name`, `swift_code`, `gl_account_id`, `is_active`, and `is_default`.
 
+### Bank Auto-Match Rules
+
+```http
+GET /tenants/{tenantId}/bank-match-rules?bank_account_id={accountId}&active_only=true&include_global=true
+POST /tenants/{tenantId}/bank-match-rules
+GET /tenants/{tenantId}/bank-match-rules/{ruleId}
+PUT /tenants/{tenantId}/bank-match-rules/{ruleId}
+DELETE /tenants/{tenantId}/bank-match-rules/{ruleId}
+Authorization: Bearer <token>
+```
+
+Create a rule:
+
+```json
+{
+  "bank_account_id": "uuid",
+  "name": "Stripe receipts",
+  "priority": 10,
+  "match_field": "DESCRIPTION",
+  "pattern": "stripe",
+  "min_confidence": 0.85,
+  "max_date_diff_days": 3,
+  "require_exact_amount": true,
+  "is_active": true
+}
+```
+
+Rules can be bank-account scoped or tenant-wide by omitting `bank_account_id`. `match_field` supports `DESCRIPTION`, `REFERENCE`, `COUNTERPARTY_NAME`, and `COUNTERPARTY_ACCOUNT`. `priority` runs lowest first, `min_confidence` can only raise the CLI/API auto-match threshold for matching transactions, `max_date_diff_days` narrows the payment date window, and `require_exact_amount` filters candidate payments before scoring.
+
+Update supports `bank_account_id`, `clear_bank_account`, `name`, `priority`, `match_field`, `pattern`, `min_confidence`, `max_date_diff_days`, `require_exact_amount`, and `is_active`.
+
 ### Bank Transactions
 
 ```http

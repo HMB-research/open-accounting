@@ -34,6 +34,16 @@ const (
 	ReconciliationCompleted  ReconciliationStatus = "COMPLETED"
 )
 
+// BankMatchField defines the transaction field inspected by a bank match rule.
+type BankMatchField string
+
+const (
+	BankMatchFieldDescription         BankMatchField = "DESCRIPTION"
+	BankMatchFieldReference           BankMatchField = "REFERENCE"
+	BankMatchFieldCounterpartyName    BankMatchField = "COUNTERPARTY_NAME"
+	BankMatchFieldCounterpartyAccount BankMatchField = "COUNTERPARTY_ACCOUNT"
+)
+
 // BankAccount represents a bank account
 type BankAccount struct {
 	ID            string          `json:"id"`
@@ -113,6 +123,23 @@ type MatchSuggestion struct {
 	MatchReason   string          `json:"match_reason"`
 }
 
+// BankMatchRule tunes automatic matching for transactions that match a pattern.
+type BankMatchRule struct {
+	ID                 string         `json:"id"`
+	TenantID           string         `json:"tenant_id"`
+	BankAccountID      *string        `json:"bank_account_id,omitempty"`
+	Name               string         `json:"name"`
+	Priority           int            `json:"priority"`
+	MatchField         BankMatchField `json:"match_field"`
+	Pattern            string         `json:"pattern"`
+	MinConfidence      float64        `json:"min_confidence"`
+	MaxDateDiffDays    int            `json:"max_date_diff_days"`
+	RequireExactAmount bool           `json:"require_exact_amount"`
+	IsActive           bool           `json:"is_active"`
+	CreatedAt          time.Time      `json:"created_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
+}
+
 // CreateBankAccountRequest is the request to create a bank account
 type CreateBankAccountRequest struct {
 	Name          string  `json:"name"`
@@ -132,6 +159,33 @@ type UpdateBankAccountRequest struct {
 	GLAccountID *string `json:"gl_account_id,omitempty"`
 	IsActive    *bool   `json:"is_active,omitempty"`
 	IsDefault   *bool   `json:"is_default,omitempty"`
+}
+
+// CreateBankMatchRuleRequest is the request to create a bank auto-match rule.
+type CreateBankMatchRuleRequest struct {
+	BankAccountID      *string        `json:"bank_account_id,omitempty"`
+	Name               string         `json:"name"`
+	Priority           int            `json:"priority,omitempty"`
+	MatchField         BankMatchField `json:"match_field,omitempty"`
+	Pattern            string         `json:"pattern"`
+	MinConfidence      float64        `json:"min_confidence,omitempty"`
+	MaxDateDiffDays    int            `json:"max_date_diff_days,omitempty"`
+	RequireExactAmount bool           `json:"require_exact_amount,omitempty"`
+	IsActive           *bool          `json:"is_active,omitempty"`
+}
+
+// UpdateBankMatchRuleRequest is the request to update a bank auto-match rule.
+type UpdateBankMatchRuleRequest struct {
+	BankAccountID      *string         `json:"bank_account_id,omitempty"`
+	ClearBankAccount   bool            `json:"clear_bank_account,omitempty"`
+	Name               *string         `json:"name,omitempty"`
+	Priority           *int            `json:"priority,omitempty"`
+	MatchField         *BankMatchField `json:"match_field,omitempty"`
+	Pattern            *string         `json:"pattern,omitempty"`
+	MinConfidence      *float64        `json:"min_confidence,omitempty"`
+	MaxDateDiffDays    *int            `json:"max_date_diff_days,omitempty"`
+	RequireExactAmount *bool           `json:"require_exact_amount,omitempty"`
+	IsActive           *bool           `json:"is_active,omitempty"`
 }
 
 // ImportCSVRequest is the request to import transactions from CSV
@@ -205,6 +259,13 @@ type BankAccountFilter struct {
 	Currency string
 }
 
+// BankMatchRuleFilter provides filtering options for auto-match rules.
+type BankMatchRuleFilter struct {
+	BankAccountID string
+	ActiveOnly    bool
+	IncludeGlobal bool
+}
+
 // NormalizeFollowUpStatus validates and normalizes a follow-up status value.
 func NormalizeFollowUpStatus(value string) (FollowUpStatus, error) {
 	normalized := FollowUpStatus(strings.ToUpper(strings.TrimSpace(value)))
@@ -213,5 +274,19 @@ func NormalizeFollowUpStatus(value string) (FollowUpStatus, error) {
 		return normalized, nil
 	default:
 		return "", fmt.Errorf("invalid follow-up status")
+	}
+}
+
+// NormalizeBankMatchField validates and normalizes a bank match field.
+func NormalizeBankMatchField(value string) (BankMatchField, error) {
+	normalized := BankMatchField(strings.ToUpper(strings.TrimSpace(value)))
+	if normalized == "" {
+		return BankMatchFieldDescription, nil
+	}
+	switch normalized {
+	case BankMatchFieldDescription, BankMatchFieldReference, BankMatchFieldCounterpartyName, BankMatchFieldCounterpartyAccount:
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("invalid bank match field")
 	}
 }
