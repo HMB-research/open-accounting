@@ -16,6 +16,7 @@ import (
 type MockRepository struct {
 	accounts       map[string]*Account
 	journalEntries map[string]*JournalEntry
+	templates      map[string]*JournalEntryTemplate
 	accountsByType map[AccountType][]Account
 	balances       []AccountBalance
 	periodBalances []AccountBalance
@@ -37,6 +38,7 @@ func NewMockRepository() *MockRepository {
 	return &MockRepository{
 		accounts:       make(map[string]*Account),
 		journalEntries: make(map[string]*JournalEntry),
+		templates:      make(map[string]*JournalEntryTemplate),
 		accountsByType: make(map[AccountType][]Account),
 	}
 }
@@ -127,6 +129,36 @@ func (m *MockRepository) CreateJournalEntry(ctx context.Context, schemaName stri
 
 func (m *MockRepository) CreateJournalEntryTx(ctx context.Context, schemaName string, tx pgx.Tx, je *JournalEntry) error {
 	return m.CreateJournalEntry(ctx, schemaName, je)
+}
+
+func (m *MockRepository) CreateJournalEntryTemplate(ctx context.Context, schemaName string, template *JournalEntryTemplate) error {
+	if m.createJournalErr != nil {
+		return m.createJournalErr
+	}
+	m.templates[template.ID] = template
+	return nil
+}
+
+func (m *MockRepository) ListJournalEntryTemplates(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]JournalEntryTemplate, error) {
+	result := make([]JournalEntryTemplate, 0, len(m.templates))
+	for _, template := range m.templates {
+		if template.TenantID != tenantID {
+			continue
+		}
+		if activeOnly && !template.IsActive {
+			continue
+		}
+		result = append(result, *template)
+	}
+	return result, nil
+}
+
+func (m *MockRepository) GetJournalEntryTemplateByID(ctx context.Context, schemaName, tenantID, templateID string) (*JournalEntryTemplate, error) {
+	template, ok := m.templates[templateID]
+	if !ok || template.TenantID != tenantID {
+		return nil, errors.New("journal entry template not found")
+	}
+	return template, nil
 }
 
 func (m *MockRepository) UpdateJournalEntryStatus(ctx context.Context, schemaName, tenantID, entryID string, status JournalEntryStatus, userID string) error {
@@ -503,6 +535,87 @@ func TestService_CreateJournalEntry(t *testing.T) {
 		assert.Error(t, err)
 		repo.createJournalErr = nil
 	})
+}
+
+func TestService_JournalEntryTemplates(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	svc := NewServiceWithRepo(nil, repo)
+	schemaName := "tenant_test"
+
+	template, err := svc.CreateJournalEntryTemplate(ctx, schemaName, "tenant-1", &CreateJournalEntryTemplateRequest{
+		Name:             "Monthly rent accrual",
+		Description:      "Monthly rent accrual",
+		Reference:        "RENT",
+		RequiresEvidence: false,
+		Lines: []CreateJournalEntryLineReq{
+			{AccountID: "rent-expense", Description: "Rent expense", DebitAmount: decimal.RequireFromString("500.00")},
+			{AccountID: "accruals", Description: "Accrued rent", CreditAmount: decimal.RequireFromString("500.00")},
+		},
+		UserID: "user-1",
+	})
+	require.NoError(t, err)
+	assert.NotEmpty(t, template.ID)
+	assert.Equal(t, "Monthly rent accrual", template.Name)
+	assert.Equal(t, 2, template.LineCount)
+
+	templates, err := svc.ListJournalEntryTemplates(ctx, schemaName, "tenant-1", true)
+	require.NoError(t, err)
+	require.Len(t, templates, 1)
+	assert.Equal(t, template.ID, templates[0].ID)
+
+	entry, err := svc.ApplyJournalEntryTemplate(ctx, schemaName, "tenant-1", template.ID, &ApplyJournalEntryTemplateRequest{
+		EntryDate:   time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC),
+		Description: "April rent accrual",
+		Reference:   "RENT-APR",
+		Post:        true,
+		UserID:      "user-1",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, StatusPosted, entry.Status)
+	assert.Equal(t, SourceTypeJournalTemplate, entry.SourceType)
+	require.NotNil(t, entry.SourceID)
+	assert.Equal(t, template.ID, *entry.SourceID)
+	assert.Equal(t, "April rent accrual", entry.Description)
+	assert.Equal(t, "RENT-APR", entry.Reference)
+}
+
+func TestService_JournalEntryTemplateValidation(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	svc := NewServiceWithRepo(nil, repo)
+	schemaName := "tenant_test"
+
+	_, err := svc.CreateJournalEntryTemplate(ctx, schemaName, "tenant-1", &CreateJournalEntryTemplateRequest{
+		Name:        "Unbalanced",
+		Description: "Unbalanced",
+		Lines: []CreateJournalEntryLineReq{
+			{AccountID: "expense", DebitAmount: decimal.RequireFromString("500.00")},
+			{AccountID: "accruals", CreditAmount: decimal.RequireFromString("400.00")},
+		},
+		UserID: "user-1",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "validation failed")
+
+	template, err := svc.CreateJournalEntryTemplate(ctx, schemaName, "tenant-1", &CreateJournalEntryTemplateRequest{
+		Name:             "Evidence controlled",
+		Description:      "Evidence controlled",
+		RequiresEvidence: true,
+		Lines: []CreateJournalEntryLineReq{
+			{AccountID: "expense", DebitAmount: decimal.RequireFromString("100.00")},
+			{AccountID: "accruals", CreditAmount: decimal.RequireFromString("100.00")},
+		},
+		UserID: "user-1",
+	})
+	require.NoError(t, err)
+
+	_, err = svc.ApplyJournalEntryTemplate(ctx, schemaName, "tenant-1", template.ID, &ApplyJournalEntryTemplateRequest{
+		EntryDate: time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC),
+		Post:      true,
+		UserID:    "user-1",
+	})
+	require.ErrorIs(t, err, ErrTemplateEvidenceAutoPost)
 }
 
 func TestService_PostJournalEntry(t *testing.T) {

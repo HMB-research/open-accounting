@@ -367,6 +367,152 @@ func (r *Repository) UpdateJournalEntryStatus(ctx context.Context, schemaName, t
 	return nil
 }
 
+// CreateJournalEntryTemplate creates a reusable balanced journal entry template.
+func (r *Repository) CreateJournalEntryTemplate(ctx context.Context, schemaName string, template *JournalEntryTemplate) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if template.ID == "" {
+		template.ID = uuid.New().String()
+	}
+	if template.CreatedAt.IsZero() {
+		template.CreatedAt = time.Now()
+	}
+	if template.UpdatedAt.IsZero() {
+		template.UpdatedAt = template.CreatedAt
+	}
+
+	_, err = tx.Exec(ctx, fmt.Sprintf(`
+		INSERT INTO %s.journal_entry_templates (
+			id, tenant_id, name, description, reference, requires_evidence, is_active, created_at, created_by, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`, schemaName),
+		template.ID, template.TenantID, template.Name, template.Description, template.Reference,
+		template.RequiresEvidence, template.IsActive, template.CreatedAt, template.CreatedBy, template.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("insert journal entry template: %w", err)
+	}
+
+	for i := range template.Lines {
+		line := &template.Lines[i]
+		if line.ID == "" {
+			line.ID = uuid.New().String()
+		}
+		line.TemplateID = template.ID
+		if line.LineNumber == 0 {
+			line.LineNumber = i + 1
+		}
+
+		_, err = tx.Exec(ctx, fmt.Sprintf(`
+			INSERT INTO %s.journal_entry_template_lines (
+				id, template_id, line_number, account_id, description, debit_amount, credit_amount, currency, exchange_rate
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		`, schemaName),
+			line.ID, line.TemplateID, line.LineNumber, line.AccountID, line.Description,
+			line.DebitAmount, line.CreditAmount, line.Currency, line.ExchangeRate,
+		)
+		if err != nil {
+			return fmt.Errorf("insert journal entry template line: %w", err)
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
+// ListJournalEntryTemplates lists reusable journal entry templates for a tenant.
+func (r *Repository) ListJournalEntryTemplates(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]JournalEntryTemplate, error) {
+	query := fmt.Sprintf(`
+		SELECT t.id, t.tenant_id, t.name, COALESCE(t.description, ''), COALESCE(t.reference, ''),
+		       COALESCE(t.requires_evidence, FALSE), COALESCE(t.is_active, TRUE), COUNT(l.id) AS line_count,
+		       t.created_at, t.created_by, t.updated_at
+		FROM %s.journal_entry_templates t
+		LEFT JOIN %s.journal_entry_template_lines l ON l.template_id = t.id
+		WHERE t.tenant_id = $1
+	`, schemaName, schemaName)
+	if activeOnly {
+		query += " AND t.is_active = TRUE"
+	}
+	query += `
+		GROUP BY t.id, t.tenant_id, t.name, t.description, t.reference, t.requires_evidence, t.is_active, t.created_at, t.created_by, t.updated_at
+		ORDER BY t.name
+	`
+
+	rows, err := r.db.Query(ctx, query, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("list journal entry templates: %w", err)
+	}
+	defer rows.Close()
+
+	var templates []JournalEntryTemplate
+	for rows.Next() {
+		var template JournalEntryTemplate
+		if err := rows.Scan(
+			&template.ID, &template.TenantID, &template.Name, &template.Description, &template.Reference,
+			&template.RequiresEvidence, &template.IsActive, &template.LineCount,
+			&template.CreatedAt, &template.CreatedBy, &template.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan journal entry template: %w", err)
+		}
+		templates = append(templates, template)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate journal entry templates: %w", err)
+	}
+	return templates, nil
+}
+
+// GetJournalEntryTemplateByID retrieves a reusable journal entry template with lines.
+func (r *Repository) GetJournalEntryTemplateByID(ctx context.Context, schemaName, tenantID, templateID string) (*JournalEntryTemplate, error) {
+	var template JournalEntryTemplate
+	err := r.db.QueryRow(ctx, fmt.Sprintf(`
+		SELECT id, tenant_id, name, COALESCE(description, ''), COALESCE(reference, ''),
+		       COALESCE(requires_evidence, FALSE), COALESCE(is_active, TRUE), created_at, created_by, updated_at
+		FROM %s.journal_entry_templates
+		WHERE id = $1 AND tenant_id = $2
+	`, schemaName), templateID, tenantID).Scan(
+		&template.ID, &template.TenantID, &template.Name, &template.Description, &template.Reference,
+		&template.RequiresEvidence, &template.IsActive, &template.CreatedAt, &template.CreatedBy, &template.UpdatedAt,
+	)
+	if err == pgx.ErrNoRows {
+		return nil, fmt.Errorf("journal entry template not found: %s", templateID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get journal entry template: %w", err)
+	}
+
+	rows, err := r.db.Query(ctx, fmt.Sprintf(`
+		SELECT id, template_id, line_number, account_id, COALESCE(description, ''),
+		       debit_amount, credit_amount, currency, exchange_rate
+		FROM %s.journal_entry_template_lines
+		WHERE template_id = $1
+		ORDER BY line_number
+	`, schemaName), templateID)
+	if err != nil {
+		return nil, fmt.Errorf("get journal entry template lines: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var line JournalEntryTemplateLine
+		if err := rows.Scan(
+			&line.ID, &line.TemplateID, &line.LineNumber, &line.AccountID, &line.Description,
+			&line.DebitAmount, &line.CreditAmount, &line.Currency, &line.ExchangeRate,
+		); err != nil {
+			return nil, fmt.Errorf("scan journal entry template line: %w", err)
+		}
+		template.Lines = append(template.Lines, line)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate journal entry template lines: %w", err)
+	}
+	template.LineCount = len(template.Lines)
+	return &template, nil
+}
+
 // GetAccountBalance retrieves the balance of an account as of a date
 func (r *Repository) GetAccountBalance(ctx context.Context, schemaName, tenantID, accountID string, asOfDate time.Time) (decimal.Decimal, error) {
 	var debitSum, creditSum decimal.Decimal

@@ -33,6 +33,11 @@ const (
 	StatusVoided JournalEntryStatus = "VOIDED"
 )
 
+const (
+	// SourceTypeJournalTemplate marks journal entries generated from reusable templates.
+	SourceTypeJournalTemplate = "JOURNAL_TEMPLATE"
+)
+
 // Account represents a GL account in the chart of accounts
 type Account struct {
 	ID          string      `json:"id"`
@@ -235,6 +240,54 @@ type CreateJournalEntryLineReq struct {
 	CreditAmount decimal.Decimal `json:"credit_amount"`
 	Currency     string          `json:"currency,omitempty"`
 	ExchangeRate decimal.Decimal `json:"exchange_rate,omitempty"`
+}
+
+// JournalEntryTemplate represents a reusable balanced journal entry pattern.
+type JournalEntryTemplate struct {
+	ID               string                     `json:"id"`
+	TenantID         string                     `json:"tenant_id"`
+	Name             string                     `json:"name"`
+	Description      string                     `json:"description"`
+	Reference        string                     `json:"reference,omitempty"`
+	RequiresEvidence bool                       `json:"requires_evidence"`
+	IsActive         bool                       `json:"is_active"`
+	LineCount        int                        `json:"line_count"`
+	Lines            []JournalEntryTemplateLine `json:"lines,omitempty"`
+	CreatedAt        time.Time                  `json:"created_at"`
+	CreatedBy        string                     `json:"created_by"`
+	UpdatedAt        time.Time                  `json:"updated_at"`
+}
+
+// JournalEntryTemplateLine is one line in a reusable journal entry template.
+type JournalEntryTemplateLine struct {
+	ID           string          `json:"id"`
+	TemplateID   string          `json:"template_id"`
+	LineNumber   int             `json:"line_number"`
+	AccountID    string          `json:"account_id"`
+	Description  string          `json:"description,omitempty"`
+	DebitAmount  decimal.Decimal `json:"debit_amount"`
+	CreditAmount decimal.Decimal `json:"credit_amount"`
+	Currency     string          `json:"currency"`
+	ExchangeRate decimal.Decimal `json:"exchange_rate"`
+}
+
+// CreateJournalEntryTemplateRequest is the request to create a journal entry template.
+type CreateJournalEntryTemplateRequest struct {
+	Name             string                      `json:"name"`
+	Description      string                      `json:"description"`
+	Reference        string                      `json:"reference,omitempty"`
+	RequiresEvidence bool                        `json:"requires_evidence,omitempty"`
+	Lines            []CreateJournalEntryLineReq `json:"lines"`
+	UserID           string                      `json:"-"`
+}
+
+// ApplyJournalEntryTemplateRequest creates a journal entry from a template.
+type ApplyJournalEntryTemplateRequest struct {
+	EntryDate   time.Time `json:"entry_date"`
+	Description string    `json:"description,omitempty"`
+	Reference   string    `json:"reference,omitempty"`
+	Post        bool      `json:"post,omitempty"`
+	UserID      string    `json:"-"`
 }
 
 // AccountBalance represents an account's balance at a point in time
