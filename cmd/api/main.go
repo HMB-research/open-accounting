@@ -446,7 +446,9 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Post("/journal-entries/{entryID}/void", h.VoidJournalEntry)
 				r.Get("/journal-entry-templates", h.ListJournalEntryTemplates)
 				r.Post("/journal-entry-templates", h.CreateJournalEntryTemplate)
+				r.Post("/journal-entry-templates/generate-due", h.GenerateDueJournalEntryTemplates)
 				r.Get("/journal-entry-templates/{templateID}", h.GetJournalEntryTemplate)
+				r.Post("/journal-entry-templates/{templateID}/generate", h.GenerateJournalEntryTemplate)
 				r.Post("/journal-entry-templates/{templateID}/apply", h.ApplyJournalEntryTemplate)
 
 				// Contacts

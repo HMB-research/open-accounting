@@ -164,6 +164,35 @@ func (m *mockAccountingRepository) GetJournalEntryTemplateByID(ctx context.Conte
 	return template, nil
 }
 
+func (m *mockAccountingRepository) GetDueJournalEntryTemplateIDs(ctx context.Context, schemaName, tenantID string, asOfDate time.Time) ([]string, error) {
+	var ids []string
+	for _, template := range m.templates {
+		if template.TenantID != tenantID || !template.IsActive || !template.IsRecurring() || template.NextGenerationDate == nil {
+			continue
+		}
+		if template.NextGenerationDate.After(asOfDate) {
+			continue
+		}
+		if template.EndDate != nil && template.NextGenerationDate.After(*template.EndDate) {
+			continue
+		}
+		ids = append(ids, template.ID)
+	}
+	return ids, nil
+}
+
+func (m *mockAccountingRepository) UpdateJournalEntryTemplateAfterGeneration(ctx context.Context, schemaName, tenantID, templateID string, nextDate time.Time, generatedAt time.Time) error {
+	template, ok := m.templates[templateID]
+	if !ok || template.TenantID != tenantID {
+		return assert.AnError
+	}
+	template.NextGenerationDate = &nextDate
+	template.LastGeneratedAt = &generatedAt
+	template.GeneratedCount++
+	template.UpdatedAt = generatedAt
+	return nil
+}
+
 func (m *mockAccountingRepository) UpdateJournalEntryStatus(ctx context.Context, schemaName, tenantID, entryID string, status accounting.JournalEntryStatus, userID string) error {
 	if m.updateJournalErr != nil {
 		return m.updateJournalErr

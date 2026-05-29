@@ -2984,17 +2984,21 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 	}
 	templatePayload := func() map[string]any {
 		return map[string]any{
-			"id":                "tpl-1",
-			"tenant_id":         "tenant-1",
-			"name":              "Monthly rent accrual",
-			"description":       "Monthly rent accrual",
-			"reference":         "RENT",
-			"requires_evidence": false,
-			"is_active":         true,
-			"line_count":        2,
-			"created_at":        "2026-03-31T12:00:00Z",
-			"created_by":        "user-1",
-			"updated_at":        "2026-03-31T12:00:00Z",
+			"id":                   "tpl-1",
+			"tenant_id":            "tenant-1",
+			"name":                 "Monthly rent accrual",
+			"description":          "Monthly rent accrual",
+			"reference":            "RENT",
+			"requires_evidence":    false,
+			"is_active":            true,
+			"frequency":            "MONTHLY",
+			"start_date":           "2026-04-30T00:00:00Z",
+			"next_generation_date": "2026-04-30T00:00:00Z",
+			"generated_count":      0,
+			"line_count":           2,
+			"created_at":           "2026-03-31T12:00:00Z",
+			"created_by":           "user-1",
+			"updated_at":           "2026-03-31T12:00:00Z",
 			"lines": []map[string]any{
 				{
 					"id":            "tpl-line-1",
@@ -3069,6 +3073,9 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 			assert.Equal(t, "Monthly rent accrual", req.Name)
 			assert.Equal(t, "Monthly rent accrual", req.Description)
 			assert.Equal(t, "RENT", req.Reference)
+			assert.Equal(t, accounting.JournalEntryTemplateFrequencyMonthly, req.Frequency)
+			require.NotNil(t, req.StartDate)
+			assert.Equal(t, "2026-04-30", req.StartDate.Format("2006-01-02"))
 			require.Len(t, req.Lines, 2)
 			assert.True(t, req.Lines[0].DebitAmount.Equal(decimal.RequireFromString("500.00")))
 			assert.True(t, req.Lines[1].CreditAmount.Equal(decimal.RequireFromString("500.00")))
@@ -3076,6 +3083,34 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(templatePayload())
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entry-templates/tpl-1":
 			_ = json.NewEncoder(w).Encode(templatePayload())
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entry-templates/tpl-1/generate":
+			var req accounting.GenerateJournalEntryTemplateRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.True(t, req.Post)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"template_id":            "tpl-1",
+				"template_name":          "Monthly rent accrual",
+				"generated_entry_id":     "je-template-2",
+				"generated_entry_number": "JE-2026-005",
+				"entry_date":             "2026-04-30T00:00:00Z",
+				"next_generation_date":   "2026-05-30T00:00:00Z",
+				"status":                 "generated",
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entry-templates/generate-due":
+			var req accounting.GenerateDueJournalEntryTemplatesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.NotNil(t, req.AsOfDate)
+			assert.Equal(t, "2026-05-30", req.AsOfDate.Format("2006-01-02"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"template_id":            "tpl-1",
+				"template_name":          "Monthly rent accrual",
+				"generated_entry_id":     "je-template-3",
+				"generated_entry_number": "JE-2026-006",
+				"entry_date":             "2026-05-30T00:00:00Z",
+				"next_generation_date":   "2026-06-30T00:00:00Z",
+				"status":                 "generated",
+			}})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entry-templates/tpl-1/apply":
 			var req accounting.ApplyJournalEntryTemplateRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -3147,6 +3182,8 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 		"--name", "Monthly rent accrual",
 		"--description", "Monthly rent accrual",
 		"--reference", "RENT",
+		"--frequency", "monthly",
+		"--start-date", "2026-04-30",
 		"--line", "account_id=acc-1,description=Rent expense,debit=500.00",
 		"--line", "account_id=acc-2,description=Accrued rent,credit=500.00",
 	})
@@ -3158,6 +3195,17 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Journal entry template Monthly rent accrual")
 	assert.Contains(t, stdout.String(), "Total debits: 500")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"journal", "templates", "generate", "--id", "tpl-1", "--post"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "JE-2026-005")
+	assert.Contains(t, stdout.String(), "generated")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"journal", "templates", "generate-due", "--as-of", "2026-05-30"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "JE-2026-006")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{

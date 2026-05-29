@@ -1239,6 +1239,44 @@ func (h *Handlers) CreateJournalEntryTemplate(w http.ResponseWriter, r *http.Req
 	respondJSON(w, http.StatusCreated, template)
 }
 
+// GenerateDueJournalEntryTemplates generates all recurring journal entry templates due by a date.
+// @Summary Generate due recurring journal entry templates
+// @Description Generate entries for active recurring templates due by as_of_date
+// @Tags Journal Entries
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body accounting.GenerateDueJournalEntryTemplatesRequest true "Due generation details"
+// @Success 200 {array} accounting.JournalEntryTemplateGenerationResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/journal-entry-templates/generate-due [post]
+func (h *Handlers) GenerateDueJournalEntryTemplates(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req accounting.GenerateDueJournalEntryTemplatesRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	req.UserID = claims.UserID
+	lockDate, err := h.getTenantPeriodLockDate(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to validate period lock")
+		return
+	}
+	req.PeriodLockDate = lockDate
+
+	results, err := h.accountingService.GenerateDueJournalEntryTemplates(r.Context(), schemaName, tenantID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, results)
+}
+
 // GetJournalEntryTemplate returns one reusable journal entry template.
 // @Summary Get journal entry template
 // @Description Get one reusable journal entry template with lines
@@ -1261,6 +1299,65 @@ func (h *Handlers) GetJournalEntryTemplate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	respondJSON(w, http.StatusOK, template)
+}
+
+// GenerateJournalEntryTemplate generates and advances one recurring journal entry template.
+// @Summary Generate recurring journal entry template
+// @Description Generate an entry from one recurring template and advance its next generation date
+// @Tags Journal Entries
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param templateID path string true "Template ID"
+// @Param request body accounting.GenerateJournalEntryTemplateRequest true "Recurring generation details"
+// @Success 201 {object} accounting.JournalEntryTemplateGenerationResult
+// @Failure 400 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
+// @Router /tenants/{tenantID}/journal-entry-templates/{templateID}/generate [post]
+func (h *Handlers) GenerateJournalEntryTemplate(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	templateID := chi.URLParam(r, "templateID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req accounting.GenerateJournalEntryTemplateRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	req.UserID = claims.UserID
+	template, err := h.accountingService.GetJournalEntryTemplate(r.Context(), schemaName, tenantID, templateID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Journal entry template not found")
+		return
+	}
+	entryDate := time.Now()
+	if req.EntryDate != nil {
+		entryDate = *req.EntryDate
+	} else if template.NextGenerationDate != nil {
+		entryDate = *template.NextGenerationDate
+	}
+	if h.rejectLockedPeriod(w, r.Context(), tenantID, entryDate) {
+		return
+	}
+	lockDate, err := h.getTenantPeriodLockDate(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to validate period lock")
+		return
+	}
+	req.PeriodLockDate = lockDate
+
+	result, err := h.accountingService.GenerateJournalEntryTemplate(r.Context(), schemaName, tenantID, templateID, &req)
+	if err != nil {
+		if errors.Is(err, accounting.ErrTemplateEvidenceAutoPost) || strings.Contains(err.Error(), "period locked") {
+			respondError(w, http.StatusConflict, err.Error())
+			return
+		}
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusCreated, result)
 }
 
 // ApplyJournalEntryTemplate creates a journal entry from a reusable template.

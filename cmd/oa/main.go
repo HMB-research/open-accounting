@@ -424,6 +424,8 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  journal templates create  Create a journal entry template")
 	_, _ = fmt.Fprintln(a.stdout, "  journal templates get     Show one journal entry template")
 	_, _ = fmt.Fprintln(a.stdout, "  journal templates apply   Create an entry from a template")
+	_, _ = fmt.Fprintln(a.stdout, "  journal templates generate  Generate one recurring template")
+	_, _ = fmt.Fprintln(a.stdout, "  journal templates generate-due  Generate due recurring templates")
 	_, _ = fmt.Fprintln(a.stdout, "")
 	_, _ = fmt.Fprintln(a.stdout, "Environment overrides:")
 	_, _ = fmt.Fprintln(a.stdout, "  OA_BASE_URL, OA_API_TOKEN, OA_TENANT_ID")
@@ -7938,6 +7940,10 @@ func (a *cliApp) runJournalTemplates(ctx context.Context, cfg *cliConfig, client
 		description := fs.String("description", "", "Journal entry description")
 		reference := fs.String("reference", "", "Default reference")
 		requiresEvidence := fs.Bool("requires-evidence", false, "Require approved evidence before posting generated entries")
+		frequencyFlag := fs.String("frequency", "", "Recurring frequency: WEEKLY, BIWEEKLY, MONTHLY, QUARTERLY, YEARLY")
+		startDate := fs.String("start-date", "", "Recurring start date in YYYY-MM-DD")
+		endDate := fs.String("end-date", "", "Recurring end date in YYYY-MM-DD")
+		nextGenerationDate := fs.String("next-generation-date", "", "Next recurring generation date in YYYY-MM-DD")
 		lines := journalLineFlags{}
 		fs.Var(&lines, "line", "Line as comma-separated key=value pairs; repeatable")
 		asJSON := fs.Bool("json", false, "Output JSON")
@@ -7953,13 +7959,33 @@ func (a *cliApp) runJournalTemplates(ctx context.Context, cfg *cliConfig, client
 		if len(lines) < 2 {
 			return errors.New("at least two lines are required")
 		}
+		frequency, err := parseOptionalJournalTemplateFrequency(*frequencyFlag)
+		if err != nil {
+			return err
+		}
+		startDateValue, err := parseOptionalDate("start-date", *startDate)
+		if err != nil {
+			return err
+		}
+		endDateValue, err := parseOptionalDate("end-date", *endDate)
+		if err != nil {
+			return err
+		}
+		nextGenerationDateValue, err := parseOptionalDate("next-generation-date", *nextGenerationDate)
+		if err != nil {
+			return err
+		}
 
 		template, err := client.createJournalEntryTemplate(ctx, cfg.TenantID, &accounting.CreateJournalEntryTemplateRequest{
-			Name:             strings.TrimSpace(*name),
-			Description:      strings.TrimSpace(*description),
-			Reference:        strings.TrimSpace(*reference),
-			RequiresEvidence: *requiresEvidence,
-			Lines:            []accounting.CreateJournalEntryLineReq(lines),
+			Name:               strings.TrimSpace(*name),
+			Description:        strings.TrimSpace(*description),
+			Reference:          strings.TrimSpace(*reference),
+			RequiresEvidence:   *requiresEvidence,
+			Frequency:          frequency,
+			StartDate:          startDateValue,
+			EndDate:            endDateValue,
+			NextGenerationDate: nextGenerationDateValue,
+			Lines:              []accounting.CreateJournalEntryLineReq(lines),
 		})
 		if err != nil {
 			return err
@@ -7990,6 +8016,64 @@ func (a *cliApp) runJournalTemplates(ctx context.Context, cfg *cliConfig, client
 			return printJSON(a.stdout, template)
 		}
 		printJournalEntryTemplate(a.stdout, template)
+		return nil
+
+	case "generate":
+		fs := flag.NewFlagSet("journal templates generate", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		templateID := fs.String("id", "", "Journal entry template id")
+		entryDate := fs.String("entry-date", "", "Override entry date in YYYY-MM-DD")
+		postEntry := fs.Bool("post", false, "Post the generated entry immediately")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*templateID) == "" {
+			return errors.New("id is required")
+		}
+		entryDateValue, err := parseOptionalDate("entry-date", *entryDate)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.generateJournalEntryTemplate(ctx, cfg.TenantID, strings.TrimSpace(*templateID), &accounting.GenerateJournalEntryTemplateRequest{
+			EntryDate: entryDateValue,
+			Post:      *postEntry,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		printJournalEntryTemplateGenerationResults(a.stdout, []accounting.JournalEntryTemplateGenerationResult{*result})
+		return nil
+
+	case "generate-due":
+		fs := flag.NewFlagSet("journal templates generate-due", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asOfDate := fs.String("as-of", "", "Generate templates due on or before YYYY-MM-DD")
+		postEntries := fs.Bool("post", false, "Post generated entries immediately")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		asOfDateValue, err := parseOptionalDate("as-of", *asOfDate)
+		if err != nil {
+			return err
+		}
+
+		results, err := client.generateDueJournalEntryTemplates(ctx, cfg.TenantID, &accounting.GenerateDueJournalEntryTemplatesRequest{
+			AsOfDate: asOfDateValue,
+			Post:     *postEntries,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, results)
+		}
+		printJournalEntryTemplateGenerationResults(a.stdout, results)
 		return nil
 
 	case "apply":
@@ -9987,6 +10071,19 @@ func parseRequiredRecurringFrequency(value string) (recurring.Frequency, error) 
 			return "", errors.New("frequency is required")
 		}
 		return "", fmt.Errorf("invalid recurring invoice frequency %q", value)
+	}
+}
+
+func parseOptionalJournalTemplateFrequency(value string) (accounting.JournalEntryTemplateFrequency, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	switch accounting.JournalEntryTemplateFrequency(normalized) {
+	case accounting.JournalEntryTemplateFrequencyWeekly, accounting.JournalEntryTemplateFrequencyBiweekly, accounting.JournalEntryTemplateFrequencyMonthly, accounting.JournalEntryTemplateFrequencyQuarterly, accounting.JournalEntryTemplateFrequencyYearly:
+		return accounting.JournalEntryTemplateFrequency(normalized), nil
+	default:
+		return "", fmt.Errorf("invalid journal template frequency %q", value)
 	}
 }
 
