@@ -201,6 +201,12 @@ func (je *JournalEntry) Validate() error {
 		if line.DebitAmount.LessThan(decimal.Zero) || line.CreditAmount.LessThan(decimal.Zero) {
 			return errors.New("amounts cannot be negative")
 		}
+		if !line.ExchangeRate.IsZero() && line.ExchangeRate.LessThanOrEqual(decimal.Zero) {
+			return errors.New("exchange_rate must be positive")
+		}
+		if line.BaseDebit.LessThan(decimal.Zero) || line.BaseCredit.LessThan(decimal.Zero) {
+			return errors.New("base amounts cannot be negative")
+		}
 
 		totalDebits = totalDebits.Add(line.BaseDebit)
 		totalCredits = totalCredits.Add(line.BaseCredit)

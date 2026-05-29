@@ -124,6 +124,54 @@ func TestJournalEntry_Validate(t *testing.T) {
 		assert.Contains(t, err.Error(), "negative")
 	})
 
+	t.Run("negative exchange rate", func(t *testing.T) {
+		entry := &JournalEntry{
+			Lines: []JournalEntryLine{
+				{
+					AccountID:    "acc1",
+					DebitAmount:  decimal.NewFromFloat(100),
+					ExchangeRate: decimal.NewFromFloat(-0.92),
+					BaseDebit:    decimal.NewFromFloat(-92),
+					BaseCredit:   decimal.Zero,
+				},
+				{
+					AccountID:    "acc2",
+					CreditAmount: decimal.NewFromFloat(100),
+					ExchangeRate: decimal.NewFromFloat(-0.92),
+					BaseDebit:    decimal.Zero,
+					BaseCredit:   decimal.NewFromFloat(-92),
+				},
+			},
+		}
+
+		err := entry.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "exchange_rate must be positive")
+	})
+
+	t.Run("negative base amount", func(t *testing.T) {
+		entry := &JournalEntry{
+			Lines: []JournalEntryLine{
+				{
+					AccountID:   "acc1",
+					DebitAmount: decimal.NewFromFloat(100),
+					BaseDebit:   decimal.NewFromFloat(-100),
+					BaseCredit:  decimal.Zero,
+				},
+				{
+					AccountID:    "acc2",
+					CreditAmount: decimal.NewFromFloat(100),
+					BaseDebit:    decimal.Zero,
+					BaseCredit:   decimal.NewFromFloat(-100),
+				},
+			},
+		}
+
+		err := entry.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "base amounts cannot be negative")
+	})
+
 	t.Run("zero amount entry", func(t *testing.T) {
 		entry := &JournalEntry{
 			Lines: []JournalEntryLine{

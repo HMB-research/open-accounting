@@ -43,7 +43,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Entry reversal/void | ✅ | ✅ | ✅ | Implemented |
 | Recurring entries | ✅ | ✅ | ⚠️ | Partial: recurring journal templates can generate single or due-batch entries through API/CLI; background scheduler/UI polish remains |
 | Entry templates | ✅ | ✅ | ✅ | Implemented through reusable balanced journal entry templates with API/CLI apply workflow |
-| Multi-currency entries | ✅ | ✅ | ⚠️ | Partial |
+| Multi-currency entries | ✅ | ✅ | ✅ | Implemented for manual and template journal entries with line currency, positive exchange rate validation, base-currency balancing, API/CLI support, and historical journal import |
 
 ### 1.3 Multi-Tenancy
 
