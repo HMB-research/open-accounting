@@ -204,6 +204,22 @@ scripts/db-backup-health.sh \
 
 The health check finds the newest `openaccounting_*.dump`, requires a non-empty file, verifies `FILE.sha256`, fails when the backup is older than the configured threshold, and can write Prometheus textfile metrics.
 
+Sync local backups offsite after the backup script writes both the dump and checksum:
+
+```bash
+BACKUP_OFFSITE_S3_URI="s3://company-backups/open-accounting/prod" \
+  scripts/db-backup-offsite-sync.sh --backup-dir ./backups
+```
+
+For non-AWS providers, configure an rclone remote on the host and use:
+
+```bash
+BACKUP_OFFSITE_RCLONE_REMOTE="b2:company-backups/open-accounting/prod" \
+  scripts/db-backup-offsite-sync.sh --backup-dir ./backups
+```
+
+The offsite sync helper copies selected `openaccounting_*.dump` files plus matching `.sha256` files and never deletes remote objects. Use `--backup FILE` to sync one specific dump, and `--dry-run` to verify the planned uploads from cron, systemd timers, or deployment automation.
+
 ---
 
 ## Troubleshooting
