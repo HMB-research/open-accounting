@@ -159,6 +159,53 @@ func (h *Handlers) GetDocumentRetentionReview(w http.ResponseWriter, r *http.Req
 	respondJSON(w, http.StatusOK, result)
 }
 
+func (h *Handlers) UpdateDocumentRetention(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	documentID := chi.URLParam(r, "documentID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req struct {
+		RetentionUntil *string `json:"retention_until"`
+		ClearRetention bool    `json:"clear_retention"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	rawRetention := ""
+	if req.RetentionUntil != nil {
+		rawRetention = strings.TrimSpace(*req.RetentionUntil)
+	}
+	if req.ClearRetention && rawRetention != "" {
+		respondError(w, http.StatusBadRequest, "retention_until cannot be set when clear_retention is true")
+		return
+	}
+	if !req.ClearRetention && rawRetention == "" {
+		respondError(w, http.StatusBadRequest, "retention_until is required unless clear_retention is true")
+		return
+	}
+
+	var retentionUntil *time.Time
+	if !req.ClearRetention {
+		parsed, err := time.Parse("2006-01-02", rawRetention)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "Invalid retention_until date, expected YYYY-MM-DD")
+			return
+		}
+		normalized := parsed.UTC()
+		retentionUntil = &normalized
+	}
+
+	doc, err := h.documentsService.UpdateDocumentRetention(r.Context(), schemaName, tenantID, documentID, retentionUntil)
+	if err != nil {
+		respondDocumentError(w, err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, doc)
+}
+
 func (h *Handlers) UploadDocument(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetClaims(r.Context())
 	tenantID := chi.URLParam(r, "tenantID")

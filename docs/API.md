@@ -500,6 +500,20 @@ Authorization: Bearer <token>
 
 Returns tenant-wide retention administration data for documents with `retention_until` on or before the cutoff date. `include_missing=true` also includes documents without retention metadata. The response includes expired, due-soon, missing-retention, pending-review, rejected, and total counts plus the matching documents.
 
+#### Update Retention Metadata
+
+```http
+PATCH /tenants/{tenantId}/documents/{documentId}/retention
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "retention_until": "2028-03-31"
+}
+```
+
+Use `{"clear_retention": true}` to clear retention metadata. `retention_until` uses `YYYY-MM-DD` and cannot be sent together with `clear_retention`.
+
 #### Mark Document Reviewed
 
 ```http
