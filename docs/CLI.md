@@ -345,6 +345,15 @@ go run ./cmd/oa invoices create \
   --due-date 2026-03-29 \
   --reference PO-123 \
   --line "description=Consulting,quantity=2,unit=hour,unit_price=100.00,vat_rate=22.00"
+go run ./cmd/oa invoices create \
+  --type PURCHASE \
+  --contact-id <supplier-id> \
+  --issue-date 2026-03-20 \
+  --due-date 2026-04-03 \
+  --currency USD \
+  --exchange-rate 0.93 \
+  --reference SUP-2026-03 \
+  --line "description=Materials,quantity=5,unit=unit,unit_price=25.00,vat_rate=20.00,account_id=<expense-account-id>"
 go run ./cmd/oa invoices get --id <invoice-id>
 go run ./cmd/oa invoices pdf --id <invoice-id> --output ./invoice.pdf
 go run ./cmd/oa invoices send --id <invoice-id>
@@ -352,7 +361,7 @@ go run ./cmd/oa invoices void --id <invoice-id>
 go run ./cmd/oa invoices import --file ./invoices.csv
 ```
 
-Use `--line` repeatedly on `invoices create` for multi-line invoices. Each line is comma-separated `key=value` pairs with `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, `account_id`, and `product_id`.
+Use `--line` repeatedly on `invoices create` for multi-line invoices. Each line is comma-separated `key=value` pairs with `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, `account_id`, and `product_id`. Use `--type PURCHASE` with a supplier contact to enter purchase invoices and supplier bills; `account_id` should point at the expense, asset, or other posting account for that purchase line.
 
 ## Quotes
 

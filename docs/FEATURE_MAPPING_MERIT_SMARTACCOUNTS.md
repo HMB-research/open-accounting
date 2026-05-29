@@ -78,7 +78,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 
 | Feature | Merit | SmartAccounts | Open Accounting | Status |
 |---------|-------|---------------|-----------------|--------|
-| Purchase invoice entry | ✅ | ✅ | ⚠️ | Partial |
+| Purchase invoice entry | ✅ | ✅ | ✅ | Implemented through `PURCHASE` invoices/supplier bills with API/CLI creation, filtering, PDF/download, voiding, attachments, payment allocation, and CSV import |
 | Expense categorization | ✅ | ✅ | ✅ | Implemented |
 | Supplier management | ✅ | ✅ | ✅ | Implemented |
 | OCR scanning | ✅ | ✅ | ❌ | **Blocker** |
