@@ -693,6 +693,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 		})
 	case "/orders/{orderID}/stock-check":
 		return commandForMethod(method, map[string]string{"GET": "orders stock-check"})
+	case "/orders/{orderID}/stock-reservations":
+		return commandForMethod(method, map[string]string{"GET": "orders stock-reservations"})
 	case "/orders/{orderID}/reserve-stock":
 		return commandForMethod(method, map[string]string{"POST": "orders reserve-stock"})
 	case "/orders/{orderID}/release-stock":

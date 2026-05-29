@@ -650,6 +650,24 @@ func orderStockReservationProductLabel(line orders.OrderStockReservationLine) st
 	return line.ProductID
 }
 
+func printOrderStockReservations(w io.Writer, reservations []orders.OrderStockReservation) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tPRODUCT\tWAREHOUSE\tQUANTITY\tSTATUS\tUPDATED")
+	for _, reservation := range reservations {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			reservation.ID,
+			reservation.ProductID,
+			reservation.WarehouseID,
+			reservation.Quantity.String(),
+			reservation.Status,
+			formatTime(reservation.UpdatedAt),
+		)
+	}
+	_ = tw.Flush()
+}
+
 func printRecurringInvoicesTable(w io.Writer, invoices []recurring.RecurringInvoice) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tNAME\tCONTACT\tFREQUENCY\tNEXT\tACTIVE\tGENERATED")

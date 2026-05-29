@@ -212,6 +212,23 @@ const (
 	OrderStockReservationStatusReleased = "RELEASED"
 )
 
+// OrderStockReservation stores the current reserved quantity for one order/product/warehouse.
+type OrderStockReservation struct {
+	ID          string          `json:"id"`
+	TenantID    string          `json:"tenant_id"`
+	OrderID     string          `json:"order_id"`
+	ProductID   string          `json:"product_id"`
+	WarehouseID string          `json:"warehouse_id"`
+	Quantity    decimal.Decimal `json:"quantity"`
+	Status      string          `json:"status"`
+	Reason      string          `json:"reason,omitempty"`
+	CreatedAt   time.Time       `json:"created_at"`
+	CreatedBy   string          `json:"created_by,omitempty"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+	ReleasedAt  *time.Time      `json:"released_at,omitempty"`
+	ReleasedBy  string          `json:"released_by,omitempty"`
+}
+
 // OrderStockCheck summarizes whether an order's product lines can be fulfilled.
 type OrderStockCheck struct {
 	OrderID     string                `json:"order_id"`

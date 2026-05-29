@@ -1389,6 +1389,15 @@ Authorization: Bearer <token>
 
 Returns a non-mutating fulfillment readiness check for each order line. Product lines linked to tracked goods report `AVAILABLE` or `SHORTAGE`; repeated lines for the same product consume the same available quantity cumulatively inside the check. Service, free-text, and other non-tracked lines report `NOT_TRACKED`; deleted or missing product references report `PRODUCT_NOT_FOUND`. Omitting `warehouse_id` sums available stock across all warehouses.
 
+### List Order Stock Reservations
+
+```http
+GET /tenants/{tenantId}/orders/{orderId}/stock-reservations
+Authorization: Bearer <token>
+```
+
+Lists the persisted order-level stock reservations by product and warehouse. These records are updated by `reserve-stock` and `release-stock` and are separate from the aggregate warehouse `reserved_qty` total.
+
 ### Reserve Order Stock
 
 ```http
