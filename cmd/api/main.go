@@ -434,6 +434,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/accounts", h.ListAccounts)
 				r.Post("/accounts", h.CreateAccount)
 				r.Post("/accounts/import", h.ImportAccounts)
+				r.Get("/accounts/hierarchy", h.GetAccountHierarchy)
 				r.Get("/accounts/{accountID}", h.GetAccount)
 
 				// Journal entries

@@ -51,6 +51,32 @@ func TestAccountingHandlers_ListCreateAndGet(t *testing.T) {
 	require.Len(t, accounts, 1)
 	assert.Equal(t, "acc-1", accounts[0].ID)
 
+	parentID := "acc-1"
+	accountingRepo.accounts["acc-3"] = &accounting.Account{
+		ID:          "acc-3",
+		TenantID:    "tenant-1",
+		Code:        "1100",
+		Name:        "Bank",
+		AccountType: accounting.AccountTypeAsset,
+		ParentID:    &parentID,
+		IsActive:    true,
+	}
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/accounts/hierarchy?active_only=true", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetAccountHierarchy(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var hierarchy []accounting.AccountHierarchyRow
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &hierarchy))
+	require.Len(t, hierarchy, 2)
+	assert.Equal(t, "1000", hierarchy[0].Code)
+	assert.True(t, hierarchy[0].HasChildren)
+	assert.Equal(t, "1100", hierarchy[1].Code)
+	assert.Equal(t, "1000", hierarchy[1].ParentCode)
+	assert.Equal(t, 1, hierarchy[1].Depth)
+	assert.Equal(t, "1000/1100", hierarchy[1].Path)
+
 	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/accounts", map[string]interface{}{
 		"code":         "2000",
 		"name":         "Receivables",

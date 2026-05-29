@@ -1914,6 +1914,60 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/accounts/hierarchy": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get chart of accounts rows ordered by parent-child account grouping",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Accounts"
+                ],
+                "summary": "Get account hierarchy",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Filter for active accounts only",
+                        "name": "active_only",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.AccountHierarchyRow"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/accounts/import": {
             "post": {
                 "security": [
@@ -14395,6 +14449,56 @@ const docTemplate = `{
                 },
                 "net_balance": {
                     "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.AccountHierarchyRow": {
+            "type": "object",
+            "properties": {
+                "account_type": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.AccountType"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "depth": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "has_children": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "is_system": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parent_code": {
+                    "type": "string"
+                },
+                "parent_id": {
+                    "type": "string"
+                },
+                "parent_name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
                 }
             }
         },

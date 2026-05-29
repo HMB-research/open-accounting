@@ -29,7 +29,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Multi-level account hierarchy | ✅ | ✅ | ✅ | Implemented |
 | Account types (Asset/Liability/Equity/Revenue/Expense) | ✅ | ✅ | ✅ | Implemented |
 | Custom account codes | ✅ | ✅ | ✅ | Implemented |
-| Account grouping | ✅ | ✅ | ⚠️ | Partial |
+| Account grouping | ✅ | ✅ | ✅ | Implemented with parent-child chart hierarchy, CSV parent-code import, and API/CLI grouped view |
 | System accounts (locked) | ✅ | ✅ | ✅ | Implemented |
 | Account deactivation | ✅ | ✅ | ✅ | Implemented |
 

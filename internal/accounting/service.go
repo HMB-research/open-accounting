@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -58,6 +59,93 @@ func (s *Service) GetAccount(ctx context.Context, schemaName, tenantID, accountI
 // ListAccounts retrieves all accounts for a tenant
 func (s *Service) ListAccounts(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]Account, error) {
 	return s.repo.ListAccounts(ctx, schemaName, tenantID, activeOnly)
+}
+
+// GetAccountHierarchy returns accounts in parent-child chart order.
+func (s *Service) GetAccountHierarchy(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]AccountHierarchyRow, error) {
+	accounts, err := s.repo.ListAccounts(ctx, schemaName, tenantID, activeOnly)
+	if err != nil {
+		return nil, err
+	}
+	return BuildAccountHierarchy(accounts), nil
+}
+
+// BuildAccountHierarchy flattens accounts into deterministic parent-child order.
+func BuildAccountHierarchy(accounts []Account) []AccountHierarchyRow {
+	accountsByID := make(map[string]Account, len(accounts))
+	for _, account := range accounts {
+		accountsByID[account.ID] = account
+	}
+
+	childrenByParent := make(map[string][]Account)
+	var roots []Account
+	for _, account := range accounts {
+		if account.ParentID != nil {
+			if _, ok := accountsByID[*account.ParentID]; ok {
+				childrenByParent[*account.ParentID] = append(childrenByParent[*account.ParentID], account)
+				continue
+			}
+		}
+		roots = append(roots, account)
+	}
+
+	sortAccounts := func(items []Account) {
+		sort.SliceStable(items, func(i, j int) bool {
+			if items[i].Code != items[j].Code {
+				return items[i].Code < items[j].Code
+			}
+			if items[i].Name != items[j].Name {
+				return items[i].Name < items[j].Name
+			}
+			return items[i].ID < items[j].ID
+		})
+	}
+	sortAccounts(roots)
+	for parentID := range childrenByParent {
+		sortAccounts(childrenByParent[parentID])
+	}
+
+	rows := make([]AccountHierarchyRow, 0, len(accounts))
+	visited := make(map[string]bool, len(accounts))
+	var walk func(account Account, depth int, parentCode, parentName, parentPath string)
+	walk = func(account Account, depth int, parentCode, parentName, parentPath string) {
+		if visited[account.ID] {
+			return
+		}
+		visited[account.ID] = true
+
+		path := account.Code
+		if strings.TrimSpace(parentPath) != "" {
+			path = parentPath + "/" + account.Code
+		}
+		children := childrenByParent[account.ID]
+		rows = append(rows, AccountHierarchyRow{
+			Account:     account,
+			ParentCode:  parentCode,
+			ParentName:  parentName,
+			Depth:       depth,
+			Path:        path,
+			HasChildren: len(children) > 0,
+		})
+		for _, child := range children {
+			walk(child, depth+1, account.Code, account.Name, path)
+		}
+	}
+
+	for _, root := range roots {
+		walk(root, 0, "", "", "")
+	}
+
+	sortedAccounts := make([]Account, 0, len(accounts))
+	sortedAccounts = append(sortedAccounts, accounts...)
+	sortAccounts(sortedAccounts)
+	for _, account := range sortedAccounts {
+		if !visited[account.ID] {
+			walk(account, 0, "", "", "")
+		}
+	}
+
+	return rows
 }
 
 // CreateAccount creates a new account

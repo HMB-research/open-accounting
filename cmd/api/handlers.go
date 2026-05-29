@@ -735,6 +735,31 @@ func (h *Handlers) ListAccounts(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, accounts)
 }
 
+// GetAccountHierarchy returns a flattened parent-child chart of accounts.
+// @Summary Get account hierarchy
+// @Description Get chart of accounts rows ordered by parent-child account grouping
+// @Tags Accounts
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param active_only query bool false "Filter for active accounts only"
+// @Success 200 {array} accounting.AccountHierarchyRow
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/accounts/hierarchy [get]
+func (h *Handlers) GetAccountHierarchy(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	activeOnly := r.URL.Query().Get("active_only") == "true"
+	rows, err := h.accountingService.GetAccountHierarchy(r.Context(), schemaName, tenantID, activeOnly)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get account hierarchy")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, rows)
+}
+
 // CreateAccount creates a new account
 // @Summary Create account
 // @Description Create a new account in the chart of accounts

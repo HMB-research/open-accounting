@@ -201,10 +201,13 @@ go run ./cmd/oa tokens revoke --id <token-id>
 ```bash
 go run ./cmd/oa accounts list
 go run ./cmd/oa accounts list --active-only
+go run ./cmd/oa accounts hierarchy --active-only
 go run ./cmd/oa accounts create --code 1100 --name Cash --type ASSET
 go run ./cmd/oa accounts get --id <account-id>
 go run ./cmd/oa accounts import --file ./accounts.csv
 ```
+
+`accounts hierarchy` shows the parent-child chart of accounts using existing `parent_id` relationships. Account CSV imports can set parent accounts with `parent_code`.
 
 ## Contacts
 

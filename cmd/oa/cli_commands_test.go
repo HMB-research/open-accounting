@@ -993,6 +993,35 @@ func TestCLIAccountsCommands(t *testing.T) {
 				"account_type": "ASSET",
 				"is_active":    true,
 			}})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/accounts/hierarchy":
+			require.Equal(t, "true", r.URL.Query().Get("active_only"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{
+					"id":           "acc-1",
+					"tenant_id":    "tenant-1",
+					"code":         "1000",
+					"name":         "Assets",
+					"account_type": "ASSET",
+					"is_active":    true,
+					"path":         "1000",
+					"depth":        0,
+					"has_children": true,
+				},
+				{
+					"id":           "acc-2",
+					"tenant_id":    "tenant-1",
+					"code":         "1100",
+					"name":         "Bank",
+					"account_type": "ASSET",
+					"parent_id":    "acc-1",
+					"parent_code":  "1000",
+					"parent_name":  "Assets",
+					"is_active":    true,
+					"path":         "1000/1100",
+					"depth":        1,
+					"has_children": false,
+				},
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/accounts":
 			var req accounting.CreateAccountRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -1040,6 +1069,12 @@ func TestCLIAccountsCommands(t *testing.T) {
 	err := app.run(context.Background(), []string{"accounts", "list", "--active-only", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"code": "1000"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"accounts", "hierarchy", "--active-only"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Assets")
+	assert.Contains(t, stdout.String(), "1000/1100")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{
