@@ -180,7 +180,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 |---------|-------|---------------|-----------------|--------|
 | VAT calculation | ✅ | ✅ | ✅ | Implemented |
 | Multi-rate VAT | ✅ | ✅ | ✅ | Implemented |
-| VAT declaration (KMD) | ✅ | ✅ | ⚠️ | Partial |
+| VAT declaration (KMD) | ✅ | ✅ | ✅ | Implemented with generation, listing, e-MTA XML export, KMD INF A/B reporting, historical import, API/CLI coverage, and tests; direct e-MTA submission remains a separate blocker |
 | e-MTA VAT submission | ✅ | ✅ | ❌ | **Blocker** |
 | EU VAT (MOSS) | ✅ | ✅ | ❌ | **Gap** |
 | Reverse charge VAT | ✅ | ✅ | ⚠️ | Partial |
