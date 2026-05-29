@@ -168,7 +168,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Revenue by period | ✅ | ✅ | ✅ | Implemented |
 | Expense breakdown | ✅ | ✅ | ✅ | Implemented |
 | Customer profitability | ✅ | ✅ | ⚠️ | Partial: sales margin includes customer rollups; deeper lifecycle profitability remains thin |
-| Budget vs actual | ✅ | ✅ | ❌ | **Gap** |
+| Budget vs actual | ✅ | ✅ | ✅ | Implemented through cost-center budget-vs-actual API/CLI CSV/XLSX/PDF reports |
 
 ---
 

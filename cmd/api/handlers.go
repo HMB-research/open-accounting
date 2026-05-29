@@ -3192,6 +3192,28 @@ func (h *Handlers) DeleteCostCenter(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} object{error=string}
 // @Router /tenants/{tenantID}/cost-centers/report [get]
 func (h *Handlers) GetCostCenterReport(w http.ResponseWriter, r *http.Request) {
+	h.writeCostCenterBudgetReport(w, r, "cost-center-report")
+}
+
+// GetBudgetVsActualReport handles GET /tenants/{tenantID}/reports/budget-vs-actual
+// @Summary Get budget vs actual report
+// @Description Get budget versus actual expenses by cost center, with optional CSV, XLSX, or PDF export
+// @Tags Reports
+// @Produce json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param start_date query string false "Start date (YYYY-MM-DD)"
+// @Param end_date query string false "End date (YYYY-MM-DD)"
+// @Param format query string false "Response format: json, csv, xlsx, or pdf"
+// @Success 200 {object} accounting.CostCenterReport
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/reports/budget-vs-actual [get]
+func (h *Handlers) GetBudgetVsActualReport(w http.ResponseWriter, r *http.Request) {
+	h.writeCostCenterBudgetReport(w, r, "budget-vs-actual")
+}
+
+func (h *Handlers) writeCostCenterBudgetReport(w http.ResponseWriter, r *http.Request, filenamePrefix string) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
 
@@ -3229,6 +3251,10 @@ func (h *Handlers) GetCostCenterReport(w http.ResponseWriter, r *http.Request) {
 		// Default to today
 		end = time.Now()
 	}
+	if end.Before(start) {
+		respondError(w, http.StatusBadRequest, "end_date must be on or after start_date")
+		return
+	}
 
 	report, err := h.costCenterService.GetCostCenterReport(r.Context(), schemaName, tenantID, start, end)
 	if err != nil {
@@ -3242,7 +3268,7 @@ func (h *Handlers) GetCostCenterReport(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusInternalServerError, "Failed to export cost center report CSV")
 			return
 		}
-		respondReportCSV(w, fmt.Sprintf("cost-center-report-%s-%s.csv", reportExportDate(report.PeriodStart), reportExportDate(report.PeriodEnd)), content)
+		respondReportCSV(w, fmt.Sprintf("%s-%s-%s.csv", filenamePrefix, reportExportDate(report.PeriodStart), reportExportDate(report.PeriodEnd)), content)
 		return
 	}
 	if format == "xlsx" {
@@ -3251,7 +3277,7 @@ func (h *Handlers) GetCostCenterReport(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusInternalServerError, "Failed to export cost center report XLSX")
 			return
 		}
-		respondReportXLSX(w, fmt.Sprintf("cost-center-report-%s-%s.xlsx", reportExportDate(report.PeriodStart), reportExportDate(report.PeriodEnd)), content)
+		respondReportXLSX(w, fmt.Sprintf("%s-%s-%s.xlsx", filenamePrefix, reportExportDate(report.PeriodStart), reportExportDate(report.PeriodEnd)), content)
 		return
 	}
 	if format == "pdf" {
@@ -3260,7 +3286,7 @@ func (h *Handlers) GetCostCenterReport(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusInternalServerError, "Failed to export cost center report PDF")
 			return
 		}
-		respondReportPDF(w, fmt.Sprintf("cost-center-report-%s-%s.pdf", reportExportDate(report.PeriodStart), reportExportDate(report.PeriodEnd)), content)
+		respondReportPDF(w, fmt.Sprintf("%s-%s-%s.pdf", filenamePrefix, reportExportDate(report.PeriodStart), reportExportDate(report.PeriodEnd)), content)
 		return
 	}
 
