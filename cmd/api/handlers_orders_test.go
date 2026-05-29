@@ -21,20 +21,22 @@ import (
 
 // mockOrdersRepository implements orders.Repository for testing
 type mockOrdersRepository struct {
-	orders      map[string]*orders.Order
-	orderNumber int
-	createErr   error
-	getErr      error
-	listErr     error
-	updateErr   error
-	statusErr   error
-	deleteErr   error
+	orders            map[string]*orders.Order
+	stockReservations map[string]*orders.OrderStockReservation
+	orderNumber       int
+	createErr         error
+	getErr            error
+	listErr           error
+	updateErr         error
+	statusErr         error
+	deleteErr         error
 }
 
 func newMockOrdersRepository() *mockOrdersRepository {
 	return &mockOrdersRepository{
-		orders:      make(map[string]*orders.Order),
-		orderNumber: 1,
+		orders:            make(map[string]*orders.Order),
+		stockReservations: make(map[string]*orders.OrderStockReservation),
+		orderNumber:       1,
 	}
 }
 
@@ -120,6 +122,63 @@ func (m *mockOrdersRepository) SetConvertedToInvoice(ctx context.Context, schema
 		return nil
 	}
 	return orders.ErrOrderNotFound
+}
+
+func (m *mockOrdersRepository) ListStockReservations(ctx context.Context, schemaName, tenantID, orderID string) ([]orders.OrderStockReservation, error) {
+	var result []orders.OrderStockReservation
+	for _, reservation := range m.stockReservations {
+		if reservation.TenantID == tenantID && reservation.OrderID == orderID {
+			result = append(result, *reservation)
+		}
+	}
+	return result, nil
+}
+
+func (m *mockOrdersRepository) GetStockReservation(ctx context.Context, schemaName, tenantID, orderID, productID, warehouseID string) (*orders.OrderStockReservation, error) {
+	key := orderStockReservationKey(orderID, productID, warehouseID)
+	reservation, ok := m.stockReservations[key]
+	if !ok || reservation.TenantID != tenantID {
+		return nil, orders.ErrOrderStockReservationNotFound
+	}
+	return reservation, nil
+}
+
+func (m *mockOrdersRepository) UpsertStockReservation(ctx context.Context, schemaName string, reservation *orders.OrderStockReservation) error {
+	key := orderStockReservationKey(reservation.OrderID, reservation.ProductID, reservation.WarehouseID)
+	existing, ok := m.stockReservations[key]
+	if !ok {
+		copy := *reservation
+		copy.Status = orders.OrderStockReservationStatusReserved
+		m.stockReservations[key] = &copy
+		return nil
+	}
+	existing.Quantity = existing.Quantity.Add(reservation.Quantity)
+	existing.Status = orders.OrderStockReservationStatusReserved
+	existing.Reason = reservation.Reason
+	return nil
+}
+
+func (m *mockOrdersRepository) ReleaseStockReservation(ctx context.Context, schemaName, tenantID, orderID, productID, warehouseID string, quantity decimal.Decimal, reason, releasedBy string) (*orders.OrderStockReservation, error) {
+	reservation, err := m.GetStockReservation(ctx, schemaName, tenantID, orderID, productID, warehouseID)
+	if err != nil {
+		return nil, err
+	}
+	if reservation.Quantity.LessThan(quantity) {
+		return nil, orders.ErrOrderStockReservationNotFound
+	}
+	reservation.Quantity = reservation.Quantity.Sub(quantity)
+	reservation.Reason = reason
+	if reservation.Quantity.IsZero() {
+		reservation.Status = orders.OrderStockReservationStatusReleased
+		reservation.ReleasedBy = releasedBy
+	} else {
+		reservation.Status = orders.OrderStockReservationStatusReserved
+	}
+	return reservation, nil
+}
+
+func orderStockReservationKey(orderID, productID, warehouseID string) string {
+	return orderID + "|" + productID + "|" + warehouseID
 }
 
 func setupOrdersTestHandlers() (*Handlers, *mockOrdersRepository, *mockTenantRepository) {
@@ -600,6 +659,23 @@ func TestReserveAndReleaseOrderStock(t *testing.T) {
 	assert.True(t, reserveResult.Lines[0].ReservedQty.Equal(decimal.NewFromInt(6)))
 	assert.True(t, reserveResult.Lines[0].AvailableQty.Equal(decimal.NewFromInt(4)))
 	assert.Equal(t, orders.OrderStockReservationStatusReserved, reserveResult.Lines[0].Status)
+	ledgerReservation := repo.stockReservations[orderStockReservationKey("order-1", "prod-1", "wh-1")]
+	require.NotNil(t, ledgerReservation)
+	assert.True(t, ledgerReservation.Quantity.Equal(decimal.NewFromInt(5)))
+	assert.Equal(t, orders.OrderStockReservationStatusReserved, ledgerReservation.Status)
+
+	listReq := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/orders/order-1/stock-reservations", nil)
+	listReq = withURLParams(listReq, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+	listReq = listReq.WithContext(contextWithClaims(listReq.Context(), claims))
+
+	listResp := httptest.NewRecorder()
+	h.ListOrderStockReservations(listResp, listReq)
+
+	require.Equal(t, http.StatusOK, listResp.Code)
+	var listed []orders.OrderStockReservation
+	require.NoError(t, json.Unmarshal(listResp.Body.Bytes(), &listed))
+	require.Len(t, listed, 1)
+	assert.True(t, listed[0].Quantity.Equal(decimal.NewFromInt(5)))
 
 	releaseBody, _ := json.Marshal(orders.OrderStockReservationRequest{WarehouseID: "wh-1", Reason: "Order canceled"})
 	releaseReq := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/orders/order-1/release-stock", bytes.NewReader(releaseBody))
@@ -619,6 +695,8 @@ func TestReserveAndReleaseOrderStock(t *testing.T) {
 	assert.True(t, releaseResult.Lines[0].ReservedQty.Equal(decimal.NewFromInt(1)))
 	assert.True(t, releaseResult.Lines[0].AvailableQty.Equal(decimal.NewFromInt(9)))
 	assert.Equal(t, orders.OrderStockReservationStatusReleased, releaseResult.Lines[0].Status)
+	assert.True(t, ledgerReservation.Quantity.IsZero())
+	assert.Equal(t, orders.OrderStockReservationStatusReleased, ledgerReservation.Status)
 }
 
 func TestReserveOrderStockRejectsShortage(t *testing.T) {
@@ -676,6 +754,7 @@ func TestReserveOrderStockRejectsShortage(t *testing.T) {
 	level := inventoryRepo.stockLevels["prod-1-wh-1"]
 	assert.True(t, level.ReservedQty.IsZero())
 	assert.True(t, level.AvailableQty.Equal(decimal.NewFromInt(4)))
+	assert.Empty(t, repo.stockReservations)
 }
 
 func TestUpdateOrder(t *testing.T) {

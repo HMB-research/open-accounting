@@ -3621,6 +3621,39 @@ func (h *Handlers) buildOrderStockCheck(ctx context.Context, tenantID, schemaNam
 	return check, nil
 }
 
+// ListOrderStockReservations lists persisted stock reservations for an order.
+// @Summary List order stock reservations
+// @Description List current product and warehouse stock reservations recorded for an order
+// @Tags Orders
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param orderID path string true "Order ID"
+// @Success 200 {array} orders.OrderStockReservation
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/orders/{orderID}/stock-reservations [get]
+func (h *Handlers) ListOrderStockReservations(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	orderID := chi.URLParam(r, "orderID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if _, err := h.ordersService.GetByID(r.Context(), tenantID, schemaName, orderID); err != nil {
+		if errors.Is(err, orders.ErrOrderNotFound) {
+			respondError(w, http.StatusNotFound, "Order not found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to get order")
+		return
+	}
+
+	reservations, err := h.ordersService.ListStockReservations(r.Context(), tenantID, schemaName, orderID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list order stock reservations")
+		return
+	}
+	respondJSON(w, http.StatusOK, reservations)
+}
+
 // ReserveOrderStock reserves the tracked product quantities required by an order.
 // @Summary Reserve order stock
 // @Description Reserve tracked goods for an order from one warehouse without shipping stock
@@ -3782,6 +3815,16 @@ func (h *Handlers) applyOrderStockReservation(
 
 	for _, productID := range productOrder {
 		line := aggregates[productID]
+		if action == orders.OrderStockReservationActionRelease {
+			reservation, err := h.ordersService.GetStockReservation(ctx, tenantID, schemaName, check.OrderID, productID, check.WarehouseID)
+			if err != nil {
+				return nil, err
+			}
+			if reservation.Quantity.LessThan(line.Quantity) {
+				return nil, fmt.Errorf("cannot release more than order reserved stock for product %s", productID)
+			}
+		}
+
 		req := &inventory.StockReservationRequest{
 			ProductID:   productID,
 			WarehouseID: check.WarehouseID,
@@ -3800,6 +3843,28 @@ func (h *Handlers) applyOrderStockReservation(
 		}
 		if err != nil {
 			return nil, err
+		}
+		if action == orders.OrderStockReservationActionRelease {
+			if _, err := h.ordersService.ReleaseStockReservation(ctx, tenantID, schemaName, check.OrderID, productID, check.WarehouseID, line.Quantity, reason, userID); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := h.ordersService.UpsertStockReservation(ctx, tenantID, schemaName, &orders.OrderStockReservation{
+				TenantID:    tenantID,
+				OrderID:     check.OrderID,
+				ProductID:   productID,
+				WarehouseID: check.WarehouseID,
+				Quantity:    line.Quantity,
+				Status:      orders.OrderStockReservationStatusReserved,
+				Reason:      reason,
+				CreatedBy:   userID,
+			}); err != nil {
+				_, rollbackErr := h.inventoryService.ReleaseStock(ctx, tenantID, schemaName, req)
+				if rollbackErr != nil {
+					return nil, fmt.Errorf("%w; rollback release failed: %v", err, rollbackErr)
+				}
+				return nil, err
+			}
 		}
 		line.ReservedQty = level.ReservedQty
 		line.AvailableQty = level.AvailableQty

@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/shopspring/decimal"
 )
 
 // Repository defines the contract for order data access
@@ -19,10 +20,17 @@ type Repository interface {
 	Delete(ctx context.Context, schemaName, tenantID, orderID string) error
 	GenerateNumber(ctx context.Context, schemaName, tenantID string) (string, error)
 	SetConvertedToInvoice(ctx context.Context, schemaName, tenantID, orderID, invoiceID string) error
+	ListStockReservations(ctx context.Context, schemaName, tenantID, orderID string) ([]OrderStockReservation, error)
+	GetStockReservation(ctx context.Context, schemaName, tenantID, orderID, productID, warehouseID string) (*OrderStockReservation, error)
+	UpsertStockReservation(ctx context.Context, schemaName string, reservation *OrderStockReservation) error
+	ReleaseStockReservation(ctx context.Context, schemaName, tenantID, orderID, productID, warehouseID string, quantity decimal.Decimal, reason, releasedBy string) (*OrderStockReservation, error)
 }
 
 // ErrOrderNotFound is returned when an order is not found
 var ErrOrderNotFound = fmt.Errorf("order not found")
+
+// ErrOrderStockReservationNotFound is returned when an order stock reservation is not found.
+var ErrOrderStockReservationNotFound = fmt.Errorf("order stock reservation not found")
 
 // PostgresRepository implements Repository using PostgreSQL
 type PostgresRepository struct {
@@ -316,4 +324,139 @@ func (r *PostgresRepository) SetConvertedToInvoice(ctx context.Context, schemaNa
 		return ErrOrderNotFound
 	}
 	return nil
+}
+
+// ListStockReservations retrieves current stock reservations for an order.
+func (r *PostgresRepository) ListStockReservations(ctx context.Context, schemaName, tenantID, orderID string) ([]OrderStockReservation, error) {
+	rows, err := r.db.Query(ctx, fmt.Sprintf(`
+		SELECT id, tenant_id, order_id, product_id, warehouse_id, quantity, status,
+		       COALESCE(reason, ''), created_at, COALESCE(created_by::text, ''),
+		       updated_at, released_at, COALESCE(released_by::text, '')
+		FROM %s.order_stock_reservations
+		WHERE tenant_id = $1 AND order_id = $2
+		ORDER BY created_at, product_id, warehouse_id
+	`, schemaName), tenantID, orderID)
+	if err != nil {
+		return nil, fmt.Errorf("list order stock reservations: %w", err)
+	}
+	defer rows.Close()
+
+	var reservations []OrderStockReservation
+	for rows.Next() {
+		reservation, err := scanOrderStockReservation(rows)
+		if err != nil {
+			return nil, err
+		}
+		reservations = append(reservations, *reservation)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate order stock reservations: %w", err)
+	}
+	return reservations, nil
+}
+
+// GetStockReservation retrieves one order stock reservation.
+func (r *PostgresRepository) GetStockReservation(ctx context.Context, schemaName, tenantID, orderID, productID, warehouseID string) (*OrderStockReservation, error) {
+	row := r.db.QueryRow(ctx, fmt.Sprintf(`
+		SELECT id, tenant_id, order_id, product_id, warehouse_id, quantity, status,
+		       COALESCE(reason, ''), created_at, COALESCE(created_by::text, ''),
+		       updated_at, released_at, COALESCE(released_by::text, '')
+		FROM %s.order_stock_reservations
+		WHERE tenant_id = $1 AND order_id = $2 AND product_id = $3 AND warehouse_id = $4
+	`, schemaName), tenantID, orderID, productID, warehouseID)
+
+	reservation, err := scanOrderStockReservation(row)
+	if err == pgx.ErrNoRows {
+		return nil, ErrOrderStockReservationNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return reservation, nil
+}
+
+// UpsertStockReservation increases or recreates an order stock reservation.
+func (r *PostgresRepository) UpsertStockReservation(ctx context.Context, schemaName string, reservation *OrderStockReservation) error {
+	_, err := r.db.Exec(ctx, fmt.Sprintf(`
+		INSERT INTO %s.order_stock_reservations AS osr (
+			id, tenant_id, order_id, product_id, warehouse_id, quantity, status, reason,
+			created_by, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, 'RESERVED', NULLIF($7, ''), NULLIF($8, '')::uuid, NOW(), NOW())
+		ON CONFLICT (tenant_id, order_id, product_id, warehouse_id) DO UPDATE SET
+			quantity = osr.quantity + EXCLUDED.quantity,
+			status = 'RESERVED',
+			reason = COALESCE(EXCLUDED.reason, osr.reason),
+			updated_at = NOW(),
+			released_at = NULL,
+			released_by = NULL
+	`, schemaName),
+		reservation.ID, reservation.TenantID, reservation.OrderID, reservation.ProductID,
+		reservation.WarehouseID, reservation.Quantity, reservation.Reason, reservation.CreatedBy,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert order stock reservation: %w", err)
+	}
+	return nil
+}
+
+// ReleaseStockReservation decreases an order stock reservation.
+func (r *PostgresRepository) ReleaseStockReservation(
+	ctx context.Context,
+	schemaName string,
+	tenantID string,
+	orderID string,
+	productID string,
+	warehouseID string,
+	quantity decimal.Decimal,
+	reason string,
+	releasedBy string,
+) (*OrderStockReservation, error) {
+	row := r.db.QueryRow(ctx, fmt.Sprintf(`
+		UPDATE %s.order_stock_reservations
+		SET quantity = quantity - $5,
+		    status = CASE WHEN quantity - $5 <= 0 THEN 'RELEASED' ELSE 'RESERVED' END,
+		    reason = COALESCE(NULLIF($6, ''), reason),
+		    updated_at = NOW(),
+		    released_at = CASE WHEN quantity - $5 <= 0 THEN NOW() ELSE released_at END,
+		    released_by = CASE WHEN quantity - $5 <= 0 THEN NULLIF($7, '')::uuid ELSE released_by END
+		WHERE tenant_id = $1 AND order_id = $2 AND product_id = $3 AND warehouse_id = $4 AND quantity >= $5
+		RETURNING id, tenant_id, order_id, product_id, warehouse_id, quantity, status,
+		          COALESCE(reason, ''), created_at, COALESCE(created_by::text, ''),
+		          updated_at, released_at, COALESCE(released_by::text, '')
+	`, schemaName), tenantID, orderID, productID, warehouseID, quantity, reason, releasedBy)
+
+	reservation, err := scanOrderStockReservation(row)
+	if err == pgx.ErrNoRows {
+		return nil, ErrOrderStockReservationNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return reservation, nil
+}
+
+type orderStockReservationScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+func scanOrderStockReservation(scanner orderStockReservationScanner) (*OrderStockReservation, error) {
+	var reservation OrderStockReservation
+	if err := scanner.Scan(
+		&reservation.ID,
+		&reservation.TenantID,
+		&reservation.OrderID,
+		&reservation.ProductID,
+		&reservation.WarehouseID,
+		&reservation.Quantity,
+		&reservation.Status,
+		&reservation.Reason,
+		&reservation.CreatedAt,
+		&reservation.CreatedBy,
+		&reservation.UpdatedAt,
+		&reservation.ReleasedAt,
+		&reservation.ReleasedBy,
+	); err != nil {
+		return nil, err
+	}
+	return &reservation, nil
 }

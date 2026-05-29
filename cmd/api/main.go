@@ -487,6 +487,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Put("/orders/{orderID}", h.UpdateOrder)
 				r.Delete("/orders/{orderID}", h.DeleteOrder)
 				r.Get("/orders/{orderID}/stock-check", h.CheckOrderStock)
+				r.Get("/orders/{orderID}/stock-reservations", h.ListOrderStockReservations)
 				r.Post("/orders/{orderID}/reserve-stock", h.ReserveOrderStock)
 				r.Post("/orders/{orderID}/release-stock", h.ReleaseOrderStock)
 				r.Post("/orders/{orderID}/confirm", h.ConfirmOrder)

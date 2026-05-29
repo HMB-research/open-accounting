@@ -16,22 +16,24 @@ import (
 
 // MockRepository implements Repository for testing
 type MockRepository struct {
-	Orders        map[string]*Order
-	NextNumber    string
-	GenerateErr   error
-	CreateErr     error
-	GetErr        error
-	ListErr       error
-	UpdateErr     error
-	UpdateStatErr error
-	DeleteErr     error
-	ConvertErr    error
+	Orders            map[string]*Order
+	StockReservations map[string]*OrderStockReservation
+	NextNumber        string
+	GenerateErr       error
+	CreateErr         error
+	GetErr            error
+	ListErr           error
+	UpdateErr         error
+	UpdateStatErr     error
+	DeleteErr         error
+	ConvertErr        error
 }
 
 func NewMockRepository() *MockRepository {
 	return &MockRepository{
-		Orders:     make(map[string]*Order),
-		NextNumber: "ORD-00001",
+		Orders:            make(map[string]*Order),
+		StockReservations: make(map[string]*OrderStockReservation),
+		NextNumber:        "ORD-00001",
 	}
 }
 
@@ -115,6 +117,63 @@ func (m *MockRepository) SetConvertedToInvoice(ctx context.Context, schemaName, 
 	}
 	order.ConvertedToInvoiceID = &invoiceID
 	return nil
+}
+
+func (m *MockRepository) ListStockReservations(ctx context.Context, schemaName, tenantID, orderID string) ([]OrderStockReservation, error) {
+	var reservations []OrderStockReservation
+	for _, reservation := range m.StockReservations {
+		if reservation.TenantID == tenantID && reservation.OrderID == orderID {
+			reservations = append(reservations, *reservation)
+		}
+	}
+	return reservations, nil
+}
+
+func (m *MockRepository) GetStockReservation(ctx context.Context, schemaName, tenantID, orderID, productID, warehouseID string) (*OrderStockReservation, error) {
+	key := orderStockReservationKey(orderID, productID, warehouseID)
+	reservation, ok := m.StockReservations[key]
+	if !ok || reservation.TenantID != tenantID {
+		return nil, ErrOrderStockReservationNotFound
+	}
+	return reservation, nil
+}
+
+func (m *MockRepository) UpsertStockReservation(ctx context.Context, schemaName string, reservation *OrderStockReservation) error {
+	key := orderStockReservationKey(reservation.OrderID, reservation.ProductID, reservation.WarehouseID)
+	existing, ok := m.StockReservations[key]
+	if !ok {
+		copy := *reservation
+		copy.Status = OrderStockReservationStatusReserved
+		m.StockReservations[key] = &copy
+		return nil
+	}
+	existing.Quantity = existing.Quantity.Add(reservation.Quantity)
+	existing.Status = OrderStockReservationStatusReserved
+	existing.Reason = reservation.Reason
+	return nil
+}
+
+func (m *MockRepository) ReleaseStockReservation(ctx context.Context, schemaName, tenantID, orderID, productID, warehouseID string, quantity decimal.Decimal, reason, releasedBy string) (*OrderStockReservation, error) {
+	reservation, err := m.GetStockReservation(ctx, schemaName, tenantID, orderID, productID, warehouseID)
+	if err != nil {
+		return nil, err
+	}
+	if reservation.Quantity.LessThan(quantity) {
+		return nil, ErrOrderStockReservationNotFound
+	}
+	reservation.Quantity = reservation.Quantity.Sub(quantity)
+	if reservation.Quantity.IsZero() {
+		reservation.Status = OrderStockReservationStatusReleased
+		reservation.ReleasedBy = releasedBy
+	} else {
+		reservation.Status = OrderStockReservationStatusReserved
+	}
+	reservation.Reason = reason
+	return reservation, nil
+}
+
+func orderStockReservationKey(orderID, productID, warehouseID string) string {
+	return orderID + "|" + productID + "|" + warehouseID
 }
 
 func TestNewServiceWithRepository(t *testing.T) {
