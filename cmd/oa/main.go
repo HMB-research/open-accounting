@@ -5514,7 +5514,7 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		fs := flag.NewFlagSet("inventory valuation", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
 		warehouseID := fs.String("warehouse-id", "", "Warehouse id")
-		method := fs.String("method", "", "Valuation method: standard-cost or weighted-average")
+		method := fs.String("method", "", "Valuation method: standard-cost, weighted-average, or fifo")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err

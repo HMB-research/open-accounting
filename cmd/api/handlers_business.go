@@ -4923,13 +4923,13 @@ func (h *Handlers) GetInventoryMovements(w http.ResponseWriter, r *http.Request)
 
 // GetInventoryValuation returns inventory valuation by warehouse.
 // @Summary Get inventory valuation
-// @Description Return valued on-hand stock for tracked goods using standard-cost or weighted-average valuation
+// @Description Return valued on-hand stock for tracked goods using standard-cost, weighted-average, or FIFO valuation
 // @Tags Inventory
 // @Produce json
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param warehouse_id query string false "Warehouse ID"
-// @Param method query string false "Valuation method: standard-cost or weighted-average"
+// @Param method query string false "Valuation method: standard-cost, weighted-average, or fifo"
 // @Success 200 {object} inventory.InventoryValuationReport
 // @Failure 400 {object} object{error=string}
 // @Failure 500 {object} object{error=string}

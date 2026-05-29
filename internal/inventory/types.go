@@ -139,6 +139,8 @@ const (
 	InventoryValuationMethodStandardCost = "STANDARD_COST"
 	// InventoryValuationMethodWeightedAverage values stock using weighted average inbound movement cost.
 	InventoryValuationMethodWeightedAverage = "WEIGHTED_AVERAGE"
+	// InventoryValuationMethodFIFO values ending stock from the newest remaining inbound layers.
+	InventoryValuationMethodFIFO = "FIFO"
 )
 
 // InventoryValuationLine represents one valued product/warehouse stock position.
