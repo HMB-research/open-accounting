@@ -353,14 +353,27 @@ func (s *Service) GetInventoryValuation(ctx context.Context, tenantID, schemaNam
 			continue
 		}
 
-		unitCost, err := s.inventoryValuationUnitCost(ctx, tenantID, schemaName, product, valuationMethod)
-		if err != nil {
-			return nil, err
-		}
-
 		levels, err := s.repo.GetStockLevelsByProduct(ctx, schemaName, tenantID, product.ID)
 		if err != nil {
 			return nil, fmt.Errorf("get stock levels for product %s: %w", product.ID, err)
+		}
+		valuationQuantity := product.CurrentStock
+		if len(levels) > 0 {
+			valuationQuantity = decimal.Zero
+			for _, level := range levels {
+				if level.TenantID != tenantID {
+					continue
+				}
+				if warehouseID != "" && level.WarehouseID != warehouseID {
+					continue
+				}
+				valuationQuantity = valuationQuantity.Add(level.Quantity)
+			}
+		}
+
+		unitCost, err := s.inventoryValuationUnitCost(ctx, tenantID, schemaName, product, valuationMethod, valuationQuantity)
+		if err != nil {
+			return nil, err
 		}
 		if len(levels) == 0 {
 			if warehouseID == "" && !product.CurrentStock.IsZero() {
@@ -404,12 +417,14 @@ func normalizeInventoryValuationMethod(method string) (string, error) {
 		return InventoryValuationMethodStandardCost, nil
 	case "WEIGHTED", "AVERAGE_COST", InventoryValuationMethodWeightedAverage:
 		return InventoryValuationMethodWeightedAverage, nil
+	case InventoryValuationMethodFIFO, "FIFO_LAYERED":
+		return InventoryValuationMethodFIFO, nil
 	default:
 		return "", fmt.Errorf("invalid valuation method: %s", method)
 	}
 }
 
-func (s *Service) inventoryValuationUnitCost(ctx context.Context, tenantID, schemaName string, product Product, method string) (decimal.Decimal, error) {
+func (s *Service) inventoryValuationUnitCost(ctx context.Context, tenantID, schemaName string, product Product, method string, valuationQuantity decimal.Decimal) (decimal.Decimal, error) {
 	if method == InventoryValuationMethodStandardCost {
 		return product.PurchasePrice, nil
 	}
@@ -417,6 +432,9 @@ func (s *Service) inventoryValuationUnitCost(ctx context.Context, tenantID, sche
 	movements, err := s.repo.ListMovements(ctx, schemaName, tenantID, product.ID)
 	if err != nil {
 		return decimal.Zero, fmt.Errorf("list movements for product %s: %w", product.ID, err)
+	}
+	if method == InventoryValuationMethodFIFO {
+		return fifoInventoryUnitCost(product, movements, tenantID, valuationQuantity), nil
 	}
 
 	totalQuantity := decimal.Zero
@@ -448,6 +466,64 @@ func (s *Service) inventoryValuationUnitCost(ctx context.Context, tenantID, sche
 		return product.PurchasePrice, nil
 	}
 	return totalCost.Div(totalQuantity), nil
+}
+
+func fifoInventoryUnitCost(product Product, movements []InventoryMovement, tenantID string, quantity decimal.Decimal) decimal.Decimal {
+	if quantity.LessThanOrEqual(decimal.Zero) {
+		return product.PurchasePrice
+	}
+
+	sort.SliceStable(movements, func(i, j int) bool {
+		left := movements[i].MovementDate
+		if left.IsZero() {
+			left = movements[i].CreatedAt
+		}
+		right := movements[j].MovementDate
+		if right.IsZero() {
+			right = movements[j].CreatedAt
+		}
+		return left.After(right)
+	})
+
+	remaining := quantity
+	totalValue := decimal.Zero
+	for _, movement := range movements {
+		if movement.TenantID != tenantID {
+			continue
+		}
+		if movement.MovementType != MovementTypeIn && movement.MovementType != MovementTypeAdjustment {
+			continue
+		}
+		if movement.Quantity.LessThanOrEqual(decimal.Zero) {
+			continue
+		}
+
+		unitCost := movement.UnitCost
+		if unitCost.LessThanOrEqual(decimal.Zero) && movement.TotalCost.GreaterThan(decimal.Zero) {
+			unitCost = movement.TotalCost.Div(movement.Quantity)
+		}
+		if unitCost.LessThanOrEqual(decimal.Zero) {
+			continue
+		}
+
+		layerQty := movement.Quantity
+		if layerQty.GreaterThan(remaining) {
+			layerQty = remaining
+		}
+		totalValue = totalValue.Add(layerQty.Mul(unitCost))
+		remaining = remaining.Sub(layerQty)
+		if remaining.IsZero() {
+			break
+		}
+	}
+
+	if remaining.GreaterThan(decimal.Zero) {
+		totalValue = totalValue.Add(remaining.Mul(product.PurchasePrice))
+	}
+	if totalValue.IsZero() {
+		return product.PurchasePrice
+	}
+	return totalValue.Div(quantity)
 }
 
 func inventoryValuationLine(product Product, level StockLevel, warehouse Warehouse, unitCost decimal.Decimal) InventoryValuationLine {

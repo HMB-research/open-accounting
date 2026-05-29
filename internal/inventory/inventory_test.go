@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -1651,6 +1652,8 @@ func TestService_GetInventoryValuation(t *testing.T) {
 		ReservedQty:  decimal.Zero,
 		AvailableQty: decimal.RequireFromString("3.00"),
 	}
+	oldReceiptDate := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+	newReceiptDate := time.Date(2026, 2, 1, 10, 0, 0, 0, time.UTC)
 	ts.repo.Movements["p1"] = []InventoryMovement{
 		{
 			ID:           "mov-1",
@@ -1660,6 +1663,7 @@ func TestService_GetInventoryValuation(t *testing.T) {
 			Quantity:     decimal.RequireFromString("10.00"),
 			UnitCost:     decimal.RequireFromString("8.00"),
 			TotalCost:    decimal.RequireFromString("80.00"),
+			MovementDate: oldReceiptDate,
 		},
 		{
 			ID:           "mov-2",
@@ -1669,6 +1673,7 @@ func TestService_GetInventoryValuation(t *testing.T) {
 			Quantity:     decimal.RequireFromString("10.00"),
 			UnitCost:     decimal.RequireFromString("12.00"),
 			TotalCost:    decimal.RequireFromString("120.00"),
+			MovementDate: newReceiptDate,
 		},
 		{
 			ID:           "mov-out",
@@ -1700,6 +1705,13 @@ func TestService_GetInventoryValuation(t *testing.T) {
 	assert.True(t, weighted.Lines[0].UnitCost.Equal(decimal.RequireFromString("10.00")))
 	assert.True(t, weighted.TotalValue.Equal(decimal.RequireFromString("150.00")))
 
+	fifo, err := ts.svc.GetInventoryValuation(ctx, "tenant-1", "test_schema", "", "fifo")
+	require.NoError(t, err)
+	require.Len(t, fifo.Lines, 2)
+	assert.Equal(t, InventoryValuationMethodFIFO, fifo.ValuationMethod)
+	assert.True(t, fifo.Lines[0].UnitCost.Round(4).Equal(decimal.RequireFromString("10.6667")))
+	assert.True(t, fifo.TotalValue.Round(2).Equal(decimal.RequireFromString("160.00")))
+
 	filtered, err := ts.svc.GetInventoryValuation(ctx, "tenant-1", "test_schema", "wh-1", "")
 	require.NoError(t, err)
 	require.Len(t, filtered.Lines, 1)
@@ -1708,7 +1720,7 @@ func TestService_GetInventoryValuation(t *testing.T) {
 	assert.True(t, filtered.TotalQuantity.Equal(decimal.RequireFromString("12.00")))
 	assert.True(t, filtered.TotalValue.Equal(decimal.RequireFromString("126.0000")))
 
-	_, err = ts.svc.GetInventoryValuation(ctx, "tenant-1", "test_schema", "", "fifo")
+	_, err = ts.svc.GetInventoryValuation(ctx, "tenant-1", "test_schema", "", "lifo")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid valuation method")
 }

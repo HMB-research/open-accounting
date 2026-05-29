@@ -1768,10 +1768,11 @@ Authorization: Bearer <token>
 GET /tenants/{tenantId}/inventory/valuation
 GET /tenants/{tenantId}/inventory/valuation?warehouse_id={warehouseId}
 GET /tenants/{tenantId}/inventory/valuation?method=weighted-average
+GET /tenants/{tenantId}/inventory/valuation?method=fifo
 Authorization: Bearer <token>
 ```
 
-Returns tracked `GOODS` stock valuation. `method` accepts `standard-cost` (default, using each product `purchase_price`) or `weighted-average` (using costed inbound stock movements, falling back to purchase price when no costed movements exist). The response includes product and warehouse labels, on-hand/reserved/available quantities, line value, and report totals.
+Returns tracked `GOODS` stock valuation. `method` accepts `standard-cost` (default, using each product `purchase_price`), `weighted-average` (using costed inbound stock movements), or `fifo` (valuing current quantity from newest remaining inbound layers). Costed methods fall back to purchase price when no usable movement costs exist. The response includes product and warehouse labels, on-hand/reserved/available quantities, line value, and report totals.
 
 ### Warehouses
 
