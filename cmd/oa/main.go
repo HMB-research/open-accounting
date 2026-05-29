@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -63,6 +64,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 	switch args[0] {
 	case "health":
 		return a.runHealth(ctx, args[1:])
+	case "ops":
+		return a.runOps(ctx, args[1:])
 	case "demo":
 		return a.runDemo(ctx, args[1:])
 	case "auth":
@@ -141,6 +144,10 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "Commands:")
 	_, _ = fmt.Fprintln(a.stdout, "  help                      Show CLI usage")
 	_, _ = fmt.Fprintln(a.stdout, "  health                    Check API health")
+	_, _ = fmt.Fprintln(a.stdout, "  ops backup create         Run a PostgreSQL backup")
+	_, _ = fmt.Fprintln(a.stdout, "  ops backup health         Check backup freshness and checksum")
+	_, _ = fmt.Fprintln(a.stdout, "  ops backup offsite-sync   Sync backup dumps to offsite storage")
+	_, _ = fmt.Fprintln(a.stdout, "  ops backup restore-drill  Restore a backup into a drill database")
 	_, _ = fmt.Fprintln(a.stdout, "  demo status               Show demo data status")
 	_, _ = fmt.Fprintln(a.stdout, "  demo reset                Reset demo data")
 	_, _ = fmt.Fprintln(a.stdout, "  auth register             Register a user")
@@ -414,6 +421,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "")
 	_, _ = fmt.Fprintln(a.stdout, "Environment overrides:")
 	_, _ = fmt.Fprintln(a.stdout, "  OA_BASE_URL, OA_API_TOKEN, OA_TENANT_ID")
+	_, _ = fmt.Fprintln(a.stdout, "  OA_SCRIPT_DIR for local operator scripts")
 }
 
 func (a *cliApp) runHealth(ctx context.Context, args []string) error {
@@ -430,6 +438,189 @@ func (a *cliApp) runHealth(ctx context.Context, args []string) error {
 	}
 	_, _ = fmt.Fprintln(a.stdout, strings.TrimSpace(status))
 	return nil
+}
+
+func (a *cliApp) runOps(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("ops subcommand required")
+	}
+
+	switch args[0] {
+	case "backup":
+		return a.runOpsBackup(ctx, args[1:])
+	default:
+		return fmt.Errorf("unknown ops subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runOpsBackup(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("ops backup subcommand required")
+	}
+
+	switch args[0] {
+	case "create":
+		fs := flag.NewFlagSet("ops backup create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		databaseURL := fs.String("database-url", "", "PostgreSQL connection URL")
+		backupDir := fs.String("backup-dir", "", "Directory for generated backups")
+		output := fs.String("output", "", "Exact backup file path")
+		retentionDays := fs.String("retention-days", "", "Delete generated backups older than this many days")
+		noRetention := fs.Bool("no-retention", false, "Disable retention cleanup")
+		dryRun := fs.Bool("dry-run", false, "Print the planned backup without running pg_dump")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		scriptArgs := make([]string, 0, 12)
+		scriptArgs = appendStringFlag(scriptArgs, "database-url", *databaseURL)
+		scriptArgs = appendStringFlag(scriptArgs, "backup-dir", *backupDir)
+		scriptArgs = appendStringFlag(scriptArgs, "output", *output)
+		scriptArgs = appendStringFlag(scriptArgs, "retention-days", *retentionDays)
+		scriptArgs = appendBoolFlag(scriptArgs, "no-retention", *noRetention)
+		scriptArgs = appendBoolFlag(scriptArgs, "dry-run", *dryRun)
+		return a.runOperatorScript(ctx, "db-backup.sh", scriptArgs)
+
+	case "health":
+		fs := flag.NewFlagSet("ops backup health", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		backupDir := fs.String("backup-dir", "", "Directory to scan for backups")
+		backup := fs.String("backup", "", "Exact backup file to check")
+		maxAgeHours := fs.String("max-age-hours", "", "Maximum acceptable backup age in hours")
+		minSizeBytes := fs.String("min-size-bytes", "", "Minimum acceptable backup size in bytes")
+		statusFile := fs.String("status-file", "", "Prometheus textfile metrics output path")
+		allowMissingChecksum := fs.Bool("allow-missing-checksum", false, "Do not fail when FILE.sha256 is absent")
+		dryRun := fs.Bool("dry-run", false, "Print the planned health check without inspecting files")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		scriptArgs := make([]string, 0, 14)
+		scriptArgs = appendStringFlag(scriptArgs, "backup-dir", *backupDir)
+		scriptArgs = appendStringFlag(scriptArgs, "backup", *backup)
+		scriptArgs = appendStringFlag(scriptArgs, "max-age-hours", *maxAgeHours)
+		scriptArgs = appendStringFlag(scriptArgs, "min-size-bytes", *minSizeBytes)
+		scriptArgs = appendStringFlag(scriptArgs, "status-file", *statusFile)
+		scriptArgs = appendBoolFlag(scriptArgs, "allow-missing-checksum", *allowMissingChecksum)
+		scriptArgs = appendBoolFlag(scriptArgs, "dry-run", *dryRun)
+		return a.runOperatorScript(ctx, "db-backup-health.sh", scriptArgs)
+
+	case "offsite-sync":
+		fs := flag.NewFlagSet("ops backup offsite-sync", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		backupDir := fs.String("backup-dir", "", "Directory to scan for backups")
+		var backups stringListFlags
+		fs.Var(&backups, "backup", "Exact backup file to sync; repeatable")
+		s3URI := fs.String("s3-uri", "", "Destination S3 URI")
+		rcloneRemote := fs.String("rclone-remote", "", "Destination rclone remote path")
+		dryRun := fs.Bool("dry-run", false, "Print planned uploads without calling aws or rclone")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		scriptArgs := make([]string, 0, 10+len(backups)*2)
+		scriptArgs = appendStringFlag(scriptArgs, "backup-dir", *backupDir)
+		scriptArgs = appendRepeatableStringFlag(scriptArgs, "backup", backups)
+		scriptArgs = appendStringFlag(scriptArgs, "s3-uri", *s3URI)
+		scriptArgs = appendStringFlag(scriptArgs, "rclone-remote", *rcloneRemote)
+		scriptArgs = appendBoolFlag(scriptArgs, "dry-run", *dryRun)
+		return a.runOperatorScript(ctx, "db-backup-offsite-sync.sh", scriptArgs)
+
+	case "restore-drill":
+		fs := flag.NewFlagSet("ops backup restore-drill", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		backup := fs.String("backup", "", "Backup file to restore")
+		restoreURL := fs.String("restore-url", "", "Target drill database URL")
+		sourceURL := fs.String("source-url", "", "Source database URL used for safety comparison")
+		allowNonEmpty := fs.Bool("allow-non-empty", false, "Allow restoring into a non-empty drill database")
+		skipChecksum := fs.Bool("skip-checksum", false, "Skip checksum verification when FILE.sha256 exists")
+		dryRun := fs.Bool("dry-run", false, "Validate and print the planned restore without pg_restore")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		scriptArgs := make([]string, 0, 12)
+		scriptArgs = appendStringFlag(scriptArgs, "backup", *backup)
+		scriptArgs = appendStringFlag(scriptArgs, "restore-url", *restoreURL)
+		scriptArgs = appendStringFlag(scriptArgs, "source-url", *sourceURL)
+		scriptArgs = appendBoolFlag(scriptArgs, "allow-non-empty", *allowNonEmpty)
+		scriptArgs = appendBoolFlag(scriptArgs, "skip-checksum", *skipChecksum)
+		scriptArgs = appendBoolFlag(scriptArgs, "dry-run", *dryRun)
+		return a.runOperatorScript(ctx, "db-restore-drill.sh", scriptArgs)
+
+	default:
+		return fmt.Errorf("unknown ops backup subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runOperatorScript(ctx context.Context, scriptName string, args []string) error {
+	scriptPath, err := resolveOperatorScriptPath(scriptName)
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.CommandContext(ctx, scriptPath, args...)
+	cmd.Stdout = a.stdout
+	cmd.Stderr = a.stderr
+	cmd.Env = os.Environ()
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s failed: %w", filepath.Base(scriptPath), err)
+	}
+	return nil
+}
+
+func resolveOperatorScriptPath(scriptName string) (string, error) {
+	if scriptDir := strings.TrimSpace(os.Getenv("OA_SCRIPT_DIR")); scriptDir != "" {
+		return validateOperatorScriptPath(filepath.Join(scriptDir, scriptName))
+	}
+
+	if cwd, err := os.Getwd(); err == nil {
+		for {
+			candidate := filepath.Join(cwd, "scripts", scriptName)
+			if path, err := validateOperatorScriptPath(candidate); err == nil {
+				return path, nil
+			}
+			parent := filepath.Dir(cwd)
+			if parent == cwd {
+				break
+			}
+			cwd = parent
+		}
+	}
+
+	return validateOperatorScriptPath(filepath.Join("scripts", scriptName))
+}
+
+func validateOperatorScriptPath(path string) (string, error) {
+	info, err := os.Stat(path) // #nosec G703 -- operator scripts are local files resolved from the repository or explicit OA_SCRIPT_DIR.
+	if err != nil {
+		return "", fmt.Errorf("operator script not found: %s (set OA_SCRIPT_DIR to the scripts directory)", path)
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("operator script path is a directory: %s", path)
+	}
+	return path, nil
+}
+
+func appendStringFlag(args []string, name, value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return args
+	}
+	return append(args, "--"+name, strings.TrimSpace(value))
+}
+
+func appendRepeatableStringFlag(args []string, name string, values []string) []string {
+	for _, value := range values {
+		args = appendStringFlag(args, name, value)
+	}
+	return args
+}
+
+func appendBoolFlag(args []string, name string, value bool) []string {
+	if !value {
+		return args
+	}
+	return append(args, "--"+name)
 }
 
 func (a *cliApp) runDemo(ctx context.Context, args []string) error {

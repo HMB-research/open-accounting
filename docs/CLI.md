@@ -25,6 +25,19 @@ go run ./cmd/oa demo reset --base-url http://localhost:8080 --secret <demo-secre
 
 `demo reset` accepts `--user 1` through `--user 4` for a single seeded demo user. Omit `--user` to reset all demo users.
 
+## Operator backup commands
+
+These local operator commands wrap the backup scripts in `scripts/`. Run them from the repository root, or set `OA_SCRIPT_DIR` to the directory containing the scripts when using a built binary.
+
+```bash
+go run ./cmd/oa ops backup create --backup-dir ./backups --retention-days 30 --dry-run
+go run ./cmd/oa ops backup health --backup-dir ./backups --max-age-hours 26 --status-file /var/lib/node_exporter/textfile_collector/openaccounting_backup.prom
+go run ./cmd/oa ops backup offsite-sync --backup-dir ./backups --s3-uri s3://company-backups/open-accounting/prod --dry-run
+go run ./cmd/oa ops backup restore-drill --backup ./backups/openaccounting_20260528T120000Z.dump --restore-url postgres://user:pass@localhost:5432/openaccounting_restore_drill?sslmode=disable --dry-run
+```
+
+`ops backup create` delegates to `db-backup.sh`, which requires `DATABASE_URL` unless `--database-url` is passed. `ops backup restore-drill` requires a separate disposable restore database and refuses to restore into the source URL when `DATABASE_URL` or `--source-url` matches. `ops backup offsite-sync` requires exactly one destination: `--s3-uri` or `--rclone-remote`.
+
 ## Bootstrap a token
 
 ```bash
@@ -89,6 +102,7 @@ Environment overrides:
 OA_BASE_URL
 OA_API_TOKEN
 OA_TENANT_ID
+OA_SCRIPT_DIR
 ```
 
 `OA_API_TOKEN` is useful for CI or automation where you do not want to persist local config.

@@ -184,6 +184,15 @@ DATABASE_URL="postgres://user:pass@host:5432/openaccounting?sslmode=require" \
   scripts/db-backup.sh --backup-dir /backups --retention-days 30
 ```
 
+The same script can be run through the Go CLI when the repository scripts are available on the host:
+
+```bash
+DATABASE_URL="postgres://user:pass@host:5432/openaccounting?sslmode=require" \
+  oa ops backup create --backup-dir /backups --retention-days 30
+```
+
+Set `OA_SCRIPT_DIR=/opt/open-accounting/scripts` when the `oa` binary is installed separately from the repository checkout.
+
 The script writes `openaccounting_<utc>.dump` plus a `.sha256` checksum file. The production Docker Compose file also runs the same pattern daily and keeps generated backups for `BACKUP_RETENTION_DAYS` days, defaulting to 30.
 Run backup and restore commands with PostgreSQL client tools from the same major version as the server, or use the production Compose backup service image.
 
@@ -205,6 +214,11 @@ Monitor backup freshness and checksum status with the health script. It exits no
 
 ```bash
 scripts/db-backup-health.sh \
+  --backup-dir /backups \
+  --max-age-hours 26 \
+  --status-file /var/lib/node_exporter/textfile_collector/openaccounting_backup.prom
+
+oa ops backup health \
   --backup-dir /backups \
   --max-age-hours 26 \
   --status-file /var/lib/node_exporter/textfile_collector/openaccounting_backup.prom

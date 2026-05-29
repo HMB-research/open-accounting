@@ -60,6 +60,14 @@ func writeTempCSV(t *testing.T, name, content string) string {
 	return path
 }
 
+func writeTempOperatorScript(t *testing.T, dir, name string) {
+	t.Helper()
+
+	path := filepath.Join(dir, name)
+	content := "#!/usr/bin/env bash\nprintf '%s %s\\n' \"$(basename \"$0\")\" \"$*\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o700))
+}
+
 func TestCLIAppRunHelpAndUnknownCommand(t *testing.T) {
 	t.Parallel()
 
@@ -118,6 +126,69 @@ func TestCLIOperationalCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"demo", "reset", "--base-url", server.URL, "--secret", "demo-secret", "--user", "2"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "\"message\": \"reset\"")
+}
+
+func TestCLIOpsBackupCommands(t *testing.T) {
+	scriptDir := t.TempDir()
+	for _, scriptName := range []string{
+		"db-backup.sh",
+		"db-backup-health.sh",
+		"db-backup-offsite-sync.sh",
+		"db-restore-drill.sh",
+	} {
+		writeTempOperatorScript(t, scriptDir, scriptName)
+	}
+	t.Setenv("OA_SCRIPT_DIR", scriptDir)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{
+		"ops", "backup", "create",
+		"--database-url", "postgres://prod",
+		"--backup-dir", "/backups",
+		"--output", "/backups/openaccounting.dump",
+		"--retention-days", "7",
+		"--dry-run",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "db-backup.sh --database-url postgres://prod --backup-dir /backups --output /backups/openaccounting.dump --retention-days 7 --dry-run")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"ops", "backup", "health",
+		"--backup", "/backups/openaccounting.dump",
+		"--max-age-hours", "30",
+		"--min-size-bytes", "1024",
+		"--status-file", "/tmp/openaccounting_backup.prom",
+		"--allow-missing-checksum",
+		"--dry-run",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "db-backup-health.sh --backup /backups/openaccounting.dump --max-age-hours 30 --min-size-bytes 1024 --status-file /tmp/openaccounting_backup.prom --allow-missing-checksum --dry-run")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"ops", "backup", "offsite-sync",
+		"--backup", "/backups/a.dump",
+		"--backup", "/backups/b.dump",
+		"--s3-uri", "s3://bucket/open-accounting",
+		"--dry-run",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "db-backup-offsite-sync.sh --backup /backups/a.dump --backup /backups/b.dump --s3-uri s3://bucket/open-accounting --dry-run")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"ops", "backup", "restore-drill",
+		"--backup", "/backups/openaccounting.dump",
+		"--restore-url", "postgres://drill",
+		"--source-url", "postgres://prod",
+		"--allow-non-empty",
+		"--skip-checksum",
+		"--dry-run",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "db-restore-drill.sh --backup /backups/openaccounting.dump --restore-url postgres://drill --source-url postgres://prod --allow-non-empty --skip-checksum --dry-run")
 }
 
 func TestCLIAuthInitStatusAndLogoutFlow(t *testing.T) {
@@ -6129,7 +6200,15 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 
 	app, _, _ := newTestCLIApp()
 
-	err := app.runAuth(context.Background(), nil)
+	err := app.runOps(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ops subcommand required")
+
+	err = app.runOpsBackup(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ops backup subcommand required")
+
+	err = app.runAuth(context.Background(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "auth subcommand required")
 
