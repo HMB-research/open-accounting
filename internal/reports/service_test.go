@@ -979,3 +979,135 @@ func TestGetBalanceConfirmation(t *testing.T) {
 		assert.Empty(t, result.Invoices)
 	})
 }
+
+func TestGetContactStatement(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("returns statement with opening activity and closing balance", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+
+		mockRepo.Contact = ContactInfo{
+			ID:    "contact-1",
+			Name:  "Customer A",
+			Code:  "CUST-001",
+			Email: "customer@example.com",
+		}
+		mockRepo.ContactStatementOpening = decimal.NewFromInt(100)
+		mockRepo.ContactStatementEntries = []ContactStatementEntry{
+			{
+				Date:            "2026-01-10",
+				DocumentType:    "INVOICE",
+				DocumentID:      "inv-1",
+				DocumentNumber:  "INV-001",
+				DueDate:         "2026-01-24",
+				Currency:        "EUR",
+				DocumentAmount:  decimal.NewFromInt(250),
+				StatementAmount: decimal.NewFromInt(250),
+			},
+			{
+				Date:            "2026-01-20",
+				DocumentType:    "PAYMENT",
+				DocumentID:      "pay-1",
+				DocumentNumber:  "PMT-001",
+				Currency:        "EUR",
+				DocumentAmount:  decimal.NewFromInt(40),
+				StatementAmount: decimal.NewFromInt(-40),
+			},
+		}
+
+		result, err := svc.GetContactStatement(ctx, "tenant-1", "schema_tenant1", &ContactStatementRequest{
+			ContactID: "contact-1",
+			Type:      "RECEIVABLE",
+			StartDate: "2026-01-01",
+			EndDate:   "2026-01-31",
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, "contact-1", result.ContactID)
+		assert.Equal(t, BalanceTypeReceivable, result.Type)
+		assert.True(t, result.OpeningBalance.Equal(decimal.NewFromInt(100)))
+		assert.True(t, result.TotalInvoiced.Equal(decimal.NewFromInt(250)))
+		assert.True(t, result.TotalPaid.Equal(decimal.NewFromInt(40)))
+		assert.True(t, result.ClosingBalance.Equal(decimal.NewFromInt(310)))
+		require.Len(t, result.Entries, 2)
+		assert.True(t, result.Entries[0].IncreaseAmount.Equal(decimal.NewFromInt(250)))
+		assert.True(t, result.Entries[0].Balance.Equal(decimal.NewFromInt(350)))
+		assert.True(t, result.Entries[1].DecreaseAmount.Equal(decimal.NewFromInt(40)))
+		assert.True(t, result.Entries[1].Balance.Equal(decimal.NewFromInt(310)))
+	})
+
+	t.Run("returns payable statement", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+		mockRepo.Contact = ContactInfo{ID: "supplier-1", Name: "Supplier X"}
+		mockRepo.ContactStatementEntries = []ContactStatementEntry{{
+			Date:            "2026-01-10",
+			DocumentType:    "INVOICE",
+			DocumentID:      "pinv-1",
+			DocumentNumber:  "PINV-001",
+			Currency:        "EUR",
+			DocumentAmount:  decimal.NewFromInt(500),
+			StatementAmount: decimal.NewFromInt(500),
+		}}
+
+		result, err := svc.GetContactStatement(ctx, "tenant-1", "schema_tenant1", &ContactStatementRequest{
+			ContactID: "supplier-1",
+			Type:      "PAYABLE",
+			StartDate: "2026-01-01",
+			EndDate:   "2026-01-31",
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, BalanceTypePayable, result.Type)
+		assert.True(t, result.ClosingBalance.Equal(decimal.NewFromInt(500)))
+	})
+
+	t.Run("validates required inputs", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+
+		result, err := svc.GetContactStatement(ctx, "tenant-1", "schema_tenant1", &ContactStatementRequest{
+			Type:      "RECEIVABLE",
+			StartDate: "2026-01-01",
+			EndDate:   "2026-01-31",
+		})
+		assert.Nil(t, result)
+		assert.ErrorContains(t, err, "contact_id is required")
+
+		result, err = svc.GetContactStatement(ctx, "tenant-1", "schema_tenant1", &ContactStatementRequest{
+			ContactID: "contact-1",
+			Type:      "OTHER",
+			StartDate: "2026-01-01",
+			EndDate:   "2026-01-31",
+		})
+		assert.Nil(t, result)
+		assert.ErrorContains(t, err, "type must be RECEIVABLE or PAYABLE")
+
+		result, err = svc.GetContactStatement(ctx, "tenant-1", "schema_tenant1", &ContactStatementRequest{
+			ContactID: "contact-1",
+			Type:      "RECEIVABLE",
+			StartDate: "2026-02-01",
+			EndDate:   "2026-01-31",
+		})
+		assert.Nil(t, result)
+		assert.ErrorContains(t, err, "end_date must be on or after start_date")
+	})
+
+	t.Run("surfaces repository errors", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+		mockRepo.Contact = ContactInfo{ID: "contact-1", Name: "Customer A"}
+		mockRepo.GetContactStatementEntriesErr = assert.AnError
+
+		result, err := svc.GetContactStatement(ctx, "tenant-1", "schema_tenant1", &ContactStatementRequest{
+			ContactID: "contact-1",
+			Type:      "RECEIVABLE",
+			StartDate: "2026-01-01",
+			EndDate:   "2026-01-31",
+		})
+
+		assert.Nil(t, result)
+		assert.ErrorContains(t, err, "get contact statement entries")
+	})
+}

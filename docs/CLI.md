@@ -758,9 +758,28 @@ go run ./cmd/oa reports balance-confirmation \
   --as-of 2026-03-31 \
   --pdf \
   --output ./balance-confirmation.pdf
+go run ./cmd/oa reports contact-statement \
+  --contact-id <contact-id> \
+  --type RECEIVABLE \
+  --start 2026-01-01 \
+  --end 2026-03-31
+go run ./cmd/oa reports contact-statement \
+  --contact-id <contact-id> \
+  --type PAYABLE \
+  --start 2026-01-01 \
+  --end 2026-03-31 \
+  --csv \
+  --output ./vendor-statement.csv
+go run ./cmd/oa reports contact-statement \
+  --contact-id <contact-id> \
+  --type RECEIVABLE \
+  --start 2026-01-01 \
+  --end 2026-03-31 \
+  --pdf \
+  --output ./customer-statement.pdf
 ```
 
-Every report command supports `--json` for automation. `reports cash-flow --method` accepts `direct` or `indirect`; indirect operating cash flow starts with net income and adjusts for depreciation/amortization plus receivables, inventory, and payables changes. Cash-flow account mapping can be saved with `reports cash-flow-mapping update` or overridden per request with comma-separated `--operating-accounts`, `--investing-accounts`, and `--financing-accounts` for custom charts. Request-level overrides take precedence over saved mappings. Core statement, account-balance, aging, and balance-confirmation commands also support backend CSV export with `--csv`, XLSX export with `--xlsx`, and PDF export with `--pdf`; omit `--output` to stream the export bytes to stdout.
+Every report command supports `--json` for automation. `reports cash-flow --method` accepts `direct` or `indirect`; indirect operating cash flow starts with net income and adjusts for depreciation/amortization plus receivables, inventory, and payables changes. Cash-flow account mapping can be saved with `reports cash-flow-mapping update` or overridden per request with comma-separated `--operating-accounts`, `--investing-accounts`, and `--financing-accounts` for custom charts. Request-level overrides take precedence over saved mappings. Core statement, account-balance, aging, balance-confirmation, and contact-statement commands also support backend CSV export with `--csv`, XLSX export with `--xlsx`, and PDF export with `--pdf`; omit `--output` to stream the export bytes to stdout. Contact statements show one customer or supplier's opening balance, period invoices, period payments, and closing balance.
 
 ## Documents
 

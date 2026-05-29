@@ -29,6 +29,12 @@ type Repository interface {
 	// GetContact retrieves contact details
 	GetContact(ctx context.Context, schemaName, tenantID, contactID string) (ContactInfo, error)
 
+	// GetContactStatementOpeningBalance retrieves the opening balance before a statement period
+	GetContactStatementOpeningBalance(ctx context.Context, schemaName, tenantID, contactID, invoiceType, paymentType string, startDate time.Time) (decimal.Decimal, error)
+
+	// GetContactStatementEntries retrieves invoice and payment activity for a statement period
+	GetContactStatementEntries(ctx context.Context, schemaName, tenantID, contactID, invoiceType, paymentType string, startDate, endDate time.Time) ([]ContactStatementEntry, error)
+
 	// GetCashFlowMappingOverrides retrieves tenant-level cash-flow account mappings.
 	GetCashFlowMappingOverrides(ctx context.Context, tenantID string) (CashFlowMappingOverrides, error)
 
@@ -267,6 +273,132 @@ func (r *PostgresRepository) GetContact(ctx context.Context, schemaName, tenantI
 	return c, nil
 }
 
+// GetContactStatementOpeningBalance retrieves the opening balance before a statement period.
+func (r *PostgresRepository) GetContactStatementOpeningBalance(ctx context.Context, schemaName, tenantID, contactID, invoiceType, paymentType string, startDate time.Time) (decimal.Decimal, error) {
+	query := fmt.Sprintf(`
+		SELECT COALESCE(SUM(statement_amount), 0)
+		FROM (
+			SELECT i.base_total AS statement_amount
+			FROM %s.invoices i
+			WHERE i.tenant_id = $1
+				AND i.contact_id = $2
+				AND i.invoice_type = $3
+				AND i.status <> 'VOIDED'
+				AND i.issue_date < $5
+			UNION ALL
+			SELECT -p.base_amount AS statement_amount
+			FROM %s.payments p
+			WHERE p.tenant_id = $1
+				AND p.contact_id = $2
+				AND p.payment_type = $4
+				AND p.payment_date < $5
+		) statement_activity
+	`, schemaName, schemaName)
+
+	var balance decimal.Decimal
+	if err := r.db.QueryRow(ctx, query, tenantID, contactID, invoiceType, paymentType, startDate).Scan(&balance); err != nil {
+		return decimal.Zero, fmt.Errorf("query contact statement opening balance: %w", err)
+	}
+	return balance, nil
+}
+
+// GetContactStatementEntries retrieves invoice and payment activity for a statement period.
+func (r *PostgresRepository) GetContactStatementEntries(ctx context.Context, schemaName, tenantID, contactID, invoiceType, paymentType string, startDate, endDate time.Time) ([]ContactStatementEntry, error) {
+	query := fmt.Sprintf(`
+		SELECT
+			document_type,
+			document_id,
+			document_number,
+			document_date,
+			due_date,
+			description,
+			reference,
+			currency,
+			document_amount,
+			statement_amount
+		FROM (
+			SELECT
+				'INVOICE' AS document_type,
+				i.id AS document_id,
+				i.invoice_number AS document_number,
+				i.issue_date AS document_date,
+				i.due_date AS due_date,
+				COALESCE(NULLIF(i.reference, ''), NULLIF(i.notes, ''), i.invoice_number) AS description,
+				COALESCE(i.reference, '') AS reference,
+				i.currency AS currency,
+				i.total AS document_amount,
+				i.base_total AS statement_amount,
+				1 AS sort_order
+			FROM %s.invoices i
+			WHERE i.tenant_id = $1
+				AND i.contact_id = $2
+				AND i.invoice_type = $3
+				AND i.status <> 'VOIDED'
+				AND i.issue_date >= $5
+				AND i.issue_date <= $6
+			UNION ALL
+			SELECT
+				'PAYMENT' AS document_type,
+				p.id AS document_id,
+				p.payment_number AS document_number,
+				p.payment_date AS document_date,
+				NULL::date AS due_date,
+				COALESCE(NULLIF(p.reference, ''), NULLIF(p.notes, ''), p.payment_number) AS description,
+				COALESCE(p.reference, '') AS reference,
+				p.currency AS currency,
+				p.amount AS document_amount,
+				-p.base_amount AS statement_amount,
+				2 AS sort_order
+			FROM %s.payments p
+			WHERE p.tenant_id = $1
+				AND p.contact_id = $2
+				AND p.payment_type = $4
+				AND p.payment_date >= $5
+				AND p.payment_date <= $6
+		) statement_activity
+		ORDER BY document_date ASC, sort_order ASC, document_number ASC, document_id ASC
+	`, schemaName, schemaName)
+
+	rows, err := r.db.Query(ctx, query, tenantID, contactID, invoiceType, paymentType, startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("query contact statement entries: %w", err)
+	}
+	defer rows.Close()
+
+	entries := []ContactStatementEntry{}
+	for rows.Next() {
+		var (
+			entry        ContactStatementEntry
+			documentDate time.Time
+			dueDate      *time.Time
+		)
+		if err := rows.Scan(
+			&entry.DocumentType,
+			&entry.DocumentID,
+			&entry.DocumentNumber,
+			&documentDate,
+			&dueDate,
+			&entry.Description,
+			&entry.Reference,
+			&entry.Currency,
+			&entry.DocumentAmount,
+			&entry.StatementAmount,
+		); err != nil {
+			return nil, fmt.Errorf("scan contact statement entry: %w", err)
+		}
+		entry.Date = documentDate.Format("2006-01-02")
+		if dueDate != nil {
+			entry.DueDate = dueDate.Format("2006-01-02")
+		}
+		entries = append(entries, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate contact statement entries: %w", err)
+	}
+
+	return entries, nil
+}
+
 // GetCashFlowMappingOverrides retrieves tenant-level cash-flow account mappings from tenant settings.
 func (r *PostgresRepository) GetCashFlowMappingOverrides(ctx context.Context, tenantID string) (CashFlowMappingOverrides, error) {
 	var raw []byte
@@ -320,28 +452,33 @@ func (r *PostgresRepository) UpdateCashFlowMappingOverrides(ctx context.Context,
 
 // MockRepository for testing
 type MockRepository struct {
-	JournalEntries           []JournalEntryWithLines
-	CashBalance              decimal.Decimal
-	CashFlowMapping          CashFlowMappingOverrides
-	ContactBalances          []ContactBalance
-	ContactInvoices          []BalanceInvoice
-	Contact                  ContactInfo
-	GetEntriesErr            error
-	GetCashBalanceErr        error
-	GetCashFlowMappingErr    error
-	UpdateCashFlowMappingErr error
-	GetContactBalancesErr    error
-	GetContactInvoicesErr    error
-	GetContactErr            error
+	JournalEntries                []JournalEntryWithLines
+	CashBalance                   decimal.Decimal
+	CashFlowMapping               CashFlowMappingOverrides
+	ContactBalances               []ContactBalance
+	ContactInvoices               []BalanceInvoice
+	Contact                       ContactInfo
+	ContactStatementOpening       decimal.Decimal
+	ContactStatementEntries       []ContactStatementEntry
+	GetEntriesErr                 error
+	GetCashBalanceErr             error
+	GetCashFlowMappingErr         error
+	UpdateCashFlowMappingErr      error
+	GetContactBalancesErr         error
+	GetContactInvoicesErr         error
+	GetContactErr                 error
+	GetContactStatementOpeningErr error
+	GetContactStatementEntriesErr error
 }
 
 // NewMockRepository creates a new mock repository
 func NewMockRepository() *MockRepository {
 	return &MockRepository{
-		JournalEntries:  make([]JournalEntryWithLines, 0),
-		CashBalance:     decimal.Zero,
-		ContactBalances: make([]ContactBalance, 0),
-		ContactInvoices: make([]BalanceInvoice, 0),
+		JournalEntries:          make([]JournalEntryWithLines, 0),
+		CashBalance:             decimal.Zero,
+		ContactBalances:         make([]ContactBalance, 0),
+		ContactInvoices:         make([]BalanceInvoice, 0),
+		ContactStatementEntries: make([]ContactStatementEntry, 0),
 	}
 }
 
@@ -409,4 +546,20 @@ func (m *MockRepository) GetContact(ctx context.Context, schemaName, tenantID, c
 		return ContactInfo{}, m.GetContactErr
 	}
 	return m.Contact, nil
+}
+
+// GetContactStatementOpeningBalance returns mock contact statement opening balance.
+func (m *MockRepository) GetContactStatementOpeningBalance(ctx context.Context, schemaName, tenantID, contactID, invoiceType, paymentType string, startDate time.Time) (decimal.Decimal, error) {
+	if m.GetContactStatementOpeningErr != nil {
+		return decimal.Zero, m.GetContactStatementOpeningErr
+	}
+	return m.ContactStatementOpening, nil
+}
+
+// GetContactStatementEntries returns mock contact statement entries.
+func (m *MockRepository) GetContactStatementEntries(ctx context.Context, schemaName, tenantID, contactID, invoiceType, paymentType string, startDate, endDate time.Time) ([]ContactStatementEntry, error) {
+	if m.GetContactStatementEntriesErr != nil {
+		return nil, m.GetContactStatementEntriesErr
+	}
+	return m.ContactStatementEntries, nil
 }

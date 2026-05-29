@@ -564,6 +564,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Put("/reports/cash-flow/mapping", h.UpdateCashFlowMapping)
 				r.Get("/reports/balance-confirmations", h.GetBalanceConfirmationSummary)
 				r.Get("/reports/balance-confirmations/{contactID}", h.GetBalanceConfirmation)
+				r.Get("/reports/contact-statements/{contactID}", h.GetContactStatement)
 
 				// Cost Centers
 				r.Get("/cost-centers", h.ListCostCenters)

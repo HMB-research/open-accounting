@@ -400,6 +400,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  reports aging             Show receivables or payables aging")
 	_, _ = fmt.Fprintln(a.stdout, "  reports balance-confirmations  Show balance confirmations")
 	_, _ = fmt.Fprintln(a.stdout, "  reports balance-confirmation  Show one balance confirmation")
+	_, _ = fmt.Fprintln(a.stdout, "  reports contact-statement  Show one customer or supplier period statement")
 	_, _ = fmt.Fprintln(a.stdout, "  documents list            List documents for a record")
 	_, _ = fmt.Fprintln(a.stdout, "  documents review-summary  Summarize document review state")
 	_, _ = fmt.Fprintln(a.stdout, "  documents review-queue    List documents waiting for reviewer action")
@@ -8890,6 +8891,77 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, report)
 		}
 		printBalanceConfirmation(a.stdout, report)
+		return nil
+
+	case "contact-statement":
+		fs := flag.NewFlagSet("reports contact-statement", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		contactID := fs.String("contact-id", "", "Contact id")
+		balanceType := fs.String("type", "", "Statement type: RECEIVABLE or PAYABLE")
+		startDate := fs.String("start", "", "Start date in YYYY-MM-DD")
+		endDate := fs.String("end", "", "End date in YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		asCSV := fs.Bool("csv", false, "Output CSV")
+		asXLSX := fs.Bool("xlsx", false, "Output XLSX")
+		asPDF := fs.Bool("pdf", false, "Output PDF")
+		outputPath := fs.String("output", "", "Optional CSV/XLSX/PDF output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *asPDF, *outputPath); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*contactID) == "" {
+			return errors.New("contact-id is required")
+		}
+		normalizedType := strings.ToUpper(strings.TrimSpace(*balanceType))
+		if normalizedType != "RECEIVABLE" && normalizedType != "PAYABLE" {
+			return errors.New("type must be RECEIVABLE or PAYABLE")
+		}
+		startDateValue, err := parseRequiredDate("start", *startDate)
+		if err != nil {
+			return err
+		}
+		endDateValue, err := parseRequiredDate("end", *endDate)
+		if err != nil {
+			return err
+		}
+		if endDateValue.Before(startDateValue) {
+			return errors.New("end must be on or after start")
+		}
+		start := startDateValue.Format("2006-01-02")
+		end := endDateValue.Format("2006-01-02")
+
+		if *asCSV {
+			content, err := client.exportContactStatement(ctx, cfg.TenantID, strings.TrimSpace(*contactID), normalizedType, start, end, "csv")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "contact statement CSV")
+		}
+		if *asXLSX {
+			content, err := client.exportContactStatement(ctx, cfg.TenantID, strings.TrimSpace(*contactID), normalizedType, start, end, "xlsx")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "contact statement XLSX")
+		}
+		if *asPDF {
+			content, err := client.exportContactStatement(ctx, cfg.TenantID, strings.TrimSpace(*contactID), normalizedType, start, end, "pdf")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "contact statement PDF")
+		}
+
+		report, err := client.getContactStatement(ctx, cfg.TenantID, strings.TrimSpace(*contactID), normalizedType, start, end)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, report)
+		}
+		printContactStatement(a.stdout, report)
 		return nil
 
 	default:

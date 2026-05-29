@@ -2447,6 +2447,30 @@ func (c *apiClient) exportBalanceConfirmation(ctx context.Context, tenantID, con
 	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "balance-confirmations", contactID), values), nil, c.apiToken)
 }
 
+func (c *apiClient) getContactStatement(ctx context.Context, tenantID, contactID, balanceType, startDate, endDate string) (*reports.ContactStatement, error) {
+	values := contactStatementQuery(balanceType, startDate, endDate)
+
+	var resp reports.ContactStatement
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "contact-statements", contactID), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) exportContactStatement(ctx context.Context, tenantID, contactID, balanceType, startDate, endDate, format string) ([]byte, error) {
+	values := contactStatementQuery(balanceType, startDate, endDate)
+	values.Set("format", strings.TrimSpace(format))
+	return c.requestRaw(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "contact-statements", contactID), values), nil, c.apiToken)
+}
+
+func contactStatementQuery(balanceType, startDate, endDate string) url.Values {
+	values := url.Values{}
+	values.Set("type", strings.TrimSpace(balanceType))
+	values.Set("start_date", strings.TrimSpace(startDate))
+	values.Set("end_date", strings.TrimSpace(endDate))
+	return values
+}
+
 func (c *apiClient) getAgingReport(ctx context.Context, tenantID, reportType string) (*analytics.AgingReport, error) {
 	var resp analytics.AgingReport
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "reports", "aging", reportType), nil, c.apiToken, &resp); err != nil {
