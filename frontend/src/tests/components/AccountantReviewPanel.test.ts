@@ -11,6 +11,7 @@ const { apiMock } = vi.hoisted(() => ({
 		listBankTransactions: vi.fn(),
 		listDocumentReviewSummaries: vi.fn(),
 		reviewBankTransaction: vi.fn(),
+		sendPaymentReminder: vi.fn(),
 		listPeriodCloseEvents: vi.fn(),
 		listJournalEntries: vi.fn()
 	}
@@ -69,6 +70,7 @@ describe('AccountantReviewPanel', () => {
 					invoice_number: 'INV-001',
 					contact_id: 'contact-1',
 					contact_name: 'Northwind',
+					contact_email: 'billing@northwind.example',
 					issue_date: '2026-01-01',
 					due_date: '2026-01-15',
 					total: '1200',
@@ -78,7 +80,8 @@ describe('AccountantReviewPanel', () => {
 					days_overdue: 27,
 					reminder_count: 1
 				}
-			]
+			],
+			generated_at: '2026-02-11T00:00:00Z'
 		});
 		apiMock.listBankAccounts.mockResolvedValue([
 			{
@@ -170,6 +173,13 @@ describe('AccountantReviewPanel', () => {
 			reviewed_at: '2026-02-09T09:00:00Z',
 			created_at: '2026-02-08T00:00:00Z'
 		});
+		apiMock.sendPaymentReminder.mockResolvedValue({
+			invoice_id: 'inv-1',
+			invoice_number: 'INV-001',
+			success: true,
+			message: 'Sent',
+			reminder_id: 'rem-1'
+		});
 	});
 
 	it('loads and renders the accountant review queues', async () => {
@@ -203,7 +213,8 @@ describe('AccountantReviewPanel', () => {
 			invoice_count: 0,
 			contact_count: 0,
 			average_days_overdue: 0,
-			invoices: []
+			invoices: [],
+			generated_at: '2026-02-11T00:00:00Z'
 		});
 		apiMock.listBankTransactions.mockResolvedValue([]);
 		apiMock.listDocumentReviewSummaries.mockResolvedValue([]);
@@ -247,5 +258,25 @@ describe('AccountantReviewPanel', () => {
 				review_note: 'Request signed receipt'
 			});
 		});
+	});
+
+	it('sends overdue invoice reminders from the review queue', async () => {
+		render(AccountantReviewPanel, {
+			tenant: createTenant()
+		});
+
+		await waitFor(() => {
+			expect(screen.getByRole('button', { name: 'Send Reminder' })).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Send Reminder' }));
+
+		await waitFor(() => {
+			expect(apiMock.sendPaymentReminder).toHaveBeenCalledWith('tenant-1', 'inv-1', undefined);
+		});
+		await waitFor(() => {
+			expect(screen.getByText('Reminder sent successfully for invoice INV-001')).toBeInTheDocument();
+		});
+		expect(apiMock.getOverdueInvoices).toHaveBeenCalledTimes(2);
 	});
 });
