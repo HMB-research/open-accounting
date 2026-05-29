@@ -1270,6 +1270,128 @@ func TestCLIInvoiceLifecycleCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Voided invoice inv-1")
 }
 
+func TestCLIPurchaseInvoiceCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	billPayload := func() map[string]any {
+		return map[string]any{
+			"id":             "bill-1",
+			"tenant_id":      "tenant-1",
+			"invoice_number": "BILL-00001",
+			"invoice_type":   "PURCHASE",
+			"contact_id":     "supplier-1",
+			"contact": map[string]any{
+				"id":           "supplier-1",
+				"name":         "Supply Co",
+				"contact_type": "SUPPLIER",
+				"is_active":    true,
+			},
+			"issue_date":      "2026-03-20T00:00:00Z",
+			"due_date":        "2026-04-03T00:00:00Z",
+			"currency":        "USD",
+			"exchange_rate":   "0.93",
+			"subtotal":        "125.00",
+			"vat_amount":      "25.00",
+			"total":           "150.00",
+			"base_subtotal":   "116.25",
+			"base_vat_amount": "23.25",
+			"base_total":      "139.50",
+			"amount_paid":     "0.00",
+			"status":          "DRAFT",
+			"reference":       "SUP-2026-03",
+			"notes":           "Supplier bill",
+			"created_at":      "2026-03-20T12:00:00Z",
+			"created_by":      "user-1",
+			"updated_at":      "2026-03-20T12:00:00Z",
+			"lines": []map[string]any{{
+				"id":               "line-1",
+				"tenant_id":        "tenant-1",
+				"invoice_id":       "bill-1",
+				"line_number":      1,
+				"description":      "Materials",
+				"quantity":         "5.00",
+				"unit":             "unit",
+				"unit_price":       "25.00",
+				"discount_percent": "0.00",
+				"vat_rate":         "20.00",
+				"line_subtotal":    "125.00",
+				"line_vat":         "25.00",
+				"line_total":       "150.00",
+				"account_id":       "expense-1",
+			}},
+		}
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invoices":
+			require.Equal(t, "PURCHASE", r.URL.Query().Get("type"))
+			require.Equal(t, "DRAFT", r.URL.Query().Get("status"))
+			require.Equal(t, "supplier-1", r.URL.Query().Get("contact_id"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{billPayload()})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices":
+			var req invoicing.CreateInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, invoicing.InvoiceTypePurchase, req.InvoiceType)
+			assert.Equal(t, "supplier-1", req.ContactID)
+			assert.Equal(t, "2026-03-20", req.IssueDate.Format("2006-01-02"))
+			assert.Equal(t, "2026-04-03", req.DueDate.Format("2006-01-02"))
+			assert.Equal(t, "USD", req.Currency)
+			assert.True(t, req.ExchangeRate.Equal(decimal.RequireFromString("0.93")))
+			require.Len(t, req.Lines, 1)
+			assert.Equal(t, "Materials", req.Lines[0].Description)
+			require.NotNil(t, req.Lines[0].AccountID)
+			assert.Equal(t, "expense-1", *req.Lines[0].AccountID)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(billPayload())
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{
+		"invoices", "list",
+		"--type", "purchase",
+		"--status", "draft",
+		"--contact-id", "supplier-1",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"invoice_number": "BILL-00001"`)
+	assert.Contains(t, stdout.String(), `"invoice_type": "PURCHASE"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"invoices", "create",
+		"--type", "purchase",
+		"--contact-id", "supplier-1",
+		"--issue-date", "2026-03-20",
+		"--due-date", "2026-04-03",
+		"--currency", "usd",
+		"--exchange-rate", "0.93",
+		"--reference", "SUP-2026-03",
+		"--notes", "Supplier bill",
+		"--line", "description=Materials,quantity=5,unit=unit,unit_price=25.00,vat_rate=20.00,account_id=expense-1",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created invoice BILL-00001 (bill-1)")
+}
+
 func TestCLIQuoteCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{

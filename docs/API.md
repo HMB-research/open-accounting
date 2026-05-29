@@ -1277,6 +1277,8 @@ Authorization: Bearer <token>
 
 ### Create Invoice
 
+Use `invoice_type: "SALES"` for customer sales invoices, `invoice_type: "PURCHASE"` for supplier bills, and `invoice_type: "CREDIT_NOTE"` for credit notes. Purchase invoice lines can carry `account_id` for the expense or asset account used by downstream accounting.
+
 ```http
 POST /tenants/{tenantId}/invoices
 Authorization: Bearer <token>
