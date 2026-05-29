@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/shopspring/decimal"
 
 	"github.com/HMB-research/open-accounting/internal/tax"
 )
@@ -101,6 +103,60 @@ func (h *Handlers) HandleListKMD(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, declarations)
+}
+
+// HandleGenerateKMDINF generates a KMD INF appendix report for a period.
+// @Summary Generate KMD INF appendix report
+// @Description Generate KMD INF A/B invoice appendix rows for an Estonian VAT period
+// @Tags Tax
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param year path string true "Year"
+// @Param month path string true "Month"
+// @Param threshold query string false "Partner-period threshold excluding VAT"
+// @Success 200 {object} tax.KMDINFReport
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/tax/kmd/{year}/{month}/inf [get]
+func (h *Handlers) HandleGenerateKMDINF(w http.ResponseWriter, r *http.Request) {
+	tenantCtx := h.tenantContextFromRequest(r)
+
+	year, err := strconv.Atoi(chi.URLParam(r, "year"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid year")
+		return
+	}
+	month, err := strconv.Atoi(chi.URLParam(r, "month"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid month")
+		return
+	}
+
+	threshold := tax.KMDINFDefaultThreshold
+	if raw := strings.TrimSpace(r.URL.Query().Get("threshold")); raw != "" {
+		threshold, err = decimal.NewFromString(raw)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "Invalid threshold")
+			return
+		}
+	}
+	if threshold.LessThanOrEqual(decimal.Zero) {
+		respondError(w, http.StatusBadRequest, "threshold must be positive")
+		return
+	}
+
+	report, err := h.taxService.GenerateKMDINF(r.Context(), tenantCtx.tenantID, tenantCtx.schemaName, &tax.KMDINFReportRequest{
+		Year:      year,
+		Month:     month,
+		Threshold: threshold,
+	})
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, report)
 }
 
 // HandleExportKMD exports a KMD declaration to XML

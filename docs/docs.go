@@ -12762,6 +12762,82 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/tax/kmd/{year}/{month}/inf": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Generate KMD INF A/B invoice appendix rows for an Estonian VAT period",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tax"
+                ],
+                "summary": "Generate KMD INF appendix report",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Year",
+                        "name": "year",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Month",
+                        "name": "month",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Partner-period threshold excluding VAT",
+                        "name": "threshold",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_tax.KMDINFReport"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/tax/kmd/{year}/{month}/xml": {
             "get": {
                 "security": [
@@ -21147,6 +21223,116 @@ const docTemplate = `{
                 },
                 "year": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_tax.KMDINFPart": {
+            "type": "string",
+            "enum": [
+                "A",
+                "B"
+            ],
+            "x-enum-varnames": [
+                "KMDINFPartSales",
+                "KMDINFPartPurchases"
+            ]
+        },
+        "github_com_HMB-research_open-accounting_internal_tax.KMDINFPartSummary": {
+            "type": "object",
+            "properties": {
+                "invoice_count": {
+                    "type": "integer"
+                },
+                "part": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_tax.KMDINFPart"
+                },
+                "partner_count": {
+                    "type": "integer"
+                },
+                "taxable_amount": {
+                    "type": "number"
+                },
+                "total_amount": {
+                    "type": "number"
+                },
+                "vat_amount": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_tax.KMDINFReport": {
+            "type": "object",
+            "properties": {
+                "generated_at": {
+                    "type": "string"
+                },
+                "month": {
+                    "type": "integer"
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_tax.KMDINFReportRow"
+                    }
+                },
+                "summary": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_tax.KMDINFPartSummary"
+                    }
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "threshold": {
+                    "type": "number"
+                },
+                "year": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_tax.KMDINFReportRow": {
+            "type": "object",
+            "properties": {
+                "contact_id": {
+                    "type": "string"
+                },
+                "contact_name": {
+                    "type": "string"
+                },
+                "contact_reg_code": {
+                    "type": "string"
+                },
+                "contact_vat_number": {
+                    "type": "string"
+                },
+                "invoice_date": {
+                    "type": "string"
+                },
+                "invoice_id": {
+                    "type": "string"
+                },
+                "invoice_number": {
+                    "type": "string"
+                },
+                "invoice_type": {
+                    "type": "string"
+                },
+                "part": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_tax.KMDINFPart"
+                },
+                "partner_period_taxable_amount": {
+                    "type": "number"
+                },
+                "taxable_amount": {
+                    "type": "number"
+                },
+                "total_amount": {
+                    "type": "number"
+                },
+                "vat_amount": {
+                    "type": "number"
                 }
             }
         },

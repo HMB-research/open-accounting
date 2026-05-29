@@ -26,6 +26,9 @@ type Repository interface {
 	// QueryVATData queries VAT data from journal entries for a period
 	QueryVATData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]VATAggregateRow, error)
 
+	// QueryKMDINFData queries invoice rows eligible for the KMD INF appendix.
+	QueryKMDINFData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time, threshold decimal.Decimal) ([]KMDINFReportRow, error)
+
 	// SaveDeclaration saves a KMD declaration (upsert)
 	SaveDeclaration(ctx context.Context, schemaName string, decl *KMDDeclaration) error
 
@@ -113,6 +116,84 @@ func (r *PostgresRepository) QueryVATData(ctx context.Context, schemaName, tenan
 			return nil, fmt.Errorf("scan row: %w", err)
 		}
 		result = append(result, row)
+	}
+
+	return result, nil
+}
+
+// QueryKMDINFData queries invoice rows eligible for the KMD INF appendix.
+func (r *PostgresRepository) QueryKMDINFData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time, threshold decimal.Decimal) ([]KMDINFReportRow, error) {
+	rows, err := r.db.Query(ctx, fmt.Sprintf(`
+		WITH invoice_rows AS (
+			SELECT
+				CASE
+					WHEN i.invoice_type = 'SALES' THEN 'A'
+					WHEN i.invoice_type = 'PURCHASE' THEN 'B'
+				END AS part,
+				i.contact_id,
+				COALESCE(c.name, '') AS contact_name,
+				COALESCE(c.reg_code, '') AS contact_reg_code,
+				COALESCE(c.vat_number, '') AS contact_vat_number,
+				i.id AS invoice_id,
+				i.invoice_number,
+				i.issue_date AS invoice_date,
+				i.invoice_type,
+				i.base_subtotal AS taxable_amount,
+				i.base_vat_amount AS vat_amount,
+				i.base_total AS total_amount
+			FROM %s.invoices i
+			JOIN %s.contacts c ON c.id = i.contact_id AND c.tenant_id = i.tenant_id
+			WHERE i.tenant_id = $1
+				AND i.issue_date >= $2
+				AND i.issue_date < $3
+				AND i.status NOT IN ('DRAFT', 'VOIDED')
+				AND i.invoice_type IN ('SALES', 'PURCHASE')
+				AND COALESCE(i.base_vat_amount, 0) <> 0
+				AND COALESCE(NULLIF(c.country_code, ''), 'EE') = 'EE'
+		),
+		qualified_rows AS (
+			SELECT
+				invoice_rows.*,
+				SUM(taxable_amount) OVER (PARTITION BY part, contact_id) AS partner_period_taxable_amount
+			FROM invoice_rows
+		)
+		SELECT
+			part, contact_id, contact_name, contact_reg_code, contact_vat_number,
+			invoice_id, invoice_number, invoice_date, invoice_type,
+			taxable_amount, vat_amount, total_amount, partner_period_taxable_amount
+		FROM qualified_rows
+		WHERE partner_period_taxable_amount >= $4
+		ORDER BY part, contact_name, invoice_date, invoice_number
+	`, schemaName, schemaName), tenantID, startDate, endDate, threshold)
+	if err != nil {
+		return nil, fmt.Errorf("query KMD INF data: %w", err)
+	}
+	defer rows.Close()
+
+	result := []KMDINFReportRow{}
+	for rows.Next() {
+		var row KMDINFReportRow
+		if err := rows.Scan(
+			&row.Part,
+			&row.ContactID,
+			&row.ContactName,
+			&row.ContactRegCode,
+			&row.ContactVATNumber,
+			&row.InvoiceID,
+			&row.InvoiceNumber,
+			&row.InvoiceDate,
+			&row.InvoiceType,
+			&row.TaxableAmount,
+			&row.VATAmount,
+			&row.TotalAmount,
+			&row.PartnerPeriodTaxableAmount,
+		); err != nil {
+			return nil, fmt.Errorf("scan KMD INF row: %w", err)
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate KMD INF rows: %w", err)
 	}
 
 	return result, nil

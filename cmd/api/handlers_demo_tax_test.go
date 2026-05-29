@@ -24,6 +24,8 @@ type mockTaxRepository struct {
 	ensureSchemaErr        error
 	queryVATDataResult     []tax.VATAggregateRow
 	queryVATDataErr        error
+	queryKMDINFDataResult  []tax.KMDINFReportRow
+	queryKMDINFDataErr     error
 	saveDeclarationErr     error
 	getDeclarationResult   *tax.KMDDeclaration
 	existingDeclarations   map[string]*tax.KMDDeclaration
@@ -42,6 +44,13 @@ func (m *mockTaxRepository) QueryVATData(ctx context.Context, schemaName, tenant
 		return nil, m.queryVATDataErr
 	}
 	return m.queryVATDataResult, nil
+}
+
+func (m *mockTaxRepository) QueryKMDINFData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time, threshold decimal.Decimal) ([]tax.KMDINFReportRow, error) {
+	if m.queryKMDINFDataErr != nil {
+		return nil, m.queryKMDINFDataErr
+	}
+	return m.queryKMDINFDataResult, nil
 }
 
 func (m *mockTaxRepository) SaveDeclaration(ctx context.Context, schemaName string, decl *tax.KMDDeclaration) error {
@@ -132,6 +141,34 @@ func TestKMDHandlers(t *testing.T) {
 	require.Len(t, declarations, 1)
 	assert.Equal(t, 2025, declarations[0].Year)
 
+	taxRepo.queryKMDINFDataResult = []tax.KMDINFReportRow{{
+		Part:                       tax.KMDINFPartSales,
+		ContactID:                  "contact-1",
+		ContactName:                "Alpha OU",
+		ContactRegCode:             "12345678",
+		InvoiceID:                  "invoice-1",
+		InvoiceNumber:              "INV-1",
+		InvoiceDate:                time.Date(2025, 2, 5, 0, 0, 0, 0, time.UTC),
+		InvoiceType:                "SALES",
+		TaxableAmount:              decimal.NewFromInt(1200),
+		VATAmount:                  decimal.NewFromInt(264),
+		TotalAmount:                decimal.NewFromInt(1464),
+		PartnerPeriodTaxableAmount: decimal.NewFromInt(1200),
+	}}
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/tax/kmd/2025/2/inf?threshold=1000", nil), map[string]string{
+		"tenantID": "tenant-1",
+		"year":     "2025",
+		"month":    "2",
+	})
+	rr = httptest.NewRecorder()
+	h.HandleGenerateKMDINF(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var infReport tax.KMDINFReport
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&infReport))
+	require.Len(t, infReport.Rows, 1)
+	assert.Equal(t, tax.KMDINFPartSales, infReport.Rows[0].Part)
+	assert.True(t, infReport.Threshold.Equal(decimal.NewFromInt(1000)))
+
 	taxRepo.getDeclarationResult = &tax.KMDDeclaration{
 		ID:             "decl-export",
 		TenantID:       tenantRecord.ID,
@@ -210,6 +247,28 @@ func TestKMDHandlersValidationAndErrorPaths(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, rr.Code, rr.Body.String())
 	assert.Contains(t, rr.Body.String(), "list failed")
 	taxRepo.listDeclarationsErr = nil
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/tax/kmd/2025/2/inf?threshold=bad", nil), map[string]string{
+		"tenantID": "tenant-1",
+		"year":     "2025",
+		"month":    "2",
+	})
+	rr = httptest.NewRecorder()
+	h.HandleGenerateKMDINF(rr, req)
+	require.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "Invalid threshold")
+
+	taxRepo.queryKMDINFDataErr = errors.New("inf query failed")
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/tax/kmd/2025/2/inf", nil), map[string]string{
+		"tenantID": "tenant-1",
+		"year":     "2025",
+		"month":    "2",
+	})
+	rr = httptest.NewRecorder()
+	h.HandleGenerateKMDINF(rr, req)
+	require.Equal(t, http.StatusInternalServerError, rr.Code, rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "inf query failed")
+	taxRepo.queryKMDINFDataErr = nil
 
 	tenantRepo.getTenantErr = tenant.ErrTenantNotFound
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/tax/kmd/2025/2/xml", nil), map[string]string{

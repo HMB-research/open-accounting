@@ -10,6 +10,7 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/models"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
@@ -119,6 +120,101 @@ func (r *GORMRepository) QueryVATData(ctx context.Context, schemaName, tenantID 
 			IsOutput:  r.IsOutput,
 			TaxBase:   r.TaxBase.Decimal,
 			TaxAmount: r.TaxAmount.Decimal,
+		}
+	}
+
+	return rows, nil
+}
+
+// QueryKMDINFData queries invoice rows eligible for the KMD INF appendix.
+func (r *GORMRepository) QueryKMDINFData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time, threshold decimal.Decimal) ([]KMDINFReportRow, error) {
+	invoicesTable, err := database.QualifiedTable(schemaName, "invoices")
+	if err != nil {
+		return nil, err
+	}
+	contactsTable, err := database.QualifiedTable(schemaName, "contacts")
+	if err != nil {
+		return nil, err
+	}
+
+	var results []struct {
+		Part                       KMDINFPart
+		ContactID                  string
+		ContactName                string
+		ContactRegCode             string
+		ContactVATNumber           string
+		InvoiceID                  string
+		InvoiceNumber              string
+		InvoiceDate                time.Time
+		InvoiceType                string
+		TaxableAmount              models.Decimal
+		VATAmount                  models.Decimal
+		TotalAmount                models.Decimal
+		PartnerPeriodTaxableAmount models.Decimal
+	}
+
+	err = r.db.WithContext(ctx).Raw(fmt.Sprintf(`
+		WITH invoice_rows AS (
+			SELECT
+				CASE
+					WHEN i.invoice_type = 'SALES' THEN 'A'
+					WHEN i.invoice_type = 'PURCHASE' THEN 'B'
+				END AS part,
+				i.contact_id,
+				COALESCE(c.name, '') AS contact_name,
+				COALESCE(c.reg_code, '') AS contact_reg_code,
+				COALESCE(c.vat_number, '') AS contact_vat_number,
+				i.id AS invoice_id,
+				i.invoice_number,
+				i.issue_date AS invoice_date,
+				i.invoice_type,
+				i.base_subtotal AS taxable_amount,
+				i.base_vat_amount AS vat_amount,
+				i.base_total AS total_amount
+			FROM %s i
+			JOIN %s c ON c.id = i.contact_id AND c.tenant_id = i.tenant_id
+			WHERE i.tenant_id = ?
+				AND i.issue_date >= ?
+				AND i.issue_date < ?
+				AND i.status NOT IN ('DRAFT', 'VOIDED')
+				AND i.invoice_type IN ('SALES', 'PURCHASE')
+				AND COALESCE(i.base_vat_amount, 0) <> 0
+				AND COALESCE(NULLIF(c.country_code, ''), 'EE') = 'EE'
+		),
+		qualified_rows AS (
+			SELECT
+				invoice_rows.*,
+				SUM(taxable_amount) OVER (PARTITION BY part, contact_id) AS partner_period_taxable_amount
+			FROM invoice_rows
+		)
+		SELECT
+			part, contact_id, contact_name, contact_reg_code, contact_vat_number,
+			invoice_id, invoice_number, invoice_date, invoice_type,
+			taxable_amount, vat_amount, total_amount, partner_period_taxable_amount
+		FROM qualified_rows
+		WHERE partner_period_taxable_amount >= ?
+		ORDER BY part, contact_name, invoice_date, invoice_number
+	`, invoicesTable, contactsTable), tenantID, startDate, endDate, threshold).Scan(&results).Error
+	if err != nil {
+		return nil, fmt.Errorf("query KMD INF data: %w", err)
+	}
+
+	rows := make([]KMDINFReportRow, len(results))
+	for i, result := range results {
+		rows[i] = KMDINFReportRow{
+			Part:                       result.Part,
+			ContactID:                  result.ContactID,
+			ContactName:                result.ContactName,
+			ContactRegCode:             result.ContactRegCode,
+			ContactVATNumber:           result.ContactVATNumber,
+			InvoiceID:                  result.InvoiceID,
+			InvoiceNumber:              result.InvoiceNumber,
+			InvoiceDate:                result.InvoiceDate,
+			InvoiceType:                result.InvoiceType,
+			TaxableAmount:              result.TaxableAmount.Decimal,
+			VATAmount:                  result.VATAmount.Decimal,
+			TotalAmount:                result.TotalAmount.Decimal,
+			PartnerPeriodTaxableAmount: result.PartnerPeriodTaxableAmount.Decimal,
 		}
 	}
 

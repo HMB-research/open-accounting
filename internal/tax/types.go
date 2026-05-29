@@ -22,6 +22,62 @@ type KMDDeclaration struct {
 	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
+// KMDINFPart identifies the sales or purchase side of the KMD INF appendix.
+type KMDINFPart string
+
+const (
+	KMDINFPartSales     KMDINFPart = "A"
+	KMDINFPartPurchases KMDINFPart = "B"
+)
+
+// KMDINFDefaultThreshold is the partner-period threshold excluding VAT.
+var KMDINFDefaultThreshold = decimal.NewFromInt(1000)
+
+// KMDINFReport contains invoice-level KMD INF appendix rows for a VAT period.
+type KMDINFReport struct {
+	TenantID    string              `json:"tenant_id"`
+	Year        int                 `json:"year"`
+	Month       int                 `json:"month"`
+	Threshold   decimal.Decimal     `json:"threshold"`
+	GeneratedAt time.Time           `json:"generated_at"`
+	Summary     []KMDINFPartSummary `json:"summary"`
+	Rows        []KMDINFReportRow   `json:"rows"`
+}
+
+// KMDINFPartSummary summarizes one KMD INF appendix part.
+type KMDINFPartSummary struct {
+	Part          KMDINFPart      `json:"part"`
+	PartnerCount  int             `json:"partner_count"`
+	InvoiceCount  int             `json:"invoice_count"`
+	TaxableAmount decimal.Decimal `json:"taxable_amount"`
+	VATAmount     decimal.Decimal `json:"vat_amount"`
+	TotalAmount   decimal.Decimal `json:"total_amount"`
+}
+
+// KMDINFReportRow represents one invoice row in the KMD INF appendix report.
+type KMDINFReportRow struct {
+	Part                       KMDINFPart      `json:"part"`
+	ContactID                  string          `json:"contact_id"`
+	ContactName                string          `json:"contact_name"`
+	ContactRegCode             string          `json:"contact_reg_code,omitempty"`
+	ContactVATNumber           string          `json:"contact_vat_number,omitempty"`
+	InvoiceID                  string          `json:"invoice_id"`
+	InvoiceNumber              string          `json:"invoice_number"`
+	InvoiceDate                time.Time       `json:"invoice_date"`
+	InvoiceType                string          `json:"invoice_type"`
+	TaxableAmount              decimal.Decimal `json:"taxable_amount"`
+	VATAmount                  decimal.Decimal `json:"vat_amount"`
+	TotalAmount                decimal.Decimal `json:"total_amount"`
+	PartnerPeriodTaxableAmount decimal.Decimal `json:"partner_period_taxable_amount"`
+}
+
+// KMDINFReportRequest contains KMD INF generation options.
+type KMDINFReportRequest struct {
+	Year      int             `json:"year"`
+	Month     int             `json:"month"`
+	Threshold decimal.Decimal `json:"threshold,omitempty"`
+}
+
 // KMDRow represents a single row in the KMD declaration
 type KMDRow struct {
 	Code        string          `json:"code"`        // KMD row code (1, 2, 3, etc.)

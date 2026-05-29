@@ -2393,6 +2393,63 @@ func printKMDDeclaration(w io.Writer, declaration *tax.KMDDeclaration) {
 	_ = tw.Flush()
 }
 
+func printKMDINFReport(w io.Writer, report *tax.KMDINFReport) {
+	_, _ = fmt.Fprintf(w, "KMD INF %04d-%02d\n", report.Year, report.Month)
+	_, _ = fmt.Fprintf(w, "Threshold: %s\n", report.Threshold.String())
+	_, _ = fmt.Fprintf(w, "Generated: %s\n", formatTime(report.GeneratedAt))
+
+	if len(report.Summary) > 0 {
+		tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		_, _ = fmt.Fprintln(tw, "PART\tPARTNERS\tINVOICES\tTAXABLE\tVAT\tTOTAL")
+		for _, summary := range report.Summary {
+			_, _ = fmt.Fprintf(
+				tw,
+				"%s\t%d\t%d\t%s\t%s\t%s\n",
+				kmdINFPartLabel(summary.Part),
+				summary.PartnerCount,
+				summary.InvoiceCount,
+				summary.TaxableAmount.String(),
+				summary.VATAmount.String(),
+				summary.TotalAmount.String(),
+			)
+		}
+		_ = tw.Flush()
+	}
+	if len(report.Rows) == 0 {
+		return
+	}
+
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "PART\tCONTACT\tREG/VAT\tINVOICE\tDATE\tTAXABLE\tVAT\tTOTAL\tPARTNER PERIOD")
+	for _, row := range report.Rows {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			kmdINFPartLabel(row.Part),
+			row.ContactName,
+			firstNonEmpty(row.ContactRegCode, row.ContactVATNumber, "-"),
+			row.InvoiceNumber,
+			formatDate(row.InvoiceDate),
+			row.TaxableAmount.String(),
+			row.VATAmount.String(),
+			row.TotalAmount.String(),
+			row.PartnerPeriodTaxableAmount.String(),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func kmdINFPartLabel(part tax.KMDINFPart) string {
+	switch part {
+	case tax.KMDINFPartSales:
+		return "A sales"
+	case tax.KMDINFPartPurchases:
+		return "B purchases"
+	default:
+		return string(part)
+	}
+}
+
 func printTrialBalance(w io.Writer, report *accounting.TrialBalance) {
 	_, _ = fmt.Fprintf(w, "Trial balance as of %s\n", formatDate(report.AsOfDate))
 	printAccountBalances(w, report.Accounts)

@@ -103,6 +103,76 @@ func TestPostgresRepository_ListDeclarations(t *testing.T) {
 	}
 }
 
+func TestPostgresRepository_QueryKMDINFData(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	salesContactID := uuid.New().String()
+	purchaseContactID := uuid.New().String()
+	smallContactID := uuid.New().String()
+	foreignContactID := uuid.New().String()
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.contacts (id, tenant_id, name, contact_type, reg_code, country_code, is_active, created_at, updated_at)
+		VALUES
+			($1, $5, 'Sales Partner', 'CUSTOMER', '12345678', 'EE', true, NOW(), NOW()),
+			($2, $5, 'Purchase Partner', 'SUPPLIER', '87654321', 'EE', true, NOW(), NOW()),
+			($3, $5, 'Small Partner', 'CUSTOMER', '11111111', 'EE', true, NOW(), NOW()),
+			($4, $5, 'Foreign Partner', 'CUSTOMER', '22222222', 'FI', true, NOW(), NOW())
+	`, salesContactID, purchaseContactID, smallContactID, foreignContactID, tenant.ID)
+	if err != nil {
+		t.Fatalf("insert contacts: %v", err)
+	}
+
+	insertInvoice := func(number, invoiceType, contactID string, issueDate time.Time, subtotal, vat, total decimal.Decimal) {
+		t.Helper()
+		_, err := pool.Exec(ctx, `
+			INSERT INTO `+tenant.SchemaName+`.invoices (
+				id, tenant_id, invoice_number, invoice_type, contact_id, issue_date, due_date,
+				currency, exchange_rate, subtotal, vat_amount, total,
+				base_subtotal, base_vat_amount, base_total, amount_paid, status,
+				created_by, created_at, updated_at
+			) VALUES ($1, $2, $3, $4, $5, $6, $6, 'EUR', 1, $7, $8, $9, $7, $8, $9, 0, 'SENT', $10, NOW(), NOW())
+		`, uuid.New().String(), tenant.ID, number, invoiceType, contactID, issueDate, subtotal, vat, total, uuid.New().String())
+		if err != nil {
+			t.Fatalf("insert invoice %s: %v", number, err)
+		}
+	}
+
+	periodDate := time.Date(2026, 3, 5, 0, 0, 0, 0, time.UTC)
+	insertInvoice("S-1", "SALES", salesContactID, periodDate, decimal.NewFromInt(600), decimal.NewFromInt(132), decimal.NewFromInt(732))
+	insertInvoice("S-2", "SALES", salesContactID, periodDate.AddDate(0, 0, 1), decimal.NewFromInt(500), decimal.NewFromInt(110), decimal.NewFromInt(610))
+	insertInvoice("P-1", "PURCHASE", purchaseContactID, periodDate, decimal.NewFromInt(1200), decimal.NewFromInt(264), decimal.NewFromInt(1464))
+	insertInvoice("SMALL-1", "SALES", smallContactID, periodDate, decimal.NewFromInt(500), decimal.NewFromInt(110), decimal.NewFromInt(610))
+	insertInvoice("FOREIGN-1", "SALES", foreignContactID, periodDate, decimal.NewFromInt(2000), decimal.NewFromInt(440), decimal.NewFromInt(2440))
+
+	rows, err := repo.QueryKMDINFData(
+		ctx,
+		tenant.SchemaName,
+		tenant.ID,
+		time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
+		decimal.NewFromInt(1000),
+	)
+	if err != nil {
+		t.Fatalf("QueryKMDINFData failed: %v", err)
+	}
+
+	if len(rows) != 3 {
+		t.Fatalf("expected 3 KMD INF rows, got %d", len(rows))
+	}
+	if rows[0].Part != KMDINFPartSales || rows[0].ContactName != "Sales Partner" {
+		t.Fatalf("expected sales partner first, got %#v", rows[0])
+	}
+	if !rows[0].PartnerPeriodTaxableAmount.Equal(decimal.NewFromInt(1100)) {
+		t.Fatalf("expected sales partner period amount 1100, got %s", rows[0].PartnerPeriodTaxableAmount)
+	}
+	if rows[2].Part != KMDINFPartPurchases || rows[2].ContactName != "Purchase Partner" {
+		t.Fatalf("expected purchase partner third, got %#v", rows[2])
+	}
+}
+
 func TestPostgresRepository_GetDeclaration_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)

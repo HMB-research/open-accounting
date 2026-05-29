@@ -17,6 +17,8 @@ type MockRepository struct {
 	ensureSchemaErr        error
 	queryVATDataResult     []VATAggregateRow
 	queryVATDataErr        error
+	queryKMDINFDataResult  []KMDINFReportRow
+	queryKMDINFDataErr     error
 	saveDeclarationErr     error
 	getDeclarationResult   *KMDDeclaration
 	existingDeclarations   map[string]*KMDDeclaration
@@ -35,6 +37,13 @@ func (m *MockRepository) QueryVATData(ctx context.Context, schemaName, tenantID 
 		return nil, m.queryVATDataErr
 	}
 	return m.queryVATDataResult, nil
+}
+
+func (m *MockRepository) QueryKMDINFData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time, threshold decimal.Decimal) ([]KMDINFReportRow, error) {
+	if m.queryKMDINFDataErr != nil {
+		return nil, m.queryKMDINFDataErr
+	}
+	return m.queryKMDINFDataResult, nil
 }
 
 func (m *MockRepository) SaveDeclaration(ctx context.Context, schemaName string, decl *KMDDeclaration) error {
@@ -326,6 +335,92 @@ func TestService_GenerateKMD_EmptyVATData(t *testing.T) {
 	assert.True(t, decl.TotalOutputVAT.IsZero())
 	assert.True(t, decl.TotalInputVAT.IsZero())
 	assert.Len(t, decl.Rows, 0)
+}
+
+func TestService_GenerateKMDINF_Success(t *testing.T) {
+	repo := &MockRepository{
+		queryKMDINFDataResult: []KMDINFReportRow{
+			{
+				Part:                       KMDINFPartSales,
+				ContactID:                  "contact-1",
+				ContactName:                "Alpha OU",
+				ContactRegCode:             "12345678",
+				InvoiceID:                  "invoice-1",
+				InvoiceNumber:              "INV-1",
+				InvoiceDate:                time.Date(2026, 3, 5, 0, 0, 0, 0, time.UTC),
+				InvoiceType:                "SALES",
+				TaxableAmount:              decimal.NewFromInt(1200),
+				VATAmount:                  decimal.NewFromInt(264),
+				TotalAmount:                decimal.NewFromInt(1464),
+				PartnerPeriodTaxableAmount: decimal.NewFromInt(1200),
+			},
+			{
+				Part:                       KMDINFPartPurchases,
+				ContactID:                  "contact-2",
+				ContactName:                "Beta OU",
+				ContactRegCode:             "87654321",
+				InvoiceID:                  "invoice-2",
+				InvoiceNumber:              "PUR-1",
+				InvoiceDate:                time.Date(2026, 3, 7, 0, 0, 0, 0, time.UTC),
+				InvoiceType:                "PURCHASE",
+				TaxableAmount:              decimal.NewFromInt(1500),
+				VATAmount:                  decimal.NewFromInt(330),
+				TotalAmount:                decimal.NewFromInt(1830),
+				PartnerPeriodTaxableAmount: decimal.NewFromInt(1500),
+			},
+		},
+	}
+	svc := NewServiceWithRepository(repo)
+
+	report, err := svc.GenerateKMDINF(context.Background(), "tenant-1", "test_schema", &KMDINFReportRequest{
+		Year:  2026,
+		Month: 3,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.Equal(t, "tenant-1", report.TenantID)
+	assert.Equal(t, 2026, report.Year)
+	assert.Equal(t, 3, report.Month)
+	assert.True(t, report.Threshold.Equal(KMDINFDefaultThreshold))
+	assert.Len(t, report.Rows, 2)
+	require.Len(t, report.Summary, 2)
+	assert.Equal(t, KMDINFPartSales, report.Summary[0].Part)
+	assert.Equal(t, 1, report.Summary[0].PartnerCount)
+	assert.Equal(t, 1, report.Summary[0].InvoiceCount)
+	assert.True(t, report.Summary[0].TaxableAmount.Equal(decimal.NewFromInt(1200)))
+	assert.Equal(t, KMDINFPartPurchases, report.Summary[1].Part)
+	assert.True(t, report.Summary[1].VATAmount.Equal(decimal.NewFromInt(330)))
+}
+
+func TestService_GenerateKMDINF_ValidationAndRepositoryErrors(t *testing.T) {
+	svc := NewServiceWithRepository(&MockRepository{})
+
+	_, err := svc.GenerateKMDINF(context.Background(), "tenant-1", "test_schema", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "request is required")
+
+	_, err = svc.GenerateKMDINF(context.Background(), "tenant-1", "test_schema", &KMDINFReportRequest{Year: 2019, Month: 3})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid year")
+
+	_, err = svc.GenerateKMDINF(context.Background(), "tenant-1", "test_schema", &KMDINFReportRequest{Year: 2026, Month: 13})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid month")
+
+	_, err = svc.GenerateKMDINF(context.Background(), "tenant-1", "test_schema", &KMDINFReportRequest{
+		Year:      2026,
+		Month:     3,
+		Threshold: decimal.NewFromInt(-1),
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "threshold must be positive")
+
+	repo := &MockRepository{queryKMDINFDataErr: errors.New("query failed")}
+	svc = NewServiceWithRepository(repo)
+	_, err = svc.GenerateKMDINF(context.Background(), "tenant-1", "test_schema", &KMDINFReportRequest{Year: 2026, Month: 3})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "query KMD INF data")
 }
 
 func TestService_GetKMD_Success(t *testing.T) {

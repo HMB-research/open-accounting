@@ -983,6 +983,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 		})
 	case "/tax/kmd/import-history":
 		return commandForMethod(method, map[string]string{"POST": "tax kmd import-history"})
+	case "/tax/kmd/{year}/{month}/inf":
+		return commandForMethod(method, map[string]string{"GET": "tax kmd inf"})
 	case "/tax/kmd/{year}/{month}/xml":
 		return commandForMethod(method, map[string]string{"GET": "tax kmd export-xml"})
 	case "/employees":

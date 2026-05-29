@@ -2305,6 +2305,19 @@ func (c *apiClient) importKMDHistory(ctx context.Context, tenantID string, req *
 	return &resp, nil
 }
 
+func (c *apiClient) generateKMDINF(ctx context.Context, tenantID string, year, month int, threshold decimal.Decimal) (*tax.KMDINFReport, error) {
+	values := url.Values{}
+	if !threshold.IsZero() {
+		values.Set("threshold", threshold.String())
+	}
+
+	var resp tax.KMDINFReport
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "tax", "kmd", strconv.Itoa(year), strconv.Itoa(month), "inf"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) exportKMDXML(ctx context.Context, tenantID string, year, month int) ([]byte, error) {
 	return c.requestRaw(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "tax", "kmd", strconv.Itoa(year), strconv.Itoa(month), "xml"), nil, c.apiToken)
 }

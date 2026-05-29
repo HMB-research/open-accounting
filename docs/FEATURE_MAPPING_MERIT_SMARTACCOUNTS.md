@@ -142,7 +142,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 |---------|-------|---------------|-----------------|--------|
 | TSD form generation | ✅ | ✅ | ✅ | Implemented |
 | e-MTA submission | ✅ | ✅ | ❌ | **Blocker** |
-| INF form | ✅ | ✅ | ❌ | **Gap** |
+| INF form | ✅ | ✅ | ✅ | Implemented as KMD INF A/B report; e-MTA submission remains blocked |
 
 ---
 

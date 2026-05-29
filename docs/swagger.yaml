@@ -4796,6 +4796,79 @@ definitions:
       year:
         type: integer
     type: object
+  github_com_HMB-research_open-accounting_internal_tax.KMDINFPart:
+    enum:
+    - A
+    - B
+    type: string
+    x-enum-varnames:
+    - KMDINFPartSales
+    - KMDINFPartPurchases
+  github_com_HMB-research_open-accounting_internal_tax.KMDINFPartSummary:
+    properties:
+      invoice_count:
+        type: integer
+      part:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tax.KMDINFPart'
+      partner_count:
+        type: integer
+      taxable_amount:
+        type: number
+      total_amount:
+        type: number
+      vat_amount:
+        type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_tax.KMDINFReport:
+    properties:
+      generated_at:
+        type: string
+      month:
+        type: integer
+      rows:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tax.KMDINFReportRow'
+        type: array
+      summary:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tax.KMDINFPartSummary'
+        type: array
+      tenant_id:
+        type: string
+      threshold:
+        type: number
+      year:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_tax.KMDINFReportRow:
+    properties:
+      contact_id:
+        type: string
+      contact_name:
+        type: string
+      contact_reg_code:
+        type: string
+      contact_vat_number:
+        type: string
+      invoice_date:
+        type: string
+      invoice_id:
+        type: string
+      invoice_number:
+        type: string
+      invoice_type:
+        type: string
+      part:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tax.KMDINFPart'
+      partner_period_taxable_amount:
+        type: number
+      taxable_amount:
+        type: number
+      total_amount:
+        type: number
+      vat_amount:
+        type: number
+    type: object
   github_com_HMB-research_open-accounting_internal_tax.KMDRow:
     properties:
       code:
@@ -13098,6 +13171,56 @@ paths:
       security:
       - BearerAuth: []
       summary: Generate KMD declaration
+      tags:
+      - Tax
+  /tenants/{tenantID}/tax/kmd/{year}/{month}/inf:
+    get:
+      description: Generate KMD INF A/B invoice appendix rows for an Estonian VAT
+        period
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Year
+        in: path
+        name: year
+        required: true
+        type: string
+      - description: Month
+        in: path
+        name: month
+        required: true
+        type: string
+      - description: Partner-period threshold excluding VAT
+        in: query
+        name: threshold
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tax.KMDINFReport'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Generate KMD INF appendix report
       tags:
       - Tax
   /tenants/{tenantID}/tax/kmd/{year}/{month}/xml:

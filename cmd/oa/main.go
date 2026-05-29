@@ -239,6 +239,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  tsd mark-submitted        Mark a TSD declaration submitted")
 	_, _ = fmt.Fprintln(a.stdout, "  tax kmd list              List KMD declarations")
 	_, _ = fmt.Fprintln(a.stdout, "  tax kmd generate          Generate KMD declaration")
+	_, _ = fmt.Fprintln(a.stdout, "  tax kmd inf               Generate KMD INF appendix report")
 	_, _ = fmt.Fprintln(a.stdout, "  tax kmd import-history    Import historical KMD declarations from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  tax kmd export-xml        Export KMD XML")
 	_, _ = fmt.Fprintln(a.stdout, "  invoices list             List invoices")
@@ -8688,6 +8689,38 @@ func (a *cliApp) runTax(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, declaration)
 		}
 		printKMDDeclaration(a.stdout, declaration)
+		return nil
+
+	case "inf":
+		fs := flag.NewFlagSet("tax kmd inf", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		yearFlag := fs.String("year", "", "Declaration year")
+		monthFlag := fs.String("month", "", "Declaration month")
+		thresholdFlag := fs.String("threshold", "", "Optional partner-period threshold excluding VAT")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		year, month, err := parseYearMonthFlags(*yearFlag, *monthFlag)
+		if err != nil {
+			return err
+		}
+		threshold := decimal.Zero
+		if strings.TrimSpace(*thresholdFlag) != "" {
+			threshold, err = parseRequiredPositiveDecimal("threshold", *thresholdFlag)
+			if err != nil {
+				return err
+			}
+		}
+
+		report, err := client.generateKMDINF(ctx, cfg.TenantID, year, month, threshold)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, report)
+		}
+		printKMDINFReport(a.stdout, report)
 		return nil
 
 	case "import-history":
