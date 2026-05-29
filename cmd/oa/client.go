@@ -83,6 +83,11 @@ type documentReviewSummaryRequest struct {
 	EntityIDs  []string `json:"entity_ids"`
 }
 
+type documentRetentionUpdateRequest struct {
+	RetentionUntil string `json:"retention_until,omitempty"`
+	ClearRetention bool   `json:"clear_retention,omitempty"`
+}
+
 type downloadedDocument struct {
 	FileName    string
 	ContentType string
@@ -2635,6 +2640,19 @@ func (c *apiClient) downloadDocument(ctx context.Context, tenantID, documentID s
 		ContentType: resp.Header.Get("Content-Type"),
 		Content:     content,
 	}, nil
+}
+
+func (c *apiClient) updateDocumentRetention(ctx context.Context, tenantID, documentID, retentionUntil string, clearRetention bool) (*documents.Document, error) {
+	req := documentRetentionUpdateRequest{
+		RetentionUntil: strings.TrimSpace(retentionUntil),
+		ClearRetention: clearRetention,
+	}
+
+	var resp documents.Document
+	if err := c.request(ctx, http.MethodPatch, path.Join("/api/v1/tenants", tenantID, "documents", documentID, "retention"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }
 
 func (c *apiClient) markDocumentReviewed(ctx context.Context, tenantID, documentID string) (*documents.Document, error) {

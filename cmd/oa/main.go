@@ -393,6 +393,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  documents review-queue    List documents waiting for reviewer action")
 	_, _ = fmt.Fprintln(a.stdout, "  documents evidence-policy Evaluate required evidence policy")
 	_, _ = fmt.Fprintln(a.stdout, "  documents retention       List retention-due documents")
+	_, _ = fmt.Fprintln(a.stdout, "  documents retention-set   Set or clear document retention metadata")
 	_, _ = fmt.Fprintln(a.stdout, "  documents upload          Upload a document to a record")
 	_, _ = fmt.Fprintln(a.stdout, "  documents download        Download a document")
 	_, _ = fmt.Fprintln(a.stdout, "  documents review          Approve, reject, or mark a document reviewed")
@@ -8818,6 +8819,50 @@ func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, review)
 		}
 		printDocumentRetentionReview(a.stdout, review)
+		return nil
+
+	case "retention-set":
+		fs := flag.NewFlagSet("documents retention-set", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		documentID := fs.String("id", "", "Document id")
+		retentionUntil := fs.String("retention-until", "", "Retention date in YYYY-MM-DD")
+		clearRetention := fs.Bool("clear", false, "Clear retention metadata")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*documentID) == "" {
+			return errors.New("id is required")
+		}
+		trimmedRetention := strings.TrimSpace(*retentionUntil)
+		if *clearRetention && trimmedRetention != "" {
+			return errors.New("retention-until cannot be combined with clear")
+		}
+		if !*clearRetention && trimmedRetention == "" {
+			return errors.New("retention-until is required unless clear is set")
+		}
+		if trimmedRetention != "" {
+			if _, err := time.Parse("2006-01-02", trimmedRetention); err != nil {
+				return fmt.Errorf("parse retention-until: %w", err)
+			}
+		}
+
+		doc, err := client.updateDocumentRetention(ctx, cfg.TenantID, strings.TrimSpace(*documentID), trimmedRetention, *clearRetention)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, doc)
+		}
+		if *clearRetention {
+			_, _ = fmt.Fprintf(a.stdout, "Cleared retention for document %s\n", doc.ID)
+			return nil
+		}
+		retentionLabel := trimmedRetention
+		if doc.RetentionUntil != nil {
+			retentionLabel = doc.RetentionUntil.Format("2006-01-02")
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Set retention for document %s to %s\n", doc.ID, retentionLabel)
 		return nil
 
 	case "upload":

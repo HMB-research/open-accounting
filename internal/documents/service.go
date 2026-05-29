@@ -291,6 +291,29 @@ func (s *Service) MarkDocumentReviewed(ctx context.Context, schemaName, tenantID
 	})
 }
 
+func (s *Service) UpdateDocumentRetention(ctx context.Context, schemaName, tenantID, documentID string, retentionUntil *time.Time) (*Document, error) {
+	trimmedID := strings.TrimSpace(documentID)
+	if trimmedID == "" {
+		return nil, fmt.Errorf("document ID is required")
+	}
+
+	if _, err := s.repo.GetDocumentByID(ctx, schemaName, tenantID, trimmedID); err != nil {
+		return nil, err
+	}
+
+	var normalizedRetention *time.Time
+	if retentionUntil != nil {
+		normalized := dateOnlyUTC(*retentionUntil)
+		normalizedRetention = &normalized
+	}
+
+	if err := s.repo.UpdateDocumentRetention(ctx, schemaName, tenantID, trimmedID, normalizedRetention); err != nil {
+		return nil, err
+	}
+
+	return s.repo.GetDocumentByID(ctx, schemaName, tenantID, trimmedID)
+}
+
 func dateOnlyUTC(value time.Time) time.Time {
 	utc := value.UTC()
 	return time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)

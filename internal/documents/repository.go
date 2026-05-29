@@ -20,6 +20,7 @@ type Repository interface {
 	ListRetentionReviewDocuments(ctx context.Context, schemaName, tenantID string, cutoff time.Time, includeMissing bool) ([]Document, error)
 	ListReviewSummaries(ctx context.Context, schemaName, tenantID, entityType string, entityIDs []string) (map[string]ReviewSummary, error)
 	GetDocumentByID(ctx context.Context, schemaName, tenantID, documentID string) (*Document, error)
+	UpdateDocumentRetention(ctx context.Context, schemaName, tenantID, documentID string, retentionUntil *time.Time) error
 	ReviewDocument(ctx context.Context, schemaName, tenantID, documentID, reviewStatus, reviewNote, reviewedBy string, reviewedAt time.Time) error
 	DeleteDocument(ctx context.Context, schemaName, tenantID, documentID string) error
 }
@@ -315,6 +316,27 @@ func (r *PostgresRepository) GetDocumentByID(ctx context.Context, schemaName, te
 	}
 
 	return &doc, nil
+}
+
+func (r *PostgresRepository) UpdateDocumentRetention(ctx context.Context, schemaName, tenantID, documentID string, retentionUntil *time.Time) error {
+	table, err := database.QualifiedTable(schemaName, "documents")
+	if err != nil {
+		return fmt.Errorf("qualify documents table: %w", err)
+	}
+
+	result, err := r.db.Exec(ctx, fmt.Sprintf(`
+		UPDATE %s
+		SET retention_until = $1
+		WHERE tenant_id = $2 AND id = $3
+	`, table), retentionUntil, tenantID, documentID)
+	if err != nil {
+		return fmt.Errorf("update document retention: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("document not found")
+	}
+
+	return nil
 }
 
 func (r *PostgresRepository) ReviewDocument(ctx context.Context, schemaName, tenantID, documentID, reviewStatus, reviewNote, reviewedBy string, reviewedAt time.Time) error {

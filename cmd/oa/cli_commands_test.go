@@ -5641,6 +5641,7 @@ func TestCLIDocumentCommands(t *testing.T) {
 	}))
 
 	uploadPath := writeTempCSV(t, "evidence.txt", "statement line")
+	retentionPatchCount := 0
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -5835,6 +5836,47 @@ func TestCLIDocumentCommands(t *testing.T) {
 			w.Header().Set("Content-Type", "text/plain")
 			w.Header().Set("Content-Disposition", `attachment; filename="evidence.txt"`)
 			_, _ = w.Write([]byte("statement line"))
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-2/retention":
+			retentionPatchCount++
+			var req documentRetentionUpdateRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			switch retentionPatchCount {
+			case 1:
+				assert.Equal(t, "2028-03-31", req.RetentionUntil)
+				assert.False(t, req.ClearRetention)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"id":              "doc-2",
+					"tenant_id":       "tenant-1",
+					"entity_type":     "bank_transaction",
+					"entity_id":       "txn-1",
+					"document_type":   "reconciliation_evidence",
+					"file_name":       "evidence.txt",
+					"content_type":    "text/plain",
+					"file_size":       14,
+					"retention_until": "2028-03-31T00:00:00Z",
+					"review_status":   "PENDING",
+					"uploaded_by":     "user-1",
+					"created_at":      "2026-03-12T00:00:00Z",
+				})
+			case 2:
+				assert.Empty(t, req.RetentionUntil)
+				assert.True(t, req.ClearRetention)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"id":            "doc-2",
+					"tenant_id":     "tenant-1",
+					"entity_type":   "bank_transaction",
+					"entity_id":     "txn-1",
+					"document_type": "reconciliation_evidence",
+					"file_name":     "evidence.txt",
+					"content_type":  "text/plain",
+					"file_size":     14,
+					"review_status": "PENDING",
+					"uploaded_by":   "user-1",
+					"created_at":    "2026-03-12T00:00:00Z",
+				})
+			default:
+				t.Fatalf("unexpected retention patch count: %d", retentionPatchCount)
+			}
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-2/mark-reviewed":
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"id":            "doc-2",
@@ -5924,6 +5966,16 @@ func TestCLIDocumentCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Uploaded evidence.txt (doc-2)")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"documents", "retention-set", "--id", "doc-2", "--retention-until", "2028-03-31"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Set retention for document doc-2 to 2028-03-31")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"documents", "retention-set", "--id", "doc-2", "--clear"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Cleared retention for document doc-2")
+
+	stdout.Reset()
 	downloadPath := filepath.Join(t.TempDir(), "downloaded-evidence.txt")
 	err = app.run(context.Background(), []string{"documents", "download", "--id", "doc-2", "--output", downloadPath})
 	require.NoError(t, err)
@@ -5946,6 +5998,7 @@ func TestCLIDocumentCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"documents", "delete", "--id", "doc-2"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Deleted document doc-2")
+	assert.Equal(t, 2, retentionPatchCount)
 }
 
 func TestCLIHelperFunctionsAndErrors(t *testing.T) {

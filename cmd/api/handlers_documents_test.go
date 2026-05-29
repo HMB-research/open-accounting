@@ -141,6 +141,15 @@ func (m *mockDocumentRepository) GetDocumentByID(ctx context.Context, schemaName
 	return doc, nil
 }
 
+func (m *mockDocumentRepository) UpdateDocumentRetention(ctx context.Context, schemaName, tenantID, documentID string, retentionUntil *time.Time) error {
+	doc, ok := m.docs[documentID]
+	if !ok || doc.TenantID != tenantID {
+		return io.EOF
+	}
+	doc.RetentionUntil = retentionUntil
+	return nil
+}
+
 func (m *mockDocumentRepository) ReviewDocument(ctx context.Context, schemaName, tenantID, documentID, reviewStatus, reviewNote, reviewedBy string, reviewedAt time.Time) error {
 	doc, ok := m.docs[documentID]
 	if !ok || doc.TenantID != tenantID {
@@ -248,6 +257,40 @@ func TestUploadListDownloadAndDeleteDocument(t *testing.T) {
 	require.Equal(t, 1, retentionReview.TotalCount)
 	require.Equal(t, 1, retentionReview.DueSoonCount)
 	require.Len(t, retentionReview.Documents, 1)
+
+	retentionSetReq := makeAuthenticatedRequest(http.MethodPatch, "/tenants/tenant-1/documents/"+uploaded.ID+"/retention", map[string]any{
+		"retention_until": "2028-03-31",
+	}, claims)
+	retentionSetReq = withURLParams(retentionSetReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
+	retentionSetResp := httptest.NewRecorder()
+	h.UpdateDocumentRetention(retentionSetResp, retentionSetReq)
+	require.Equal(t, http.StatusOK, retentionSetResp.Code)
+
+	var retentionSetDoc documents.Document
+	require.NoError(t, json.NewDecoder(retentionSetResp.Body).Decode(&retentionSetDoc))
+	require.NotNil(t, retentionSetDoc.RetentionUntil)
+	require.Equal(t, "2028-03-31", retentionSetDoc.RetentionUntil.Format("2006-01-02"))
+
+	retentionConflictReq := makeAuthenticatedRequest(http.MethodPatch, "/tenants/tenant-1/documents/"+uploaded.ID+"/retention", map[string]any{
+		"retention_until": "2029-03-31",
+		"clear_retention": true,
+	}, claims)
+	retentionConflictReq = withURLParams(retentionConflictReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
+	retentionConflictResp := httptest.NewRecorder()
+	h.UpdateDocumentRetention(retentionConflictResp, retentionConflictReq)
+	require.Equal(t, http.StatusBadRequest, retentionConflictResp.Code)
+
+	retentionClearReq := makeAuthenticatedRequest(http.MethodPatch, "/tenants/tenant-1/documents/"+uploaded.ID+"/retention", map[string]any{
+		"clear_retention": true,
+	}, claims)
+	retentionClearReq = withURLParams(retentionClearReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
+	retentionClearResp := httptest.NewRecorder()
+	h.UpdateDocumentRetention(retentionClearResp, retentionClearReq)
+	require.Equal(t, http.StatusOK, retentionClearResp.Code)
+
+	var retentionClearDoc documents.Document
+	require.NoError(t, json.NewDecoder(retentionClearResp.Body).Decode(&retentionClearDoc))
+	require.Nil(t, retentionClearDoc.RetentionUntil)
 
 	queueReq := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/documents/review-queue?entity_type=bank_transaction&document_type=reconciliation_evidence&review_status=PENDING&limit=25", nil, claims)
 	queueReq = withURLParams(queueReq, map[string]string{"tenantID": "tenant-1"})

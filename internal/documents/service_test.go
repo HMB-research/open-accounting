@@ -136,6 +136,15 @@ func (m *mockRepository) GetDocumentByID(ctx context.Context, schemaName, tenant
 	return doc, nil
 }
 
+func (m *mockRepository) UpdateDocumentRetention(ctx context.Context, schemaName, tenantID, documentID string, retentionUntil *time.Time) error {
+	doc, ok := m.docs[documentID]
+	if !ok || doc.TenantID != tenantID {
+		return os.ErrNotExist
+	}
+	doc.RetentionUntil = retentionUntil
+	return nil
+}
+
 func (m *mockRepository) ReviewDocument(ctx context.Context, schemaName, tenantID, documentID, reviewStatus, reviewNote, reviewedBy string, reviewedAt time.Time) error {
 	doc, ok := m.docs[documentID]
 	if !ok || doc.TenantID != tenantID {
@@ -336,6 +345,26 @@ func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 	}
 	if retentionReview.PendingReviewCount != 1 || retentionReview.RejectedCount != 1 {
 		t.Fatalf("unexpected retention review status counts: %#v", retentionReview)
+	}
+
+	correctedRetention := time.Date(2028, 3, 31, 15, 45, 0, 0, time.FixedZone("EET", 2*60*60))
+	correctedDoc, err := svc.UpdateDocumentRetention(context.Background(), "tenant_demo", "tenant-1", doc.ID, &correctedRetention)
+	if err != nil {
+		t.Fatalf("UpdateDocumentRetention failed: %v", err)
+	}
+	if correctedDoc.RetentionUntil == nil || correctedDoc.RetentionUntil.Format("2006-01-02T15:04:05Z07:00") != "2028-03-31T00:00:00Z" {
+		t.Fatalf("unexpected corrected retention: %#v", correctedDoc.RetentionUntil)
+	}
+
+	clearedDoc, err := svc.UpdateDocumentRetention(context.Background(), "tenant_demo", "tenant-1", doc.ID, nil)
+	if err != nil {
+		t.Fatalf("UpdateDocumentRetention clear failed: %v", err)
+	}
+	if clearedDoc.RetentionUntil != nil {
+		t.Fatalf("expected cleared retention, got %#v", clearedDoc.RetentionUntil)
+	}
+	if _, err := svc.UpdateDocumentRetention(context.Background(), "tenant_demo", "tenant-1", "", nil); err == nil {
+		t.Fatal("expected document ID to be required")
 	}
 
 	summaries, err := svc.ListReviewSummaries(context.Background(), "tenant_demo", "tenant-1", EntityTypeBankTxn, []string{"txn-1", "txn-2"})
