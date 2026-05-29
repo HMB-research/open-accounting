@@ -21,6 +21,7 @@ import (
 type mockAccountingRepository struct {
 	accounts       map[string]*accounting.Account
 	journalEntries map[string]*accounting.JournalEntry
+	templates      map[string]*accounting.JournalEntryTemplate
 
 	accountBalance       decimal.Decimal
 	trialBalances        []accounting.AccountBalance
@@ -41,6 +42,7 @@ func newMockAccountingRepository() *mockAccountingRepository {
 	return &mockAccountingRepository{
 		accounts:       make(map[string]*accounting.Account),
 		journalEntries: make(map[string]*accounting.JournalEntry),
+		templates:      make(map[string]*accounting.JournalEntryTemplate),
 	}
 }
 
@@ -130,6 +132,36 @@ func (m *mockAccountingRepository) CreateJournalEntry(ctx context.Context, schem
 
 func (m *mockAccountingRepository) CreateJournalEntryTx(ctx context.Context, schemaName string, tx pgx.Tx, je *accounting.JournalEntry) error {
 	return m.CreateJournalEntry(ctx, schemaName, je)
+}
+
+func (m *mockAccountingRepository) CreateJournalEntryTemplate(ctx context.Context, schemaName string, template *accounting.JournalEntryTemplate) error {
+	if m.createJournalErr != nil {
+		return m.createJournalErr
+	}
+	m.templates[template.ID] = template
+	return nil
+}
+
+func (m *mockAccountingRepository) ListJournalEntryTemplates(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]accounting.JournalEntryTemplate, error) {
+	result := make([]accounting.JournalEntryTemplate, 0, len(m.templates))
+	for _, template := range m.templates {
+		if template.TenantID != tenantID {
+			continue
+		}
+		if activeOnly && !template.IsActive {
+			continue
+		}
+		result = append(result, *template)
+	}
+	return result, nil
+}
+
+func (m *mockAccountingRepository) GetJournalEntryTemplateByID(ctx context.Context, schemaName, tenantID, templateID string) (*accounting.JournalEntryTemplate, error) {
+	template, ok := m.templates[templateID]
+	if !ok || template.TenantID != tenantID {
+		return nil, assert.AnError
+	}
+	return template, nil
 }
 
 func (m *mockAccountingRepository) UpdateJournalEntryStatus(ctx context.Context, schemaName, tenantID, entryID string, status accounting.JournalEntryStatus, userID string) error {

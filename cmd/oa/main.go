@@ -420,6 +420,10 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  journal void              Void a journal entry")
 	_, _ = fmt.Fprintln(a.stdout, "  journal import-opening-balances  Import opening balances from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  journal import            Import historical journal entries from CSV")
+	_, _ = fmt.Fprintln(a.stdout, "  journal templates list    List journal entry templates")
+	_, _ = fmt.Fprintln(a.stdout, "  journal templates create  Create a journal entry template")
+	_, _ = fmt.Fprintln(a.stdout, "  journal templates get     Show one journal entry template")
+	_, _ = fmt.Fprintln(a.stdout, "  journal templates apply   Create an entry from a template")
 	_, _ = fmt.Fprintln(a.stdout, "")
 	_, _ = fmt.Fprintln(a.stdout, "Environment overrides:")
 	_, _ = fmt.Fprintln(a.stdout, "  OA_BASE_URL, OA_API_TOKEN, OA_TENANT_ID")
@@ -7666,6 +7670,9 @@ func (a *cliApp) runJournal(ctx context.Context, args []string) error {
 	}
 
 	switch args[0] {
+	case "templates":
+		return a.runJournalTemplates(ctx, cfg, client, args[1:])
+
 	case "list":
 		fs := flag.NewFlagSet("journal list", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
@@ -7896,6 +7903,135 @@ func (a *cliApp) runJournal(ctx context.Context, args []string) error {
 
 	default:
 		return fmt.Errorf("unknown journal subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runJournalTemplates(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("journal templates subcommand required")
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("journal templates list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		activeOnly := fs.Bool("active-only", false, "Only show active templates")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		templates, err := client.listJournalEntryTemplates(ctx, cfg.TenantID, *activeOnly)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, templates)
+		}
+		printJournalEntryTemplatesTable(a.stdout, templates)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("journal templates create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		name := fs.String("name", "", "Template name")
+		description := fs.String("description", "", "Journal entry description")
+		reference := fs.String("reference", "", "Default reference")
+		requiresEvidence := fs.Bool("requires-evidence", false, "Require approved evidence before posting generated entries")
+		lines := journalLineFlags{}
+		fs.Var(&lines, "line", "Line as comma-separated key=value pairs; repeatable")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*name) == "" {
+			return errors.New("name is required")
+		}
+		if strings.TrimSpace(*description) == "" {
+			return errors.New("description is required")
+		}
+		if len(lines) < 2 {
+			return errors.New("at least two lines are required")
+		}
+
+		template, err := client.createJournalEntryTemplate(ctx, cfg.TenantID, &accounting.CreateJournalEntryTemplateRequest{
+			Name:             strings.TrimSpace(*name),
+			Description:      strings.TrimSpace(*description),
+			Reference:        strings.TrimSpace(*reference),
+			RequiresEvidence: *requiresEvidence,
+			Lines:            []accounting.CreateJournalEntryLineReq(lines),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, template)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created journal entry template %s (%s)\n", template.Name, template.ID)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("journal templates get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		templateID := fs.String("id", "", "Journal entry template id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*templateID) == "" {
+			return errors.New("id is required")
+		}
+
+		template, err := client.getJournalEntryTemplate(ctx, cfg.TenantID, strings.TrimSpace(*templateID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, template)
+		}
+		printJournalEntryTemplate(a.stdout, template)
+		return nil
+
+	case "apply":
+		fs := flag.NewFlagSet("journal templates apply", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		templateID := fs.String("id", "", "Journal entry template id")
+		entryDate := fs.String("entry-date", "", "Entry date in YYYY-MM-DD")
+		description := fs.String("description", "", "Override generated entry description")
+		reference := fs.String("reference", "", "Override generated entry reference")
+		postEntry := fs.Bool("post", false, "Post the generated entry immediately")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*templateID) == "" {
+			return errors.New("id is required")
+		}
+		entryDateValue, err := parseRequiredDate("entry-date", *entryDate)
+		if err != nil {
+			return err
+		}
+
+		entry, err := client.applyJournalEntryTemplate(ctx, cfg.TenantID, strings.TrimSpace(*templateID), &accounting.ApplyJournalEntryTemplateRequest{
+			EntryDate:   entryDateValue,
+			Description: strings.TrimSpace(*description),
+			Reference:   strings.TrimSpace(*reference),
+			Post:        *postEntry,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, entry)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created journal entry %s (%s) from template %s\n", entry.EntryNumber, entry.ID, strings.TrimSpace(*templateID))
+		if entry.Status == accounting.StatusPosted {
+			_, _ = fmt.Fprintln(a.stdout, "Generated entry was posted")
+		}
+		return nil
+
+	default:
+		return fmt.Errorf("unknown journal templates subcommand %q", args[0])
 	}
 }
 

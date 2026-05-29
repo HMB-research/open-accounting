@@ -1877,6 +1877,43 @@ func (c *apiClient) createJournalEntry(ctx context.Context, tenantID string, req
 	return &resp, nil
 }
 
+func (c *apiClient) listJournalEntryTemplates(ctx context.Context, tenantID string, activeOnly bool) ([]accounting.JournalEntryTemplate, error) {
+	values := url.Values{}
+	if activeOnly {
+		values.Set("active_only", "true")
+	}
+
+	var resp []accounting.JournalEntryTemplate
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "journal-entry-templates"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createJournalEntryTemplate(ctx context.Context, tenantID string, req *accounting.CreateJournalEntryTemplateRequest) (*accounting.JournalEntryTemplate, error) {
+	var resp accounting.JournalEntryTemplate
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "journal-entry-templates"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getJournalEntryTemplate(ctx context.Context, tenantID, templateID string) (*accounting.JournalEntryTemplate, error) {
+	var resp accounting.JournalEntryTemplate
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "journal-entry-templates", templateID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) applyJournalEntryTemplate(ctx context.Context, tenantID, templateID string, req *accounting.ApplyJournalEntryTemplateRequest) (*accounting.JournalEntry, error) {
+	var resp accounting.JournalEntry
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "journal-entry-templates", templateID, "apply"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) postJournalEntry(ctx context.Context, tenantID, entryID string) (map[string]string, error) {
 	var resp map[string]string
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "journal-entries", entryID, "post"), nil, c.apiToken, &resp); err != nil {

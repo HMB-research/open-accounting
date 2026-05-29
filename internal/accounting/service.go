@@ -2,7 +2,9 @@ package accounting
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -10,6 +12,18 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
+)
+
+// JournalEntryTemplateRepository is the optional repository surface for reusable entry templates.
+type JournalEntryTemplateRepository interface {
+	CreateJournalEntryTemplate(ctx context.Context, schemaName string, template *JournalEntryTemplate) error
+	ListJournalEntryTemplates(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]JournalEntryTemplate, error)
+	GetJournalEntryTemplateByID(ctx context.Context, schemaName, tenantID, templateID string) (*JournalEntryTemplate, error)
+}
+
+var (
+	errJournalEntryTemplatesUnsupported = errors.New("journal entry templates are not supported by repository")
+	ErrTemplateEvidenceAutoPost         = errors.New("cannot auto-post a template entry that requires evidence")
 )
 
 // Service provides accounting operations
@@ -136,6 +150,176 @@ func (s *Service) CreateJournalEntry(ctx context.Context, schemaName, tenantID s
 	}
 
 	return entry, nil
+}
+
+// CreateJournalEntryTemplate stores a balanced reusable journal entry template.
+func (s *Service) CreateJournalEntryTemplate(ctx context.Context, schemaName, tenantID string, req *CreateJournalEntryTemplateRequest) (*JournalEntryTemplate, error) {
+	repo, err := s.templateRepository()
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		return nil, errors.New("name is required")
+	}
+	if len(req.Lines) < 2 {
+		return nil, errors.New("at least two lines are required")
+	}
+
+	now := time.Now()
+	template := &JournalEntryTemplate{
+		ID:               uuid.New().String(),
+		TenantID:         tenantID,
+		Name:             strings.TrimSpace(req.Name),
+		Description:      strings.TrimSpace(req.Description),
+		Reference:        strings.TrimSpace(req.Reference),
+		RequiresEvidence: req.RequiresEvidence,
+		IsActive:         true,
+		CreatedAt:        now,
+		CreatedBy:        req.UserID,
+		UpdatedAt:        now,
+	}
+	for i, reqLine := range req.Lines {
+		line := newJournalEntryTemplateLine(template.ID, i+1, reqLine)
+		template.Lines = append(template.Lines, line)
+	}
+	template.LineCount = len(template.Lines)
+
+	if err := validateJournalEntryTemplate(template); err != nil {
+		return nil, fmt.Errorf("validation failed: %w", err)
+	}
+	if err := repo.CreateJournalEntryTemplate(ctx, schemaName, template); err != nil {
+		return nil, fmt.Errorf("create journal entry template: %w", err)
+	}
+	return template, nil
+}
+
+// ListJournalEntryTemplates retrieves reusable journal entry templates.
+func (s *Service) ListJournalEntryTemplates(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]JournalEntryTemplate, error) {
+	repo, err := s.templateRepository()
+	if err != nil {
+		return nil, err
+	}
+	return repo.ListJournalEntryTemplates(ctx, schemaName, tenantID, activeOnly)
+}
+
+// GetJournalEntryTemplate retrieves a reusable journal entry template.
+func (s *Service) GetJournalEntryTemplate(ctx context.Context, schemaName, tenantID, templateID string) (*JournalEntryTemplate, error) {
+	repo, err := s.templateRepository()
+	if err != nil {
+		return nil, err
+	}
+	return repo.GetJournalEntryTemplateByID(ctx, schemaName, tenantID, templateID)
+}
+
+// ApplyJournalEntryTemplate creates a journal entry from a reusable template.
+func (s *Service) ApplyJournalEntryTemplate(ctx context.Context, schemaName, tenantID, templateID string, req *ApplyJournalEntryTemplateRequest) (*JournalEntry, error) {
+	template, err := s.GetJournalEntryTemplate(ctx, schemaName, tenantID, templateID)
+	if err != nil {
+		return nil, err
+	}
+	if !template.IsActive {
+		return nil, errors.New("journal entry template is inactive")
+	}
+	if req.Post && template.RequiresEvidence {
+		return nil, ErrTemplateEvidenceAutoPost
+	}
+
+	entryDate := req.EntryDate
+	if entryDate.IsZero() {
+		entryDate = time.Now()
+	}
+	description := strings.TrimSpace(req.Description)
+	if description == "" {
+		description = template.Description
+	}
+	reference := strings.TrimSpace(req.Reference)
+	if reference == "" {
+		reference = template.Reference
+	}
+
+	sourceID := template.ID
+	lines := make([]CreateJournalEntryLineReq, 0, len(template.Lines))
+	for _, line := range template.Lines {
+		lines = append(lines, CreateJournalEntryLineReq{
+			AccountID:    line.AccountID,
+			Description:  line.Description,
+			DebitAmount:  line.DebitAmount,
+			CreditAmount: line.CreditAmount,
+			Currency:     line.Currency,
+			ExchangeRate: line.ExchangeRate,
+		})
+	}
+
+	entry, err := s.CreateJournalEntry(ctx, schemaName, tenantID, &CreateJournalEntryRequest{
+		EntryDate:        entryDate,
+		Description:      description,
+		Reference:        reference,
+		SourceType:       SourceTypeJournalTemplate,
+		SourceID:         &sourceID,
+		RequiresEvidence: template.RequiresEvidence,
+		Lines:            lines,
+		UserID:           req.UserID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !req.Post {
+		return entry, nil
+	}
+	if err := s.PostJournalEntry(ctx, schemaName, tenantID, entry.ID, req.UserID); err != nil {
+		return nil, err
+	}
+	return s.GetJournalEntry(ctx, schemaName, tenantID, entry.ID)
+}
+
+func (s *Service) templateRepository() (JournalEntryTemplateRepository, error) {
+	repo, ok := s.repo.(JournalEntryTemplateRepository)
+	if !ok {
+		return nil, errJournalEntryTemplatesUnsupported
+	}
+	return repo, nil
+}
+
+func newJournalEntryTemplateLine(templateID string, lineNumber int, reqLine CreateJournalEntryLineReq) JournalEntryTemplateLine {
+	currency := strings.TrimSpace(reqLine.Currency)
+	if currency == "" {
+		currency = "EUR"
+	}
+	exchangeRate := reqLine.ExchangeRate
+	if exchangeRate.IsZero() {
+		exchangeRate = decimal.NewFromInt(1)
+	}
+	return JournalEntryTemplateLine{
+		ID:           uuid.New().String(),
+		TemplateID:   templateID,
+		LineNumber:   lineNumber,
+		AccountID:    strings.TrimSpace(reqLine.AccountID),
+		Description:  strings.TrimSpace(reqLine.Description),
+		DebitAmount:  reqLine.DebitAmount,
+		CreditAmount: reqLine.CreditAmount,
+		Currency:     currency,
+		ExchangeRate: exchangeRate,
+	}
+}
+
+func validateJournalEntryTemplate(template *JournalEntryTemplate) error {
+	entry := &JournalEntry{Lines: make([]JournalEntryLine, 0, len(template.Lines))}
+	for _, templateLine := range template.Lines {
+		if strings.TrimSpace(templateLine.AccountID) == "" {
+			return errors.New("line account_id is required")
+		}
+		entry.Lines = append(entry.Lines, JournalEntryLine{
+			AccountID:    templateLine.AccountID,
+			Description:  templateLine.Description,
+			DebitAmount:  templateLine.DebitAmount,
+			CreditAmount: templateLine.CreditAmount,
+			Currency:     templateLine.Currency,
+			ExchangeRate: templateLine.ExchangeRate,
+			BaseDebit:    templateLine.DebitAmount.Mul(templateLine.ExchangeRate),
+			BaseCredit:   templateLine.CreditAmount.Mul(templateLine.ExchangeRate),
+		})
+	}
+	return entry.Validate()
 }
 
 // PostJournalEntry posts a draft journal entry

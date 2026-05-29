@@ -42,7 +42,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Entry numbering | ✅ | ✅ | ✅ | Implemented |
 | Entry reversal/void | ✅ | ✅ | ✅ | Implemented |
 | Recurring entries | ✅ | ✅ | ❌ | **Gap** |
-| Entry templates | ✅ | ✅ | ❌ | **Gap** |
+| Entry templates | ✅ | ✅ | ✅ | Implemented through reusable balanced journal entry templates with API/CLI apply workflow |
 | Multi-currency entries | ✅ | ✅ | ⚠️ | Partial |
 
 ### 1.3 Multi-Tenancy

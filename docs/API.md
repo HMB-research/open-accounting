@@ -715,6 +715,46 @@ Content-Type: application/json
 }
 ```
 
+### Journal Entry Templates
+
+Reusable balanced journal templates reduce repeated manual accruals and adjustments.
+
+```http
+GET /tenants/{tenantId}/journal-entry-templates?active_only=true
+GET /tenants/{tenantId}/journal-entry-templates/{templateId}
+POST /tenants/{tenantId}/journal-entry-templates
+POST /tenants/{tenantId}/journal-entry-templates/{templateId}/apply
+Authorization: Bearer <token>
+```
+
+Create templates with the same line format as manual journal entries:
+
+```json
+{
+  "name": "Monthly rent accrual",
+  "description": "Monthly rent accrual",
+  "reference": "RENT",
+  "requires_evidence": false,
+  "lines": [
+    {"account_id": "expense-account-id", "description": "Rent expense", "debit_amount": "500.00"},
+    {"account_id": "accrual-account-id", "description": "Accrued rent", "credit_amount": "500.00"}
+  ]
+}
+```
+
+Apply a template to create a draft or posted journal entry:
+
+```json
+{
+  "entry_date": "2026-04-30",
+  "description": "April rent accrual",
+  "reference": "RENT-APR",
+  "post": true
+}
+```
+
+Templates marked `requires_evidence` can be applied as drafts, but cannot be auto-posted because the generated entry needs approved evidence before posting.
+
 ### Import Opening Balances
 
 ```http

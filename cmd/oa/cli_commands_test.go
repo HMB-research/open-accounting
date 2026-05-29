@@ -2982,6 +2982,45 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 			},
 		}
 	}
+	templatePayload := func() map[string]any {
+		return map[string]any{
+			"id":                "tpl-1",
+			"tenant_id":         "tenant-1",
+			"name":              "Monthly rent accrual",
+			"description":       "Monthly rent accrual",
+			"reference":         "RENT",
+			"requires_evidence": false,
+			"is_active":         true,
+			"line_count":        2,
+			"created_at":        "2026-03-31T12:00:00Z",
+			"created_by":        "user-1",
+			"updated_at":        "2026-03-31T12:00:00Z",
+			"lines": []map[string]any{
+				{
+					"id":            "tpl-line-1",
+					"template_id":   "tpl-1",
+					"line_number":   1,
+					"account_id":    "acc-1",
+					"description":   "Rent expense",
+					"debit_amount":  "500.00",
+					"credit_amount": "0.00",
+					"currency":      "EUR",
+					"exchange_rate": "1.00",
+				},
+				{
+					"id":            "tpl-line-2",
+					"template_id":   "tpl-1",
+					"line_number":   2,
+					"account_id":    "acc-2",
+					"description":   "Accrued rent",
+					"debit_amount":  "0.00",
+					"credit_amount": "500.00",
+					"currency":      "EUR",
+					"exchange_rate": "1.00",
+				},
+			},
+		}
+	}
 	journalImportFile := writeTempCSV(t, "journals.csv", "entry_reference,entry_date,account_code,debit,credit\nLEG-001,2026-03-31,1000,100.00,0\nLEG-001,2026-03-31,4000,0,100.00\n")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -3021,6 +3060,37 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 				"total_credit":    "100.00",
 				"journal_entries": []map[string]any{journalPayload("je-import-1", "JE-2026-003", accounting.StatusPosted)},
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entry-templates":
+			require.Equal(t, "true", r.URL.Query().Get("active_only"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{templatePayload()})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entry-templates":
+			var req accounting.CreateJournalEntryTemplateRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Monthly rent accrual", req.Name)
+			assert.Equal(t, "Monthly rent accrual", req.Description)
+			assert.Equal(t, "RENT", req.Reference)
+			require.Len(t, req.Lines, 2)
+			assert.True(t, req.Lines[0].DebitAmount.Equal(decimal.RequireFromString("500.00")))
+			assert.True(t, req.Lines[1].CreditAmount.Equal(decimal.RequireFromString("500.00")))
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(templatePayload())
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entry-templates/tpl-1":
+			_ = json.NewEncoder(w).Encode(templatePayload())
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entry-templates/tpl-1/apply":
+			var req accounting.ApplyJournalEntryTemplateRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-04-30", req.EntryDate.Format("2006-01-02"))
+			assert.Equal(t, "April rent accrual", req.Description)
+			assert.Equal(t, "RENT-APR", req.Reference)
+			assert.True(t, req.Post)
+			payload := journalPayload("je-template-1", "JE-2026-004", accounting.StatusPosted)
+			payload["description"] = "April rent accrual"
+			payload["reference"] = "RENT-APR"
+			payload["source_type"] = accounting.SourceTypeJournalTemplate
+			payload["source_id"] = "tpl-1"
+			payload["requires_evidence"] = false
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(payload)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-1":
 			_ = json.NewEncoder(w).Encode(journalPayload("je-1", "JE-2026-001", accounting.StatusDraft))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-1/post":
@@ -3065,6 +3135,42 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"journal", "import", "--file", journalImportFile, "--source-type", "LEGACY_GL", "--post"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Processed 2 rows, created 1 journal entries, imported 2 lines, skipped 0 rows")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"journal", "templates", "list", "--active-only", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Monthly rent accrual"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"journal", "templates", "create",
+		"--name", "Monthly rent accrual",
+		"--description", "Monthly rent accrual",
+		"--reference", "RENT",
+		"--line", "account_id=acc-1,description=Rent expense,debit=500.00",
+		"--line", "account_id=acc-2,description=Accrued rent,credit=500.00",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created journal entry template Monthly rent accrual (tpl-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"journal", "templates", "get", "--id", "tpl-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Journal entry template Monthly rent accrual")
+	assert.Contains(t, stdout.String(), "Total debits: 500")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"journal", "templates", "apply",
+		"--id", "tpl-1",
+		"--entry-date", "2026-04-30",
+		"--description", "April rent accrual",
+		"--reference", "RENT-APR",
+		"--post",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created journal entry JE-2026-004 (je-template-1) from template tpl-1")
+	assert.Contains(t, stdout.String(), "Generated entry was posted")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"journal", "get", "--id", "je-1"})

@@ -1183,6 +1183,136 @@ func (h *Handlers) VoidJournalEntry(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, reversal)
 }
 
+// ListJournalEntryTemplates returns reusable journal entry templates.
+// @Summary List journal entry templates
+// @Description List reusable balanced journal entry templates for a tenant
+// @Tags Journal Entries
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param active_only query bool false "Filter for active templates only"
+// @Success 200 {array} accounting.JournalEntryTemplate
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/journal-entry-templates [get]
+func (h *Handlers) ListJournalEntryTemplates(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+	activeOnly := r.URL.Query().Get("active_only") == "true"
+
+	templates, err := h.accountingService.ListJournalEntryTemplates(r.Context(), schemaName, tenantID, activeOnly)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, templates)
+}
+
+// CreateJournalEntryTemplate creates a reusable journal entry template.
+// @Summary Create journal entry template
+// @Description Create a reusable balanced journal entry template
+// @Tags Journal Entries
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body accounting.CreateJournalEntryTemplateRequest true "Journal entry template details"
+// @Success 201 {object} accounting.JournalEntryTemplate
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/journal-entry-templates [post]
+func (h *Handlers) CreateJournalEntryTemplate(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req accounting.CreateJournalEntryTemplateRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	req.UserID = claims.UserID
+
+	template, err := h.accountingService.CreateJournalEntryTemplate(r.Context(), schemaName, tenantID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusCreated, template)
+}
+
+// GetJournalEntryTemplate returns one reusable journal entry template.
+// @Summary Get journal entry template
+// @Description Get one reusable journal entry template with lines
+// @Tags Journal Entries
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param templateID path string true "Template ID"
+// @Success 200 {object} accounting.JournalEntryTemplate
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/journal-entry-templates/{templateID} [get]
+func (h *Handlers) GetJournalEntryTemplate(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	templateID := chi.URLParam(r, "templateID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	template, err := h.accountingService.GetJournalEntryTemplate(r.Context(), schemaName, tenantID, templateID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Journal entry template not found")
+		return
+	}
+	respondJSON(w, http.StatusOK, template)
+}
+
+// ApplyJournalEntryTemplate creates a journal entry from a reusable template.
+// @Summary Apply journal entry template
+// @Description Create a draft or posted journal entry from a reusable template
+// @Tags Journal Entries
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param templateID path string true "Template ID"
+// @Param request body accounting.ApplyJournalEntryTemplateRequest true "Template application details"
+// @Success 201 {object} accounting.JournalEntry
+// @Failure 400 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
+// @Router /tenants/{tenantID}/journal-entry-templates/{templateID}/apply [post]
+func (h *Handlers) ApplyJournalEntryTemplate(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	templateID := chi.URLParam(r, "templateID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req accounting.ApplyJournalEntryTemplateRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	req.UserID = claims.UserID
+	entryDate := req.EntryDate
+	if entryDate.IsZero() {
+		entryDate = time.Now()
+	}
+	if h.rejectLockedPeriod(w, r.Context(), tenantID, entryDate) {
+		return
+	}
+
+	entry, err := h.accountingService.ApplyJournalEntryTemplate(r.Context(), schemaName, tenantID, templateID, &req)
+	if err != nil {
+		if errors.Is(err, accounting.ErrTemplateEvidenceAutoPost) {
+			respondError(w, http.StatusConflict, err.Error())
+			return
+		}
+		status := http.StatusBadRequest
+		if strings.Contains(err.Error(), "not found") {
+			status = http.StatusNotFound
+		}
+		respondError(w, status, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusCreated, entry)
+}
+
 // GetTrialBalance returns the trial balance for a tenant
 // @Summary Get trial balance
 // @Description Get trial balance report as of a specific date

@@ -224,6 +224,83 @@ func TestPostgresRepository_CreateJournalEntry(t *testing.T) {
 	}
 }
 
+func TestPostgresRepository_JournalEntryTemplates(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	userID := testutil.CreateTestUser(t, pool, "journal-template-"+uuid.New().String()[:8]+"@example.com")
+	testutil.AddUserToTenant(t, pool, tenant.ID, userID, "admin")
+	repo := NewRepository(pool)
+	ctx := context.Background()
+
+	var cashAccountID, expenseAccountID string
+	err := pool.QueryRow(ctx, `
+		SELECT id FROM `+tenant.SchemaName+`.accounts WHERE code = '1000' LIMIT 1
+	`).Scan(&cashAccountID)
+	if err != nil {
+		t.Fatalf("failed to get cash account: %v", err)
+	}
+	err = pool.QueryRow(ctx, `
+		SELECT id FROM `+tenant.SchemaName+`.accounts WHERE code = '5000' LIMIT 1
+	`).Scan(&expenseAccountID)
+	if err != nil {
+		t.Fatalf("failed to get expense account: %v", err)
+	}
+
+	template := &JournalEntryTemplate{
+		ID:          uuid.New().String(),
+		TenantID:    tenant.ID,
+		Name:        "Monthly office supplies",
+		Description: "Monthly office supplies accrual",
+		Reference:   "SUPPLIES",
+		IsActive:    true,
+		CreatedAt:   time.Now(),
+		CreatedBy:   userID,
+		UpdatedAt:   time.Now(),
+		Lines: []JournalEntryTemplateLine{
+			{
+				ID:           uuid.New().String(),
+				LineNumber:   1,
+				AccountID:    expenseAccountID,
+				Description:  "Office supplies",
+				DebitAmount:  decimal.RequireFromString("75.00"),
+				CreditAmount: decimal.Zero,
+				Currency:     "EUR",
+				ExchangeRate: decimal.NewFromInt(1),
+			},
+			{
+				ID:           uuid.New().String(),
+				LineNumber:   2,
+				AccountID:    cashAccountID,
+				Description:  "Cash",
+				DebitAmount:  decimal.Zero,
+				CreditAmount: decimal.RequireFromString("75.00"),
+				Currency:     "EUR",
+				ExchangeRate: decimal.NewFromInt(1),
+			},
+		},
+	}
+
+	if err := repo.CreateJournalEntryTemplate(ctx, tenant.SchemaName, template); err != nil {
+		t.Fatalf("CreateJournalEntryTemplate failed: %v", err)
+	}
+
+	templates, err := repo.ListJournalEntryTemplates(ctx, tenant.SchemaName, tenant.ID, true)
+	if err != nil {
+		t.Fatalf("ListJournalEntryTemplates failed: %v", err)
+	}
+	if len(templates) != 1 || templates[0].LineCount != 2 {
+		t.Fatalf("expected one template with two lines, got %#v", templates)
+	}
+
+	reloaded, err := repo.GetJournalEntryTemplateByID(ctx, tenant.SchemaName, tenant.ID, template.ID)
+	if err != nil {
+		t.Fatalf("GetJournalEntryTemplateByID failed: %v", err)
+	}
+	if reloaded.Name != template.Name || len(reloaded.Lines) != 2 {
+		t.Fatalf("unexpected reloaded template: %#v", reloaded)
+	}
+}
+
 func TestPostgresRepository_GetAccountByID(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)

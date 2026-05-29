@@ -1246,6 +1246,76 @@ func printJournalEntryLinesTable(w io.Writer, lines []accounting.JournalEntryLin
 	_ = tw.Flush()
 }
 
+func printJournalEntryTemplatesTable(w io.Writer, templates []accounting.JournalEntryTemplate) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNAME\tACTIVE\tEVIDENCE\tLINES\tREFERENCE\tDESCRIPTION")
+	for _, template := range templates {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%t\t%t\t%d\t%s\t%s\n",
+			template.ID,
+			template.Name,
+			template.IsActive,
+			template.RequiresEvidence,
+			template.LineCount,
+			template.Reference,
+			template.Description,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printJournalEntryTemplate(w io.Writer, template *accounting.JournalEntryTemplate) {
+	_, _ = fmt.Fprintf(w, "Journal entry template %s\n", template.Name)
+	_, _ = fmt.Fprintf(w, "ID: %s\n", template.ID)
+	_, _ = fmt.Fprintf(w, "Description: %s\n", template.Description)
+	if strings.TrimSpace(template.Reference) != "" {
+		_, _ = fmt.Fprintf(w, "Reference: %s\n", template.Reference)
+	}
+	_, _ = fmt.Fprintf(w, "Active: %t\n", template.IsActive)
+	_, _ = fmt.Fprintf(w, "Requires evidence: %t\n", template.RequiresEvidence)
+	_, _ = fmt.Fprintf(w, "Lines: %d\n", template.LineCount)
+	_, _ = fmt.Fprintf(w, "Total debits: %s\n", journalTemplateTotalDebit(template.Lines).String())
+	_, _ = fmt.Fprintf(w, "Total credits: %s\n", journalTemplateTotalCredit(template.Lines).String())
+	if len(template.Lines) > 0 {
+		printJournalEntryTemplateLinesTable(w, template.Lines)
+	}
+}
+
+func printJournalEntryTemplateLinesTable(w io.Writer, lines []accounting.JournalEntryTemplateLine) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "NO\tACCOUNT\tDESCRIPTION\tDEBIT\tCREDIT\tCURRENCY")
+	for _, line := range lines {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%d\t%s\t%s\t%s\t%s\t%s\n",
+			line.LineNumber,
+			line.AccountID,
+			line.Description,
+			line.DebitAmount.Mul(line.ExchangeRate).String(),
+			line.CreditAmount.Mul(line.ExchangeRate).String(),
+			line.Currency,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func journalTemplateTotalDebit(lines []accounting.JournalEntryTemplateLine) decimal.Decimal {
+	total := decimal.Zero
+	for _, line := range lines {
+		total = total.Add(line.DebitAmount.Mul(line.ExchangeRate))
+	}
+	return total
+}
+
+func journalTemplateTotalCredit(lines []accounting.JournalEntryTemplateLine) decimal.Decimal {
+	total := decimal.Zero
+	for _, line := range lines {
+		total = total.Add(line.CreditAmount.Mul(line.ExchangeRate))
+	}
+	return total
+}
+
 func printEmployeesTable(w io.Writer, employees []payroll.Employee) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tNUMBER\tNAME\tTYPE\tEMAIL\tACTIVE")

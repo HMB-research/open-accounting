@@ -174,6 +174,66 @@ func TestJournalEntryHandlers_CreatePostVoidAndGet(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
+func TestJournalEntryTemplateHandlers_CreateListGetAndApply(t *testing.T) {
+	h, tenantRepo, _ := setupAccountingTestHandlers()
+	tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+	claims := &auth.Claims{UserID: "user-1", TenantID: "tenant-1", Role: tenant.RoleOwner}
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entry-templates", map[string]interface{}{
+		"name":        "Monthly rent accrual",
+		"description": "Monthly rent accrual",
+		"reference":   "RENT",
+		"lines": []map[string]interface{}{
+			{"account_id": "rent-expense", "description": "Rent expense", "debit_amount": "500.00"},
+			{"account_id": "accruals", "description": "Accrued rent", "credit_amount": "500.00"},
+		},
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr := httptest.NewRecorder()
+	h.CreateJournalEntryTemplate(rr, req)
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+
+	var created accounting.JournalEntryTemplate
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &created))
+	assert.Equal(t, "Monthly rent accrual", created.Name)
+	assert.Equal(t, 2, created.LineCount)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/journal-entry-templates?active_only=true", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.ListJournalEntryTemplates(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var templates []accounting.JournalEntryTemplate
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &templates))
+	require.Len(t, templates, 1)
+	assert.Equal(t, created.ID, templates[0].ID)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/journal-entry-templates/"+created.ID, nil), map[string]string{
+		"tenantID":   "tenant-1",
+		"templateID": created.ID,
+	})
+	rr = httptest.NewRecorder()
+	h.GetJournalEntryTemplate(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entry-templates/"+created.ID+"/apply", map[string]interface{}{
+		"entry_date":  "2026-04-30T00:00:00Z",
+		"description": "April rent accrual",
+		"reference":   "RENT-APR",
+		"post":        true,
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "templateID": created.ID})
+	rr = httptest.NewRecorder()
+	h.ApplyJournalEntryTemplate(rr, req)
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+
+	var entry accounting.JournalEntry
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &entry))
+	assert.Equal(t, accounting.StatusPosted, entry.Status)
+	assert.Equal(t, accounting.SourceTypeJournalTemplate, entry.SourceType)
+	assert.Equal(t, "April rent accrual", entry.Description)
+}
+
 func TestPostJournalEntryRequiresApprovedEvidence(t *testing.T) {
 	h, tenantRepo, accountingRepo := setupAccountingTestHandlers()
 	docRepo := newMockDocumentRepository()

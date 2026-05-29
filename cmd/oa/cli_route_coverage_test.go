@@ -619,6 +619,15 @@ func tenantCLICommand(method, path string) (string, bool) {
 		return commandForMethod(method, map[string]string{"POST": "journal post"})
 	case "/journal-entries/{entryID}/void":
 		return commandForMethod(method, map[string]string{"POST": "journal void"})
+	case "/journal-entry-templates":
+		return commandForMethod(method, map[string]string{
+			"GET":  "journal templates list",
+			"POST": "journal templates create",
+		})
+	case "/journal-entry-templates/{templateID}":
+		return commandForMethod(method, map[string]string{"GET": "journal templates get"})
+	case "/journal-entry-templates/{templateID}/apply":
+		return commandForMethod(method, map[string]string{"POST": "journal templates apply"})
 	case "/contacts":
 		return commandForMethod(method, map[string]string{
 			"GET":  "contacts list",

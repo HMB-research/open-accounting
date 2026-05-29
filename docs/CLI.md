@@ -835,9 +835,24 @@ go run ./cmd/oa journal get --id <journal-entry-id>
 go run ./cmd/oa journal post --id <journal-entry-id>
 go run ./cmd/oa journal void --id <journal-entry-id> --reason "Duplicate entry"
 go run ./cmd/oa journal import --file ./journal-entries.csv --source-type LEGACY_GL --post
+go run ./cmd/oa journal templates list --active-only
+go run ./cmd/oa journal templates create \
+  --name "Monthly rent accrual" \
+  --description "Monthly rent accrual" \
+  --reference RENT \
+  --line "account_id=<expense-account-id>,description=Rent expense,debit=500.00" \
+  --line "account_id=<accrual-account-id>,description=Accrued rent,credit=500.00"
+go run ./cmd/oa journal templates get --id <template-id>
+go run ./cmd/oa journal templates apply \
+  --id <template-id> \
+  --entry-date 2026-04-30 \
+  --description "April rent accrual" \
+  --reference RENT-APR \
+  --post
 ```
 
 Use `--line` repeatedly on `journal create`. Each line is comma-separated `key=value` pairs with `account_id` and exactly one of `debit` or `credit`; optional keys include `description`, `currency`, and `exchange_rate`. Use `--requires-evidence` for manual adjustments that must have approved `supporting_document`, `receipt`, or `tax_support` evidence attached before posting.
+`journal templates create` uses the same `--line` syntax. Applying a template with `--post` creates and posts the generated entry; templates that require evidence can only generate drafts.
 `journal import` expects grouped CSV rows with `entry_reference`, `entry_date`, `account_code`, `debit`, and `credit`; optional columns include `entry_description`, `line_description`, `currency`, `exchange_rate`, `source_type`, and `source_id`.
 
 ## Opening balances
