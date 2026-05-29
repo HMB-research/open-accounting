@@ -5166,6 +5166,11 @@ func TestCLIReportsCommands(t *testing.T) {
 				_, _ = w.Write([]byte("section,code,description,description_et,amount,is_subtotal\nsummary,closing_cash,Closing cash,,500.00,true\n"))
 				return
 			}
+			if r.URL.Query().Get("format") == "xlsx" {
+				w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+				_, _ = w.Write([]byte("xlsx-cash-flow"))
+				return
+			}
 			if r.URL.Query().Get("format") == "pdf" {
 				w.Header().Set("Content-Type", "application/pdf")
 				_, _ = w.Write([]byte("%PDF cash flow"))
@@ -5204,6 +5209,11 @@ func TestCLIReportsCommands(t *testing.T) {
 			if r.URL.Query().Get("format") == "csv" {
 				w.Header().Set("Content-Type", "text/csv")
 				_, _ = w.Write([]byte("row_type,report_type,contact_name,total\ncontact,receivables,Acme,900.00\n"))
+				return
+			}
+			if r.URL.Query().Get("format") == "xlsx" {
+				w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+				_, _ = w.Write([]byte("xlsx-receivables-aging"))
 				return
 			}
 			if r.URL.Query().Get("format") == "pdf" {
@@ -5556,6 +5566,15 @@ func TestCLIReportsCommands(t *testing.T) {
 	assert.Contains(t, string(cashFlowCSV), "closing_cash")
 
 	stdout.Reset()
+	cashFlowXLSXPath := filepath.Join(t.TempDir(), "cash-flow.xlsx")
+	err = app.run(context.Background(), []string{"reports", "cash-flow", "--start", "2026-01-01", "--end", "2026-03-31", "--xlsx", "--output", cashFlowXLSXPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote cash flow XLSX")
+	cashFlowXLSX, err := os.ReadFile(cashFlowXLSXPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("xlsx-cash-flow"), cashFlowXLSX)
+
+	stdout.Reset()
 	cashFlowPDFPath := filepath.Join(t.TempDir(), "cash-flow.pdf")
 	err = app.run(context.Background(), []string{"reports", "cash-flow", "--start", "2026-01-01", "--end", "2026-03-31", "--pdf", "--output", cashFlowPDFPath})
 	require.NoError(t, err)
@@ -5577,6 +5596,15 @@ func TestCLIReportsCommands(t *testing.T) {
 	agingCSV, err := os.ReadFile(agingCSVPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(agingCSV), "Acme")
+
+	stdout.Reset()
+	agingXLSXPath := filepath.Join(t.TempDir(), "aging.xlsx")
+	err = app.run(context.Background(), []string{"reports", "aging", "--type", "receivables", "--xlsx", "--output", agingXLSXPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote receivables aging XLSX")
+	agingXLSX, err := os.ReadFile(agingXLSXPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("xlsx-receivables-aging"), agingXLSX)
 
 	stdout.Reset()
 	agingPDFPath := filepath.Join(t.TempDir(), "aging.pdf")

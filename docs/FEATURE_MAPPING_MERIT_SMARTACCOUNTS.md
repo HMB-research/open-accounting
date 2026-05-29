@@ -155,8 +155,8 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Trial Balance | ✅ | ✅ | ✅ | Implemented |
 | Balance Sheet | ✅ | ✅ | ✅ | Implemented |
 | Income Statement | ✅ | ✅ | ✅ | Implemented |
-| Cash Flow Statement | ✅ | ✅ | ⚠️ | Partial |
-| Aging reports | ✅ | ✅ | ⚠️ | Partial |
+| Cash Flow Statement | ✅ | ✅ | ✅ | Implemented through direct and indirect cash-flow statements with API/CLI JSON/CSV/XLSX/PDF export, annual-report inclusion, and tenant/request-level account mapping |
+| Aging reports | ✅ | ✅ | ✅ | Implemented for receivables and payables with API/CLI JSON/CSV/XLSX/PDF export |
 | Sales margin reports | ✅ | ✅ | ✅ | Implemented through API/CLI CSV/XLSX/PDF exports |
 | Custom date ranges | ✅ | ✅ | ✅ | Implemented |
 
@@ -212,7 +212,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Feature | Merit | SmartAccounts | Open Accounting | Status |
 |---------|-------|---------------|-----------------|--------|
 | CSV export | ✅ | ✅ | ✅ | Implemented |
-| Excel export | ✅ | ✅ | ⚠️ | Partial |
+| Excel export | ✅ | ✅ | ✅ | Implemented for core financial statements, cash flow, aging, balance confirmations, contact statements, sales margin, budget-vs-actual, and cost-center budget reports |
 | Data migration tools | ✅ | ✅ | ⚠️ | Partial: CSV imports cover setup data, invoices, opening balances, employees, finalized payroll history, and leave balances; full incumbent-system migration is still incomplete |
 
 ---
