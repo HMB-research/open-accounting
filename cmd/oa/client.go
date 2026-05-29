@@ -670,6 +670,10 @@ func (c *apiClient) importPayments(ctx context.Context, tenantID string, req *pa
 	return &resp, nil
 }
 
+func (c *apiClient) exportSEPAPayments(ctx context.Context, tenantID string, req *payments.SEPAExportRequest) ([]byte, error) {
+	return c.requestRaw(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "payments", "sepa-export"), req, c.apiToken)
+}
+
 func (c *apiClient) getPayment(ctx context.Context, tenantID, paymentID string) (*payments.Payment, error) {
 	var resp payments.Payment
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "payments", paymentID), nil, c.apiToken, &resp); err != nil {

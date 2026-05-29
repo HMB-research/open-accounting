@@ -821,6 +821,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 		})
 	case "/payments/import":
 		return commandForMethod(method, map[string]string{"POST": "payments import"})
+	case "/payments/sepa-export":
+		return commandForMethod(method, map[string]string{"POST": "payments sepa-export"})
 	case "/payments/unallocated":
 		return commandForMethod(method, map[string]string{"GET": "payments unallocated"})
 	case "/payments/{paymentID}":

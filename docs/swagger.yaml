@@ -3013,6 +3013,54 @@ definitions:
     x-enum-varnames:
     - PaymentTypeReceived
     - PaymentTypeMade
+  github_com_HMB-research_open-accounting_internal_payments.SEPACreditTransferLine:
+    properties:
+      amount:
+        type: number
+      creditor_bic:
+        type: string
+      creditor_iban:
+        type: string
+      creditor_name:
+        type: string
+      currency:
+        type: string
+      end_to_end_id:
+        type: string
+      invoice_id:
+        type: string
+      payment_id:
+        type: string
+      payment_number:
+        type: string
+      remittance:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_payments.SEPAExportRequest:
+    properties:
+      batch_booking:
+        type: boolean
+      charge_bearer:
+        type: string
+      creation_date_time:
+        type: string
+      debtor_bic:
+        type: string
+      debtor_iban:
+        type: string
+      debtor_name:
+        type: string
+      execution_date:
+        type: string
+      lines:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payments.SEPACreditTransferLine'
+        type: array
+      message_id:
+        type: string
+      payment_info_id:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_payroll.AbsenceType:
     properties:
       affects_salary:
@@ -10669,6 +10717,43 @@ paths:
       security:
       - BearerAuth: []
       summary: Import payments
+      tags:
+      - Payments
+  /tenants/{tenantID}/payments/sepa-export:
+    post:
+      consumes:
+      - application/json
+      description: Generate an ISO 20022 pain.001.001.03 SEPA credit-transfer XML
+        file for manual bank upload
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: SEPA export details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payments.SEPAExportRequest'
+      produces:
+      - application/xml
+      responses:
+        "200":
+          description: SEPA pain.001 XML
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Export SEPA payment file
       tags:
       - Payments
   /tenants/{tenantID}/payments/unallocated:

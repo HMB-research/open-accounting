@@ -921,6 +921,34 @@ func (h *Handlers) ImportPayments(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, result)
 }
 
+// ExportSEPAPayments exports SEPA credit-transfer XML for bank upload
+// @Summary Export SEPA payment file
+// @Description Generate an ISO 20022 pain.001.001.03 SEPA credit-transfer XML file for manual bank upload
+// @Tags Payments
+// @Accept json
+// @Produce application/xml
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body payments.SEPAExportRequest true "SEPA export details"
+// @Success 200 {string} string "SEPA pain.001 XML"
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/payments/sepa-export [post]
+func (h *Handlers) ExportSEPAPayments(w http.ResponseWriter, r *http.Request) {
+	var req payments.SEPAExportRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	result, err := payments.BuildSEPAExport(&req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondReportXML(w, result.FileName, []byte(result.XML))
+}
+
 // GetPayment returns a payment by ID
 // @Summary Get payment
 // @Description Get payment details by ID

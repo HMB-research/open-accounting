@@ -8831,6 +8831,63 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/payments/sepa-export": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Generate an ISO 20022 pain.001.001.03 SEPA credit-transfer XML file for manual bank upload",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/xml"
+                ],
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "Export SEPA payment file",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "SEPA export details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payments.SEPAExportRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SEPA pain.001 XML",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/payments/unallocated": {
             "get": {
                 "security": [
@@ -18365,6 +18422,79 @@ const docTemplate = `{
                 "PaymentTypeReceived",
                 "PaymentTypeMade"
             ]
+        },
+        "github_com_HMB-research_open-accounting_internal_payments.SEPACreditTransferLine": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "creditor_bic": {
+                    "type": "string"
+                },
+                "creditor_iban": {
+                    "type": "string"
+                },
+                "creditor_name": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "end_to_end_id": {
+                    "type": "string"
+                },
+                "invoice_id": {
+                    "type": "string"
+                },
+                "payment_id": {
+                    "type": "string"
+                },
+                "payment_number": {
+                    "type": "string"
+                },
+                "remittance": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_payments.SEPAExportRequest": {
+            "type": "object",
+            "properties": {
+                "batch_booking": {
+                    "type": "boolean"
+                },
+                "charge_bearer": {
+                    "type": "string"
+                },
+                "creation_date_time": {
+                    "type": "string"
+                },
+                "debtor_bic": {
+                    "type": "string"
+                },
+                "debtor_iban": {
+                    "type": "string"
+                },
+                "debtor_name": {
+                    "type": "string"
+                },
+                "execution_date": {
+                    "type": "string"
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payments.SEPACreditTransferLine"
+                    }
+                },
+                "message_id": {
+                    "type": "string"
+                },
+                "payment_info_id": {
+                    "type": "string"
+                }
+            }
         },
         "github_com_HMB-research_open-accounting_internal_payroll.AbsenceType": {
             "type": "object",

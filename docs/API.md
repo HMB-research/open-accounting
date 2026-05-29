@@ -2075,6 +2075,34 @@ Content-Type: application/json
 
 Payment CSV imports require `payment_type`, `payment_date`, and `amount`. Optional columns include `payment_number`, `contact_id`, `currency`, `exchange_rate`, `payment_method`, `bank_account`, `reference`, `notes`, `invoice_id`, and `allocation_amount`. Omitted payment numbers are generated; supplied numbers are preserved and checked for duplicates.
 
+### Export SEPA Payment XML
+
+```http
+POST /tenants/{tenantId}/payments/sepa-export
+Authorization: Bearer <token>
+Content-Type: application/json
+Accept: application/xml
+
+{
+  "message_id": "MSG-20260331",
+  "debtor_name": "Example OU",
+  "debtor_iban": "EE382200221020145685",
+  "debtor_bic": "HABAEE2X",
+  "execution_date": "2026-04-01",
+  "lines": [
+    {
+      "end_to_end_id": "INV-1001",
+      "creditor_name": "Supplier AS",
+      "creditor_iban": "EE471000001020145685",
+      "amount": "125.50",
+      "remittance": "Invoice INV-1001"
+    }
+  ]
+}
+```
+
+Returns ISO 20022 `pain.001.001.03` SEPA credit-transfer XML for manual bank upload. The exporter validates debtor and creditor IBAN checksums, optional BIC format, positive EUR amounts, and `YYYY-MM-DD` execution dates. It does not submit payments directly to a bank.
+
 ### Get Payment
 
 ```http

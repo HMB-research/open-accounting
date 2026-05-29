@@ -107,7 +107,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Partial payments | ✅ | ✅ | ✅ | Implemented |
 | Payment reminders | ✅ | ✅ | ✅ | Implemented |
 | Direct bank payments | ✅ | ✅ | ❌ | **Blocker** |
-| SEPA payments | ✅ | ✅ | ❌ | **Gap** |
+| SEPA payments | ✅ | ✅ | ✅ | Implemented as pain.001 XML export for manual bank upload; direct bank submission remains a separate blocker |
 
 ---
 
