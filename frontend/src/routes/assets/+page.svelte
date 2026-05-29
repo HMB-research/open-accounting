@@ -119,15 +119,18 @@
 		}
 	}
 
-	async function activateAsset(assetId: string) {
+	async function activateAsset(asset: FixedAsset) {
 		const tenantId = $page.url.searchParams.get('tenant');
 		if (!tenantId) return;
 
 		try {
-			await api.activateAsset(tenantId, assetId);
+			await api.activateAsset(tenantId, asset.id);
 			loadData(tenantId);
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to activate asset';
+			if (isAssetActivationEvidenceError(error)) {
+				openDocumentManager(asset);
+			}
 		}
 	}
 
@@ -214,6 +217,10 @@
 	function closeDocumentManager() {
 		showDocumentManager = false;
 		selectedAssetForDocuments = null;
+	}
+
+	function isAssetActivationEvidenceError(message: string): boolean {
+		return message.includes('approved asset activation evidence is required');
 	}
 
 	const statusConfig: Record<AssetStatus, StatusConfig> = {
@@ -305,7 +312,7 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each assets as asset}
+						{#each assets as asset (asset.id)}
 							<tr>
 								<td class="number" data-label={m.assets_assetNumber()}>{asset.asset_number}</td>
 								<td data-label={m.common_name()}>{asset.name}</td>
@@ -318,7 +325,7 @@
 								<td class="amount text-right hide-mobile" data-label={m.assets_bookValue()}>{formatCurrency(asset.book_value)}</td>
 								<td class="actions hide-mobile" data-label={m.common_actions()}>
 									{#if asset.status === 'DRAFT'}
-										<button class="btn btn-small btn-success" onclick={() => activateAsset(asset.id)} title={m.assets_activate()}>
+										<button class="btn btn-small btn-success" onclick={() => activateAsset(asset)} title={m.assets_activate()}>
 											{m.assets_activate()}
 										</button>
 										<button class="btn btn-small btn-danger" onclick={() => deleteAsset(asset.id)} title={m.common_delete()}>
@@ -368,7 +375,7 @@
 						<label class="label" for="category">{m.assets_category()}</label>
 						<select class="input" id="category" bind:value={newCategoryId}>
 							<option value="">-</option>
-							{#each categories as category}
+							{#each categories as category (category.id)}
 								<option value={category.id}>{category.name}</option>
 							{/each}
 						</select>
@@ -531,7 +538,7 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each depreciationHistory as entry}
+							{#each depreciationHistory as entry (entry.id)}
 								<tr>
 									<td>{formatDate(entry.depreciation_date)}</td>
 									<td>{formatDate(entry.period_start)}</td>
