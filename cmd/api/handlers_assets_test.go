@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/HMB-research/open-accounting/internal/assets"
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -670,6 +671,59 @@ func TestActivateAsset(t *testing.T) {
 	h.ActivateAsset(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestActivateAssetRequiresApprovedAssetEvidence(t *testing.T) {
+	h, repo, tenantRepo := setupAssetsTestHandlers()
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	repo.assets["asset-1"] = &assets.FixedAsset{
+		ID:               "asset-1",
+		TenantID:         "tenant-1",
+		Name:             "Dell Laptop",
+		Status:           assets.AssetStatusDraft,
+		PurchaseDate:     time.Now(),
+		PurchaseCost:     decimal.NewFromInt(1500),
+		UsefulLifeMonths: 36,
+		ResidualValue:    decimal.NewFromInt(100),
+	}
+
+	docRepo.docs["doc-1"] = &documents.Document{
+		ID:           "doc-1",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypeAsset,
+		EntityID:     "asset-1",
+		DocumentType: documents.DocumentTypeAssetRecord,
+		FileName:     "asset-record.pdf",
+		ReviewStatus: documents.ReviewStatusPending,
+		UploadedBy:   "user-1",
+		CreatedAt:    time.Now(),
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/assets/asset-1/activate", nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "assetID": "asset-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.ActivateAsset(rr, req)
+
+	require.Equal(t, http.StatusConflict, rr.Code)
+	assert.Contains(t, rr.Body.String(), "approved asset activation evidence is required")
+	assert.Equal(t, assets.AssetStatusDraft, repo.assets["asset-1"].Status)
+
+	docRepo.docs["doc-1"].ReviewStatus = documents.ReviewStatusApproved
+
+	rr = httptest.NewRecorder()
+	h.ActivateAsset(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, assets.AssetStatusActive, repo.assets["asset-1"].Status)
 }
 
 func TestDisposeAsset(t *testing.T) {

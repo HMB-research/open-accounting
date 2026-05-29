@@ -33,7 +33,10 @@ import (
 	_ "github.com/HMB-research/open-accounting/internal/tax"
 )
 
-var errApprovedReconciliationEvidenceRequired = errors.New("approved reconciliation evidence is required")
+var (
+	errApprovedReconciliationEvidenceRequired  = errors.New("approved reconciliation evidence is required")
+	errApprovedAssetActivationEvidenceRequired = errors.New("approved asset activation evidence is required")
+)
 
 // =============================================================================
 // ANALYTICS HANDLERS
@@ -3984,7 +3987,7 @@ func (h *Handlers) DeleteAsset(w http.ResponseWriter, r *http.Request) {
 
 // ActivateAsset marks an asset as active
 // @Summary Activate fixed asset
-// @Description Mark a draft fixed asset as active
+// @Description Mark a draft fixed asset as active after approved asset evidence is attached
 // @Tags Fixed Assets
 // @Produce json
 // @Security BearerAuth
@@ -3992,11 +3995,24 @@ func (h *Handlers) DeleteAsset(w http.ResponseWriter, r *http.Request) {
 // @Param assetID path string true "Asset ID"
 // @Success 200 {object} object{status=string}
 // @Failure 400 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
 // @Router /tenants/{tenantID}/assets/{assetID}/activate [post]
 func (h *Handlers) ActivateAsset(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	assetID := chi.URLParam(r, "assetID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.requireApprovedAssetActivationEvidence(r.Context(), schemaName, tenantID, assetID); err != nil {
+		status := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, errApprovedAssetActivationEvidenceRequired):
+			status = http.StatusConflict
+		case strings.Contains(err.Error(), "get asset"):
+			status = http.StatusBadRequest
+		}
+		respondError(w, status, err.Error())
+		return
+	}
 
 	if err := h.assetsService.Activate(r.Context(), tenantID, schemaName, assetID); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
@@ -4004,6 +4020,42 @@ func (h *Handlers) ActivateAsset(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "active"})
+}
+
+func (h *Handlers) requireApprovedAssetActivationEvidence(ctx context.Context, schemaName, tenantID, assetID string) error {
+	if h.documentsService == nil {
+		return nil
+	}
+
+	asset, err := h.assetsService.GetByID(ctx, tenantID, schemaName, assetID)
+	if err != nil {
+		return fmt.Errorf("get asset: %w", err)
+	}
+	if asset.Status != assets.AssetStatusDraft {
+		return nil
+	}
+
+	results, err := h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
+		EntityType: documents.EntityTypeAsset,
+		EntityIDs:  []string{assetID},
+		Rules: []documents.EvidencePolicyRule{{
+			DocumentTypes: []string{
+				documents.DocumentTypeAssetRecord,
+				documents.DocumentTypeReceipt,
+				documents.DocumentTypeContract,
+			},
+			MinCount:        1,
+			RequireApproved: true,
+		}},
+	})
+	if err != nil {
+		return fmt.Errorf("evaluate asset evidence: %w", err)
+	}
+	if len(results) == 0 || !results[0].Compliant {
+		return fmt.Errorf("%w before activating fixed asset %s", errApprovedAssetActivationEvidenceRequired, assetID)
+	}
+
+	return nil
 }
 
 // DisposeAsset marks an asset as disposed
