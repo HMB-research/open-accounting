@@ -205,14 +205,11 @@ func (s *Service) CreateJournalEntry(ctx context.Context, schemaName, tenantID s
 	}
 
 	// Convert request lines to entry lines
-	for _, reqLine := range req.Lines {
-		currency := reqLine.Currency
-		if currency == "" {
-			currency = "EUR"
-		}
-		exchangeRate := reqLine.ExchangeRate
-		if exchangeRate.IsZero() {
-			exchangeRate = decimal.NewFromInt(1)
+	for i, reqLine := range req.Lines {
+		currency := normalizeJournalLineCurrency(reqLine.Currency)
+		exchangeRate, err := normalizeJournalLineExchangeRate(reqLine.ExchangeRate)
+		if err != nil {
+			return nil, fmt.Errorf("validation failed: line %d: %w", i+1, err)
 		}
 
 		line := JournalEntryLine{
@@ -274,7 +271,10 @@ func (s *Service) CreateJournalEntryTemplate(ctx context.Context, schemaName, te
 	}
 	normalizeJournalEntryTemplateSchedule(template)
 	for i, reqLine := range req.Lines {
-		line := newJournalEntryTemplateLine(template.ID, i+1, reqLine)
+		line, err := newJournalEntryTemplateLine(template.ID, i+1, reqLine)
+		if err != nil {
+			return nil, fmt.Errorf("validation failed: %w", err)
+		}
 		template.Lines = append(template.Lines, line)
 	}
 	template.LineCount = len(template.Lines)
@@ -457,14 +457,10 @@ func (s *Service) templateRepository() (JournalEntryTemplateRepository, error) {
 	return repo, nil
 }
 
-func newJournalEntryTemplateLine(templateID string, lineNumber int, reqLine CreateJournalEntryLineReq) JournalEntryTemplateLine {
-	currency := strings.TrimSpace(reqLine.Currency)
-	if currency == "" {
-		currency = "EUR"
-	}
-	exchangeRate := reqLine.ExchangeRate
-	if exchangeRate.IsZero() {
-		exchangeRate = decimal.NewFromInt(1)
+func newJournalEntryTemplateLine(templateID string, lineNumber int, reqLine CreateJournalEntryLineReq) (JournalEntryTemplateLine, error) {
+	exchangeRate, err := normalizeJournalLineExchangeRate(reqLine.ExchangeRate)
+	if err != nil {
+		return JournalEntryTemplateLine{}, fmt.Errorf("line %d: %w", lineNumber, err)
 	}
 	return JournalEntryTemplateLine{
 		ID:           uuid.New().String(),
@@ -474,9 +470,27 @@ func newJournalEntryTemplateLine(templateID string, lineNumber int, reqLine Crea
 		Description:  strings.TrimSpace(reqLine.Description),
 		DebitAmount:  reqLine.DebitAmount,
 		CreditAmount: reqLine.CreditAmount,
-		Currency:     currency,
+		Currency:     normalizeJournalLineCurrency(reqLine.Currency),
 		ExchangeRate: exchangeRate,
+	}, nil
+}
+
+func normalizeJournalLineCurrency(value string) string {
+	currency := strings.ToUpper(strings.TrimSpace(value))
+	if currency == "" {
+		return "EUR"
 	}
+	return currency
+}
+
+func normalizeJournalLineExchangeRate(value decimal.Decimal) (decimal.Decimal, error) {
+	if value.IsZero() {
+		return decimal.NewFromInt(1), nil
+	}
+	if value.LessThanOrEqual(decimal.Zero) {
+		return decimal.Zero, errors.New("exchange_rate must be positive")
+	}
+	return value, nil
 }
 
 func validateJournalEntryTemplate(template *JournalEntryTemplate) error {

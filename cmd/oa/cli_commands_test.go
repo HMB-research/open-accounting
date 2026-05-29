@@ -3140,7 +3140,11 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 			require.Len(t, req.Lines, 2)
 			assert.Equal(t, "acc-1", req.Lines[0].AccountID)
 			assert.True(t, req.Lines[0].DebitAmount.Equal(decimal.RequireFromString("100.00")))
+			assert.Equal(t, "USD", req.Lines[0].Currency)
+			assert.True(t, req.Lines[0].ExchangeRate.Equal(decimal.RequireFromString("0.92")))
 			assert.True(t, req.Lines[1].CreditAmount.Equal(decimal.RequireFromString("100.00")))
+			assert.Equal(t, "USD", req.Lines[1].Currency)
+			assert.True(t, req.Lines[1].ExchangeRate.Equal(decimal.RequireFromString("0.92")))
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(journalPayload("je-1", "JE-2026-001", accounting.StatusDraft))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/import":
@@ -3254,8 +3258,8 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 		"--reference", "ACC-1",
 		"--source-type", "MANUAL",
 		"--requires-evidence",
-		"--line", "account_id=acc-1,description=Expense,debit=100.00",
-		"--line", "account_id=acc-2,description=Accrual,credit=100.00",
+		"--line", "account_id=acc-1,description=Expense,debit=100.00,currency=usd,exchange_rate=0.92",
+		"--line", "account_id=acc-2,description=Accrual,credit=100.00,currency=usd,exchange_rate=0.92",
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created journal entry JE-2026-001 (je-1)")
@@ -7241,13 +7245,19 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	assert.Contains(t, err.Error(), "vat_rate is required")
 
 	var journalLines journalLineFlags
-	require.NoError(t, journalLines.Set("account_id=acc-1,debit=100,description=Debit line"))
+	require.NoError(t, journalLines.Set("account_id=acc-1,debit=100,description=Debit line,currency=usd,exchange_rate=0.92"))
 	require.NoError(t, journalLines.Set("account_id=acc-2,credit=100,description=Credit line"))
 	assert.Equal(t, "acc-1,acc-2", journalLines.String())
+	assert.Equal(t, "USD", journalLines[0].Currency)
+	assert.True(t, journalLines[0].ExchangeRate.Equal(decimal.RequireFromString("0.92")))
 
 	err = journalLines.Set("account_id=acc-3,debit=10,credit=10")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "exactly one")
+
+	err = journalLines.Set("account_id=acc-3,debit=10,exchange_rate=-0.92")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "line exchange_rate")
 
 	paymentType, err := parseRequiredPaymentType("made")
 	require.NoError(t, err)

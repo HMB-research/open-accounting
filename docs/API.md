@@ -687,19 +687,23 @@ Content-Type: application/json
       "account_id": "uuid",
       "debit_amount": "100.00",
       "credit_amount": "0.00",
+      "currency": "USD",
+      "exchange_rate": "0.92",
       "description": "Office supplies"
     },
     {
       "account_id": "uuid",
       "debit_amount": "0.00",
       "credit_amount": "100.00",
+      "currency": "USD",
+      "exchange_rate": "0.92",
       "description": "Payment from cash"
     }
   ]
 }
 ```
 
-**Note:** Debits must equal credits. When `requires_evidence` is true, posting is blocked until the journal entry has at least one approved `supporting_document`, `receipt`, or `tax_support` document attached.
+**Note:** Debits must equal credits in base currency. Line `currency` defaults to `EUR`, omitted or zero `exchange_rate` defaults to `1`, and non-zero exchange rates must be positive. When `requires_evidence` is true, posting is blocked until the journal entry has at least one approved `supporting_document`, `receipt`, or `tax_support` document attached.
 
 ### Post Journal Entry
 
@@ -738,7 +742,7 @@ POST /tenants/{tenantId}/journal-entry-templates/generate-due
 Authorization: Bearer <token>
 ```
 
-Create templates with the same line format as manual journal entries:
+Create templates with the same line format as manual journal entries, including optional `currency` and positive `exchange_rate` for foreign-currency accruals:
 
 ```json
 {

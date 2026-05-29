@@ -510,6 +510,23 @@ func TestService_CreateJournalEntry(t *testing.T) {
 		result, err := svc.CreateJournalEntry(ctx, schemaName, "tenant-1", req)
 		require.NoError(t, err)
 		assert.True(t, result.Lines[0].BaseDebit.Equal(decimal.NewFromFloat(92)))
+		assert.Equal(t, "USD", result.Lines[0].Currency)
+	})
+
+	t.Run("rejects non-positive exchange rate", func(t *testing.T) {
+		req := &CreateJournalEntryRequest{
+			EntryDate:   time.Now(),
+			Description: "Bad FX entry",
+			Lines: []CreateJournalEntryLineReq{
+				{AccountID: "acc-1", DebitAmount: decimal.NewFromFloat(100), Currency: "USD", ExchangeRate: decimal.NewFromFloat(-0.92)},
+				{AccountID: "acc-2", CreditAmount: decimal.NewFromFloat(100), Currency: "USD", ExchangeRate: decimal.NewFromFloat(-0.92)},
+			},
+			UserID: "user-1",
+		}
+
+		_, err := svc.CreateJournalEntry(ctx, schemaName, "tenant-1", req)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "exchange_rate must be positive")
 	})
 
 	t.Run("rejects unbalanced entry", func(t *testing.T) {
@@ -669,6 +686,18 @@ func TestService_JournalEntryTemplateValidation(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "validation failed")
+
+	_, err = svc.CreateJournalEntryTemplate(ctx, schemaName, "tenant-1", &CreateJournalEntryTemplateRequest{
+		Name:        "Bad FX template",
+		Description: "Bad FX template",
+		Lines: []CreateJournalEntryLineReq{
+			{AccountID: "expense", DebitAmount: decimal.RequireFromString("100.00"), Currency: "USD", ExchangeRate: decimal.RequireFromString("-0.92")},
+			{AccountID: "accruals", CreditAmount: decimal.RequireFromString("100.00"), Currency: "USD", ExchangeRate: decimal.RequireFromString("-0.92")},
+		},
+		UserID: "user-1",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exchange_rate must be positive")
 
 	template, err := svc.CreateJournalEntryTemplate(ctx, schemaName, "tenant-1", &CreateJournalEntryTemplateRequest{
 		Name:             "Evidence controlled",

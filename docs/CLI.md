@@ -852,8 +852,8 @@ go run ./cmd/oa journal create \
   --description "Manual accrual" \
   --reference ACC-1 \
   --requires-evidence \
-  --line "account_id=<expense-account-id>,description=Expense,debit=100.00" \
-  --line "account_id=<accrual-account-id>,description=Accrual,credit=100.00"
+  --line "account_id=<expense-account-id>,description=Expense,debit=100.00,currency=USD,exchange_rate=0.92" \
+  --line "account_id=<accrual-account-id>,description=Accrual,credit=100.00,currency=USD,exchange_rate=0.92"
 go run ./cmd/oa journal get --id <journal-entry-id>
 go run ./cmd/oa journal post --id <journal-entry-id>
 go run ./cmd/oa journal void --id <journal-entry-id> --reason "Duplicate entry"
@@ -878,7 +878,7 @@ go run ./cmd/oa journal templates generate --id <template-id> --post
 go run ./cmd/oa journal templates generate-due --as-of 2026-05-31
 ```
 
-Use `--line` repeatedly on `journal create`. Each line is comma-separated `key=value` pairs with `account_id` and exactly one of `debit` or `credit`; optional keys include `description`, `currency`, and `exchange_rate`. Use `--requires-evidence` for manual adjustments that must have approved `supporting_document`, `receipt`, or `tax_support` evidence attached before posting.
+Use `--line` repeatedly on `journal create`. Each line is comma-separated `key=value` pairs with `account_id` and exactly one of `debit` or `credit`; optional keys include `description`, `currency`, and positive `exchange_rate`. Omitted currency defaults to `EUR` and omitted exchange rate defaults to `1`; journal entries balance on base-currency debit/credit totals. Use `--requires-evidence` for manual adjustments that must have approved `supporting_document`, `receipt`, or `tax_support` evidence attached before posting.
 `journal templates create` uses the same `--line` syntax. Add `--frequency` with `--start-date` for recurring templates; supported frequencies are `WEEKLY`, `BIWEEKLY`, `MONTHLY`, `QUARTERLY`, and `YEARLY`. `journal templates apply` creates an on-demand entry without advancing the schedule. `journal templates generate` and `generate-due` advance recurring schedules. Templates that require evidence can only generate drafts.
 `journal import` expects grouped CSV rows with `entry_reference`, `entry_date`, `account_code`, `debit`, and `credit`; optional columns include `entry_description`, `line_description`, `currency`, `exchange_rate`, `source_type`, and `source_id`.
 

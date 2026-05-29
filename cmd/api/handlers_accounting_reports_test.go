@@ -153,12 +153,26 @@ func TestJournalEntryHandlers_CreatePostVoidAndGet(t *testing.T) {
 
 	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries", map[string]interface{}{
 		"entry_date":  "2026-02-10T00:00:00Z",
+		"description": "Bad FX journal",
+		"lines": []map[string]interface{}{
+			{"account_id": "cash", "debit_amount": "100.00", "currency": "USD", "exchange_rate": "-0.92"},
+			{"account_id": "sales", "credit_amount": "100.00", "currency": "USD", "exchange_rate": "-0.92"},
+		},
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.CreateJournalEntry(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "exchange_rate must be positive")
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries", map[string]interface{}{
+		"entry_date":  "2026-02-10T00:00:00Z",
 		"description": "Sales journal",
 		"reference":   "REF-1",
 		"source_type": "MANUAL",
 		"lines": []map[string]interface{}{
-			{"account_id": "cash", "debit_amount": "100.00"},
-			{"account_id": "sales", "credit_amount": "100.00"},
+			{"account_id": "cash", "debit_amount": "100.00", "currency": "usd", "exchange_rate": "0.92"},
+			{"account_id": "sales", "credit_amount": "100.00", "currency": "usd", "exchange_rate": "0.92"},
 		},
 	}, claims)
 	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
@@ -170,6 +184,11 @@ func TestJournalEntryHandlers_CreatePostVoidAndGet(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &created))
 	assert.Equal(t, accounting.StatusDraft, created.Status)
 	require.NotEmpty(t, created.ID)
+	require.Len(t, created.Lines, 2)
+	assert.Equal(t, "USD", created.Lines[0].Currency)
+	assert.True(t, created.Lines[0].ExchangeRate.Equal(decimal.RequireFromString("0.92")))
+	assert.True(t, created.Lines[0].BaseDebit.Equal(decimal.RequireFromString("92.00")))
+	assert.True(t, created.Lines[1].BaseCredit.Equal(decimal.RequireFromString("92.00")))
 
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/journal-entries/"+created.ID, nil), map[string]string{
 		"tenantID": "tenant-1",
