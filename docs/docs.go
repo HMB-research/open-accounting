@@ -9517,6 +9517,69 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/payroll-runs/{runID}/process": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Bulk-calculate payslips for all active employees in a payroll run and optionally approve it",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Payroll"
+                ],
+                "summary": "Process payroll run",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Payroll Run ID",
+                        "name": "runID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Bulk payroll processing options",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.ProcessPayrollRunRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.PayrollRunProcessResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/payroll-runs/{runID}/tsd": {
             "post": {
                 "security": [
@@ -19160,6 +19223,20 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_payroll.PayrollRunProcessResult": {
+            "type": "object",
+            "properties": {
+                "approved": {
+                    "type": "boolean"
+                },
+                "payroll_run": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.PayrollRun"
+                },
+                "payslip_count": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_payroll.PayrollStatus": {
             "type": "string",
             "enum": [
@@ -19247,6 +19324,14 @@ const docTemplate = `{
                 },
                 "unemployment_insurance_employer": {
                     "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_payroll.ProcessPayrollRunRequest": {
+            "type": "object",
+            "properties": {
+                "approve": {
+                    "type": "boolean"
                 }
             }
         },

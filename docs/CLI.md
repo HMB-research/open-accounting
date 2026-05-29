@@ -243,12 +243,13 @@ go run ./cmd/oa payroll runs list --year 2026
 go run ./cmd/oa payroll runs create --year 2026 --month 3 --payment-date 2026-03-31
 go run ./cmd/oa payroll runs get --id <payroll-run-id>
 go run ./cmd/oa payroll runs calculate --id <payroll-run-id>
+go run ./cmd/oa payroll runs process --id <payroll-run-id> --approve
 go run ./cmd/oa payroll runs approve --id <payroll-run-id>
 go run ./cmd/oa payroll runs payslips --id <payroll-run-id>
 go run ./cmd/oa payroll tax-preview --gross-salary 3200.00
 ```
 
-Use `payroll runs calculate` after employee salary setup, then `payroll runs approve` before TSD generation. Use `--json` on read and mutation commands when scripting.
+Use `payroll runs calculate` after employee salary setup, then `payroll runs approve` before TSD generation. Use `payroll runs process --approve` to bulk-calculate all active employees in a draft run and approve it in one request. Use `--json` on read and mutation commands when scripting.
 
 ## Payroll migration imports
 

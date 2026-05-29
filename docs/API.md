@@ -1033,6 +1033,20 @@ Authorization: Bearer <token>
 
 Calculates payslips for active employees that have salary setup.
 
+### Process Payroll Run
+
+```http
+POST /tenants/{tenantId}/payroll-runs/{runId}/process
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "approve": true
+}
+```
+
+Bulk-calculates payslips for all active employees that have salary setup. When `approve` is true, the same request also approves the calculated run for payment and tax declaration workflows.
+
 ### Approve Payroll Run
 
 ```http

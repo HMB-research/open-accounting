@@ -212,6 +212,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  payroll runs create       Create a payroll run")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll runs get          Show one payroll run")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll runs calculate    Calculate payslips for a payroll run")
+	_, _ = fmt.Fprintln(a.stdout, "  payroll runs process      Bulk process a payroll run")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll runs approve      Approve a payroll run")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll runs payslips     List payslips for a payroll run")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll tax-preview       Preview Estonian payroll taxes")
@@ -8401,6 +8402,36 @@ func (a *cliApp) runPayrollRuns(ctx context.Context, cfg *cliConfig, client *api
 			return printJSON(a.stdout, run)
 		}
 		printPayrollRun(a.stdout, run)
+		return nil
+
+	case "process":
+		fs := flag.NewFlagSet("payroll runs process", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		runID := fs.String("id", "", "Payroll run id")
+		approve := fs.Bool("approve", false, "Approve after calculation")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		trimmedRunID := strings.TrimSpace(*runID)
+		if trimmedRunID == "" {
+			return errors.New("id is required")
+		}
+
+		result, err := client.processPayrollRun(ctx, cfg.TenantID, trimmedRunID, &payroll.ProcessPayrollRunRequest{
+			Approve: *approve,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Processed payroll run %s with %d payslips\n", trimmedRunID, result.PayslipCount)
+		if result.Approved {
+			_, _ = fmt.Fprintln(a.stdout, "Payroll run was approved")
+		}
+		printPayrollRun(a.stdout, result.PayrollRun)
 		return nil
 
 	case "approve":

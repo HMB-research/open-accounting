@@ -340,6 +340,38 @@ func (s *Service) CalculatePayroll(ctx context.Context, schemaName, tenantID, pa
 	return run, nil
 }
 
+// ProcessPayrollRun calculates all active employee payslips and optionally approves the run.
+func (s *Service) ProcessPayrollRun(ctx context.Context, schemaName, tenantID, runID, approverID string, req *ProcessPayrollRunRequest) (*PayrollRunProcessResult, error) {
+	if req == nil {
+		req = &ProcessPayrollRunRequest{}
+	}
+
+	run, err := s.CalculatePayroll(ctx, schemaName, tenantID, runID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &PayrollRunProcessResult{
+		PayrollRun:   run,
+		PayslipCount: len(run.Payslips),
+		Approved:     false,
+	}
+
+	if req.Approve {
+		if err := s.ApprovePayrollRun(ctx, schemaName, tenantID, runID, approverID); err != nil {
+			return nil, err
+		}
+		now := time.Now()
+		run.Status = PayrollApproved
+		run.ApprovedBy = approverID
+		run.ApprovedAt = &now
+		run.UpdatedAt = now
+		result.Approved = true
+	}
+
+	return result, nil
+}
+
 // GetPayrollRun retrieves a payroll run by ID
 func (s *Service) GetPayrollRun(ctx context.Context, schemaName, tenantID, runID string) (*PayrollRun, error) {
 	run, err := s.repo.GetPayrollRun(ctx, schemaName, tenantID, runID)

@@ -119,6 +119,25 @@ func TestPayrollHandlersIntegration(t *testing.T) {
 		t.Fatalf("expected payroll run %s, got %s", run.ID, gotRun.ID)
 	}
 
+	processRun := invokeJSON[payroll.PayrollRun](t, http.StatusCreated, func(w http.ResponseWriter, r *http.Request) {
+		h.CreatePayrollRun(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tenant.ID+"/payroll-runs", payroll.CreatePayrollRunRequest{
+		PeriodYear:  2025,
+		PeriodMonth: 3,
+	}, claims), map[string]string{"tenantID": tenant.ID}))
+
+	processed := invokeJSON[payroll.PayrollRunProcessResult](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
+		h.ProcessPayrollRun(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tenant.ID+"/payroll-runs/"+processRun.ID+"/process", payroll.ProcessPayrollRunRequest{
+		Approve: true,
+	}, claims), map[string]string{"tenantID": tenant.ID, "runID": processRun.ID}))
+	if processed.PayslipCount != 1 || !processed.Approved {
+		t.Fatalf("expected processed approved run with 1 payslip, got count=%d approved=%v", processed.PayslipCount, processed.Approved)
+	}
+	if processed.PayrollRun == nil || processed.PayrollRun.Status != payroll.PayrollApproved {
+		t.Fatalf("expected approved processed payroll run, got %#v", processed.PayrollRun)
+	}
+
 	calculated := invokeJSON[payroll.PayrollRun](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
 		h.CalculatePayroll(w, r)
 	}, withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tenant.ID+"/payroll-runs/"+run.ID+"/calculate", nil, claims), map[string]string{"tenantID": tenant.ID, "runID": run.ID}))

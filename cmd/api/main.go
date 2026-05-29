@@ -677,6 +677,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Post("/payroll-runs/import-history", h.ImportPayrollHistory)
 				r.Get("/payroll-runs/{runID}", h.GetPayrollRun)
 				r.Post("/payroll-runs/{runID}/calculate", h.CalculatePayroll)
+				r.Post("/payroll-runs/{runID}/process", h.ProcessPayrollRun)
 				r.Post("/payroll-runs/{runID}/approve", h.ApprovePayroll)
 				r.Get("/payroll-runs/{runID}/payslips", h.GetPayslips)
 				r.Post("/payroll-runs/{runID}/tsd", h.GenerateTSD)

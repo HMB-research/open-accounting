@@ -134,7 +134,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Pension contributions | ✅ | ✅ | ✅ | Implemented |
 | Payslip generation | ✅ | ✅ | ⚠️ | Partial |
 | Historical payroll and leave-balance import | ✅ | ✅ | ⚠️ | API/UI/CLI import exists; broader cutover still partial |
-| Bulk payroll processing | ✅ | ✅ | ❌ | **Gap** |
+| Bulk payroll processing | ✅ | ✅ | ✅ | Implemented via payroll run process API/CLI |
 
 ### 4.3 Tax Declarations
 
