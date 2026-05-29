@@ -323,7 +323,7 @@
 								<td class="hide-mobile" data-label={m.assets_purchaseDate()}>{formatDate(asset.purchase_date)}</td>
 								<td class="amount text-right" data-label={m.assets_purchaseCost()}>{formatCurrency(asset.purchase_cost)}</td>
 								<td class="amount text-right hide-mobile" data-label={m.assets_bookValue()}>{formatCurrency(asset.book_value)}</td>
-								<td class="actions hide-mobile" data-label={m.common_actions()}>
+								<td class="actions actions-cell" data-label={m.common_actions()}>
 									{#if asset.status === 'DRAFT'}
 										<button class="btn btn-small btn-success" onclick={() => activateAsset(asset)} title={m.assets_activate()}>
 											{m.assets_activate()}
