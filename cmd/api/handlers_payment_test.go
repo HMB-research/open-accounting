@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -139,6 +140,51 @@ func setupPaymentTestHandlers() (*Handlers, *mockPaymentsRepository, *mockTenant
 		tenantService:   tenantSvc,
 	}
 	return h, paymentsRepo, tenantRepo
+}
+
+func TestPaymentReceiptEvidenceRequirement(t *testing.T) {
+	h, repo, tenantRepo := setupPaymentTestHandlers()
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+		Name:       "Test Tenant",
+	}
+	repo.payments["pay-1"] = &payments.Payment{
+		ID:          "pay-1",
+		TenantID:    "tenant-1",
+		PaymentType: payments.PaymentTypeReceived,
+		PaymentDate: time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+		Amount:      decimal.NewFromInt(100),
+		Currency:    "EUR",
+	}
+
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+
+	err := h.requireApprovedPaymentReceiptEvidence(context.Background(), "tenant_test", "tenant-1", "pay-1", true)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errApprovedPaymentReceiptEvidenceRequired)
+
+	docRepo.docs["doc-1"] = &documents.Document{
+		ID:           "doc-1",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypePayment,
+		EntityID:     "pay-1",
+		DocumentType: documents.DocumentTypeReceipt,
+		ReviewStatus: documents.ReviewStatusApproved,
+	}
+	err = h.requireApprovedPaymentReceiptEvidence(context.Background(), "tenant_test", "tenant-1", "pay-1", true)
+	require.NoError(t, err)
+
+	req := withURLParams(httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/payments/pay-1/email-receipt", bytes.NewBufferString(`{
+		"recipient_email":"billing@example.com",
+		"require_approved_evidence":true
+	}`)), map[string]string{"tenantID": "tenant-1", "paymentID": "pay-1"})
+	docRepo.docs = map[string]*documents.Document{}
+	rr := httptest.NewRecorder()
+	h.EmailPaymentReceipt(rr, req)
+	assert.Equal(t, http.StatusConflict, rr.Code)
+	assert.Contains(t, rr.Body.String(), "approved payment receipt evidence is required")
 }
 
 func TestListPayments(t *testing.T) {

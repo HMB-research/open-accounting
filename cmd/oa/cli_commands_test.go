@@ -3725,6 +3725,7 @@ func TestCLIEmailCommands(t *testing.T) {
 			assert.Equal(t, "Acme", req.RecipientName)
 			assert.Equal(t, "Receipt", req.Subject)
 			assert.Equal(t, "Thanks", req.Message)
+			assert.True(t, req.RequireApprovedEvidence)
 			_ = json.NewEncoder(w).Encode(emailSentPayload)
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
@@ -3772,7 +3773,7 @@ func TestCLIEmailCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Log ID: email-2")
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"email", "payment-receipt", "--payment-id", "pay-1", "--recipient-email", "billing@example.com", "--recipient-name", "Acme", "--subject", "Receipt", "--message", "Thanks"})
+	err = app.run(context.Background(), []string{"email", "payment-receipt", "--payment-id", "pay-1", "--recipient-email", "billing@example.com", "--recipient-name", "Acme", "--subject", "Receipt", "--message", "Thanks", "--require-approved-evidence"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Email sent")
 }

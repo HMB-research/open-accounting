@@ -3020,6 +3020,7 @@ func (a *cliApp) runEmail(ctx context.Context, args []string) error {
 		recipientName := fs.String("recipient-name", "", "Recipient name")
 		subject := fs.String("subject", "", "Email subject override")
 		message := fs.String("message", "", "Email message")
+		requireApprovedEvidence := fs.Bool("require-approved-evidence", false, "Require approved payment evidence before sending")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -3032,10 +3033,11 @@ func (a *cliApp) runEmail(ctx context.Context, args []string) error {
 		}
 
 		result, err := client.emailPaymentReceipt(ctx, cfg.TenantID, strings.TrimSpace(*paymentID), &email.SendPaymentReceiptRequest{
-			RecipientEmail: strings.TrimSpace(*recipientEmail),
-			RecipientName:  strings.TrimSpace(*recipientName),
-			Subject:        strings.TrimSpace(*subject),
-			Message:        strings.TrimSpace(*message),
+			RecipientEmail:          strings.TrimSpace(*recipientEmail),
+			RecipientName:           strings.TrimSpace(*recipientName),
+			Subject:                 strings.TrimSpace(*subject),
+			Message:                 strings.TrimSpace(*message),
+			RequireApprovedEvidence: *requireApprovedEvidence,
 		})
 		if err != nil {
 			return err
