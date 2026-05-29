@@ -250,6 +250,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  payments list             List payments")
 	_, _ = fmt.Fprintln(a.stdout, "  payments create           Create a payment")
 	_, _ = fmt.Fprintln(a.stdout, "  payments import           Import payments from CSV")
+	_, _ = fmt.Fprintln(a.stdout, "  payments sepa-export      Export SEPA payment XML")
 	_, _ = fmt.Fprintln(a.stdout, "  payments get              Show one payment")
 	_, _ = fmt.Fprintln(a.stdout, "  payments allocate         Allocate a payment to an invoice")
 	_, _ = fmt.Fprintln(a.stdout, "  payments unallocated      List unallocated payments")
@@ -2582,6 +2583,54 @@ func (a *cliApp) runPayments(ctx context.Context, args []string) error {
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Processed %d rows, created %d payments, skipped %d rows\n", result.RowsProcessed, result.PaymentsCreated, result.RowsSkipped)
 		return nil
+
+	case "sepa-export":
+		fs := flag.NewFlagSet("payments sepa-export", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		messageID := fs.String("message-id", "", "Optional SEPA message id")
+		paymentInfoID := fs.String("payment-info-id", "", "Optional SEPA payment info id")
+		creationDateTime := fs.String("creation-date-time", "", "Optional creation timestamp in RFC3339")
+		debtorName := fs.String("debtor-name", "", "Debtor/company name")
+		debtorIBAN := fs.String("debtor-iban", "", "Debtor IBAN")
+		debtorBIC := fs.String("debtor-bic", "", "Optional debtor BIC")
+		executionDate := fs.String("execution-date", "", "Requested execution date in YYYY-MM-DD")
+		batchBooking := fs.Bool("batch-booking", true, "Use batch booking")
+		chargeBearer := fs.String("charge-bearer", "SLEV", "Charge bearer")
+		outputPath := fs.String("output", "", "Optional XML output file path")
+		lines := sepaLineFlags{}
+		fs.Var(&lines, "line", "Credit transfer as comma-separated key=value pairs; repeatable")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*debtorName) == "" {
+			return errors.New("debtor-name is required")
+		}
+		if strings.TrimSpace(*debtorIBAN) == "" {
+			return errors.New("debtor-iban is required")
+		}
+		if strings.TrimSpace(*executionDate) == "" {
+			return errors.New("execution-date is required")
+		}
+		if len(lines) == 0 {
+			return errors.New("at least one line is required")
+		}
+
+		content, err := client.exportSEPAPayments(ctx, cfg.TenantID, &payments.SEPAExportRequest{
+			MessageID:        strings.TrimSpace(*messageID),
+			PaymentInfoID:    strings.TrimSpace(*paymentInfoID),
+			CreationDateTime: strings.TrimSpace(*creationDateTime),
+			DebtorName:       strings.TrimSpace(*debtorName),
+			DebtorIBAN:       strings.TrimSpace(*debtorIBAN),
+			DebtorBIC:        strings.TrimSpace(*debtorBIC),
+			ExecutionDate:    strings.TrimSpace(*executionDate),
+			BatchBooking:     batchBooking,
+			ChargeBearer:     strings.TrimSpace(*chargeBearer),
+			Lines:            []payments.SEPACreditTransferLine(lines),
+		})
+		if err != nil {
+			return err
+		}
+		return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "SEPA XML")
 
 	case "get":
 		fs := flag.NewFlagSet("payments get", flag.ContinueOnError)
@@ -10696,6 +10745,66 @@ func (a *allocationFlags) String() string {
 	values := make([]string, 0, len(*a))
 	for _, allocation := range *a {
 		values = append(values, allocation.InvoiceID+":"+allocation.Amount.String())
+	}
+	return strings.Join(values, ",")
+}
+
+type sepaLineFlags []payments.SEPACreditTransferLine
+
+func (l *sepaLineFlags) Set(value string) error {
+	reader := csv.NewReader(strings.NewReader(value))
+	reader.TrimLeadingSpace = true
+	reader.FieldsPerRecord = -1
+	fields, err := reader.Read()
+	if err != nil {
+		return fmt.Errorf("parse line: %w", err)
+	}
+
+	values := make(map[string]string)
+	for _, field := range fields {
+		key, val, ok := strings.Cut(field, "=")
+		if !ok {
+			return fmt.Errorf("line field %q must be key=value", field)
+		}
+		normalizedKey := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(key)), "-", "_")
+		values[normalizedKey] = strings.TrimSpace(val)
+	}
+
+	creditorName := strings.TrimSpace(firstNonEmpty(values["creditor_name"], values["name"]))
+	if creditorName == "" {
+		return errors.New("line creditor_name is required")
+	}
+	creditorIBAN := strings.TrimSpace(firstNonEmpty(values["creditor_iban"], values["iban"]))
+	if creditorIBAN == "" {
+		return errors.New("line creditor_iban is required")
+	}
+	amount, err := parseRequiredPositiveDecimal("line amount", values["amount"])
+	if err != nil {
+		return err
+	}
+
+	*l = append(*l, payments.SEPACreditTransferLine{
+		EndToEndID:    strings.TrimSpace(firstNonEmpty(values["end_to_end_id"], values["e2e"])),
+		CreditorName:  creditorName,
+		CreditorIBAN:  creditorIBAN,
+		CreditorBIC:   strings.TrimSpace(firstNonEmpty(values["creditor_bic"], values["bic"])),
+		Amount:        amount,
+		Currency:      strings.ToUpper(firstNonEmpty(values["currency"], "EUR")),
+		Remittance:    strings.TrimSpace(firstNonEmpty(values["remittance"], values["message"])),
+		InvoiceID:     strings.TrimSpace(values["invoice_id"]),
+		PaymentID:     strings.TrimSpace(values["payment_id"]),
+		PaymentNumber: strings.TrimSpace(values["payment_number"]),
+	})
+	return nil
+}
+
+func (l *sepaLineFlags) String() string {
+	if l == nil {
+		return ""
+	}
+	values := make([]string, 0, len(*l))
+	for _, line := range *l {
+		values = append(values, line.CreditorName+":"+line.Amount.String())
 	}
 	return strings.Join(values, ",")
 }

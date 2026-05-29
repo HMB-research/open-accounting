@@ -3492,6 +3492,19 @@ func TestCLIPaymentCommands(t *testing.T) {
 				"payments_created": 1,
 				"rows_skipped":     0,
 			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments/sepa-export":
+			var req payments.SEPAExportRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "MSG-20260331", req.MessageID)
+			assert.Equal(t, "Example OU", req.DebtorName)
+			assert.Equal(t, "EE382200221020145685", req.DebtorIBAN)
+			assert.Equal(t, "2026-04-01", req.ExecutionDate)
+			require.Len(t, req.Lines, 1)
+			assert.Equal(t, "Supplier AS", req.Lines[0].CreditorName)
+			assert.Equal(t, "EE471000001020145685", req.Lines[0].CreditorIBAN)
+			assert.True(t, req.Lines[0].Amount.Equal(decimal.RequireFromString("125.50")))
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><Document><MsgId>MSG-20260331</MsgId><InstdAmt Ccy="EUR">125.50</InstdAmt></Document>`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payments/pay-1":
 			_ = json.NewEncoder(w).Encode(paymentPayload("pay-1", "PMT-00001"))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments/pay-1/allocate":
@@ -3548,6 +3561,25 @@ func TestCLIPaymentCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"payments", "import", "--file", importFile})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 payments, skipped 0 rows")
+
+	stdout.Reset()
+	sepaPath := filepath.Join(t.TempDir(), "sepa.xml")
+	err = app.run(context.Background(), []string{
+		"payments", "sepa-export",
+		"--message-id", "MSG-20260331",
+		"--debtor-name", "Example OU",
+		"--debtor-iban", "EE382200221020145685",
+		"--debtor-bic", "HABAEE2X",
+		"--execution-date", "2026-04-01",
+		"--line", "name=Supplier AS,iban=EE471000001020145685,amount=125.50,remittance=Invoice INV-1001",
+		"--output", sepaPath,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote SEPA XML")
+	sepaXML, err := os.ReadFile(sepaPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(sepaXML), "MSG-20260331")
+	assert.Contains(t, string(sepaXML), "125.50")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"payments", "get", "--id", "pay-1"})

@@ -45,6 +45,13 @@ func respondReportPDF(w http.ResponseWriter, fileName string, content []byte) {
 	_, _ = w.Write(content)
 }
 
+func respondReportXML(w http.ResponseWriter, fileName string, content []byte) {
+	w.Header().Set("Content-Type", "application/xml")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileName))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(content)
+}
+
 func trialBalanceCSV(report *accounting.TrialBalance) ([]byte, error) {
 	buffer := &bytes.Buffer{}
 	writer := csv.NewWriter(buffer)

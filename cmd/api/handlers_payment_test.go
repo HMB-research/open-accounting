@@ -436,6 +436,57 @@ func TestImportPayments(t *testing.T) {
 	}
 }
 
+func TestExportSEPAPayments(t *testing.T) {
+	h, _, tenantRepo := setupPaymentTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/payments/sepa-export", payments.SEPAExportRequest{
+		MessageID:        "MSG-20260331",
+		PaymentInfoID:    "PMTINF-20260331",
+		CreationDateTime: "2026-03-31T09:30:00Z",
+		DebtorName:       "Example OU",
+		DebtorIBAN:       "EE382200221020145685",
+		DebtorBIC:        "HABAEE2X",
+		ExecutionDate:    "2026-04-01",
+		Lines: []payments.SEPACreditTransferLine{{
+			EndToEndID:   "INV-1001",
+			CreditorName: "Supplier AS",
+			CreditorIBAN: "EE471000001020145685",
+			Amount:       decimal.RequireFromString("125.50"),
+			Remittance:   "Invoice INV-1001",
+		}},
+	}, nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr := httptest.NewRecorder()
+	h.ExportSEPAPayments(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/xml", rr.Header().Get("Content-Type"))
+	assert.Contains(t, rr.Header().Get("Content-Disposition"), "sepa-payments-2026-04-01.xml")
+	assert.Contains(t, rr.Body.String(), `<MsgId>MSG-20260331</MsgId>`)
+	assert.Contains(t, rr.Body.String(), `<InstdAmt Ccy="EUR">125.50</InstdAmt>`)
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/payments/sepa-export", payments.SEPAExportRequest{
+		DebtorName:    "Example OU",
+		DebtorIBAN:    "EE001",
+		ExecutionDate: "2026-04-01",
+		Lines: []payments.SEPACreditTransferLine{{
+			CreditorName: "Supplier AS",
+			CreditorIBAN: "EE471000001020145685",
+			Amount:       decimal.RequireFromString("125.50"),
+		}},
+	}, nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.ExportSEPAPayments(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "debtor_iban")
+}
+
 func TestGetPayment(t *testing.T) {
 	h, repo, tenantRepo := setupPaymentTestHandlers()
 
