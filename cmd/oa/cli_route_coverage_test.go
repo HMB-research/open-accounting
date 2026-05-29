@@ -317,6 +317,10 @@ func collectKnownCLICommandPaths(t *testing.T) map[string]bool {
 		"help":                          true,
 		"auth init":                     true,
 		"auth logout":                   true,
+		"ops backup create":             true,
+		"ops backup health":             true,
+		"ops backup offsite-sync":       true,
+		"ops backup restore-drill":      true,
 		"payroll import-leave-balances": true,
 	}
 	for _, route := range collectAPIRoutesFromSource(t) {

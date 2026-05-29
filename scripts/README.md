@@ -177,6 +177,15 @@ DATABASE_URL="postgres://user:pass@host:5432/openaccounting?sslmode=require" \
   scripts/db-backup.sh --backup-dir ./backups --retention-days 30
 ```
 
+The Go CLI exposes the same local operator flow when the scripts are present:
+
+```bash
+DATABASE_URL="postgres://user:pass@host:5432/openaccounting?sslmode=require" \
+  go run ./cmd/oa ops backup create --backup-dir ./backups --retention-days 30
+```
+
+Set `OA_SCRIPT_DIR` when running a built `oa` binary outside the repository checkout.
+
 Use PostgreSQL client tools from the same major version as the server. For self-hosted Docker deployments, the production backup service runs the script from a matching PostgreSQL image.
 
 Verify a backup by restoring it into a separate disposable database:
@@ -209,6 +218,8 @@ Sync local backups offsite after the backup script writes both the dump and chec
 ```bash
 BACKUP_OFFSITE_S3_URI="s3://company-backups/open-accounting/prod" \
   scripts/db-backup-offsite-sync.sh --backup-dir ./backups
+
+go run ./cmd/oa ops backup offsite-sync --backup-dir ./backups --s3-uri s3://company-backups/open-accounting/prod --dry-run
 ```
 
 For non-AWS providers, configure an rclone remote on the host and use:
