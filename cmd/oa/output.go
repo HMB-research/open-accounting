@@ -1918,6 +1918,31 @@ func printYearEndClosePack(w io.Writer, pack *accounting.YearEndClosePack) {
 	}
 }
 
+func printAnnualReport(w io.Writer, report *reports.AnnualReport) {
+	if report == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "Annual report %s\n", report.FiscalYearLabel)
+	_, _ = fmt.Fprintf(w, "Fiscal year: %s to %s\n", report.FiscalYearStartDate, report.FiscalYearEndDate)
+	if report.CloseStatus != nil {
+		_, _ = fmt.Fprintf(w, "Period closed: %t\n", report.CloseStatus.PeriodClosed)
+		_, _ = fmt.Fprintf(w, "Carry-forward ready: %t\n", report.CloseStatus.CarryForwardReady)
+		_, _ = fmt.Fprintf(w, "Net income: %s\n", report.CloseStatus.NetIncome.String())
+	}
+	if report.TrialBalance != nil {
+		_, _ = fmt.Fprintf(w, "Trial balance: debits %s, credits %s, balanced %t\n", report.TrialBalance.TotalDebits.String(), report.TrialBalance.TotalCredits.String(), report.TrialBalance.IsBalanced)
+	}
+	if report.BalanceSheet != nil {
+		_, _ = fmt.Fprintf(w, "Balance sheet: assets %s, liabilities %s, equity %s, balanced %t\n", report.BalanceSheet.TotalAssets.String(), report.BalanceSheet.TotalLiabilities.String(), report.BalanceSheet.TotalEquity.String(), report.BalanceSheet.IsBalanced)
+	}
+	if report.IncomeStatement != nil {
+		_, _ = fmt.Fprintf(w, "Income statement: revenue %s, expenses %s, net income %s\n", report.IncomeStatement.TotalRevenue.String(), report.IncomeStatement.TotalExpenses.String(), report.IncomeStatement.NetIncome.String())
+	}
+	if report.CashFlowStatement != nil {
+		_, _ = fmt.Fprintf(w, "Cash flow: method %s, net change %s, closing cash %s\n", report.CashFlowStatement.Method, report.CashFlowStatement.NetCashChange.String(), report.CashFlowStatement.ClosingCash.String())
+	}
+}
+
 func printYearEndCloseAuditEvidence(w io.Writer, audit *accounting.YearEndCloseAuditEvidence) {
 	if audit == nil {
 		return

@@ -4856,6 +4856,80 @@ func TestCLIReportsCommands(t *testing.T) {
 				"total_expenses": "700.00",
 				"net_income":     "500.00",
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/annual":
+			require.Equal(t, "2026-12-31", r.URL.Query().Get("period_end_date"))
+			require.Equal(t, "indirect", r.URL.Query().Get("cash_flow_method"))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tenant_id":              "tenant-1",
+				"period_end_date":        "2026-12-31",
+				"fiscal_year_label":      "2026",
+				"fiscal_year_start_date": "2026-01-01",
+				"fiscal_year_end_date":   "2026-12-31",
+				"generated_at":           "2026-12-31T12:00:00Z",
+				"close_status": map[string]any{
+					"period_end_date":               "2026-12-31",
+					"fiscal_year_label":             "2026",
+					"fiscal_year_start_date":        "2026-01-01",
+					"fiscal_year_end_date":          "2026-12-31",
+					"carry_forward_date":            "2027-01-01",
+					"is_fiscal_year_end":            true,
+					"period_closed":                 true,
+					"has_profit_and_loss_activity":  true,
+					"carry_forward_needed":          true,
+					"carry_forward_ready":           true,
+					"has_retained_earnings_account": true,
+					"net_income":                    "500.00",
+				},
+				"trial_balance": map[string]any{
+					"tenant_id":     "tenant-1",
+					"as_of_date":    "2026-12-31T00:00:00Z",
+					"generated_at":  "2026-12-31T12:00:00Z",
+					"accounts":      []map[string]any{},
+					"total_debits":  "500.00",
+					"total_credits": "500.00",
+					"is_balanced":   true,
+				},
+				"balance_sheet": map[string]any{
+					"tenant_id":         "tenant-1",
+					"as_of_date":        "2026-12-31T00:00:00Z",
+					"generated_at":      "2026-12-31T12:00:00Z",
+					"assets":            []map[string]any{},
+					"liabilities":       []map[string]any{},
+					"equity":            []map[string]any{},
+					"total_assets":      "500.00",
+					"total_liabilities": "0.00",
+					"total_equity":      "500.00",
+					"retained_earnings": "500.00",
+					"is_balanced":       true,
+				},
+				"income_statement": map[string]any{
+					"tenant_id":      "tenant-1",
+					"start_date":     "2026-01-01T00:00:00Z",
+					"end_date":       "2026-12-31T00:00:00Z",
+					"generated_at":   "2026-12-31T12:00:00Z",
+					"revenue":        []map[string]any{},
+					"expenses":       []map[string]any{},
+					"total_revenue":  "1200.00",
+					"total_expenses": "700.00",
+					"net_income":     "500.00",
+				},
+				"cash_flow_statement": map[string]any{
+					"tenant_id":            "tenant-1",
+					"start_date":           "2026-01-01",
+					"end_date":             "2026-12-31",
+					"method":               "indirect",
+					"operating_activities": []map[string]any{{"code": "CF_OPER_TOTAL", "description": "Operating total", "amount": "500.00", "is_subtotal": true}},
+					"investing_activities": []map[string]any{},
+					"financing_activities": []map[string]any{},
+					"total_operating":      "500.00",
+					"total_investing":      "0.00",
+					"total_financing":      "0.00",
+					"net_cash_change":      "500.00",
+					"opening_cash":         "0.00",
+					"closing_cash":         "500.00",
+					"generated_at":         "2026-12-31T12:00:00Z",
+				},
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/cash-flow":
 			require.Equal(t, "2026-01-01", r.URL.Query().Get("start_date"))
 			require.Equal(t, "2026-03-31", r.URL.Query().Get("end_date"))
@@ -5202,6 +5276,12 @@ func TestCLIReportsCommands(t *testing.T) {
 	incomeStatementPDF, err := os.ReadFile(incomeStatementPDFPath)
 	require.NoError(t, err)
 	assert.Equal(t, []byte("%PDF income statement"), incomeStatementPDF)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "annual", "--period-end", "2026-12-31", "--cash-flow-method", "indirect"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Annual report 2026")
+	assert.Contains(t, stdout.String(), "Cash flow: method indirect")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"reports", "cash-flow", "--start", "2026-01-01", "--end", "2026-03-31"})

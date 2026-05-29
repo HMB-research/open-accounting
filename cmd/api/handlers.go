@@ -1717,6 +1717,87 @@ func (h *Handlers) GetIncomeStatement(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, is)
 }
 
+// GetAnnualReport returns a fiscal-year annual report pack for a tenant.
+// @Summary Get annual report
+// @Description Get year-end close readiness plus trial balance, balance sheet, income statement, and cash flow for the fiscal year
+// @Tags Reports
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param period_end_date query string true "Fiscal year-end date (YYYY-MM-DD)"
+// @Param cash_flow_method query string false "Cash flow method: direct or indirect"
+// @Success 200 {object} reports.AnnualReport
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/reports/annual [get]
+func (h *Handlers) GetAnnualReport(w http.ResponseWriter, r *http.Request) {
+	routeCtx := h.tenantContextFromRequest(r)
+	periodEndDate := strings.TrimSpace(r.URL.Query().Get("period_end_date"))
+	if periodEndDate == "" {
+		respondError(w, http.StatusBadRequest, "period end date is required")
+		return
+	}
+	cashFlowMethod, err := reports.NormalizeCashFlowMethod(r.URL.Query().Get("cash_flow_method"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	tenantRecord, err := h.tenantService.GetTenant(r.Context(), routeCtx.tenantID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Tenant not found")
+		return
+	}
+
+	pack, err := h.accountingService.GetYearEndClosePack(
+		r.Context(),
+		routeCtx.schemaName,
+		routeCtx.tenantID,
+		tenantRecord.Settings.FiscalYearStart,
+		periodEndDate,
+		tenantRecord.Settings.PeriodLockDate,
+	)
+	if err != nil {
+		respondYearEndCloseError(w, err)
+		return
+	}
+	if pack.Status == nil {
+		respondError(w, http.StatusInternalServerError, "Failed to generate annual report")
+		return
+	}
+	if err := h.attachYearEndCloseEvidenceStatus(r.Context(), routeCtx.schemaName, routeCtx.tenantID, pack.Status); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to evaluate close-pack evidence")
+		return
+	}
+
+	cashFlow, err := h.reportsService.GenerateCashFlowStatement(r.Context(), routeCtx.tenantID, routeCtx.schemaName, &reports.CashFlowRequest{
+		StartDate: pack.Status.FiscalYearStartDate,
+		EndDate:   pack.Status.FiscalYearEndDate,
+		Method:    cashFlowMethod,
+	})
+	if err != nil {
+		log.Error().Err(err).Str("tenant", routeCtx.tenantID).Msg("Failed to generate annual report cash flow")
+		respondError(w, http.StatusInternalServerError, "Failed to generate annual report")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, &reports.AnnualReport{
+		TenantID:            routeCtx.tenantID,
+		PeriodEndDate:       periodEndDate,
+		FiscalYearLabel:     pack.Status.FiscalYearLabel,
+		FiscalYearStartDate: pack.Status.FiscalYearStartDate,
+		FiscalYearEndDate:   pack.Status.FiscalYearEndDate,
+		CloseStatus:         pack.Status,
+		TrialBalance:        pack.TrialBalance,
+		BalanceSheet:        pack.BalanceSheet,
+		IncomeStatement:     pack.IncomeStatement,
+		CashFlowStatement:   cashFlow,
+		GeneratedAt:         time.Now(),
+	})
+}
+
 // GetCashFlowStatement returns the cash flow statement for a tenant
 // @Summary Get cash flow statement
 // @Description Get cash flow statement report for a specific period (Estonian standard)
