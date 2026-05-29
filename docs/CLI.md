@@ -235,6 +235,8 @@ go run ./cmd/oa employees create \
 go run ./cmd/oa employees get --id <employee-id>
 go run ./cmd/oa employees update --id <employee-id> --department Finance --active true
 go run ./cmd/oa employees set-salary --id <employee-id> --amount 3200.00 --effective-from 2026-03-01
+go run ./cmd/oa employees add-salary-component --id <employee-id> --type SECONDARY_EMPLOYMENT --name "Evening contract" --amount 600.00 --effective-from 2026-03-01
+go run ./cmd/oa employees salary-components --id <employee-id> --active-on 2026-03-15
 go run ./cmd/oa employees import --file ./employees.csv
 ```
 

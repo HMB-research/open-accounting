@@ -5897,6 +5897,18 @@ func TestCLIEmployeesCommands(t *testing.T) {
 			"updated_at":             "2026-01-15T00:00:00Z",
 		}
 	}
+	salaryComponentPayload := map[string]any{
+		"id":             "comp-1",
+		"tenant_id":      "tenant-1",
+		"employee_id":    "emp-1",
+		"component_type": "SECONDARY_EMPLOYMENT",
+		"name":           "Evening contract",
+		"amount":         "600.00",
+		"is_taxable":     true,
+		"is_recurring":   true,
+		"effective_from": "2026-03-01T00:00:00Z",
+		"created_at":     "2026-03-01T00:00:00Z",
+	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -5931,6 +5943,20 @@ func TestCLIEmployeesCommands(t *testing.T) {
 			assert.Contains(t, req, "amount")
 			assert.Contains(t, req, "effective_from")
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "salary updated"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-1/salary-components":
+			var req payroll.CreateSalaryComponentRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, payroll.SalaryComponentSecondaryEmployment, req.ComponentType)
+			assert.Equal(t, "Evening contract", req.Name)
+			assert.True(t, req.Amount.Equal(decimal.NewFromInt(600)))
+			require.NotNil(t, req.IsTaxable)
+			assert.True(t, *req.IsTaxable)
+			require.NotNil(t, req.IsRecurring)
+			assert.True(t, *req.IsRecurring)
+			_ = json.NewEncoder(w).Encode(salaryComponentPayload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-1/salary-components":
+			assert.Equal(t, "2026-03-15", r.URL.Query().Get("active_on"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{salaryComponentPayload})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/employees/import":
 			var req payroll.ImportEmployeesRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -5991,6 +6017,24 @@ func TestCLIEmployeesCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"employees", "set-salary", "--id", "emp-1", "--amount", "3200.00", "--effective-from", "2026-03-01"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Set base salary for employee emp-1 to 3200")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"employees", "add-salary-component",
+		"--id", "emp-1",
+		"--type", "SECONDARY_EMPLOYMENT",
+		"--name", "Evening contract",
+		"--amount", "600.00",
+		"--effective-from", "2026-03-01",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Added salary component Evening contract (comp-1) for employee emp-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"employees", "salary-components", "--id", "emp-1", "--active-on", "2026-03-15"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "SECONDARY_EMPLOYMENT")
+	assert.Contains(t, stdout.String(), "Evening contract")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"employees", "import", "--file", employeesFile})

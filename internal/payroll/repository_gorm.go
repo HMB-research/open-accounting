@@ -158,6 +158,32 @@ func (r *GORMRepository) CreateSalaryComponent(ctx context.Context, schemaName s
 	return nil
 }
 
+// ListSalaryComponents returns salary components for an employee.
+func (r *GORMRepository) ListSalaryComponents(ctx context.Context, schemaName, tenantID, employeeID string, activeOn *time.Time) ([]SalaryComponent, error) {
+	db, err := r.tenantTable(ctx, schemaName, "salary_components")
+	if err != nil {
+		return nil, err
+	}
+
+	query := db.Where("tenant_id = ? AND employee_id = ?", tenantID, employeeID)
+	if activeOn != nil {
+		query = query.Where("effective_from <= ?", *activeOn).
+			Where("effective_to IS NULL OR effective_to >= ?", *activeOn)
+	}
+	query = query.Order("effective_from DESC, created_at DESC, name")
+
+	var compModels []models.SalaryComponent
+	if err := query.Find(&compModels).Error; err != nil {
+		return nil, fmt.Errorf("list salary components: %w", err)
+	}
+
+	components := make([]SalaryComponent, len(compModels))
+	for i, compModel := range compModels {
+		components[i] = *modelToSalaryComponent(&compModel)
+	}
+	return components, nil
+}
+
 // GetCurrentSalary returns the current salary for an employee
 func (r *GORMRepository) GetCurrentSalary(ctx context.Context, schemaName, tenantID, employeeID string) (decimal.Decimal, error) {
 	db, err := r.tenantTable(ctx, schemaName, "salary_components")
@@ -372,6 +398,22 @@ func salaryComponentToModel(s *SalaryComponent) *models.SalaryComponent {
 		EffectiveFrom: s.EffectiveFrom,
 		EffectiveTo:   s.EffectiveTo,
 		CreatedAt:     s.CreatedAt,
+	}
+}
+
+func modelToSalaryComponent(m *models.SalaryComponent) *SalaryComponent {
+	return &SalaryComponent{
+		ID:            m.ID,
+		TenantID:      m.TenantID,
+		EmployeeID:    m.EmployeeID,
+		ComponentType: m.ComponentType,
+		Name:          m.Name,
+		Amount:        m.Amount.Decimal,
+		IsTaxable:     m.IsTaxable,
+		IsRecurring:   m.IsRecurring,
+		EffectiveFrom: m.EffectiveFrom,
+		EffectiveTo:   m.EffectiveTo,
+		CreatedAt:     m.CreatedAt,
 	}
 }
 

@@ -46,7 +46,7 @@ func setupPayrollIntegrationHandlers(t *testing.T) (*Handlers, *testutil.TestTen
 }
 
 func TestPayrollHandlersIntegration(t *testing.T) {
-	h, tenant, claims, _ := setupPayrollIntegrationHandlers(t)
+	h, tenant, claims, pool := setupPayrollIntegrationHandlers(t)
 
 	employeeReq := payroll.CreateEmployeeRequest{
 		EmployeeNumber:       "EMP-H-001",
@@ -98,6 +98,32 @@ func TestPayrollHandlersIntegration(t *testing.T) {
 		"amount":         "3000.00",
 		"effective_from": time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
 	}, claims), map[string]string{"tenantID": tenant.ID, "employeeID": employee.ID}))
+
+	secondaryComponent := invokeJSON[payroll.SalaryComponent](t, http.StatusCreated, func(w http.ResponseWriter, r *http.Request) {
+		h.AddSalaryComponent(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tenant.ID+"/employees/"+employee.ID+"/salary-components", payroll.CreateSalaryComponentRequest{
+		ComponentType: payroll.SalaryComponentSecondaryEmployment,
+		Name:          "Evening contract",
+		Amount:        decimal.NewFromInt(500),
+		EffectiveFrom: time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC),
+	}, claims), map[string]string{"tenantID": tenant.ID, "employeeID": employee.ID}))
+	if secondaryComponent.ID == "" || secondaryComponent.ComponentType != payroll.SalaryComponentSecondaryEmployment {
+		t.Fatalf("expected secondary salary component, got %#v", secondaryComponent)
+	}
+
+	salaryComponents := invokeJSON[[]payroll.SalaryComponent](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
+		h.ListSalaryComponents(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/"+tenant.ID+"/employees/"+employee.ID+"/salary-components?active_on=2025-02-01", nil, claims), map[string]string{"tenantID": tenant.ID, "employeeID": employee.ID}))
+	if len(salaryComponents) != 2 {
+		t.Fatalf("expected base and secondary salary components, got %d", len(salaryComponents))
+	}
+	currentSalary, err := payroll.NewService(pool).GetCurrentSalary(context.Background(), tenant.SchemaName, tenant.ID, employee.ID)
+	if err != nil {
+		t.Fatalf("get current salary: %v", err)
+	}
+	if !currentSalary.Equal(decimal.NewFromInt(3500)) {
+		t.Fatalf("expected current salary 3500 with secondary component, got %s", currentSalary)
+	}
 
 	runReq := payroll.CreatePayrollRunRequest{
 		PeriodYear:  2025,

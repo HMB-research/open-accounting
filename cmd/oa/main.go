@@ -208,6 +208,8 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  employees get             Show one employee")
 	_, _ = fmt.Fprintln(a.stdout, "  employees update          Update an employee")
 	_, _ = fmt.Fprintln(a.stdout, "  employees set-salary      Set an employee base salary")
+	_, _ = fmt.Fprintln(a.stdout, "  employees salary-components     List salary components")
+	_, _ = fmt.Fprintln(a.stdout, "  employees add-salary-component  Add a salary component")
 	_, _ = fmt.Fprintln(a.stdout, "  employees import          Import employees from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll runs list         List payroll runs")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll runs create       Create a payroll run")
@@ -7310,6 +7312,86 @@ func (a *cliApp) runEmployees(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, result)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Set base salary for employee %s to %s\n", strings.TrimSpace(*employeeID), amount.String())
+		return nil
+
+	case "salary-components":
+		fs := flag.NewFlagSet("employees salary-components", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		employeeID := fs.String("id", "", "Employee id")
+		activeOn := fs.String("active-on", "", "Filter components active on date in YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*employeeID) == "" {
+			return errors.New("id is required")
+		}
+		activeOnValue := strings.TrimSpace(*activeOn)
+		if activeOnValue != "" {
+			if _, err := parseRequiredDate("active-on", activeOnValue); err != nil {
+				return err
+			}
+		}
+
+		components, err := client.listSalaryComponents(ctx, cfg.TenantID, strings.TrimSpace(*employeeID), activeOnValue)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, components)
+		}
+		printSalaryComponentsTable(a.stdout, components)
+		return nil
+
+	case "add-salary-component":
+		fs := flag.NewFlagSet("employees add-salary-component", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		employeeID := fs.String("id", "", "Employee id")
+		componentType := fs.String("type", payroll.SalaryComponentSecondaryEmployment, "Component type: SECONDARY_EMPLOYMENT, BONUS, COMMISSION, BENEFIT")
+		name := fs.String("name", "", "Component name")
+		amountFlag := fs.String("amount", "", "Component amount")
+		effectiveFrom := fs.String("effective-from", "", "Effective date in YYYY-MM-DD")
+		effectiveTo := fs.String("effective-to", "", "Optional end date in YYYY-MM-DD")
+		isTaxable := fs.Bool("taxable", true, "Component is taxable")
+		isRecurring := fs.Bool("recurring", true, "Component is recurring")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*employeeID) == "" {
+			return errors.New("id is required")
+		}
+		amount, err := parseRequiredPositiveDecimal("amount", *amountFlag)
+		if err != nil {
+			return err
+		}
+		effectiveFromValue, err := parseRequiredDate("effective-from", *effectiveFrom)
+		if err != nil {
+			return err
+		}
+		effectiveToValue, err := parseOptionalDate("effective-to", *effectiveTo)
+		if err != nil {
+			return err
+		}
+		taxableValue := *isTaxable
+		recurringValue := *isRecurring
+
+		component, err := client.addSalaryComponent(ctx, cfg.TenantID, strings.TrimSpace(*employeeID), &payroll.CreateSalaryComponentRequest{
+			ComponentType: strings.ToUpper(strings.TrimSpace(*componentType)),
+			Name:          strings.TrimSpace(*name),
+			Amount:        amount,
+			IsTaxable:     &taxableValue,
+			IsRecurring:   &recurringValue,
+			EffectiveFrom: effectiveFromValue,
+			EffectiveTo:   effectiveToValue,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, component)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Added salary component %s (%s) for employee %s\n", component.Name, component.ID, strings.TrimSpace(*employeeID))
 		return nil
 
 	case "import":

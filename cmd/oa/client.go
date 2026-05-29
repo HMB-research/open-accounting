@@ -2048,6 +2048,27 @@ func (c *apiClient) setBaseSalary(ctx context.Context, tenantID, employeeID stri
 	return resp, nil
 }
 
+func (c *apiClient) listSalaryComponents(ctx context.Context, tenantID, employeeID, activeOn string) ([]payroll.SalaryComponent, error) {
+	values := url.Values{}
+	if strings.TrimSpace(activeOn) != "" {
+		values.Set("active_on", strings.TrimSpace(activeOn))
+	}
+
+	var resp []payroll.SalaryComponent
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "employees", employeeID, "salary-components"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) addSalaryComponent(ctx context.Context, tenantID, employeeID string, req *payroll.CreateSalaryComponentRequest) (*payroll.SalaryComponent, error) {
+	var resp payroll.SalaryComponent
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "employees", employeeID, "salary-components"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) importEmployees(ctx context.Context, tenantID string, req *payroll.ImportEmployeesRequest) (*payroll.ImportEmployeesResult, error) {
 	var resp payroll.ImportEmployeesResult
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "employees", "import"), req, c.apiToken, &resp); err != nil {

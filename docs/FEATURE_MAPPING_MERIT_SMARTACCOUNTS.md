@@ -121,7 +121,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Contract management | ✅ | ✅ | ✅ | Implemented |
 | Tax exemptions | ✅ | ✅ | ✅ | Implemented |
 | Pension fund enrollment | ✅ | ✅ | ✅ | Implemented |
-| Multiple employments | ✅ | ✅ | ⚠️ | Partial |
+| Multiple employments | ✅ | ✅ | ✅ | Implemented through date-bounded salary components for secondary employments, with API/CLI management and payroll gross salary inclusion |
 
 ### 4.2 Salary Calculation
 

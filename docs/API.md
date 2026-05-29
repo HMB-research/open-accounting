@@ -977,6 +977,36 @@ Content-Type: application/json
 }
 ```
 
+### Add Salary Component
+
+```http
+POST /tenants/{tenantId}/employees/{employeeId}/salary-components
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "component_type": "SECONDARY_EMPLOYMENT",
+  "name": "Evening contract",
+  "amount": "600.00",
+  "is_taxable": true,
+  "is_recurring": true,
+  "effective_from": "2026-03-01T00:00:00Z",
+  "effective_to": "2026-08-31T00:00:00Z"
+}
+```
+
+Supported earning component types are `SECONDARY_EMPLOYMENT`, `BONUS`, `COMMISSION`, `BENEFIT`, and `BASE_SALARY`. Active recurring components are included in payroll gross salary.
+
+### List Salary Components
+
+```http
+GET /tenants/{tenantId}/employees/{employeeId}/salary-components?active_on=2026-03-15
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `active_on` (date, optional): return only components active on the given `YYYY-MM-DD` date
+
 ### Import Employees
 
 ```http
