@@ -122,23 +122,24 @@ type ImportJournalEntriesRowError struct {
 
 // JournalEntry represents an immutable accounting transaction
 type JournalEntry struct {
-	ID          string             `json:"id"`
-	TenantID    string             `json:"tenant_id"`
-	EntryNumber string             `json:"entry_number"`
-	EntryDate   time.Time          `json:"entry_date"`
-	Description string             `json:"description"`
-	Reference   string             `json:"reference,omitempty"`
-	SourceType  string             `json:"source_type,omitempty"`
-	SourceID    *string            `json:"source_id,omitempty"`
-	Status      JournalEntryStatus `json:"status"`
-	Lines       []JournalEntryLine `json:"lines"`
-	PostedAt    *time.Time         `json:"posted_at,omitempty"`
-	PostedBy    *string            `json:"posted_by,omitempty"`
-	VoidedAt    *time.Time         `json:"voided_at,omitempty"`
-	VoidedBy    *string            `json:"voided_by,omitempty"`
-	VoidReason  string             `json:"void_reason,omitempty"`
-	CreatedAt   time.Time          `json:"created_at"`
-	CreatedBy   string             `json:"created_by"`
+	ID               string             `json:"id"`
+	TenantID         string             `json:"tenant_id"`
+	EntryNumber      string             `json:"entry_number"`
+	EntryDate        time.Time          `json:"entry_date"`
+	Description      string             `json:"description"`
+	Reference        string             `json:"reference,omitempty"`
+	SourceType       string             `json:"source_type,omitempty"`
+	SourceID         *string            `json:"source_id,omitempty"`
+	RequiresEvidence bool               `json:"requires_evidence"`
+	Status           JournalEntryStatus `json:"status"`
+	Lines            []JournalEntryLine `json:"lines"`
+	PostedAt         *time.Time         `json:"posted_at,omitempty"`
+	PostedBy         *string            `json:"posted_by,omitempty"`
+	VoidedAt         *time.Time         `json:"voided_at,omitempty"`
+	VoidedBy         *string            `json:"voided_by,omitempty"`
+	VoidReason       string             `json:"void_reason,omitempty"`
+	CreatedAt        time.Time          `json:"created_at"`
+	CreatedBy        string             `json:"created_by"`
 }
 
 // JournalEntryLine represents a single debit or credit in a journal entry
@@ -216,13 +217,14 @@ func (je *JournalEntry) IsBalanced() bool {
 
 // CreateJournalEntryRequest is the request to create a new journal entry
 type CreateJournalEntryRequest struct {
-	EntryDate   time.Time                   `json:"entry_date"`
-	Description string                      `json:"description"`
-	Reference   string                      `json:"reference,omitempty"`
-	SourceType  string                      `json:"source_type,omitempty"`
-	SourceID    *string                     `json:"source_id,omitempty"`
-	Lines       []CreateJournalEntryLineReq `json:"lines"`
-	UserID      string                      `json:"-"`
+	EntryDate        time.Time                   `json:"entry_date"`
+	Description      string                      `json:"description"`
+	Reference        string                      `json:"reference,omitempty"`
+	SourceType       string                      `json:"source_type,omitempty"`
+	SourceID         *string                     `json:"source_id,omitempty"`
+	RequiresEvidence bool                        `json:"requires_evidence,omitempty"`
+	Lines            []CreateJournalEntryLineReq `json:"lines"`
+	UserID           string                      `json:"-"`
 }
 
 // CreateJournalEntryLineReq is a line in the create request

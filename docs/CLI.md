@@ -805,6 +805,7 @@ go run ./cmd/oa journal create \
   --entry-date 2026-03-31 \
   --description "Manual accrual" \
   --reference ACC-1 \
+  --requires-evidence \
   --line "account_id=<expense-account-id>,description=Expense,debit=100.00" \
   --line "account_id=<accrual-account-id>,description=Accrual,credit=100.00"
 go run ./cmd/oa journal get --id <journal-entry-id>
@@ -813,7 +814,7 @@ go run ./cmd/oa journal void --id <journal-entry-id> --reason "Duplicate entry"
 go run ./cmd/oa journal import --file ./journal-entries.csv --source-type LEGACY_GL --post
 ```
 
-Use `--line` repeatedly on `journal create`. Each line is comma-separated `key=value` pairs with `account_id` and exactly one of `debit` or `credit`; optional keys include `description`, `currency`, and `exchange_rate`.
+Use `--line` repeatedly on `journal create`. Each line is comma-separated `key=value` pairs with `account_id` and exactly one of `debit` or `credit`; optional keys include `description`, `currency`, and `exchange_rate`. Use `--requires-evidence` for manual adjustments that must have approved `supporting_document`, `receipt`, or `tax_support` evidence attached before posting.
 `journal import` expects grouped CSV rows with `entry_reference`, `entry_date`, `account_code`, `debit`, and `credit`; optional columns include `entry_description`, `line_description`, `currency`, `exchange_rate`, `source_type`, and `source_id`.
 
 ## Opening balances

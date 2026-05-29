@@ -471,6 +471,23 @@ func TestService_CreateJournalEntry(t *testing.T) {
 		assert.Equal(t, &sourceID, result.SourceID)
 	})
 
+	t.Run("sets evidence requirement", func(t *testing.T) {
+		req := &CreateJournalEntryRequest{
+			EntryDate:        time.Now(),
+			Description:      "Evidence controlled adjustment",
+			RequiresEvidence: true,
+			Lines: []CreateJournalEntryLineReq{
+				{AccountID: "acc-1", DebitAmount: decimal.NewFromFloat(100)},
+				{AccountID: "acc-2", CreditAmount: decimal.NewFromFloat(100)},
+			},
+			UserID: "user-1",
+		}
+
+		result, err := svc.CreateJournalEntry(ctx, schemaName, "tenant-1", req)
+		require.NoError(t, err)
+		assert.True(t, result.RequiresEvidence)
+	})
+
 	t.Run("propagates repository error", func(t *testing.T) {
 		repo.createJournalErr = errors.New("database error")
 		req := &CreateJournalEntryRequest{

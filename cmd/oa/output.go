@@ -1187,15 +1187,16 @@ func printCostCenterReport(w io.Writer, report *accounting.CostCenterReport) {
 
 func printJournalEntriesTable(w io.Writer, entries []accounting.JournalEntry) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "ID\tNUMBER\tDATE\tSTATUS\tDEBIT\tCREDIT\tREFERENCE\tDESCRIPTION")
+	_, _ = fmt.Fprintln(tw, "ID\tNUMBER\tDATE\tSTATUS\tEVIDENCE\tDEBIT\tCREDIT\tREFERENCE\tDESCRIPTION")
 	for _, entry := range entries {
 		_, _ = fmt.Fprintf(
 			tw,
-			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%s\t%s\t%t\t%s\t%s\t%s\t%s\n",
 			entry.ID,
 			entry.EntryNumber,
 			formatDate(entry.EntryDate),
 			entry.Status,
+			entry.RequiresEvidence,
 			entry.TotalDebits().String(),
 			entry.TotalCredits().String(),
 			entry.Reference,
@@ -1216,6 +1217,7 @@ func printJournalEntry(w io.Writer, entry *accounting.JournalEntry) {
 	if strings.TrimSpace(entry.SourceType) != "" {
 		_, _ = fmt.Fprintf(w, "Source: %s\n", entry.SourceType)
 	}
+	_, _ = fmt.Fprintf(w, "Requires evidence: %t\n", entry.RequiresEvidence)
 	_, _ = fmt.Fprintf(w, "Total debits: %s\n", entry.TotalDebits().String())
 	_, _ = fmt.Fprintf(w, "Total credits: %s\n", entry.TotalCredits().String())
 	_, _ = fmt.Fprintf(w, "Balanced: %t\n", entry.IsBalanced())

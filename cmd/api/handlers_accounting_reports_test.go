@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/auth"
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -170,6 +172,58 @@ func TestJournalEntryHandlers_CreatePostVoidAndGet(t *testing.T) {
 	rr = httptest.NewRecorder()
 	h.VoidJournalEntry(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestPostJournalEntryRequiresApprovedEvidence(t *testing.T) {
+	h, tenantRepo, accountingRepo := setupAccountingTestHandlers()
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+	tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+
+	entry := &accounting.JournalEntry{
+		ID:               "je-evidence",
+		TenantID:         "tenant-1",
+		EntryNumber:      "JE-00009",
+		EntryDate:        time.Date(2026, 2, 10, 0, 0, 0, 0, time.UTC),
+		Description:      "Manual adjustment",
+		Status:           accounting.StatusDraft,
+		RequiresEvidence: true,
+		CreatedBy:        "user-1",
+		Lines: []accounting.JournalEntryLine{
+			{AccountID: "cash", DebitAmount: decimal.NewFromInt(100), BaseDebit: decimal.NewFromInt(100), Currency: "EUR", ExchangeRate: decimal.NewFromInt(1)},
+			{AccountID: "sales", CreditAmount: decimal.NewFromInt(100), BaseCredit: decimal.NewFromInt(100), Currency: "EUR", ExchangeRate: decimal.NewFromInt(1)},
+		},
+	}
+	accountingRepo.journalEntries[entry.ID] = entry
+
+	claims := &auth.Claims{UserID: "user-1", TenantID: "tenant-1", Role: tenant.RoleOwner}
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries/"+entry.ID+"/post", nil, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "entryID": entry.ID})
+	rr := httptest.NewRecorder()
+
+	h.PostJournalEntry(rr, req)
+
+	require.Equal(t, http.StatusConflict, rr.Code)
+	assert.Contains(t, rr.Body.String(), "approved journal-entry evidence is required")
+	assert.Equal(t, accounting.StatusDraft, accountingRepo.journalEntries[entry.ID].Status)
+
+	docRepo.docs["doc-1"] = &documents.Document{
+		ID:           "doc-1",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypeJournalEntry,
+		EntityID:     entry.ID,
+		DocumentType: documents.DocumentTypeSupportingDocument,
+		FileName:     "adjustment-support.pdf",
+		ReviewStatus: documents.ReviewStatusApproved,
+		UploadedBy:   "user-1",
+		CreatedAt:    time.Now(),
+	}
+
+	rr = httptest.NewRecorder()
+	h.PostJournalEntry(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	assert.Equal(t, accounting.StatusPosted, accountingRepo.journalEntries[entry.ID].Status)
 }
 
 func TestReportHandlers(t *testing.T) {

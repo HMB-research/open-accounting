@@ -7718,6 +7718,7 @@ func (a *cliApp) runJournal(ctx context.Context, args []string) error {
 		reference := fs.String("reference", "", "Reference")
 		sourceType := fs.String("source-type", "", "Source type")
 		sourceID := fs.String("source-id", "", "Source id")
+		requiresEvidence := fs.Bool("requires-evidence", false, "Require approved evidence before posting")
 		lines := journalLineFlags{}
 		fs.Var(&lines, "line", "Line as comma-separated key=value pairs; repeatable")
 		asJSON := fs.Bool("json", false, "Output JSON")
@@ -7736,12 +7737,13 @@ func (a *cliApp) runJournal(ctx context.Context, args []string) error {
 		}
 
 		entry, err := client.createJournalEntry(ctx, cfg.TenantID, &accounting.CreateJournalEntryRequest{
-			EntryDate:   entryDateValue,
-			Description: strings.TrimSpace(*description),
-			Reference:   strings.TrimSpace(*reference),
-			SourceType:  strings.TrimSpace(*sourceType),
-			SourceID:    optionalStringPtr(*sourceID),
-			Lines:       []accounting.CreateJournalEntryLineReq(lines),
+			EntryDate:        entryDateValue,
+			Description:      strings.TrimSpace(*description),
+			Reference:        strings.TrimSpace(*reference),
+			SourceType:       strings.TrimSpace(*sourceType),
+			SourceID:         optionalStringPtr(*sourceID),
+			RequiresEvidence: *requiresEvidence,
+			Lines:            []accounting.CreateJournalEntryLineReq(lines),
 		})
 		if err != nil {
 			return err
@@ -7750,6 +7752,9 @@ func (a *cliApp) runJournal(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, entry)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Created journal entry %s (%s)\n", entry.EntryNumber, entry.ID)
+		if entry.RequiresEvidence {
+			_, _ = fmt.Fprintln(a.stdout, "Approved evidence required before posting")
+		}
 		return nil
 
 	case "post":

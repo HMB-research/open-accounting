@@ -1681,12 +1681,13 @@ func TestPrintJournalEntries(t *testing.T) {
 
 	entryDate := time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC)
 	entry := accounting.JournalEntry{
-		ID:          "je-1",
-		EntryNumber: "JE-2026-001",
-		EntryDate:   entryDate,
-		Description: "Manual accrual",
-		Reference:   "ACC-1",
-		Status:      accounting.StatusDraft,
+		ID:               "je-1",
+		EntryNumber:      "JE-2026-001",
+		EntryDate:        entryDate,
+		Description:      "Manual accrual",
+		Reference:        "ACC-1",
+		RequiresEvidence: true,
+		Status:           accounting.StatusDraft,
 		Lines: []accounting.JournalEntryLine{
 			{
 				AccountID:   "acc-1",
@@ -1709,10 +1710,12 @@ func TestPrintJournalEntries(t *testing.T) {
 	var entriesBuf bytes.Buffer
 	printJournalEntriesTable(&entriesBuf, []accounting.JournalEntry{entry})
 	assert.Contains(t, entriesBuf.String(), "JE-2026-001")
+	assert.Contains(t, entriesBuf.String(), "true")
 	assert.Contains(t, entriesBuf.String(), "Manual accrual")
 
 	var entryBuf bytes.Buffer
 	printJournalEntry(&entryBuf, &entry)
+	assert.Contains(t, entryBuf.String(), "Requires evidence: true")
 	assert.Contains(t, entryBuf.String(), "Balanced: true")
 	assert.Contains(t, entryBuf.String(), "6000 Expenses")
 }
