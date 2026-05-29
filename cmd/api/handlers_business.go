@@ -3503,6 +3503,107 @@ func (h *Handlers) RejectQuote(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"status": "rejected"})
 }
 
+// ConvertQuoteToInvoice creates a draft sales invoice from an accepted quote.
+// @Summary Convert quote to invoice
+// @Description Create a draft sales invoice from an accepted quote and mark the quote converted
+// @Tags Quotes
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param quoteID path string true "Quote ID"
+// @Param request body quotes.ConvertQuoteToInvoiceRequest true "Invoice conversion options"
+// @Success 201 {object} quotes.QuoteInvoiceConversionResult
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/quotes/{quoteID}/convert-to-invoice [post]
+func (h *Handlers) ConvertQuoteToInvoice(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	quoteID := chi.URLParam(r, "quoteID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req quotes.ConvertQuoteToInvoiceRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	req.UserID = claims.UserID
+	if req.IssueDate.IsZero() {
+		req.IssueDate = time.Now()
+	}
+	if req.DueDate.IsZero() {
+		req.DueDate = req.IssueDate.AddDate(0, 0, 14)
+	}
+	if req.DueDate.Before(req.IssueDate) {
+		respondError(w, http.StatusBadRequest, "due date cannot be before issue date")
+		return
+	}
+	if h.rejectLockedPeriod(w, r.Context(), tenantID, req.IssueDate) {
+		return
+	}
+
+	quote, err := h.quotesService.GetByID(r.Context(), tenantID, schemaName, quoteID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Quote not found")
+		return
+	}
+	if quote.Status != quotes.QuoteStatusAccepted {
+		respondError(w, http.StatusConflict, "quote must be accepted before conversion")
+		return
+	}
+	if quote.ConvertedToInvoiceID != nil {
+		respondError(w, http.StatusConflict, "quote has already been converted to an invoice")
+		return
+	}
+
+	notes := strings.TrimSpace(req.Notes)
+	if notes == "" {
+		notes = quote.Notes
+	}
+	invoiceReq := invoicing.CreateInvoiceRequest{
+		InvoiceType:  invoicing.InvoiceTypeSales,
+		ContactID:    quote.ContactID,
+		IssueDate:    req.IssueDate,
+		DueDate:      req.DueDate,
+		Currency:     quote.Currency,
+		ExchangeRate: quote.ExchangeRate,
+		Reference:    quote.QuoteNumber,
+		Notes:        notes,
+		UserID:       req.UserID,
+	}
+	for _, line := range quote.Lines {
+		invoiceReq.Lines = append(invoiceReq.Lines, invoicing.CreateInvoiceLineRequest{
+			Description:     line.Description,
+			Quantity:        line.Quantity,
+			Unit:            line.Unit,
+			UnitPrice:       line.UnitPrice,
+			DiscountPercent: line.DiscountPercent,
+			VATRate:         line.VATRate,
+			ProductID:       line.ProductID,
+		})
+	}
+
+	invoice, err := h.invoicingService.Create(r.Context(), tenantID, schemaName, &invoiceReq)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.quotesService.ConvertToInvoice(r.Context(), tenantID, schemaName, quoteID, invoice.ID); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to mark quote converted")
+		return
+	}
+	quote.Status = quotes.QuoteStatusConverted
+	quote.ConvertedToInvoiceID = &invoice.ID
+
+	respondJSON(w, http.StatusCreated, &quotes.QuoteInvoiceConversionResult{
+		Quote:   quote,
+		Invoice: invoice,
+	})
+}
+
 // =============================================================================
 // ORDERS HANDLERS
 // =============================================================================

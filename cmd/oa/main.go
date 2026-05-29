@@ -317,6 +317,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  quotes send               Mark a quote sent")
 	_, _ = fmt.Fprintln(a.stdout, "  quotes accept             Mark a quote accepted")
 	_, _ = fmt.Fprintln(a.stdout, "  quotes reject             Mark a quote rejected")
+	_, _ = fmt.Fprintln(a.stdout, "  quotes convert-to-invoice Convert an accepted quote to an invoice")
 	_, _ = fmt.Fprintln(a.stdout, "  orders list               List orders")
 	_, _ = fmt.Fprintln(a.stdout, "  orders create             Create an order")
 	_, _ = fmt.Fprintln(a.stdout, "  orders import             Import orders from CSV")
@@ -4484,6 +4485,62 @@ func (a *cliApp) runQuotes(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, result)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "%s quote %s\n", quoteActionPastTense(args[0]), strings.TrimSpace(*quoteID))
+		return nil
+
+	case "convert-to-invoice":
+		fs := flag.NewFlagSet("quotes convert-to-invoice", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		quoteID := fs.String("id", "", "Quote id")
+		issueDateFlag := fs.String("issue-date", "", "Invoice issue date in YYYY-MM-DD")
+		dueDateFlag := fs.String("due-date", "", "Invoice due date in YYYY-MM-DD")
+		notes := fs.String("notes", "", "Invoice notes")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		trimmedQuoteID := strings.TrimSpace(*quoteID)
+		if trimmedQuoteID == "" {
+			return errors.New("id is required")
+		}
+
+		var issueDate time.Time
+		if strings.TrimSpace(*issueDateFlag) != "" {
+			issueDate, err = parseRequiredDate("issue-date", *issueDateFlag)
+			if err != nil {
+				return err
+			}
+		}
+		var dueDate time.Time
+		if strings.TrimSpace(*dueDateFlag) != "" {
+			dueDate, err = parseRequiredDate("due-date", *dueDateFlag)
+			if err != nil {
+				return err
+			}
+		}
+
+		result, err := client.convertQuoteToInvoice(ctx, cfg.TenantID, trimmedQuoteID, &quotes.ConvertQuoteToInvoiceRequest{
+			IssueDate: issueDate,
+			DueDate:   dueDate,
+			Notes:     strings.TrimSpace(*notes),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+
+		quoteNumber := trimmedQuoteID
+		if result.Quote != nil && strings.TrimSpace(result.Quote.QuoteNumber) != "" {
+			quoteNumber = result.Quote.QuoteNumber
+		}
+		invoiceNumber := ""
+		invoiceID := ""
+		if result.Invoice != nil {
+			invoiceNumber = result.Invoice.InvoiceNumber
+			invoiceID = result.Invoice.ID
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Converted quote %s to invoice %s (%s)\n", quoteNumber, invoiceNumber, invoiceID)
 		return nil
 
 	default:

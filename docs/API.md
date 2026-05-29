@@ -1404,6 +1404,22 @@ POST /tenants/{tenantId}/quotes/{quoteId}/reject
 Authorization: Bearer <token>
 ```
 
+### Convert Quote to Invoice
+
+```http
+POST /tenants/{tenantId}/quotes/{quoteId}/convert-to-invoice
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "issue_date": "2026-03-20T00:00:00Z",
+  "due_date": "2026-04-03T00:00:00Z",
+  "notes": "Invoice notes"
+}
+```
+
+Creates a draft sales invoice from an accepted quote, sets the invoice reference to the quote number, and marks the quote `CONVERTED`.
+
 ---
 
 ## Orders

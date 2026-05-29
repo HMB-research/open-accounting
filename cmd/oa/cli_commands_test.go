@@ -1346,6 +1346,55 @@ func TestCLIQuoteCommands(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "sent"})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-1/accept":
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-1/convert-to-invoice":
+			var req quotes.ConvertQuoteToInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-03-20", req.IssueDate.Format("2006-01-02"))
+			assert.Equal(t, "2026-04-03", req.DueDate.Format("2006-01-02"))
+			assert.Equal(t, "Invoice from quote", req.Notes)
+			convertedQuote := quotePayload("quote-1", "QUO-00001", "CONVERTED")
+			convertedQuote["converted_to_invoice_id"] = "inv-1"
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"quote": convertedQuote,
+				"invoice": map[string]any{
+					"id":             "inv-1",
+					"tenant_id":      "tenant-1",
+					"invoice_number": "INV-2026-0001",
+					"invoice_type":   "SALES",
+					"contact_id":     "contact-1",
+					"issue_date":     "2026-03-20T00:00:00Z",
+					"due_date":       "2026-04-03T00:00:00Z",
+					"status":         "DRAFT",
+					"currency":       "EUR",
+					"exchange_rate":  "1.00",
+					"reference":      "QUO-00001",
+					"subtotal":       "180.00",
+					"vat_amount":     "39.60",
+					"total":          "219.60",
+					"amount_paid":    "0.00",
+					"notes":          "Invoice from quote",
+					"created_at":     "2026-03-20T12:00:00Z",
+					"created_by":     "user-1",
+					"updated_at":     "2026-03-20T12:00:00Z",
+					"lines": []map[string]any{{
+						"id":               "line-1",
+						"tenant_id":        "tenant-1",
+						"invoice_id":       "inv-1",
+						"line_number":      1,
+						"description":      "Consulting",
+						"quantity":         "2.00",
+						"unit":             "hour",
+						"unit_price":       "100.00",
+						"discount_percent": "10.00",
+						"vat_rate":         "22.00",
+						"line_subtotal":    "180.00",
+						"line_vat":         "39.60",
+						"line_total":       "219.60",
+						"product_id":       "prod-1",
+					}},
+				},
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-1/reject":
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "rejected"})
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-1":
@@ -1419,6 +1468,17 @@ func TestCLIQuoteCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"quotes", "accept", "--id", "quote-1", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"status": "accepted"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"quotes", "convert-to-invoice",
+		"--id", "quote-1",
+		"--issue-date", "2026-03-20",
+		"--due-date", "2026-04-03",
+		"--notes", "Invoice from quote",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Converted quote QUO-00001 to invoice INV-2026-0001 (inv-1)")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"quotes", "reject", "--id", "quote-1"})

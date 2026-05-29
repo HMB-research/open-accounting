@@ -3959,6 +3959,15 @@ definitions:
           type: integer
         type: array
     type: object
+  github_com_HMB-research_open-accounting_internal_quotes.ConvertQuoteToInvoiceRequest:
+    properties:
+      due_date:
+        type: string
+      issue_date:
+        type: string
+      notes:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_quotes.CreateQuoteLineRequest:
     properties:
       description:
@@ -4072,6 +4081,13 @@ definitions:
         type: string
       vat_amount:
         type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_quotes.QuoteInvoiceConversionResult:
+    properties:
+      invoice:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.Invoice'
+      quote:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_quotes.Quote'
     type: object
   github_com_HMB-research_open-accounting_internal_quotes.QuoteLine:
     properties:
@@ -11803,6 +11819,69 @@ paths:
       security:
       - BearerAuth: []
       summary: Accept quote
+      tags:
+      - Quotes
+  /tenants/{tenantID}/quotes/{quoteID}/convert-to-invoice:
+    post:
+      consumes:
+      - application/json
+      description: Create a draft sales invoice from an accepted quote and mark the
+        quote converted
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Quote ID
+        in: path
+        name: quoteID
+        required: true
+        type: string
+      - description: Invoice conversion options
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_quotes.ConvertQuoteToInvoiceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_quotes.QuoteInvoiceConversionResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Convert quote to invoice
       tags:
       - Quotes
   /tenants/{tenantID}/quotes/{quoteID}/reject:
