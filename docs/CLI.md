@@ -442,6 +442,8 @@ go run ./cmd/oa assets create \
 go run ./cmd/oa assets import --file ./assets.csv
 go run ./cmd/oa assets get --id <asset-id>
 go run ./cmd/oa assets update --id <asset-id> --name Laptop --useful-life-months 48
+go run ./cmd/oa documents upload --entity-type asset --entity-id <asset-id> --file ./asset-invoice.pdf --document-type asset_record
+go run ./cmd/oa documents review --id <document-id> --status APPROVED --note "Asset acquisition evidence accepted"
 go run ./cmd/oa assets activate --id <asset-id>
 go run ./cmd/oa assets dispose --id <asset-id> --disposal-date 2026-05-01 --method SOLD --proceeds 900.00
 go run ./cmd/oa assets depreciate --id <asset-id>
@@ -449,7 +451,7 @@ go run ./cmd/oa assets depreciation --id <asset-id>
 go run ./cmd/oa assets delete --id <asset-id>
 ```
 
-Asset statuses are `DRAFT`, `ACTIVE`, `DISPOSED`, and `SOLD`. Depreciation methods are `STRAIGHT_LINE`, `DECLINING_BALANCE`, and `UNITS_OF_PRODUCTION`; disposal methods are `SOLD`, `SCRAPPED`, `DONATED`, and `LOST`. Asset CSV imports require `name`, `purchase_date`, and `purchase_cost`; optional columns include `asset_number`, `category_id`, `category_name`, `status`, depreciation/book-value fields, disposal fields, and account IDs.
+Asset statuses are `DRAFT`, `ACTIVE`, `DISPOSED`, and `SOLD`. Activating a draft asset requires approved `asset_record`, `receipt`, or `contract` evidence attached to the `asset` entity; pending or missing evidence returns a conflict before the asset can enter depreciation. Depreciation methods are `STRAIGHT_LINE`, `DECLINING_BALANCE`, and `UNITS_OF_PRODUCTION`; disposal methods are `SOLD`, `SCRAPPED`, `DONATED`, and `LOST`. Asset CSV imports require `name`, `purchase_date`, and `purchase_cost`; optional columns include `asset_number`, `category_id`, `category_name`, `status`, depreciation/book-value fields, disposal fields, and account IDs.
 
 ## Inventory
 

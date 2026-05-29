@@ -1573,6 +1573,8 @@ POST /tenants/{tenantId}/assets/{assetId}/dispose
 Authorization: Bearer <token>
 ```
 
+Activating a draft asset requires at least one approved `asset_record`, `receipt`, or `contract` document attached to the `asset` entity. Missing or pending asset evidence returns `409 Conflict` so operators can upload and approve the acquisition record before the asset enters the depreciation workflow.
+
 Dispose payloads include `disposal_date`, `disposal_method`, optional `disposal_proceeds`, and optional `disposal_notes`.
 
 ### Depreciation
