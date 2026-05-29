@@ -41,7 +41,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Auto-generated entries | ✅ | ✅ | ✅ | Implemented |
 | Entry numbering | ✅ | ✅ | ✅ | Implemented |
 | Entry reversal/void | ✅ | ✅ | ✅ | Implemented |
-| Recurring entries | ✅ | ✅ | ⚠️ | Partial: recurring journal templates can generate single or due-batch entries through API/CLI; background scheduler/UI polish remains |
+| Recurring entries | ✅ | ✅ | ✅ | Implemented through recurring journal templates with API/CLI single and due-batch generation plus background scheduled due generation across active tenants |
 | Entry templates | ✅ | ✅ | ✅ | Implemented through reusable balanced journal entry templates with API/CLI apply workflow |
 | Multi-currency entries | ✅ | ✅ | ✅ | Implemented for manual and template journal entries with line currency, positive exchange rate validation, base-currency balancing, API/CLI support, and historical journal import |
 
