@@ -1389,6 +1389,36 @@ Authorization: Bearer <token>
 
 Returns a non-mutating fulfillment readiness check for each order line. Product lines linked to tracked goods report `AVAILABLE` or `SHORTAGE`; repeated lines for the same product consume the same available quantity cumulatively inside the check. Service, free-text, and other non-tracked lines report `NOT_TRACKED`; deleted or missing product references report `PRODUCT_NOT_FOUND`. Omitting `warehouse_id` sums available stock across all warehouses.
 
+### Reserve Order Stock
+
+```http
+POST /tenants/{tenantId}/orders/{orderId}/reserve-stock
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "warehouse_id": "uuid",
+  "reason": "Pick list"
+}
+```
+
+Runs the order stock check for the selected warehouse and, only when every tracked product line is available, reserves the cumulative tracked goods quantities for the order. The mutation increases warehouse `reserved_qty` and decreases `available_qty`; it does not ship stock or create a per-order allocation ledger.
+
+### Release Order Stock
+
+```http
+POST /tenants/{tenantId}/orders/{orderId}/release-stock
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "warehouse_id": "uuid",
+  "reason": "Order canceled"
+}
+```
+
+Releases the order's cumulative tracked goods quantities from the selected warehouse's reserved stock back to available stock. The release requires enough warehouse-level reserved quantity for each tracked product.
+
 ### Update Order
 
 ```http

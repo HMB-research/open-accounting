@@ -1269,6 +1269,22 @@ func (c *apiClient) checkOrderStock(ctx context.Context, tenantID, orderID, ware
 	return &resp, nil
 }
 
+func (c *apiClient) reserveOrderStock(ctx context.Context, tenantID, orderID string, req *orders.OrderStockReservationRequest) (*orders.OrderStockReservationResult, error) {
+	var resp orders.OrderStockReservationResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "orders", orderID, "reserve-stock"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) releaseOrderStock(ctx context.Context, tenantID, orderID string, req *orders.OrderStockReservationRequest) (*orders.OrderStockReservationResult, error) {
+	var resp orders.OrderStockReservationResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "orders", orderID, "release-stock"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) updateOrder(ctx context.Context, tenantID, orderID string, req *orders.UpdateOrderRequest) (*orders.Order, error) {
 	var resp orders.Order
 	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "orders", orderID), req, c.apiToken, &resp); err != nil {

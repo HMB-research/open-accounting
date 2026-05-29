@@ -612,6 +612,44 @@ func orderStockProductLabel(line orders.OrderStockCheckLine) string {
 	return line.Description
 }
 
+func printOrderStockReservation(w io.Writer, result *orders.OrderStockReservationResult) {
+	if result == nil {
+		return
+	}
+
+	action := strings.ToLower(result.Action)
+	switch result.Action {
+	case orders.OrderStockReservationActionReserve:
+		action = "reserved"
+	case orders.OrderStockReservationActionRelease:
+		action = "released"
+	}
+	_, _ = fmt.Fprintf(w, "Order stock %s %s\n", action, result.OrderNumber)
+	_, _ = fmt.Fprintf(w, "Warehouse: %s\n\n", result.WarehouseID)
+
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "PRODUCT\tQUANTITY\tRESERVED\tAVAILABLE\tSTATUS")
+	for _, line := range result.Lines {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\n",
+			orderStockReservationProductLabel(line),
+			line.Quantity.String(),
+			line.ReservedQty.String(),
+			line.AvailableQty.String(),
+			line.Status,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func orderStockReservationProductLabel(line orders.OrderStockReservationLine) string {
+	if strings.TrimSpace(line.ProductCode) != "" || strings.TrimSpace(line.ProductName) != "" {
+		return strings.TrimSpace(strings.TrimSpace(line.ProductCode) + " " + strings.TrimSpace(line.ProductName))
+	}
+	return line.ProductID
+}
+
 func printRecurringInvoicesTable(w io.Writer, invoices []recurring.RecurringInvoice) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tNAME\tCONTACT\tFREQUENCY\tNEXT\tACTIVE\tGENERATED")

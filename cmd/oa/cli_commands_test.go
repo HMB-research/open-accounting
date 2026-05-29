@@ -1481,6 +1481,46 @@ func TestCLIOrderCommands(t *testing.T) {
 					Status:       orders.OrderStockLineStatusShortage,
 				}},
 			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1/reserve-stock":
+			var req orders.OrderStockReservationRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "wh-1", req.WarehouseID)
+			assert.Equal(t, "Pick list", req.Reason)
+			_ = json.NewEncoder(w).Encode(orders.OrderStockReservationResult{
+				OrderID:     "order-1",
+				OrderNumber: "ORD-00001",
+				WarehouseID: "wh-1",
+				Action:      orders.OrderStockReservationActionReserve,
+				Lines: []orders.OrderStockReservationLine{{
+					ProductID:    "prod-1",
+					ProductCode:  "PROD-001",
+					ProductName:  "Consulting pack",
+					Quantity:     decimal.RequireFromString("2.00"),
+					ReservedQty:  decimal.RequireFromString("5.00"),
+					AvailableQty: decimal.RequireFromString("4.00"),
+					Status:       orders.OrderStockReservationStatusReserved,
+				}},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1/release-stock":
+			var req orders.OrderStockReservationRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "wh-1", req.WarehouseID)
+			assert.Equal(t, "Order canceled", req.Reason)
+			_ = json.NewEncoder(w).Encode(orders.OrderStockReservationResult{
+				OrderID:     "order-1",
+				OrderNumber: "ORD-00001",
+				WarehouseID: "wh-1",
+				Action:      orders.OrderStockReservationActionRelease,
+				Lines: []orders.OrderStockReservationLine{{
+					ProductID:    "prod-1",
+					ProductCode:  "PROD-001",
+					ProductName:  "Consulting pack",
+					Quantity:     decimal.RequireFromString("2.00"),
+					ReservedQty:  decimal.RequireFromString("3.00"),
+					AvailableQty: decimal.RequireFromString("6.00"),
+					Status:       orders.OrderStockReservationStatusReleased,
+				}},
+			})
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1":
 			var req orders.UpdateOrderRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -1556,6 +1596,17 @@ func TestCLIOrderCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Order stock check ORD-00001")
 	assert.Contains(t, stdout.String(), "Warehouse: wh-1")
 	assert.Contains(t, stdout.String(), "SHORTAGE")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"orders", "reserve-stock", "--id", "order-1", "--warehouse-id", "wh-1", "--reason", "Pick list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Order stock reserved ORD-00001")
+	assert.Contains(t, stdout.String(), "RESERVED")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"orders", "release-stock", "--id", "order-1", "--warehouse-id", "wh-1", "--reason", "Order canceled", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"action": "RELEASE"`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{
