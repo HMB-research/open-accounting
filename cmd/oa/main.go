@@ -193,6 +193,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  tokens create             Create another API token")
 	_, _ = fmt.Fprintln(a.stdout, "  tokens revoke             Revoke an API token by id")
 	_, _ = fmt.Fprintln(a.stdout, "  accounts list             List accounts")
+	_, _ = fmt.Fprintln(a.stdout, "  accounts hierarchy        Show grouped chart of accounts")
 	_, _ = fmt.Fprintln(a.stdout, "  accounts create           Create an account")
 	_, _ = fmt.Fprintln(a.stdout, "  accounts get              Show one account")
 	_, _ = fmt.Fprintln(a.stdout, "  accounts import           Import accounts from CSV")
@@ -1858,6 +1859,24 @@ func (a *cliApp) runAccounts(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, accountsList)
 		}
 		printAccountsTable(a.stdout, accountsList)
+		return nil
+
+	case "hierarchy":
+		fs := flag.NewFlagSet("accounts hierarchy", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		activeOnly := fs.Bool("active-only", false, "List only active accounts")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		rows, err := client.getAccountHierarchy(ctx, cfg.TenantID, *activeOnly)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, rows)
+		}
+		printAccountHierarchyTable(a.stdout, rows)
 		return nil
 
 	case "create":

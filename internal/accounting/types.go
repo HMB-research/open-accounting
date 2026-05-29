@@ -63,6 +63,16 @@ type Account struct {
 	CreatedAt   time.Time   `json:"created_at"`
 }
 
+// AccountHierarchyRow is a flattened chart-of-accounts hierarchy row.
+type AccountHierarchyRow struct {
+	Account
+	ParentCode  string `json:"parent_code,omitempty"`
+	ParentName  string `json:"parent_name,omitempty"`
+	Depth       int    `json:"depth"`
+	Path        string `json:"path"`
+	HasChildren bool   `json:"has_children"`
+}
+
 // ImportAccountsRequest contains CSV payload for bulk account import.
 type ImportAccountsRequest struct {
 	CSVContent string `json:"csv_content"`

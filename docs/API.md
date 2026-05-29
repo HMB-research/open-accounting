@@ -571,6 +571,15 @@ Authorization: Bearer <token>
 ]
 ```
 
+### Account Hierarchy
+
+```http
+GET /tenants/{tenantId}/accounts/hierarchy
+Authorization: Bearer <token>
+```
+
+Returns a flattened parent-child chart of accounts ordered by account code. Each row includes `depth`, `path`, `parent_code`, and `has_children` fields for grouped chart views. Supports `active_only=true`.
+
 ### Create Account
 
 ```http

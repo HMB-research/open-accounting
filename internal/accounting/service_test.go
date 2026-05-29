@@ -316,6 +316,49 @@ func TestService_ListAccounts(t *testing.T) {
 	})
 }
 
+func TestService_GetAccountHierarchy(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	svc := NewServiceWithRepo(nil, repo)
+	schemaName := "tenant_test"
+
+	parentID := "acc-1000"
+	repo.accounts["acc-4000"] = &Account{ID: "acc-4000", TenantID: "tenant-1", Code: "4000", Name: "Revenue", AccountType: AccountTypeRevenue, IsActive: true}
+	repo.accounts["acc-1100"] = &Account{ID: "acc-1100", TenantID: "tenant-1", Code: "1100", Name: "Bank", AccountType: AccountTypeAsset, ParentID: &parentID, IsActive: true}
+	repo.accounts["acc-1000"] = &Account{ID: "acc-1000", TenantID: "tenant-1", Code: "1000", Name: "Assets", AccountType: AccountTypeAsset, IsActive: true}
+	repo.accounts["acc-1200"] = &Account{ID: "acc-1200", TenantID: "tenant-1", Code: "1200", Name: "Receivables", AccountType: AccountTypeAsset, ParentID: &parentID, IsActive: false}
+	repo.accounts["acc-other"] = &Account{ID: "acc-other", TenantID: "tenant-2", Code: "9999", Name: "Other", AccountType: AccountTypeExpense, IsActive: true}
+
+	t.Run("flattens parent child accounts in code order", func(t *testing.T) {
+		result, err := svc.GetAccountHierarchy(ctx, schemaName, "tenant-1", false)
+		require.NoError(t, err)
+		require.Len(t, result, 4)
+
+		assert.Equal(t, []string{"1000", "1100", "1200", "4000"}, []string{result[0].Code, result[1].Code, result[2].Code, result[3].Code})
+		assert.Equal(t, 0, result[0].Depth)
+		assert.True(t, result[0].HasChildren)
+		assert.Equal(t, 1, result[1].Depth)
+		assert.Equal(t, "1000", result[1].ParentCode)
+		assert.Equal(t, "Assets", result[1].ParentName)
+		assert.Equal(t, "1000/1100", result[1].Path)
+		assert.Equal(t, "1000/1200", result[2].Path)
+	})
+
+	t.Run("applies active only filter before building hierarchy", func(t *testing.T) {
+		result, err := svc.GetAccountHierarchy(ctx, schemaName, "tenant-1", true)
+		require.NoError(t, err)
+		require.Len(t, result, 3)
+		assert.Equal(t, []string{"1000", "1100", "4000"}, []string{result[0].Code, result[1].Code, result[2].Code})
+	})
+
+	t.Run("propagates repository error", func(t *testing.T) {
+		repo.listAccountsErr = errors.New("database error")
+		_, err := svc.GetAccountHierarchy(ctx, schemaName, "tenant-1", false)
+		assert.Error(t, err)
+		repo.listAccountsErr = nil
+	})
+}
+
 func TestService_CreateAccount(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()

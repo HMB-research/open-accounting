@@ -469,6 +469,18 @@ func (c *apiClient) listAccounts(ctx context.Context, tenantID string, activeOnl
 	return resp, nil
 }
 
+func (c *apiClient) getAccountHierarchy(ctx context.Context, tenantID string, activeOnly bool) ([]accounting.AccountHierarchyRow, error) {
+	query := ""
+	if activeOnly {
+		query = "?active_only=true"
+	}
+	var resp []accounting.AccountHierarchyRow
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "accounts", "hierarchy")+query, nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
 func (c *apiClient) createAccount(ctx context.Context, tenantID string, req *accounting.CreateAccountRequest) (*accounting.Account, error) {
 	var resp accounting.Account
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "accounts"), req, c.apiToken, &resp); err != nil {

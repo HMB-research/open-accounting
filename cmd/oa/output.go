@@ -331,6 +331,20 @@ func printAccountsTable(w io.Writer, accounts []accounting.Account) {
 	_ = tw.Flush()
 }
 
+func printAccountHierarchyTable(w io.Writer, rows []accounting.AccountHierarchyRow) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "CODE\tNAME\tTYPE\tPARENT\tPATH\tACTIVE")
+	for _, row := range rows {
+		code := strings.Repeat("  ", row.Depth) + row.Code
+		parent := row.ParentCode
+		if strings.TrimSpace(parent) == "" {
+			parent = "-"
+		}
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%t\n", code, row.Name, row.AccountType, parent, row.Path, row.IsActive)
+	}
+	_ = tw.Flush()
+}
+
 func printAccount(w io.Writer, account *accounting.Account) {
 	_, _ = fmt.Fprintf(w, "Account %s %s (%s)\n", account.Code, account.Name, account.AccountType)
 	_, _ = fmt.Fprintf(w, "ID: %s\n", account.ID)
