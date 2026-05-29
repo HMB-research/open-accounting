@@ -67,7 +67,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Multiple VAT rates | ✅ | ✅ | ✅ | Implemented |
 | PDF generation | ✅ | ✅ | ✅ | Implemented |
 | Email sending | ✅ | ✅ | ✅ | Implemented |
-| Invoice templates | ✅ | ✅ | ⚠️ | Partial |
+| Invoice templates | ✅ | ✅ | ✅ | Implemented through recurring invoice templates with API/CLI create, import, create-from-invoice, update, pause/resume, manual generation, and due-batch generation |
 | Credit notes | ✅ | ✅ | ✅ | Implemented |
 | Invoice reminders | ✅ | ✅ | ✅ | Implemented |
 | Recurring invoices | ✅ | ✅ | ✅ | Implemented |
