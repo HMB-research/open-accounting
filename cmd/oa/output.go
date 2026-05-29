@@ -2507,6 +2507,36 @@ func printContactStatement(w io.Writer, report *reports.ContactStatement) {
 	_, _ = fmt.Fprintf(w, "Closing balance: %s\n", report.ClosingBalance.String())
 }
 
+func printSalesMarginReport(w io.Writer, report *reports.SalesMarginReport) {
+	_, _ = fmt.Fprintf(w, "Sales margin from %s to %s\n", report.StartDate, report.EndDate)
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "DATE\tINVOICE\tCONTACT\tPRODUCT\tREVENUE\tCOST\tMARGIN\tMARGIN %")
+	for _, line := range report.Lines {
+		product := line.ProductName
+		if product == "" {
+			product = line.Description
+		}
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			line.InvoiceDate,
+			line.InvoiceNumber,
+			line.ContactName,
+			product,
+			line.Revenue.String(),
+			line.Cost.String(),
+			line.Margin.String(),
+			line.MarginPercent.String(),
+		)
+	}
+	_ = tw.Flush()
+	_, _ = fmt.Fprintf(w, "Lines: %d\n", report.LineCount)
+	_, _ = fmt.Fprintf(w, "Total revenue: %s\n", report.TotalRevenue.String())
+	_, _ = fmt.Fprintf(w, "Total cost: %s\n", report.TotalCost.String())
+	_, _ = fmt.Fprintf(w, "Total margin: %s\n", report.TotalMargin.String())
+	_, _ = fmt.Fprintf(w, "Margin percent: %s\n", report.MarginPercent.String())
+}
+
 func printAccountBalances(w io.Writer, balances []accounting.AccountBalance) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "CODE\tNAME\tTYPE\tDEBIT\tCREDIT\tNET")

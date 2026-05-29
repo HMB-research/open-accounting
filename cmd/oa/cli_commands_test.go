@@ -4820,6 +4820,52 @@ func TestCLIReportsCommands(t *testing.T) {
 				}},
 				"generated_at": "2026-03-31T12:00:00Z",
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/sales-margin":
+			require.Equal(t, "2026-01-01", r.URL.Query().Get("start_date"))
+			require.Equal(t, "2026-03-31", r.URL.Query().Get("end_date"))
+			if r.URL.Query().Get("format") == "csv" {
+				w.Header().Set("Content-Type", "text/csv")
+				_, _ = w.Write([]byte("row_type,start_date,end_date,invoice_number,product_name,margin\nline,2026-01-01,2026-03-31,INV-1,Widget,700.00\n"))
+				return
+			}
+			if r.URL.Query().Get("format") == "xlsx" {
+				w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+				_, _ = w.Write([]byte("xlsx-sales-margin"))
+				return
+			}
+			if r.URL.Query().Get("format") == "pdf" {
+				w.Header().Set("Content-Type", "application/pdf")
+				_, _ = w.Write([]byte("%PDF sales margin"))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tenant_id":      "tenant-1",
+				"start_date":     "2026-01-01",
+				"end_date":       "2026-03-31",
+				"total_revenue":  "1000.00",
+				"total_cost":     "300.00",
+				"total_margin":   "700.00",
+				"margin_percent": "70.00",
+				"line_count":     1,
+				"lines": []map[string]any{{
+					"invoice_id":     "invoice-1",
+					"invoice_number": "INV-1",
+					"invoice_date":   "2026-03-01",
+					"contact_id":     "contact-1",
+					"contact_name":   "Acme",
+					"product_id":     "product-1",
+					"product_code":   "SKU-1",
+					"product_name":   "Widget",
+					"description":    "Widget sale",
+					"quantity":       "2.00",
+					"revenue":        "1000.00",
+					"unit_cost":      "150.00",
+					"cost":           "300.00",
+					"margin":         "700.00",
+					"margin_percent": "70.00",
+				}},
+				"generated_at": "2026-03-31T12:00:00Z",
+			})
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -5076,6 +5122,40 @@ func TestCLIReportsCommands(t *testing.T) {
 	contactStatementPDF, err := os.ReadFile(contactStatementPDFPath)
 	require.NoError(t, err)
 	assert.Equal(t, []byte("%PDF contact statement"), contactStatementPDF)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "sales-margin", "--start", "2026-01-01", "--end", "2026-03-31"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Sales margin from 2026-01-01 to 2026-03-31")
+	assert.Contains(t, stdout.String(), "Widget")
+	assert.Contains(t, stdout.String(), "Total margin: 700")
+
+	stdout.Reset()
+	salesMarginCSVPath := filepath.Join(t.TempDir(), "sales-margin.csv")
+	err = app.run(context.Background(), []string{"reports", "sales-margin", "--start", "2026-01-01", "--end", "2026-03-31", "--csv", "--output", salesMarginCSVPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote sales margin CSV")
+	salesMarginCSV, err := os.ReadFile(salesMarginCSVPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(salesMarginCSV), "Widget")
+
+	stdout.Reset()
+	salesMarginXLSXPath := filepath.Join(t.TempDir(), "sales-margin.xlsx")
+	err = app.run(context.Background(), []string{"reports", "sales-margin", "--start", "2026-01-01", "--end", "2026-03-31", "--xlsx", "--output", salesMarginXLSXPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote sales margin XLSX")
+	salesMarginXLSX, err := os.ReadFile(salesMarginXLSXPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("xlsx-sales-margin"), salesMarginXLSX)
+
+	stdout.Reset()
+	salesMarginPDFPath := filepath.Join(t.TempDir(), "sales-margin.pdf")
+	err = app.run(context.Background(), []string{"reports", "sales-margin", "--start", "2026-01-01", "--end", "2026-03-31", "--pdf", "--output", salesMarginPDFPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote sales margin PDF")
+	salesMarginPDF, err := os.ReadFile(salesMarginPDFPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("%PDF sales margin"), salesMarginPDF)
 }
 
 func TestCLIEmployeesCommands(t *testing.T) {

@@ -35,6 +35,9 @@ type Repository interface {
 	// GetContactStatementEntries retrieves invoice and payment activity for a statement period
 	GetContactStatementEntries(ctx context.Context, schemaName, tenantID, contactID, invoiceType, paymentType string, startDate, endDate time.Time) ([]ContactStatementEntry, error)
 
+	// GetSalesMarginLines retrieves sales invoice lines with estimated product costs
+	GetSalesMarginLines(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]SalesMarginLine, error)
+
 	// GetCashFlowMappingOverrides retrieves tenant-level cash-flow account mappings.
 	GetCashFlowMappingOverrides(ctx context.Context, tenantID string) (CashFlowMappingOverrides, error)
 
@@ -399,6 +402,74 @@ func (r *PostgresRepository) GetContactStatementEntries(ctx context.Context, sch
 	return entries, nil
 }
 
+// GetSalesMarginLines retrieves sales invoice lines with estimated product costs.
+func (r *PostgresRepository) GetSalesMarginLines(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]SalesMarginLine, error) {
+	query := fmt.Sprintf(`
+		SELECT
+			i.id,
+			i.invoice_number,
+			i.issue_date,
+			i.contact_id,
+			c.name AS contact_name,
+			COALESCE(p.id::text, '') AS product_id,
+			COALESCE(p.code, '') AS product_code,
+			COALESCE(p.name, '') AS product_name,
+			COALESCE(il.description, '') AS description,
+			il.quantity,
+			(il.line_subtotal * i.exchange_rate) AS revenue,
+			COALESCE(p.purchase_price, 0) AS unit_cost,
+			(il.quantity * COALESCE(p.purchase_price, 0)) AS cost
+		FROM %s.invoices i
+		JOIN %s.invoice_lines il ON il.invoice_id = i.id AND il.tenant_id = i.tenant_id
+		JOIN %s.contacts c ON c.id = i.contact_id AND c.tenant_id = i.tenant_id
+		LEFT JOIN %s.products p ON p.id = il.product_id AND p.tenant_id = i.tenant_id
+		WHERE i.tenant_id = $1
+			AND i.invoice_type = 'SALES'
+			AND i.status <> 'VOIDED'
+			AND i.issue_date >= $2
+			AND i.issue_date <= $3
+		ORDER BY i.issue_date ASC, i.invoice_number ASC, il.line_number ASC
+	`, schemaName, schemaName, schemaName, schemaName)
+
+	rows, err := r.db.Query(ctx, query, tenantID, startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("query sales margin lines: %w", err)
+	}
+	defer rows.Close()
+
+	lines := []SalesMarginLine{}
+	for rows.Next() {
+		var (
+			line        SalesMarginLine
+			invoiceDate time.Time
+		)
+		if err := rows.Scan(
+			&line.InvoiceID,
+			&line.InvoiceNumber,
+			&invoiceDate,
+			&line.ContactID,
+			&line.ContactName,
+			&line.ProductID,
+			&line.ProductCode,
+			&line.ProductName,
+			&line.Description,
+			&line.Quantity,
+			&line.Revenue,
+			&line.UnitCost,
+			&line.Cost,
+		); err != nil {
+			return nil, fmt.Errorf("scan sales margin line: %w", err)
+		}
+		line.InvoiceDate = invoiceDate.Format("2006-01-02")
+		lines = append(lines, line)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate sales margin lines: %w", err)
+	}
+
+	return lines, nil
+}
+
 // GetCashFlowMappingOverrides retrieves tenant-level cash-flow account mappings from tenant settings.
 func (r *PostgresRepository) GetCashFlowMappingOverrides(ctx context.Context, tenantID string) (CashFlowMappingOverrides, error) {
 	var raw []byte
@@ -460,6 +531,7 @@ type MockRepository struct {
 	Contact                       ContactInfo
 	ContactStatementOpening       decimal.Decimal
 	ContactStatementEntries       []ContactStatementEntry
+	SalesMarginLines              []SalesMarginLine
 	GetEntriesErr                 error
 	GetCashBalanceErr             error
 	GetCashFlowMappingErr         error
@@ -469,6 +541,7 @@ type MockRepository struct {
 	GetContactErr                 error
 	GetContactStatementOpeningErr error
 	GetContactStatementEntriesErr error
+	GetSalesMarginLinesErr        error
 }
 
 // NewMockRepository creates a new mock repository
@@ -479,6 +552,7 @@ func NewMockRepository() *MockRepository {
 		ContactBalances:         make([]ContactBalance, 0),
 		ContactInvoices:         make([]BalanceInvoice, 0),
 		ContactStatementEntries: make([]ContactStatementEntry, 0),
+		SalesMarginLines:        make([]SalesMarginLine, 0),
 	}
 }
 
@@ -562,4 +636,12 @@ func (m *MockRepository) GetContactStatementEntries(ctx context.Context, schemaN
 		return nil, m.GetContactStatementEntriesErr
 	}
 	return m.ContactStatementEntries, nil
+}
+
+// GetSalesMarginLines returns mock sales margin lines.
+func (m *MockRepository) GetSalesMarginLines(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]SalesMarginLine, error) {
+	if m.GetSalesMarginLinesErr != nil {
+		return nil, m.GetSalesMarginLinesErr
+	}
+	return m.SalesMarginLines, nil
 }

@@ -46,6 +46,14 @@ func contactStatementXLSX(report *reports.ContactStatement) ([]byte, error) {
 	return reportRowsXLSX("Contact Statement", contactStatementRows(report))
 }
 
+func salesMarginCSV(report *reports.SalesMarginReport) ([]byte, error) {
+	return rowsToCSV(salesMarginRows(report))
+}
+
+func salesMarginXLSX(report *reports.SalesMarginReport) ([]byte, error) {
+	return reportRowsXLSX("Sales Margin", salesMarginRows(report))
+}
+
 func costCenterReportCSV(report *accounting.CostCenterReport) ([]byte, error) {
 	return rowsToCSV(costCenterReportRows(report))
 }
@@ -338,6 +346,87 @@ func contactStatementRows(report *reports.ContactStatement) [][]string {
 			entry.IncreaseAmount.String(),
 			entry.DecreaseAmount.String(),
 			entry.Balance.String(),
+		})
+	}
+	return rows
+}
+
+func salesMarginRows(report *reports.SalesMarginReport) [][]string {
+	rows := [][]string{{
+		"row_type",
+		"start_date",
+		"end_date",
+		"total_revenue",
+		"total_cost",
+		"total_margin",
+		"margin_percent",
+		"line_count",
+		"invoice_id",
+		"invoice_number",
+		"invoice_date",
+		"contact_id",
+		"contact_name",
+		"product_id",
+		"product_code",
+		"product_name",
+		"description",
+		"quantity",
+		"revenue",
+		"unit_cost",
+		"cost",
+		"margin",
+		"line_margin_percent",
+	}}
+	rows = append(rows, []string{
+		"summary",
+		report.StartDate,
+		report.EndDate,
+		report.TotalRevenue.String(),
+		report.TotalCost.String(),
+		report.TotalMargin.String(),
+		report.MarginPercent.String(),
+		intString(report.LineCount),
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+	})
+	for _, line := range report.Lines {
+		rows = append(rows, []string{
+			"line",
+			report.StartDate,
+			report.EndDate,
+			"",
+			"",
+			"",
+			"",
+			"",
+			line.InvoiceID,
+			line.InvoiceNumber,
+			line.InvoiceDate,
+			line.ContactID,
+			line.ContactName,
+			line.ProductID,
+			line.ProductCode,
+			line.ProductName,
+			line.Description,
+			line.Quantity.String(),
+			line.Revenue.String(),
+			line.UnitCost.String(),
+			line.Cost.String(),
+			line.Margin.String(),
+			line.MarginPercent.String(),
 		})
 	}
 	return rows

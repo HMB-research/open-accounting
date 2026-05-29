@@ -1111,3 +1111,78 @@ func TestGetContactStatement(t *testing.T) {
 		assert.ErrorContains(t, err, "get contact statement entries")
 	})
 }
+
+func TestGetSalesMarginReport(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("returns totals and line margins", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+		mockRepo.SalesMarginLines = []SalesMarginLine{
+			{
+				InvoiceID:     "inv-1",
+				InvoiceNumber: "INV-001",
+				InvoiceDate:   "2026-03-01",
+				ContactName:   "Acme",
+				Description:   "Consulting",
+				Quantity:      decimal.NewFromInt(2),
+				Revenue:       decimal.NewFromInt(1000),
+				UnitCost:      decimal.NewFromInt(150),
+				Cost:          decimal.NewFromInt(300),
+			},
+			{
+				InvoiceID:     "inv-2",
+				InvoiceNumber: "INV-002",
+				InvoiceDate:   "2026-03-10",
+				ContactName:   "Beta",
+				Description:   "Support",
+				Quantity:      decimal.NewFromInt(1),
+				Revenue:       decimal.NewFromInt(200),
+				UnitCost:      decimal.NewFromInt(80),
+				Cost:          decimal.NewFromInt(80),
+			},
+		}
+
+		report, err := svc.GetSalesMarginReport(ctx, "tenant-1", "schema_tenant1", &SalesMarginRequest{
+			StartDate: "2026-03-01",
+			EndDate:   "2026-03-31",
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, "tenant-1", report.TenantID)
+		assert.True(t, report.TotalRevenue.Equal(decimal.NewFromInt(1200)))
+		assert.True(t, report.TotalCost.Equal(decimal.NewFromInt(380)))
+		assert.True(t, report.TotalMargin.Equal(decimal.NewFromInt(820)))
+		assert.Equal(t, "68.33", report.MarginPercent.String())
+		require.Len(t, report.Lines, 2)
+		assert.True(t, report.Lines[0].Margin.Equal(decimal.NewFromInt(700)))
+		assert.Equal(t, "70", report.Lines[0].MarginPercent.String())
+	})
+
+	t.Run("validates date range", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+
+		report, err := svc.GetSalesMarginReport(ctx, "tenant-1", "schema_tenant1", &SalesMarginRequest{
+			StartDate: "2026-04-01",
+			EndDate:   "2026-03-31",
+		})
+
+		assert.Nil(t, report)
+		assert.ErrorContains(t, err, "end_date must be on or after start_date")
+	})
+
+	t.Run("surfaces repository errors", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+		mockRepo.GetSalesMarginLinesErr = assert.AnError
+
+		report, err := svc.GetSalesMarginReport(ctx, "tenant-1", "schema_tenant1", &SalesMarginRequest{
+			StartDate: "2026-03-01",
+			EndDate:   "2026-03-31",
+		})
+
+		assert.Nil(t, report)
+		assert.ErrorContains(t, err, "get sales margin lines")
+	})
+}
