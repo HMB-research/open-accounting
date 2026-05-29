@@ -22,6 +22,7 @@ type Repository interface {
 	// Salary component operations
 	EndCurrentBaseSalary(ctx context.Context, schemaName, tenantID, employeeID string, effectiveTo time.Time) error
 	CreateSalaryComponent(ctx context.Context, schemaName string, comp *SalaryComponent) error
+	ListSalaryComponents(ctx context.Context, schemaName, tenantID, employeeID string, activeOn *time.Time) ([]SalaryComponent, error)
 	GetCurrentSalary(ctx context.Context, schemaName, tenantID, employeeID string) (decimal.Decimal, error)
 
 	// Payroll run operations
@@ -207,11 +208,49 @@ func (r *PostgresRepository) EndCurrentBaseSalary(ctx context.Context, schemaNam
 // CreateSalaryComponent inserts a new salary component
 func (r *PostgresRepository) CreateSalaryComponent(ctx context.Context, schemaName string, comp *SalaryComponent) error {
 	query := fmt.Sprintf(`
-		INSERT INTO %s.salary_components (id, tenant_id, employee_id, component_type, name, amount, is_taxable, is_recurring, effective_from, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+		INSERT INTO %s.salary_components (id, tenant_id, employee_id, component_type, name, amount, is_taxable, is_recurring, effective_from, effective_to, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
 	`, schemaName)
 
-	return r.exec(ctx, query, comp.ID, comp.TenantID, comp.EmployeeID, comp.ComponentType, comp.Name, comp.Amount, comp.IsTaxable, comp.IsRecurring, comp.EffectiveFrom)
+	return r.exec(ctx, query, comp.ID, comp.TenantID, comp.EmployeeID, comp.ComponentType, comp.Name, comp.Amount, comp.IsTaxable, comp.IsRecurring, comp.EffectiveFrom, comp.EffectiveTo)
+}
+
+// ListSalaryComponents returns salary components for an employee.
+func (r *PostgresRepository) ListSalaryComponents(ctx context.Context, schemaName, tenantID, employeeID string, activeOn *time.Time) ([]SalaryComponent, error) {
+	query := fmt.Sprintf(`
+		SELECT id, tenant_id, employee_id, component_type, name, amount, is_taxable, is_recurring, effective_from, effective_to, created_at
+		FROM %s.salary_components
+		WHERE tenant_id = $1 AND employee_id = $2
+	`, schemaName)
+	args := []interface{}{tenantID, employeeID}
+	if activeOn != nil {
+		query += " AND effective_from <= $3 AND (effective_to IS NULL OR effective_to >= $3)"
+		args = append(args, *activeOn)
+	}
+	query += " ORDER BY effective_from DESC, created_at DESC, name"
+
+	rows, err := r.query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	components := []SalaryComponent{}
+	for rows.Next() {
+		var comp SalaryComponent
+		if err := rows.Scan(
+			&comp.ID, &comp.TenantID, &comp.EmployeeID, &comp.ComponentType, &comp.Name,
+			&comp.Amount, &comp.IsTaxable, &comp.IsRecurring, &comp.EffectiveFrom,
+			&comp.EffectiveTo, &comp.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		components = append(components, comp)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return components, nil
 }
 
 // GetCurrentSalary returns the current salary for an employee

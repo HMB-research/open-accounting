@@ -679,6 +679,8 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/employees/{employeeID}", h.GetEmployee)
 				r.Put("/employees/{employeeID}", h.UpdateEmployee)
 				r.Post("/employees/{employeeID}/salary", h.SetBaseSalary)
+				r.Get("/employees/{employeeID}/salary-components", h.ListSalaryComponents)
+				r.Post("/employees/{employeeID}/salary-components", h.AddSalaryComponent)
 
 				// Payroll - Runs
 				r.Get("/payroll-runs", h.ListPayrollRuns)

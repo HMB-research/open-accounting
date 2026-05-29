@@ -3207,6 +3207,23 @@ definitions:
       period_year:
         type: integer
     type: object
+  github_com_HMB-research_open-accounting_internal_payroll.CreateSalaryComponentRequest:
+    properties:
+      amount:
+        type: number
+      component_type:
+        type: string
+      effective_from:
+        type: string
+      effective_to:
+        type: string
+      is_recurring:
+        type: boolean
+      is_taxable:
+        type: boolean
+      name:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_payroll.Employee:
     properties:
       address:
@@ -3621,6 +3638,33 @@ definitions:
       reason:
         type: string
       rejected_by:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_payroll.SalaryComponent:
+    properties:
+      amount:
+        type: number
+      component_type:
+        description: BASE_SALARY, SECONDARY_EMPLOYMENT, BONUS, COMMISSION, BENEFIT,
+          DEDUCTION
+        type: string
+      created_at:
+        type: string
+      effective_from:
+        type: string
+      effective_to:
+        type: string
+      employee_id:
+        type: string
+      id:
+        type: string
+      is_recurring:
+        type: boolean
+      is_taxable:
+        type: boolean
+      name:
+        type: string
+      tenant_id:
         type: string
     type: object
   github_com_HMB-research_open-accounting_internal_payroll.TSDDeclaration:
@@ -8609,6 +8653,87 @@ paths:
       security:
       - BearerAuth: []
       summary: Set base salary
+      tags:
+      - Payroll
+  /tenants/{tenantID}/employees/{employeeID}/salary-components:
+    get:
+      description: List salary components for an employee, optionally filtered to
+        components active on a date
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Employee ID
+        in: path
+        name: employeeID
+        required: true
+        type: string
+      - description: Filter components active on date (YYYY-MM-DD)
+        in: query
+        name: active_on
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.SalaryComponent'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List salary components
+      tags:
+      - Payroll
+    post:
+      consumes:
+      - application/json
+      description: Add a recurring or one-off salary component, such as secondary
+        employment income, bonus, commission, or taxable benefit
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Employee ID
+        in: path
+        name: employeeID
+        required: true
+        type: string
+      - description: Salary component details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.CreateSalaryComponentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.SalaryComponent'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Add salary component
       tags:
       - Payroll
   /tenants/{tenantID}/employees/import:

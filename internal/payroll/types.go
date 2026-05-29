@@ -90,7 +90,7 @@ type SalaryComponent struct {
 	ID            string          `json:"id"`
 	TenantID      string          `json:"tenant_id"`
 	EmployeeID    string          `json:"employee_id"`
-	ComponentType string          `json:"component_type"` // BASE_SALARY, BONUS, COMMISSION, BENEFIT, DEDUCTION
+	ComponentType string          `json:"component_type"` // BASE_SALARY, SECONDARY_EMPLOYMENT, BONUS, COMMISSION, BENEFIT, DEDUCTION
 	Name          string          `json:"name"`
 	Amount        decimal.Decimal `json:"amount"`
 	IsTaxable     bool            `json:"is_taxable"`
@@ -99,6 +99,15 @@ type SalaryComponent struct {
 	EffectiveTo   *time.Time      `json:"effective_to,omitempty"`
 	CreatedAt     time.Time       `json:"created_at"`
 }
+
+const (
+	SalaryComponentBaseSalary          = "BASE_SALARY"
+	SalaryComponentSecondaryEmployment = "SECONDARY_EMPLOYMENT"
+	SalaryComponentBonus               = "BONUS"
+	SalaryComponentCommission          = "COMMISSION"
+	SalaryComponentBenefit             = "BENEFIT"
+	SalaryComponentDeduction           = "DEDUCTION"
+)
 
 // PayrollRun represents a monthly payroll calculation
 type PayrollRun struct {
@@ -247,6 +256,17 @@ type CreatePayrollRunRequest struct {
 // ProcessPayrollRunRequest is the request to bulk-process a payroll run.
 type ProcessPayrollRunRequest struct {
 	Approve bool `json:"approve,omitempty"`
+}
+
+// CreateSalaryComponentRequest creates an additional salary component for an employee.
+type CreateSalaryComponentRequest struct {
+	ComponentType string          `json:"component_type,omitempty"`
+	Name          string          `json:"name,omitempty"`
+	Amount        decimal.Decimal `json:"amount"`
+	IsTaxable     *bool           `json:"is_taxable,omitempty"`
+	IsRecurring   *bool           `json:"is_recurring,omitempty"`
+	EffectiveFrom time.Time       `json:"effective_from"`
+	EffectiveTo   *time.Time      `json:"effective_to,omitempty"`
 }
 
 // PayrollRunProcessResult is returned after bulk payroll processing.

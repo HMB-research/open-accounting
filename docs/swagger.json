@@ -5524,6 +5524,129 @@
                 }
             }
         },
+        "/tenants/{tenantID}/employees/{employeeID}/salary-components": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List salary components for an employee, optionally filtered to components active on a date",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Payroll"
+                ],
+                "summary": "List salary components",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Employee ID",
+                        "name": "employeeID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter components active on date (YYYY-MM-DD)",
+                        "name": "active_on",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.SalaryComponent"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Add a recurring or one-off salary component, such as secondary employment income, bonus, commission, or taxable benefit",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Payroll"
+                ],
+                "summary": "Add salary component",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Employee ID",
+                        "name": "employeeID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Salary component details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.CreateSalaryComponentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.SalaryComponent"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/inventory/stock-import": {
             "post": {
                 "security": [
@@ -19233,6 +19356,32 @@
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_payroll.CreateSalaryComponentRequest": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "component_type": {
+                    "type": "string"
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "effective_to": {
+                    "type": "string"
+                },
+                "is_recurring": {
+                    "type": "boolean"
+                },
+                "is_taxable": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_payroll.Employee": {
             "type": "object",
             "properties": {
@@ -19848,6 +19997,45 @@
                     "type": "string"
                 },
                 "rejected_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_payroll.SalaryComponent": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "component_type": {
+                    "description": "BASE_SALARY, SECONDARY_EMPLOYMENT, BONUS, COMMISSION, BENEFIT, DEDUCTION",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "effective_to": {
+                    "type": "string"
+                },
+                "employee_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_recurring": {
+                    "type": "boolean"
+                },
+                "is_taxable": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "tenant_id": {
                     "type": "string"
                 }
             }

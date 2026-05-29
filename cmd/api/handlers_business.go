@@ -2668,6 +2668,75 @@ func (h *Handlers) SetBaseSalary(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"status": "salary updated"})
 }
 
+// ListSalaryComponents returns salary components for an employee
+// @Summary List salary components
+// @Description List salary components for an employee, optionally filtered to components active on a date
+// @Tags Payroll
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param employeeID path string true "Employee ID"
+// @Param active_on query string false "Filter components active on date (YYYY-MM-DD)"
+// @Success 200 {array} payroll.SalaryComponent
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/employees/{employeeID}/salary-components [get]
+func (h *Handlers) ListSalaryComponents(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	employeeID := chi.URLParam(r, "employeeID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var activeOn *time.Time
+	if rawActiveOn := strings.TrimSpace(r.URL.Query().Get("active_on")); rawActiveOn != "" {
+		parsed, err := time.Parse("2006-01-02", rawActiveOn)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "Invalid active_on date")
+			return
+		}
+		activeOn = &parsed
+	}
+
+	components, err := h.payrollService.ListSalaryComponents(r.Context(), schemaName, tenantID, employeeID, activeOn)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, components)
+}
+
+// AddSalaryComponent creates a salary component for an employee
+// @Summary Add salary component
+// @Description Add a recurring or one-off salary component, such as secondary employment income, bonus, commission, or taxable benefit
+// @Tags Payroll
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param employeeID path string true "Employee ID"
+// @Param request body payroll.CreateSalaryComponentRequest true "Salary component details"
+// @Success 201 {object} payroll.SalaryComponent
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/employees/{employeeID}/salary-components [post]
+func (h *Handlers) AddSalaryComponent(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	employeeID := chi.URLParam(r, "employeeID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req payroll.CreateSalaryComponentRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	component, err := h.payrollService.AddSalaryComponent(r.Context(), schemaName, tenantID, employeeID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, component)
+}
+
 // ListPayrollRuns returns all payroll runs for a tenant
 // @Summary List payroll runs
 // @Description Get all payroll runs for a tenant

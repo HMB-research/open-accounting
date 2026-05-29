@@ -35,8 +35,10 @@ type MockRepository struct {
 
 	// Salary component data
 	Salaries                 map[string]decimal.Decimal // employeeID -> salary
+	SalaryComponents         map[string][]SalaryComponent
 	EndCurrentBaseSalaryErr  error
 	CreateSalaryComponentErr error
+	ListSalaryComponentsErr  error
 	GetCurrentSalaryErr      error
 
 	// Payroll run data
@@ -93,10 +95,11 @@ func (t *MockTx) Conn() *pgx.Conn                                               
 
 func NewMockRepository() *MockRepository {
 	return &MockRepository{
-		Employees:   make(map[string]*Employee),
-		PayrollRuns: make(map[string]*PayrollRun),
-		Salaries:    make(map[string]decimal.Decimal),
-		mockTx:      &MockTx{},
+		Employees:        make(map[string]*Employee),
+		PayrollRuns:      make(map[string]*PayrollRun),
+		Salaries:         make(map[string]decimal.Decimal),
+		SalaryComponents: make(map[string][]SalaryComponent),
+		mockTx:           &MockTx{},
 	}
 }
 
@@ -143,6 +146,15 @@ func (m *MockRepository) UpdateEmployee(ctx context.Context, schemaName string, 
 }
 
 func (m *MockRepository) EndCurrentBaseSalary(ctx context.Context, schemaName, tenantID, employeeID string, effectiveTo time.Time) error {
+	if m.EndCurrentBaseSalaryErr == nil {
+		for i := range m.SalaryComponents[employeeID] {
+			comp := &m.SalaryComponents[employeeID][i]
+			if comp.TenantID == tenantID && comp.ComponentType == SalaryComponentBaseSalary && comp.EffectiveTo == nil {
+				comp.EffectiveTo = &effectiveTo
+			}
+		}
+		m.recalculateSalary(employeeID, time.Now())
+	}
 	return m.EndCurrentBaseSalaryErr
 }
 
@@ -150,8 +162,26 @@ func (m *MockRepository) CreateSalaryComponent(ctx context.Context, schemaName s
 	if m.CreateSalaryComponentErr != nil {
 		return m.CreateSalaryComponentErr
 	}
-	m.Salaries[comp.EmployeeID] = comp.Amount
+	m.SalaryComponents[comp.EmployeeID] = append(m.SalaryComponents[comp.EmployeeID], *comp)
+	m.recalculateSalary(comp.EmployeeID, time.Now())
 	return nil
+}
+
+func (m *MockRepository) ListSalaryComponents(ctx context.Context, schemaName, tenantID, employeeID string, activeOn *time.Time) ([]SalaryComponent, error) {
+	if m.ListSalaryComponentsErr != nil {
+		return nil, m.ListSalaryComponentsErr
+	}
+	components := []SalaryComponent{}
+	for _, comp := range m.SalaryComponents[employeeID] {
+		if comp.TenantID != tenantID {
+			continue
+		}
+		if activeOn != nil && !salaryComponentActiveOn(comp, *activeOn) {
+			continue
+		}
+		components = append(components, comp)
+	}
+	return components, nil
 }
 
 func (m *MockRepository) GetCurrentSalary(ctx context.Context, schemaName, tenantID, employeeID string) (decimal.Decimal, error) {
@@ -163,6 +193,26 @@ func (m *MockRepository) GetCurrentSalary(ctx context.Context, schemaName, tenan
 		return decimal.Zero, nil
 	}
 	return salary, nil
+}
+
+func (m *MockRepository) recalculateSalary(employeeID string, activeOn time.Time) {
+	if len(m.SalaryComponents[employeeID]) == 0 {
+		return
+	}
+	total := decimal.Zero
+	for _, comp := range m.SalaryComponents[employeeID] {
+		if comp.IsRecurring && salaryComponentActiveOn(comp, activeOn) {
+			total = total.Add(comp.Amount)
+		}
+	}
+	m.Salaries[employeeID] = total
+}
+
+func salaryComponentActiveOn(comp SalaryComponent, activeOn time.Time) bool {
+	if comp.EffectiveFrom.After(activeOn) {
+		return false
+	}
+	return comp.EffectiveTo == nil || !comp.EffectiveTo.Before(activeOn)
 }
 
 func (m *MockRepository) CreatePayrollRun(ctx context.Context, schemaName string, run *PayrollRun) error {
@@ -503,7 +553,7 @@ func TestSetBaseSalary_Success(t *testing.T) {
 	err := service.SetBaseSalary(ctx, "test_schema", "tenant-1", "emp-1", amount, effectiveFrom)
 
 	require.NoError(t, err)
-	assert.Equal(t, amount, repo.Salaries["emp-1"])
+	assert.True(t, repo.Salaries["emp-1"].Equal(amount))
 }
 
 func TestSetBaseSalary_Error(t *testing.T) {
@@ -517,6 +567,191 @@ func TestSetBaseSalary_Error(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "set base salary")
+}
+
+func TestAddSalaryComponent_DefaultsAndSumsCurrentSalary(t *testing.T) {
+	repo := NewMockRepository()
+	uuidGen := &MockUUIDGenerator{prefix: "comp"}
+	service := NewServiceWithRepository(repo, uuidGen)
+	ctx := context.Background()
+	effectiveFrom := time.Now().AddDate(0, 0, -1)
+	repo.Employees["emp-1"] = &Employee{
+		ID:       "emp-1",
+		TenantID: "tenant-1",
+	}
+
+	err := service.SetBaseSalary(ctx, "test_schema", "tenant-1", "emp-1", decimal.NewFromInt(2000), effectiveFrom)
+	require.NoError(t, err)
+
+	component, err := service.AddSalaryComponent(ctx, "test_schema", "tenant-1", "emp-1", &CreateSalaryComponentRequest{
+		Amount:        decimal.NewFromInt(600),
+		EffectiveFrom: effectiveFrom,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, SalaryComponentSecondaryEmployment, component.ComponentType)
+	assert.Equal(t, "Secondary employment", component.Name)
+	assert.True(t, component.IsTaxable)
+	assert.True(t, component.IsRecurring)
+
+	salary, err := service.GetCurrentSalary(ctx, "test_schema", "tenant-1", "emp-1")
+	require.NoError(t, err)
+	assert.True(t, salary.Equal(decimal.NewFromInt(2600)))
+}
+
+func TestAddSalaryComponent_ValidationErrors(t *testing.T) {
+	repo := NewMockRepository()
+	uuidGen := &MockUUIDGenerator{prefix: "comp"}
+	service := NewServiceWithRepository(repo, uuidGen)
+	ctx := context.Background()
+	effectiveFrom := time.Now()
+	repo.Employees["emp-1"] = &Employee{
+		ID:       "emp-1",
+		TenantID: "tenant-1",
+	}
+	effectiveToBefore := effectiveFrom.AddDate(0, 0, -1)
+
+	tests := []struct {
+		name       string
+		employeeID string
+		req        *CreateSalaryComponentRequest
+		wantError  string
+	}{
+		{
+			name:       "nil request",
+			employeeID: "emp-1",
+			req:        nil,
+			wantError:  "salary component request is required",
+		},
+		{
+			name:       "employee missing",
+			employeeID: "missing",
+			req: &CreateSalaryComponentRequest{
+				Amount:        decimal.NewFromInt(100),
+				EffectiveFrom: effectiveFrom,
+			},
+			wantError: "employee not found",
+		},
+		{
+			name:       "unsupported type",
+			employeeID: "emp-1",
+			req: &CreateSalaryComponentRequest{
+				ComponentType: "allowance",
+				Amount:        decimal.NewFromInt(100),
+				EffectiveFrom: effectiveFrom,
+			},
+			wantError: "unsupported salary component type",
+		},
+		{
+			name:       "zero amount",
+			employeeID: "emp-1",
+			req: &CreateSalaryComponentRequest{
+				Amount:        decimal.Zero,
+				EffectiveFrom: effectiveFrom,
+			},
+			wantError: "amount must be positive",
+		},
+		{
+			name:       "missing effective from",
+			employeeID: "emp-1",
+			req: &CreateSalaryComponentRequest{
+				Amount: decimal.NewFromInt(100),
+			},
+			wantError: "effective from date is required",
+		},
+		{
+			name:       "effective to before from",
+			employeeID: "emp-1",
+			req: &CreateSalaryComponentRequest{
+				Amount:        decimal.NewFromInt(100),
+				EffectiveFrom: effectiveFrom,
+				EffectiveTo:   &effectiveToBefore,
+			},
+			wantError: "effective to date must be on or after effective from date",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			component, err := service.AddSalaryComponent(ctx, "test_schema", "tenant-1", tt.employeeID, tt.req)
+			require.Error(t, err)
+			assert.Nil(t, component)
+			assert.Contains(t, err.Error(), tt.wantError)
+		})
+	}
+}
+
+func TestAddSalaryComponent_RepositoryError(t *testing.T) {
+	repo := NewMockRepository()
+	repo.CreateSalaryComponentErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "comp"}
+	service := NewServiceWithRepository(repo, uuidGen)
+	ctx := context.Background()
+	repo.Employees["emp-1"] = &Employee{
+		ID:       "emp-1",
+		TenantID: "tenant-1",
+	}
+
+	component, err := service.AddSalaryComponent(ctx, "test_schema", "tenant-1", "emp-1", &CreateSalaryComponentRequest{
+		Amount:        decimal.NewFromInt(100),
+		EffectiveFrom: time.Now(),
+	})
+
+	require.Error(t, err)
+	assert.Nil(t, component)
+	assert.Contains(t, err.Error(), "create salary component")
+}
+
+func TestListSalaryComponents_ActiveOn(t *testing.T) {
+	repo := NewMockRepository()
+	uuidGen := &MockUUIDGenerator{prefix: "comp"}
+	service := NewServiceWithRepository(repo, uuidGen)
+	ctx := context.Background()
+	activeOn := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+	ended := activeOn.AddDate(0, 0, -1)
+	repo.Employees["emp-1"] = &Employee{
+		ID:       "emp-1",
+		TenantID: "tenant-1",
+	}
+	repo.SalaryComponents["emp-1"] = []SalaryComponent{
+		{
+			ID:            "comp-active",
+			TenantID:      "tenant-1",
+			EmployeeID:    "emp-1",
+			ComponentType: SalaryComponentSecondaryEmployment,
+			Name:          "Evening contract",
+			Amount:        decimal.NewFromInt(600),
+			IsRecurring:   true,
+			EffectiveFrom: activeOn.AddDate(0, -1, 0),
+		},
+		{
+			ID:            "comp-ended",
+			TenantID:      "tenant-1",
+			EmployeeID:    "emp-1",
+			ComponentType: SalaryComponentBonus,
+			Name:          "Ended bonus",
+			Amount:        decimal.NewFromInt(100),
+			IsRecurring:   true,
+			EffectiveFrom: activeOn.AddDate(0, -2, 0),
+			EffectiveTo:   &ended,
+		},
+		{
+			ID:            "comp-future",
+			TenantID:      "tenant-1",
+			EmployeeID:    "emp-1",
+			ComponentType: SalaryComponentBenefit,
+			Name:          "Future benefit",
+			Amount:        decimal.NewFromInt(100),
+			IsRecurring:   true,
+			EffectiveFrom: activeOn.AddDate(0, 0, 1),
+		},
+	}
+
+	components, err := service.ListSalaryComponents(ctx, "test_schema", "tenant-1", "emp-1", &activeOn)
+
+	require.NoError(t, err)
+	require.Len(t, components, 1)
+	assert.Equal(t, "comp-active", components[0].ID)
 }
 
 func TestGetCurrentSalary_Success(t *testing.T) {

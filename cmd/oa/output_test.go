@@ -1402,6 +1402,21 @@ func TestPrintPayrollOutputs(t *testing.T) {
 	assert.Contains(t, payslipsBuf.String(), "Mari Maasikas")
 	assert.Contains(t, payslipsBuf.String(), "2534.8")
 
+	var componentsBuf bytes.Buffer
+	printSalaryComponentsTable(&componentsBuf, []payroll.SalaryComponent{
+		{
+			ID:            "comp-1",
+			ComponentType: payroll.SalaryComponentSecondaryEmployment,
+			Name:          "Evening contract",
+			Amount:        decimal.NewFromInt(600),
+			IsTaxable:     true,
+			IsRecurring:   true,
+			EffectiveFrom: paymentDate,
+		},
+	})
+	assert.Contains(t, componentsBuf.String(), "SECONDARY_EMPLOYMENT")
+	assert.Contains(t, componentsBuf.String(), "Evening contract")
+
 	var taxBuf bytes.Buffer
 	printTaxCalculation(&taxBuf, &payroll.TaxCalculation{
 		GrossSalary:       decimal.NewFromInt(3200),

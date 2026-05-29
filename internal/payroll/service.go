@@ -3,6 +3,7 @@ package payroll
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -179,6 +180,13 @@ func (s *Service) UpdateEmployee(ctx context.Context, schemaName, tenantID, empl
 
 // SetBaseSalary sets or updates an employee's base salary
 func (s *Service) SetBaseSalary(ctx context.Context, schemaName, tenantID, employeeID string, amount decimal.Decimal, effectiveFrom time.Time) error {
+	if amount.LessThanOrEqual(decimal.Zero) {
+		return fmt.Errorf("amount must be positive")
+	}
+	if effectiveFrom.IsZero() {
+		return fmt.Errorf("effective from date is required")
+	}
+
 	// End any existing base salary (ignore errors - may not exist)
 	_ = s.repo.EndCurrentBaseSalary(ctx, schemaName, tenantID, employeeID, effectiveFrom.AddDate(0, 0, -1))
 
@@ -187,7 +195,7 @@ func (s *Service) SetBaseSalary(ctx context.Context, schemaName, tenantID, emplo
 		ID:            s.uuid.New(),
 		TenantID:      tenantID,
 		EmployeeID:    employeeID,
-		ComponentType: "BASE_SALARY",
+		ComponentType: SalaryComponentBaseSalary,
 		Name:          "Base Salary",
 		Amount:        amount,
 		IsTaxable:     true,
@@ -203,6 +211,72 @@ func (s *Service) SetBaseSalary(ctx context.Context, schemaName, tenantID, emplo
 	return nil
 }
 
+// AddSalaryComponent creates an additional salary component for an employee.
+func (s *Service) AddSalaryComponent(ctx context.Context, schemaName, tenantID, employeeID string, req *CreateSalaryComponentRequest) (*SalaryComponent, error) {
+	if req == nil {
+		return nil, fmt.Errorf("salary component request is required")
+	}
+	if _, err := s.GetEmployee(ctx, schemaName, tenantID, employeeID); err != nil {
+		return nil, err
+	}
+	componentType, err := normalizeSalaryComponentType(req.ComponentType)
+	if err != nil {
+		return nil, err
+	}
+	if req.Amount.LessThanOrEqual(decimal.Zero) {
+		return nil, fmt.Errorf("amount must be positive")
+	}
+	if req.EffectiveFrom.IsZero() {
+		return nil, fmt.Errorf("effective from date is required")
+	}
+	if req.EffectiveTo != nil && req.EffectiveTo.Before(req.EffectiveFrom) {
+		return nil, fmt.Errorf("effective to date must be on or after effective from date")
+	}
+
+	isTaxable := true
+	if req.IsTaxable != nil {
+		isTaxable = *req.IsTaxable
+	}
+	isRecurring := true
+	if req.IsRecurring != nil {
+		isRecurring = *req.IsRecurring
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		name = defaultSalaryComponentName(componentType)
+	}
+
+	comp := &SalaryComponent{
+		ID:            s.uuid.New(),
+		TenantID:      tenantID,
+		EmployeeID:    employeeID,
+		ComponentType: componentType,
+		Name:          name,
+		Amount:        req.Amount,
+		IsTaxable:     isTaxable,
+		IsRecurring:   isRecurring,
+		EffectiveFrom: req.EffectiveFrom,
+		EffectiveTo:   req.EffectiveTo,
+		CreatedAt:     time.Now(),
+	}
+	if err := s.repo.CreateSalaryComponent(ctx, schemaName, comp); err != nil {
+		return nil, fmt.Errorf("create salary component: %w", err)
+	}
+	return comp, nil
+}
+
+// ListSalaryComponents returns salary components for an employee.
+func (s *Service) ListSalaryComponents(ctx context.Context, schemaName, tenantID, employeeID string, activeOn *time.Time) ([]SalaryComponent, error) {
+	if _, err := s.GetEmployee(ctx, schemaName, tenantID, employeeID); err != nil {
+		return nil, err
+	}
+	components, err := s.repo.ListSalaryComponents(ctx, schemaName, tenantID, employeeID, activeOn)
+	if err != nil {
+		return nil, fmt.Errorf("list salary components: %w", err)
+	}
+	return components, nil
+}
+
 // GetCurrentSalary returns the current salary for an employee
 func (s *Service) GetCurrentSalary(ctx context.Context, schemaName, tenantID, employeeID string) (decimal.Decimal, error) {
 	salary, err := s.repo.GetCurrentSalary(ctx, schemaName, tenantID, employeeID)
@@ -210,6 +284,34 @@ func (s *Service) GetCurrentSalary(ctx context.Context, schemaName, tenantID, em
 		return decimal.Zero, fmt.Errorf("get current salary: %w", err)
 	}
 	return salary, nil
+}
+
+func normalizeSalaryComponentType(componentType string) (string, error) {
+	normalized := strings.ToUpper(strings.TrimSpace(componentType))
+	if normalized == "" {
+		return SalaryComponentSecondaryEmployment, nil
+	}
+	switch normalized {
+	case SalaryComponentBaseSalary, SalaryComponentSecondaryEmployment, SalaryComponentBonus, SalaryComponentCommission, SalaryComponentBenefit:
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("unsupported salary component type %q", normalized)
+	}
+}
+
+func defaultSalaryComponentName(componentType string) string {
+	switch componentType {
+	case SalaryComponentBaseSalary:
+		return "Base Salary"
+	case SalaryComponentBonus:
+		return "Bonus"
+	case SalaryComponentCommission:
+		return "Commission"
+	case SalaryComponentBenefit:
+		return "Benefit"
+	default:
+		return "Secondary employment"
+	}
 }
 
 // =============================================================================

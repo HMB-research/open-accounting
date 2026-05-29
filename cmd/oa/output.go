@@ -1403,6 +1403,26 @@ func printEmployee(w io.Writer, employee *payroll.Employee) {
 	_, _ = fmt.Fprintf(w, "Active: %t\n", employee.IsActive)
 }
 
+func printSalaryComponentsTable(w io.Writer, components []payroll.SalaryComponent) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tTYPE\tNAME\tAMOUNT\tTAXABLE\tRECURRING\tFROM\tTO")
+	for _, component := range components {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%t\t%t\t%s\t%s\n",
+			component.ID,
+			component.ComponentType,
+			component.Name,
+			component.Amount.String(),
+			component.IsTaxable,
+			component.IsRecurring,
+			formatDate(component.EffectiveFrom),
+			formatDatePtr(component.EffectiveTo),
+		)
+	}
+	_ = tw.Flush()
+}
+
 func printDocumentsTable(w io.Writer, docs []documents.Document) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tENTITY\tTYPE\tFILE\tREVIEW\tRETENTION\tCREATED")
