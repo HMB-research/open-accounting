@@ -484,6 +484,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Post("/quotes/{quoteID}/send", h.SendQuote)
 				r.Post("/quotes/{quoteID}/accept", h.AcceptQuote)
 				r.Post("/quotes/{quoteID}/reject", h.RejectQuote)
+				r.Post("/quotes/{quoteID}/convert-to-invoice", h.ConvertQuoteToInvoice)
 
 				// Orders
 				r.Get("/orders", h.ListOrders)

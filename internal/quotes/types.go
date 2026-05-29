@@ -7,6 +7,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/invoicing"
 )
 
 // QuoteStatus represents the status of a quote
@@ -198,6 +199,20 @@ type UpdateQuoteRequest struct {
 	ExchangeRate decimal.Decimal          `json:"exchange_rate,omitempty"`
 	Notes        string                   `json:"notes,omitempty"`
 	Lines        []CreateQuoteLineRequest `json:"lines"`
+}
+
+// ConvertQuoteToInvoiceRequest requests conversion of an accepted quote into a sales invoice.
+type ConvertQuoteToInvoiceRequest struct {
+	IssueDate time.Time `json:"issue_date,omitempty"`
+	DueDate   time.Time `json:"due_date,omitempty"`
+	Notes     string    `json:"notes,omitempty"`
+	UserID    string    `json:"-"`
+}
+
+// QuoteInvoiceConversionResult returns the converted quote and created invoice.
+type QuoteInvoiceConversionResult struct {
+	Quote   *Quote             `json:"quote"`
+	Invoice *invoicing.Invoice `json:"invoice"`
 }
 
 // QuoteFilter provides filtering options

@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -583,4 +584,80 @@ func TestRejectQuote(t *testing.T) {
 	h.RejectQuote(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestConvertQuoteToInvoice(t *testing.T) {
+	h, quotesRepo, tenantRepo := setupQuotesTestHandlers()
+	invoiceRepo := newMockInvoicingRepository()
+	h.invoicingService = invoicing.NewServiceWithRepository(invoiceRepo, nil)
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	quoteDate := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	quotesRepo.quotes["quote-1"] = &quotes.Quote{
+		ID:           "quote-1",
+		TenantID:     "tenant-1",
+		QuoteNumber:  "QT-001",
+		ContactID:    "contact-1",
+		QuoteDate:    quoteDate,
+		Status:       quotes.QuoteStatusAccepted,
+		Currency:     "EUR",
+		ExchangeRate: decimal.NewFromInt(1),
+		Notes:        "Quote notes",
+		Lines: []quotes.QuoteLine{
+			{
+				ID:              "line-1",
+				TenantID:        "tenant-1",
+				QuoteID:         "quote-1",
+				LineNumber:      1,
+				Description:     "Consulting",
+				Quantity:        decimal.NewFromInt(2),
+				Unit:            "hour",
+				UnitPrice:       decimal.NewFromInt(100),
+				DiscountPercent: decimal.NewFromInt(10),
+				VATRate:         decimal.NewFromInt(22),
+			},
+		},
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/quotes/quote-1/convert-to-invoice",
+		bytes.NewBufferString(`{"issue_date":"2026-03-10T00:00:00Z","due_date":"2026-03-24T00:00:00Z","notes":"Invoice notes"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "quoteID": "quote-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.ConvertQuoteToInvoice(rr, req)
+
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+
+	var result quotes.QuoteInvoiceConversionResult
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&result))
+	require.NotNil(t, result.Quote)
+	require.NotNil(t, result.Invoice)
+	assert.Equal(t, quotes.QuoteStatusConverted, result.Quote.Status)
+	require.NotNil(t, result.Quote.ConvertedToInvoiceID)
+	assert.Equal(t, result.Invoice.ID, *result.Quote.ConvertedToInvoiceID)
+	assert.Equal(t, result.Invoice.ID, *quotesRepo.quotes["quote-1"].ConvertedToInvoiceID)
+	assert.Equal(t, quotes.QuoteStatusConverted, quotesRepo.quotes["quote-1"].Status)
+
+	assert.Equal(t, invoicing.InvoiceTypeSales, result.Invoice.InvoiceType)
+	assert.Equal(t, invoicing.StatusDraft, result.Invoice.Status)
+	assert.Equal(t, "contact-1", result.Invoice.ContactID)
+	assert.Equal(t, "QT-001", result.Invoice.Reference)
+	assert.Equal(t, "Invoice notes", result.Invoice.Notes)
+	assert.Equal(t, "2026-03-10", result.Invoice.IssueDate.Format("2006-01-02"))
+	assert.Equal(t, "2026-03-24", result.Invoice.DueDate.Format("2006-01-02"))
+	require.Len(t, result.Invoice.Lines, 1)
+	assert.Equal(t, "Consulting", result.Invoice.Lines[0].Description)
+	assert.True(t, result.Invoice.Lines[0].Quantity.Equal(decimal.NewFromInt(2)))
+	assert.True(t, result.Invoice.Lines[0].UnitPrice.Equal(decimal.NewFromInt(100)))
+	assert.True(t, result.Invoice.Lines[0].DiscountPercent.Equal(decimal.NewFromInt(10)))
+	assert.True(t, result.Invoice.Lines[0].VATRate.Equal(decimal.NewFromInt(22)))
 }
