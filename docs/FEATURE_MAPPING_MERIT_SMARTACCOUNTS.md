@@ -132,7 +132,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Income tax calculation | ✅ | ✅ | ✅ | Implemented |
 | Unemployment insurance | ✅ | ✅ | ✅ | Implemented |
 | Pension contributions | ✅ | ✅ | ✅ | Implemented |
-| Payslip generation | ✅ | ✅ | ⚠️ | Partial |
+| Payslip generation | ✅ | ✅ | ✅ | Implemented with calculated payslip records plus generated PDF download through API/CLI |
 | Historical payroll and leave-balance import | ✅ | ✅ | ⚠️ | API/UI/CLI import exists; broader cutover still partial |
 | Bulk payroll processing | ✅ | ✅ | ✅ | Implemented via payroll run process API/CLI |
 

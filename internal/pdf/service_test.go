@@ -10,6 +10,7 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -455,6 +456,42 @@ func TestGenerateInvoicePDF(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, pdfBytes)
 	})
+}
+
+func TestGeneratePayslipPDF(t *testing.T) {
+	svc := NewService()
+	tnant := createTestTenant()
+	run := &payroll.PayrollRun{
+		ID:          "run-1",
+		TenantID:    "tenant-1",
+		PeriodYear:  2026,
+		PeriodMonth: 3,
+		Status:      payroll.PayrollCalculated,
+	}
+	payslip := &payroll.Payslip{
+		ID:                      "payslip-1",
+		TenantID:                "tenant-1",
+		PayrollRunID:            "run-1",
+		EmployeeID:              "employee-1",
+		GrossSalary:             decimal.RequireFromString("3200.00"),
+		TaxableIncome:           decimal.RequireFromString("2500.00"),
+		IncomeTax:               decimal.RequireFromString("550.00"),
+		UnemploymentInsuranceEE: decimal.RequireFromString("51.20"),
+		FundedPension:           decimal.RequireFromString("64.00"),
+		NetSalary:               decimal.RequireFromString("2534.80"),
+		SocialTax:               decimal.RequireFromString("1056.00"),
+		UnemploymentInsuranceER: decimal.RequireFromString("25.60"),
+		TotalEmployerCost:       decimal.RequireFromString("4281.60"),
+		BasicExemptionApplied:   decimal.RequireFromString("700.00"),
+		PaymentStatus:           "PENDING",
+		Employee:                &payroll.Employee{FirstName: "Mari", LastName: "Maasikas", PersonalCode: "49001010001", Email: "mari@example.com"},
+	}
+
+	pdfBytes, err := svc.GeneratePayslipPDF(payslip, run, tnant)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, pdfBytes)
+	assert.Equal(t, "%PDF", string(pdfBytes[:4]))
 }
 
 func createTestInvoice() *invoicing.Invoice {

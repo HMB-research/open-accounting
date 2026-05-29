@@ -215,6 +215,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  payroll runs process      Bulk process a payroll run")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll runs approve      Approve a payroll run")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll runs payslips     List payslips for a payroll run")
+	_, _ = fmt.Fprintln(a.stdout, "  payroll runs payslip-pdf  Download one payslip PDF")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll tax-preview       Preview Estonian payroll taxes")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll import-history    Import historical payroll runs from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll import-leave-balances  Import leave balances from CSV")
@@ -8479,6 +8480,27 @@ func (a *cliApp) runPayrollRuns(ctx context.Context, cfg *cliConfig, client *api
 		}
 		printPayslipsTable(a.stdout, payslips)
 		return nil
+
+	case "payslip-pdf":
+		fs := flag.NewFlagSet("payroll runs payslip-pdf", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		runID := fs.String("run-id", "", "Payroll run id")
+		payslipID := fs.String("payslip-id", "", "Payslip id")
+		outputPath := fs.String("output", "", "Optional PDF output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*runID) == "" {
+			return errors.New("run-id is required")
+		}
+		if strings.TrimSpace(*payslipID) == "" {
+			return errors.New("payslip-id is required")
+		}
+		content, err := client.downloadPayslipPDF(ctx, cfg.TenantID, strings.TrimSpace(*runID), strings.TrimSpace(*payslipID))
+		if err != nil {
+			return err
+		}
+		return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "payslip PDF")
 
 	default:
 		return fmt.Errorf("unknown payroll runs subcommand %q", args[0])

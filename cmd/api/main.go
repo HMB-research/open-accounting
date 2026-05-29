@@ -682,6 +682,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Post("/payroll-runs/{runID}/process", h.ProcessPayrollRun)
 				r.Post("/payroll-runs/{runID}/approve", h.ApprovePayroll)
 				r.Get("/payroll-runs/{runID}/payslips", h.GetPayslips)
+				r.Get("/payroll-runs/{runID}/payslips/{payslipID}/pdf", h.GetPayslipPDF)
 				r.Post("/payroll-runs/{runID}/tsd", h.GenerateTSD)
 
 				// Payroll - Tax Preview

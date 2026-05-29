@@ -1063,6 +1063,15 @@ GET /tenants/{tenantId}/payroll-runs/{runId}/payslips
 Authorization: Bearer <token>
 ```
 
+### Download Payslip PDF
+
+```http
+GET /tenants/{tenantId}/payroll-runs/{runId}/payslips/{payslipId}/pdf
+Authorization: Bearer <token>
+```
+
+Returns a generated PDF for one employee payslip in the payroll run.
+
 ### Payroll Tax Preview
 
 ```http

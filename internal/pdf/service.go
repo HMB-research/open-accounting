@@ -17,6 +17,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -107,6 +108,32 @@ func (s *Service) GenerateInvoicePDF(invoice *invoicing.Invoice, t *tenant.Tenan
 	return doc.GetBytes(), nil
 }
 
+// GeneratePayslipPDF generates a PDF for an employee payslip.
+func (s *Service) GeneratePayslipPDF(payslip *payroll.Payslip, run *payroll.PayrollRun, t *tenant.Tenant) ([]byte, error) {
+	cfg := config.NewBuilder().
+		WithPageNumber(props.PageNumber{
+			Pattern: "Page {current} of {total}",
+			Place:   props.RightBottom,
+			Size:    8,
+		}).
+		WithLeftMargin(15).
+		WithTopMargin(15).
+		WithRightMargin(15).
+		Build()
+
+	m := maroto.New(cfg)
+	s.addHeader(m, t)
+	s.addPayslipTitle(m, payslip, run)
+	s.addPayslipEmployee(m, payslip)
+	s.addPayslipAmounts(m, payslip)
+
+	doc, err := m.Generate()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate payslip PDF: %w", err)
+	}
+	return doc.GetBytes(), nil
+}
+
 func (s *Service) addHeader(m core.Maroto, t *tenant.Tenant) {
 	m.AddRow(20,
 		col.New(8).Add(
@@ -157,6 +184,111 @@ func (s *Service) addHeader(m core.Maroto, t *tenant.Tenant) {
 		),
 	)
 	m.AddRow(5)
+}
+
+func (s *Service) addPayslipTitle(m core.Maroto, payslip *payroll.Payslip, run *payroll.PayrollRun) {
+	period := ""
+	if run != nil {
+		period = fmt.Sprintf("%04d-%02d", run.PeriodYear, run.PeriodMonth)
+	}
+	m.AddRow(12,
+		col.New(6).Add(
+			text.New("PAYSLIP", props.Text{
+				Size:  20,
+				Style: fontstyle.Bold,
+				Align: align.Left,
+			}),
+		),
+		col.New(6).Add(
+			text.New(period, props.Text{
+				Size:  14,
+				Style: fontstyle.Bold,
+				Align: align.Right,
+			}),
+		),
+	)
+	m.AddRow(6,
+		col.New(6).Add(text.New(fmt.Sprintf("Payslip ID: %s", payslip.ID), props.Text{Size: 9, Align: align.Left})),
+		col.New(6).Add(text.New(fmt.Sprintf("Payment status: %s", payslip.PaymentStatus), props.Text{Size: 9, Align: align.Right})),
+	)
+	if payslip.PaidAt != nil {
+		m.AddRow(6,
+			col.New(6).Add(text.New(fmt.Sprintf("Paid at: %s", payslip.PaidAt.Format("02.01.2006")), props.Text{Size: 9, Align: align.Left})),
+		)
+	}
+	m.AddRow(8)
+}
+
+func (s *Service) addPayslipEmployee(m core.Maroto, payslip *payroll.Payslip) {
+	name := payslip.EmployeeID
+	personalCode := ""
+	email := ""
+	if payslip.Employee != nil {
+		name = strings.TrimSpace(payslip.Employee.FullName())
+		if name == "" {
+			name = payslip.EmployeeID
+		}
+		personalCode = payslip.Employee.PersonalCode
+		email = payslip.Employee.Email
+	}
+
+	m.AddRow(6,
+		col.New(12).Add(text.New("Employee", props.Text{Size: 10, Style: fontstyle.Bold, Align: align.Left})),
+	)
+	m.AddRow(5,
+		col.New(6).Add(text.New(name, props.Text{Size: 10, Style: fontstyle.Bold, Align: align.Left})),
+		col.New(6).Add(text.New(fmt.Sprintf("Employee ID: %s", payslip.EmployeeID), props.Text{Size: 9, Align: align.Right})),
+	)
+	if personalCode != "" || email != "" {
+		m.AddRow(5,
+			col.New(6).Add(text.New(personalCode, props.Text{Size: 9, Align: align.Left})),
+			col.New(6).Add(text.New(email, props.Text{Size: 9, Align: align.Right})),
+		)
+	}
+	m.AddRow(8)
+}
+
+func (s *Service) addPayslipAmounts(m core.Maroto, payslip *payroll.Payslip) {
+	headerStyle := props.Text{Size: 9, Style: fontstyle.Bold, Align: align.Left}
+	headerStyleRight := props.Text{Size: 9, Style: fontstyle.Bold, Align: align.Right}
+	cellStyle := props.Text{Size: 9, Align: align.Left}
+	cellStyleRight := props.Text{Size: 9, Align: align.Right}
+
+	m.AddRow(7,
+		col.New(8).Add(text.New("Description", headerStyle)),
+		col.New(4).Add(text.New("Amount", headerStyleRight)),
+	).WithStyle(&props.Cell{
+		BackgroundColor: &props.Color{Red: 240, Green: 240, Blue: 240},
+		BorderType:      border.Bottom,
+		BorderThickness: 0.5,
+	})
+
+	rows := []struct {
+		label  string
+		amount decimal.Decimal
+	}{
+		{"Gross salary", payslip.GrossSalary},
+		{"Taxable income", payslip.TaxableIncome},
+		{"Income tax", payslip.IncomeTax.Neg()},
+		{"Unemployment insurance employee", payslip.UnemploymentInsuranceEE.Neg()},
+		{"Funded pension", payslip.FundedPension.Neg()},
+		{"Other deductions", payslip.OtherDeductions.Neg()},
+		{"Net salary", payslip.NetSalary},
+		{"Social tax", payslip.SocialTax},
+		{"Unemployment insurance employer", payslip.UnemploymentInsuranceER},
+		{"Total employer cost", payslip.TotalEmployerCost},
+		{"Basic exemption applied", payslip.BasicExemptionApplied},
+	}
+	for _, row := range rows {
+		m.AddRow(6,
+			col.New(8).Add(text.New(row.label, cellStyle)),
+			col.New(4).Add(text.New(formatMoney(row.amount, "EUR"), cellStyleRight)),
+		).WithStyle(&props.Cell{
+			BorderType:      border.Bottom,
+			BorderThickness: 0.2,
+		})
+	}
+	m.AddRow(8)
 }
 
 func (s *Service) addInvoiceTitle(m core.Maroto, invoice *invoicing.Invoice) {

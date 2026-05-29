@@ -2227,6 +2227,10 @@ func (c *apiClient) listPayslips(ctx context.Context, tenantID, runID string) ([
 	return resp, nil
 }
 
+func (c *apiClient) downloadPayslipPDF(ctx context.Context, tenantID, runID, payslipID string) ([]byte, error) {
+	return c.requestRaw(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "payroll-runs", runID, "payslips", payslipID, "pdf"), nil, c.apiToken)
+}
+
 func (c *apiClient) calculateTaxPreview(ctx context.Context, tenantID string, grossSalary decimal.Decimal, applyBasicExemption bool, fundedPensionRate decimal.Decimal) (*payroll.TaxCalculation, error) {
 	var resp payroll.TaxCalculation
 	body := map[string]any{

@@ -11108,6 +11108,52 @@ paths:
       summary: Get payslips
       tags:
       - Payroll
+  /tenants/{tenantID}/payroll-runs/{runID}/payslips/{payslipID}/pdf:
+    get:
+      description: Generate and download a PDF for an employee payslip in a payroll
+        run
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Payroll Run ID
+        in: path
+        name: runID
+        required: true
+        type: string
+      - description: Payslip ID
+        in: path
+        name: payslipID
+        required: true
+        type: string
+      produces:
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Download payslip PDF
+      tags:
+      - Payroll
   /tenants/{tenantID}/payroll-runs/{runID}/process:
     post:
       consumes:
