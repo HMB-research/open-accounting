@@ -5774,6 +5774,9 @@ func TestCLIPayrollRunCommands(t *testing.T) {
 					"updated_at":      "2026-01-01T00:00:00Z",
 				},
 			}})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-1/payslips/payslip-1/pdf":
+			w.Header().Set("Content-Type", "application/pdf")
+			_, _ = w.Write([]byte("%PDF payslip"))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll/tax-preview":
 			var req map[string]any
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -5843,6 +5846,15 @@ func TestCLIPayrollRunCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"payroll", "runs", "payslips", "--id", "run-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Mari Maasikas")
+
+	stdout.Reset()
+	payslipPDFPath := filepath.Join(t.TempDir(), "payslip.pdf")
+	err = app.run(context.Background(), []string{"payroll", "runs", "payslip-pdf", "--run-id", "run-1", "--payslip-id", "payslip-1", "--output", payslipPDFPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote payslip PDF")
+	payslipPDF, err := os.ReadFile(payslipPDFPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("%PDF payslip"), payslipPDF)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"payroll", "tax-preview", "--gross-salary", "3200.00"})

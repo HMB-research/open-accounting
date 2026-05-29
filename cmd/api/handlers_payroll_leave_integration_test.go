@@ -15,6 +15,7 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/payroll"
+	"github.com/HMB-research/open-accounting/internal/pdf"
 	tenantpkg "github.com/HMB-research/open-accounting/internal/tenant"
 	"github.com/HMB-research/open-accounting/internal/testutil"
 )
@@ -37,6 +38,7 @@ func setupPayrollIntegrationHandlers(t *testing.T) (*Handlers, *testutil.TestTen
 		tenantService:  tenantpkg.NewService(pool),
 		payrollService: payroll.NewService(pool),
 		absenceService: payroll.NewAbsenceServiceWithPool(pool),
+		pdfService:     pdf.NewService(),
 	}
 
 	claims := createTestClaims(userID, fmt.Sprintf("payroll-handler-%d@example.com", time.Now().UnixNano()), tenant.ID, tenantpkg.RoleOwner)
@@ -150,6 +152,14 @@ func TestPayrollHandlersIntegration(t *testing.T) {
 	}, withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/"+tenant.ID+"/payroll-runs/"+run.ID+"/payslips", nil, claims), map[string]string{"tenantID": tenant.ID, "runID": run.ID}))
 	if len(payslips) != 1 {
 		t.Fatalf("expected 1 payslip, got %d", len(payslips))
+	}
+
+	payslipPDF := invokeRaw(t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
+		h.GetPayslipPDF(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/"+tenant.ID+"/payroll-runs/"+run.ID+"/payslips/"+payslips[0].ID+"/pdf", nil, claims), map[string]string{"tenantID": tenant.ID, "runID": run.ID, "payslipID": payslips[0].ID}))
+	requirePDF(t, payslipPDF.Body.Bytes())
+	if got := payslipPDF.Header().Get("Content-Type"); got != "application/pdf" {
+		t.Fatalf("expected application/pdf, got %q", got)
 	}
 
 	invokeJSON[map[string]string](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {

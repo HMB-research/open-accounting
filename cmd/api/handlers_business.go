@@ -2867,6 +2867,68 @@ func (h *Handlers) GetPayslips(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, payslips)
 }
 
+// GetPayslipPDF generates and returns a PDF for one payroll run payslip.
+// @Summary Download payslip PDF
+// @Description Generate and download a PDF for an employee payslip in a payroll run
+// @Tags Payroll
+// @Produce application/pdf
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param runID path string true "Payroll Run ID"
+// @Param payslipID path string true "Payslip ID"
+// @Success 200 {file} binary
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/payroll-runs/{runID}/payslips/{payslipID}/pdf [get]
+func (h *Handlers) GetPayslipPDF(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	runID := chi.URLParam(r, "runID")
+	payslipID := chi.URLParam(r, "payslipID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	run, err := h.payrollService.GetPayrollRun(r.Context(), schemaName, tenantID, runID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Payroll run not found")
+		return
+	}
+
+	payslips, err := h.payrollService.GetPayslipsWithEmployees(r.Context(), schemaName, tenantID, runID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get payslips")
+		return
+	}
+	var selected *payroll.Payslip
+	for i := range payslips {
+		if payslips[i].ID == payslipID {
+			selected = &payslips[i]
+			break
+		}
+	}
+	if selected == nil {
+		respondError(w, http.StatusNotFound, "Payslip not found")
+		return
+	}
+
+	tenantRecord, err := h.tenantService.GetTenant(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get tenant")
+		return
+	}
+
+	pdfBytes, err := h.pdfService.GeneratePayslipPDF(selected, run, tenantRecord)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to generate PDF")
+		return
+	}
+
+	filename := fmt.Sprintf("payslip-%04d-%02d-%s.pdf", run.PeriodYear, run.PeriodMonth, safeArchiveFileName(payslipID))
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(pdfBytes)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(pdfBytes)
+}
+
 // CalculateTaxPreview returns a tax preview for a salary
 // @Summary Calculate tax preview
 // @Description Preview Estonian tax calculations for a given gross salary
