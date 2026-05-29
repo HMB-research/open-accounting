@@ -3621,6 +3621,195 @@ func (h *Handlers) buildOrderStockCheck(ctx context.Context, tenantID, schemaNam
 	return check, nil
 }
 
+// ReserveOrderStock reserves the tracked product quantities required by an order.
+// @Summary Reserve order stock
+// @Description Reserve tracked goods for an order from one warehouse without shipping stock
+// @Tags Orders
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param orderID path string true "Order ID"
+// @Param request body orders.OrderStockReservationRequest true "Warehouse reservation request"
+// @Success 200 {object} orders.OrderStockReservationResult
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/orders/{orderID}/reserve-stock [post]
+func (h *Handlers) ReserveOrderStock(w http.ResponseWriter, r *http.Request) {
+	h.handleOrderStockReservation(w, r, orders.OrderStockReservationActionReserve)
+}
+
+// ReleaseOrderStock releases the tracked product quantities required by an order.
+// @Summary Release order stock
+// @Description Release tracked goods for an order from one warehouse back to available stock
+// @Tags Orders
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param orderID path string true "Order ID"
+// @Param request body orders.OrderStockReservationRequest true "Warehouse release request"
+// @Success 200 {object} orders.OrderStockReservationResult
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/orders/{orderID}/release-stock [post]
+func (h *Handlers) ReleaseOrderStock(w http.ResponseWriter, r *http.Request) {
+	h.handleOrderStockReservation(w, r, orders.OrderStockReservationActionRelease)
+}
+
+func (h *Handlers) handleOrderStockReservation(w http.ResponseWriter, r *http.Request, action string) {
+	tenantID := chi.URLParam(r, "tenantID")
+	orderID := chi.URLParam(r, "orderID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if h.inventoryService == nil {
+		respondError(w, http.StatusInternalServerError, "Inventory service unavailable")
+		return
+	}
+
+	claims, ok := auth.GetClaims(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Invalid or missing authentication")
+		return
+	}
+
+	var req orders.OrderStockReservationRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	req.WarehouseID = strings.TrimSpace(req.WarehouseID)
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.WarehouseID == "" {
+		respondError(w, http.StatusBadRequest, "warehouse_id is required")
+		return
+	}
+	if _, err := h.inventoryService.GetWarehouseByID(r.Context(), tenantID, schemaName, req.WarehouseID); err != nil {
+		respondError(w, http.StatusBadRequest, "Warehouse not found")
+		return
+	}
+
+	check, err := h.buildOrderStockCheck(r.Context(), tenantID, schemaName, orderID, req.WarehouseID)
+	if err != nil {
+		if errors.Is(err, orders.ErrOrderNotFound) {
+			respondError(w, http.StatusNotFound, "Order not found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to check order stock")
+		return
+	}
+	if action == orders.OrderStockReservationActionReserve && !check.Ready {
+		respondJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error":       "Order stock is not ready for reservation",
+			"stock_check": check,
+		})
+		return
+	}
+	if action == orders.OrderStockReservationActionRelease && orderStockCheckHasStatus(check, orders.OrderStockLineStatusProductNotFound) {
+		respondJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error":       "Order has missing product references",
+			"stock_check": check,
+		})
+		return
+	}
+
+	result, err := h.applyOrderStockReservation(r.Context(), tenantID, schemaName, action, req.Reason, claims.UserID, check)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("Failed to %s order stock: %v", strings.ToLower(action), err))
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+func orderStockCheckHasStatus(check *orders.OrderStockCheck, status string) bool {
+	if check == nil {
+		return false
+	}
+	for _, line := range check.Lines {
+		if line.Status == status {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *Handlers) applyOrderStockReservation(
+	ctx context.Context,
+	tenantID string,
+	schemaName string,
+	action string,
+	reason string,
+	userID string,
+	check *orders.OrderStockCheck,
+) (*orders.OrderStockReservationResult, error) {
+	result := &orders.OrderStockReservationResult{
+		OrderID:     check.OrderID,
+		OrderNumber: check.OrderNumber,
+		WarehouseID: check.WarehouseID,
+		Action:      action,
+	}
+
+	aggregates := map[string]*orders.OrderStockReservationLine{}
+	productOrder := []string{}
+	for _, line := range check.Lines {
+		if line.ProductID == "" {
+			continue
+		}
+		if line.Status != orders.OrderStockLineStatusAvailable && line.Status != orders.OrderStockLineStatusShortage {
+			continue
+		}
+		aggregate, ok := aggregates[line.ProductID]
+		if !ok {
+			aggregate = &orders.OrderStockReservationLine{
+				ProductID:   line.ProductID,
+				ProductCode: line.ProductCode,
+				ProductName: line.ProductName,
+			}
+			aggregates[line.ProductID] = aggregate
+			productOrder = append(productOrder, line.ProductID)
+		}
+		aggregate.Quantity = aggregate.Quantity.Add(line.RequiredQty)
+	}
+
+	status := orders.OrderStockReservationStatusReserved
+	if action == orders.OrderStockReservationActionRelease {
+		status = orders.OrderStockReservationStatusReleased
+	}
+	if reason == "" {
+		reason = fmt.Sprintf("Order %s stock %s", check.OrderNumber, strings.ToLower(action))
+	}
+
+	for _, productID := range productOrder {
+		line := aggregates[productID]
+		req := &inventory.StockReservationRequest{
+			ProductID:   productID,
+			WarehouseID: check.WarehouseID,
+			Quantity:    line.Quantity.String(),
+			Reason:      reason,
+			UserID:      userID,
+		}
+		var (
+			level *inventory.StockLevel
+			err   error
+		)
+		if action == orders.OrderStockReservationActionRelease {
+			level, err = h.inventoryService.ReleaseStock(ctx, tenantID, schemaName, req)
+		} else {
+			level, err = h.inventoryService.ReserveStock(ctx, tenantID, schemaName, req)
+		}
+		if err != nil {
+			return nil, err
+		}
+		line.ReservedQty = level.ReservedQty
+		line.AvailableQty = level.AvailableQty
+		line.Status = status
+		result.Lines = append(result.Lines, *line)
+	}
+
+	return result, nil
+}
+
 // UpdateOrder updates an order
 // @Summary Update order
 // @Description Update a pending or confirmed order

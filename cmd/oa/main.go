@@ -311,6 +311,8 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  orders import             Import orders from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  orders get                Show one order")
 	_, _ = fmt.Fprintln(a.stdout, "  orders stock-check        Check order stock availability")
+	_, _ = fmt.Fprintln(a.stdout, "  orders reserve-stock      Reserve order stock in a warehouse")
+	_, _ = fmt.Fprintln(a.stdout, "  orders release-stock      Release order stock in a warehouse")
 	_, _ = fmt.Fprintln(a.stdout, "  orders update             Update an order")
 	_, _ = fmt.Fprintln(a.stdout, "  orders delete             Delete a pending order")
 	_, _ = fmt.Fprintln(a.stdout, "  orders confirm            Mark an order confirmed")
@@ -4410,6 +4412,42 @@ func (a *cliApp) runOrders(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, check)
 		}
 		printOrderStockCheck(a.stdout, check)
+		return nil
+
+	case "reserve-stock", "release-stock":
+		fs := flag.NewFlagSet("orders "+args[0], flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		orderID := fs.String("id", "", "Order id")
+		warehouseID := fs.String("warehouse-id", "", "Warehouse id")
+		reason := fs.String("reason", "", "Reservation reason")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*orderID) == "" {
+			return errors.New("id is required")
+		}
+		if strings.TrimSpace(*warehouseID) == "" {
+			return errors.New("warehouse-id is required")
+		}
+
+		req := &orders.OrderStockReservationRequest{
+			WarehouseID: strings.TrimSpace(*warehouseID),
+			Reason:      strings.TrimSpace(*reason),
+		}
+		var result *orders.OrderStockReservationResult
+		if args[0] == "release-stock" {
+			result, err = client.releaseOrderStock(ctx, cfg.TenantID, strings.TrimSpace(*orderID), req)
+		} else {
+			result, err = client.reserveOrderStock(ctx, cfg.TenantID, strings.TrimSpace(*orderID), req)
+		}
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		printOrderStockReservation(a.stdout, result)
 		return nil
 
 	case "update":

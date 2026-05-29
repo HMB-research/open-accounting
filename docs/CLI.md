@@ -372,6 +372,8 @@ go run ./cmd/oa orders create \
   --line "description=Consulting,quantity=2,unit=hour,unit_price=100.00,vat_rate=22.00"
 go run ./cmd/oa orders get --id <order-id>
 go run ./cmd/oa orders stock-check --id <order-id> --warehouse-id <warehouse-id>
+go run ./cmd/oa orders reserve-stock --id <order-id> --warehouse-id <warehouse-id> --reason "Pick list"
+go run ./cmd/oa orders release-stock --id <order-id> --warehouse-id <warehouse-id> --reason "Order canceled"
 go run ./cmd/oa orders update \
   --id <order-id> \
   --contact-id <contact-id> \
@@ -389,6 +391,8 @@ go run ./cmd/oa orders import --file ./orders.csv
 Use `--line` repeatedly on `orders create` and `orders update`. Each line accepts `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, and `product_id`. Order statuses are `PENDING`, `CONFIRMED`, `PROCESSING`, `SHIPPED`, `DELIVERED`, and `CANCELED`.
 
 `orders stock-check` checks tracked product lines without mutating inventory. It sums all warehouses unless `--warehouse-id` is provided, consumes repeated lines for the same product cumulatively inside the check, and reports per-line statuses: `AVAILABLE`, `SHORTAGE`, `NOT_TRACKED`, and `PRODUCT_NOT_FOUND`.
+
+`orders reserve-stock` and `orders release-stock` mutate the selected warehouse's reserved and available quantities for the order's cumulative tracked goods. `reserve-stock` first requires the selected warehouse to be ready for every tracked line; these commands do not create a separate per-order allocation ledger.
 
 Order imports use one CSV row per order line and group rows by `order_number`. Required columns are `order_number`, `order_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`; optional columns include `expected_delivery`, `status`, `currency`, `exchange_rate`, `notes`, `quote_id`, `unit`, `discount_percent`, and `product_id`.
 

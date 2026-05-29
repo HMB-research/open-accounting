@@ -205,6 +205,13 @@ const (
 	OrderStockLineStatusProductNotFound = "PRODUCT_NOT_FOUND"
 )
 
+const (
+	OrderStockReservationActionReserve  = "RESERVE"
+	OrderStockReservationActionRelease  = "RELEASE"
+	OrderStockReservationStatusReserved = "RESERVED"
+	OrderStockReservationStatusReleased = "RELEASED"
+)
+
 // OrderStockCheck summarizes whether an order's product lines can be fulfilled.
 type OrderStockCheck struct {
 	OrderID     string                `json:"order_id"`
@@ -225,5 +232,31 @@ type OrderStockCheckLine struct {
 	RequiredQty  decimal.Decimal `json:"required_qty"`
 	AvailableQty decimal.Decimal `json:"available_qty"`
 	ShortageQty  decimal.Decimal `json:"shortage_qty"`
+	Status       string          `json:"status"`
+}
+
+// OrderStockReservationRequest selects the warehouse used for order stock reservations.
+type OrderStockReservationRequest struct {
+	WarehouseID string `json:"warehouse_id"`
+	Reason      string `json:"reason,omitempty"`
+}
+
+// OrderStockReservationResult summarizes reserved or released stock for an order.
+type OrderStockReservationResult struct {
+	OrderID     string                      `json:"order_id"`
+	OrderNumber string                      `json:"order_number"`
+	WarehouseID string                      `json:"warehouse_id"`
+	Action      string                      `json:"action"`
+	Lines       []OrderStockReservationLine `json:"lines"`
+}
+
+// OrderStockReservationLine reports one product-level reservation mutation.
+type OrderStockReservationLine struct {
+	ProductID    string          `json:"product_id"`
+	ProductCode  string          `json:"product_code,omitempty"`
+	ProductName  string          `json:"product_name,omitempty"`
+	Quantity     decimal.Decimal `json:"quantity"`
+	ReservedQty  decimal.Decimal `json:"reserved_qty"`
+	AvailableQty decimal.Decimal `json:"available_qty"`
 	Status       string          `json:"status"`
 }
