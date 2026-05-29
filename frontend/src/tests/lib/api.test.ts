@@ -705,6 +705,32 @@ describe("API Client - Core Functionality", () => {
       expect(result.due_soon_count).toBe(1);
     });
 
+    it("should update document retention metadata", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "doc-1",
+          retention_until: "2028-03-31T00:00:00Z",
+        }),
+      });
+
+      const result = await api.updateDocumentRetention("tenant-123", "doc-1", {
+        retention_until: "2028-03-31",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/documents/doc-1/retention",
+        ),
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ retention_until: "2028-03-31" }),
+        }),
+      );
+      expect(result.retention_until).toBe("2028-03-31T00:00:00Z");
+    });
+
     it("should upload documents with multipart form data", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
