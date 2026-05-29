@@ -2674,7 +2674,7 @@ GET /tenants/{tenantId}/reports/sales-margin
 Authorization: Bearer <token>
 ```
 
-Returns sales invoice line revenue, estimated product cost from product purchase prices, margin, and margin percent for a period.
+Returns sales invoice line revenue, estimated product cost from product purchase prices, customer rollups, margin, and margin percent for a period.
 
 **Query Parameters:**
 - `start_date` (string, required): Start date in YYYY-MM-DD format

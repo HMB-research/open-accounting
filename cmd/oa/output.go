@@ -2509,6 +2509,24 @@ func printContactStatement(w io.Writer, report *reports.ContactStatement) {
 
 func printSalesMarginReport(w io.Writer, report *reports.SalesMarginReport) {
 	_, _ = fmt.Fprintf(w, "Sales margin from %s to %s\n", report.StartDate, report.EndDate)
+	if len(report.ByContact) > 0 {
+		_, _ = fmt.Fprintln(w, "By customer:")
+		contactWriter := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		_, _ = fmt.Fprintln(contactWriter, "CONTACT\tREVENUE\tCOST\tMARGIN\tMARGIN %\tLINES")
+		for _, contact := range report.ByContact {
+			_, _ = fmt.Fprintf(
+				contactWriter,
+				"%s\t%s\t%s\t%s\t%s\t%d\n",
+				contact.ContactName,
+				contact.Revenue.String(),
+				contact.Cost.String(),
+				contact.Margin.String(),
+				contact.MarginPercent.String(),
+				contact.LineCount,
+			)
+		}
+		_ = contactWriter.Flush()
+	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "DATE\tINVOICE\tCONTACT\tPRODUCT\tREVENUE\tCOST\tMARGIN\tMARGIN %")
 	for _, line := range report.Lines {

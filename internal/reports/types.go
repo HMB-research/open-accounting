@@ -223,16 +223,28 @@ type SalesMarginRequest struct {
 
 // SalesMarginReport represents revenue, cost, and margin for sales invoice lines.
 type SalesMarginReport struct {
-	TenantID      string            `json:"tenant_id"`
-	StartDate     string            `json:"start_date"`
-	EndDate       string            `json:"end_date"`
-	TotalRevenue  decimal.Decimal   `json:"total_revenue"`
-	TotalCost     decimal.Decimal   `json:"total_cost"`
-	TotalMargin   decimal.Decimal   `json:"total_margin"`
-	MarginPercent decimal.Decimal   `json:"margin_percent"`
-	LineCount     int               `json:"line_count"`
-	Lines         []SalesMarginLine `json:"lines"`
-	GeneratedAt   time.Time         `json:"generated_at"`
+	TenantID      string               `json:"tenant_id"`
+	StartDate     string               `json:"start_date"`
+	EndDate       string               `json:"end_date"`
+	TotalRevenue  decimal.Decimal      `json:"total_revenue"`
+	TotalCost     decimal.Decimal      `json:"total_cost"`
+	TotalMargin   decimal.Decimal      `json:"total_margin"`
+	MarginPercent decimal.Decimal      `json:"margin_percent"`
+	LineCount     int                  `json:"line_count"`
+	ByContact     []SalesMarginContact `json:"by_contact"`
+	Lines         []SalesMarginLine    `json:"lines"`
+	GeneratedAt   time.Time            `json:"generated_at"`
+}
+
+// SalesMarginContact represents margin totals grouped by customer.
+type SalesMarginContact struct {
+	ContactID     string          `json:"contact_id"`
+	ContactName   string          `json:"contact_name"`
+	Revenue       decimal.Decimal `json:"revenue"`
+	Cost          decimal.Decimal `json:"cost"`
+	Margin        decimal.Decimal `json:"margin"`
+	MarginPercent decimal.Decimal `json:"margin_percent"`
+	LineCount     int             `json:"line_count"`
 }
 
 // SalesMarginLine represents one sales invoice line's estimated margin.

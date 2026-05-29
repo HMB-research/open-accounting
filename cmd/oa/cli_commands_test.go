@@ -4847,6 +4847,15 @@ func TestCLIReportsCommands(t *testing.T) {
 				"total_margin":   "700.00",
 				"margin_percent": "70.00",
 				"line_count":     1,
+				"by_contact": []map[string]any{{
+					"contact_id":     "contact-1",
+					"contact_name":   "Acme",
+					"revenue":        "1000.00",
+					"cost":           "300.00",
+					"margin":         "700.00",
+					"margin_percent": "70.00",
+					"line_count":     1,
+				}},
 				"lines": []map[string]any{{
 					"invoice_id":     "invoice-1",
 					"invoice_number": "INV-1",
@@ -5127,6 +5136,7 @@ func TestCLIReportsCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"reports", "sales-margin", "--start", "2026-01-01", "--end", "2026-03-31"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Sales margin from 2026-01-01 to 2026-03-31")
+	assert.Contains(t, stdout.String(), "By customer:")
 	assert.Contains(t, stdout.String(), "Widget")
 	assert.Contains(t, stdout.String(), "Total margin: 700")
 

@@ -421,6 +421,9 @@ func TestExtendedReportHandlers(t *testing.T) {
 	var marginReport reports.SalesMarginReport
 	assert.NoError(t, json.NewDecoder(rr.Body).Decode(&marginReport))
 	assert.True(t, marginReport.TotalMargin.Equal(decimal.NewFromInt(110)))
+	if assert.Len(t, marginReport.ByContact, 1) {
+		assert.Equal(t, "Example Customer", marginReport.ByContact[0].ContactName)
+	}
 
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/sales-margin?start_date=2026-01-01&end_date=2026-01-31&format=csv", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
