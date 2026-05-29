@@ -1123,6 +1123,7 @@ func TestGetSalesMarginReport(t *testing.T) {
 				InvoiceID:     "inv-1",
 				InvoiceNumber: "INV-001",
 				InvoiceDate:   "2026-03-01",
+				ContactID:     "contact-1",
 				ContactName:   "Acme",
 				Description:   "Consulting",
 				Quantity:      decimal.NewFromInt(2),
@@ -1134,6 +1135,7 @@ func TestGetSalesMarginReport(t *testing.T) {
 				InvoiceID:     "inv-2",
 				InvoiceNumber: "INV-002",
 				InvoiceDate:   "2026-03-10",
+				ContactID:     "contact-2",
 				ContactName:   "Beta",
 				Description:   "Support",
 				Quantity:      decimal.NewFromInt(1),
@@ -1157,6 +1159,10 @@ func TestGetSalesMarginReport(t *testing.T) {
 		require.Len(t, report.Lines, 2)
 		assert.True(t, report.Lines[0].Margin.Equal(decimal.NewFromInt(700)))
 		assert.Equal(t, "70", report.Lines[0].MarginPercent.String())
+		require.Len(t, report.ByContact, 2)
+		assert.Equal(t, "contact-1", report.ByContact[0].ContactID)
+		assert.True(t, report.ByContact[0].Margin.Equal(decimal.NewFromInt(700)))
+		assert.Equal(t, "70", report.ByContact[0].MarginPercent.String())
 	})
 
 	t.Run("validates date range", func(t *testing.T) {

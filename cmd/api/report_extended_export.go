@@ -402,6 +402,33 @@ func salesMarginRows(report *reports.SalesMarginReport) [][]string {
 		"",
 		"",
 	})
+	for _, contact := range report.ByContact {
+		rows = append(rows, []string{
+			"contact",
+			report.StartDate,
+			report.EndDate,
+			"",
+			"",
+			"",
+			"",
+			intString(contact.LineCount),
+			"",
+			"",
+			"",
+			contact.ContactID,
+			contact.ContactName,
+			"",
+			"",
+			"",
+			"",
+			"",
+			contact.Revenue.String(),
+			"",
+			contact.Cost.String(),
+			contact.Margin.String(),
+			contact.MarginPercent.String(),
+		})
+	}
 	for _, line := range report.Lines {
 		rows = append(rows, []string{
 			"line",

@@ -950,6 +950,7 @@ func (s *Service) GetSalesMarginReport(ctx context.Context, tenantID, schemaName
 		totalCost = totalCost.Add(lines[i].Cost)
 	}
 	totalMargin := totalRevenue.Sub(totalCost)
+	byContact := aggregateSalesMarginByContact(lines)
 
 	return &SalesMarginReport{
 		TenantID:      tenantID,
@@ -960,9 +961,45 @@ func (s *Service) GetSalesMarginReport(ctx context.Context, tenantID, schemaName
 		TotalMargin:   totalMargin,
 		MarginPercent: calculateMarginPercent(totalMargin, totalRevenue),
 		LineCount:     len(lines),
+		ByContact:     byContact,
 		Lines:         lines,
 		GeneratedAt:   time.Now(),
 	}, nil
+}
+
+func aggregateSalesMarginByContact(lines []SalesMarginLine) []SalesMarginContact {
+	contactsByID := make(map[string]*SalesMarginContact)
+	for _, line := range lines {
+		key := line.ContactID
+		if key == "" {
+			key = line.ContactName
+		}
+		contact, ok := contactsByID[key]
+		if !ok {
+			contact = &SalesMarginContact{
+				ContactID:   line.ContactID,
+				ContactName: line.ContactName,
+			}
+			contactsByID[key] = contact
+		}
+		contact.Revenue = contact.Revenue.Add(line.Revenue)
+		contact.Cost = contact.Cost.Add(line.Cost)
+		contact.LineCount++
+	}
+
+	contacts := make([]SalesMarginContact, 0, len(contactsByID))
+	for _, contact := range contactsByID {
+		contact.Margin = contact.Revenue.Sub(contact.Cost)
+		contact.MarginPercent = calculateMarginPercent(contact.Margin, contact.Revenue)
+		contacts = append(contacts, *contact)
+	}
+	sort.Slice(contacts, func(i, j int) bool {
+		if contacts[i].Margin.Equal(contacts[j].Margin) {
+			return contacts[i].ContactName < contacts[j].ContactName
+		}
+		return contacts[i].Margin.GreaterThan(contacts[j].Margin)
+	})
+	return contacts
 }
 
 func calculateMarginPercent(margin, revenue decimal.Decimal) decimal.Decimal {

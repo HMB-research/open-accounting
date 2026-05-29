@@ -167,7 +167,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Dashboard analytics | ✅ | ✅ | ✅ | Implemented |
 | Revenue by period | ✅ | ✅ | ✅ | Implemented |
 | Expense breakdown | ✅ | ✅ | ✅ | Implemented |
-| Customer profitability | ✅ | ✅ | ⚠️ | Partial: invoice-line sales margin is implemented; customer rollups remain thin |
+| Customer profitability | ✅ | ✅ | ⚠️ | Partial: sales margin includes customer rollups; deeper lifecycle profitability remains thin |
 | Budget vs actual | ✅ | ✅ | ❌ | **Gap** |
 
 ---
