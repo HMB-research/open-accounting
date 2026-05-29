@@ -197,3 +197,33 @@ type OrderFilter struct {
 	ToDate    *time.Time
 	Search    string
 }
+
+const (
+	OrderStockLineStatusAvailable       = "AVAILABLE"
+	OrderStockLineStatusShortage        = "SHORTAGE"
+	OrderStockLineStatusNotTracked      = "NOT_TRACKED"
+	OrderStockLineStatusProductNotFound = "PRODUCT_NOT_FOUND"
+)
+
+// OrderStockCheck summarizes whether an order's product lines can be fulfilled.
+type OrderStockCheck struct {
+	OrderID     string                `json:"order_id"`
+	OrderNumber string                `json:"order_number"`
+	WarehouseID string                `json:"warehouse_id,omitempty"`
+	Ready       bool                  `json:"ready"`
+	Lines       []OrderStockCheckLine `json:"lines"`
+}
+
+// OrderStockCheckLine describes availability for one order line.
+type OrderStockCheckLine struct {
+	LineID       string          `json:"line_id"`
+	LineNumber   int             `json:"line_number"`
+	Description  string          `json:"description"`
+	ProductID    string          `json:"product_id,omitempty"`
+	ProductCode  string          `json:"product_code,omitempty"`
+	ProductName  string          `json:"product_name,omitempty"`
+	RequiredQty  decimal.Decimal `json:"required_qty"`
+	AvailableQty decimal.Decimal `json:"available_qty"`
+	ShortageQty  decimal.Decimal `json:"shortage_qty"`
+	Status       string          `json:"status"`
+}

@@ -1379,6 +1379,16 @@ GET /tenants/{tenantId}/orders/{orderId}
 Authorization: Bearer <token>
 ```
 
+### Check Order Stock
+
+```http
+GET /tenants/{tenantId}/orders/{orderId}/stock-check
+GET /tenants/{tenantId}/orders/{orderId}/stock-check?warehouse_id={warehouseId}
+Authorization: Bearer <token>
+```
+
+Returns a non-mutating fulfillment readiness check for each order line. Product lines linked to tracked goods report `AVAILABLE` or `SHORTAGE`; repeated lines for the same product consume the same available quantity cumulatively inside the check. Service, free-text, and other non-tracked lines report `NOT_TRACKED`; deleted or missing product references report `PRODUCT_NOT_FOUND`. Omitting `warehouse_id` sums available stock across all warehouses.
+
 ### Update Order
 
 ```http
