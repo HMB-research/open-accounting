@@ -210,7 +210,34 @@ scripts/db-backup-health.sh \
   --status-file /var/lib/node_exporter/textfile_collector/openaccounting_backup.prom
 ```
 
-Alert when `open_accounting_backup_health` is `0` or when `open_accounting_backup_latest_age_seconds` exceeds the expected schedule plus a grace period. Use a separate object-storage sync or platform backup export for offsite copies, and run `db-restore-drill.sh` from a scheduled job against the latest synced backup.
+Alert when `open_accounting_backup_health` is `0` or when `open_accounting_backup_latest_age_seconds` exceeds the expected schedule plus a grace period.
+
+Sync completed dumps and checksum files to offsite storage after the local backup finishes. Use S3-compatible storage when the deployment already has AWS credentials configured:
+
+```bash
+BACKUP_OFFSITE_S3_URI="s3://company-backups/open-accounting/prod" \
+  scripts/db-backup-offsite-sync.sh --backup-dir /backups
+```
+
+Use rclone for providers such as Backblaze B2, Wasabi, SFTP, or another S3-compatible target managed outside the app stack:
+
+```bash
+BACKUP_OFFSITE_RCLONE_REMOTE="b2:company-backups/open-accounting/prod" \
+  scripts/db-backup-offsite-sync.sh --backup-dir /backups
+```
+
+`db-backup-offsite-sync.sh` copies `openaccounting_*.dump` files and matching `.sha256` files, refuses ambiguous destination configuration, and never deletes remote objects. Keep provider credentials outside the repository in the host secret manager, platform variables, or rclone config.
+
+Recommended production schedule:
+
+```text
+02:00  scripts/db-backup.sh --backup-dir /backups --retention-days 30
+02:20  scripts/db-backup-offsite-sync.sh --backup-dir /backups
+02:30  scripts/db-backup-health.sh --backup-dir /backups --max-age-hours 26 --status-file /var/lib/node_exporter/textfile_collector/openaccounting_backup.prom
+Weekly restore drill against the newest synced dump in a disposable database
+```
+
+Run `db-restore-drill.sh` from a scheduled job at least weekly against the latest offsite-restored backup copy, not only the local backup directory.
 
 ### Connection Pooling
 

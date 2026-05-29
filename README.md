@@ -331,11 +331,11 @@ open-accounting/
 - [x] Document attachments for invoices, journal entries, payments, bank transactions, and fixed assets
 - [x] Document evidence policy evaluation through API and CLI
 - [x] Reconciliation completion blocks bank transactions marked as requiring evidence until approved evidence is attached
-- [x] Backup creation and restore-drill scripts for self-hosted operations
+- [x] Backup creation, offsite sync, health-check, and restore-drill scripts for self-hosted operations
 
 ### Still missing for reliable production use
 - [ ] Remaining external migration imports beyond payroll, tax history, quote/order/recurring-template, cost-center/product-category/warehouse/product/stock, and fixed assets
-- [ ] Automated document policy enforcement in close packs and broader workflow blockers
+- [ ] Automated document policy enforcement in remaining workflow blockers
 - [ ] Broader auth administration controls
 - [ ] E-invoice, direct bank feeds, SEPA initiation, and automatic e-MTA submission
 
