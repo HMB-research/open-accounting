@@ -5,6 +5,7 @@
 		type BankTransaction,
 		type FollowUpStatus,
 		type JournalEntry,
+		type OverdueInvoice,
 		type OverdueInvoicesSummary,
 		type PeriodCloseEvent,
 		type Tenant
@@ -31,6 +32,10 @@
 	let reviewSavedId = $state('');
 	let reviewErrorId = $state('');
 	let reviewError = $state('');
+	let reminderSendingId = $state('');
+	let reminderSentId = $state('');
+	let reminderErrorId = $state('');
+	let reminderError = $state('');
 	let loadedTenantKey = '';
 
 	$effect(() => {
@@ -56,6 +61,9 @@
 		reviewSavedId = '';
 		reviewErrorId = '';
 		reviewError = '';
+		reminderSentId = '';
+		reminderErrorId = '';
+		reminderError = '';
 
 		if (snapshot.errorCount === 4) {
 			error = m.errors_loadFailed();
@@ -194,6 +202,32 @@
 			reviewSavingId = '';
 		}
 	}
+
+	async function sendInvoiceReminder(invoice: OverdueInvoice) {
+		if (!invoice.contact_email) {
+			return;
+		}
+
+		reminderSendingId = invoice.id;
+		reminderSentId = '';
+		reminderErrorId = '';
+		reminderError = '';
+
+		try {
+			const result = await api.sendPaymentReminder(tenant.id, invoice.id, undefined);
+			if (!result.success) {
+				throw new Error(result.message || m.dashboard_reviewReminderSendError());
+			}
+
+			await loadReviewWorkspace(tenant);
+			reminderSentId = invoice.id;
+		} catch (err) {
+			reminderErrorId = invoice.id;
+			reminderError = err instanceof Error ? err.message : m.dashboard_reviewReminderSendError();
+		} finally {
+			reminderSendingId = '';
+		}
+	}
 </script>
 
 <section class="review-board card">
@@ -242,15 +276,38 @@
 
 				{#if topOverdueInvoices.length > 0}
 					<ul class="review-list">
-						{#each topOverdueInvoices as invoice}
-							<li>
-								<div>
+						{#each topOverdueInvoices as invoice (invoice.id)}
+							<li class="review-list-item-invoice">
+								<div class="review-list-main">
 									<strong>{invoice.invoice_number}</strong>
 									<span>{invoice.contact_name}</span>
+									{#if invoice.contact_email}
+										<span>{invoice.contact_email}</span>
+									{:else}
+										<span>{m.reminder_no_email()}</span>
+									{/if}
 								</div>
 								<div class="review-list-meta">
 									<strong>{formatCurrency(invoice.outstanding_amount)}</strong>
 									<span>{invoice.days_overdue} {m.dashboard_reviewDaysShort()}</span>
+								</div>
+								<div class="review-invoice-actions">
+									<button
+										class="btn btn-secondary review-reminder-button"
+										type="button"
+										onclick={() => sendInvoiceReminder(invoice)}
+										disabled={reminderSendingId === invoice.id || !invoice.contact_email}
+									>
+										{reminderSendingId === invoice.id ? m.reminder_sending() : m.reminder_send_now()}
+									</button>
+									{#if reminderSentId === invoice.id}
+										<span class="review-feedback review-feedback-success">
+											{m.reminder_sent_success({ invoice: invoice.invoice_number })}
+										</span>
+									{/if}
+									{#if reminderErrorId === invoice.id}
+										<span class="review-feedback review-feedback-error">{reminderError}</span>
+									{/if}
 								</div>
 							</li>
 						{/each}
@@ -286,7 +343,7 @@
 
 				{#if topUnmatchedTransactions.length > 0}
 					<ul class="review-list">
-						{#each topUnmatchedTransactions as item}
+						{#each topUnmatchedTransactions as item (item.transaction.id)}
 							<li class="review-list-item-banking">
 								<div class="review-list-main">
 									<strong>{item.account.name}</strong>
@@ -378,7 +435,7 @@
 
 				{#if periodCloseEvents.length > 0}
 					<ul class="review-list">
-						{#each periodCloseEvents.slice(0, 4) as event}
+						{#each periodCloseEvents.slice(0, 4) as event (event.id)}
 							<li>
 								<div>
 									<strong>{getCloseActionLabel(event)}</strong>
@@ -422,7 +479,7 @@
 
 				{#if topJournalEntries.length > 0}
 					<ul class="review-list">
-						{#each topJournalEntries as entry}
+						{#each topJournalEntries as entry (entry.id)}
 							<li>
 								<div>
 									<strong>{entry.entry_number}</strong>
@@ -615,9 +672,15 @@
 		gap: 0.15rem;
 	}
 
-	.review-list-item-banking {
+	.review-list li.review-list-item-banking {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto;
+	}
+
+	.review-list li.review-list-item-invoice {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto minmax(9rem, auto);
+		align-items: flex-start;
 	}
 
 	.review-list-main {
@@ -634,6 +697,33 @@
 
 	.review-note-preview {
 		font-style: italic;
+	}
+
+	.review-invoice-actions {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0.45rem;
+		min-width: 9rem;
+	}
+
+	.review-reminder-button {
+		justify-content: center;
+		width: 100%;
+	}
+
+	.review-card-emphasis .review-reminder-button {
+		background: rgba(255, 255, 255, 0.12);
+		border-color: rgba(226, 232, 240, 0.24);
+		color: rgba(248, 250, 252, 0.96);
+	}
+
+	.review-card-emphasis .review-reminder-button:hover:not(:disabled) {
+		background: rgba(255, 255, 255, 0.2);
+	}
+
+	.review-card-emphasis .review-reminder-button:disabled {
+		color: rgba(226, 232, 240, 0.52);
 	}
 
 	.review-transaction-review {
@@ -723,8 +813,17 @@
 			grid-template-columns: 1fr;
 		}
 
-		.review-list-item-banking {
+		.review-list li.review-list-item-banking {
 			grid-template-columns: 1fr;
+		}
+
+		.review-list li.review-list-item-invoice {
+			grid-template-columns: 1fr;
+		}
+
+		.review-invoice-actions {
+			align-items: stretch;
+			width: 100%;
 		}
 
 		.review-list-meta-banking {

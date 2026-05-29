@@ -188,6 +188,7 @@
   "dashboard_reviewFollowUpSave": "Salvesta ülevaatus",
   "dashboard_reviewFollowUpSaved": "Ülevaatus salvestatud",
   "dashboard_reviewFollowUpSaveError": "Ülevaatuse salvestamine ebaõnnestus.",
+  "dashboard_reviewReminderSendError": "Meeldetuletuse saatmine ebaõnnestus.",
   "dashboard_reviewAccounts": "kontot",
   "dashboard_reviewNoBankingExceptions": "Ühtegi sidumata pangatehingut ei oota ülevaatust.",
   "dashboard_reviewCloseTitle": "Sulgemise kontrollid",

@@ -188,6 +188,7 @@
   "dashboard_reviewFollowUpSave": "Save review",
   "dashboard_reviewFollowUpSaved": "Review saved",
   "dashboard_reviewFollowUpSaveError": "Failed to save review update.",
+  "dashboard_reviewReminderSendError": "Failed to send reminder.",
   "dashboard_reviewAccounts": "accounts",
   "dashboard_reviewNoBankingExceptions": "No unmatched bank transactions are waiting for review.",
   "dashboard_reviewCloseTitle": "Close controls",
