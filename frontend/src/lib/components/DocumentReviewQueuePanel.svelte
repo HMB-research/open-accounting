@@ -54,6 +54,7 @@
 	let reviewQueue = $state<DocumentReviewQueue | null>(null);
 	let retentionReview = $state<DocumentRetentionReview | null>(null);
 	let reviewNotes = $state<Record<string, string>>({});
+	let retentionEdits = $state<Record<string, string>>({});
 	let isLoading = $state(false);
 	let mutatingDocumentId = $state('');
 	let downloadingDocumentId = $state('');
@@ -102,6 +103,7 @@
 				limit: queueLimit
 			});
 			syncReviewNotes(reviewQueue.documents);
+			syncRetentionEdits(reviewQueue.documents);
 		} catch (err) {
 			error = err instanceof Error ? err.message : m.documents_loadReviewQueueError();
 		} finally {
@@ -119,6 +121,7 @@
 				include_missing: includeMissingRetention ? true : undefined
 			});
 			syncReviewNotes(retentionReview.documents);
+			syncRetentionEdits(retentionReview.documents);
 		} catch (err) {
 			error = err instanceof Error ? err.message : m.documents_loadRetentionError();
 		} finally {
@@ -130,10 +133,21 @@
 		reviewNotes = Object.fromEntries(documents.map((doc) => [doc.id, reviewNotes[doc.id] ?? doc.review_note ?? '']));
 	}
 
+	function syncRetentionEdits(documents: DocumentAttachment[]) {
+		retentionEdits = Object.fromEntries(documents.map((doc) => [doc.id, retentionEdits[doc.id] ?? dateInputValue(doc.retention_until)]));
+	}
+
 	function updateReviewNote(doc: DocumentAttachment, event: Event) {
 		reviewNotes = {
 			...reviewNotes,
 			[doc.id]: (event.currentTarget as HTMLTextAreaElement).value
+		};
+	}
+
+	function updateRetentionEdit(doc: DocumentAttachment, event: Event) {
+		retentionEdits = {
+			...retentionEdits,
+			[doc.id]: (event.currentTarget as HTMLInputElement).value
 		};
 	}
 
@@ -174,6 +188,30 @@
 		}
 	}
 
+	async function updateRetention(doc: DocumentAttachment, clearRetention = false) {
+		const retentionUntil = (retentionEdits[doc.id] || '').trim();
+		if (!clearRetention && !retentionUntil) {
+			error = m.documents_retentionDateRequired();
+			return;
+		}
+
+		mutatingDocumentId = doc.id;
+		error = '';
+		try {
+			await api.updateDocumentRetention(tenantId, doc.id, clearRetention ? { clear_retention: true } : { retention_until: retentionUntil });
+			retentionEdits = {
+				...retentionEdits,
+				[doc.id]: clearRetention ? '' : retentionUntil
+			};
+			await refreshActiveQueue(false);
+			successMessage = m.documents_retentionUpdated({ file: doc.file_name });
+		} catch (err) {
+			error = err instanceof Error ? err.message : m.documents_retentionUpdateError();
+		} finally {
+			mutatingDocumentId = '';
+		}
+	}
+
 	async function downloadDocument(doc: DocumentAttachment) {
 		downloadingDocumentId = doc.id;
 		error = '';
@@ -184,6 +222,23 @@
 		} finally {
 			downloadingDocumentId = '';
 		}
+	}
+
+	function dateInputValue(value?: string): string {
+		if (!value) {
+			return '';
+		}
+		const isoDate = /^(\d{4}-\d{2}-\d{2})/.exec(value);
+		if (isoDate) {
+			return isoDate[1];
+		}
+		const parsed = new Date(value);
+		if (Number.isNaN(parsed.getTime())) {
+			return '';
+		}
+		const month = String(parsed.getUTCMonth() + 1).padStart(2, '0');
+		const day = String(parsed.getUTCDate()).padStart(2, '0');
+		return `${parsed.getUTCFullYear()}-${month}-${day}`;
 	}
 
 	function formatDate(value?: string): string {
@@ -483,6 +538,32 @@
 									<td data-label={m.documents_reviewQueueUploaded()}>{formatDateTime(doc.created_at)}</td>
 									<td data-label={m.common_actions()} class="actions-cell">
 										<div class="review-actions">
+											{#if activeView === 'retention'}
+												<div class="retention-editor">
+													<label class="label" for={`retention-date-${doc.id}`}>{m.documents_retentionDateFor({ file: doc.file_name })}</label>
+													<div class="retention-row">
+														<input
+															class="input"
+															id={`retention-date-${doc.id}`}
+															type="date"
+															value={retentionEdits[doc.id] || ''}
+															oninput={(event) => updateRetentionEdit(doc, event)}
+															disabled={mutatingDocumentId === doc.id}
+														/>
+														<button
+															type="button"
+															class="btn btn-secondary"
+															onclick={() => updateRetention(doc)}
+															disabled={mutatingDocumentId === doc.id || !(retentionEdits[doc.id] || '').trim()}
+														>
+															{m.documents_retentionUpdateAction()}
+														</button>
+														<button type="button" class="btn btn-secondary" onclick={() => updateRetention(doc, true)} disabled={mutatingDocumentId === doc.id}>
+															{m.documents_clearRetentionAction()}
+														</button>
+													</div>
+												</div>
+											{/if}
 											<label class="label" for={`queue-review-note-${doc.id}`}>{m.documents_reviewNoteFor({ file: doc.file_name })}</label>
 											<textarea
 												class="input"
@@ -744,6 +825,27 @@
 		min-width: 20rem;
 	}
 
+	.retention-editor {
+		display: grid;
+		gap: 0.4rem;
+		padding-bottom: 0.25rem;
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.retention-row {
+		display: grid;
+		grid-template-columns: minmax(9rem, 1fr) auto auto;
+		gap: 0.5rem;
+		align-items: center;
+	}
+
+	.retention-row .btn {
+		justify-content: center;
+		min-height: 2.35rem;
+		padding: 0.45rem 0.75rem;
+		white-space: nowrap;
+	}
+
 	.action-row {
 		display: flex;
 		flex-wrap: wrap;
@@ -827,6 +929,11 @@
 			grid-template-columns: 1fr;
 		}
 
+		.retention-row {
+			grid-template-columns: 1fr;
+		}
+
+		.retention-row .btn,
 		.action-row .btn {
 			width: 100%;
 		}

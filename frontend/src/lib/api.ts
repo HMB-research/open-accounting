@@ -550,6 +550,18 @@ class ApiClient {
     );
   }
 
+  async updateDocumentRetention(
+    tenantId: string,
+    documentId: string,
+    data: DocumentRetentionUpdateRequest,
+  ) {
+    return this.request<DocumentAttachment>(
+      "PATCH",
+      `/api/v1/tenants/${tenantId}/documents/${documentId}/retention`,
+      data,
+    );
+  }
+
   async uploadDocument(
     tenantId: string,
     entityType: DocumentAttachment["entity_type"],
@@ -2755,6 +2767,11 @@ export interface DocumentRetentionReviewFilter {
   as_of?: string;
   horizon_days?: number;
   include_missing?: boolean;
+}
+
+export interface DocumentRetentionUpdateRequest {
+  retention_until?: string;
+  clear_retention?: boolean;
 }
 
 export interface DocumentRetentionReview {

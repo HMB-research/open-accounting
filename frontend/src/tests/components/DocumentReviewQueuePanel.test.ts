@@ -17,6 +17,7 @@ const { apiMock } = vi.hoisted(() => ({
   apiMock: {
     getDocumentReviewQueue: vi.fn(),
     getDocumentRetentionReview: vi.fn(),
+    updateDocumentRetention: vi.fn(),
     markDocumentReviewed: vi.fn(),
     reviewDocument: vi.fn(),
     downloadDocument: vi.fn(),
@@ -108,6 +109,13 @@ describe("DocumentReviewQueuePanel", () => {
     vi.clearAllMocks();
     apiMock.getDocumentReviewQueue.mockResolvedValue(createReviewQueue());
     apiMock.getDocumentRetentionReview.mockResolvedValue(createRetentionReview());
+    apiMock.updateDocumentRetention.mockResolvedValue(
+      createDocument({
+        id: "doc-retention",
+        file_name: "receipt.pdf",
+        retention_until: "2028-03-31T00:00:00Z",
+      }),
+    );
     apiMock.markDocumentReviewed.mockResolvedValue(
       createDocument({ review_status: "REVIEWED" }),
     );
@@ -194,6 +202,46 @@ describe("DocumentReviewQueuePanel", () => {
     });
     expect(screen.getByText("receipt.pdf")).toBeInTheDocument();
     expect(screen.getByText("Due soon")).toBeInTheDocument();
+  });
+
+  it("updates and clears retention metadata from the retention queue", async () => {
+    render(DocumentReviewQueuePanel, { tenantId: "tenant-1" });
+
+    await fireEvent.click(screen.getByRole("tab", { name: "Retention queue" }));
+    await screen.findByText("receipt.pdf");
+
+    await fireEvent.input(
+      screen.getByLabelText("Retention date for receipt.pdf"),
+      {
+        target: { value: "2028-03-31" },
+      },
+    );
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Save retention" }),
+    );
+
+    await waitFor(() => {
+      expect(apiMock.updateDocumentRetention).toHaveBeenCalledWith(
+        "tenant-1",
+        "doc-retention",
+        { retention_until: "2028-03-31" },
+      );
+    });
+    expect(
+      await screen.findByText("receipt.pdf retention metadata updated."),
+    ).toBeInTheDocument();
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Clear retention" }),
+    );
+    await waitFor(() => {
+      expect(apiMock.updateDocumentRetention).toHaveBeenLastCalledWith(
+        "tenant-1",
+        "doc-retention",
+        { clear_retention: true },
+      );
+    });
+    expect(screen.getByLabelText("Retention date for receipt.pdf")).toHaveValue("");
   });
 
   it("requires rejection notes and downloads documents", async () => {
