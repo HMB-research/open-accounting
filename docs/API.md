@@ -2840,6 +2840,20 @@ Returns sales invoice line revenue, estimated product cost from product purchase
 - `end_date` (string, required): End date in YYYY-MM-DD format
 - `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
 
+### Customer Profitability
+
+```http
+GET /tenants/{tenantId}/reports/customer-profitability
+Authorization: Bearer <token>
+```
+
+Returns customer-level revenue, estimated product cost from product purchase prices, profit, profit percent, and supporting sales invoice line detail for a period.
+
+**Query Parameters:**
+- `start_date` (string, required): Start date in YYYY-MM-DD format
+- `end_date` (string, required): End date in YYYY-MM-DD format
+- `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
+
 ### Budget vs Actual
 
 ```http

@@ -445,6 +445,42 @@ func TestExtendedReportHandlers(t *testing.T) {
 	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
 	requirePDF(t, rr.Body.Bytes())
 
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/customer-profitability?start_date=2026-01-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCustomerProfitabilityReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	var profitabilityReport reports.SalesMarginReport
+	assert.NoError(t, json.NewDecoder(rr.Body).Decode(&profitabilityReport))
+	assert.True(t, profitabilityReport.TotalMargin.Equal(decimal.NewFromInt(110)))
+	if assert.Len(t, profitabilityReport.ByContact, 1) {
+		assert.Equal(t, "Example Customer", profitabilityReport.ByContact[0].ContactName)
+	}
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/customer-profitability?start_date=2026-01-01&end_date=2026-01-31&format=csv", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCustomerProfitabilityReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "row_type,start_date,end_date")
+	assert.Contains(t, rr.Body.String(), "Example Customer")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/customer-profitability?start_date=2026-01-01&end_date=2026-01-31&format=xlsx", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCustomerProfitabilityReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	requireXLSXContains(t, rr.Body.Bytes(), "Example Customer")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/customer-profitability?start_date=2026-01-01&end_date=2026-01-31&format=pdf", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCustomerProfitabilityReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	requirePDF(t, rr.Body.Bytes())
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/customer-profitability?start_date=2026-02-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCustomerProfitabilityReport(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/sales-margin?start_date=2026-02-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.GetSalesMarginReport(rr, req)

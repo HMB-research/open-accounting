@@ -167,7 +167,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Dashboard analytics | ✅ | ✅ | ✅ | Implemented |
 | Revenue by period | ✅ | ✅ | ✅ | Implemented |
 | Expense breakdown | ✅ | ✅ | ✅ | Implemented |
-| Customer profitability | ✅ | ✅ | ⚠️ | Partial: sales margin includes customer rollups; deeper lifecycle profitability remains thin |
+| Customer profitability | ✅ | ✅ | ✅ | Implemented through first-class customer profitability API/CLI JSON/CSV/XLSX/PDF reporting with product-cost-backed customer revenue, estimated cost, profit, profit percent, and supporting invoice-line detail |
 | Budget vs actual | ✅ | ✅ | ✅ | Implemented through cost-center budget-vs-actual API/CLI CSV/XLSX/PDF reports |
 
 ---

@@ -13124,6 +13124,59 @@ paths:
       summary: Get contact statement
       tags:
       - Reports
+  /tenants/{tenantID}/reports/customer-profitability:
+    get:
+      description: Get customer-level revenue, estimated product cost, margin, and
+        supporting sales invoice line detail
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Start date (YYYY-MM-DD)
+        in: query
+        name: start_date
+        required: true
+        type: string
+      - description: End date (YYYY-MM-DD)
+        in: query
+        name: end_date
+        required: true
+        type: string
+      - description: 'Response format: json, csv, xlsx, or pdf'
+        in: query
+        name: format
+        type: string
+      produces:
+      - application/json
+      - text/csv
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_reports.SalesMarginReport'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get customer profitability report
+      tags:
+      - Reports
   /tenants/{tenantID}/reports/income-statement:
     get:
       description: Get income statement (P&L) report for a specific period

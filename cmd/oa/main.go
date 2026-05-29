@@ -409,6 +409,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  reports balance-confirmation  Show one balance confirmation")
 	_, _ = fmt.Fprintln(a.stdout, "  reports contact-statement  Show one customer or supplier period statement")
 	_, _ = fmt.Fprintln(a.stdout, "  reports sales-margin      Show sales margin by invoice line")
+	_, _ = fmt.Fprintln(a.stdout, "  reports customer-profitability  Show customer profitability by margin")
 	_, _ = fmt.Fprintln(a.stdout, "  reports budget-vs-actual  Show budget versus actual expenses")
 	_, _ = fmt.Fprintln(a.stdout, "  documents list            List documents for a record")
 	_, _ = fmt.Fprintln(a.stdout, "  documents review-summary  Summarize document review state")
@@ -9486,6 +9487,68 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, report)
 		}
 		printSalesMarginReport(a.stdout, report)
+		return nil
+
+	case "customer-profitability":
+		fs := flag.NewFlagSet("reports customer-profitability", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		startDate := fs.String("start", "", "Start date in YYYY-MM-DD")
+		endDate := fs.String("end", "", "End date in YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		asCSV := fs.Bool("csv", false, "Output CSV")
+		asXLSX := fs.Bool("xlsx", false, "Output XLSX")
+		asPDF := fs.Bool("pdf", false, "Output PDF")
+		outputPath := fs.String("output", "", "Optional CSV/XLSX/PDF output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if err := validateReportOutputFlags(*asJSON, *asCSV, *asXLSX, *asPDF, *outputPath); err != nil {
+			return err
+		}
+		startDateValue, err := parseRequiredDate("start", *startDate)
+		if err != nil {
+			return err
+		}
+		endDateValue, err := parseRequiredDate("end", *endDate)
+		if err != nil {
+			return err
+		}
+		if endDateValue.Before(startDateValue) {
+			return errors.New("end must be on or after start")
+		}
+		start := startDateValue.Format("2006-01-02")
+		end := endDateValue.Format("2006-01-02")
+
+		if *asCSV {
+			content, err := client.exportCustomerProfitabilityReport(ctx, cfg.TenantID, start, end, "csv")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "customer profitability CSV")
+		}
+		if *asXLSX {
+			content, err := client.exportCustomerProfitabilityReport(ctx, cfg.TenantID, start, end, "xlsx")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "customer profitability XLSX")
+		}
+		if *asPDF {
+			content, err := client.exportCustomerProfitabilityReport(ctx, cfg.TenantID, start, end, "pdf")
+			if err != nil {
+				return err
+			}
+			return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "customer profitability PDF")
+		}
+
+		report, err := client.getCustomerProfitabilityReport(ctx, cfg.TenantID, start, end)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, report)
+		}
+		printCustomerProfitabilityReport(a.stdout, report)
 		return nil
 
 	case "budget-vs-actual":

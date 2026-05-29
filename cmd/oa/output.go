@@ -2748,6 +2748,57 @@ func printSalesMarginReport(w io.Writer, report *reports.SalesMarginReport) {
 	_, _ = fmt.Fprintf(w, "Margin percent: %s\n", report.MarginPercent.String())
 }
 
+func printCustomerProfitabilityReport(w io.Writer, report *reports.SalesMarginReport) {
+	_, _ = fmt.Fprintf(w, "Customer profitability from %s to %s\n", report.StartDate, report.EndDate)
+	if len(report.ByContact) > 0 {
+		_, _ = fmt.Fprintln(w, "By customer:")
+		contactWriter := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		_, _ = fmt.Fprintln(contactWriter, "CUSTOMER\tREVENUE\tEST. COST\tPROFIT\tPROFIT %\tLINES")
+		for _, contact := range report.ByContact {
+			_, _ = fmt.Fprintf(
+				contactWriter,
+				"%s\t%s\t%s\t%s\t%s\t%d\n",
+				contact.ContactName,
+				contact.Revenue.String(),
+				contact.Cost.String(),
+				contact.Margin.String(),
+				contact.MarginPercent.String(),
+				contact.LineCount,
+			)
+		}
+		_ = contactWriter.Flush()
+	}
+	if len(report.Lines) > 0 {
+		_, _ = fmt.Fprintln(w, "Supporting invoice lines:")
+		tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		_, _ = fmt.Fprintln(tw, "DATE\tINVOICE\tCUSTOMER\tPRODUCT\tREVENUE\tEST. COST\tPROFIT\tPROFIT %")
+		for _, line := range report.Lines {
+			product := line.ProductName
+			if product == "" {
+				product = line.Description
+			}
+			_, _ = fmt.Fprintf(
+				tw,
+				"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				line.InvoiceDate,
+				line.InvoiceNumber,
+				line.ContactName,
+				product,
+				line.Revenue.String(),
+				line.Cost.String(),
+				line.Margin.String(),
+				line.MarginPercent.String(),
+			)
+		}
+		_ = tw.Flush()
+	}
+	_, _ = fmt.Fprintf(w, "Lines: %d\n", report.LineCount)
+	_, _ = fmt.Fprintf(w, "Total revenue: %s\n", report.TotalRevenue.String())
+	_, _ = fmt.Fprintf(w, "Total estimated cost: %s\n", report.TotalCost.String())
+	_, _ = fmt.Fprintf(w, "Total profit: %s\n", report.TotalMargin.String())
+	_, _ = fmt.Fprintf(w, "Profit percent: %s\n", report.MarginPercent.String())
+}
+
 func printAccountBalances(w io.Writer, balances []accounting.AccountBalance) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "CODE\tNAME\tTYPE\tDEBIT\tCREDIT\tNET")
