@@ -1027,6 +1027,53 @@ func (c *apiClient) deleteBankAccount(ctx context.Context, tenantID, accountID s
 	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "bank-accounts", accountID), nil, c.apiToken, nil)
 }
 
+func (c *apiClient) listBankMatchRules(ctx context.Context, tenantID string, filter banking.BankMatchRuleFilter) ([]banking.BankMatchRule, error) {
+	values := url.Values{}
+	if strings.TrimSpace(filter.BankAccountID) != "" {
+		values.Set("bank_account_id", strings.TrimSpace(filter.BankAccountID))
+	}
+	if filter.ActiveOnly {
+		values.Set("active_only", "true")
+	}
+	if filter.IncludeGlobal {
+		values.Set("include_global", "true")
+	}
+
+	var resp []banking.BankMatchRule
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "bank-match-rules"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createBankMatchRule(ctx context.Context, tenantID string, req *banking.CreateBankMatchRuleRequest) (*banking.BankMatchRule, error) {
+	var resp banking.BankMatchRule
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "bank-match-rules"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getBankMatchRule(ctx context.Context, tenantID, ruleID string) (*banking.BankMatchRule, error) {
+	var resp banking.BankMatchRule
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "bank-match-rules", ruleID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) updateBankMatchRule(ctx context.Context, tenantID, ruleID string, req *banking.UpdateBankMatchRuleRequest) (*banking.BankMatchRule, error) {
+	var resp banking.BankMatchRule
+	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "bank-match-rules", ruleID), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) deleteBankMatchRule(ctx context.Context, tenantID, ruleID string) error {
+	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "bank-match-rules", ruleID), nil, c.apiToken, nil)
+}
+
 func (c *apiClient) listBankTransactions(ctx context.Context, tenantID, accountID string, filter banking.TransactionFilter) ([]banking.BankTransaction, error) {
 	values := url.Values{}
 	if filter.Status != "" {

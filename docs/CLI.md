@@ -707,6 +707,20 @@ go run ./cmd/oa banking accounts get --id <bank-account-id>
 go run ./cmd/oa banking accounts update --id <bank-account-id> --bank-name SEB --active true
 go run ./cmd/oa banking accounts delete --id <bank-account-id>
 
+go run ./cmd/oa banking match-rules list --bank-account-id <bank-account-id> --active-only --include-global
+go run ./cmd/oa banking match-rules create \
+  --name "Stripe receipts" \
+  --bank-account-id <bank-account-id> \
+  --priority 10 \
+  --field DESCRIPTION \
+  --pattern stripe \
+  --min-confidence 0.85 \
+  --max-date-diff-days 3 \
+  --require-exact-amount
+go run ./cmd/oa banking match-rules get --id <rule-id>
+go run ./cmd/oa banking match-rules update --id <rule-id> --global --active false
+go run ./cmd/oa banking match-rules delete --id <rule-id>
+
 go run ./cmd/oa banking transactions list \
   --account-id <bank-account-id> \
   --status UNMATCHED \
@@ -735,7 +749,7 @@ go run ./cmd/oa banking reconciliations get --id <reconciliation-id>
 go run ./cmd/oa banking reconciliations complete --id <reconciliation-id>
 ```
 
-Bank transaction statuses are `UNMATCHED`, `MATCHED`, and `RECONCILED`. Follow-up statuses are `NONE`, `EVIDENCE_REQUIRED`, and `READY_TO_MATCH`. Reconciliation completion blocks matched transactions marked `EVIDENCE_REQUIRED` until they have approved `reconciliation_evidence` documents; use `documents upload`, `documents review`, and `documents evidence-policy` to resolve evidence failures. Bank CSV imports accept comma, semicolon, or tab delimiters with headers such as `date`, `amount`, `description`, `reference`, `counterparty_name`, `counterparty_account`, `value_date`, and `external_id`. Use `--json` on banking read and mutation commands for automation.
+Bank transaction statuses are `UNMATCHED`, `MATCHED`, and `RECONCILED`. Follow-up statuses are `NONE`, `EVIDENCE_REQUIRED`, and `READY_TO_MATCH`. Auto-match rule fields are `DESCRIPTION`, `REFERENCE`, `COUNTERPARTY_NAME`, and `COUNTERPARTY_ACCOUNT`; omit `--bank-account-id` or pass `--global` on update for tenant-wide rules. Reconciliation completion blocks matched transactions marked `EVIDENCE_REQUIRED` until they have approved `reconciliation_evidence` documents; use `documents upload`, `documents review`, and `documents evidence-policy` to resolve evidence failures. Bank CSV imports accept comma, semicolon, or tab delimiters with headers such as `date`, `amount`, `description`, `reference`, `counterparty_name`, `counterparty_account`, `value_date`, and `external_id`. Use `--json` on banking read and mutation commands for automation.
 
 ## Reports
 

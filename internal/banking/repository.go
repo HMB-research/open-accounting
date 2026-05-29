@@ -22,6 +22,13 @@ type Repository interface {
 	CountTransactionsForAccount(ctx context.Context, schemaName, accountID string) (int, error)
 	CalculateAccountBalance(ctx context.Context, schemaName, accountID string) (decimal.Decimal, error)
 
+	// Auto-match rule operations
+	CreateBankMatchRule(ctx context.Context, schemaName string, rule *BankMatchRule) error
+	GetBankMatchRule(ctx context.Context, schemaName, tenantID, ruleID string) (*BankMatchRule, error)
+	ListBankMatchRules(ctx context.Context, schemaName, tenantID string, filter *BankMatchRuleFilter) ([]BankMatchRule, error)
+	UpdateBankMatchRule(ctx context.Context, schemaName string, rule *BankMatchRule) error
+	DeleteBankMatchRule(ctx context.Context, schemaName, tenantID, ruleID string) error
+
 	// Transaction operations
 	ListTransactions(ctx context.Context, schemaName, tenantID string, filter *TransactionFilter) ([]BankTransaction, error)
 	GetTransaction(ctx context.Context, schemaName, tenantID, transactionID string) (*BankTransaction, error)
@@ -52,6 +59,7 @@ var (
 	ErrTransactionAlreadyMatched = fmt.Errorf("transaction not found or already matched")
 	ErrTransactionNotMatched     = fmt.Errorf("transaction not found or not matched")
 	ErrReconciliationAlreadyDone = fmt.Errorf("reconciliation not found or already completed")
+	ErrBankMatchRuleNotFound     = fmt.Errorf("bank match rule not found")
 )
 
 // PostgresRepository implements Repository using PostgreSQL
@@ -83,7 +91,27 @@ const bankTransactionSelectColumns = `
 	COALESCE(external_id, '')
 `
 
+const bankMatchRuleSelectColumns = `
+	id,
+	tenant_id,
+	bank_account_id,
+	name,
+	priority,
+	match_field,
+	pattern,
+	min_confidence,
+	max_date_diff_days,
+	require_exact_amount,
+	is_active,
+	created_at,
+	updated_at
+`
+
 type bankTransactionScanner interface {
+	Scan(dest ...any) error
+}
+
+type bankMatchRuleScanner interface {
 	Scan(dest ...any) error
 }
 
@@ -115,6 +143,24 @@ func scanBankTransaction(scanner bankTransactionScanner, transaction *BankTransa
 		&transaction.ReconciliationID,
 		&transaction.ImportedAt,
 		&transaction.ExternalID,
+	)
+}
+
+func scanBankMatchRule(scanner bankMatchRuleScanner, rule *BankMatchRule) error {
+	return scanner.Scan(
+		&rule.ID,
+		&rule.TenantID,
+		&rule.BankAccountID,
+		&rule.Name,
+		&rule.Priority,
+		&rule.MatchField,
+		&rule.Pattern,
+		&rule.MinConfidence,
+		&rule.MaxDateDiffDays,
+		&rule.RequireExactAmount,
+		&rule.IsActive,
+		&rule.CreatedAt,
+		&rule.UpdatedAt,
 	)
 }
 
@@ -259,6 +305,142 @@ func (r *PostgresRepository) CalculateAccountBalance(ctx context.Context, schema
 		SELECT COALESCE(SUM(amount), 0) FROM %s.bank_transactions WHERE bank_account_id = $1
 	`, schemaName), accountID).Scan(&balance)
 	return balance, err
+}
+
+// CreateBankMatchRule inserts a new bank auto-match rule.
+func (r *PostgresRepository) CreateBankMatchRule(ctx context.Context, schemaName string, rule *BankMatchRule) error {
+	_, err := r.db.Exec(ctx, fmt.Sprintf(`
+		INSERT INTO %s.bank_match_rules (
+			id, tenant_id, bank_account_id, name, priority, match_field, pattern,
+			min_confidence, max_date_diff_days, require_exact_amount, is_active, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+	`, schemaName),
+		rule.ID, rule.TenantID, rule.BankAccountID, rule.Name, rule.Priority, rule.MatchField, rule.Pattern,
+		rule.MinConfidence, rule.MaxDateDiffDays, rule.RequireExactAmount, rule.IsActive, rule.CreatedAt, rule.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("insert bank match rule: %w", err)
+	}
+	return nil
+}
+
+// GetBankMatchRule retrieves a bank auto-match rule by ID.
+func (r *PostgresRepository) GetBankMatchRule(ctx context.Context, schemaName, tenantID, ruleID string) (*BankMatchRule, error) {
+	var rule BankMatchRule
+	err := r.db.QueryRow(ctx, fmt.Sprintf(`
+		SELECT %s
+		FROM %s.bank_match_rules
+		WHERE id = $1 AND tenant_id = $2
+	`, bankMatchRuleSelectColumns, schemaName), ruleID, tenantID).Scan(
+		&rule.ID,
+		&rule.TenantID,
+		&rule.BankAccountID,
+		&rule.Name,
+		&rule.Priority,
+		&rule.MatchField,
+		&rule.Pattern,
+		&rule.MinConfidence,
+		&rule.MaxDateDiffDays,
+		&rule.RequireExactAmount,
+		&rule.IsActive,
+		&rule.CreatedAt,
+		&rule.UpdatedAt,
+	)
+	if err == pgx.ErrNoRows {
+		return nil, ErrBankMatchRuleNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get bank match rule: %w", err)
+	}
+	return &rule, nil
+}
+
+// ListBankMatchRules lists bank auto-match rules for a tenant.
+func (r *PostgresRepository) ListBankMatchRules(ctx context.Context, schemaName, tenantID string, filter *BankMatchRuleFilter) ([]BankMatchRule, error) {
+	query := fmt.Sprintf(`
+		SELECT %s
+		FROM %s.bank_match_rules
+		WHERE tenant_id = $1
+	`, bankMatchRuleSelectColumns, schemaName)
+	args := []interface{}{tenantID}
+	argNum := 2
+
+	if filter != nil {
+		if filter.ActiveOnly {
+			query += " AND is_active = true"
+		}
+		if filter.BankAccountID != "" {
+			if filter.IncludeGlobal {
+				query += fmt.Sprintf(" AND (bank_account_id = $%d OR bank_account_id IS NULL)", argNum)
+			} else {
+				query += fmt.Sprintf(" AND bank_account_id = $%d", argNum)
+			}
+			args = append(args, filter.BankAccountID)
+		}
+	}
+	query += " ORDER BY priority ASC, name ASC, created_at ASC"
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list bank match rules: %w", err)
+	}
+	defer rows.Close()
+
+	rules := []BankMatchRule{}
+	for rows.Next() {
+		var rule BankMatchRule
+		if err := scanBankMatchRule(rows, &rule); err != nil {
+			return nil, fmt.Errorf("scan bank match rule: %w", err)
+		}
+		rules = append(rules, rule)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate bank match rules: %w", err)
+	}
+	return rules, nil
+}
+
+// UpdateBankMatchRule updates a bank auto-match rule.
+func (r *PostgresRepository) UpdateBankMatchRule(ctx context.Context, schemaName string, rule *BankMatchRule) error {
+	result, err := r.db.Exec(ctx, fmt.Sprintf(`
+		UPDATE %s.bank_match_rules
+		SET bank_account_id = $1,
+			name = $2,
+			priority = $3,
+			match_field = $4,
+			pattern = $5,
+			min_confidence = $6,
+			max_date_diff_days = $7,
+			require_exact_amount = $8,
+			is_active = $9,
+			updated_at = $10
+		WHERE id = $11 AND tenant_id = $12
+	`, schemaName),
+		rule.BankAccountID, rule.Name, rule.Priority, rule.MatchField, rule.Pattern,
+		rule.MinConfidence, rule.MaxDateDiffDays, rule.RequireExactAmount, rule.IsActive,
+		rule.UpdatedAt, rule.ID, rule.TenantID,
+	)
+	if err != nil {
+		return fmt.Errorf("update bank match rule: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrBankMatchRuleNotFound
+	}
+	return nil
+}
+
+// DeleteBankMatchRule deletes a bank auto-match rule.
+func (r *PostgresRepository) DeleteBankMatchRule(ctx context.Context, schemaName, tenantID, ruleID string) error {
+	result, err := r.db.Exec(ctx, fmt.Sprintf(`
+		DELETE FROM %s.bank_match_rules WHERE id = $1 AND tenant_id = $2
+	`, schemaName), ruleID, tenantID)
+	if err != nil {
+		return fmt.Errorf("delete bank match rule: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrBankMatchRuleNotFound
+	}
+	return nil
 }
 
 // ListTransactions lists bank transactions with filters

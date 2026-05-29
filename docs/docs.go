@@ -3812,6 +3812,288 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/bank-match-rules": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get bank auto-match rules, optionally scoped to a bank account",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Banking"
+                ],
+                "summary": "List bank auto-match rules",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter to rules for a bank account",
+                        "name": "bank_account_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Only active rules",
+                        "name": "active_only",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include tenant-wide rules when filtering by bank account",
+                        "name": "include_global",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankMatchRule"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a transaction-pattern rule that tunes automatic payment matching",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Banking"
+                ],
+                "summary": "Create bank auto-match rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Bank match rule details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_banking.CreateBankMatchRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankMatchRule"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/bank-match-rules/{ruleID}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get one bank auto-match rule",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Banking"
+                ],
+                "summary": "Get bank auto-match rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Rule ID",
+                        "name": "ruleID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankMatchRule"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update one bank auto-match rule",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Banking"
+                ],
+                "summary": "Update bank auto-match rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Rule ID",
+                        "name": "ruleID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Bank match rule updates",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_banking.UpdateBankMatchRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankMatchRule"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Delete one bank auto-match rule",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Banking"
+                ],
+                "summary": "Delete bank auto-match rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Rule ID",
+                        "name": "ruleID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/bank-transactions/{transactionID}": {
             "get": {
                 "security": [
@@ -16438,6 +16720,65 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_banking.BankMatchField": {
+            "type": "string",
+            "enum": [
+                "DESCRIPTION",
+                "REFERENCE",
+                "COUNTERPARTY_NAME",
+                "COUNTERPARTY_ACCOUNT"
+            ],
+            "x-enum-varnames": [
+                "BankMatchFieldDescription",
+                "BankMatchFieldReference",
+                "BankMatchFieldCounterpartyName",
+                "BankMatchFieldCounterpartyAccount"
+            ]
+        },
+        "github_com_HMB-research_open-accounting_internal_banking.BankMatchRule": {
+            "type": "object",
+            "properties": {
+                "bank_account_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "match_field": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankMatchField"
+                },
+                "max_date_diff_days": {
+                    "type": "integer"
+                },
+                "min_confidence": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "pattern": {
+                    "type": "string"
+                },
+                "priority": {
+                    "type": "integer"
+                },
+                "require_exact_amount": {
+                    "type": "boolean"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_banking.BankReconciliation": {
             "type": "object",
             "properties": {
@@ -16625,6 +16966,38 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_banking.CreateBankMatchRuleRequest": {
+            "type": "object",
+            "properties": {
+                "bank_account_id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "match_field": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankMatchField"
+                },
+                "max_date_diff_days": {
+                    "type": "integer"
+                },
+                "min_confidence": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "pattern": {
+                    "type": "string"
+                },
+                "priority": {
+                    "type": "integer"
+                },
+                "require_exact_amount": {
+                    "type": "boolean"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_banking.CreateReconciliationRequest": {
             "type": "object",
             "properties": {
@@ -16774,6 +17147,41 @@ const docTemplate = `{
                 },
                 "swift_code": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_banking.UpdateBankMatchRuleRequest": {
+            "type": "object",
+            "properties": {
+                "bank_account_id": {
+                    "type": "string"
+                },
+                "clear_bank_account": {
+                    "type": "boolean"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "match_field": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankMatchField"
+                },
+                "max_date_diff_days": {
+                    "type": "integer"
+                },
+                "min_confidence": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "pattern": {
+                    "type": "string"
+                },
+                "priority": {
+                    "type": "integer"
+                },
+                "require_exact_amount": {
+                    "type": "boolean"
                 }
             }
         },

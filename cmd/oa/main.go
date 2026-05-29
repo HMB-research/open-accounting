@@ -297,6 +297,11 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  banking accounts get      Show one bank account")
 	_, _ = fmt.Fprintln(a.stdout, "  banking accounts update   Update a bank account")
 	_, _ = fmt.Fprintln(a.stdout, "  banking accounts delete   Delete a bank account")
+	_, _ = fmt.Fprintln(a.stdout, "  banking match-rules list  List bank auto-match rules")
+	_, _ = fmt.Fprintln(a.stdout, "  banking match-rules create  Create a bank auto-match rule")
+	_, _ = fmt.Fprintln(a.stdout, "  banking match-rules get   Show one bank auto-match rule")
+	_, _ = fmt.Fprintln(a.stdout, "  banking match-rules update  Update a bank auto-match rule")
+	_, _ = fmt.Fprintln(a.stdout, "  banking match-rules delete  Delete a bank auto-match rule")
 	_, _ = fmt.Fprintln(a.stdout, "  banking transactions list List bank transactions")
 	_, _ = fmt.Fprintln(a.stdout, "  banking transactions import  Import bank transactions from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  banking transactions import-history  Import historical bank transactions")
@@ -3681,6 +3686,8 @@ func (a *cliApp) runBanking(ctx context.Context, args []string) error {
 	switch args[0] {
 	case "accounts":
 		return a.runBankAccounts(ctx, cfg, client, args[1:])
+	case "match-rules":
+		return a.runBankMatchRules(ctx, cfg, client, args[1:])
 	case "transactions":
 		return a.runBankTransactions(ctx, cfg, client, args[1:])
 	case "reconciliations":
@@ -3842,6 +3849,214 @@ func (a *cliApp) runBankAccounts(ctx context.Context, cfg *cliConfig, client *ap
 
 	default:
 		return fmt.Errorf("unknown banking accounts subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runBankMatchRules(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("banking match-rules subcommand required")
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("banking match-rules list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		bankAccountID := fs.String("bank-account-id", "", "Filter by bank account id")
+		activeOnly := fs.Bool("active-only", false, "List only active rules")
+		includeGlobal := fs.Bool("include-global", false, "Include tenant-wide rules when filtering by bank account")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		rules, err := client.listBankMatchRules(ctx, cfg.TenantID, banking.BankMatchRuleFilter{
+			BankAccountID: strings.TrimSpace(*bankAccountID),
+			ActiveOnly:    *activeOnly,
+			IncludeGlobal: *includeGlobal,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, rules)
+		}
+		printBankMatchRulesTable(a.stdout, rules)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("banking match-rules create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		name := fs.String("name", "", "Rule name")
+		bankAccountID := fs.String("bank-account-id", "", "Optional bank account id")
+		priority := fs.Int("priority", 100, "Rule priority, lower runs first")
+		matchField := fs.String("field", string(banking.BankMatchFieldDescription), "Transaction field: DESCRIPTION, REFERENCE, COUNTERPARTY_NAME, COUNTERPARTY_ACCOUNT")
+		pattern := fs.String("pattern", "", "Case-insensitive pattern")
+		minConfidenceFlag := fs.String("min-confidence", "0.7", "Minimum confidence threshold")
+		maxDateDiffDays := fs.Int("max-date-diff-days", 7, "Maximum payment date difference in days")
+		requireExactAmount := fs.Bool("require-exact-amount", false, "Require exact amount match")
+		isActive := fs.Bool("active", true, "Rule is active")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		minConfidence, err := parseBankMatchRuleConfidence(*minConfidenceFlag)
+		if err != nil {
+			return err
+		}
+		activeValue := *isActive
+
+		rule, err := client.createBankMatchRule(ctx, cfg.TenantID, &banking.CreateBankMatchRuleRequest{
+			BankAccountID:      optionalStringPtr(*bankAccountID),
+			Name:               strings.TrimSpace(*name),
+			Priority:           *priority,
+			MatchField:         banking.BankMatchField(strings.ToUpper(strings.TrimSpace(*matchField))),
+			Pattern:            strings.TrimSpace(*pattern),
+			MinConfidence:      minConfidence,
+			MaxDateDiffDays:    *maxDateDiffDays,
+			RequireExactAmount: *requireExactAmount,
+			IsActive:           &activeValue,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, rule)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created bank match rule %s (%s)\n", rule.Name, rule.ID)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("banking match-rules get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		ruleID := fs.String("id", "", "Rule id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*ruleID) == "" {
+			return errors.New("id is required")
+		}
+
+		rule, err := client.getBankMatchRule(ctx, cfg.TenantID, strings.TrimSpace(*ruleID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, rule)
+		}
+		printBankMatchRule(a.stdout, rule)
+		return nil
+
+	case "update":
+		fs := flag.NewFlagSet("banking match-rules update", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		ruleID := fs.String("id", "", "Rule id")
+		name := fs.String("name", "", "Rule name")
+		bankAccountID := fs.String("bank-account-id", "", "Bank account id")
+		global := fs.Bool("global", false, "Make the rule tenant-wide")
+		priority := fs.String("priority", "", "Rule priority")
+		matchField := fs.String("field", "", "Transaction field")
+		pattern := fs.String("pattern", "", "Case-insensitive pattern")
+		minConfidenceFlag := fs.String("min-confidence", "", "Minimum confidence threshold")
+		maxDateDiffDaysFlag := fs.String("max-date-diff-days", "", "Maximum payment date difference in days")
+		requireExactAmountFlag := fs.String("require-exact-amount", "", "Require exact amount match: true or false")
+		activeFlag := fs.String("active", "", "Rule active state: true or false")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*ruleID) == "" {
+			return errors.New("id is required")
+		}
+		if *global && strings.TrimSpace(*bankAccountID) != "" {
+			return errors.New("global and bank-account-id cannot both be set")
+		}
+
+		req := &banking.UpdateBankMatchRuleRequest{ClearBankAccount: *global}
+		if strings.TrimSpace(*bankAccountID) != "" {
+			req.BankAccountID = optionalStringPtr(*bankAccountID)
+		}
+		if strings.TrimSpace(*name) != "" {
+			trimmed := strings.TrimSpace(*name)
+			req.Name = &trimmed
+		}
+		if strings.TrimSpace(*priority) != "" {
+			parsed, err := strconv.Atoi(strings.TrimSpace(*priority))
+			if err != nil {
+				return fmt.Errorf("parse priority: %w", err)
+			}
+			req.Priority = &parsed
+		}
+		if strings.TrimSpace(*matchField) != "" {
+			field := banking.BankMatchField(strings.ToUpper(strings.TrimSpace(*matchField)))
+			req.MatchField = &field
+		}
+		if strings.TrimSpace(*pattern) != "" {
+			trimmed := strings.TrimSpace(*pattern)
+			req.Pattern = &trimmed
+		}
+		if strings.TrimSpace(*minConfidenceFlag) != "" {
+			parsed, err := parseBankMatchRuleConfidence(*minConfidenceFlag)
+			if err != nil {
+				return err
+			}
+			req.MinConfidence = &parsed
+		}
+		if strings.TrimSpace(*maxDateDiffDaysFlag) != "" {
+			parsed, err := strconv.Atoi(strings.TrimSpace(*maxDateDiffDaysFlag))
+			if err != nil {
+				return fmt.Errorf("parse max-date-diff-days: %w", err)
+			}
+			req.MaxDateDiffDays = &parsed
+		}
+		if strings.TrimSpace(*requireExactAmountFlag) != "" {
+			parsed, err := strconv.ParseBool(strings.TrimSpace(*requireExactAmountFlag))
+			if err != nil {
+				return fmt.Errorf("parse require-exact-amount: %w", err)
+			}
+			req.RequireExactAmount = &parsed
+		}
+		if strings.TrimSpace(*activeFlag) != "" {
+			parsed, err := strconv.ParseBool(strings.TrimSpace(*activeFlag))
+			if err != nil {
+				return fmt.Errorf("parse active: %w", err)
+			}
+			req.IsActive = &parsed
+		}
+
+		rule, err := client.updateBankMatchRule(ctx, cfg.TenantID, strings.TrimSpace(*ruleID), req)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, rule)
+		}
+		printBankMatchRule(a.stdout, rule)
+		return nil
+
+	case "delete":
+		fs := flag.NewFlagSet("banking match-rules delete", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		ruleID := fs.String("id", "", "Rule id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*ruleID) == "" {
+			return errors.New("id is required")
+		}
+
+		if err := client.deleteBankMatchRule(ctx, cfg.TenantID, strings.TrimSpace(*ruleID)); err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, map[string]string{"status": "deleted"})
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Deleted bank match rule %s\n", strings.TrimSpace(*ruleID))
+		return nil
+
+	default:
+		return fmt.Errorf("unknown banking match-rules subcommand %q", args[0])
 	}
 }
 
@@ -10457,6 +10672,17 @@ func parseRequiredBankFollowUpStatus(value string) (banking.FollowUpStatus, erro
 		return "", fmt.Errorf("invalid bank follow-up status %q", value)
 	}
 	return status, nil
+}
+
+func parseBankMatchRuleConfidence(value string) (float64, error) {
+	parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse min-confidence: %w", err)
+	}
+	if parsed < 0 || parsed > 1 {
+		return 0, errors.New("min-confidence must be between 0 and 1")
+	}
+	return parsed, nil
 }
 
 func parseOptionalAssetStatus(value string) (assets.AssetStatus, error) {

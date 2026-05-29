@@ -1610,6 +1610,145 @@ func (h *Handlers) DeleteBankAccount(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// ListBankMatchRules lists bank auto-match rules for a tenant
+// @Summary List bank auto-match rules
+// @Description Get bank auto-match rules, optionally scoped to a bank account
+// @Tags Banking
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param bank_account_id query string false "Filter to rules for a bank account"
+// @Param active_only query bool false "Only active rules"
+// @Param include_global query bool false "Include tenant-wide rules when filtering by bank account"
+// @Success 200 {array} banking.BankMatchRule
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-match-rules [get]
+func (h *Handlers) ListBankMatchRules(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	filter := &banking.BankMatchRuleFilter{
+		BankAccountID: strings.TrimSpace(r.URL.Query().Get("bank_account_id")),
+		ActiveOnly:    r.URL.Query().Get("active_only") == "true",
+		IncludeGlobal: r.URL.Query().Get("include_global") == "true",
+	}
+	rules, err := h.bankingService.ListBankMatchRules(r.Context(), schemaName, tenantID, filter)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list bank match rules")
+		return
+	}
+	respondJSON(w, http.StatusOK, rules)
+}
+
+// CreateBankMatchRule creates a bank auto-match rule
+// @Summary Create bank auto-match rule
+// @Description Create a transaction-pattern rule that tunes automatic payment matching
+// @Tags Banking
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body banking.CreateBankMatchRuleRequest true "Bank match rule details"
+// @Success 201 {object} banking.BankMatchRule
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-match-rules [post]
+func (h *Handlers) CreateBankMatchRule(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req banking.CreateBankMatchRuleRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	rule, err := h.bankingService.CreateBankMatchRule(r.Context(), schemaName, tenantID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusCreated, rule)
+}
+
+// GetBankMatchRule gets a bank auto-match rule by ID
+// @Summary Get bank auto-match rule
+// @Description Get one bank auto-match rule
+// @Tags Banking
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param ruleID path string true "Rule ID"
+// @Success 200 {object} banking.BankMatchRule
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-match-rules/{ruleID} [get]
+func (h *Handlers) GetBankMatchRule(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	ruleID := chi.URLParam(r, "ruleID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	rule, err := h.bankingService.GetBankMatchRule(r.Context(), schemaName, tenantID, ruleID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Bank match rule not found")
+		return
+	}
+	respondJSON(w, http.StatusOK, rule)
+}
+
+// UpdateBankMatchRule updates a bank auto-match rule
+// @Summary Update bank auto-match rule
+// @Description Update one bank auto-match rule
+// @Tags Banking
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param ruleID path string true "Rule ID"
+// @Param request body banking.UpdateBankMatchRuleRequest true "Bank match rule updates"
+// @Success 200 {object} banking.BankMatchRule
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-match-rules/{ruleID} [put]
+func (h *Handlers) UpdateBankMatchRule(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	ruleID := chi.URLParam(r, "ruleID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req banking.UpdateBankMatchRuleRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	rule, err := h.bankingService.UpdateBankMatchRule(r.Context(), schemaName, tenantID, ruleID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, rule)
+}
+
+// DeleteBankMatchRule deletes a bank auto-match rule
+// @Summary Delete bank auto-match rule
+// @Description Delete one bank auto-match rule
+// @Tags Banking
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param ruleID path string true "Rule ID"
+// @Success 204
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-match-rules/{ruleID} [delete]
+func (h *Handlers) DeleteBankMatchRule(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	ruleID := chi.URLParam(r, "ruleID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	if err := h.bankingService.DeleteBankMatchRule(r.Context(), schemaName, tenantID, ruleID); err != nil {
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ListBankTransactions lists bank transactions for an account
 // @Summary List bank transactions
 // @Description Get bank transactions for a bank account with filters

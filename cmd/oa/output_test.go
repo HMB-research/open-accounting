@@ -746,6 +746,21 @@ func TestPrintBankingOutputs(t *testing.T) {
 		CreatedAt:     now,
 		Balance:       decimal.NewFromInt(100),
 	}
+	matchRule := banking.BankMatchRule{
+		ID:                 "rule-1",
+		TenantID:           "tenant-1",
+		BankAccountID:      &account.ID,
+		Name:               "Stripe receipts",
+		Priority:           10,
+		MatchField:         banking.BankMatchFieldDescription,
+		Pattern:            "stripe",
+		MinConfidence:      0.85,
+		MaxDateDiffDays:    3,
+		RequireExactAmount: true,
+		IsActive:           true,
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
 	transaction := banking.BankTransaction{
 		ID:                  "tx-1",
 		TenantID:            "tenant-1",
@@ -812,6 +827,16 @@ func TestPrintBankingOutputs(t *testing.T) {
 	printBankAccount(&accountBuf, &account)
 	assert.Contains(t, accountBuf.String(), "Bank account Main bank")
 	assert.Contains(t, accountBuf.String(), "GL account: acc-bank")
+
+	var matchRulesBuf bytes.Buffer
+	printBankMatchRulesTable(&matchRulesBuf, []banking.BankMatchRule{matchRule})
+	assert.Contains(t, matchRulesBuf.String(), "Stripe receipts")
+	assert.Contains(t, matchRulesBuf.String(), "0.85")
+
+	var matchRuleBuf bytes.Buffer
+	printBankMatchRule(&matchRuleBuf, &matchRule)
+	assert.Contains(t, matchRuleBuf.String(), "Bank match rule Stripe receipts")
+	assert.Contains(t, matchRuleBuf.String(), "Require exact amount: true")
 
 	var transactionsBuf bytes.Buffer
 	printBankTransactionsTable(&transactionsBuf, []banking.BankTransaction{transaction})

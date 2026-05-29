@@ -1261,6 +1261,47 @@ definitions:
       tenant_id:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_banking.BankMatchField:
+    enum:
+    - DESCRIPTION
+    - REFERENCE
+    - COUNTERPARTY_NAME
+    - COUNTERPARTY_ACCOUNT
+    type: string
+    x-enum-varnames:
+    - BankMatchFieldDescription
+    - BankMatchFieldReference
+    - BankMatchFieldCounterpartyName
+    - BankMatchFieldCounterpartyAccount
+  github_com_HMB-research_open-accounting_internal_banking.BankMatchRule:
+    properties:
+      bank_account_id:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      match_field:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankMatchField'
+      max_date_diff_days:
+        type: integer
+      min_confidence:
+        type: number
+      name:
+        type: string
+      pattern:
+        type: string
+      priority:
+        type: integer
+      require_exact_amount:
+        type: boolean
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_banking.BankReconciliation:
     properties:
       bank_account_id:
@@ -1384,6 +1425,27 @@ definitions:
       swift_code:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_banking.CreateBankMatchRuleRequest:
+    properties:
+      bank_account_id:
+        type: string
+      is_active:
+        type: boolean
+      match_field:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankMatchField'
+      max_date_diff_days:
+        type: integer
+      min_confidence:
+        type: number
+      name:
+        type: string
+      pattern:
+        type: string
+      priority:
+        type: integer
+      require_exact_amount:
+        type: boolean
+    type: object
   github_com_HMB-research_open-accounting_internal_banking.CreateReconciliationRequest:
     properties:
       closing_balance:
@@ -1486,6 +1548,29 @@ definitions:
         type: string
       swift_code:
         type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_banking.UpdateBankMatchRuleRequest:
+    properties:
+      bank_account_id:
+        type: string
+      clear_bank_account:
+        type: boolean
+      is_active:
+        type: boolean
+      match_field:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankMatchField'
+      max_date_diff_days:
+        type: integer
+      min_confidence:
+        type: number
+      name:
+        type: string
+      pattern:
+        type: string
+      priority:
+        type: integer
+      require_exact_amount:
+        type: boolean
     type: object
   github_com_HMB-research_open-accounting_internal_banking.UpdateTransactionReviewRequest:
     properties:
@@ -7588,6 +7673,187 @@ paths:
       security:
       - BearerAuth: []
       summary: List bank transactions
+      tags:
+      - Banking
+  /tenants/{tenantID}/bank-match-rules:
+    get:
+      description: Get bank auto-match rules, optionally scoped to a bank account
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Filter to rules for a bank account
+        in: query
+        name: bank_account_id
+        type: string
+      - description: Only active rules
+        in: query
+        name: active_only
+        type: boolean
+      - description: Include tenant-wide rules when filtering by bank account
+        in: query
+        name: include_global
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankMatchRule'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List bank auto-match rules
+      tags:
+      - Banking
+    post:
+      consumes:
+      - application/json
+      description: Create a transaction-pattern rule that tunes automatic payment
+        matching
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Bank match rule details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.CreateBankMatchRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankMatchRule'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create bank auto-match rule
+      tags:
+      - Banking
+  /tenants/{tenantID}/bank-match-rules/{ruleID}:
+    delete:
+      description: Delete one bank auto-match rule
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Rule ID
+        in: path
+        name: ruleID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete bank auto-match rule
+      tags:
+      - Banking
+    get:
+      description: Get one bank auto-match rule
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Rule ID
+        in: path
+        name: ruleID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankMatchRule'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get bank auto-match rule
+      tags:
+      - Banking
+    put:
+      consumes:
+      - application/json
+      description: Update one bank auto-match rule
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Rule ID
+        in: path
+        name: ruleID
+        required: true
+        type: string
+      - description: Bank match rule updates
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.UpdateBankMatchRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankMatchRule'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update bank auto-match rule
       tags:
       - Banking
   /tenants/{tenantID}/bank-transactions/{transactionID}:

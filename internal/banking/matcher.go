@@ -97,15 +97,25 @@ func (s *Service) AutoMatchTransactions(ctx context.Context, schemaName, tenantI
 	}
 
 	matched := 0
-	config := DefaultMatcherConfig()
-	config.MinConfidence = minConfidence
+	rules, err := s.repo.ListBankMatchRules(ctx, schemaName, tenantID, &BankMatchRuleFilter{
+		BankAccountID: bankAccountID,
+		ActiveOnly:    true,
+		IncludeGlobal: true,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("list bank match rules: %w", err)
+	}
 
 	for _, transaction := range transactions {
+		rule := firstBankMatchRuleForTransaction(&transaction, bankAccountID, rules)
+		config := matcherConfigForBankMatchRule(rule, minConfidence)
+
 		// Get potential matches
 		payments, err := s.getUnallocatedPayments(ctx, schemaName, tenantID, transaction.Amount)
 		if err != nil {
 			continue
 		}
+		payments = filterPaymentsForBankMatchRule(payments, &transaction, rule)
 
 		suggestions := matchPayments(&transaction, payments, config)
 		if len(suggestions) == 0 {
@@ -114,7 +124,7 @@ func (s *Service) AutoMatchTransactions(ctx context.Context, schemaName, tenantI
 
 		// Only auto-match if confidence is high enough and there's a clear winner
 		best := suggestions[0]
-		if best.Confidence >= minConfidence {
+		if best.Confidence >= config.MinConfidence {
 			// Check if there's a significant gap to second best
 			if len(suggestions) > 1 && suggestions[1].Confidence > best.Confidence*0.9 {
 				// Too close, don't auto-match
@@ -140,6 +150,74 @@ func (s *Service) AutoMatchTransactions(ctx context.Context, schemaName, tenantI
 	}
 
 	return matched, nil
+}
+
+func firstBankMatchRuleForTransaction(transaction *BankTransaction, bankAccountID string, rules []BankMatchRule) *BankMatchRule {
+	for i := range rules {
+		rule := &rules[i]
+		if !rule.IsActive {
+			continue
+		}
+		if rule.BankAccountID != nil && *rule.BankAccountID != bankAccountID {
+			continue
+		}
+		if bankMatchRuleMatchesTransaction(rule, transaction) {
+			return rule
+		}
+	}
+	return nil
+}
+
+func bankMatchRuleMatchesTransaction(rule *BankMatchRule, transaction *BankTransaction) bool {
+	if rule == nil {
+		return false
+	}
+	pattern := strings.ToLower(strings.TrimSpace(rule.Pattern))
+	if pattern == "" {
+		return false
+	}
+
+	var value string
+	switch rule.MatchField {
+	case BankMatchFieldReference:
+		value = transaction.Reference
+	case BankMatchFieldCounterpartyName:
+		value = transaction.CounterpartyName
+	case BankMatchFieldCounterpartyAccount:
+		value = transaction.CounterpartyAccount
+	default:
+		value = transaction.Description
+	}
+	return strings.Contains(strings.ToLower(value), pattern)
+}
+
+func matcherConfigForBankMatchRule(rule *BankMatchRule, minConfidence float64) MatcherConfig {
+	config := DefaultMatcherConfig()
+	config.MinConfidence = minConfidence
+	if rule == nil {
+		return config
+	}
+	if rule.MinConfidence > config.MinConfidence {
+		config.MinConfidence = rule.MinConfidence
+	}
+	if rule.MaxDateDiffDays >= 0 {
+		config.MaxDateDiff = rule.MaxDateDiffDays
+	}
+	return config
+}
+
+func filterPaymentsForBankMatchRule(payments []PaymentForMatching, transaction *BankTransaction, rule *BankMatchRule) []PaymentForMatching {
+	if rule == nil || !rule.RequireExactAmount {
+		return payments
+	}
+	filtered := make([]PaymentForMatching, 0, len(payments))
+	transactionAmount := transaction.Amount.Abs()
+	for _, payment := range payments {
+		if payment.Amount.Abs().Equal(transactionAmount) {
+			filtered = append(filtered, payment)
+		}
+	}
+	return filtered
 }
 
 func (s *Service) getUnallocatedPayments(ctx context.Context, schemaName, tenantID string, amount decimal.Decimal) ([]PaymentForMatching, error) {
