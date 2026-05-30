@@ -1,7 +1,10 @@
 # UI Views Issues Report
 
-> Last Updated: 2026-01-12
-> Tested Against: Railway Demo Environment
+> Last Updated: 2026-05-30
+> Original full UI sweep: 2026-01-12 against the Railway Demo Environment
+> Current capability source of truth: [DEVELOPMENT_STATUS.md](./DEVELOPMENT_STATUS.md)
+>
+> This report is retained as a UI snapshot. Entries below are only corrected where current repository evidence clearly supersedes an obsolete "not implemented" note.
 
 ## Summary
 
@@ -367,10 +370,10 @@ Each view is tested for:
 - Can switch between tabs
 
 **Known Limitations (not bugs):**
-- Stock level tracking not implemented
-- Warehouse management not implemented
+- Advanced inventory workflows need a refreshed UI E2E pass beyond the January basic render checks.
+- Backend/API/CLI support now exists for warehouses, stock levels, signed stock adjustments, transfers, reservations, imports, valuation, and movement metadata; this view is no longer classified as missing stock or warehouse management.
 
-**Overall:** ✅ Working (basic functionality)
+**Overall:** ✅ Working (basic functionality; advanced workflow E2E refresh needed)
 
 ---
 
@@ -780,7 +783,7 @@ _None identified_
 ### Known Feature Gaps (Not Bugs)
 1. **/tsd** - Automatic e-MTA submission not yet available (manual XML export required)
 2. **/settings/cost-centers** - Cost center assignment to transactions needs UI
-3. **/inventory** - Stock level tracking and warehouse management not implemented
+3. **/inventory** - Advanced inventory UI workflow E2E coverage needs refresh; backend/API/CLI stock and warehouse workflows are implemented
 
 ---
 
@@ -788,6 +791,7 @@ _None identified_
 
 | Date | Tester | Changes |
 |------|--------|---------|
+| 2026-05-30 | Codex | Corrected stale inventory limitations against current repository evidence; stock and warehouse workflows now exist outside this historical UI sweep |
 | 2026-01-12 | Claude | **COMPLETE** - All 33 views tested, all working |
 | 2026-01-12 | Claude | Tested Admin Plugins (/admin/plugins) - Working (WebFetch) |
 | 2026-01-12 | Claude | Tested Settings section (5 pages) - All Working (WebFetch) |
