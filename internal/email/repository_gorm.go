@@ -1,15 +1,15 @@
-//go:build gorm
-
 package email
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/database"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // tenantSettings is a model for reading tenant settings from public schema
@@ -20,6 +20,20 @@ type tenantSettings struct {
 
 func (tenantSettings) TableName() string {
 	return "tenants"
+}
+
+type emailLogRecord struct {
+	ID             string `gorm:"column:id;primaryKey"`
+	TenantID       string `gorm:"column:tenant_id"`
+	EmailType      string `gorm:"column:email_type"`
+	RecipientEmail string `gorm:"column:recipient_email"`
+	RecipientName  string `gorm:"column:recipient_name"`
+	Subject        string `gorm:"column:subject"`
+	Status         EmailStatus
+	SentAt         *time.Time `gorm:"column:sent_at"`
+	ErrorMessage   string     `gorm:"column:error_message"`
+	RelatedID      *string    `gorm:"column:related_id"`
+	CreatedAt      time.Time  `gorm:"column:created_at"`
 }
 
 // GORMRepository implements Repository using GORM
@@ -36,8 +50,7 @@ func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName 
 	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
 }
 
-// EnsureSchema creates email tables if they don't exist
-// Note: This uses raw SQL as GORM AutoMigrate is not suitable for dynamic schema names
+// EnsureSchema creates email tables if they don't exist.
 func (r *GORMRepository) EnsureSchema(ctx context.Context, schemaName string) error {
 	quotedSchema, err := database.QuoteIdentifier(schemaName)
 	if err != nil {
@@ -162,30 +175,27 @@ func (r *GORMRepository) UpsertTemplate(ctx context.Context, schemaName string, 
 	if err != nil {
 		return err
 	}
-	templatesTable, err := database.QualifiedTable(schemaName, "email_templates")
-	if err != nil {
+
+	if err := db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "tenant_id"}, {Name: "template_type"}},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"subject":    gorm.Expr("EXCLUDED.subject"),
+			"body_html":  gorm.Expr("EXCLUDED.body_html"),
+			"body_text":  gorm.Expr("EXCLUDED.body_text"),
+			"is_active":  gorm.Expr("EXCLUDED.is_active"),
+			"updated_at": time.Now(),
+		}),
+	}).Create(template).Error; err != nil {
 		return err
 	}
 
-	// Use raw SQL for ON CONFLICT upsert since GORM's Clauses approach can be tricky with composite keys
-	err = db.Exec(fmt.Sprintf(`
-		INSERT INTO %s (id, tenant_id, template_type, subject, body_html, body_text, is_active)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT (tenant_id, template_type) DO UPDATE SET
-			subject = EXCLUDED.subject,
-			body_html = EXCLUDED.body_html,
-			body_text = EXCLUDED.body_text,
-			is_active = EXCLUDED.is_active,
-			updated_at = NOW()
-	`, templatesTable), template.ID, template.TenantID, template.TemplateType, template.Subject, template.BodyHTML, template.BodyText, template.IsActive).Error
-
-	if err != nil {
+	var persisted EmailTemplate
+	if err := db.Where("tenant_id = ? AND template_type = ?", template.TenantID, template.TemplateType).
+		First(&persisted).Error; err != nil {
 		return err
 	}
-
-	// Fetch the updated/inserted template to populate all fields
-	return db.Where("tenant_id = ? AND template_type = ?", template.TenantID, template.TemplateType).
-		First(template).Error
+	*template = persisted
+	return nil
 }
 
 // CreateEmailLog creates a new email log entry
@@ -194,7 +204,7 @@ func (r *GORMRepository) CreateEmailLog(ctx context.Context, schemaName string, 
 	if err != nil {
 		return err
 	}
-	return db.Create(log).Error
+	return db.Create(emailLogToRecord(log)).Error
 }
 
 // UpdateEmailLogStatus updates email log status
@@ -223,14 +233,58 @@ func (r *GORMRepository) GetEmailLog(ctx context.Context, schemaName, tenantID s
 		return nil, err
 	}
 
-	var logs []EmailLog
+	var records []emailLogRecord
 	err = db.Where("tenant_id = ?", tenantID).
 		Order("created_at DESC").
 		Limit(limit).
-		Find(&logs).Error
+		Find(&records).Error
 	if err != nil {
 		return nil, err
 	}
 
+	logs := make([]EmailLog, 0, len(records))
+	for _, record := range records {
+		logs = append(logs, record.toEmailLog())
+	}
 	return logs, nil
+}
+
+func emailLogToRecord(log *EmailLog) *emailLogRecord {
+	var relatedID *string
+	if strings.TrimSpace(log.RelatedID) != "" {
+		relatedID = &log.RelatedID
+	}
+
+	return &emailLogRecord{
+		ID:             log.ID,
+		TenantID:       log.TenantID,
+		EmailType:      log.EmailType,
+		RecipientEmail: log.RecipientEmail,
+		RecipientName:  log.RecipientName,
+		Subject:        log.Subject,
+		Status:         log.Status,
+		SentAt:         log.SentAt,
+		ErrorMessage:   log.ErrorMessage,
+		RelatedID:      relatedID,
+		CreatedAt:      log.CreatedAt,
+	}
+}
+
+func (r emailLogRecord) toEmailLog() EmailLog {
+	log := EmailLog{
+		ID:             r.ID,
+		TenantID:       r.TenantID,
+		EmailType:      r.EmailType,
+		RecipientEmail: r.RecipientEmail,
+		RecipientName:  r.RecipientName,
+		Subject:        r.Subject,
+		Status:         r.Status,
+		SentAt:         r.SentAt,
+		ErrorMessage:   r.ErrorMessage,
+		CreatedAt:      r.CreatedAt,
+	}
+	if r.RelatedID != nil {
+		log.RelatedID = *r.RelatedID
+	}
+	return log
 }
