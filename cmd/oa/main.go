@@ -163,6 +163,8 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  auth login                Log in and print JWT tokens")
 	_, _ = fmt.Fprintln(a.stdout, "  auth init                 Bootstrap and store a tenant-scoped API token")
 	_, _ = fmt.Fprintln(a.stdout, "  auth refresh              Exchange a refresh token for an access token")
+	_, _ = fmt.Fprintln(a.stdout, "  auth request-password-reset Request password reset instructions")
+	_, _ = fmt.Fprintln(a.stdout, "  auth reset-password       Reset a password with a one-time token")
 	_, _ = fmt.Fprintln(a.stdout, "  auth sessions             List refresh token sessions")
 	_, _ = fmt.Fprintln(a.stdout, "  auth revoke-session       Revoke a refresh token session by id")
 	_, _ = fmt.Fprintln(a.stdout, "  auth revoke-all-sessions  Revoke all refresh token sessions")
@@ -873,6 +875,59 @@ func (a *cliApp) runAuth(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, resp)
 		}
 		printLoginResponse(a.stdout, resp)
+		return nil
+
+	case "request-password-reset":
+		fs := flag.NewFlagSet("auth request-password-reset", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		baseURL := fs.String("base-url", defaultBaseURL(), "API base URL")
+		email := fs.String("email", "", "User email")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*email) == "" {
+			return errors.New("email is required")
+		}
+		client := newAPIClient(*baseURL, "")
+		resp, err := client.requestPasswordReset(ctx, strings.TrimSpace(*email))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, resp)
+		}
+		_, _ = fmt.Fprintln(a.stdout, "Password reset requested")
+		if strings.TrimSpace(resp.ResetToken) != "" {
+			_, _ = fmt.Fprintf(a.stdout, "Reset token: %s\n", resp.ResetToken)
+		}
+		if resp.ExpiresAt != nil {
+			_, _ = fmt.Fprintf(a.stdout, "Expires at: %s\n", resp.ExpiresAt.Format(time.RFC3339))
+		}
+		return nil
+
+	case "reset-password":
+		fs := flag.NewFlagSet("auth reset-password", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		baseURL := fs.String("base-url", defaultBaseURL(), "API base URL")
+		token := fs.String("token", "", "One-time password reset token")
+		newPassword := fs.String("new-password", "", "New password")
+		passwordStdin := fs.Bool("password-stdin", false, "Read new password from stdin")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*token) == "" {
+			return errors.New("token is required")
+		}
+		newPasswordValue, err := resolvePassword(*newPassword, *passwordStdin)
+		if err != nil {
+			return err
+		}
+		client := newAPIClient(*baseURL, "")
+		if err := client.resetPassword(ctx, strings.TrimSpace(*token), newPasswordValue); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintln(a.stdout, "Reset password and revoked refresh sessions")
 		return nil
 
 	case "tenants":

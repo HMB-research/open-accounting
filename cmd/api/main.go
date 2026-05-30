@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -55,6 +56,14 @@ type Config struct {
 	RefreshExpiry  time.Duration
 	AllowedOrigins []string
 	DocumentsDir   string
+	PasswordReset  PasswordResetConfig
+}
+
+// PasswordResetConfig controls optional password reset token email delivery.
+type PasswordResetConfig struct {
+	BaseURL     string
+	ExposeToken bool
+	SMTPConfig  *email.SMTPConfig
 }
 
 var defaultDevelopmentOrigins = []string{"http://localhost:5173", "http://localhost:3000"}
@@ -98,6 +107,7 @@ func main() {
 	// Initialize services
 	tokenService := auth.NewTokenService(cfg.JWTSecret, cfg.AccessExpiry, cfg.RefreshExpiry)
 	refreshSessionService := auth.NewRefreshSessionService(pool)
+	passwordResetService := auth.NewPasswordResetService(pool)
 	apiTokenService := apitoken.NewService(pool)
 	tokenService.SetAPITokenValidator(apiTokenService)
 	tenantService := tenant.NewService(pool)
@@ -159,6 +169,11 @@ func main() {
 		pool:                     pool,
 		tokenService:             tokenService,
 		refreshSessionService:    refreshSessionService,
+		passwordResetService:     passwordResetService,
+		passwordResetExposeToken: cfg.PasswordReset.ExposeToken,
+		passwordResetBaseURL:     cfg.PasswordReset.BaseURL,
+		passwordResetSMTPConfig:  cfg.PasswordReset.SMTPConfig,
+		passwordResetMailer:      &email.DefaultMailSender{},
 		apiTokenService:          apiTokenService,
 		tenantService:            tenantService,
 		accountingService:        accountingService,
@@ -269,6 +284,39 @@ func loadConfig() *Config {
 		RefreshExpiry:  7 * 24 * time.Hour,
 		AllowedOrigins: allowedOrigins,
 		DocumentsDir:   documentsDir,
+		PasswordReset: PasswordResetConfig{
+			BaseURL:     strings.TrimSpace(os.Getenv("PASSWORD_RESET_BASE_URL")),
+			ExposeToken: os.Getenv("PASSWORD_RESET_EXPOSE_TOKEN") == "true",
+			SMTPConfig:  loadPasswordResetSMTPConfig(),
+		},
+	}
+}
+
+func loadPasswordResetSMTPConfig() *email.SMTPConfig {
+	host := strings.TrimSpace(os.Getenv("PASSWORD_RESET_SMTP_HOST"))
+	fromEmail := strings.TrimSpace(os.Getenv("PASSWORD_RESET_SMTP_FROM_EMAIL"))
+	if host == "" || fromEmail == "" {
+		return nil
+	}
+
+	port := 587
+	if rawPort := strings.TrimSpace(os.Getenv("PASSWORD_RESET_SMTP_PORT")); rawPort != "" {
+		parsedPort, err := strconv.Atoi(rawPort)
+		if err != nil || parsedPort <= 0 || parsedPort > 65535 {
+			log.Warn().Str("port", rawPort).Msg("Invalid PASSWORD_RESET_SMTP_PORT, using 587")
+		} else {
+			port = parsedPort
+		}
+	}
+
+	return &email.SMTPConfig{
+		Host:      host,
+		Port:      port,
+		Username:  strings.TrimSpace(os.Getenv("PASSWORD_RESET_SMTP_USERNAME")),
+		Password:  os.Getenv("PASSWORD_RESET_SMTP_PASSWORD"),
+		FromEmail: fromEmail,
+		FromName:  strings.TrimSpace(os.Getenv("PASSWORD_RESET_SMTP_FROM_NAME")),
+		UseTLS:    strings.EqualFold(strings.TrimSpace(os.Getenv("PASSWORD_RESET_SMTP_USE_TLS")), "true"),
 	}
 }
 
@@ -372,6 +420,8 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 		r.Post("/auth/login", h.Login)
 		r.Post("/auth/refresh", h.RefreshToken)
 		r.Post("/auth/logout", h.Logout)
+		r.Post("/auth/password-reset/request", h.RequestPasswordReset)
+		r.Post("/auth/password-reset/confirm", h.ResetPassword)
 
 		// Public invitation endpoints (no auth required)
 		r.Get("/invitations/{token}", h.GetInvitationByToken)

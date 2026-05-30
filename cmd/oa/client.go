@@ -70,6 +70,13 @@ type refreshSession struct {
 	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
 }
 
+type passwordResetRequestResponse struct {
+	Status     string     `json:"status"`
+	Message    string     `json:"message,omitempty"`
+	ResetToken string     `json:"reset_token,omitempty"`
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+}
+
 type accountBalanceReport struct {
 	AccountID string `json:"account_id"`
 	AsOfDate  string `json:"as_of_date"`
@@ -151,6 +158,23 @@ func (c *apiClient) refreshAccessToken(ctx context.Context, refreshToken, tenant
 func (c *apiClient) logout(ctx context.Context, refreshToken string) error {
 	return c.request(ctx, http.MethodPost, "/api/v1/auth/logout", map[string]string{
 		"refresh_token": refreshToken,
+	}, "", nil)
+}
+
+func (c *apiClient) requestPasswordReset(ctx context.Context, email string) (*passwordResetRequestResponse, error) {
+	var resp passwordResetRequestResponse
+	if err := c.request(ctx, http.MethodPost, "/api/v1/auth/password-reset/request", map[string]string{
+		"email": email,
+	}, "", &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) resetPassword(ctx context.Context, token, newPassword string) error {
+	return c.request(ctx, http.MethodPost, "/api/v1/auth/password-reset/confirm", map[string]string{
+		"token":        token,
+		"new_password": newPassword,
 	}, "", nil)
 }
 

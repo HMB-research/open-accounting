@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 	"github.com/shopspring/decimal"
+	"github.com/wneessen/go-mail"
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/analytics"
@@ -46,6 +48,11 @@ type Handlers struct {
 	pool                     *pgxpool.Pool
 	tokenService             *auth.TokenService
 	refreshSessionService    refreshSessionManager
+	passwordResetService     passwordResetManager
+	passwordResetExposeToken bool
+	passwordResetBaseURL     string
+	passwordResetSMTPConfig  *email.SMTPConfig
+	passwordResetMailer      email.MailSender
 	apiTokenService          *apitoken.Service
 	tenantService            *tenant.Service
 	accountingService        *accounting.Service
@@ -82,6 +89,11 @@ type refreshSessionManager interface {
 	ListRefreshSessions(ctx context.Context, userID string, includeInactive bool) ([]auth.RefreshSession, error)
 	RevokeRefreshSessionByID(ctx context.Context, userID, tokenID string) error
 	RevokeAllRefreshSessions(ctx context.Context, userID string) error
+}
+
+type passwordResetManager interface {
+	RequestPasswordReset(ctx context.Context, email, requestIP, userAgent string) (*auth.PasswordResetRequestResult, error)
+	ResetPassword(ctx context.Context, resetToken, newPassword string) (string, error)
 }
 
 // getSchemaName returns the schema name for a tenant
@@ -410,6 +422,174 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
+}
+
+// RequestPasswordReset prepares a one-time password reset token.
+// @Summary Request password reset
+// @Description Request a one-time password reset token for an account. The response is intentionally generic to avoid account enumeration.
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param request body object{email=string} true "Password reset request"
+// @Success 202 {object} object{status=string,message=string,reset_token=string,expires_at=string}
+// @Failure 400 {object} object{error=string}
+// @Router /auth/password-reset/request [post]
+func (h *Handlers) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.Email) == "" {
+		respondError(w, http.StatusBadRequest, "Email is required")
+		return
+	}
+	if h.passwordResetService == nil {
+		respondError(w, http.StatusInternalServerError, "Password reset service unavailable")
+		return
+	}
+
+	result, err := h.passwordResetService.RequestPasswordReset(r.Context(), req.Email, r.RemoteAddr, r.UserAgent())
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to request password reset")
+		return
+	}
+	if result != nil && result.Issued {
+		if err := h.deliverPasswordReset(r.Context(), result); err != nil {
+			log.Warn().Err(err).Str("email", result.Email).Msg("Failed to deliver password reset email")
+		}
+	}
+
+	response := map[string]interface{}{
+		"status":  "accepted",
+		"message": "If the email belongs to an active account, reset instructions have been prepared.",
+	}
+	if h.passwordResetExposeToken && result != nil && result.Issued && result.Token != "" {
+		response["reset_token"] = result.Token
+		response["expires_at"] = result.ExpiresAt
+	}
+	respondJSON(w, http.StatusAccepted, response)
+}
+
+// ResetPassword resets an account password with a one-time token.
+// @Summary Reset password
+// @Description Reset an account password using a one-time password reset token. Active refresh-token sessions are revoked after a successful reset.
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param request body object{token=string,new_password=string} true "Password reset confirmation"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Failure 401 {object} object{error=string}
+// @Router /auth/password-reset/confirm [post]
+func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token       string `json:"token"`
+		NewPassword string `json:"new_password"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.Token) == "" || req.NewPassword == "" {
+		respondError(w, http.StatusBadRequest, "Token and new password are required")
+		return
+	}
+	if h.passwordResetService == nil {
+		respondError(w, http.StatusInternalServerError, "Password reset service unavailable")
+		return
+	}
+	if h.refreshSessionService == nil {
+		respondError(w, http.StatusInternalServerError, "Refresh session service unavailable")
+		return
+	}
+
+	userID, err := h.passwordResetService.ResetPassword(r.Context(), req.Token, req.NewPassword)
+	if err != nil {
+		status := http.StatusBadRequest
+		switch {
+		case errors.Is(err, auth.ErrPasswordResetTokenInvalid),
+			strings.Contains(err.Error(), "account is disabled"):
+			status = http.StatusUnauthorized
+		}
+		respondError(w, status, err.Error())
+		return
+	}
+
+	if err := h.refreshSessionService.RevokeAllRefreshSessions(r.Context(), userID); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to revoke refresh sessions")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "password_reset"})
+}
+
+func (h *Handlers) deliverPasswordReset(ctx context.Context, result *auth.PasswordResetRequestResult) error {
+	if h.passwordResetMailer == nil || h.passwordResetSMTPConfig == nil || !h.passwordResetSMTPConfig.IsConfigured() || strings.TrimSpace(h.passwordResetBaseURL) == "" {
+		return nil
+	}
+	if strings.TrimSpace(result.Token) == "" || strings.TrimSpace(result.Email) == "" {
+		return nil
+	}
+
+	resetURL, err := buildPasswordResetURL(h.passwordResetBaseURL, result.Token)
+	if err != nil {
+		return err
+	}
+
+	expiresAt := "one hour"
+	if result.ExpiresAt != nil {
+		expiresAt = result.ExpiresAt.Format(time.RFC3339)
+	}
+
+	msg := mail.NewMsg()
+	if strings.TrimSpace(h.passwordResetSMTPConfig.FromName) != "" {
+		if err := msg.FromFormat(h.passwordResetSMTPConfig.FromName, h.passwordResetSMTPConfig.FromEmail); err != nil {
+			return err
+		}
+	} else if err := msg.From(h.passwordResetSMTPConfig.FromEmail); err != nil {
+		return err
+	}
+	if err := msg.To(result.Email); err != nil {
+		return err
+	}
+	msg.Subject("Open Accounting password reset")
+	msg.SetBodyString(mail.TypeTextPlain, fmt.Sprintf(
+		"Use this link to reset your Open Accounting password:\n\n%s\n\nThis link expires at %s.\n\nIf you did not request a password reset, you can ignore this email.",
+		resetURL,
+		expiresAt,
+	))
+
+	done := make(chan error, 1)
+	go func() {
+		done <- h.passwordResetMailer.SendMail(h.passwordResetSMTPConfig, msg)
+	}()
+
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func buildPasswordResetURL(baseURL, resetToken string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return "", fmt.Errorf("parse password reset base URL: %w", err)
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("password reset base URL must include scheme and host")
+	}
+	if parsed.Path == "" || parsed.Path == "/" {
+		parsed.Path = "/reset-password"
+	}
+	values := parsed.Query()
+	values.Set("token", resetToken)
+	parsed.RawQuery = values.Encode()
+	return parsed.String(), nil
 }
 
 // ChangePassword changes the authenticated user's password.

@@ -6543,6 +6543,93 @@ paths:
       summary: Change password
       tags:
       - Auth
+  /auth/password-reset/confirm:
+    post:
+      consumes:
+      - application/json
+      description: Reset an account password using a one-time password reset token.
+        Active refresh-token sessions are revoked after a successful reset.
+      parameters:
+      - description: Password reset confirmation
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            new_password:
+              type: string
+            token:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      summary: Reset password
+      tags:
+      - Auth
+  /auth/password-reset/request:
+    post:
+      consumes:
+      - application/json
+      description: Request a one-time password reset token for an account. The response
+        is intentionally generic to avoid account enumeration.
+      parameters:
+      - description: Password reset request
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            email:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            properties:
+              expires_at:
+                type: string
+              message:
+                type: string
+              reset_token:
+                type: string
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      summary: Request password reset
+      tags:
+      - Auth
   /auth/refresh:
     post:
       consumes:

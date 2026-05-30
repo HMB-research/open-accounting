@@ -466,6 +466,46 @@ func (m *mockRefreshSessionService) RevokeAllRefreshSessions(ctx context.Context
 	return nil
 }
 
+type mockPasswordResetService struct {
+	requestResult *auth.PasswordResetRequestResult
+	requestErr    error
+	resetErr      error
+	resetTokens   map[string]string
+	requestEmail  string
+	requestIP     string
+	requestAgent  string
+}
+
+func newMockPasswordResetService() *mockPasswordResetService {
+	return &mockPasswordResetService{
+		resetTokens: make(map[string]string),
+	}
+}
+
+func (m *mockPasswordResetService) RequestPasswordReset(ctx context.Context, email, requestIP, userAgent string) (*auth.PasswordResetRequestResult, error) {
+	m.requestEmail = email
+	m.requestIP = requestIP
+	m.requestAgent = userAgent
+	if m.requestErr != nil {
+		return nil, m.requestErr
+	}
+	if m.requestResult != nil {
+		return m.requestResult, nil
+	}
+	return &auth.PasswordResetRequestResult{Email: email}, nil
+}
+
+func (m *mockPasswordResetService) ResetPassword(ctx context.Context, resetToken, newPassword string) (string, error) {
+	if m.resetErr != nil {
+		return "", m.resetErr
+	}
+	userID, ok := m.resetTokens[resetToken]
+	if !ok {
+		return "", auth.ErrPasswordResetTokenInvalid
+	}
+	return userID, nil
+}
+
 // =============================================================================
 // Test Setup Helpers
 // =============================================================================
@@ -480,6 +520,7 @@ func setupAuthTestHandlers() (*Handlers, *mockTenantRepository) {
 		tenantService:         tenantSvc,
 		tokenService:          tokenSvc,
 		refreshSessionService: newMockRefreshSessionService(),
+		passwordResetService:  newMockPasswordResetService(),
 	}
 
 	return h, repo
@@ -966,6 +1007,92 @@ func TestLogoutRejectsInvalidRefreshToken(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.Logout(w, req)
 	assert.Equal(t, http.StatusUnauthorized, w.Code, "response body: %s", w.Body.String())
+}
+
+func TestRequestPasswordReset(t *testing.T) {
+	h, _ := setupAuthTestHandlers()
+	resetService := h.passwordResetService.(*mockPasswordResetService)
+	expiresAt := time.Now().Add(time.Hour).UTC()
+	resetService.requestResult = &auth.PasswordResetRequestResult{
+		Email:     "user@example.com",
+		Issued:    true,
+		Token:     "reset-token-123",
+		ExpiresAt: &expiresAt,
+	}
+	h.passwordResetExposeToken = true
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/auth/password-reset/request", map[string]string{
+		"email": "user@example.com",
+	}, nil)
+	req.RemoteAddr = "192.0.2.10:12345"
+	req.Header.Set("User-Agent", "reset-test")
+	w := httptest.NewRecorder()
+
+	h.RequestPasswordReset(w, req)
+
+	require.Equal(t, http.StatusAccepted, w.Code, "response body: %s", w.Body.String())
+	assert.Equal(t, "user@example.com", resetService.requestEmail)
+	assert.Equal(t, "192.0.2.10:12345", resetService.requestIP)
+	assert.Equal(t, "reset-test", resetService.requestAgent)
+
+	var resp map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, "accepted", resp["status"])
+	assert.Equal(t, "reset-token-123", resp["reset_token"])
+}
+
+func TestResetPasswordRevokesRefreshSessions(t *testing.T) {
+	h, repo := setupAuthTestHandlers()
+	user := repo.addTestUser("user-1", "user@example.com", "Test User", "oldpassword123", true)
+	createMockRefreshSession(t, h, user.ID)
+	h.passwordResetService.(*mockPasswordResetService).resetTokens["reset-token-123"] = user.ID
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/auth/password-reset/confirm", map[string]string{
+		"token":        "reset-token-123",
+		"new_password": "newpassword123",
+	}, nil)
+	w := httptest.NewRecorder()
+
+	h.ResetPassword(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+
+	claims := createTestClaims(user.ID, user.Email, "", "")
+	req = makeAuthenticatedRequest(http.MethodGet, "/auth/sessions", nil, claims)
+	w = httptest.NewRecorder()
+	h.ListAuthSessions(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+
+	var activeSessions []auth.RefreshSession
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&activeSessions))
+	assert.Empty(t, activeSessions)
+}
+
+func TestResetPasswordRejectsInvalidToken(t *testing.T) {
+	h, _ := setupAuthTestHandlers()
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/auth/password-reset/confirm", map[string]string{
+		"token":        "missing-token",
+		"new_password": "newpassword123",
+	}, nil)
+	w := httptest.NewRecorder()
+
+	h.ResetPassword(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code, "response body: %s", w.Body.String())
+}
+
+func TestBuildPasswordResetURL(t *testing.T) {
+	resetURL, err := buildPasswordResetURL("https://app.example.com", "token/with spaces")
+	require.NoError(t, err)
+	assert.Equal(t, "https://app.example.com/reset-password?token=token%2Fwith+spaces", resetURL)
+
+	resetURL, err = buildPasswordResetURL("https://app.example.com/account/recover?source=email", "reset-token")
+	require.NoError(t, err)
+	assert.Equal(t, "https://app.example.com/account/recover?source=email&token=reset-token", resetURL)
+
+	_, err = buildPasswordResetURL("app.example.com/reset", "reset-token")
+	require.Error(t, err)
 }
 
 func TestChangePasswordRevokesRefreshSessions(t *testing.T) {

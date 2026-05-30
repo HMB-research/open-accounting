@@ -23,6 +23,15 @@ This guide covers deploying Open Accounting to production environments.
 | `CORS_DEBUG` | No | Enable verbose CORS logging | `true` |
 | `LOG_LEVEL` | No | Log verbosity (trace, debug, info, warn, error) | `debug` |
 | `DEMO_RESET_SECRET` | No | Secret key for demo reset endpoint | `your-reset-secret` |
+| `PASSWORD_RESET_BASE_URL` | No | Frontend reset URL used in password reset emails | `https://app.example.com/reset-password` |
+| `PASSWORD_RESET_SMTP_HOST` | No | SMTP host for password reset email delivery | `smtp.example.com` |
+| `PASSWORD_RESET_SMTP_PORT` | No | SMTP port for password reset email delivery | `587` |
+| `PASSWORD_RESET_SMTP_USERNAME` | No | SMTP username for password reset email delivery | `mailer@example.com` |
+| `PASSWORD_RESET_SMTP_PASSWORD` | No | SMTP password for password reset email delivery | `secret` |
+| `PASSWORD_RESET_SMTP_FROM_EMAIL` | No | From address for password reset email delivery | `no-reply@example.com` |
+| `PASSWORD_RESET_SMTP_FROM_NAME` | No | From name for password reset email delivery | `Open Accounting` |
+| `PASSWORD_RESET_SMTP_USE_TLS` | No | Require TLS for password reset email delivery | `true` |
+| `PASSWORD_RESET_EXPOSE_TOKEN` | No | Return reset tokens in API responses for local/dev only | `false` |
 | `SCHEDULER_ENABLED` | No | Enable recurring invoice, recurring journal entry, and payment reminder scheduler jobs | `true` |
 | `RECURRING_INVOICE_SCHEDULE` | No | Cron schedule for recurring invoice generation | `0 6 * * *` |
 | `RECURRING_JOURNAL_ENTRY_SCHEDULE` | No | Cron schedule for recurring journal entry generation | `15 6 * * *` |
