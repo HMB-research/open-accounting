@@ -5,19 +5,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/testutil"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 )
 
-// Note: These integration tests focus on the pgx repository implementation
+// Note: These integration tests focus on the ORM-backed repository implementation
 // which is the primary database layer for the application.
 
 func TestRepository_EnsureSchema(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newRecurringGORMRepository(t, pool)
 	ctx := context.Background()
 
 	err := repo.EnsureSchema(ctx, tenant.SchemaName)
@@ -30,7 +32,7 @@ func TestRepository_CreateAndGetByID(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newRecurringGORMRepository(t, pool)
 	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
@@ -89,7 +91,7 @@ func TestRepository_CreateLineAndGetLines(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newRecurringGORMRepository(t, pool)
 	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
@@ -160,7 +162,7 @@ func TestRepository_List(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newRecurringGORMRepository(t, pool)
 	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
@@ -244,7 +246,7 @@ func TestRepository_Update(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newRecurringGORMRepository(t, pool)
 	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
@@ -308,7 +310,7 @@ func TestRepository_SetActive(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newRecurringGORMRepository(t, pool)
 	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
@@ -372,7 +374,7 @@ func TestRepository_Delete(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newRecurringGORMRepository(t, pool)
 	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
@@ -425,7 +427,7 @@ func TestRepository_GetByID_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newRecurringGORMRepository(t, pool)
 	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
@@ -442,7 +444,7 @@ func TestRepository_DeleteLines(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newRecurringGORMRepository(t, pool)
 	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
@@ -520,7 +522,7 @@ func TestRepository_GetDueRecurringInvoiceIDs(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newRecurringGORMRepository(t, pool)
 	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
@@ -606,7 +608,7 @@ func TestRepository_UpdateAfterGeneration(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newRecurringGORMRepository(t, pool)
 	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
@@ -670,7 +672,7 @@ func TestRepository_UpdateInvoiceEmailStatus(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newRecurringGORMRepository(t, pool)
 	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
@@ -729,7 +731,7 @@ func TestRepository_SetActive_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newRecurringGORMRepository(t, pool)
 	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
@@ -747,7 +749,7 @@ func TestRepository_Delete_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newRecurringGORMRepository(t, pool)
 	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
@@ -759,4 +761,14 @@ func TestRepository_Delete_NotFound(t *testing.T) {
 	if err != ErrRecurringInvoiceNotFound {
 		t.Errorf("expected ErrRecurringInvoiceNotFound, got %v", err)
 	}
+}
+
+func newRecurringGORMRepository(t *testing.T, pool *pgxpool.Pool) *GORMRepository {
+	t.Helper()
+
+	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	if err != nil {
+		t.Fatalf("create gorm repository: %v", err)
+	}
+	return NewGORMRepository(gormDB)
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
@@ -47,7 +48,6 @@ type PDFService interface {
 
 // Service provides recurring invoice operations
 type Service struct {
-	db        *pgxpool.Pool
 	repo      Repository
 	invoicing InvoicingService
 	email     EmailService
@@ -56,11 +56,23 @@ type Service struct {
 	contacts  ContactsService
 }
 
-// NewService creates a new recurring invoice service
+// NewService creates a new recurring invoice service with an ORM-backed repository.
 func NewService(db *pgxpool.Pool, invoicingService *invoicing.Service, emailService *email.Service, pdfService *pdf.Service, tenantService *tenant.Service, contactsService *contacts.Service) *Service {
+	if db == nil {
+		return &Service{
+			invoicing: invoicingService,
+			email:     emailService,
+			pdfSvc:    pdfService,
+			tenant:    tenantService,
+			contacts:  contactsService,
+		}
+	}
+	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	if err != nil {
+		panic(fmt.Errorf("create recurring GORM repository: %w", err))
+	}
 	return &Service{
-		db:        db,
-		repo:      NewPostgresRepository(db),
+		repo:      NewGORMRepository(gormDB),
 		invoicing: invoicingService,
 		email:     emailService,
 		pdfSvc:    pdfService,
