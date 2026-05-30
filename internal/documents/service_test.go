@@ -234,6 +234,46 @@ func TestService_GetReviewQueueFiltersClosePackDocuments(t *testing.T) {
 	}
 }
 
+func TestService_UploadAcceptsCommercialDocuments(t *testing.T) {
+	t.Parallel()
+
+	store, err := NewLocalStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewLocalStore failed: %v", err)
+	}
+	repo := newMockRepository()
+	svc := NewService(repo, store)
+
+	tests := []struct {
+		name       string
+		entityType string
+		entityID   string
+	}{
+		{name: "quote", entityType: EntityTypeQuote, entityID: "quote-1"},
+		{name: "order", entityType: EntityTypeOrder, entityID: "order-1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			doc, err := svc.UploadDocument(context.Background(), "tenant_demo", "tenant-1", &UploadDocumentRequest{
+				EntityType:   tt.entityType,
+				EntityID:     tt.entityID,
+				DocumentType: DocumentTypeContract,
+				FileName:     tt.name + "-contract.pdf",
+				ContentType:  "application/pdf",
+				FileSize:     int64(len("contract")),
+				UploadedBy:   "user-1",
+			}, bytes.NewBufferString("contract"))
+			if err != nil {
+				t.Fatalf("UploadDocument failed: %v", err)
+			}
+			if doc.EntityType != tt.entityType || doc.EntityID != tt.entityID || doc.DocumentType != DocumentTypeContract {
+				t.Fatalf("unexpected commercial document: %#v", doc)
+			}
+		})
+	}
+}
+
 func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 	t.Parallel()
 

@@ -17,6 +17,8 @@ func TestEntityTableName(t *testing.T) {
 		{name: "bank transaction", entityType: EntityTypeBankTxn, wantTable: "bank_transactions"},
 		{name: "asset", entityType: EntityTypeAsset, wantTable: "fixed_assets"},
 		{name: "expense", entityType: EntityTypeExpense, wantTable: "expenses"},
+		{name: "quote", entityType: EntityTypeQuote, wantTable: "quotes"},
+		{name: "order", entityType: EntityTypeOrder, wantTable: "orders"},
 		{name: "unsupported", entityType: "contact", wantErr: true},
 	}
 
