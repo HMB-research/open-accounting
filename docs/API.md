@@ -1984,8 +1984,8 @@ Authorization: Bearer <token>
 
 Activating a draft asset requires at least one approved `asset_record`, `receipt`, or `contract` document attached to the `asset` entity. Missing or pending asset evidence returns `409 Conflict` so operators can upload and approve the acquisition record before the asset enters the depreciation workflow.
 
-Dispose payloads include `disposal_date`, `disposal_method`, optional `disposal_proceeds`, and optional `disposal_notes`.
-Disposing or selling an active asset requires at least one approved `supporting_document` or `contract` document attached to the `asset` entity. Missing or pending disposal evidence returns `409 Conflict`; successful disposal persists the date, method, proceeds, and notes on the asset record.
+Dispose payloads include `disposal_date`, `disposal_method`, optional `disposal_proceeds`, optional `disposal_notes`, optional `disposal_proceeds_account_id`, and optional `disposal_gain_loss_account_id`.
+Disposing or selling an active asset requires at least one approved `supporting_document` or `contract` document attached to the `asset` entity. Missing or pending disposal evidence returns `409 Conflict`; successful disposal persists the date, method, proceeds, notes, and `disposal_journal_entry_id`. Disposal requires asset and accumulated-depreciation account links, creates and posts a balanced `ASSET_DISPOSAL` journal entry that clears cost and accumulated depreciation, records proceeds to `disposal_proceeds_account_id`, and posts any gain or loss to `disposal_gain_loss_account_id`; gain accounts must be `REVENUE`, and loss accounts must be `EXPENSE`.
 
 ### Depreciation
 
@@ -1995,7 +1995,7 @@ GET /tenants/{tenantId}/assets/{assetId}/depreciation
 Authorization: Bearer <token>
 ```
 
-Recording depreciation uses the current month according to the server-side service. When the asset has both `depreciation_expense_account_id` and `accumulated_depreciation_account_id`, recording depreciation also creates and posts a balanced `ASSET_DEPRECIATION` journal entry and returns its ID as `journal_entry_id` on the depreciation entry. If only one of those accounts is configured, the request is rejected as an invalid asset accounting configuration.
+Recording depreciation uses the current month according to the server-side service. The asset must have both `depreciation_expense_account_id` and `accumulated_depreciation_account_id`; recording depreciation creates and posts a balanced `ASSET_DEPRECIATION` journal entry and returns its ID as `journal_entry_id` on the depreciation entry. Missing or invalid accounts are rejected as an invalid asset accounting configuration.
 
 ---
 

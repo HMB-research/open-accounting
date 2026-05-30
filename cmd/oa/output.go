@@ -1096,8 +1096,14 @@ func printAsset(w io.Writer, asset *assets.FixedAsset) {
 	if asset.DisposalMethod != nil {
 		_, _ = fmt.Fprintf(w, "Disposal method: %s\n", *asset.DisposalMethod)
 	}
+	if !asset.DisposalProceeds.IsZero() {
+		_, _ = fmt.Fprintf(w, "Disposal proceeds: %s\n", asset.DisposalProceeds.String())
+	}
 	if strings.TrimSpace(asset.DisposalNotes) != "" {
 		_, _ = fmt.Fprintf(w, "Disposal notes: %s\n", asset.DisposalNotes)
+	}
+	if asset.DisposalJournalEntryID != nil && strings.TrimSpace(*asset.DisposalJournalEntryID) != "" {
+		_, _ = fmt.Fprintf(w, "Disposal journal: %s\n", *asset.DisposalJournalEntryID)
 	}
 }
 

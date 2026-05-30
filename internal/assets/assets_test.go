@@ -176,6 +176,7 @@ func (r *MockRepository) UpdateDisposal(ctx context.Context, schemaName string, 
 	existing.DisposalMethod = asset.DisposalMethod
 	existing.DisposalProceeds = asset.DisposalProceeds
 	existing.DisposalNotes = asset.DisposalNotes
+	existing.DisposalJournalEntryID = asset.DisposalJournalEntryID
 	return nil
 }
 
@@ -1038,28 +1039,42 @@ func TestService_Activate_NotDraft(t *testing.T) {
 }
 
 func TestService_Dispose(t *testing.T) {
-	ts := newTestService()
+	repo := NewMockRepository()
+	ledger := newFakeAssetAccountingPoster()
+	svc := NewServiceWithRepositoryAndAccounting(repo, ledger)
 	ctx := context.Background()
 	disposalDate := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 
-	ts.repo.Assets["a1"] = &FixedAsset{
-		ID:       "a1",
-		TenantID: "tenant-1",
-		Name:     "Desk",
-		Status:   AssetStatusActive,
+	assetAccountID := "fixed-assets"
+	accumulatedAccountID := "accumulated-depreciation"
+	proceedsAccountID := "cash"
+	gainAccountID := "asset-disposal-gain"
+	repo.Assets["a1"] = &FixedAsset{
+		ID:                            "a1",
+		TenantID:                      "tenant-1",
+		Name:                          "Desk",
+		Status:                        AssetStatusActive,
+		PurchaseCost:                  decimal.NewFromInt(1000),
+		AccumulatedDepreciation:       decimal.NewFromInt(950),
+		BookValue:                     decimal.NewFromInt(50),
+		AssetAccountID:                &assetAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedAccountID,
 	}
 
 	req := &DisposeAssetRequest{
-		DisposalDate:     disposalDate,
-		DisposalMethod:   DisposalSold,
-		DisposalProceeds: decimal.NewFromInt(100),
-		DisposalNotes:    "Sold to company X",
+		DisposalDate:              disposalDate,
+		DisposalMethod:            DisposalSold,
+		DisposalProceeds:          decimal.NewFromInt(100),
+		DisposalNotes:             "Sold to company X",
+		DisposalProceedsAccountID: &proceedsAccountID,
+		DisposalGainLossAccountID: &gainAccountID,
+		UserID:                    "user-1",
 	}
 
-	err := ts.svc.Dispose(ctx, "tenant-1", "test_schema", "a1", req)
+	err := svc.Dispose(ctx, "tenant-1", "test_schema", "a1", req)
 	require.NoError(t, err)
 
-	asset, _ := ts.repo.GetByID(ctx, "test_schema", "tenant-1", "a1")
+	asset, _ := repo.GetByID(ctx, "test_schema", "tenant-1", "a1")
 	assert.Equal(t, AssetStatusSold, asset.Status)
 	require.NotNil(t, asset.DisposalDate)
 	assert.Equal(t, disposalDate, *asset.DisposalDate)
@@ -1067,6 +1082,165 @@ func TestService_Dispose(t *testing.T) {
 	assert.Equal(t, DisposalSold, *asset.DisposalMethod)
 	assert.True(t, asset.DisposalProceeds.Equal(decimal.NewFromInt(100)))
 	assert.Equal(t, "Sold to company X", asset.DisposalNotes)
+	require.NotNil(t, asset.DisposalJournalEntryID)
+}
+
+func TestService_DisposeCreatesAndPostsGainJournalWhenAccountsConfigured(t *testing.T) {
+	repo := NewMockRepository()
+	ledger := newFakeAssetAccountingPoster()
+	svc := NewServiceWithRepositoryAndAccounting(repo, ledger)
+	ctx := context.Background()
+	disposalDate := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+
+	assetAccountID := "fixed-assets"
+	accumulatedAccountID := "accumulated-depreciation"
+	proceedsAccountID := "cash"
+	gainAccountID := "asset-disposal-gain"
+	repo.Assets["a1"] = &FixedAsset{
+		ID:                            "a1",
+		TenantID:                      "tenant-1",
+		AssetNumber:                   "FA-00001",
+		Name:                          "Equipment",
+		Status:                        AssetStatusActive,
+		PurchaseCost:                  decimal.NewFromInt(1200),
+		AccumulatedDepreciation:       decimal.NewFromInt(300),
+		BookValue:                     decimal.NewFromInt(900),
+		AssetAccountID:                &assetAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedAccountID,
+	}
+
+	req := &DisposeAssetRequest{
+		DisposalDate:              disposalDate,
+		DisposalMethod:            DisposalSold,
+		DisposalProceeds:          decimal.NewFromInt(950),
+		DisposalProceedsAccountID: &proceedsAccountID,
+		DisposalGainLossAccountID: &gainAccountID,
+		UserID:                    "user-1",
+	}
+
+	err := svc.Dispose(ctx, "tenant-1", "test_schema", "a1", req)
+	require.NoError(t, err)
+
+	asset, _ := repo.GetByID(ctx, "test_schema", "tenant-1", "a1")
+	assert.Equal(t, AssetStatusSold, asset.Status)
+	require.NotNil(t, asset.DisposalJournalEntryID)
+	assert.Equal(t, "je-1", *asset.DisposalJournalEntryID)
+	assert.Equal(t, []string{"je-1"}, ledger.postedIDs)
+	require.NotNil(t, ledger.createdRequest)
+	assert.Equal(t, SourceTypeAssetDisposal, ledger.createdRequest.SourceType)
+	require.NotNil(t, ledger.createdRequest.SourceID)
+	assert.Equal(t, "a1", *ledger.createdRequest.SourceID)
+	assert.Equal(t, disposalDate, ledger.createdRequest.EntryDate)
+	assert.Equal(t, "FA-00001-2026-05-01", ledger.createdRequest.Reference)
+	require.Len(t, ledger.createdRequest.Lines, 4)
+	assert.Equal(t, accumulatedAccountID, ledger.createdRequest.Lines[0].AccountID)
+	assert.True(t, ledger.createdRequest.Lines[0].DebitAmount.Equal(decimal.NewFromInt(300)))
+	assert.Equal(t, proceedsAccountID, ledger.createdRequest.Lines[1].AccountID)
+	assert.True(t, ledger.createdRequest.Lines[1].DebitAmount.Equal(decimal.NewFromInt(950)))
+	assert.Equal(t, assetAccountID, ledger.createdRequest.Lines[2].AccountID)
+	assert.True(t, ledger.createdRequest.Lines[2].CreditAmount.Equal(decimal.NewFromInt(1200)))
+	assert.Equal(t, gainAccountID, ledger.createdRequest.Lines[3].AccountID)
+	assert.True(t, ledger.createdRequest.Lines[3].CreditAmount.Equal(decimal.NewFromInt(50)))
+}
+
+func TestService_DisposeCreatesLossJournalWhenScrappedWithBookValue(t *testing.T) {
+	repo := NewMockRepository()
+	ledger := newFakeAssetAccountingPoster()
+	svc := NewServiceWithRepositoryAndAccounting(repo, ledger)
+	ctx := context.Background()
+
+	assetAccountID := "fixed-assets"
+	accumulatedAccountID := "accumulated-depreciation"
+	lossAccountID := "asset-disposal-loss"
+	repo.Assets["a1"] = &FixedAsset{
+		ID:                            "a1",
+		TenantID:                      "tenant-1",
+		AssetNumber:                   "FA-00002",
+		Name:                          "Old equipment",
+		Status:                        AssetStatusActive,
+		PurchaseCost:                  decimal.NewFromInt(1200),
+		AccumulatedDepreciation:       decimal.NewFromInt(300),
+		BookValue:                     decimal.NewFromInt(900),
+		AssetAccountID:                &assetAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedAccountID,
+	}
+
+	err := svc.Dispose(ctx, "tenant-1", "test_schema", "a1", &DisposeAssetRequest{
+		DisposalDate:              time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
+		DisposalMethod:            DisposalScrapped,
+		DisposalGainLossAccountID: &lossAccountID,
+		UserID:                    "user-1",
+	})
+	require.NoError(t, err)
+
+	asset, _ := repo.GetByID(ctx, "test_schema", "tenant-1", "a1")
+	assert.Equal(t, AssetStatusDisposed, asset.Status)
+	require.NotNil(t, asset.DisposalJournalEntryID)
+	require.NotNil(t, ledger.createdRequest)
+	require.Len(t, ledger.createdRequest.Lines, 3)
+	assert.Equal(t, accumulatedAccountID, ledger.createdRequest.Lines[0].AccountID)
+	assert.True(t, ledger.createdRequest.Lines[0].DebitAmount.Equal(decimal.NewFromInt(300)))
+	assert.Equal(t, lossAccountID, ledger.createdRequest.Lines[1].AccountID)
+	assert.True(t, ledger.createdRequest.Lines[1].DebitAmount.Equal(decimal.NewFromInt(900)))
+	assert.Equal(t, assetAccountID, ledger.createdRequest.Lines[2].AccountID)
+	assert.True(t, ledger.createdRequest.Lines[2].CreditAmount.Equal(decimal.NewFromInt(1200)))
+}
+
+func TestService_DisposeRejectsPartialDisposalAccountingConfiguration(t *testing.T) {
+	repo := NewMockRepository()
+	ledger := newFakeAssetAccountingPoster()
+	svc := NewServiceWithRepositoryAndAccounting(repo, ledger)
+	ctx := context.Background()
+
+	assetAccountID := "fixed-assets"
+	accumulatedAccountID := "accumulated-depreciation"
+	proceedsAccountID := "cash"
+	repo.Assets["a1"] = &FixedAsset{
+		ID:                            "a1",
+		TenantID:                      "tenant-1",
+		Name:                          "Equipment",
+		Status:                        AssetStatusActive,
+		PurchaseCost:                  decimal.NewFromInt(1200),
+		AccumulatedDepreciation:       decimal.NewFromInt(300),
+		BookValue:                     decimal.NewFromInt(900),
+		AssetAccountID:                &assetAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedAccountID,
+	}
+
+	err := svc.Dispose(ctx, "tenant-1", "test_schema", "a1", &DisposeAssetRequest{
+		DisposalDate:              time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
+		DisposalMethod:            DisposalSold,
+		DisposalProceeds:          decimal.NewFromInt(950),
+		DisposalProceedsAccountID: &proceedsAccountID,
+		UserID:                    "user-1",
+	})
+	require.ErrorIs(t, err, ErrAssetAccountingInvalid)
+	assert.Empty(t, ledger.postedIDs)
+}
+
+func TestService_DisposeRejectsMissingDisposalAccountingConfiguration(t *testing.T) {
+	repo := NewMockRepository()
+	ledger := newFakeAssetAccountingPoster()
+	svc := NewServiceWithRepositoryAndAccounting(repo, ledger)
+	ctx := context.Background()
+
+	repo.Assets["a1"] = &FixedAsset{
+		ID:                      "a1",
+		TenantID:                "tenant-1",
+		Name:                    "Equipment",
+		Status:                  AssetStatusActive,
+		PurchaseCost:            decimal.NewFromInt(1200),
+		AccumulatedDepreciation: decimal.NewFromInt(300),
+		BookValue:               decimal.NewFromInt(900),
+	}
+
+	err := svc.Dispose(ctx, "tenant-1", "test_schema", "a1", &DisposeAssetRequest{
+		DisposalDate:   time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
+		DisposalMethod: DisposalScrapped,
+		UserID:         "user-1",
+	})
+	require.ErrorIs(t, err, ErrAssetAccountingInvalid)
+	assert.Empty(t, ledger.postedIDs)
 }
 
 func TestService_Dispose_NotActive(t *testing.T) {
@@ -1091,26 +1265,39 @@ func TestService_Dispose_NotActive(t *testing.T) {
 }
 
 func TestService_Dispose_Scrapped(t *testing.T) {
-	ts := newTestService()
+	repo := NewMockRepository()
+	ledger := newFakeAssetAccountingPoster()
+	svc := NewServiceWithRepositoryAndAccounting(repo, ledger)
 	ctx := context.Background()
 
-	ts.repo.Assets["a1"] = &FixedAsset{
-		ID:       "a1",
-		TenantID: "tenant-1",
-		Name:     "Old Computer",
-		Status:   AssetStatusActive,
+	assetAccountID := "fixed-assets"
+	accumulatedAccountID := "accumulated-depreciation"
+	lossAccountID := "asset-disposal-loss"
+	repo.Assets["a1"] = &FixedAsset{
+		ID:                            "a1",
+		TenantID:                      "tenant-1",
+		Name:                          "Old Computer",
+		Status:                        AssetStatusActive,
+		PurchaseCost:                  decimal.NewFromInt(1000),
+		AccumulatedDepreciation:       decimal.NewFromInt(900),
+		BookValue:                     decimal.NewFromInt(100),
+		AssetAccountID:                &assetAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedAccountID,
 	}
 
 	req := &DisposeAssetRequest{
-		DisposalDate:   time.Now(),
-		DisposalMethod: DisposalScrapped,
+		DisposalDate:              time.Now(),
+		DisposalMethod:            DisposalScrapped,
+		DisposalGainLossAccountID: &lossAccountID,
+		UserID:                    "user-1",
 	}
 
-	err := ts.svc.Dispose(ctx, "tenant-1", "test_schema", "a1", req)
+	err := svc.Dispose(ctx, "tenant-1", "test_schema", "a1", req)
 	require.NoError(t, err)
 
-	asset, _ := ts.repo.GetByID(ctx, "test_schema", "tenant-1", "a1")
+	asset, _ := repo.GetByID(ctx, "test_schema", "tenant-1", "a1")
 	assert.Equal(t, AssetStatusDisposed, asset.Status)
+	require.NotNil(t, asset.DisposalJournalEntryID)
 }
 
 func TestService_Delete(t *testing.T) {
@@ -1132,28 +1319,35 @@ func TestService_Delete(t *testing.T) {
 }
 
 func TestService_RecordDepreciation(t *testing.T) {
-	ts := newTestService()
+	repo := NewMockRepository()
+	ledger := newFakeAssetAccountingPoster()
+	svc := NewServiceWithRepositoryAndAccounting(repo, ledger)
 	ctx := context.Background()
 
-	ts.repo.Assets["a1"] = &FixedAsset{
-		ID:                      "a1",
-		TenantID:                "tenant-1",
-		Name:                    "Equipment",
-		Status:                  AssetStatusActive,
-		PurchaseCost:            decimal.NewFromInt(12000),
-		ResidualValue:           decimal.NewFromInt(0),
-		UsefulLifeMonths:        12,
-		DepreciationMethod:      DepreciationStraightLine,
-		AccumulatedDepreciation: decimal.Zero,
-		BookValue:               decimal.NewFromInt(12000),
+	expenseAccountID := "depreciation-expense"
+	accumulatedAccountID := "accumulated-depreciation"
+	repo.Assets["a1"] = &FixedAsset{
+		ID:                            "a1",
+		TenantID:                      "tenant-1",
+		Name:                          "Equipment",
+		Status:                        AssetStatusActive,
+		PurchaseCost:                  decimal.NewFromInt(12000),
+		ResidualValue:                 decimal.NewFromInt(0),
+		UsefulLifeMonths:              12,
+		DepreciationMethod:            DepreciationStraightLine,
+		AccumulatedDepreciation:       decimal.Zero,
+		BookValue:                     decimal.NewFromInt(12000),
+		DepreciationExpenseAccountID:  &expenseAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedAccountID,
 	}
 
 	now := time.Now()
-	entry, err := ts.svc.RecordDepreciation(ctx, "tenant-1", "test_schema", "a1", "user-1", now.AddDate(0, -1, 0), now)
+	entry, err := svc.RecordDepreciation(ctx, "tenant-1", "test_schema", "a1", "user-1", now.AddDate(0, -1, 0), now)
 	require.NoError(t, err)
 	assert.True(t, entry.DepreciationAmount.Equal(decimal.NewFromInt(1000)))
 	assert.True(t, entry.AccumulatedTotal.Equal(decimal.NewFromInt(1000)))
 	assert.True(t, entry.BookValueAfter.Equal(decimal.NewFromInt(11000)))
+	require.NotNil(t, entry.JournalEntryID)
 }
 
 func TestService_RecordDepreciationCreatesAndPostsJournalWhenAccountsConfigured(t *testing.T) {
@@ -1293,6 +1487,10 @@ func newFakeAssetAccountingPoster() *fakeAssetAccountingPoster {
 		accounts: map[string]*accounting.Account{
 			"depreciation-expense":     {ID: "depreciation-expense", AccountType: accounting.AccountTypeExpense},
 			"accumulated-depreciation": {ID: "accumulated-depreciation", AccountType: accounting.AccountTypeAsset},
+			"fixed-assets":             {ID: "fixed-assets", AccountType: accounting.AccountTypeAsset},
+			"cash":                     {ID: "cash", AccountType: accounting.AccountTypeAsset},
+			"asset-disposal-gain":      {ID: "asset-disposal-gain", AccountType: accounting.AccountTypeRevenue},
+			"asset-disposal-loss":      {ID: "asset-disposal-loss", AccountType: accounting.AccountTypeExpense},
 		},
 	}
 }

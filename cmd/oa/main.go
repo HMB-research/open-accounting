@@ -6681,6 +6681,8 @@ func (a *cliApp) runAssets(ctx context.Context, args []string) error {
 		disposalDate := fs.String("disposal-date", "", "Disposal date in YYYY-MM-DD")
 		methodFlag := fs.String("method", "", "Disposal method")
 		proceedsFlag := fs.String("proceeds", "0", "Disposal proceeds")
+		proceedsAccountID := fs.String("proceeds-account-id", "", "Asset account receiving disposal proceeds")
+		gainLossAccountID := fs.String("gain-loss-account-id", "", "Revenue or expense account for disposal gain/loss")
 		notes := fs.String("notes", "", "Disposal notes")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
@@ -6703,10 +6705,12 @@ func (a *cliApp) runAssets(ctx context.Context, args []string) error {
 		}
 
 		result, err := client.disposeAsset(ctx, cfg.TenantID, strings.TrimSpace(*assetID), &assets.DisposeAssetRequest{
-			DisposalDate:     disposalDateValue,
-			DisposalMethod:   method,
-			DisposalProceeds: proceeds,
-			DisposalNotes:    strings.TrimSpace(*notes),
+			DisposalDate:              disposalDateValue,
+			DisposalMethod:            method,
+			DisposalProceeds:          proceeds,
+			DisposalNotes:             strings.TrimSpace(*notes),
+			DisposalProceedsAccountID: optionalStringPtr(*proceedsAccountID),
+			DisposalGainLossAccountID: optionalStringPtr(*gainLossAccountID),
 		})
 		if err != nil {
 			return err

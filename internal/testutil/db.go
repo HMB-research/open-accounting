@@ -150,6 +150,12 @@ func CreateTestTenant(t *testing.T, pool *pgxpool.Pool) *TestTenant {
 		t.Fatalf("failed to add fixed assets tables: %v", err)
 	}
 
+	// Add fixed-asset disposal journal links (from migration 046)
+	_, err = conn.Exec(ctx, "SELECT add_fixed_asset_disposal_journal_links($1)", schemaName)
+	if err != nil {
+		t.Fatalf("failed to add fixed asset disposal journal links: %v", err)
+	}
+
 	// Add inventory tables (from migration 016)
 	_, err = conn.Exec(ctx, "SELECT create_inventory_tables($1)", schemaName)
 	if err != nil {

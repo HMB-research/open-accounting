@@ -98,7 +98,8 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 | **Asset Categories** | IT Equipment, Office Furniture, Vehicles, Software with depreciation settings |
 | **Depreciation** | Straight-line and declining balance methods with configurable useful life |
 | **Asset Lifecycle** | Draft → Active → Disposed/Sold/Scrapped status workflow |
-| **Depreciation Entries** | Automatic depreciation calculations with audit trail and linked ledger posting when accounts are configured |
+| **Depreciation Entries** | Automatic depreciation calculations with audit trail and required linked ledger posting |
+| **Disposal Accounting** | Approved disposals can post balanced ledger entries for cost removal, accumulated depreciation, proceeds, gains, and losses |
 
 ### Banking & Reconciliation
 | Feature | Description |

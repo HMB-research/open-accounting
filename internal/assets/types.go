@@ -39,6 +39,8 @@ const (
 const (
 	// SourceTypeAssetDepreciation marks journal entries posted from fixed-asset depreciation.
 	SourceTypeAssetDepreciation = "ASSET_DEPRECIATION"
+	// SourceTypeAssetDisposal marks journal entries posted from fixed-asset disposals.
+	SourceTypeAssetDisposal = "ASSET_DISPOSAL"
 )
 
 var (
@@ -92,10 +94,11 @@ type FixedAsset struct {
 	LastDepreciationDate    *time.Time      `json:"last_depreciation_date,omitempty"`
 
 	// Disposal Information
-	DisposalDate     *time.Time      `json:"disposal_date,omitempty"`
-	DisposalMethod   *DisposalMethod `json:"disposal_method,omitempty"`
-	DisposalProceeds decimal.Decimal `json:"disposal_proceeds"`
-	DisposalNotes    string          `json:"disposal_notes,omitempty"`
+	DisposalDate           *time.Time      `json:"disposal_date,omitempty"`
+	DisposalMethod         *DisposalMethod `json:"disposal_method,omitempty"`
+	DisposalProceeds       decimal.Decimal `json:"disposal_proceeds"`
+	DisposalNotes          string          `json:"disposal_notes,omitempty"`
+	DisposalJournalEntryID *string         `json:"disposal_journal_entry_id,omitempty"`
 
 	// Account Links
 	AssetAccountID                *string `json:"asset_account_id,omitempty"`
@@ -248,11 +251,13 @@ type UpdateAssetRequest struct {
 
 // DisposeAssetRequest is the request to dispose of an asset
 type DisposeAssetRequest struct {
-	DisposalDate     time.Time       `json:"disposal_date"`
-	DisposalMethod   DisposalMethod  `json:"disposal_method"`
-	DisposalProceeds decimal.Decimal `json:"disposal_proceeds,omitempty"`
-	DisposalNotes    string          `json:"disposal_notes,omitempty"`
-	UserID           string          `json:"-"`
+	DisposalDate              time.Time       `json:"disposal_date"`
+	DisposalMethod            DisposalMethod  `json:"disposal_method"`
+	DisposalProceeds          decimal.Decimal `json:"disposal_proceeds,omitempty"`
+	DisposalNotes             string          `json:"disposal_notes,omitempty"`
+	DisposalProceedsAccountID *string         `json:"disposal_proceeds_account_id,omitempty"`
+	DisposalGainLossAccountID *string         `json:"disposal_gain_loss_account_id,omitempty"`
+	UserID                    string          `json:"-"`
 }
 
 // CreateCategoryRequest is the request to create an asset category

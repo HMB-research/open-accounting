@@ -323,6 +323,15 @@ func (s *Service) Dispose(ctx context.Context, tenantID, schemaName, assetID str
 	if asset.Status != AssetStatusActive {
 		return fmt.Errorf("only active assets can be disposed")
 	}
+	if req.DisposalDate.IsZero() {
+		return fmt.Errorf("disposal date is required")
+	}
+	if !isValidDisposalMethod(req.DisposalMethod) {
+		return fmt.Errorf("invalid disposal method %q", req.DisposalMethod)
+	}
+	if req.DisposalProceeds.LessThan(decimal.Zero) {
+		return fmt.Errorf("disposal proceeds cannot be negative")
+	}
 
 	// Update disposal information
 	asset.DisposalDate = &req.DisposalDate
@@ -336,6 +345,12 @@ func (s *Service) Dispose(ctx context.Context, tenantID, schemaName, assetID str
 	} else {
 		newStatus = AssetStatusDisposed
 	}
+
+	journalEntryID, err := s.recordDisposalJournal(ctx, schemaName, tenantID, asset, req, req.UserID)
+	if err != nil {
+		return err
+	}
+	asset.DisposalJournalEntryID = journalEntryID
 
 	if err := s.repo.UpdateDisposal(ctx, schemaName, asset, newStatus); err != nil {
 		return fmt.Errorf("dispose asset: %w", err)
@@ -422,11 +437,8 @@ func (s *Service) RecordDepreciation(ctx context.Context, tenantID, schemaName, 
 func (s *Service) recordDepreciationJournal(ctx context.Context, schemaName, tenantID string, asset *FixedAsset, entry *DepreciationEntry, userID string) (*string, error) {
 	expenseAccountID := trimmedStringPtr(asset.DepreciationExpenseAccountID)
 	accumulatedAccountID := trimmedStringPtr(asset.AccumulatedDepreciationAcctID)
-	if expenseAccountID == "" && accumulatedAccountID == "" {
-		return nil, nil
-	}
 	if expenseAccountID == "" || accumulatedAccountID == "" {
-		return nil, fmt.Errorf("%w: depreciation expense and accumulated depreciation accounts are required together", ErrAssetAccountingInvalid)
+		return nil, fmt.Errorf("%w: depreciation expense and accumulated depreciation accounts are required", ErrAssetAccountingInvalid)
 	}
 	if s.ledger == nil {
 		return nil, fmt.Errorf("%w: accounting service is unavailable", ErrAssetAccountingInvalid)
@@ -480,6 +492,126 @@ func (s *Service) recordDepreciationJournal(ctx context.Context, schemaName, ten
 	return &journalEntry.ID, nil
 }
 
+func (s *Service) recordDisposalJournal(ctx context.Context, schemaName, tenantID string, asset *FixedAsset, req *DisposeAssetRequest, userID string) (*string, error) {
+	assetAccountID := trimmedStringPtr(asset.AssetAccountID)
+	accumulatedAccountID := trimmedStringPtr(asset.AccumulatedDepreciationAcctID)
+	proceedsAccountID := trimmedStringPtr(req.DisposalProceedsAccountID)
+	gainLossAccountID := trimmedStringPtr(req.DisposalGainLossAccountID)
+	if assetAccountID == "" || accumulatedAccountID == "" {
+		return nil, fmt.Errorf("%w: asset and accumulated depreciation accounts are required for disposal posting", ErrAssetAccountingInvalid)
+	}
+	if s.ledger == nil {
+		return nil, fmt.Errorf("%w: accounting service is unavailable", ErrAssetAccountingInvalid)
+	}
+	if asset.PurchaseCost.LessThanOrEqual(decimal.Zero) {
+		return nil, fmt.Errorf("%w: asset purchase cost must be positive for disposal posting", ErrAssetAccountingInvalid)
+	}
+	if asset.AccumulatedDepreciation.LessThan(decimal.Zero) {
+		return nil, fmt.Errorf("%w: accumulated depreciation cannot be negative for disposal posting", ErrAssetAccountingInvalid)
+	}
+
+	if err := s.requireAccountType(ctx, schemaName, tenantID, assetAccountID, "asset account", accounting.AccountTypeAsset); err != nil {
+		return nil, err
+	}
+	if err := s.requireAccountType(ctx, schemaName, tenantID, accumulatedAccountID, "accumulated depreciation account", accounting.AccountTypeAsset); err != nil {
+		return nil, err
+	}
+	if req.DisposalProceeds.GreaterThan(decimal.Zero) {
+		if proceedsAccountID == "" {
+			return nil, fmt.Errorf("%w: disposal proceeds account is required when proceeds are recorded", ErrAssetAccountingInvalid)
+		}
+		if err := s.requireAccountType(ctx, schemaName, tenantID, proceedsAccountID, "disposal proceeds account", accounting.AccountTypeAsset); err != nil {
+			return nil, err
+		}
+	}
+
+	bookValue := asset.PurchaseCost.Sub(asset.AccumulatedDepreciation)
+	gainLoss := req.DisposalProceeds.Sub(bookValue)
+	if !gainLoss.IsZero() && gainLossAccountID == "" {
+		return nil, fmt.Errorf("%w: disposal gain or loss account is required when disposal differs from book value", ErrAssetAccountingInvalid)
+	}
+	if gainLoss.GreaterThan(decimal.Zero) {
+		if err := s.requireAccountType(ctx, schemaName, tenantID, gainLossAccountID, "disposal gain account", accounting.AccountTypeRevenue); err != nil {
+			return nil, err
+		}
+	} else if gainLoss.LessThan(decimal.Zero) {
+		if err := s.requireAccountType(ctx, schemaName, tenantID, gainLossAccountID, "disposal loss account", accounting.AccountTypeExpense); err != nil {
+			return nil, err
+		}
+	}
+
+	description := disposalJournalDescription(asset)
+	lines := make([]accounting.CreateJournalEntryLineReq, 0, 4)
+	if asset.AccumulatedDepreciation.GreaterThan(decimal.Zero) {
+		lines = append(lines, accounting.CreateJournalEntryLineReq{
+			AccountID:    accumulatedAccountID,
+			Description:  description,
+			DebitAmount:  asset.AccumulatedDepreciation,
+			CreditAmount: decimal.Zero,
+		})
+	}
+	if req.DisposalProceeds.GreaterThan(decimal.Zero) {
+		lines = append(lines, accounting.CreateJournalEntryLineReq{
+			AccountID:    proceedsAccountID,
+			Description:  description,
+			DebitAmount:  req.DisposalProceeds,
+			CreditAmount: decimal.Zero,
+		})
+	}
+	if gainLoss.LessThan(decimal.Zero) {
+		lines = append(lines, accounting.CreateJournalEntryLineReq{
+			AccountID:    gainLossAccountID,
+			Description:  description,
+			DebitAmount:  gainLoss.Abs(),
+			CreditAmount: decimal.Zero,
+		})
+	}
+	lines = append(lines, accounting.CreateJournalEntryLineReq{
+		AccountID:    assetAccountID,
+		Description:  description,
+		DebitAmount:  decimal.Zero,
+		CreditAmount: asset.PurchaseCost,
+	})
+	if gainLoss.GreaterThan(decimal.Zero) {
+		lines = append(lines, accounting.CreateJournalEntryLineReq{
+			AccountID:    gainLossAccountID,
+			Description:  description,
+			DebitAmount:  decimal.Zero,
+			CreditAmount: gainLoss,
+		})
+	}
+
+	sourceID := asset.ID
+	journalEntry, err := s.ledger.CreateJournalEntry(ctx, schemaName, tenantID, &accounting.CreateJournalEntryRequest{
+		EntryDate:   req.DisposalDate,
+		Description: description,
+		Reference:   disposalJournalReference(asset, req.DisposalDate),
+		SourceType:  SourceTypeAssetDisposal,
+		SourceID:    &sourceID,
+		UserID:      userID,
+		Lines:       lines,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create disposal journal: %w", err)
+	}
+	if err := s.ledger.PostJournalEntry(ctx, schemaName, tenantID, journalEntry.ID, userID); err != nil {
+		return nil, fmt.Errorf("post disposal journal: %w", err)
+	}
+
+	return &journalEntry.ID, nil
+}
+
+func (s *Service) requireAccountType(ctx context.Context, schemaName, tenantID, accountID, label string, expected accounting.AccountType) error {
+	account, err := s.ledger.GetAccount(ctx, schemaName, tenantID, accountID)
+	if err != nil {
+		return fmt.Errorf("%w: load %s: %v", ErrAssetAccountingInvalid, label, err)
+	}
+	if account.AccountType != expected {
+		return fmt.Errorf("%w: %s must be %s", ErrAssetAccountingInvalid, label, expected)
+	}
+	return nil
+}
+
 func trimmedStringPtr(value *string) string {
 	if value == nil {
 		return ""
@@ -493,6 +625,15 @@ func nonEmptyStringPtr(value string) *string {
 		return nil
 	}
 	return &trimmed
+}
+
+func isValidDisposalMethod(method DisposalMethod) bool {
+	switch method {
+	case DisposalSold, DisposalScrapped, DisposalDonated, DisposalLost:
+		return true
+	default:
+		return false
+	}
 }
 
 func depreciationJournalDescription(asset *FixedAsset) string {
@@ -520,6 +661,32 @@ func depreciationJournalReference(asset *FixedAsset, entry *DepreciationEntry) s
 		return assetNumber
 	}
 	return fmt.Sprintf("%s-%s", assetNumber, period)
+}
+
+func disposalJournalDescription(asset *FixedAsset) string {
+	assetNumber := strings.TrimSpace(asset.AssetNumber)
+	name := strings.TrimSpace(asset.Name)
+	switch {
+	case assetNumber != "" && name != "":
+		return fmt.Sprintf("Disposal %s - %s", assetNumber, name)
+	case assetNumber != "":
+		return fmt.Sprintf("Disposal %s", assetNumber)
+	case name != "":
+		return fmt.Sprintf("Disposal %s", name)
+	default:
+		return fmt.Sprintf("Disposal asset %s", asset.ID)
+	}
+}
+
+func disposalJournalReference(asset *FixedAsset, disposalDate time.Time) string {
+	assetNumber := strings.TrimSpace(asset.AssetNumber)
+	if assetNumber == "" {
+		assetNumber = strings.TrimSpace(asset.ID)
+	}
+	if disposalDate.IsZero() {
+		return assetNumber
+	}
+	return fmt.Sprintf("%s-%s", assetNumber, disposalDate.Format("2006-01-02"))
 }
 
 // GetDepreciationHistory retrieves depreciation entries for an asset

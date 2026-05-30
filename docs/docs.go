@@ -19076,6 +19076,9 @@ const docTemplate = `{
                 "disposal_date": {
                     "type": "string"
                 },
+                "disposal_gain_loss_account_id": {
+                    "type": "string"
+                },
                 "disposal_method": {
                     "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_assets.DisposalMethod"
                 },
@@ -19084,6 +19087,9 @@ const docTemplate = `{
                 },
                 "disposal_proceeds": {
                     "type": "number"
+                },
+                "disposal_proceeds_account_id": {
+                    "type": "string"
                 }
             }
         },
@@ -19138,6 +19144,9 @@ const docTemplate = `{
                 },
                 "disposal_date": {
                     "description": "Disposal Information",
+                    "type": "string"
+                },
+                "disposal_journal_entry_id": {
                     "type": "string"
                 },
                 "disposal_method": {
