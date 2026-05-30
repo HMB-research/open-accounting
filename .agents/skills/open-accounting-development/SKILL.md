@@ -25,8 +25,10 @@ This repo treats ORM/repository-backed persistence and reusable application code
 - If a feature needs persistence behavior that is not exposed yet, refactor the repository interface and its Postgres/GORM implementations rather than bypassing the layer.
 - Use direct SQL only in migrations or repository implementations where the ORM cannot express the query clearly. Keep those exceptions schema-qualified, documented by tests, and isolated behind repository methods.
 - Prefer shared parser, mapper, validation, and formatting helpers over command-specific, handler-specific, or one-off copies. Create reusable package boundaries when multiple entry points need the same behavior.
-- Remove related legacy direct-query, duplicated mapper, or format-specific code while touching the area. Keeping legacy paths around for compatibility is not preferred unless there is an explicit product requirement and a removal plan.
+- Treat refactoring as part of feature delivery when the current shape would otherwise force duplicated logic, direct SQL, or entry-point-specific behavior. Do not keep legacy paths just to minimize the diff.
+- Remove related legacy direct-query, duplicated mapper, or format-specific code while touching the area. Keeping legacy paths around for compatibility is not preferred unless there is an explicit product requirement and a concrete removal plan.
 - CLI, API, service, and frontend entry points should call the same reusable service/mapper/repository behavior instead of maintaining parallel implementations.
+- For bank, payroll, invoice, or other external imports, put parsing and normalization behind reusable mapper packages. Use a bank/provider-specific mapper boundary when formats differ so additional formats can be added without branching through handlers or CLI commands.
 
 ### Layer Responsibilities
 
