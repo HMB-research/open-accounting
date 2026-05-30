@@ -341,6 +341,7 @@ open-accounting/
 - [x] CLI/API refresh-session listing and revocation
 - [x] One-time password reset flow with expiring tokens, request throttling, and refresh-session revocation
 - [x] Auth security audit events for login, logout, password, and session actions
+- [x] Tenant audit events for organization settings changes
 - [x] CSV import for chart of accounts, contacts, employees, invoices, quotes, orders, recurring invoice templates, payments, cost centers, product categories/warehouses/products/stock, fixed assets, and opening balances
 - [x] Migration bundle validation and expense CSV import for cutovers with API and CLI coverage
 - [x] Tenant period lock on core write paths

@@ -84,9 +84,11 @@ const (
 	AuditActionUserRemoved       = "user_removed"
 	AuditActionInvitationCreated = "invitation_created"
 	AuditActionInvitationRevoked = "invitation_revoked"
+	AuditActionTenantUpdated     = "tenant_updated"
 
 	AuditTargetUser       = "user"
 	AuditTargetInvitation = "invitation"
+	AuditTargetTenant     = "tenant"
 )
 
 // TenantAuditEvent records tenant administration and security-sensitive actions.

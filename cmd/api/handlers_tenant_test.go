@@ -645,6 +645,34 @@ func TestUpdateTenantRejectsPeriodLockMutation(t *testing.T) {
 	assert.Contains(t, resp["error"], "close or reopen actions")
 }
 
+func TestUpdateTenantRecordsAuditEvent(t *testing.T) {
+	h, repo := setupTenantTestHandlers()
+	repo.addTestTenant("tenant-1", "Old Name", "test-tenant")
+	repo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+		{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleAdmin},
+	}
+
+	req := makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1", map[string]interface{}{
+		"name": "Updated Name",
+	}, &auth.Claims{
+		UserID: "user-1",
+		Email:  "user@example.com",
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+
+	w := httptest.NewRecorder()
+	h.UpdateTenant(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	require.Len(t, repo.auditEvents["tenant-1"], 1)
+	event := repo.auditEvents["tenant-1"][0]
+	assert.Equal(t, tenant.AuditActionTenantUpdated, event.Action)
+	assert.Equal(t, tenant.AuditTargetTenant, event.TargetType)
+	assert.Equal(t, "tenant-1", event.TargetID)
+	assert.Equal(t, "user-1", event.ActorUserID)
+	assert.Equal(t, tenant.RoleAdmin, event.Metadata["role"])
+}
+
 func TestListPeriodCloseEvents(t *testing.T) {
 	h, repo := setupTenantTestHandlers()
 	repo.addTestTenant("tenant-1", "Tenant", "tenant")
