@@ -231,7 +231,7 @@ Content-Type: application/json
 }
 ```
 
-The raw `token` value is returned only once at creation time.
+The raw `token` value is returned only once at creation time. Token creation is recorded in auth security events.
 
 ### Revoke API Token
 
@@ -239,6 +239,8 @@ The raw `token` value is returned only once at creation time.
 DELETE /tenants/{tenantId}/api-tokens/{tokenId}
 Authorization: Bearer <jwt-or-api-token>
 ```
+
+Revoking a token records an auth security event.
 
 ---
 

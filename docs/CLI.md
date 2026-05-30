@@ -255,7 +255,7 @@ go run ./cmd/oa tokens create --name "CI automation" --expires-in-days 90
 go run ./cmd/oa tokens revoke --id <token-id>
 ```
 
-`tokens create` returns the raw token once. Store it immediately if you need to use it outside the CLI config flow.
+`tokens create` returns the raw token once. Store it immediately if you need to use it outside the CLI config flow. Creating or revoking a token records an auth security event for the user.
 
 ## Migration validation
 
