@@ -2328,6 +2328,25 @@ definitions:
       reason:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_inventory.AdjustStockRequest:
+    properties:
+      expiry_date:
+        type: string
+      lot_number:
+        type: string
+      product_id:
+        type: string
+      quantity:
+        type: string
+      reason:
+        type: string
+      serial_number:
+        type: string
+      unit_cost:
+        type: string
+      warehouse_id:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_inventory.ImportProductCategoriesRequest:
     properties:
       csv_content:
@@ -2460,6 +2479,47 @@ definitions:
       row:
         type: integer
     type: object
+  github_com_HMB-research_open-accounting_internal_inventory.InventoryMovement:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      expiry_date:
+        type: string
+      id:
+        type: string
+      lot_number:
+        type: string
+      movement_date:
+        type: string
+      movement_type:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.MovementType'
+      notes:
+        type: string
+      product_id:
+        type: string
+      quantity:
+        type: number
+      reference:
+        type: string
+      serial_number:
+        type: string
+      source_id:
+        type: string
+      source_type:
+        type: string
+      tenant_id:
+        type: string
+      to_warehouse_id:
+        type: string
+      total_cost:
+        type: number
+      unit_cost:
+        type: number
+      warehouse_id:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_inventory.InventoryValuationLine:
     properties:
       available_qty:
@@ -2506,6 +2566,61 @@ definitions:
       valuation_method:
         type: string
       warehouse_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_inventory.MovementType:
+    enum:
+    - IN
+    - OUT
+    - ADJUSTMENT
+    - TRANSFER
+    type: string
+    x-enum-varnames:
+    - MovementTypeIn
+    - MovementTypeOut
+    - MovementTypeAdjustment
+    - MovementTypeTransfer
+  github_com_HMB-research_open-accounting_internal_inventory.StockLevel:
+    properties:
+      available_qty:
+        type: number
+      id:
+        type: string
+      last_updated:
+        type: string
+      product_id:
+        type: string
+      quantity:
+        type: number
+      reserved_qty:
+        type: number
+      tenant_id:
+        type: string
+      warehouse_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_inventory.StockReservationRequest:
+    properties:
+      product_id:
+        type: string
+      quantity:
+        type: string
+      reason:
+        type: string
+      warehouse_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_inventory.TransferStockRequest:
+    properties:
+      from_warehouse_id:
+        type: string
+      notes:
+        type: string
+      product_id:
+        type: string
+      quantity:
+        type: string
+      to_warehouse_id:
         type: string
     type: object
   github_com_HMB-research_open-accounting_internal_invoicing.AutomatedReminderResult:
@@ -10103,6 +10218,145 @@ paths:
       summary: Import expenses
       tags:
       - Expenses
+  /tenants/{tenantID}/inventory/adjust:
+    post:
+      consumes:
+      - application/json
+      description: Apply a signed stock adjustment in one warehouse, optionally recording
+        lot number, serial number, and expiry date metadata
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Stock adjustment
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.AdjustStockRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventoryMovement'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Adjust product stock
+      tags:
+      - Inventory
+  /tenants/{tenantID}/inventory/release:
+    post:
+      consumes:
+      - application/json
+      description: Release reserved stock back to available quantity for a product
+        in one warehouse
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Stock release
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.StockReservationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.StockLevel'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Release reserved warehouse stock
+      tags:
+      - Inventory
+  /tenants/{tenantID}/inventory/reserve:
+    post:
+      consumes:
+      - application/json
+      description: Move available stock into reserved quantity for a product in one
+        warehouse
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Stock reservation
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.StockReservationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.StockLevel'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Reserve warehouse stock
+      tags:
+      - Inventory
   /tenants/{tenantID}/inventory/stock-import:
     post:
       consumes:
@@ -10138,6 +10392,60 @@ paths:
       security:
       - BearerAuth: []
       summary: Import stock adjustments
+      tags:
+      - Inventory
+  /tenants/{tenantID}/inventory/transfer:
+    post:
+      consumes:
+      - application/json
+      description: Move positive available stock between warehouses without changing
+        total product stock
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Stock transfer
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.TransferStockRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Transfer product stock
       tags:
       - Inventory
   /tenants/{tenantID}/inventory/valuation:
@@ -11776,7 +12084,10 @@ paths:
       - Orders
   /tenants/{tenantID}/orders/{orderID}/confirm:
     post:
-      description: Mark a pending order as confirmed
+      consumes:
+      - application/json
+      description: Mark a pending order as confirmed, optionally requiring approved
+        order evidence first
       parameters:
       - description: Tenant ID
         in: path
@@ -11788,6 +12099,14 @@ paths:
         name: orderID
         required: true
         type: string
+      - description: Evidence requirement options
+        in: body
+        name: request
+        schema:
+          properties:
+            require_approved_evidence:
+              type: boolean
+          type: object
       produces:
       - application/json
       responses:
@@ -11800,6 +12119,13 @@ paths:
             type: object
         "400":
           description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
           schema:
             properties:
               error:
@@ -13119,6 +13445,77 @@ paths:
       summary: Import product categories
       tags:
       - Inventory
+  /tenants/{tenantID}/products/{productID}/movements:
+    get:
+      description: List stock movements for one product, including optional lot, serial,
+        expiry, and source metadata
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Product ID
+        in: path
+        name: productID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventoryMovement'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List product inventory movements
+      tags:
+      - Inventory
+  /tenants/{tenantID}/products/{productID}/stock-levels:
+    get:
+      description: List per-warehouse stock levels for one product
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Product ID
+        in: path
+        name: productID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.StockLevel'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List product stock levels
+      tags:
+      - Inventory
   /tenants/{tenantID}/products/import:
     post:
       consumes:
@@ -13495,7 +13892,10 @@ paths:
       - Quotes
   /tenants/{tenantID}/quotes/{quoteID}/send:
     post:
-      description: Mark a quote as sent to the customer
+      consumes:
+      - application/json
+      description: Mark a quote as sent to the customer, optionally requiring approved
+        quote evidence first
       parameters:
       - description: Tenant ID
         in: path
@@ -13507,6 +13907,14 @@ paths:
         name: quoteID
         required: true
         type: string
+      - description: Evidence requirement options
+        in: body
+        name: request
+        schema:
+          properties:
+            require_approved_evidence:
+              type: boolean
+          type: object
       produces:
       - application/json
       responses:
@@ -13519,6 +13927,13 @@ paths:
             type: object
         "400":
           description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
           schema:
             properties:
               error:
