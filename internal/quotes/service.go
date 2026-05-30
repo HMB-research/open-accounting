@@ -12,15 +12,13 @@ import (
 
 // Service provides quote operations
 type Service struct {
-	db   *pgxpool.Pool
 	repo Repository
 }
 
-// NewService creates a new quotes service with a PostgreSQL repository
+// NewService creates a new quotes service with an ORM-backed repository.
 func NewService(db *pgxpool.Pool) *Service {
 	return &Service{
-		db:   db,
-		repo: NewPostgresRepository(db),
+		repo: NewRepository(db),
 	}
 }
 
