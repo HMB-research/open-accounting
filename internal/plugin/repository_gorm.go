@@ -1,5 +1,3 @@
-//go:build gorm
-
 package plugin
 
 import (
@@ -12,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // GORMRepository implements Repository using GORM
@@ -233,15 +232,27 @@ func (r *GORMRepository) CreateTenantPlugin(ctx context.Context, tenantID, plugi
 // EnableTenantPlugin enables a plugin for a tenant (upsert)
 func (r *GORMRepository) EnableTenantPlugin(ctx context.Context, tenantID, pluginID uuid.UUID, settings json.RawMessage) error {
 	now := time.Now()
+	tpModel := &models.TenantPlugin{
+		TenantID:  tenantID,
+		PluginID:  pluginID,
+		IsEnabled: true,
+		Settings:  settings,
+		EnabledAt: &now,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
 
-	// Use raw SQL for ON CONFLICT upsert
-	err := r.db.WithContext(ctx).Exec(`
-		INSERT INTO tenant_plugins (tenant_id, plugin_id, is_enabled, settings, enabled_at, created_at, updated_at)
-		VALUES (?, ?, true, ?, ?, ?, ?)
-		ON CONFLICT (tenant_id, plugin_id) DO UPDATE
-		SET is_enabled = true, settings = EXCLUDED.settings, enabled_at = EXCLUDED.enabled_at, updated_at = EXCLUDED.updated_at
-	`, tenantID, pluginID, settings, now, now, now).Error
-	if err != nil {
+	if err := r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "tenant_id"}, {Name: "plugin_id"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"is_enabled": true,
+				"settings":   settings,
+				"enabled_at": &now,
+				"updated_at": now,
+			}),
+		}).
+		Create(tpModel).Error; err != nil {
 		return fmt.Errorf("enable tenant plugin: %w", err)
 	}
 	return nil
@@ -263,21 +274,23 @@ func (r *GORMRepository) DisableTenantPlugin(ctx context.Context, tenantID, plug
 
 // GetTenantPluginSettings returns the settings for a tenant plugin
 func (r *GORMRepository) GetTenantPluginSettings(ctx context.Context, tenantID, pluginID uuid.UUID) (json.RawMessage, error) {
-	var settings json.RawMessage
+	var result struct {
+		Settings json.RawMessage `gorm:"column:settings"`
+	}
 	err := r.db.WithContext(ctx).Model(&models.TenantPlugin{}).
 		Select("settings").
 		Where("tenant_id = ? AND plugin_id = ?", tenantID, pluginID).
-		Scan(&settings).Error
+		Take(&result).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return json.RawMessage("{}"), nil
 		}
 		return nil, fmt.Errorf("get tenant plugin settings: %w", err)
 	}
-	if settings == nil {
+	if result.Settings == nil {
 		return json.RawMessage("{}"), nil
 	}
-	return settings, nil
+	return result.Settings, nil
 }
 
 // UpdateTenantPluginSettings updates tenant plugin settings
@@ -403,7 +416,6 @@ func (r *GORMRepository) DisableAllTenantsForPlugin(ctx context.Context, pluginI
 
 // GetTenantPluginsWithAll returns all plugins available to a tenant (enabled or not)
 func (r *GORMRepository) GetTenantPluginsWithAll(ctx context.Context, tenantID uuid.UUID) ([]TenantPlugin, error) {
-	// Use raw query for LEFT JOIN to get all enabled plugins with optional tenant_plugins
 	var results []struct {
 		TPID        *uuid.UUID
 		TPTenantID  *uuid.UUID
@@ -416,17 +428,23 @@ func (r *GORMRepository) GetTenantPluginsWithAll(ctx context.Context, tenantID u
 		models.Plugin
 	}
 
-	err := r.db.WithContext(ctx).Raw(`
-		SELECT tp.id as tp_id, tp.tenant_id as tp_tenant_id, tp.plugin_id as tp_plugin_id,
-		       tp.is_enabled as tp_is_enabled, tp.settings as tp_settings,
-		       tp.enabled_at as tp_enabled_at, tp.created_at as tp_created_at, tp.updated_at as tp_updated_at,
-		       p.*
-		FROM plugins p
-		LEFT JOIN tenant_plugins tp ON tp.plugin_id = p.id AND tp.tenant_id = ?
-		WHERE p.state = 'enabled'
-		ORDER BY p.display_name ASC
-	`, tenantID).Scan(&results).Error
-	if err != nil {
+	if err := r.db.WithContext(ctx).
+		Table("plugins AS p").
+		Select(`
+			tp.id AS tp_id,
+			tp.tenant_id AS tp_tenant_id,
+			tp.plugin_id AS tp_plugin_id,
+			tp.is_enabled AS tp_is_enabled,
+			tp.settings AS tp_settings,
+			tp.enabled_at AS tp_enabled_at,
+			tp.created_at AS tp_created_at,
+			tp.updated_at AS tp_updated_at,
+			p.*
+		`).
+		Joins("LEFT JOIN tenant_plugins AS tp ON tp.plugin_id = p.id AND tp.tenant_id = ?", tenantID).
+		Where("p.state = ?", models.PluginStateEnabled).
+		Order("p.display_name ASC").
+		Scan(&results).Error; err != nil {
 		return nil, fmt.Errorf("list tenant plugins: %w", err)
 	}
 
@@ -434,7 +452,7 @@ func (r *GORMRepository) GetTenantPluginsWithAll(ctx context.Context, tenantID u
 	for _, res := range results {
 		p := modelToPlugin(&res.Plugin)
 		tp := TenantPlugin{
-			PluginID: res.Plugin.ID,
+			PluginID: res.ID,
 			TenantID: tenantID,
 			Plugin:   &p,
 		}

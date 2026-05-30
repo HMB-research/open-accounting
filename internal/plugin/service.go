@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
@@ -13,7 +14,6 @@ import (
 
 // Service handles plugin lifecycle management
 type Service struct {
-	pool  *pgxpool.Pool
 	repo  Repository
 	hooks *HookRegistry
 	mu    sync.RWMutex
@@ -31,11 +31,21 @@ type LoadedPlugin struct {
 	Manifest *Manifest
 }
 
-// NewService creates a new plugin service
+// NewService creates a new plugin service with an ORM-backed repository.
 func NewService(pool *pgxpool.Pool, pluginDir string) *Service {
+	if pool == nil {
+		return &Service{
+			hooks:     NewHookRegistry(),
+			plugins:   make(map[string]*LoadedPlugin),
+			pluginDir: pluginDir,
+		}
+	}
+	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	if err != nil {
+		panic(fmt.Errorf("create plugin GORM repository: %w", err))
+	}
 	return &Service{
-		pool:      pool,
-		repo:      NewPostgresRepository(pool),
+		repo:      NewGORMRepository(gormDB),
 		hooks:     NewHookRegistry(),
 		plugins:   make(map[string]*LoadedPlugin),
 		pluginDir: pluginDir,
