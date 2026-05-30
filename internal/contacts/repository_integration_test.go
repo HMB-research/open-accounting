@@ -5,20 +5,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/testutil"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 )
 
-func TestNewPostgresRepository(t *testing.T) {
+func TestNewGORMRepository(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	if repo == nil {
 		t.Fatal("expected non-nil repository")
 	}
-	if repo.db != pool {
-		t.Error("expected repository to have the correct pool")
+	if repo.db == nil {
+		t.Error("expected repository db to be set")
 	}
 }
 
@@ -26,13 +28,13 @@ func TestRepository_Create(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	contact := &Contact{
 		ID:               uuid.New().String(),
 		TenantID:         tenant.ID,
-		Code:             "C001-pgx",
+		Code:             "C001-orm",
 		Name:             "Test Customer",
 		ContactType:      ContactTypeCustomer,
 		RegCode:          "12345678",
@@ -76,7 +78,7 @@ func TestRepository_Create_AllFields(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	contact := &Contact{
@@ -159,7 +161,7 @@ func TestRepository_Create_DuplicateID(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	contactID := uuid.New().String()
@@ -207,7 +209,7 @@ func TestRepository_GetByID(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	contact := &Contact{
@@ -245,7 +247,7 @@ func TestRepository_GetByID_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	_, err := repo.GetByID(ctx, tenant.SchemaName, tenant.ID, uuid.New().String())
@@ -258,7 +260,7 @@ func TestRepository_GetByID_WrongTenant(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	contact := &Contact{
@@ -291,7 +293,7 @@ func TestRepository_List(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create test contacts
@@ -299,7 +301,7 @@ func TestRepository_List(t *testing.T) {
 		contact := &Contact{
 			ID:               uuid.New().String(),
 			TenantID:         tenant.ID,
-			Code:             "C00" + string(rune('0'+i)) + "-pgx",
+			Code:             "C00" + string(rune('0'+i)) + "-orm",
 			Name:             "Customer " + string(rune('A'+i-1)),
 			ContactType:      ContactTypeCustomer,
 			CountryCode:      "EE",
@@ -343,7 +345,7 @@ func TestRepository_List_EmptyResult(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// List with no contacts created
@@ -361,7 +363,7 @@ func TestRepository_List_OrderByName(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create contacts in reverse alphabetical order
@@ -407,7 +409,7 @@ func TestRepository_Update(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	contact := &Contact{
@@ -454,7 +456,7 @@ func TestRepository_Update_AllFields(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	contact := &Contact{
@@ -538,7 +540,7 @@ func TestRepository_Update_NonExistent(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	contact := &Contact{
@@ -564,7 +566,7 @@ func TestRepository_Delete(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	contact := &Contact{
@@ -605,7 +607,7 @@ func TestRepository_Delete_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	err := repo.Delete(ctx, tenant.SchemaName, tenant.ID, uuid.New().String())
@@ -618,7 +620,7 @@ func TestRepository_Delete_WrongTenant(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	contact := &Contact{
@@ -660,7 +662,7 @@ func TestRepository_Delete_AlreadyInactive(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	contact := &Contact{
@@ -692,7 +694,7 @@ func TestRepository_List_AllFilters(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create customer contacts
@@ -803,7 +805,7 @@ func TestRepository_List_SearchByCode(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	contact := &Contact{
@@ -846,7 +848,7 @@ func TestRepository_List_SearchByEmail(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	contact := &Contact{
@@ -890,7 +892,7 @@ func TestRepository_List_SearchCaseInsensitive(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	contact := &Contact{
@@ -934,7 +936,7 @@ func TestRepository_List_AllFiltersCombined(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create a specific contact that matches all filters
@@ -999,7 +1001,7 @@ func TestRepository_List_NoFilterResults(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create a contact
@@ -1037,7 +1039,7 @@ func TestRepository_ContactTypeBoth(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	contact := &Contact{
@@ -1090,7 +1092,7 @@ func TestRepository_NilDefaultAccountID(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	contact := &Contact{
@@ -1126,7 +1128,7 @@ func TestRepository_ZeroValues(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	contact := &Contact{
@@ -1164,7 +1166,7 @@ func TestRepository_LargeCreditLimit(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	largeCreditLimit := decimal.NewFromFloat(999999999999.99)
@@ -1201,7 +1203,7 @@ func TestRepository_MultipleTenantsIsolation(t *testing.T) {
 	tenant1 := testutil.CreateTestTenant(t, pool)
 	tenant2 := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create contact for tenant1
@@ -1277,7 +1279,7 @@ func TestRepository_Timestamps(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	now := time.Now()
@@ -1317,7 +1319,7 @@ func TestRepository_SpecialCharacters(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	contact := &Contact{
@@ -1358,7 +1360,7 @@ func TestRepository_List_OnlyTypeFilter(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create customers
@@ -1423,7 +1425,7 @@ func TestRepository_List_OnlyActiveFilter(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create active contact
@@ -1487,7 +1489,7 @@ func TestRepository_List_OnlySearchFilter(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create contacts with specific names
@@ -1531,7 +1533,7 @@ func TestRepository_List_TypeAndActiveFilters(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create active supplier
@@ -1638,7 +1640,7 @@ func TestRepository_List_TypeAndSearchFilters(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create supplier with specific name
@@ -1710,7 +1712,7 @@ func TestRepository_List_ActiveAndSearchFilters(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newContactsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create active contact with specific name
@@ -1776,4 +1778,14 @@ func TestRepository_List_ActiveAndSearchFilters(t *testing.T) {
 	if foundInactive {
 		t.Error("should not find inactive contact when filtering by active only")
 	}
+}
+
+func newContactsGORMRepository(t *testing.T, pool *pgxpool.Pool) *GORMRepository {
+	t.Helper()
+
+	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	if err != nil {
+		t.Fatalf("create gorm repository: %v", err)
+	}
+	return NewGORMRepository(gormDB)
 }
