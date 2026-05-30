@@ -1064,6 +1064,28 @@ func TestRevokeAuthSession(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code, "response body: %s", w.Body.String())
 }
 
+func TestRevokeAllAuthSessions(t *testing.T) {
+	h, repo := setupAuthTestHandlers()
+	repo.addTestUser("user-1", "user@example.com", "Test User", "password123", true)
+	createMockRefreshSession(t, h, "user-1")
+	createMockRefreshSession(t, h, "user-1")
+
+	claims := createTestClaims("user-1", "user@example.com", "", "")
+	req := makeAuthenticatedRequest(http.MethodDelete, "/auth/sessions", nil, claims)
+	w := httptest.NewRecorder()
+	h.RevokeAllAuthSessions(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+
+	req = makeAuthenticatedRequest(http.MethodGet, "/auth/sessions", nil, claims)
+	w = httptest.NewRecorder()
+	h.ListAuthSessions(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+
+	var activeSessions []auth.RefreshSession
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&activeSessions))
+	assert.Empty(t, activeSessions)
+}
+
 // =============================================================================
 // GetCurrentUser Handler Tests
 // =============================================================================

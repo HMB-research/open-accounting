@@ -487,7 +487,10 @@ func cliCommandForRoute(route apiRoute) (string, bool) {
 	case "/auth/password":
 		return commandForMethod(route.Method, map[string]string{"PUT": "auth change-password"})
 	case "/auth/sessions":
-		return commandForMethod(route.Method, map[string]string{"GET": "auth sessions"})
+		return commandForMethod(route.Method, map[string]string{
+			"GET":    "auth sessions",
+			"DELETE": "auth revoke-all-sessions",
+		})
 	case "/auth/sessions/{sessionID}":
 		return commandForMethod(route.Method, map[string]string{"DELETE": "auth revoke-session"})
 	case "/invitations/{token}":

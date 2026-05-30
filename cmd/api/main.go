@@ -386,6 +386,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 			r.Get("/me/tenants", h.ListMyTenants)
 			r.Put("/auth/password", h.ChangePassword)
 			r.Get("/auth/sessions", h.ListAuthSessions)
+			r.Delete("/auth/sessions", h.RevokeAllAuthSessions)
 			r.Delete("/auth/sessions/{sessionID}", h.RevokeAuthSession)
 
 			// Tenant management
