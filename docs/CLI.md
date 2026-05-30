@@ -285,7 +285,7 @@ go run ./cmd/oa migration validate \
 go run ./cmd/oa migration validate --contacts ./contacts.csv --invoices ./invoices.csv --json
 ```
 
-`migration validate` is a non-mutating cutover preflight. It checks required CSV column groups and same-bundle cross-file references for accounts, contacts, employees, expenses, invoices, payments, bank transactions, payroll history, leave balances, KMD history, quotes, orders, recurring invoice templates, cost centers, product categories, warehouses, products, stock adjustments, fixed assets, opening balances, and historical journal entries before you run the individual import commands.
+`migration validate` is a non-mutating cutover preflight. It checks required CSV column groups and same-bundle cross-file references for accounts, contacts, employees, expenses, invoices, payments, bank transactions, payroll history, leave balances, KMD history, quotes, orders, recurring invoice templates, cost centers, product categories, warehouses, products, stock adjustments, fixed assets, opening balances, and historical journal entries before you run the individual import commands. Stock-adjustment validation recognizes optional lot metadata columns such as `lot_number`, `serial_number`, and `expiry_date`, plus aliases including `batch`, `serial`, and `expiration_date`.
 
 ## Accounts
 

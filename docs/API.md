@@ -482,7 +482,7 @@ Content-Type: application/json
 }
 ```
 
-Returns a non-mutating cutover report with required-column checks and cross-file reference issues for supported migration CSV files. Supported `kind` values are `accounts`, `contacts`, `employees`, `expenses`, `invoices`, `payments`, `bank_transactions`, `payroll_history`, `leave_balances`, `kmd_history`, `quotes`, `orders`, `recurring_invoices`, `cost_centers`, `product_categories`, `warehouses`, `products`, `stock_adjustments`, `fixed_assets`, `opening_balances`, and `journal_entries`.
+Returns a non-mutating cutover report with required-column checks and cross-file reference issues for supported migration CSV files. Supported `kind` values are `accounts`, `contacts`, `employees`, `expenses`, `invoices`, `payments`, `bank_transactions`, `payroll_history`, `leave_balances`, `kmd_history`, `quotes`, `orders`, `recurring_invoices`, `cost_centers`, `product_categories`, `warehouses`, `products`, `stock_adjustments`, `fixed_assets`, `opening_balances`, and `journal_entries`. Stock-adjustment validation recognizes optional lot metadata columns including `lot_number`, `serial_number`, and `expiry_date` plus common aliases such as `batch`, `serial`, and `expiration_date`.
 
 When the related files are present in the same bundle, the validator also checks references such as commercial documents to contacts, payments to invoices, payroll/leave rows to employees, products to product categories, stock rows to products and warehouses, cost centers to parent cost centers, product categories to parent categories, and opening balances or journals to accounts.
 

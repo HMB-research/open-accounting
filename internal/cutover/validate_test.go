@@ -97,7 +97,7 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 		{
 			Kind:       KindStockAdjustments,
 			FileName:   "stock.csv",
-			CSVContent: "product_code,warehouse_code,quantity\nSKU-1,MAIN,5\n",
+			CSVContent: "product_code,warehouse_code,quantity,batch,serial,expiration_date\nSKU-1,MAIN,5,LOT-1,SN-1,2027-05-30\n",
 		},
 		{
 			Kind:       KindFixedAssets,
@@ -122,6 +122,18 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 	assert.Equal(t, 0, report.Summary.ErrorCount)
 	assert.Equal(t, 25, report.Summary.RowsValidated)
 	assert.Empty(t, report.Issues)
+
+	var stockValidation FileValidation
+	for _, file := range report.Files {
+		if file.Kind == KindStockAdjustments {
+			stockValidation = file
+			break
+		}
+	}
+	require.Equal(t, KindStockAdjustments, stockValidation.Kind)
+	assert.Contains(t, stockValidation.Headers, "lot_number")
+	assert.Contains(t, stockValidation.Headers, "serial_number")
+	assert.Contains(t, stockValidation.Headers, "expiry_date")
 }
 
 func TestValidateBundleReportsInventoryReferenceIssues(t *testing.T) {

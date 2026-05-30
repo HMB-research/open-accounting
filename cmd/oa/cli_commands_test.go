@@ -1113,7 +1113,7 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 	categoriesFile := writeTempCSV(t, "categories.csv", "category_name\nWidgets\n")
 	warehousesFile := writeTempCSV(t, "warehouses.csv", "warehouse_code,warehouse_name\nMAIN,Main warehouse\n")
 	productsFile := writeTempCSV(t, "products.csv", "product_code,name,category_name,sales_price\nSKU-1,Widget,Widgets,10\n")
-	stockFile := writeTempCSV(t, "stock.csv", "product_code,warehouse_code,quantity\nSKU-1,MAIN,5\n")
+	stockFile := writeTempCSV(t, "stock.csv", "product_code,warehouse_code,quantity,batch,serial,expiration_date\nSKU-1,MAIN,5,LOT-1,SN-1,2027-05-30\n")
 	assetsFile := writeTempCSV(t, "assets.csv", "asset_number,name,purchase_date,purchase_cost\nFA-1,Laptop,2026-05-30,1200\n")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1134,6 +1134,11 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 				kinds := map[cutover.FileKind]bool{}
 				for _, file := range req.Files {
 					kinds[file.Kind] = true
+					if file.Kind == cutover.KindStockAdjustments {
+						assert.Contains(t, file.CSVContent, "LOT-1")
+						assert.Contains(t, file.CSVContent, "SN-1")
+						assert.Contains(t, file.CSVContent, "2027-05-30")
+					}
 				}
 				assert.True(t, kinds[cutover.KindBankTransactions])
 				assert.True(t, kinds[cutover.KindKMDHistory])
