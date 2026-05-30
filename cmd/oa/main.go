@@ -165,6 +165,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  auth refresh              Exchange a refresh token for an access token")
 	_, _ = fmt.Fprintln(a.stdout, "  auth sessions             List refresh token sessions")
 	_, _ = fmt.Fprintln(a.stdout, "  auth revoke-session       Revoke a refresh token session by id")
+	_, _ = fmt.Fprintln(a.stdout, "  auth change-password      Change the current user's password")
 	_, _ = fmt.Fprintln(a.stdout, "  auth tenants              List tenants for the current token")
 	_, _ = fmt.Fprintln(a.stdout, "  auth status               Show current CLI auth status")
 	_, _ = fmt.Fprintln(a.stdout, "  auth logout               Revoke a refresh token and remove local CLI config")
@@ -937,6 +938,31 @@ func (a *cliApp) runAuth(ctx context.Context, args []string) error {
 			return err
 		}
 		_, _ = fmt.Fprintln(a.stdout, "Revoked refresh session")
+		return nil
+
+	case "change-password":
+		cfg, client, err := a.loadTokenClient()
+		if err != nil {
+			return err
+		}
+
+		fs := flag.NewFlagSet("auth change-password", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		currentPassword := fs.String("current-password", "", "Current password")
+		newPassword := fs.String("new-password", "", "New password")
+		passwordsStdin := fs.Bool("passwords-stdin", false, "Read current and new password from stdin, one per line")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		currentValue, newValue, err := resolvePasswordPair(*currentPassword, *newPassword, *passwordsStdin)
+		if err != nil {
+			return err
+		}
+		if err := client.changePassword(ctx, currentValue, newValue, cfg.APIToken); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintln(a.stdout, "Changed password and revoked refresh sessions")
 		return nil
 
 	case "status":
@@ -11004,6 +11030,38 @@ func resolvePassword(password string, passwordStdin bool) (string, error) {
 	value = strings.TrimRight(value, "\r\n")
 	if value == "" {
 		return "", errors.New("password from stdin is empty")
+	}
+	return value, nil
+}
+
+func resolvePasswordPair(currentPassword, newPassword string, passwordsStdin bool) (string, string, error) {
+	if strings.TrimSpace(currentPassword) != "" && strings.TrimSpace(newPassword) != "" {
+		return currentPassword, newPassword, nil
+	}
+	if !passwordsStdin {
+		return "", "", errors.New("current-password and new-password are required")
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	currentValue, err := readPasswordLine(reader, "current password")
+	if err != nil {
+		return "", "", err
+	}
+	newValue, err := readPasswordLine(reader, "new password")
+	if err != nil {
+		return "", "", err
+	}
+	return currentValue, newValue, nil
+}
+
+func readPasswordLine(reader *bufio.Reader, label string) (string, error) {
+	value, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("read %s from stdin: %w", label, err)
+	}
+	value = strings.TrimRight(value, "\r\n")
+	if value == "" {
+		return "", fmt.Errorf("%s from stdin is empty", label)
 	}
 	return value, nil
 }

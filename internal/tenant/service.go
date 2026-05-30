@@ -302,6 +302,50 @@ func (s *Service) ValidatePassword(user *User, password string) bool {
 	return err == nil
 }
 
+// ChangeUserPassword verifies the current password and stores a new password hash.
+func (s *Service) ChangeUserPassword(ctx context.Context, userID, currentPassword, newPassword string) error {
+	if strings.TrimSpace(userID) == "" {
+		return fmt.Errorf("user ID is required")
+	}
+	if currentPassword == "" || newPassword == "" {
+		return fmt.Errorf("current password and new password are required")
+	}
+	if len(newPassword) < 8 {
+		return fmt.Errorf("new password must be at least 8 characters")
+	}
+
+	user, err := s.repo.GetUserByID(ctx, userID)
+	if err == ErrUserNotFound {
+		return fmt.Errorf("user not found")
+	}
+	if err != nil {
+		return err
+	}
+	if !user.IsActive {
+		return fmt.Errorf("account is disabled")
+	}
+	if !s.ValidatePassword(user, currentPassword) {
+		return fmt.Errorf("current password is incorrect")
+	}
+	if s.ValidatePassword(user, newPassword) {
+		return fmt.Errorf("new password must be different from current password")
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), 12)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	updatedAt := time.Now()
+	if err := s.repo.UpdateUserPassword(ctx, userID, string(hash), updatedAt); err != nil {
+		if err == ErrUserNotFound {
+			return fmt.Errorf("user not found")
+		}
+		return err
+	}
+	return nil
+}
+
 // DeleteTenant deletes a tenant and its schema (use with caution)
 func (s *Service) DeleteTenant(ctx context.Context, tenantID string) error {
 	tenant, err := s.GetTenant(ctx, tenantID)

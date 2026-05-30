@@ -81,6 +81,7 @@ type refreshSessionManager interface {
 	RevokeRefreshSession(ctx context.Context, userID, tokenID, tokenHash string) error
 	ListRefreshSessions(ctx context.Context, userID string, includeInactive bool) ([]auth.RefreshSession, error)
 	RevokeRefreshSessionByID(ctx context.Context, userID, tokenID string) error
+	RevokeAllRefreshSessions(ctx context.Context, userID string) error
 }
 
 // getSchemaName returns the schema name for a tenant
@@ -409,6 +410,58 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
+}
+
+// ChangePassword changes the authenticated user's password.
+// @Summary Change password
+// @Description Change the authenticated user's password after verifying the current password. Active refresh-token sessions are revoked after a successful change.
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body object{current_password=string,new_password=string} true "Password change details"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Failure 401 {object} object{error=string}
+// @Router /auth/password [put]
+func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	claims, ok := auth.GetClaims(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+
+	var req struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if h.refreshSessionService == nil {
+		respondError(w, http.StatusInternalServerError, "Refresh session service unavailable")
+		return
+	}
+
+	if err := h.tenantService.ChangeUserPassword(r.Context(), claims.UserID, req.CurrentPassword, req.NewPassword); err != nil {
+		status := http.StatusBadRequest
+		switch {
+		case strings.Contains(err.Error(), "current password is incorrect"),
+			strings.Contains(err.Error(), "account is disabled"),
+			strings.Contains(err.Error(), "user not found"):
+			status = http.StatusUnauthorized
+		}
+		respondError(w, status, err.Error())
+		return
+	}
+
+	if err := h.refreshSessionService.RevokeAllRefreshSessions(r.Context(), claims.UserID); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to revoke refresh sessions")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "password_changed"})
 }
 
 // ListAuthSessions lists refresh sessions for the authenticated user

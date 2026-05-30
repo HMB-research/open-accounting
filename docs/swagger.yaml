@@ -6496,6 +6496,53 @@ paths:
       summary: Revoke refresh token
       tags:
       - Auth
+  /auth/password:
+    put:
+      consumes:
+      - application/json
+      description: Change the authenticated user's password after verifying the current
+        password. Active refresh-token sessions are revoked after a successful change.
+      parameters:
+      - description: Password change details
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            current_password:
+              type: string
+            new_password:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Change password
+      tags:
+      - Auth
   /auth/refresh:
     post:
       consumes:

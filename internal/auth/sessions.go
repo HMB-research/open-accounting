@@ -154,6 +154,19 @@ func (s *RefreshSessionService) RevokeRefreshSessionByID(ctx context.Context, us
 	return nil
 }
 
+// RevokeAllRefreshSessions revokes all active refresh sessions for a user.
+func (s *RefreshSessionService) RevokeAllRefreshSessions(ctx context.Context, userID string) error {
+	now := s.now().UTC()
+	_, err := s.pool.Exec(ctx, `
+		UPDATE refresh_sessions
+		SET revoked_at = $2
+		WHERE user_id = $1
+			AND revoked_at IS NULL
+			AND expires_at > $2
+	`, userID, now)
+	return err
+}
+
 func nullTimePtr(value sql.NullTime) *time.Time {
 	if !value.Valid {
 		return nil

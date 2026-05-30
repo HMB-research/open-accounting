@@ -281,6 +281,16 @@ func (m *mockTenantRepository) GetUserByID(ctx context.Context, userID string) (
 	return u, nil
 }
 
+func (m *mockTenantRepository) UpdateUserPassword(ctx context.Context, userID, passwordHash string, updatedAt time.Time) error {
+	u, ok := m.users[userID]
+	if !ok {
+		return tenant.ErrUserNotFound
+	}
+	u.PasswordHash = passwordHash
+	u.UpdatedAt = updatedAt
+	return nil
+}
+
 func (m *mockTenantRepository) CreateInvitation(ctx context.Context, inv *tenant.UserInvitation) error {
 	m.invitations[inv.Token] = inv
 	return nil
@@ -443,6 +453,16 @@ func (m *mockRefreshSessionService) RevokeRefreshSessionByID(ctx context.Context
 	}
 	session.revoked = true
 	m.sessions[tokenID] = session
+	return nil
+}
+
+func (m *mockRefreshSessionService) RevokeAllRefreshSessions(ctx context.Context, userID string) error {
+	for tokenID, session := range m.sessions {
+		if session.userID == userID && !session.revoked && session.expiresAt.After(time.Now()) {
+			session.revoked = true
+			m.sessions[tokenID] = session
+		}
+	}
 	return nil
 }
 
@@ -946,6 +966,50 @@ func TestLogoutRejectsInvalidRefreshToken(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.Logout(w, req)
 	assert.Equal(t, http.StatusUnauthorized, w.Code, "response body: %s", w.Body.String())
+}
+
+func TestChangePasswordRevokesRefreshSessions(t *testing.T) {
+	h, repo := setupAuthTestHandlers()
+	user := repo.addTestUser("user-1", "user@example.com", "Test User", "oldpassword123", true)
+	createMockRefreshSession(t, h, user.ID)
+
+	claims := createTestClaims(user.ID, user.Email, "", "")
+	req := makeAuthenticatedRequest(http.MethodPut, "/auth/password", map[string]string{
+		"current_password": "oldpassword123",
+		"new_password":     "newpassword123",
+	}, claims)
+	w := httptest.NewRecorder()
+
+	h.ChangePassword(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	assert.True(t, tenant.NewServiceWithRepository(repo).ValidatePassword(user, "newpassword123"))
+
+	req = makeAuthenticatedRequest(http.MethodGet, "/auth/sessions", nil, claims)
+	w = httptest.NewRecorder()
+	h.ListAuthSessions(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+
+	var activeSessions []auth.RefreshSession
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&activeSessions))
+	assert.Empty(t, activeSessions)
+}
+
+func TestChangePasswordRejectsWrongCurrentPassword(t *testing.T) {
+	h, repo := setupAuthTestHandlers()
+	user := repo.addTestUser("user-1", "user@example.com", "Test User", "oldpassword123", true)
+
+	claims := createTestClaims(user.ID, user.Email, "", "")
+	req := makeAuthenticatedRequest(http.MethodPut, "/auth/password", map[string]string{
+		"current_password": "wrongpassword",
+		"new_password":     "newpassword123",
+	}, claims)
+	w := httptest.NewRecorder()
+
+	h.ChangePassword(w, req)
+
+	require.Equal(t, http.StatusUnauthorized, w.Code, "response body: %s", w.Body.String())
+	assert.True(t, tenant.NewServiceWithRepository(repo).ValidatePassword(user, "oldpassword123"))
 }
 
 func TestListAuthSessions(t *testing.T) {

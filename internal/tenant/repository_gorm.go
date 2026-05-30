@@ -387,6 +387,24 @@ func (r *GORMRepository) GetUserByID(ctx context.Context, userID string) (*User,
 	return modelToUser(&userModel), nil
 }
 
+// UpdateUserPassword updates a user's password hash.
+func (r *GORMRepository) UpdateUserPassword(ctx context.Context, userID, passwordHash string, updatedAt time.Time) error {
+	result := r.db.WithContext(ctx).
+		Model(&models.User{}).
+		Where("id = ?", userID).
+		Updates(map[string]interface{}{
+			"password_hash": passwordHash,
+			"updated_at":    updatedAt,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("update user password: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
 // CreateInvitation creates a new user invitation
 func (r *GORMRepository) CreateInvitation(ctx context.Context, inv *UserInvitation) error {
 	// Use raw SQL for ON CONFLICT upsert

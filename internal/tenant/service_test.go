@@ -42,6 +42,7 @@ type MockRepository struct {
 	createUserErr            error
 	getUserByEmailErr        error
 	getUserByIDErr           error
+	updateUserPasswordErr    error
 	createInvitationErr      error
 	getInvitationByTokenErr  error
 	acceptInvitationErr      error
@@ -324,6 +325,19 @@ func (m *MockRepository) GetUserByID(ctx context.Context, userID string) (*User,
 		return nil, ErrUserNotFound
 	}
 	return u, nil
+}
+
+func (m *MockRepository) UpdateUserPassword(ctx context.Context, userID, passwordHash string, updatedAt time.Time) error {
+	if m.updateUserPasswordErr != nil {
+		return m.updateUserPasswordErr
+	}
+	u, ok := m.users[userID]
+	if !ok {
+		return ErrUserNotFound
+	}
+	u.PasswordHash = passwordHash
+	u.UpdatedAt = updatedAt
+	return nil
 }
 
 func (m *MockRepository) CreateInvitation(ctx context.Context, inv *UserInvitation) error {
@@ -1261,6 +1275,61 @@ func TestService_GetUserByID(t *testing.T) {
 		_, err := svc.GetUserByID(context.Background(), "nonexistent")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "user not found")
+	})
+}
+
+func TestService_ChangeUserPassword(t *testing.T) {
+	t.Run("changes password after verifying current password", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+		user, err := svc.CreateUser(context.Background(), &CreateUserRequest{
+			Email:    "change@example.com",
+			Password: "oldpassword123",
+			Name:     "Change User",
+		})
+		require.NoError(t, err)
+
+		err = svc.ChangeUserPassword(context.Background(), user.ID, "oldpassword123", "newpassword123")
+		require.NoError(t, err)
+
+		updated, err := svc.GetUserByID(context.Background(), user.ID)
+		require.NoError(t, err)
+		assert.True(t, svc.ValidatePassword(updated, "newpassword123"))
+		assert.False(t, svc.ValidatePassword(updated, "oldpassword123"))
+	})
+
+	t.Run("rejects invalid current password", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+		user, err := svc.CreateUser(context.Background(), &CreateUserRequest{
+			Email:    "wrong-current@example.com",
+			Password: "oldpassword123",
+			Name:     "Wrong Current",
+		})
+		require.NoError(t, err)
+
+		err = svc.ChangeUserPassword(context.Background(), user.ID, "wrongpassword", "newpassword123")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "current password is incorrect")
+	})
+
+	t.Run("rejects weak or reused new password", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+		user, err := svc.CreateUser(context.Background(), &CreateUserRequest{
+			Email:    "weak@example.com",
+			Password: "oldpassword123",
+			Name:     "Weak User",
+		})
+		require.NoError(t, err)
+
+		err = svc.ChangeUserPassword(context.Background(), user.ID, "oldpassword123", "short")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "at least 8 characters")
+
+		err = svc.ChangeUserPassword(context.Background(), user.ID, "oldpassword123", "oldpassword123")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "different")
 	})
 }
 
