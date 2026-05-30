@@ -3163,6 +3163,11 @@ func (c *apiClient) uploadDocument(ctx context.Context, tenantID string, req *do
 			return nil, fmt.Errorf("write retention_until: %w", err)
 		}
 	}
+	if req.RetentionYears > 0 {
+		if err := writer.WriteField("retention_years", strconv.Itoa(req.RetentionYears)); err != nil {
+			return nil, fmt.Errorf("write retention_years: %w", err)
+		}
+	}
 
 	part, err := writer.CreateFormFile("file", strings.TrimSpace(req.FileName))
 	if err != nil {

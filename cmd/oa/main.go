@@ -11104,6 +11104,7 @@ func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
 		documentType := fs.String("document-type", documents.DocumentTypeSupportingDocument, "Document type")
 		notes := fs.String("notes", "", "Optional notes")
 		retentionUntil := fs.String("retention-until", "", "Optional retention date in YYYY-MM-DD")
+		retentionYears := fs.Int("retention-years", 0, "Set retention date this many years after upload (1-100)")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -11111,19 +11112,29 @@ func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
 		if strings.TrimSpace(*entityType) == "" || strings.TrimSpace(*entityID) == "" || strings.TrimSpace(*filePath) == "" {
 			return errors.New("entity-type, entity-id, and file are required")
 		}
-
-		content, fileName, err := readFileInput(*filePath, "stdin.bin")
-		if err != nil {
-			return err
+		trimmedRetention := strings.TrimSpace(*retentionUntil)
+		if trimmedRetention != "" && *retentionYears > 0 {
+			return errors.New("retention-until and retention-years cannot be combined")
+		}
+		if *retentionYears < 0 {
+			return errors.New("retention-years must be zero or greater")
+		}
+		if *retentionYears > documents.MaxRetentionYears {
+			return fmt.Errorf("retention-years cannot exceed %d", documents.MaxRetentionYears)
 		}
 		var retentionDate *time.Time
-		if strings.TrimSpace(*retentionUntil) != "" {
-			parsed, err := time.Parse("2006-01-02", strings.TrimSpace(*retentionUntil))
+		if trimmedRetention != "" {
+			parsed, err := time.Parse("2006-01-02", trimmedRetention)
 			if err != nil {
 				return fmt.Errorf("parse retention-until: %w", err)
 			}
 			normalized := parsed.UTC()
 			retentionDate = &normalized
+		}
+
+		content, fileName, err := readFileInput(*filePath, "stdin.bin")
+		if err != nil {
+			return err
 		}
 
 		doc, err := client.uploadDocument(ctx, cfg.TenantID, &documents.UploadDocumentRequest{
@@ -11133,6 +11144,7 @@ func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
 			FileName:       fileName,
 			Notes:          strings.TrimSpace(*notes),
 			RetentionUntil: retentionDate,
+			RetentionYears: *retentionYears,
 		}, content)
 		if err != nil {
 			return err

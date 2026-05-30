@@ -223,8 +223,14 @@ func (h *Handlers) UploadDocument(w http.ResponseWriter, r *http.Request) {
 	entityID := strings.TrimSpace(r.FormValue("entity_id"))
 	documentType := strings.TrimSpace(r.FormValue("document_type"))
 	notes := strings.TrimSpace(r.FormValue("notes"))
+	rawRetention := strings.TrimSpace(r.FormValue("retention_until"))
+	rawRetentionYears := strings.TrimSpace(r.FormValue("retention_years"))
+	if rawRetention != "" && rawRetentionYears != "" {
+		respondError(w, http.StatusBadRequest, "retention_until and retention_years cannot be combined")
+		return
+	}
 	var retentionUntil *time.Time
-	if rawRetention := strings.TrimSpace(r.FormValue("retention_until")); rawRetention != "" {
+	if rawRetention != "" {
 		parsed, err := time.Parse("2006-01-02", rawRetention)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "Invalid retention_until date, expected YYYY-MM-DD")
@@ -232,6 +238,19 @@ func (h *Handlers) UploadDocument(w http.ResponseWriter, r *http.Request) {
 		}
 		normalized := parsed.UTC()
 		retentionUntil = &normalized
+	}
+	retentionYears := 0
+	if rawRetentionYears != "" {
+		parsed, err := strconv.Atoi(rawRetentionYears)
+		if err != nil || parsed < 0 {
+			respondError(w, http.StatusBadRequest, "retention_years must be zero or greater")
+			return
+		}
+		if parsed > documents.MaxRetentionYears {
+			respondError(w, http.StatusBadRequest, "retention_years cannot exceed "+strconv.Itoa(documents.MaxRetentionYears))
+			return
+		}
+		retentionYears = parsed
 	}
 	file, header, err := r.FormFile("file")
 	if err != nil {
@@ -251,6 +270,7 @@ func (h *Handlers) UploadDocument(w http.ResponseWriter, r *http.Request) {
 		FileSize:       header.Size,
 		Notes:          notes,
 		RetentionUntil: retentionUntil,
+		RetentionYears: retentionYears,
 		UploadedBy:     claims.UserID,
 	}, file)
 	if err != nil {
@@ -345,6 +365,7 @@ func respondDocumentError(w http.ResponseWriter, err error) {
 		strings.Contains(message, "required"),
 		strings.Contains(message, "empty"),
 		strings.Contains(message, "limit"),
+		strings.Contains(message, "cannot"),
 		strings.Contains(message, "invalid"),
 		strings.Contains(message, "must"):
 		respondError(w, http.StatusBadRequest, message)

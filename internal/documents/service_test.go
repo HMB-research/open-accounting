@@ -247,21 +247,40 @@ func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 	svc := NewService(repo, store)
 
 	doc, err := svc.UploadDocument(context.Background(), "tenant_demo", "tenant-1", &UploadDocumentRequest{
-		EntityType:   EntityTypeBankTxn,
-		EntityID:     "txn-1",
-		DocumentType: DocumentTypeReconciliation,
-		FileName:     "invoice 001.pdf",
-		ContentType:  "application/pdf",
-		FileSize:     int64(len("hello world")),
-		Notes:        "Matched to March bank statement",
-		UploadedBy:   "user-1",
+		EntityType:     EntityTypeBankTxn,
+		EntityID:       "txn-1",
+		DocumentType:   DocumentTypeReconciliation,
+		FileName:       "invoice 001.pdf",
+		ContentType:    "application/pdf",
+		FileSize:       int64(len("hello world")),
+		Notes:          "Matched to March bank statement",
+		RetentionYears: 7,
+		UploadedBy:     "user-1",
 	}, bytes.NewBufferString("hello world"))
 	if err != nil {
 		t.Fatalf("UploadDocument failed: %v", err)
 	}
+	expectedRetention := dateOnlyUTC(doc.CreatedAt.AddDate(7, 0, 0))
+	if doc.RetentionUntil == nil || !doc.RetentionUntil.Equal(expectedRetention) {
+		t.Fatalf("expected retention until %s, got %#v", expectedRetention.Format("2006-01-02"), doc.RetentionUntil)
+	}
 
 	if _, err := os.Stat(filepath.Join(rootDir, doc.StorageKey)); err != nil {
 		t.Fatalf("expected stored file to exist: %v", err)
+	}
+	explicitRetention := time.Date(2029, 3, 31, 0, 0, 0, 0, time.UTC)
+	if _, err := svc.UploadDocument(context.Background(), "tenant_demo", "tenant-1", &UploadDocumentRequest{
+		EntityType:     EntityTypeBankTxn,
+		EntityID:       "txn-1",
+		DocumentType:   DocumentTypeReconciliation,
+		FileName:       "conflict.pdf",
+		ContentType:    "application/pdf",
+		FileSize:       int64(len("hello world")),
+		RetentionUntil: &explicitRetention,
+		RetentionYears: 7,
+		UploadedBy:     "user-1",
+	}, bytes.NewBufferString("hello world")); err == nil {
+		t.Fatal("expected retention_until and retention_years to conflict")
 	}
 
 	listed, err := svc.ListDocuments(context.Background(), "tenant_demo", "tenant-1", EntityTypeBankTxn, "txn-1")

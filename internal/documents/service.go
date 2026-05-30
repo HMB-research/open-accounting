@@ -69,6 +69,12 @@ func (s *Service) UploadDocument(ctx context.Context, schemaName, tenantID strin
 		return nil, fmt.Errorf("target record not found")
 	}
 
+	createdAt := time.Now().UTC()
+	retentionUntil, err := normalizeUploadRetention(req.RetentionUntil, req.RetentionYears, createdAt)
+	if err != nil {
+		return nil, err
+	}
+
 	doc := &Document{
 		ID:             uuid.New().String(),
 		TenantID:       tenantID,
@@ -79,10 +85,10 @@ func (s *Service) UploadDocument(ctx context.Context, schemaName, tenantID strin
 		ContentType:    normalizeContentType(req.ContentType, fileName),
 		FileSize:       req.FileSize,
 		Notes:          strings.TrimSpace(req.Notes),
-		RetentionUntil: req.RetentionUntil,
+		RetentionUntil: retentionUntil,
 		ReviewStatus:   ReviewStatusPending,
 		UploadedBy:     strings.TrimSpace(req.UploadedBy),
-		CreatedAt:      time.Now().UTC(),
+		CreatedAt:      createdAt,
 	}
 	doc.StorageKey = buildStorageKey(tenantID, doc.CreatedAt, doc.ID, fileName)
 
@@ -317,6 +323,28 @@ func (s *Service) UpdateDocumentRetention(ctx context.Context, schemaName, tenan
 func dateOnlyUTC(value time.Time) time.Time {
 	utc := value.UTC()
 	return time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+func normalizeUploadRetention(retentionUntil *time.Time, retentionYears int, createdAt time.Time) (*time.Time, error) {
+	if retentionYears < 0 {
+		return nil, fmt.Errorf("retention years must be zero or greater")
+	}
+	if retentionYears > MaxRetentionYears {
+		return nil, fmt.Errorf("retention years cannot exceed %d", MaxRetentionYears)
+	}
+	if retentionUntil != nil && retentionYears > 0 {
+		return nil, fmt.Errorf("retention_until and retention_years cannot be combined")
+	}
+	if retentionUntil != nil {
+		normalized := dateOnlyUTC(*retentionUntil)
+		return &normalized, nil
+	}
+	if retentionYears == 0 {
+		return nil, nil
+	}
+
+	normalized := dateOnlyUTC(createdAt.AddDate(retentionYears, 0, 0))
+	return &normalized, nil
 }
 
 func (s *Service) ReviewDocument(ctx context.Context, schemaName, tenantID, documentID, reviewedBy string, req *ReviewDocumentRequest) (*Document, error) {

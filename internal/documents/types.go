@@ -26,6 +26,7 @@ const (
 	ReviewStatusRejected = "REJECTED"
 
 	MaxDocumentSizeBytes = 10 << 20
+	MaxRetentionYears    = 100
 )
 
 type Document struct {
@@ -57,6 +58,7 @@ type UploadDocumentRequest struct {
 	FileSize       int64
 	Notes          string
 	RetentionUntil *time.Time
+	RetentionYears int
 	UploadedBy     string
 }
 
