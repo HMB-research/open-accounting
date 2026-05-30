@@ -1254,11 +1254,11 @@ func printStockLevelsTable(w io.Writer, levels []inventory.StockLevel) {
 
 func printInventoryMovementsTable(w io.Writer, movements []inventory.InventoryMovement) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "ID\tDATE\tTYPE\tPRODUCT\tWAREHOUSE\tQTY\tUNIT COST\tREFERENCE\tNOTES")
+	_, _ = fmt.Fprintln(tw, "ID\tDATE\tTYPE\tPRODUCT\tWAREHOUSE\tQTY\tUNIT COST\tLOT\tSERIAL\tEXPIRY\tREFERENCE\tNOTES")
 	for _, movement := range movements {
 		_, _ = fmt.Fprintf(
 			tw,
-			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			movement.ID,
 			formatDate(movement.MovementDate),
 			movement.MovementType,
@@ -1266,6 +1266,9 @@ func printInventoryMovementsTable(w io.Writer, movements []inventory.InventoryMo
 			movement.WarehouseID,
 			movement.Quantity.String(),
 			movement.UnitCost.String(),
+			formatOptionalString(movement.LotNumber),
+			formatOptionalString(movement.SerialNumber),
+			formatOptionalString(movement.ExpiryDate),
 			movement.Reference,
 			movement.Notes,
 		)
@@ -3218,6 +3221,14 @@ func formatDatePtr(value *time.Time) string {
 		return "-"
 	}
 	return formatDate(*value)
+}
+
+func formatOptionalString(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "-"
+	}
+	return trimmed
 }
 
 func formatDecimalPtr(value *decimal.Decimal) string {

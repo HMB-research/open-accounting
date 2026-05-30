@@ -124,6 +124,9 @@ type InventoryMovement struct {
 	Quantity      decimal.Decimal `json:"quantity"`
 	UnitCost      decimal.Decimal `json:"unit_cost"`
 	TotalCost     decimal.Decimal `json:"total_cost"`
+	LotNumber     string          `json:"lot_number,omitempty"`
+	SerialNumber  string          `json:"serial_number,omitempty"`
+	ExpiryDate    string          `json:"expiry_date,omitempty"`
 	Reference     string          `json:"reference,omitempty"`
 	SourceType    string          `json:"source_type,omitempty"`
 	SourceID      string          `json:"source_id,omitempty"`
@@ -307,12 +310,15 @@ type UpdateWarehouseRequest struct {
 
 // AdjustStockRequest represents a request to adjust stock
 type AdjustStockRequest struct {
-	ProductID   string `json:"product_id"`
-	WarehouseID string `json:"warehouse_id"`
-	Quantity    string `json:"quantity"`
-	UnitCost    string `json:"unit_cost,omitempty"`
-	Reason      string `json:"reason,omitempty"`
-	UserID      string `json:"-"`
+	ProductID    string `json:"product_id"`
+	WarehouseID  string `json:"warehouse_id"`
+	Quantity     string `json:"quantity"`
+	UnitCost     string `json:"unit_cost,omitempty"`
+	LotNumber    string `json:"lot_number,omitempty"`
+	SerialNumber string `json:"serial_number,omitempty"`
+	ExpiryDate   string `json:"expiry_date,omitempty"`
+	Reason       string `json:"reason,omitempty"`
+	UserID       string `json:"-"`
 }
 
 // ImportStockAdjustmentsRequest contains CSV payload for stock adjustment migration.

@@ -570,6 +570,11 @@ func (s *Service) AdjustStock(ctx context.Context, tenantID, schemaName string, 
 		}
 	}
 
+	lotNumber, serialNumber, expiryDate, err := normalizeMovementTrackingMetadata(req)
+	if err != nil {
+		return nil, err
+	}
+
 	product, err := s.repo.GetProductByID(ctx, schemaName, tenantID, req.ProductID)
 	if err != nil {
 		return nil, fmt.Errorf("get product: %w", err)
@@ -611,6 +616,9 @@ func (s *Service) AdjustStock(ctx context.Context, tenantID, schemaName string, 
 		Quantity:     quantity.Abs(),
 		UnitCost:     unitCost,
 		TotalCost:    quantity.Abs().Mul(unitCost),
+		LotNumber:    lotNumber,
+		SerialNumber: serialNumber,
+		ExpiryDate:   expiryDate,
 		Reference:    "Stock Adjustment",
 		Notes:        req.Reason,
 		MovementDate: time.Now(),
@@ -634,6 +642,18 @@ func (s *Service) AdjustStock(ctx context.Context, tenantID, schemaName string, 
 	}
 
 	return movement, nil
+}
+
+func normalizeMovementTrackingMetadata(req *AdjustStockRequest) (string, string, string, error) {
+	lotNumber := strings.TrimSpace(req.LotNumber)
+	serialNumber := strings.TrimSpace(req.SerialNumber)
+	expiryDate := strings.TrimSpace(req.ExpiryDate)
+	if expiryDate != "" {
+		if _, err := time.Parse("2006-01-02", expiryDate); err != nil {
+			return "", "", "", fmt.Errorf("expiry_date must use YYYY-MM-DD")
+		}
+	}
+	return lotNumber, serialNumber, expiryDate, nil
 }
 
 // TransferStock transfers stock between warehouses

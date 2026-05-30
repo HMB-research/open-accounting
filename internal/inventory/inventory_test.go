@@ -594,6 +594,9 @@ func TestMockRepository_Movements(t *testing.T) {
 		WarehouseID:  "wh-1",
 		MovementType: MovementTypeIn,
 		Quantity:     decimal.NewFromInt(50),
+		LotNumber:    "LOT-2026-01",
+		SerialNumber: "SN-001",
+		ExpiryDate:   "2027-01-31",
 	}
 
 	// Create
@@ -871,9 +874,9 @@ func TestService_ImportStockAdjustmentsCSV(t *testing.T) {
 	result, err := ts.svc.ImportStockAdjustmentsCSV(ctx, "tenant-1", "test_schema", &ImportStockAdjustmentsRequest{
 		FileName: "stock.csv",
 		UserID:   "user-1",
-		CSVContent: "product_code,warehouse_code,quantity,unit_cost,reason\n" +
-			"SKU-001,MAIN,12,10.50,Opening stock\n" +
-			"MISSING,MAIN,5,10.50,Missing product\n",
+		CSVContent: "product_code,warehouse_code,quantity,unit_cost,lot_number,serial_number,expiry_date,reason\n" +
+			"SKU-001,MAIN,12,10.50,LOT-2026-01,SN-001,2027-01-31,Opening stock\n" +
+			"MISSING,MAIN,5,10.50,,,,Missing product\n",
 	})
 
 	require.NoError(t, err)
@@ -898,6 +901,9 @@ func TestService_ImportStockAdjustmentsCSV(t *testing.T) {
 	assert.Equal(t, MovementTypeIn, movement.MovementType)
 	assert.True(t, movement.Quantity.Equal(decimal.NewFromInt(12)))
 	assert.True(t, movement.UnitCost.Equal(decimal.RequireFromString("10.50")))
+	assert.Equal(t, "LOT-2026-01", movement.LotNumber)
+	assert.Equal(t, "SN-001", movement.SerialNumber)
+	assert.Equal(t, "2027-01-31", movement.ExpiryDate)
 	assert.Equal(t, "Opening stock", movement.Notes)
 	assert.Equal(t, "user-1", movement.CreatedBy)
 }
@@ -1168,18 +1174,24 @@ func TestService_AdjustStock(t *testing.T) {
 	}
 
 	req := &AdjustStockRequest{
-		ProductID:   "p1",
-		WarehouseID: "wh-1",
-		Quantity:    "50",
-		UnitCost:    "10",
-		Reason:      "Received shipment",
-		UserID:      "user-1",
+		ProductID:    "p1",
+		WarehouseID:  "wh-1",
+		Quantity:     "50",
+		UnitCost:     "10",
+		LotNumber:    " LOT-2026-01 ",
+		SerialNumber: " SN-001 ",
+		ExpiryDate:   "2027-01-31",
+		Reason:       "Received shipment",
+		UserID:       "user-1",
 	}
 
 	movement, err := ts.svc.AdjustStock(ctx, "tenant-1", "test_schema", req)
 	require.NoError(t, err)
 	assert.Equal(t, MovementTypeIn, movement.MovementType)
 	assert.True(t, movement.Quantity.Equal(decimal.NewFromInt(50)))
+	assert.Equal(t, "LOT-2026-01", movement.LotNumber)
+	assert.Equal(t, "SN-001", movement.SerialNumber)
+	assert.Equal(t, "2027-01-31", movement.ExpiryDate)
 
 	// Check product stock updated
 	product, _ := ts.repo.GetProductByID(ctx, "test_schema", "tenant-1", "p1")
@@ -1281,6 +1293,20 @@ func TestService_AdjustStock_InvalidQuantity(t *testing.T) {
 	_, err := ts.svc.AdjustStock(ctx, "tenant-1", "test_schema", req)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid quantity")
+}
+
+func TestService_AdjustStock_InvalidExpiryDate(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	_, err := ts.svc.AdjustStock(ctx, "tenant-1", "test_schema", &AdjustStockRequest{
+		ProductID:   "p1",
+		WarehouseID: "wh-1",
+		Quantity:    "1",
+		ExpiryDate:  "31-01-2027",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "expiry_date must use YYYY-MM-DD")
 }
 
 func TestService_TransferStock(t *testing.T) {

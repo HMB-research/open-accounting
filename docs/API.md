@@ -2148,11 +2148,14 @@ Content-Type: application/json
   "warehouse_id": "uuid",
   "quantity": "-2",
   "unit_cost": "10.50",
+  "lot_number": "LOT-2026-01",
+  "serial_number": "SN-001",
+  "expiry_date": "2027-01-31",
   "reason": "Cycle count"
 }
 ```
 
-`quantity` is signed: positive quantities add stock and negative quantities remove stock. Adjustments update both the product total stock and the selected warehouse stock level; reductions cannot drive that warehouse below zero or below reserved quantity.
+`quantity` is signed: positive quantities add stock and negative quantities remove stock. Adjustments update both the product total stock and the selected warehouse stock level; reductions cannot drive that warehouse below zero or below reserved quantity. `lot_number`, `serial_number`, and `expiry_date` are optional movement metadata fields; `expiry_date` must use `YYYY-MM-DD`.
 
 ```http
 POST /tenants/{tenantId}/inventory/stock-import
@@ -2161,11 +2164,11 @@ Content-Type: application/json
 
 {
   "file_name": "stock.csv",
-  "csv_content": "product_code,warehouse_code,quantity,unit_cost,reason\nPRD-001,MAIN,12,10.50,Opening stock\n"
+  "csv_content": "product_code,warehouse_code,quantity,unit_cost,lot_number,serial_number,expiry_date,reason\nPRD-001,MAIN,12,10.50,LOT-2026-01,SN-001,2027-01-31,Opening stock\n"
 }
 ```
 
-Stock CSV imports require `quantity`, a product identifier (`product_id` or `product_code`), and a warehouse identifier (`warehouse_id` or `warehouse_code`). Quantities are signed adjustments; use positive quantities for opening stock or inbound counts and negative quantities for reductions.
+Stock CSV imports require `quantity`, a product identifier (`product_id` or `product_code`), and a warehouse identifier (`warehouse_id` or `warehouse_code`). Quantities are signed adjustments; use positive quantities for opening stock or inbound counts and negative quantities for reductions. Optional lot metadata columns are `lot_number`, `serial_number`, and `expiry_date`; aliases include `lot`, `batch`, `serial`, and `expiration_date`.
 
 ```http
 POST /tenants/{tenantId}/inventory/transfer
