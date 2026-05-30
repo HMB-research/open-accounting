@@ -1438,7 +1438,7 @@ POST /tenants/{tenantId}/invoices/{invoiceId}/send
 Authorization: Bearer <token>
 ```
 
-Draft purchase invoices require at least one approved `receipt`, `supporting_document`, or `tax_support` document attached to the `invoice` entity before they can be sent. Missing or pending evidence returns `409 Conflict`.
+Draft purchase invoices require at least one approved `receipt`, `supporting_document`, or `tax_support` document attached to the `invoice` entity before they can be sent or emailed. Missing or pending evidence returns `409 Conflict`.
 
 ### Void Invoice
 
@@ -2541,6 +2541,8 @@ Send an invoice email:
 ```
 
 Payment receipt emails use the same recipient, subject, and message fields without `attach_pdf`. Add `"require_approved_evidence": true` to require at least one approved `receipt`, `supporting_document`, or `tax_support` document attached to the payment before sending; missing approved evidence returns `409 Conflict`.
+
+Draft purchase-invoice emails use the same approved invoice-evidence rule as `POST /tenants/{tenantId}/invoices/{invoiceId}/send`.
 
 ---
 

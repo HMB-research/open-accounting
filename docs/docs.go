@@ -7464,7 +7464,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Send an invoice to a recipient via email",
+                "description": "Send an invoice to a recipient via email. Draft purchase invoices require approved invoice evidence before emailing.",
                 "consumes": [
                     "application/json"
                 ],

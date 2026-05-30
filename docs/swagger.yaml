@@ -10387,7 +10387,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Send an invoice to a recipient via email
+      description: Send an invoice to a recipient via email. Draft purchase invoices
+        require approved invoice evidence before emailing.
       parameters:
       - description: Tenant ID
         in: path

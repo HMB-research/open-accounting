@@ -899,6 +899,27 @@ func TestSendPurchaseInvoiceRequiresApprovedEvidence(t *testing.T) {
 	assert.Equal(t, invoicing.StatusSent, invoiceRepo.invoices["bill-1"].Status)
 }
 
+func TestEmailPurchaseInvoiceRequiresApprovedEvidence(t *testing.T) {
+	h, tenantRepo, invoiceRepo := setupInvoiceTestHandlers()
+	h.documentsService = documents.NewService(newMockDocumentRepository(), nil)
+
+	tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+	invoiceRepo.addTestInvoice("bill-1", "tenant-1", "supplier-1", invoicing.InvoiceTypePurchase, invoicing.StatusDraft)
+
+	claims := &auth.Claims{UserID: "user-1", TenantID: "tenant-1", Role: tenant.RoleOwner}
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/invoices/bill-1/email", map[string]any{
+		"recipient_email": "supplier@example.com",
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "invoiceID": "bill-1"})
+	w := httptest.NewRecorder()
+
+	h.EmailInvoice(w, req)
+
+	assert.Equal(t, http.StatusConflict, w.Code, "response body: %s", w.Body.String())
+	assert.Equal(t, invoicing.StatusDraft, invoiceRepo.invoices["bill-1"].Status)
+	assert.Contains(t, w.Body.String(), "approved purchase-invoice evidence is required")
+}
+
 // =============================================================================
 // VoidInvoice Handler Tests
 // =============================================================================

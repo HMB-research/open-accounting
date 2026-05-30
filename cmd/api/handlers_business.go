@@ -1292,7 +1292,7 @@ func (h *Handlers) GetEmailLog(w http.ResponseWriter, r *http.Request) {
 
 // EmailInvoice sends an invoice via email
 // @Summary Email invoice
-// @Description Send an invoice to a recipient via email
+// @Description Send an invoice to a recipient via email. Draft purchase invoices require approved invoice evidence before emailing.
 // @Tags Email
 // @Accept json
 // @Produce json
@@ -1323,6 +1323,18 @@ func (h *Handlers) EmailInvoice(w http.ResponseWriter, r *http.Request) {
 	invoice, err := h.invoicingService.GetByID(r.Context(), tenantID, schemaName, invoiceID)
 	if err != nil {
 		respondError(w, http.StatusNotFound, "Invoice not found")
+		return
+	}
+
+	if err := h.requireApprovedPurchaseInvoiceEvidence(r.Context(), schemaName, tenantID, invoiceID); err != nil {
+		status := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, errApprovedPurchaseInvoiceEvidenceRequired):
+			status = http.StatusConflict
+		case strings.Contains(err.Error(), "get invoice"):
+			status = http.StatusBadRequest
+		}
+		respondError(w, status, err.Error())
 		return
 	}
 

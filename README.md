@@ -350,6 +350,7 @@ open-accounting/
 - [x] Fiscal-year close readiness and retained-earnings carry-forward workflow
 - [x] Document attachments for invoices, journal entries, payments, bank transactions, fixed assets, and expenses
 - [x] Document evidence policy evaluation through API and CLI
+- [x] Purchase-invoice evidence enforcement on send and email paths
 - [x] Reconciliation completion blocks bank transactions marked as requiring evidence until approved evidence is attached
 - [x] Backup creation, offsite sync, health-check, and restore-drill scripts for self-hosted operations
 
