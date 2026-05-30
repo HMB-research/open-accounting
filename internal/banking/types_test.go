@@ -216,11 +216,15 @@ func TestImportCSVRequest_Fields(t *testing.T) {
 
 	req := ImportCSVRequest{
 		FileName:       "test.csv",
+		CSVContent:     "date,amount,description\n2024-01-15,100.00,Test transaction\n",
+		Format:         "generic",
 		Transactions:   rows,
 		SkipDuplicates: true,
 	}
 
 	assert.Equal(t, "test.csv", req.FileName)
+	assert.Equal(t, "generic", req.Format)
+	assert.NotEmpty(t, req.CSVContent)
 	assert.Len(t, req.Transactions, 1)
 	assert.True(t, req.SkipDuplicates)
 }

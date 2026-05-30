@@ -138,22 +138,26 @@ func (s *Service) EnsureSchema(ctx context.Context, schemaName string) error {
 
 // CreateBankAccount creates a new bank account
 func (s *Service) CreateBankAccount(ctx context.Context, schemaName, tenantID string, req *CreateBankAccountRequest) (*BankAccount, error) {
-	currency := req.Currency
+	currency := strings.ToUpper(strings.TrimSpace(req.Currency))
 	if currency == "" {
 		currency = "EUR"
+	}
+	isActive := true
+	if req.IsActive != nil {
+		isActive = *req.IsActive
 	}
 
 	account := &BankAccount{
 		ID:            uuid.New().String(),
 		TenantID:      tenantID,
-		Name:          req.Name,
-		AccountNumber: req.AccountNumber,
-		BankName:      req.BankName,
-		SwiftCode:     req.SwiftCode,
+		Name:          strings.TrimSpace(req.Name),
+		AccountNumber: strings.TrimSpace(req.AccountNumber),
+		BankName:      strings.TrimSpace(req.BankName),
+		SwiftCode:     strings.ToUpper(strings.TrimSpace(req.SwiftCode)),
 		Currency:      currency,
-		GLAccountID:   req.GLAccountID,
+		GLAccountID:   trimmedStringPtr(req.GLAccountID),
 		IsDefault:     req.IsDefault,
-		IsActive:      true,
+		IsActive:      isActive,
 		CreatedAt:     time.Now(),
 	}
 
@@ -169,6 +173,123 @@ func (s *Service) CreateBankAccount(ctx context.Context, schemaName, tenantID st
 	}
 
 	return account, nil
+}
+
+// ImportBankAccounts imports bank account master data from parsed CSV rows.
+func (s *Service) ImportBankAccounts(ctx context.Context, schemaName, tenantID string, req *ImportBankAccountsRequest) (*ImportBankAccountsResult, error) {
+	result := &ImportBankAccountsResult{
+		FileName: strings.TrimSpace(req.FileName),
+	}
+	if result.FileName == "" {
+		result.FileName = "bank_accounts_import.csv"
+	}
+
+	existing, err := s.repo.ListBankAccounts(ctx, schemaName, tenantID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("list bank accounts before import: %w", err)
+	}
+	seenAccountNumbers := make(map[string]bool, len(existing)+len(req.Rows))
+	for _, account := range existing {
+		if key := normalizeBankAccountNumber(account.AccountNumber); key != "" {
+			seenAccountNumbers[key] = true
+		}
+	}
+
+	for i, row := range req.Rows {
+		rowNum := i + 1
+		result.RowsProcessed++
+
+		name := strings.TrimSpace(row.Name)
+		accountNumber := strings.TrimSpace(row.AccountNumber)
+		if name == "" {
+			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: name is required", rowNum))
+			result.RowsSkipped++
+			continue
+		}
+		if accountNumber == "" {
+			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: account_number is required", rowNum))
+			result.RowsSkipped++
+			continue
+		}
+
+		accountNumberKey := normalizeBankAccountNumber(accountNumber)
+		if seenAccountNumbers[accountNumberKey] {
+			if !req.SkipDuplicates {
+				result.Errors = append(result.Errors, fmt.Sprintf("Row %d: duplicate account_number %q", rowNum, accountNumber))
+			}
+			result.RowsSkipped++
+			continue
+		}
+
+		isDefault, err := parseOptionalImportBool(row.IsDefault, false)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: invalid is_default: %v", rowNum, err))
+			result.RowsSkipped++
+			continue
+		}
+		isActive, err := parseOptionalImportBool(row.IsActive, true)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: invalid is_active: %v", rowNum, err))
+			result.RowsSkipped++
+			continue
+		}
+
+		if _, err := s.CreateBankAccount(ctx, schemaName, tenantID, &CreateBankAccountRequest{
+			Name:          name,
+			AccountNumber: accountNumber,
+			BankName:      row.BankName,
+			SwiftCode:     row.SwiftCode,
+			Currency:      row.Currency,
+			GLAccountID:   nonEmptyStringPtr(row.GLAccountID),
+			IsDefault:     isDefault,
+			IsActive:      &isActive,
+		}); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: create bank account failed: %v", rowNum, err))
+			result.RowsSkipped++
+			continue
+		}
+
+		seenAccountNumbers[accountNumberKey] = true
+		result.AccountsImported++
+	}
+
+	return result, nil
+}
+
+func parseOptionalImportBool(value string, defaultValue bool) (bool, error) {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "" {
+		return defaultValue, nil
+	}
+	switch normalized {
+	case "true", "t", "yes", "y", "1":
+		return true, nil
+	case "false", "f", "no", "n", "0":
+		return false, nil
+	default:
+		return false, fmt.Errorf("expected boolean, got %q", value)
+	}
+}
+
+func normalizeBankAccountNumber(value string) string {
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	normalized = strings.ReplaceAll(normalized, " ", "")
+	return normalized
+}
+
+func trimmedStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	return nonEmptyStringPtr(*value)
+}
+
+func nonEmptyStringPtr(value string) *string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 // GetBankAccount retrieves a bank account by ID

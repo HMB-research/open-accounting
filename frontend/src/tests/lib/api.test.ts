@@ -2037,14 +2037,7 @@ describe("API Client - Core Functionality", () => {
       const result = await api.importBankTransactions("tenant-123", "bank-1", {
         csv_content: "date,desc,amount\n2024-01-01,Test,100",
         file_name: "statement.csv",
-        mapping: {
-          date_column: 0,
-          description_column: 1,
-          amount_column: 2,
-          date_format: "YYYY-MM-DD",
-          decimal_separator: ".",
-          skip_header: true,
-        },
+        format: "generic",
       });
 
       expect(result.import_id).toBe("imp-1");

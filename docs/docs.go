@@ -3570,6 +3570,63 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/bank-accounts/import": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Import bank account master data from CSV rows for incumbent-system cutover.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Banking"
+                ],
+                "summary": "Import bank accounts",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Bank account import data",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_banking.ImportBankAccountsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_banking.ImportBankAccountsResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/bank-accounts/{accountID}": {
             "get": {
                 "security": [
@@ -19586,6 +19643,35 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_banking.CSVBankAccountRow": {
+            "type": "object",
+            "properties": {
+                "account_number": {
+                    "type": "string"
+                },
+                "bank_name": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "gl_account_id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "string"
+                },
+                "is_default": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "swift_code": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_banking.CSVTransactionRow": {
             "type": "object",
             "properties": {
@@ -19629,6 +19715,9 @@ const docTemplate = `{
                 },
                 "gl_account_id": {
                     "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
                 },
                 "is_default": {
                     "type": "boolean"
@@ -19700,10 +19789,56 @@ const docTemplate = `{
                 "FollowUpReadyToMatch"
             ]
         },
-        "github_com_HMB-research_open-accounting_internal_banking.ImportCSVRequest": {
+        "github_com_HMB-research_open-accounting_internal_banking.ImportBankAccountsRequest": {
             "type": "object",
             "properties": {
                 "file_name": {
+                    "type": "string"
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_banking.CSVBankAccountRow"
+                    }
+                },
+                "skip_duplicates": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_banking.ImportBankAccountsResult": {
+            "type": "object",
+            "properties": {
+                "accounts_imported": {
+                    "type": "integer"
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "rows_processed": {
+                    "type": "integer"
+                },
+                "rows_skipped": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_banking.ImportCSVRequest": {
+            "type": "object",
+            "properties": {
+                "csv_content": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "format": {
                     "type": "string"
                 },
                 "skip_duplicates": {
@@ -20166,6 +20301,7 @@ const docTemplate = `{
                 "expenses",
                 "invoices",
                 "payments",
+                "bank_accounts",
                 "bank_transactions",
                 "payroll_history",
                 "leave_balances",
@@ -20189,6 +20325,7 @@ const docTemplate = `{
                 "KindExpenses",
                 "KindInvoices",
                 "KindPayments",
+                "KindBankAccounts",
                 "KindBankTransactions",
                 "KindPayrollHistory",
                 "KindLeaveBalances",

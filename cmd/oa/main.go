@@ -22,6 +22,8 @@ import (
 	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/banking"
+	"github.com/HMB-research/open-accounting/internal/banking/mappers"
+	"github.com/HMB-research/open-accounting/internal/banking/mappers/registry"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/cutover"
 	"github.com/HMB-research/open-accounting/internal/documents"
@@ -326,6 +328,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  close reverse-carry-forward Reverse year-end carry-forward entries")
 	_, _ = fmt.Fprintln(a.stdout, "  banking accounts list     List bank accounts")
 	_, _ = fmt.Fprintln(a.stdout, "  banking accounts create   Create a bank account")
+	_, _ = fmt.Fprintln(a.stdout, "  banking accounts import   Import bank accounts from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  banking accounts get      Show one bank account")
 	_, _ = fmt.Fprintln(a.stdout, "  banking accounts update   Update a bank account")
 	_, _ = fmt.Fprintln(a.stdout, "  banking accounts delete   Delete a bank account")
@@ -1987,6 +1990,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		expensesFile := fs.String("expenses", "", "Expenses CSV file")
 		invoicesFile := fs.String("invoices", "", "Invoices CSV file")
 		paymentsFile := fs.String("payments", "", "Payments CSV file")
+		bankAccountsFile := fs.String("bank-accounts", "", "Bank accounts CSV file")
 		bankTransactionsFile := fs.String("bank-transactions", "", "Bank transactions CSV file")
 		payrollHistoryFile := fs.String("payroll-history", "", "Historical payroll CSV file")
 		leaveBalancesFile := fs.String("leave-balances", "", "Leave balances CSV file")
@@ -2014,6 +2018,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 			{kind: cutover.KindExpenses, path: *expensesFile},
 			{kind: cutover.KindInvoices, path: *invoicesFile},
 			{kind: cutover.KindPayments, path: *paymentsFile},
+			{kind: cutover.KindBankAccounts, path: *bankAccountsFile},
 			{kind: cutover.KindBankTransactions, path: *bankTransactionsFile},
 			{kind: cutover.KindPayrollHistory, path: *payrollHistoryFile},
 			{kind: cutover.KindLeaveBalances, path: *leaveBalancesFile},
@@ -4398,6 +4403,38 @@ func (a *cliApp) runBankAccounts(ctx context.Context, cfg *cliConfig, client *ap
 		_, _ = fmt.Fprintf(a.stdout, "Created bank account %s (%s)\n", account.Name, account.ID)
 		return nil
 
+	case "import":
+		fs := flag.NewFlagSet("banking accounts import", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		filePath := fs.String("file", "", "CSV file path, or - for stdin")
+		skipDuplicates := fs.Bool("skip-duplicates", true, "Skip duplicate bank account numbers")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		content, fileName, err := readCSVInput(*filePath)
+		if err != nil {
+			return err
+		}
+		rows, err := parseBankAccountCSVRows(content)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.importBankAccounts(ctx, cfg.TenantID, &banking.ImportBankAccountsRequest{
+			FileName:       fileName,
+			Rows:           rows,
+			SkipDuplicates: *skipDuplicates,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		printBankAccountImportResult(a.stdout, result)
+		return nil
+
 	case "get":
 		fs := flag.NewFlagSet("banking accounts get", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
@@ -4749,6 +4786,7 @@ func (a *cliApp) runBankTransactions(ctx context.Context, cfg *cliConfig, client
 		fs.SetOutput(a.stderr)
 		accountID := fs.String("account-id", "", "Bank account id")
 		filePath := fs.String("file", "", "CSV file path, or - for stdin")
+		format := fs.String("format", string(mappers.FormatAuto), "Statement format: auto, generic, lhv, or lhv-camt")
 		skipDuplicates := fs.Bool("skip-duplicates", true, "Skip duplicate transactions")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
@@ -4761,7 +4799,7 @@ func (a *cliApp) runBankTransactions(ctx context.Context, cfg *cliConfig, client
 		if err != nil {
 			return err
 		}
-		rows, err := parseBankTransactionCSVRows(content)
+		rows, err := parseBankTransactionCSVRowsWithFormat(content, *format)
 		if err != nil {
 			return err
 		}
@@ -12490,10 +12528,10 @@ func readCSVInput(filePath string) (content string, fileName string, err error) 
 	return string(data), fileName, nil
 }
 
-func parseBankTransactionCSVRows(content string) ([]banking.CSVTransactionRow, error) {
+func parseBankAccountCSVRows(content string) ([]banking.CSVBankAccountRow, error) {
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" {
-		return nil, errors.New("bank transaction CSV is empty")
+		return nil, errors.New("bank account CSV is empty")
 	}
 
 	reader := csv.NewReader(strings.NewReader(trimmed))
@@ -12503,7 +12541,7 @@ func parseBankTransactionCSVRows(content string) ([]banking.CSVTransactionRow, e
 
 	headers, err := reader.Read()
 	if err != nil {
-		return nil, fmt.Errorf("read bank transaction CSV header: %w", err)
+		return nil, fmt.Errorf("read bank account CSV header: %w", err)
 	}
 
 	index := make(map[string]int, len(headers))
@@ -12522,14 +12560,14 @@ func parseBankTransactionCSVRows(content string) ([]banking.CSVTransactionRow, e
 		return ""
 	}
 
-	var rows []banking.CSVTransactionRow
+	var rows []banking.CSVBankAccountRow
 	for rowNum := 2; ; rowNum++ {
 		record, err := reader.Read()
 		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("read bank transaction CSV row %d: %w", rowNum, err)
+			return nil, fmt.Errorf("read bank account CSV row %d: %w", rowNum, err)
 		}
 		empty := true
 		for _, field := range record {
@@ -12542,26 +12580,34 @@ func parseBankTransactionCSVRows(content string) ([]banking.CSVTransactionRow, e
 			continue
 		}
 
-		row := banking.CSVTransactionRow{
-			Date:                get(record, "date", "transaction_date"),
-			ValueDate:           get(record, "value_date"),
-			Amount:              get(record, "amount", "sum"),
-			Description:         get(record, "description", "details", "selgitus"),
-			Reference:           get(record, "reference", "payment_reference"),
-			CounterpartyName:    get(record, "counterparty_name", "counterparty", "name"),
-			CounterpartyAccount: get(record, "counterparty_account", "counterparty_iban", "iban"),
-			ExternalID:          get(record, "external_id", "id"),
+		row := banking.CSVBankAccountRow{
+			Name:          get(record, "name", "account_name", "bank_account_name"),
+			AccountNumber: get(record, "account_number", "iban", "bank_account", "account_no", "account"),
+			BankName:      get(record, "bank_name", "bank"),
+			SwiftCode:     get(record, "swift_code", "swift", "bic"),
+			Currency:      get(record, "currency"),
+			GLAccountID:   get(record, "gl_account_id", "ledger_account_id"),
+			IsDefault:     get(record, "is_default", "default"),
+			IsActive:      get(record, "is_active", "active"),
 		}
-		if row.Date == "" || row.Amount == "" || row.Description == "" {
-			return nil, fmt.Errorf("bank transaction CSV row %d requires date, amount, and description", rowNum)
+		if row.Name == "" || row.AccountNumber == "" {
+			return nil, fmt.Errorf("bank account CSV row %d requires name and account_number", rowNum)
 		}
 		rows = append(rows, row)
 	}
 
 	if len(rows) == 0 {
-		return nil, errors.New("bank transaction CSV contains no transactions")
+		return nil, errors.New("bank account CSV contains no accounts")
 	}
 	return rows, nil
+}
+
+func parseBankTransactionCSVRows(content string) ([]banking.CSVTransactionRow, error) {
+	return parseBankTransactionCSVRowsWithFormat(content, string(mappers.FormatAuto))
+}
+
+func parseBankTransactionCSVRowsWithFormat(content, format string) ([]banking.CSVTransactionRow, error) {
+	return registry.ParseTransactions(content, format)
 }
 
 func detectCLICSVDelimiter(content string) rune {

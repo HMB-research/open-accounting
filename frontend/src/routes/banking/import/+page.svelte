@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type BankAccount, type CSVColumnMapping } from '$lib/api';
+	import { api, type BankAccount, type BankTransactionImportFormat } from '$lib/api';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import * as m from '$lib/paraglide/messages.js';
@@ -15,67 +15,8 @@
 	let csvFile = $state<File | null>(null);
 	let csvContent = $state('');
 	let csvPreview = $state<string[][]>([]);
-
-	// Mapping configuration
-	let mapping = $state<CSVColumnMapping>({
-		date_column: 0,
-		description_column: 1,
-		amount_column: 2,
-		reference_column: undefined,
-		counterparty_column: undefined,
-		date_format: '2006-01-02',
-		decimal_separator: '.',
-		thousands_separator: '',
-		skip_header: true
-	});
-
+	let format = $state<BankTransactionImportFormat>('auto');
 	let skipDuplicates = $state(true);
-
-	// Preset bank formats
-	const presets: Record<string, CSVColumnMapping> = {
-		generic: {
-			date_column: 0,
-			description_column: 1,
-			amount_column: 2,
-			date_format: '2006-01-02',
-			decimal_separator: '.',
-			thousands_separator: '',
-			skip_header: true
-		},
-		swedbank: {
-			date_column: 0,
-			description_column: 2,
-			amount_column: 3,
-			reference_column: 4,
-			counterparty_column: 1,
-			date_format: '02.01.2006',
-			decimal_separator: ',',
-			thousands_separator: ' ',
-			skip_header: true
-		},
-		seb: {
-			date_column: 0,
-			description_column: 3,
-			amount_column: 4,
-			reference_column: 2,
-			counterparty_column: 1,
-			date_format: '02.01.2006',
-			decimal_separator: ',',
-			thousands_separator: '',
-			skip_header: true
-		},
-		lhv: {
-			date_column: 0,
-			description_column: 2,
-			amount_column: 3,
-			reference_column: 4,
-			counterparty_column: 1,
-			date_format: '02.01.2006',
-			decimal_separator: ',',
-			thousands_separator: '',
-			skip_header: true
-		}
-	};
 
 	$effect(() => {
 		loadData();
@@ -161,12 +102,6 @@
 		return result;
 	}
 
-	function applyPreset(presetName: string) {
-		if (presets[presetName]) {
-			mapping = { ...presets[presetName] };
-		}
-	}
-
 	async function importTransactions() {
 		if (!selectedAccountId || !csvContent || !csvFile) {
 			alert(m.bankingImport_selectFileAndAccount());
@@ -180,7 +115,7 @@
 			const result = await api.importBankTransactions(tenantId, selectedAccountId, {
 				csv_content: csvContent,
 				file_name: csvFile.name,
-				mapping,
+				format,
 				skip_duplicates: skipDuplicates
 			});
 
@@ -199,16 +134,6 @@
 		} finally {
 			importing = false;
 		}
-	}
-
-	function getColumnClass(colIndex: number): string {
-		const classes = [];
-		if (mapping.date_column === colIndex) classes.push('bg-blue-100');
-		if (mapping.description_column === colIndex) classes.push('bg-green-100');
-		if (mapping.amount_column === colIndex) classes.push('bg-yellow-100');
-		if (mapping.reference_column === colIndex) classes.push('bg-purple-100');
-		if (mapping.counterparty_column === colIndex) classes.push('bg-pink-100');
-		return classes.join(' ') || 'bg-gray-50';
 	}
 </script>
 
@@ -240,7 +165,7 @@
 				<div class="mb-4">
 					<label for="import-bank-account" class="block text-sm font-medium text-gray-700 mb-1">{m.bankingImport_bankAccount()}</label>
 					<select id="import-bank-account" bind:value={selectedAccountId} class="w-full border border-gray-300 rounded-lg px-3 py-2">
-						{#each bankAccounts as account}
+						{#each bankAccounts as account (account.id)}
 							<option value={account.id}>{account.name}</option>
 						{/each}
 					</select>
@@ -249,80 +174,21 @@
 				<!-- File Upload -->
 				<div class="mb-4">
 					<label for="import-csv-file" class="block text-sm font-medium text-gray-700 mb-1">{m.bankingImport_csvFile()}</label>
-					<input id="import-csv-file" type="file" accept=".csv,.txt" onchange={handleFileSelect} class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+					<input id="import-csv-file" type="file" accept=".csv,.txt,.xml" onchange={handleFileSelect} class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
 				</div>
 
 				<!-- Bank Preset -->
 				<div class="mb-4">
 					<label for="import-bank-preset" class="block text-sm font-medium text-gray-700 mb-1">{m.bankingImport_bankFormatPreset()}</label>
-					<select id="import-bank-preset" onchange={(e) => applyPreset((e.target as HTMLSelectElement).value)} class="w-full border border-gray-300 rounded-lg px-3 py-2">
+					<select id="import-bank-preset" bind:value={format} class="w-full border border-gray-300 rounded-lg px-3 py-2">
+						<option value="auto">Auto</option>
 						<option value="generic">{m.bankingImport_genericCsv()}</option>
-						<option value="swedbank">{m.bankingImport_swedbankEstonia()}</option>
-						<option value="seb">{m.bankingImport_sebEstonia()}</option>
 						<option value="lhv">{m.bankingImport_lhvEstonia()}</option>
+						<option value="lhv-camt">LHV CAMT.053</option>
 					</select>
 				</div>
 
 				<hr class="my-4" />
-
-				<h3 class="font-medium mb-3">{m.bankingImport_columnMapping()}</h3>
-
-				<div class="grid grid-cols-2 gap-3 mb-4">
-					<div>
-						<label for="mapping-date-column" class="block text-xs font-medium text-blue-700 mb-1">{m.bankingImport_dateColumn()}</label>
-						<input id="mapping-date-column" type="number" bind:value={mapping.date_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" />
-					</div>
-					<div>
-						<label for="mapping-description-column" class="block text-xs font-medium text-green-700 mb-1">{m.bankingImport_descriptionColumn()}</label>
-						<input id="mapping-description-column" type="number" bind:value={mapping.description_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" />
-					</div>
-					<div>
-						<label for="mapping-amount-column" class="block text-xs font-medium text-yellow-700 mb-1">{m.bankingImport_amountColumn()}</label>
-						<input id="mapping-amount-column" type="number" bind:value={mapping.amount_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" />
-					</div>
-					<div>
-						<label for="mapping-reference-column" class="block text-xs font-medium text-purple-700 mb-1">{m.bankingImport_referenceColumn()}</label>
-						<input id="mapping-reference-column" type="number" bind:value={mapping.reference_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" placeholder={m.common_optional()} />
-					</div>
-					<div class="col-span-2">
-						<label for="mapping-counterparty-column" class="block text-xs font-medium text-pink-700 mb-1">{m.bankingImport_counterpartyColumn()}</label>
-						<input id="mapping-counterparty-column" type="number" bind:value={mapping.counterparty_column} min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" placeholder={m.common_optional()} />
-					</div>
-				</div>
-
-				<h3 class="font-medium mb-3">{m.bankingImport_formatSettings()}</h3>
-
-				<div class="grid grid-cols-2 gap-3 mb-4">
-					<div class="col-span-2">
-						<label for="mapping-date-format" class="block text-xs font-medium text-gray-700 mb-1">{m.bankingImport_dateFormat()}</label>
-						<select id="mapping-date-format" bind:value={mapping.date_format} class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
-							<option value="2006-01-02">YYYY-MM-DD</option>
-							<option value="02.01.2006">DD.MM.YYYY</option>
-							<option value="01/02/2006">MM/DD/YYYY</option>
-							<option value="02/01/2006">DD/MM/YYYY</option>
-						</select>
-					</div>
-					<div>
-						<label for="mapping-decimal-sep" class="block text-xs font-medium text-gray-700 mb-1">{m.bankingImport_decimalSep()}</label>
-						<select id="mapping-decimal-sep" bind:value={mapping.decimal_separator} class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
-							<option value=".">{m.bankingImport_dotDecimal()}</option>
-							<option value=",">{m.bankingImport_commaDecimal()}</option>
-						</select>
-					</div>
-					<div>
-						<label for="mapping-thousands-sep" class="block text-xs font-medium text-gray-700 mb-1">{m.bankingImport_thousandsSep()}</label>
-						<select id="mapping-thousands-sep" bind:value={mapping.thousands_separator} class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
-							<option value="">{m.bankingImport_none()}</option>
-							<option value=",">{m.bankingImport_commaDecimal()}</option>
-							<option value=" ">{m.bankingImport_space()}</option>
-						</select>
-					</div>
-				</div>
-
-				<label class="flex items-center gap-2 mb-4">
-					<input type="checkbox" bind:checked={mapping.skip_header} class="rounded" />
-					<span class="text-sm">{m.bankingImport_skipHeaderRow()}</span>
-				</label>
 
 				<label class="flex items-center gap-2 mb-6">
 					<input type="checkbox" bind:checked={skipDuplicates} class="rounded" />
@@ -347,32 +213,24 @@
 						<p>{m.bankingImport_selectCsvFile()}</p>
 					</div>
 				{:else}
-					<div class="mb-4 flex flex-wrap gap-2 text-xs">
-						<span class="px-2 py-1 bg-blue-100 text-blue-700 rounded">{m.common_date()}</span>
-						<span class="px-2 py-1 bg-green-100 text-green-700 rounded">{m.common_description()}</span>
-						<span class="px-2 py-1 bg-yellow-100 text-yellow-700 rounded">{m.common_amount()}</span>
-						<span class="px-2 py-1 bg-purple-100 text-purple-700 rounded">{m.banking_reference()}</span>
-						<span class="px-2 py-1 bg-pink-100 text-pink-700 rounded">{m.banking_counterparty()}</span>
-					</div>
-
 					<div class="overflow-x-auto">
 						<table class="min-w-full text-sm border border-gray-200">
 							<thead class="bg-gray-100">
 								<tr>
 									<th class="px-2 py-1 text-left text-xs text-gray-500">#</th>
-									{#each csvPreview[0] || [] as _, i}
-										<th class="px-2 py-1 text-left text-xs text-gray-500 {getColumnClass(i)}">
+									{#each csvPreview[0] || [] as _, i (i)}
+										<th class="px-2 py-1 text-left text-xs text-gray-500 bg-gray-50">
 											Col {i}
 										</th>
 									{/each}
 								</tr>
 							</thead>
 							<tbody>
-								{#each csvPreview as row, rowIndex}
-									<tr class="{mapping.skip_header && rowIndex === 0 ? 'opacity-50' : ''}">
+								{#each csvPreview as row, rowIndex (rowIndex)}
+									<tr class={rowIndex === 0 ? 'opacity-50' : ''}>
 										<td class="px-2 py-1 border-t text-gray-400">{rowIndex}</td>
-										{#each row as cell, colIndex}
-											<td class="px-2 py-1 border-t max-w-[150px] truncate {getColumnClass(colIndex)}">
+										{#each row as cell, colIndex (colIndex)}
+											<td class="px-2 py-1 border-t max-w-[150px] truncate bg-gray-50">
 												{cell}
 											</td>
 										{/each}

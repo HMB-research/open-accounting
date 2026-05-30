@@ -16,6 +16,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
+	"github.com/HMB-research/open-accounting/internal/banking/mappers/registry"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
@@ -1605,6 +1606,44 @@ func (h *Handlers) CreateBankAccount(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, account)
 }
 
+// ImportBankAccounts imports bank account master data.
+// @Summary Import bank accounts
+// @Description Import bank account master data from CSV rows for incumbent-system cutover.
+// @Tags Banking
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body banking.ImportBankAccountsRequest true "Bank account import data"
+// @Success 200 {object} banking.ImportBankAccountsResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/bank-accounts/import [post]
+func (h *Handlers) ImportBankAccounts(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req banking.ImportBankAccountsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if len(req.Rows) == 0 {
+		respondError(w, http.StatusBadRequest, "No bank accounts to import")
+		return
+	}
+	if strings.TrimSpace(req.FileName) == "" {
+		req.FileName = "bank_accounts_import.csv"
+	}
+
+	result, err := h.bankingService.ImportBankAccounts(r.Context(), schemaName, tenantID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // GetBankAccount retrieves a bank account by ID
 // @Summary Get bank account
 // @Description Get bank account details by ID
@@ -1926,13 +1965,20 @@ func (h *Handlers) ImportBankTransactions(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if req.FileName == "" {
+		req.FileName = "manual_import.csv"
+	}
+	if len(req.Transactions) == 0 && strings.TrimSpace(req.CSVContent) != "" {
+		rows, err := registry.ParseTransactions(req.CSVContent, req.Format)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		req.Transactions = rows
+	}
 	if len(req.Transactions) == 0 {
 		respondError(w, http.StatusBadRequest, "No transactions to import")
 		return
-	}
-
-	if req.FileName == "" {
-		req.FileName = "manual_import.csv"
 	}
 
 	result, err := h.bankingService.ImportTransactions(r.Context(), schemaName, tenantID, accountID, &req)

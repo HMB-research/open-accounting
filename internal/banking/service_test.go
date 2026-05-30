@@ -507,6 +507,126 @@ func TestService_CreateBankAccount_RepositoryError(t *testing.T) {
 	}
 }
 
+func TestService_ImportBankAccounts(t *testing.T) {
+	repo := NewMockRepository()
+	repo.accounts["existing"] = &BankAccount{
+		ID:            "existing",
+		TenantID:      testTenantID,
+		Name:          "Existing bank",
+		AccountNumber: "EE000",
+		Currency:      "EUR",
+		IsDefault:     true,
+		IsActive:      true,
+	}
+	service := NewServiceWithRepository(repo)
+
+	result, err := service.ImportBankAccounts(context.Background(), testSchemaName, testTenantID, &ImportBankAccountsRequest{
+		FileName:       "bank-accounts.csv",
+		SkipDuplicates: true,
+		Rows: []CSVBankAccountRow{
+			{
+				Name:          "Main bank",
+				AccountNumber: "EE471000001020145685",
+				BankName:      "LHV",
+				SwiftCode:     "lhvbee22",
+				Currency:      "eur",
+				GLAccountID:   "gl-bank",
+				IsDefault:     "yes",
+			},
+			{
+				Name:          "Closed bank",
+				AccountNumber: "EE222",
+				Currency:      "usd",
+				IsActive:      "false",
+			},
+			{
+				Name:          "Duplicate existing",
+				AccountNumber: "EE000",
+			},
+			{
+				AccountNumber: "EE333",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ImportBankAccounts() error = %v", err)
+	}
+	if result.RowsProcessed != 4 {
+		t.Errorf("expected 4 processed rows, got %d", result.RowsProcessed)
+	}
+	if result.AccountsImported != 2 {
+		t.Errorf("expected 2 imported accounts, got %d", result.AccountsImported)
+	}
+	if result.RowsSkipped != 2 {
+		t.Errorf("expected 2 skipped rows, got %d", result.RowsSkipped)
+	}
+	if len(result.Errors) != 1 || !strings.Contains(result.Errors[0], "name is required") {
+		t.Fatalf("expected one missing-name error, got %#v", result.Errors)
+	}
+
+	var main *BankAccount
+	var closed *BankAccount
+	for _, account := range repo.accounts {
+		switch account.AccountNumber {
+		case "EE471000001020145685":
+			main = account
+		case "EE222":
+			closed = account
+		}
+	}
+	if main == nil {
+		t.Fatal("expected imported main bank account")
+	}
+	if main.Currency != "EUR" {
+		t.Errorf("expected uppercase currency EUR, got %q", main.Currency)
+	}
+	if main.SwiftCode != "LHVBEE22" {
+		t.Errorf("expected uppercase swift code, got %q", main.SwiftCode)
+	}
+	if main.GLAccountID == nil || *main.GLAccountID != "gl-bank" {
+		t.Errorf("expected GL account id gl-bank, got %v", main.GLAccountID)
+	}
+	if !main.IsDefault {
+		t.Error("expected imported main account to become default")
+	}
+	if repo.accounts["existing"].IsDefault {
+		t.Error("expected previous default account to be unset")
+	}
+	if closed == nil {
+		t.Fatal("expected imported closed bank account")
+	}
+	if closed.IsActive {
+		t.Error("expected closed bank account to import inactive")
+	}
+	if closed.Currency != "USD" {
+		t.Errorf("expected uppercase currency USD, got %q", closed.Currency)
+	}
+}
+
+func TestService_ImportBankAccountsRejectsDuplicateWhenNotSkipping(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo)
+
+	result, err := service.ImportBankAccounts(context.Background(), testSchemaName, testTenantID, &ImportBankAccountsRequest{
+		Rows: []CSVBankAccountRow{
+			{Name: "Main bank", AccountNumber: "EE471000001020145685"},
+			{Name: "Duplicate main", AccountNumber: "EE471000001020145685"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ImportBankAccounts() error = %v", err)
+	}
+	if result.AccountsImported != 1 {
+		t.Errorf("expected 1 imported account, got %d", result.AccountsImported)
+	}
+	if result.RowsSkipped != 1 {
+		t.Errorf("expected 1 skipped row, got %d", result.RowsSkipped)
+	}
+	if len(result.Errors) != 1 || !strings.Contains(result.Errors[0], "duplicate account_number") {
+		t.Fatalf("expected duplicate account number error, got %#v", result.Errors)
+	}
+}
+
 func TestService_GetBankAccount(t *testing.T) {
 	repo := NewMockRepository()
 	service := NewServiceWithRepository(repo)

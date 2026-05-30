@@ -2383,6 +2383,16 @@ func printBankImportResult(w io.Writer, result *banking.ImportResult) {
 	}
 }
 
+func printBankAccountImportResult(w io.Writer, result *banking.ImportBankAccountsResult) {
+	_, _ = fmt.Fprintf(w, "File: %s\n", result.FileName)
+	_, _ = fmt.Fprintf(w, "Processed: %d\n", result.RowsProcessed)
+	_, _ = fmt.Fprintf(w, "Imported: %d\n", result.AccountsImported)
+	_, _ = fmt.Fprintf(w, "Skipped: %d\n", result.RowsSkipped)
+	for _, rowErr := range result.Errors {
+		_, _ = fmt.Fprintf(w, "Error: %s\n", rowErr)
+	}
+}
+
 func printBankImportsTable(w io.Writer, imports []banking.BankStatementImport) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tFILE\tIMPORTED\tMATCHED\tDUPLICATES\tCREATED")

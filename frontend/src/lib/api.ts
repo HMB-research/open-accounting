@@ -4129,23 +4129,13 @@ export interface UpdateBankAccountRequest {
   is_active?: boolean;
 }
 
+export type BankTransactionImportFormat = "auto" | "generic" | "lhv" | "lhv-camt";
+
 export interface ImportTransactionsRequest {
   csv_content: string;
   file_name: string;
-  mapping: CSVColumnMapping;
+  format?: BankTransactionImportFormat;
   skip_duplicates?: boolean;
-}
-
-export interface CSVColumnMapping {
-  date_column: number;
-  description_column: number;
-  amount_column: number;
-  reference_column?: number;
-  counterparty_column?: number;
-  date_format: string;
-  decimal_separator: string;
-  thousands_separator?: string;
-  skip_header: boolean;
 }
 
 export interface ImportResult {

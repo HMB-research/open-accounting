@@ -160,6 +160,28 @@ var fileSpecs = map[FileKind]fileSpec{
 		}),
 		requiredGroups: [][]string{{"payment_type"}, {"payment_date"}, {"amount"}},
 	},
+	KindBankAccounts: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"account_name":      "name",
+			"bank_account_name": "name",
+			"account_number":    "account_number",
+			"iban":              "account_number",
+			"bank_account":      "account_number",
+			"account_no":        "account_number",
+			"bank":              "bank_name",
+			"bank_name":         "bank_name",
+			"bic":               "swift_code",
+			"swift":             "swift_code",
+			"swift_code":        "swift_code",
+			"gl_account_id":     "gl_account_id",
+			"ledger_account_id": "gl_account_id",
+			"default":           "is_default",
+			"is_default":        "is_default",
+			"active":            "is_active",
+			"is_active":         "is_active",
+		}),
+		requiredGroups: [][]string{{"name"}, {"account_number"}},
+	},
 	KindBankTransactions: {
 		aliases: mergeAliases(commonAliases(), map[string]string{
 			"date":                 "date",
