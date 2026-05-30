@@ -948,7 +948,7 @@ go run ./cmd/oa documents upload \
   --file ./statement-line.pdf \
   --document-type reconciliation_evidence \
   --notes "Matched against March bank statement" \
-  --retention-until 2027-03-31
+  --retention-years 7
 go run ./cmd/oa documents upload \
   --entity-type year_end_close \
   --entity-id <close-pack-evidence-entity-id> \
@@ -971,7 +971,7 @@ go run ./cmd/oa documents mark-reviewed --id <document-id>
 go run ./cmd/oa documents delete --id <document-id>
 ```
 
-`documents review-queue` returns a tenant-wide reviewer queue, defaulting to `PENDING` documents; filter by `--entity-type year_end_close --document-type close_pack` for fiscal-year close-pack approvals, and use `--status all` for audit review. `documents evidence-policy` checks required evidence for one or more entity IDs. Repeat `--document-type` or `--required-document-type` to allow several document types in the rule, set `--min-count` for the required count, and use `--require-approved` when pending or reviewed-but-unapproved evidence must fail. `documents retention` returns a tenant-wide queue of documents whose `retention_until` is due by the cutoff, with optional missing-retention records. `documents retention-set` corrects one document's `retention_until` date or clears it with `--clear`. `documents review` supports `REVIEWED`, `APPROVED`, and `REJECTED`; rejected documents require a review note. `documents download` uses the server-provided filename when `--output` is omitted. Use `--output -` to stream the document content to stdout.
+`documents upload` accepts either `--retention-until YYYY-MM-DD` or `--retention-years N` up to `100`; `--retention-years` sets `retention_until` to the upload date plus the selected number of years, and the two retention flags cannot be combined. `documents review-queue` returns a tenant-wide reviewer queue, defaulting to `PENDING` documents; filter by `--entity-type year_end_close --document-type close_pack` for fiscal-year close-pack approvals, and use `--status all` for audit review. `documents evidence-policy` checks required evidence for one or more entity IDs. Repeat `--document-type` or `--required-document-type` to allow several document types in the rule, set `--min-count` for the required count, and use `--require-approved` when pending or reviewed-but-unapproved evidence must fail. `documents retention` returns a tenant-wide queue of documents whose `retention_until` is due by the cutoff, with optional missing-retention records. `documents retention-set` corrects one document's `retention_until` date or clears it with `--clear`. `documents review` supports `REVIEWED`, `APPROVED`, and `REJECTED`; rejected documents require a review note. `documents download` uses the server-provided filename when `--output` is omitted. Use `--output -` to stream the document content to stdout.
 
 ## Journal entries
 

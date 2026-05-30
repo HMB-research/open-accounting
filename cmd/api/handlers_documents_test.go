@@ -381,3 +381,57 @@ func TestUploadListDownloadAndDeleteDocument(t *testing.T) {
 	require.Equal(t, http.StatusOK, deleteResp.Code)
 	require.Empty(t, repo.docs)
 }
+
+func TestUploadDocumentRetentionYears(t *testing.T) {
+	h, _ := setupDocumentHandlers(t)
+	claims := createTestClaims("user-1", "user@example.com", "tenant-1", "admin")
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("entity_type", documents.EntityTypeBankTxn))
+	require.NoError(t, writer.WriteField("entity_id", "txn-1"))
+	require.NoError(t, writer.WriteField("document_type", documents.DocumentTypeReconciliation))
+	require.NoError(t, writer.WriteField("retention_years", "7"))
+	part, err := writer.CreateFormFile("file", "statement.pdf")
+	require.NoError(t, err)
+	_, err = io.Copy(part, bytes.NewBufferString("statement pdf"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/documents", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), claims))
+
+	resp := httptest.NewRecorder()
+	h.UploadDocument(resp, req)
+	require.Equal(t, http.StatusCreated, resp.Code)
+
+	var uploaded documents.Document
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&uploaded))
+	require.NotNil(t, uploaded.RetentionUntil)
+	require.Equal(t, uploaded.CreatedAt.AddDate(7, 0, 0).Format("2006-01-02"), uploaded.RetentionUntil.Format("2006-01-02"))
+}
+
+func TestUploadDocumentRejectsRetentionConflict(t *testing.T) {
+	h, _ := setupDocumentHandlers(t)
+	claims := createTestClaims("user-1", "user@example.com", "tenant-1", "admin")
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("entity_type", documents.EntityTypeBankTxn))
+	require.NoError(t, writer.WriteField("entity_id", "txn-1"))
+	require.NoError(t, writer.WriteField("document_type", documents.DocumentTypeReconciliation))
+	require.NoError(t, writer.WriteField("retention_until", "2027-03-31"))
+	require.NoError(t, writer.WriteField("retention_years", "7"))
+	require.NoError(t, writer.Close())
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/documents", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), claims))
+
+	resp := httptest.NewRecorder()
+	h.UploadDocument(resp, req)
+	require.Equal(t, http.StatusBadRequest, resp.Code)
+}

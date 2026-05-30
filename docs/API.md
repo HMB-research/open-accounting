@@ -518,7 +518,7 @@ entity_type=payment
 entity_id=<uuid>
 document_type=receipt
 notes=Matched%20to%20bank%20statement
-retention_until=2027-03-31
+retention_years=7
 file=<binary>
 ```
 
@@ -526,6 +526,7 @@ file=<binary>
 - maximum file size is `10 MB`
 - supported `document_type` values currently include `supporting_document`, `receipt`, `reconciliation_evidence`, `contract`, `asset_record`, `tax_support`, `close_pack`, and `other`
 - uploads start in `PENDING` review status and can carry optional retention metadata
+- set either `retention_until=YYYY-MM-DD` or `retention_years=N` up to `100`; `retention_years` derives `retention_until` from the upload date, and the two fields cannot be combined
 
 #### Download Document
 

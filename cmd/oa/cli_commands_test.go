@@ -7718,7 +7718,8 @@ func TestCLIDocumentCommands(t *testing.T) {
 			assert.Equal(t, "txn-1", r.FormValue("entity_id"))
 			assert.Equal(t, documents.DocumentTypeReconciliation, r.FormValue("document_type"))
 			assert.Equal(t, "Statement evidence", r.FormValue("notes"))
-			assert.Equal(t, "2027-03-31", r.FormValue("retention_until"))
+			assert.Empty(t, r.FormValue("retention_until"))
+			assert.Equal(t, "7", r.FormValue("retention_years"))
 			file, header, err := r.FormFile("file")
 			require.NoError(t, err)
 			defer func() { _ = file.Close() }()
@@ -7867,10 +7868,24 @@ func TestCLIDocumentCommands(t *testing.T) {
 		"--file", uploadPath,
 		"--document-type", "reconciliation_evidence",
 		"--notes", "Statement evidence",
-		"--retention-until", "2027-03-31",
+		"--retention-years", "7",
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Uploaded evidence.txt (doc-2)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"documents",
+		"upload",
+		"--entity-type", "bank_transaction",
+		"--entity-id", "txn-1",
+		"--file", uploadPath,
+		"--document-type", "reconciliation_evidence",
+		"--retention-until", "2027-03-31",
+		"--retention-years", "7",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "retention-until and retention-years cannot be combined")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"documents", "retention-set", "--id", "doc-2", "--retention-until", "2028-03-31"})
