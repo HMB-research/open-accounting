@@ -1540,6 +1540,8 @@ POST /tenants/{tenantId}/quotes/{quoteId}/reject
 Authorization: Bearer <token>
 ```
 
+`POST /tenants/{tenantId}/quotes/{quoteId}/send` accepts an optional JSON body `{"require_approved_evidence": true}`. When set, the quote must have at least one approved `contract` or `supporting_document` document attached to the `quote` entity or the endpoint returns `409 Conflict`.
+
 ### Convert Quote to Invoice
 
 ```http
@@ -1704,6 +1706,8 @@ POST /tenants/{tenantId}/orders/{orderId}/deliver
 POST /tenants/{tenantId}/orders/{orderId}/cancel
 Authorization: Bearer <token>
 ```
+
+`POST /tenants/{tenantId}/orders/{orderId}/confirm` accepts an optional JSON body `{"require_approved_evidence": true}`. When set, the order must have at least one approved `contract` or `supporting_document` document attached to the `order` entity or the endpoint returns `409 Conflict`.
 
 ---
 

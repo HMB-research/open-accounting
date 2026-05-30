@@ -99,6 +99,10 @@ type documentRetentionUpdateRequest struct {
 	ClearRetention bool   `json:"clear_retention,omitempty"`
 }
 
+type documentEvidenceRequirementRequest struct {
+	RequireApprovedEvidence bool `json:"require_approved_evidence"`
+}
+
 type downloadedDocument struct {
 	FileName    string
 	ContentType string
@@ -1507,9 +1511,13 @@ func (c *apiClient) deleteQuote(ctx context.Context, tenantID, quoteID string) e
 	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "quotes", quoteID), nil, c.apiToken, nil)
 }
 
-func (c *apiClient) updateQuoteStatus(ctx context.Context, tenantID, quoteID, action string) (map[string]string, error) {
+func (c *apiClient) updateQuoteStatus(ctx context.Context, tenantID, quoteID, action string, requireApprovedEvidence bool) (map[string]string, error) {
 	var resp map[string]string
-	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "quotes", quoteID, action), nil, c.apiToken, &resp); err != nil {
+	var req any
+	if requireApprovedEvidence {
+		req = documentEvidenceRequirementRequest{RequireApprovedEvidence: true}
+	}
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "quotes", quoteID, action), req, c.apiToken, &resp); err != nil {
 		return nil, err
 	}
 	return resp, nil
@@ -1632,9 +1640,13 @@ func (c *apiClient) deleteOrder(ctx context.Context, tenantID, orderID string) e
 	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "orders", orderID), nil, c.apiToken, nil)
 }
 
-func (c *apiClient) updateOrderStatus(ctx context.Context, tenantID, orderID, action string) (map[string]string, error) {
+func (c *apiClient) updateOrderStatus(ctx context.Context, tenantID, orderID, action string, requireApprovedEvidence bool) (map[string]string, error) {
 	var resp map[string]string
-	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "orders", orderID, action), nil, c.apiToken, &resp); err != nil {
+	var req any
+	if requireApprovedEvidence {
+		req = documentEvidenceRequirementRequest{RequireApprovedEvidence: true}
+	}
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "orders", orderID, action), req, c.apiToken, &resp); err != nil {
 		return nil, err
 	}
 	return resp, nil

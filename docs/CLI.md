@@ -483,7 +483,7 @@ go run ./cmd/oa quotes update \
   --contact-id <contact-id> \
   --quote-date 2026-03-16 \
   --line "description=Updated consulting,quantity=3,unit=hour,unit_price=100.00,vat_rate=22.00"
-go run ./cmd/oa quotes send --id <quote-id>
+go run ./cmd/oa quotes send --id <quote-id> --require-approved-evidence
 go run ./cmd/oa quotes accept --id <quote-id>
 go run ./cmd/oa quotes reject --id <quote-id>
 go run ./cmd/oa quotes convert-to-invoice --id <quote-id> --issue-date 2026-03-20 --due-date 2026-04-03
@@ -491,7 +491,7 @@ go run ./cmd/oa quotes delete --id <quote-id>
 go run ./cmd/oa quotes import --file ./quotes.csv
 ```
 
-Use `--line` repeatedly on `quotes create` and `quotes update` for multi-line offers. Each line accepts `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, and `product_id`. Quote statuses are `DRAFT`, `SENT`, `ACCEPTED`, `REJECTED`, `EXPIRED`, and `CONVERTED`; accepted quotes can be converted into draft sales invoices.
+Use `--line` repeatedly on `quotes create` and `quotes update` for multi-line offers. Each line accepts `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, and `product_id`. Quote statuses are `DRAFT`, `SENT`, `ACCEPTED`, `REJECTED`, `EXPIRED`, and `CONVERTED`; accepted quotes can be converted into draft sales invoices. `quotes send --require-approved-evidence` blocks sending until an approved `contract` or `supporting_document` is attached to the quote.
 
 Quote imports use one CSV row per quote line and group rows by `quote_number`. Required columns are `quote_number`, `quote_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`; optional columns include `valid_until`, `status`, `currency`, `exchange_rate`, `notes`, `unit`, `discount_percent`, and `product_id`.
 
@@ -517,7 +517,7 @@ go run ./cmd/oa orders update \
   --contact-id <contact-id> \
   --order-date 2026-03-16 \
   --line "description=Updated consulting,quantity=3,unit=hour,unit_price=100.00,vat_rate=22.00"
-go run ./cmd/oa orders confirm --id <order-id>
+go run ./cmd/oa orders confirm --id <order-id> --require-approved-evidence
 go run ./cmd/oa orders process --id <order-id>
 go run ./cmd/oa orders ship --id <order-id>
 go run ./cmd/oa orders deliver --id <order-id>
@@ -526,7 +526,7 @@ go run ./cmd/oa orders delete --id <order-id>
 go run ./cmd/oa orders import --file ./orders.csv
 ```
 
-Use `--line` repeatedly on `orders create` and `orders update`. Each line accepts `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, and `product_id`. Order statuses are `PENDING`, `CONFIRMED`, `PROCESSING`, `SHIPPED`, `DELIVERED`, and `CANCELED`.
+Use `--line` repeatedly on `orders create` and `orders update`. Each line accepts `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, and `product_id`. Order statuses are `PENDING`, `CONFIRMED`, `PROCESSING`, `SHIPPED`, `DELIVERED`, and `CANCELED`. `orders confirm --require-approved-evidence` blocks confirmation until an approved `contract` or `supporting_document` is attached to the order.
 
 `orders stock-check` checks tracked product lines without mutating inventory. It sums all warehouses unless `--warehouse-id` is provided, consumes repeated lines for the same product cumulatively inside the check, and reports per-line statuses: `AVAILABLE`, `SHORTAGE`, `NOT_TRACKED`, and `PRODUCT_NOT_FOUND`.
 

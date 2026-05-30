@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/tenant"
@@ -964,4 +965,56 @@ func TestOrderStatusTransitions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConfirmOrderRequiresApprovedEvidence(t *testing.T) {
+	h, repo, tenantRepo := setupOrdersTestHandlers()
+	store, err := documents.NewLocalStore(t.TempDir())
+	require.NoError(t, err)
+	documentRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(documentRepo, store)
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+	repo.orders["order-1"] = &orders.Order{
+		ID:       "order-1",
+		TenantID: "tenant-1",
+		Status:   orders.OrderStatusPending,
+		Lines:    []orders.OrderLine{},
+	}
+
+	claims := createTestClaims("user-1", "test@example.com", "tenant-1", "owner")
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/orders/order-1/confirm", map[string]any{
+		"require_approved_evidence": true,
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+
+	rr := httptest.NewRecorder()
+	h.ConfirmOrder(rr, req)
+
+	assert.Equal(t, http.StatusConflict, rr.Code)
+	assert.Contains(t, rr.Body.String(), "approved order evidence is required")
+
+	documentRepo.docs["doc-order"] = &documents.Document{
+		ID:           "doc-order",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypeOrder,
+		EntityID:     "order-1",
+		DocumentType: documents.DocumentTypeContract,
+		FileName:     "signed-order.pdf",
+		ReviewStatus: documents.ReviewStatusApproved,
+		UploadedBy:   "user-1",
+		CreatedAt:    time.Now(),
+	}
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/orders/order-1/confirm", map[string]any{
+		"require_approved_evidence": true,
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+	rr = httptest.NewRecorder()
+	h.ConfirmOrder(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
 }

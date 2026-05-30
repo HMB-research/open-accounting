@@ -40,6 +40,8 @@ var (
 	errApprovedJournalEntryEvidenceRequired    = errors.New("approved journal-entry evidence is required")
 	errApprovedPaymentReceiptEvidenceRequired  = errors.New("approved payment receipt evidence is required")
 	errApprovedPurchaseInvoiceEvidenceRequired = errors.New("approved purchase-invoice evidence is required")
+	errApprovedQuoteEvidenceRequired           = errors.New("approved quote evidence is required")
+	errApprovedOrderEvidenceRequired           = errors.New("approved order evidence is required")
 )
 
 // =============================================================================
@@ -4054,19 +4056,41 @@ func (h *Handlers) DeleteQuote(w http.ResponseWriter, r *http.Request) {
 
 // SendQuote marks a quote as sent
 // @Summary Send quote
-// @Description Mark a quote as sent to the customer
+// @Description Mark a quote as sent to the customer, optionally requiring approved quote evidence first
 // @Tags Quotes
+// @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param quoteID path string true "Quote ID"
+// @Param request body object{require_approved_evidence=bool} false "Evidence requirement options"
 // @Success 200 {object} object{status=string}
 // @Failure 400 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
 // @Router /tenants/{tenantID}/quotes/{quoteID}/send [post]
 func (h *Handlers) SendQuote(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	quoteID := chi.URLParam(r, "quoteID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req struct {
+		RequireApprovedEvidence bool `json:"require_approved_evidence"`
+	}
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := decodeJSON(r, &req); err != nil {
+			respondError(w, http.StatusBadRequest, "Invalid request body")
+			return
+		}
+	}
+
+	if err := h.requireApprovedCommercialEvidence(r.Context(), schemaName, tenantID, documents.EntityTypeQuote, quoteID, req.RequireApprovedEvidence, errApprovedQuoteEvidenceRequired, "sending quote"); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, errApprovedQuoteEvidenceRequired) {
+			status = http.StatusConflict
+		}
+		respondError(w, status, err.Error())
+		return
+	}
 
 	if err := h.quotesService.Send(r.Context(), tenantID, schemaName, quoteID); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
@@ -4074,6 +4098,36 @@ func (h *Handlers) SendQuote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "sent"})
+}
+
+func (h *Handlers) requireApprovedCommercialEvidence(ctx context.Context, schemaName, tenantID, entityType, entityID string, requireApproved bool, requiredErr error, action string) error {
+	if !requireApproved {
+		return nil
+	}
+	if h.documentsService == nil {
+		return fmt.Errorf("%w before %s %s", requiredErr, action, entityID)
+	}
+
+	results, err := h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
+		EntityType: entityType,
+		EntityIDs:  []string{entityID},
+		Rules: []documents.EvidencePolicyRule{{
+			DocumentTypes: []string{
+				documents.DocumentTypeContract,
+				documents.DocumentTypeSupportingDocument,
+			},
+			MinCount:        1,
+			RequireApproved: true,
+		}},
+	})
+	if err != nil {
+		return fmt.Errorf("evaluate %s evidence: %w", entityType, err)
+	}
+	if len(results) == 0 || !results[0].Compliant {
+		return fmt.Errorf("%w before %s %s", requiredErr, action, entityID)
+	}
+
+	return nil
 }
 
 // AcceptQuote marks a quote as accepted
@@ -4966,19 +5020,41 @@ func (h *Handlers) DeleteOrder(w http.ResponseWriter, r *http.Request) {
 
 // ConfirmOrder marks an order as confirmed
 // @Summary Confirm order
-// @Description Mark a pending order as confirmed
+// @Description Mark a pending order as confirmed, optionally requiring approved order evidence first
 // @Tags Orders
+// @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param orderID path string true "Order ID"
+// @Param request body object{require_approved_evidence=bool} false "Evidence requirement options"
 // @Success 200 {object} object{status=string}
 // @Failure 400 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
 // @Router /tenants/{tenantID}/orders/{orderID}/confirm [post]
 func (h *Handlers) ConfirmOrder(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	orderID := chi.URLParam(r, "orderID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req struct {
+		RequireApprovedEvidence bool `json:"require_approved_evidence"`
+	}
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := decodeJSON(r, &req); err != nil {
+			respondError(w, http.StatusBadRequest, "Invalid request body")
+			return
+		}
+	}
+
+	if err := h.requireApprovedCommercialEvidence(r.Context(), schemaName, tenantID, documents.EntityTypeOrder, orderID, req.RequireApprovedEvidence, errApprovedOrderEvidenceRequired, "confirming order"); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, errApprovedOrderEvidenceRequired) {
+			status = http.StatusConflict
+		}
+		respondError(w, status, err.Error())
+		return
+	}
 
 	if err := h.ordersService.Confirm(r.Context(), tenantID, schemaName, orderID); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
