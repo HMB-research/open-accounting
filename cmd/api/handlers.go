@@ -1742,6 +1742,175 @@ func (h *Handlers) GetIncomeStatement(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, is)
 }
 
+// GetConsolidatedReport returns consolidated financial statements across selected tenant memberships.
+// @Summary Get consolidated financial report
+// @Description Consolidate trial balance, balance sheet, and income statement across selected companies the caller can view
+// @Tags Reports
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Anchor tenant ID"
+// @Param tenant_ids query string false "Comma-separated tenant IDs to consolidate; defaults to the anchor tenant"
+// @Param tenant_id query []string false "Repeatable tenant ID selector"
+// @Param as_of query string false "Balance sheet and trial balance date (YYYY-MM-DD)"
+// @Param start query string false "Income statement start date (YYYY-MM-DD); defaults to Jan 1 of as_of year"
+// @Param end query string false "Income statement end date (YYYY-MM-DD); defaults to as_of"
+// @Success 200 {object} reports.ConsolidatedFinancialReport
+// @Failure 400 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/reports/consolidated [get]
+func (h *Handlers) GetConsolidatedReport(w http.ResponseWriter, r *http.Request) {
+	claims, ok := auth.GetClaims(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Not authenticated")
+		return
+	}
+
+	anchorTenantID := chi.URLParam(r, "tenantID")
+	tenantIDs, err := parseConsolidatedTenantIDs(r, anchorTenantID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	asOfDate, startDate, endDate, err := parseConsolidatedReportDates(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	allowedTenants, err := h.allowedConsolidationTenants(r.Context(), claims, anchorTenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to resolve tenant access")
+		return
+	}
+
+	entities := make([]reports.ConsolidatedTenantReport, 0, len(tenantIDs))
+	for _, tenantID := range tenantIDs {
+		tenantRecord, ok := allowedTenants[tenantID]
+		if !ok {
+			respondError(w, http.StatusForbidden, "Access denied to one or more selected tenants")
+			return
+		}
+
+		trialBalance, err := h.accountingService.GetTrialBalance(r.Context(), tenantRecord.SchemaName, tenantRecord.ID, asOfDate)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to generate consolidated trial balance")
+			return
+		}
+		balanceSheet, err := h.accountingService.GetBalanceSheet(r.Context(), tenantRecord.SchemaName, tenantRecord.ID, asOfDate)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to generate consolidated balance sheet")
+			return
+		}
+		incomeStatement, err := h.accountingService.GetIncomeStatement(r.Context(), tenantRecord.SchemaName, tenantRecord.ID, startDate, endDate)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to generate consolidated income statement")
+			return
+		}
+		entities = append(entities, reports.ConsolidatedTenantReport{
+			TenantID:        tenantRecord.ID,
+			TenantName:      tenantRecord.Name,
+			TenantSlug:      tenantRecord.Slug,
+			TrialBalance:    trialBalance,
+			BalanceSheet:    balanceSheet,
+			IncomeStatement: incomeStatement,
+		})
+	}
+
+	report := reports.BuildConsolidatedFinancialReport(anchorTenantID, asOfDate, startDate, endDate, entities)
+	respondJSON(w, http.StatusOK, report)
+}
+
+func parseConsolidatedTenantIDs(r *http.Request, anchorTenantID string) ([]string, error) {
+	rawValues := r.URL.Query()["tenant_id"]
+	if raw := strings.TrimSpace(r.URL.Query().Get("tenant_ids")); raw != "" {
+		rawValues = append(rawValues, strings.Split(raw, ",")...)
+	}
+	if len(rawValues) == 0 {
+		rawValues = []string{anchorTenantID}
+	}
+
+	seen := make(map[string]bool, len(rawValues))
+	tenantIDs := make([]string, 0, len(rawValues))
+	for _, raw := range rawValues {
+		tenantID := strings.TrimSpace(raw)
+		if tenantID == "" {
+			continue
+		}
+		if !seen[tenantID] {
+			tenantIDs = append(tenantIDs, tenantID)
+			seen[tenantID] = true
+		}
+	}
+	if len(tenantIDs) == 0 {
+		return nil, fmt.Errorf("at least one tenant_id is required")
+	}
+	if len(tenantIDs) > 20 {
+		return nil, fmt.Errorf("at most 20 tenants can be consolidated at once")
+	}
+	return tenantIDs, nil
+}
+
+func parseConsolidatedReportDates(r *http.Request) (time.Time, time.Time, time.Time, error) {
+	asOfRaw := strings.TrimSpace(r.URL.Query().Get("as_of"))
+	if asOfRaw == "" {
+		asOfRaw = strings.TrimSpace(r.URL.Query().Get("as_of_date"))
+	}
+	asOfDate := time.Now()
+	var err error
+	if asOfRaw != "" {
+		asOfDate, err = time.Parse("2006-01-02", asOfRaw)
+		if err != nil {
+			return time.Time{}, time.Time{}, time.Time{}, fmt.Errorf("invalid as_of date format. Use YYYY-MM-DD")
+		}
+	}
+
+	startDate := time.Date(asOfDate.Year(), 1, 1, 0, 0, 0, 0, time.UTC)
+	endDate := asOfDate
+	if raw := strings.TrimSpace(r.URL.Query().Get("start")); raw != "" {
+		startDate, err = time.Parse("2006-01-02", raw)
+		if err != nil {
+			return time.Time{}, time.Time{}, time.Time{}, fmt.Errorf("invalid start date format. Use YYYY-MM-DD")
+		}
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("end")); raw != "" {
+		endDate, err = time.Parse("2006-01-02", raw)
+		if err != nil {
+			return time.Time{}, time.Time{}, time.Time{}, fmt.Errorf("invalid end date format. Use YYYY-MM-DD")
+		}
+	}
+	if endDate.Before(startDate) {
+		return time.Time{}, time.Time{}, time.Time{}, fmt.Errorf("end date must be on or after start date")
+	}
+	return asOfDate, startDate, endDate, nil
+}
+
+func (h *Handlers) allowedConsolidationTenants(ctx context.Context, claims *auth.Claims, anchorTenantID string) (map[string]tenant.Tenant, error) {
+	if claims.TokenKind == auth.TokenKindAPIToken {
+		if claims.TenantID != "" && claims.TenantID != anchorTenantID {
+			return map[string]tenant.Tenant{}, nil
+		}
+		tenantRecord, err := h.tenantService.GetTenant(ctx, anchorTenantID)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]tenant.Tenant{tenantRecord.ID: *tenantRecord}, nil
+	}
+
+	memberships, err := h.tenantService.ListUserTenants(ctx, claims.UserID)
+	if err != nil {
+		return nil, err
+	}
+	allowed := make(map[string]tenant.Tenant, len(memberships))
+	for _, membership := range memberships {
+		if tenant.GetRolePermissions(membership.Role).CanViewReports {
+			allowed[membership.Tenant.ID] = membership.Tenant
+		}
+	}
+	return allowed, nil
+}
+
 // GetAnnualReport returns a fiscal-year annual report pack for a tenant.
 // @Summary Get annual report
 // @Description Get year-end close readiness plus trial balance, balance sheet, income statement, and cash flow for the fiscal year

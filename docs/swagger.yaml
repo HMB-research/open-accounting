@@ -4762,6 +4762,50 @@ definitions:
       total_operating:
         type: number
     type: object
+  github_com_HMB-research_open-accounting_internal_reports.ConsolidatedFinancialReport:
+    properties:
+      as_of_date:
+        type: string
+      balance_sheet:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.BalanceSheet'
+      end_date:
+        type: string
+      entities:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_reports.ConsolidatedTenantReport'
+        type: array
+      generated_at:
+        type: string
+      income_statement:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.IncomeStatement'
+      start_date:
+        type: string
+      tenant_count:
+        type: integer
+      tenant_id:
+        type: string
+      tenant_ids:
+        items:
+          type: string
+        type: array
+      trial_balance:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.TrialBalance'
+    type: object
+  github_com_HMB-research_open-accounting_internal_reports.ConsolidatedTenantReport:
+    properties:
+      balance_sheet:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.BalanceSheet'
+      income_statement:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.IncomeStatement'
+      tenant_id:
+        type: string
+      tenant_name:
+        type: string
+      tenant_slug:
+        type: string
+      trial_balance:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.TrialBalance'
+    type: object
   github_com_HMB-research_open-accounting_internal_reports.ContactBalance:
     properties:
       balance:
@@ -13537,6 +13581,74 @@ paths:
       security:
       - BearerAuth: []
       summary: Update cash flow mapping
+      tags:
+      - Reports
+  /tenants/{tenantID}/reports/consolidated:
+    get:
+      description: Consolidate trial balance, balance sheet, and income statement
+        across selected companies the caller can view
+      parameters:
+      - description: Anchor tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Comma-separated tenant IDs to consolidate; defaults to the anchor
+          tenant
+        in: query
+        name: tenant_ids
+        type: string
+      - collectionFormat: csv
+        description: Repeatable tenant ID selector
+        in: query
+        items:
+          type: string
+        name: tenant_id
+        type: array
+      - description: Balance sheet and trial balance date (YYYY-MM-DD)
+        in: query
+        name: as_of
+        type: string
+      - description: Income statement start date (YYYY-MM-DD); defaults to Jan 1 of
+          as_of year
+        in: query
+        name: start
+        type: string
+      - description: Income statement end date (YYYY-MM-DD); defaults to as_of
+        in: query
+        name: end
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_reports.ConsolidatedFinancialReport'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get consolidated financial report
       tags:
       - Reports
   /tenants/{tenantID}/reports/contact-statements/{contactID}:

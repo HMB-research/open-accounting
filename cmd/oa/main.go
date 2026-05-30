@@ -408,6 +408,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  reports account-balance   Show one account balance")
 	_, _ = fmt.Fprintln(a.stdout, "  reports balance-sheet     Show balance sheet")
 	_, _ = fmt.Fprintln(a.stdout, "  reports income-statement  Show income statement")
+	_, _ = fmt.Fprintln(a.stdout, "  reports consolidated      Show consolidated financial statements")
 	_, _ = fmt.Fprintln(a.stdout, "  reports annual            Show annual report pack")
 	_, _ = fmt.Fprintln(a.stdout, "  reports cash-flow         Show cash flow statement")
 	_, _ = fmt.Fprintln(a.stdout, "  reports cash-flow-mapping get  Show saved cash-flow account mappings")
@@ -9432,6 +9433,28 @@ func (a *cliApp) runReports(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, report)
 		}
 		printIncomeStatement(a.stdout, report)
+		return nil
+
+	case "consolidated":
+		fs := flag.NewFlagSet("reports consolidated", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asOf := fs.String("as-of", "", "As-of date in YYYY-MM-DD")
+		startDate := fs.String("start", "", "Income statement start date in YYYY-MM-DD")
+		endDate := fs.String("end", "", "Income statement end date in YYYY-MM-DD")
+		tenantIDs := fs.String("tenant-ids", "", "Comma-separated tenant ids to consolidate")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		report, err := client.getConsolidatedReport(ctx, cfg.TenantID, strings.TrimSpace(*asOf), strings.TrimSpace(*startDate), strings.TrimSpace(*endDate), strings.TrimSpace(*tenantIDs))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, report)
+		}
+		printConsolidatedFinancialReport(a.stdout, report)
 		return nil
 
 	case "annual":

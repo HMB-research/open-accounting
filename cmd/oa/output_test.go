@@ -1604,6 +1604,41 @@ func TestPrintReports(t *testing.T) {
 	assert.Contains(t, incomeBuf.String(), "Income statement")
 	assert.Contains(t, incomeBuf.String(), "Net income: 500")
 
+	var consolidatedBuf bytes.Buffer
+	printConsolidatedFinancialReport(&consolidatedBuf, &reports.ConsolidatedFinancialReport{
+		TenantCount: 2,
+		AsOfDate:    asOf,
+		StartDate:   asOf,
+		EndDate:     asOf,
+		BalanceSheet: &accounting.BalanceSheet{
+			TotalAssets:      decimal.NewFromInt(1000),
+			TotalLiabilities: decimal.NewFromInt(400),
+			TotalEquity:      decimal.NewFromInt(600),
+		},
+		IncomeStatement: &accounting.IncomeStatement{
+			TotalRevenue:  decimal.NewFromInt(1200),
+			TotalExpenses: decimal.NewFromInt(700),
+			NetIncome:     decimal.NewFromInt(500),
+		},
+		Entities: []reports.ConsolidatedTenantReport{{
+			TenantID:   "tenant-1",
+			TenantName: "Alpha",
+			BalanceSheet: &accounting.BalanceSheet{
+				TotalAssets:      decimal.NewFromInt(500),
+				TotalLiabilities: decimal.NewFromInt(200),
+				TotalEquity:      decimal.NewFromInt(300),
+			},
+			IncomeStatement: &accounting.IncomeStatement{
+				TotalRevenue:  decimal.NewFromInt(600),
+				TotalExpenses: decimal.NewFromInt(350),
+				NetIncome:     decimal.NewFromInt(250),
+			},
+		}},
+	})
+	assert.Contains(t, consolidatedBuf.String(), "Consolidated report (2 tenants)")
+	assert.Contains(t, consolidatedBuf.String(), "Alpha")
+	assert.Contains(t, consolidatedBuf.String(), "Net income: 500")
+
 	var cashFlowBuf bytes.Buffer
 	printCashFlowStatement(&cashFlowBuf, &reports.CashFlowStatement{
 		StartDate: "2026-01-01",

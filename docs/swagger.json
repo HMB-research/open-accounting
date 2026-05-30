@@ -12813,6 +12813,107 @@
                 }
             }
         },
+        "/tenants/{tenantID}/reports/consolidated": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Consolidate trial balance, balance sheet, and income statement across selected companies the caller can view",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Get consolidated financial report",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Anchor tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated tenant IDs to consolidate; defaults to the anchor tenant",
+                        "name": "tenant_ids",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "Repeatable tenant ID selector",
+                        "name": "tenant_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Balance sheet and trial balance date (YYYY-MM-DD)",
+                        "name": "as_of",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Income statement start date (YYYY-MM-DD); defaults to Jan 1 of as_of year",
+                        "name": "start",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Income statement end date (YYYY-MM-DD); defaults to as_of",
+                        "name": "end",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.ConsolidatedFinancialReport"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/reports/contact-statements/{contactID}": {
             "get": {
                 "security": [
@@ -22026,6 +22127,73 @@
                 },
                 "total_operating": {
                     "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_reports.ConsolidatedFinancialReport": {
+            "type": "object",
+            "properties": {
+                "as_of_date": {
+                    "type": "string"
+                },
+                "balance_sheet": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.BalanceSheet"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "entities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_reports.ConsolidatedTenantReport"
+                    }
+                },
+                "generated_at": {
+                    "type": "string"
+                },
+                "income_statement": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.IncomeStatement"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "tenant_count": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "tenant_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "trial_balance": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.TrialBalance"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_reports.ConsolidatedTenantReport": {
+            "type": "object",
+            "properties": {
+                "balance_sheet": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.BalanceSheet"
+                },
+                "income_statement": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.IncomeStatement"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "tenant_name": {
+                    "type": "string"
+                },
+                "tenant_slug": {
+                    "type": "string"
+                },
+                "trial_balance": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.TrialBalance"
                 }
             }
         },

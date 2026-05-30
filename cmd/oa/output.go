@@ -2636,6 +2636,53 @@ func printIncomeStatement(w io.Writer, report *accounting.IncomeStatement) {
 	_, _ = fmt.Fprintf(w, "Net income: %s\n", report.NetIncome.String())
 }
 
+func printConsolidatedFinancialReport(w io.Writer, report *reports.ConsolidatedFinancialReport) {
+	_, _ = fmt.Fprintf(w, "Consolidated report (%d tenants)\n", report.TenantCount)
+	_, _ = fmt.Fprintf(w, "As of: %s\n", formatDate(report.AsOfDate))
+	_, _ = fmt.Fprintf(w, "Income period: %s to %s\n", formatDate(report.StartDate), formatDate(report.EndDate))
+	if len(report.Entities) > 0 {
+		tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		_, _ = fmt.Fprintln(tw, "TENANT\tASSETS\tLIABILITIES\tEQUITY\tREVENUE\tEXPENSES\tNET INCOME")
+		for _, entity := range report.Entities {
+			balanceSheet := entity.BalanceSheet
+			incomeStatement := entity.IncomeStatement
+			var assets, liabilities, equity, revenue, expenses, netIncome string
+			if balanceSheet != nil {
+				assets = balanceSheet.TotalAssets.String()
+				liabilities = balanceSheet.TotalLiabilities.String()
+				equity = balanceSheet.TotalEquity.String()
+			}
+			if incomeStatement != nil {
+				revenue = incomeStatement.TotalRevenue.String()
+				expenses = incomeStatement.TotalExpenses.String()
+				netIncome = incomeStatement.NetIncome.String()
+			}
+			_, _ = fmt.Fprintf(
+				tw,
+				"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				firstNonEmpty(entity.TenantName, entity.TenantID),
+				firstNonEmpty(assets, "0"),
+				firstNonEmpty(liabilities, "0"),
+				firstNonEmpty(equity, "0"),
+				firstNonEmpty(revenue, "0"),
+				firstNonEmpty(expenses, "0"),
+				firstNonEmpty(netIncome, "0"),
+			)
+		}
+		_ = tw.Flush()
+	}
+	if report.BalanceSheet != nil {
+		_, _ = fmt.Fprintf(w, "Total assets: %s\n", report.BalanceSheet.TotalAssets.String())
+		_, _ = fmt.Fprintf(w, "Total liabilities: %s\n", report.BalanceSheet.TotalLiabilities.String())
+		_, _ = fmt.Fprintf(w, "Total equity: %s\n", report.BalanceSheet.TotalEquity.String())
+	}
+	if report.IncomeStatement != nil {
+		_, _ = fmt.Fprintf(w, "Total revenue: %s\n", report.IncomeStatement.TotalRevenue.String())
+		_, _ = fmt.Fprintf(w, "Total expenses: %s\n", report.IncomeStatement.TotalExpenses.String())
+		_, _ = fmt.Fprintf(w, "Net income: %s\n", report.IncomeStatement.NetIncome.String())
+	}
+}
+
 func printCashFlowStatement(w io.Writer, report *reports.CashFlowStatement) {
 	_, _ = fmt.Fprintf(w, "Cash flow %s to %s\n", report.StartDate, report.EndDate)
 	if strings.TrimSpace(report.Method) != "" {
