@@ -897,6 +897,94 @@ func TestService_Update(t *testing.T) {
 	assert.Equal(t, 48, asset.UsefulLifeMonths)
 }
 
+func TestService_UpdatePreservesCategoryAndAccountsWhenOmitted(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	categoryID := "cat-1"
+	assetAccountID := "asset-account"
+	depreciationExpenseAccountID := "depreciation-expense"
+	accumulatedDepreciationAccountID := "accumulated-depreciation"
+	ts.repo.Assets["a1"] = &FixedAsset{
+		ID:                            "a1",
+		TenantID:                      "tenant-1",
+		Name:                          "Laptop",
+		CategoryID:                    &categoryID,
+		Status:                        AssetStatusActive,
+		PurchaseDate:                  time.Now(),
+		PurchaseCost:                  decimal.NewFromInt(1200),
+		UsefulLifeMonths:              36,
+		ResidualValue:                 decimal.NewFromInt(100),
+		DepreciationMethod:            DepreciationStraightLine,
+		AssetAccountID:                &assetAccountID,
+		DepreciationExpenseAccountID:  &depreciationExpenseAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedDepreciationAccountID,
+	}
+
+	asset, err := ts.svc.Update(ctx, "tenant-1", "test_schema", "a1", &UpdateAssetRequest{
+		Name: "Updated laptop",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, asset.CategoryID)
+	assert.Equal(t, categoryID, *asset.CategoryID)
+	require.NotNil(t, asset.AssetAccountID)
+	assert.Equal(t, assetAccountID, *asset.AssetAccountID)
+	require.NotNil(t, asset.DepreciationExpenseAccountID)
+	assert.Equal(t, depreciationExpenseAccountID, *asset.DepreciationExpenseAccountID)
+	require.NotNil(t, asset.AccumulatedDepreciationAcctID)
+	assert.Equal(t, accumulatedDepreciationAccountID, *asset.AccumulatedDepreciationAcctID)
+}
+
+func TestService_UpdateInheritsChangedCategoryDefaults(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	assetAccountID := "asset-account-2"
+	depreciationExpenseAccountID := "depreciation-expense-2"
+	accumulatedDepreciationAccountID := "accumulated-depreciation-2"
+	ts.repo.Categories["cat-2"] = &AssetCategory{
+		ID:                            "cat-2",
+		TenantID:                      "tenant-1",
+		Name:                          "Vehicles",
+		DepreciationMethod:            DepreciationDecliningBalance,
+		DefaultUsefulLifeMonths:       48,
+		DefaultResidualValuePercent:   decimal.NewFromInt(20),
+		AssetAccountID:                &assetAccountID,
+		DepreciationExpenseAccountID:  &depreciationExpenseAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedDepreciationAccountID,
+	}
+	ts.repo.Assets["a1"] = &FixedAsset{
+		ID:                 "a1",
+		TenantID:           "tenant-1",
+		Name:               "Truck",
+		Status:             AssetStatusActive,
+		PurchaseDate:       time.Now(),
+		PurchaseCost:       decimal.NewFromInt(10000),
+		UsefulLifeMonths:   60,
+		ResidualValue:      decimal.NewFromInt(500),
+		DepreciationMethod: DepreciationStraightLine,
+	}
+	categoryID := "cat-2"
+
+	asset, err := ts.svc.Update(ctx, "tenant-1", "test_schema", "a1", &UpdateAssetRequest{
+		CategoryID: &categoryID,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, asset.CategoryID)
+	assert.Equal(t, categoryID, *asset.CategoryID)
+	assert.Equal(t, DepreciationDecliningBalance, asset.DepreciationMethod)
+	assert.Equal(t, 48, asset.UsefulLifeMonths)
+	assert.True(t, asset.ResidualValue.Equal(decimal.NewFromInt(2000)))
+	require.NotNil(t, asset.AssetAccountID)
+	assert.Equal(t, assetAccountID, *asset.AssetAccountID)
+	require.NotNil(t, asset.DepreciationExpenseAccountID)
+	assert.Equal(t, depreciationExpenseAccountID, *asset.DepreciationExpenseAccountID)
+	require.NotNil(t, asset.AccumulatedDepreciationAcctID)
+	assert.Equal(t, accumulatedDepreciationAccountID, *asset.AccumulatedDepreciationAcctID)
+}
+
 func TestService_Update_NotDraft(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
