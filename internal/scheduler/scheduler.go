@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/recurring"
 )
@@ -67,9 +68,21 @@ type Scheduler struct {
 
 // NewScheduler creates a new scheduler instance
 func NewScheduler(db *pgxpool.Pool, recurringService *recurring.Service, reminderService *invoicing.AutomatedReminderService, config Config) *Scheduler {
+	if db == nil {
+		return &Scheduler{
+			cron:      cron.New(cron.WithSeconds()),
+			recurring: recurringService,
+			reminder:  reminderService,
+			config:    config,
+		}
+	}
+	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	if err != nil {
+		panic(fmt.Errorf("create scheduler GORM repository: %w", err))
+	}
 	return &Scheduler{
 		cron:      cron.New(cron.WithSeconds()),
-		repo:      NewPostgresRepository(db),
+		repo:      NewGORMRepository(gormDB),
 		recurring: recurringService,
 		reminder:  reminderService,
 		config:    config,

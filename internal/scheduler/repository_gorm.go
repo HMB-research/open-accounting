@@ -1,9 +1,8 @@
-//go:build gorm
-
 package scheduler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"gorm.io/gorm"
@@ -13,6 +12,8 @@ import (
 type tenantModel struct {
 	ID         string `gorm:"column:id;primaryKey"`
 	SchemaName string `gorm:"column:schema_name"`
+	Name       string `gorm:"column:name"`
+	Settings   []byte `gorm:"column:settings;type:jsonb"`
 	IsActive   bool   `gorm:"column:is_active"`
 }
 
@@ -43,10 +44,26 @@ func (r *GORMRepository) ListActiveTenants(ctx context.Context) ([]TenantInfo, e
 	result := make([]TenantInfo, len(tenants))
 	for i, t := range tenants {
 		result[i] = TenantInfo{
-			ID:         t.ID,
-			SchemaName: t.SchemaName,
+			ID:             t.ID,
+			SchemaName:     t.SchemaName,
+			CompanyName:    t.Name,
+			PeriodLockDate: periodLockDateFromSettings(t.Settings),
 		}
 	}
 
 	return result, nil
+}
+
+func periodLockDateFromSettings(settings []byte) string {
+	if len(settings) == 0 {
+		return ""
+	}
+
+	var values map[string]any
+	if err := json.Unmarshal(settings, &values); err != nil {
+		return ""
+	}
+
+	periodLockDate, _ := values["period_lock_date"].(string)
+	return periodLockDate
 }
