@@ -532,6 +532,33 @@ func (h *Handlers) RevokeAuthSession(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
 }
 
+// RevokeAllAuthSessions revokes all refresh sessions for the authenticated user.
+// @Summary Revoke all auth sessions
+// @Description Revoke all active refresh-token sessions for the authenticated user
+// @Tags Auth
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} object{status=string}
+// @Failure 401 {object} object{error=string}
+// @Router /auth/sessions [delete]
+func (h *Handlers) RevokeAllAuthSessions(w http.ResponseWriter, r *http.Request) {
+	claims, ok := auth.GetClaims(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+	if h.refreshSessionService == nil {
+		respondError(w, http.StatusInternalServerError, "Refresh session service unavailable")
+		return
+	}
+
+	if err := h.refreshSessionService.RevokeAllRefreshSessions(r.Context(), claims.UserID); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to revoke refresh sessions")
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
+}
+
 func (h *Handlers) generateRefreshTokenWithClaims(userID string) (string, *auth.RefreshClaims, error) {
 	refreshToken, err := h.tokenService.GenerateRefreshToken(userID)
 	if err != nil {

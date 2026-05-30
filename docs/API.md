@@ -148,6 +148,13 @@ DELETE /auth/sessions/{sessionID}
 Authorization: Bearer <access-token-or-api-token>
 ```
 
+Use the collection delete endpoint to revoke every active refresh-token session for the authenticated user.
+
+```http
+DELETE /auth/sessions
+Authorization: Bearer <access-token-or-api-token>
+```
+
 ---
 
 ## API Tokens

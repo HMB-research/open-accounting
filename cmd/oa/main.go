@@ -165,6 +165,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  auth refresh              Exchange a refresh token for an access token")
 	_, _ = fmt.Fprintln(a.stdout, "  auth sessions             List refresh token sessions")
 	_, _ = fmt.Fprintln(a.stdout, "  auth revoke-session       Revoke a refresh token session by id")
+	_, _ = fmt.Fprintln(a.stdout, "  auth revoke-all-sessions  Revoke all refresh token sessions")
 	_, _ = fmt.Fprintln(a.stdout, "  auth change-password      Change the current user's password")
 	_, _ = fmt.Fprintln(a.stdout, "  auth tenants              List tenants for the current token")
 	_, _ = fmt.Fprintln(a.stdout, "  auth status               Show current CLI auth status")
@@ -938,6 +939,17 @@ func (a *cliApp) runAuth(ctx context.Context, args []string) error {
 			return err
 		}
 		_, _ = fmt.Fprintln(a.stdout, "Revoked refresh session")
+		return nil
+
+	case "revoke-all-sessions":
+		cfg, client, err := a.loadTokenClient()
+		if err != nil {
+			return err
+		}
+		if err := client.revokeAllAuthSessions(ctx, cfg.APIToken); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintln(a.stdout, "Revoked all refresh sessions")
 		return nil
 
 	case "change-password":

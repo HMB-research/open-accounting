@@ -6628,6 +6628,31 @@ paths:
       tags:
       - Auth
   /auth/sessions:
+    delete:
+      description: Revoke all active refresh-token sessions for the authenticated
+        user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Revoke all auth sessions
+      tags:
+      - Auth
     get:
       description: List active refresh-token sessions for the authenticated user
       parameters:

@@ -245,6 +245,9 @@ func TestCLIAuthInitStatusAndLogoutFlow(t *testing.T) {
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/auth/sessions/session-1":
 			require.Equal(t, "Bearer oa_raw_token_123456789", r.Header.Get("Authorization"))
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "revoked"})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/auth/sessions":
+			require.Equal(t, "Bearer oa_raw_token_123456789", r.Header.Get("Authorization"))
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "revoked"})
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/auth/password":
 			require.Equal(t, "Bearer oa_raw_token_123456789", r.Header.Get("Authorization"))
 			var req map[string]string
@@ -302,6 +305,11 @@ func TestCLIAuthInitStatusAndLogoutFlow(t *testing.T) {
 	err = app.run(context.Background(), []string{"auth", "revoke-session", "--id", "session-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Revoked refresh session")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"auth", "revoke-all-sessions"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Revoked all refresh sessions")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"auth", "change-password", "--current-password", "oldpassword123", "--new-password", "newpassword123"})
