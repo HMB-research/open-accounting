@@ -399,6 +399,33 @@ This currently applies to:
 
 Invoice import also enforces the lock, but because it is a bulk operation, locked invoice rows are returned as row errors in the import summary instead of failing the whole request with `409 Conflict`.
 
+### Validate Migration Bundle
+
+```http
+POST /tenants/{tenantId}/migration/validate
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "files": [
+    {
+      "kind": "contacts",
+      "file_name": "contacts.csv",
+      "csv_content": "contact_code,name\nCUST-1,Customer One\n"
+    },
+    {
+      "kind": "invoices",
+      "file_name": "invoices.csv",
+      "csv_content": "invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\nINV-1,CUST-1,2026-05-30,Work,1,100,22\n"
+    }
+  ]
+}
+```
+
+Returns a non-mutating cutover report with required-column checks and cross-file reference issues for supported migration CSV files. Supported `kind` values are `accounts`, `contacts`, `employees`, `invoices`, `payments`, `payroll_history`, `leave_balances`, `opening_balances`, and `journal_entries`.
+
 ### List Recent Journal Entries
 
 ```http

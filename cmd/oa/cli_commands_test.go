@@ -20,6 +20,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/cutover"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/expenses"
@@ -938,6 +939,77 @@ func TestCLIWebhookCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"webhooks", "delete", "--id", webhookID})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Deleted webhook endpoint")
+}
+
+func TestCLIMigrationValidationCommand(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	contactsFile := writeTempCSV(t, "contacts.csv", "contact_code,name\nCUST-1,Customer One\n")
+	invoicesFile := writeTempCSV(t, "invoices.csv", "invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\nINV-1,CUST-404,2026-05-30,Work,1,100,22\n")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/migration/validate":
+			var req cutover.ValidateBundleRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.NotEmpty(t, req.Files)
+			assert.Equal(t, cutover.KindContacts, req.Files[0].Kind)
+			assert.Equal(t, "contacts.csv", req.Files[0].FileName)
+			if len(req.Files) == 2 {
+				assert.Contains(t, req.Files[1].CSVContent, "CUST-404")
+			}
+			_ = json.NewEncoder(w).Encode(cutover.BundleValidationReport{
+				Summary: cutover.BundleValidationSummary{
+					FilesValidated: 2,
+					RowsValidated:  2,
+					ErrorCount:     1,
+					Ready:          false,
+				},
+				Files: []cutover.FileValidation{
+					{Kind: cutover.KindContacts, FileName: "contacts.csv", Rows: 1},
+					{Kind: cutover.KindInvoices, FileName: "invoices.csv", Rows: 1},
+				},
+				Issues: []cutover.ValidationIssue{
+					{
+						Severity:   cutover.SeverityError,
+						Kind:       cutover.KindInvoices,
+						FileName:   "invoices.csv",
+						Row:        2,
+						Field:      "contact_code",
+						Value:      "CUST-404",
+						TargetKind: cutover.KindContacts,
+						Message:    `contact_code reference "CUST-404" was not found in contacts file`,
+					},
+				},
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"migration", "validate", "--contacts", contactsFile, "--invoices", invoicesFile})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Migration validation: blocked")
+	assert.Contains(t, stdout.String(), "CUST-404")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"migration", "validate", "--contacts", contactsFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"files_validated": 2`)
 }
 
 func TestCLIAdminPluginCommands(t *testing.T) {

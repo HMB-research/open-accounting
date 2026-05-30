@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/cutover"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/expenses"
@@ -50,6 +52,58 @@ func printRawJSON(w io.Writer, payload json.RawMessage) error {
 		return writeErr
 	}
 	return printJSON(w, value)
+}
+
+func printMigrationValidationReport(w io.Writer, report *cutover.BundleValidationReport) {
+	if report == nil {
+		_, _ = fmt.Fprintln(w, "No migration validation report")
+		return
+	}
+	status := "ready"
+	if !report.Summary.Ready {
+		status = "blocked"
+	}
+	_, _ = fmt.Fprintf(
+		w,
+		"Migration validation: %s (%d files, %d rows, %d errors, %d warnings)\n",
+		status,
+		report.Summary.FilesValidated,
+		report.Summary.RowsValidated,
+		report.Summary.ErrorCount,
+		report.Summary.WarningCount,
+	)
+
+	if len(report.Files) > 0 {
+		tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		_, _ = fmt.Fprintln(tw, "KIND\tFILE\tROWS\tMISSING COLUMNS")
+		for _, file := range report.Files {
+			missing := "-"
+			if len(file.MissingColumns) > 0 {
+				missing = strings.Join(file.MissingColumns, ",")
+			}
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%d\t%s\n", file.Kind, file.FileName, file.Rows, missing)
+		}
+		_ = tw.Flush()
+	}
+
+	if len(report.Issues) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "Issues:")
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "SEVERITY\tFILE\tROW\tFIELD\tMESSAGE")
+	for _, issue := range report.Issues {
+		row := "-"
+		if issue.Row > 0 {
+			row = strconv.Itoa(issue.Row)
+		}
+		field := issue.Field
+		if field == "" {
+			field = "-"
+		}
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", issue.Severity, issue.FileName, row, field, issue.Message)
+	}
+	_ = tw.Flush()
 }
 
 func printLoginResponse(w io.Writer, resp *loginResponse) {

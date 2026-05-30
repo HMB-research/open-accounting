@@ -128,6 +128,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 | **TSD Declaration** | Annex 1 generation with XML/CSV export for e-MTA |
 | **Historical Payroll Import** | CSV import of finalized prior payroll runs and payslips through API, web UI, and CLI |
 | **Leave Balance Import** | CSV import of employee leave balances for migration cutovers through API, web UI, and CLI |
+| **Migration Preflight** | Non-mutating CSV bundle validation for required columns and cross-file references before cutover imports |
 
 ### Estonian Compliance
 | Feature | Description |
@@ -336,6 +337,7 @@ open-accounting/
 - [x] Revocable, single-use refresh token sessions
 - [x] CLI/API refresh-session listing and revocation
 - [x] CSV import for chart of accounts, contacts, employees, invoices, quotes, orders, recurring invoice templates, payments, cost centers, product categories/warehouses/products/stock, fixed assets, and opening balances
+- [x] Migration bundle validation for CSV cutovers with API and CLI coverage
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings
 - [x] Fiscal-year close readiness and retained-earnings carry-forward workflow

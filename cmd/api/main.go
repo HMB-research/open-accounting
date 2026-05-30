@@ -441,6 +441,9 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Post("/api-tokens", h.CreateAPIToken)
 				r.Delete("/api-tokens/{tokenID}", h.RevokeAPIToken)
 
+				// Migration cutover preflight
+				r.Post("/migration/validate", h.ValidateMigrationBundle)
+
 				// Accounts
 				r.Get("/accounts", h.ListAccounts)
 				r.Post("/accounts", h.CreateAccount)

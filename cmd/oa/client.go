@@ -23,6 +23,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/cutover"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/expenses"
@@ -572,6 +573,14 @@ func (c *apiClient) listAPITokens(ctx context.Context, tenantID string) ([]apito
 
 func (c *apiClient) revokeAPIToken(ctx context.Context, tenantID, tokenID string) error {
 	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "api-tokens", tokenID), nil, c.apiToken, nil)
+}
+
+func (c *apiClient) validateMigrationBundle(ctx context.Context, tenantID string, req *cutover.ValidateBundleRequest) (*cutover.BundleValidationReport, error) {
+	var resp cutover.BundleValidationReport
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "migration", "validate"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }
 
 func (c *apiClient) listAccounts(ctx context.Context, tenantID string, activeOnly bool) ([]accounting.Account, error) {

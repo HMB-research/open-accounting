@@ -23,6 +23,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/cutover"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/expenses"
@@ -84,6 +85,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runWebhooks(ctx, args[1:])
 	case "expenses":
 		return a.runExpenses(ctx, args[1:])
+	case "migration":
+		return a.runMigration(ctx, args[1:])
 	case "admin":
 		return a.runAdmin(ctx, args[1:])
 	case "tokens":
@@ -191,6 +194,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  webhooks delete           Delete a webhook endpoint")
 	_, _ = fmt.Fprintln(a.stdout, "  webhooks deliveries       List webhook deliveries")
 	_, _ = fmt.Fprintln(a.stdout, "  webhooks test             Send a test webhook delivery")
+	_, _ = fmt.Fprintln(a.stdout, "  migration validate        Validate CSV migration bundle references")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins list        List installed plugins")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins search      Search plugin repositories")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins get         Show an installed plugin")
@@ -1691,6 +1695,91 @@ func (a *cliApp) runWebhooks(ctx context.Context, args []string) error {
 	default:
 		return fmt.Errorf("unknown webhooks subcommand %q", args[0])
 	}
+}
+
+func (a *cliApp) runMigration(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("migration subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "validate":
+		fs := flag.NewFlagSet("migration validate", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		accountsFile := fs.String("accounts", "", "Accounts CSV file")
+		contactsFile := fs.String("contacts", "", "Contacts CSV file")
+		employeesFile := fs.String("employees", "", "Employees CSV file")
+		invoicesFile := fs.String("invoices", "", "Invoices CSV file")
+		paymentsFile := fs.String("payments", "", "Payments CSV file")
+		payrollHistoryFile := fs.String("payroll-history", "", "Historical payroll CSV file")
+		leaveBalancesFile := fs.String("leave-balances", "", "Leave balances CSV file")
+		openingBalancesFile := fs.String("opening-balances", "", "Opening balances CSV file")
+		journalFile := fs.String("journal", "", "Historical journal CSV file")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		files, err := buildMigrationBundleFiles([]migrationFileInput{
+			{kind: cutover.KindAccounts, path: *accountsFile},
+			{kind: cutover.KindContacts, path: *contactsFile},
+			{kind: cutover.KindEmployees, path: *employeesFile},
+			{kind: cutover.KindInvoices, path: *invoicesFile},
+			{kind: cutover.KindPayments, path: *paymentsFile},
+			{kind: cutover.KindPayrollHistory, path: *payrollHistoryFile},
+			{kind: cutover.KindLeaveBalances, path: *leaveBalancesFile},
+			{kind: cutover.KindOpeningBalances, path: *openingBalancesFile},
+			{kind: cutover.KindJournalEntries, path: *journalFile},
+		})
+		if err != nil {
+			return err
+		}
+		if len(files) == 0 {
+			return errors.New("at least one migration CSV file is required")
+		}
+
+		report, err := client.validateMigrationBundle(ctx, cfg.TenantID, &cutover.ValidateBundleRequest{Files: files})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, report)
+		}
+		printMigrationValidationReport(a.stdout, report)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown migration subcommand %q", args[0])
+	}
+}
+
+type migrationFileInput struct {
+	kind cutover.FileKind
+	path string
+}
+
+func buildMigrationBundleFiles(inputs []migrationFileInput) ([]cutover.BundleFile, error) {
+	files := make([]cutover.BundleFile, 0, len(inputs))
+	for _, input := range inputs {
+		pathValue := strings.TrimSpace(input.path)
+		if pathValue == "" {
+			continue
+		}
+		content, fileName, err := readFileInput(pathValue, string(input.kind)+".csv")
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, cutover.BundleFile{
+			Kind:       input.kind,
+			FileName:   fileName,
+			CSVContent: string(content),
+		})
+	}
+	return files, nil
 }
 
 func (a *cliApp) runPluginSettings(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
