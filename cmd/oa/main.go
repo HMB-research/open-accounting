@@ -181,6 +181,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  users list                List tenant users")
 	_, _ = fmt.Fprintln(a.stdout, "  users update-role         Update a tenant user role")
 	_, _ = fmt.Fprintln(a.stdout, "  users sessions            List tenant user refresh sessions")
+	_, _ = fmt.Fprintln(a.stdout, "  users security-events     List tenant user auth security events")
 	_, _ = fmt.Fprintln(a.stdout, "  users revoke-session      Revoke a tenant user refresh session")
 	_, _ = fmt.Fprintln(a.stdout, "  users revoke-all-sessions Revoke all tenant user refresh sessions")
 	_, _ = fmt.Fprintln(a.stdout, "  users remove              Remove a tenant user")
@@ -1355,6 +1356,32 @@ func (a *cliApp) runUsers(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, sessions)
 		}
 		printRefreshSessions(a.stdout, sessions)
+		return nil
+
+	case "security-events":
+		fs := flag.NewFlagSet("users security-events", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		userID := fs.String("id", "", "User id")
+		limit := fs.Int("limit", 50, "Maximum events to return")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*userID) == "" {
+			return errors.New("id is required")
+		}
+		if *limit <= 0 || *limit > 200 {
+			return errors.New("limit must be between 1 and 200")
+		}
+
+		events, err := client.listTenantUserSecurityAuditEvents(ctx, cfg.TenantID, strings.TrimSpace(*userID), *limit)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, events)
+		}
+		printSecurityAuditEvents(a.stdout, events)
 		return nil
 
 	case "revoke-session":

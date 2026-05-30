@@ -155,6 +155,7 @@ go run ./cmd/oa users list
 go run ./cmd/oa users update-role --id <user-id> --role accountant
 go run ./cmd/oa users sessions --id <user-id>
 go run ./cmd/oa users sessions --id <user-id> --include-inactive
+go run ./cmd/oa users security-events --id <user-id> --limit 50
 go run ./cmd/oa users revoke-session --id <user-id> --session-id <session-id>
 go run ./cmd/oa users revoke-all-sessions --id <user-id>
 go run ./cmd/oa users remove --id <user-id>
@@ -170,7 +171,7 @@ go run ./cmd/oa invitations accept \
   --base-url http://localhost:8080
 ```
 
-`users update-role` accepts `admin`, `accountant`, or `viewer`. The `owner` role is assigned only at tenant creation and cannot be granted through the CLI role-update flow. `users sessions` and the tenant-user revocation commands require a tenant admin or owner and record audit events when sessions are revoked. Use `--password-stdin` on `invitations accept` to avoid placing a new-user password in shell history.
+`users update-role` accepts `admin`, `accountant`, or `viewer`. The `owner` role is assigned only at tenant creation and cannot be granted through the CLI role-update flow. `users sessions`, `users security-events`, and the tenant-user revocation commands require a tenant admin or owner and record audit events when sessions are revoked. Use `--password-stdin` on `invitations accept` to avoid placing a new-user password in shell history.
 
 ## Plugins
 

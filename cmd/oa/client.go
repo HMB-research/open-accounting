@@ -381,6 +381,19 @@ func (c *apiClient) revokeTenantUserAuthSessions(ctx context.Context, tenantID, 
 	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "users", userID, "sessions"), nil, c.apiToken, nil)
 }
 
+func (c *apiClient) listTenantUserSecurityAuditEvents(ctx context.Context, tenantID, userID string, limit int) ([]auth.SecurityAuditEvent, error) {
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+
+	var resp []auth.SecurityAuditEvent
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "users", userID, "security-events"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
 func (c *apiClient) listInvitations(ctx context.Context, tenantID string) ([]tenant.UserInvitation, error) {
 	var resp []tenant.UserInvitation
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "invitations"), nil, c.apiToken, &resp); err != nil {

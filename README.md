@@ -343,6 +343,7 @@ open-accounting/
 - [x] Auth security audit events for login, logout, password, and session actions
 - [x] Tenant audit events for organization settings changes
 - [x] Tenant admin controls for member refresh-session inspection and revocation
+- [x] Tenant admin security-event visibility for member auth activity
 - [x] CSV import for chart of accounts, contacts, employees, invoices, quotes, orders, recurring invoice templates, payments, cost centers, product categories/warehouses/products/stock, fixed assets, and opening balances
 - [x] Migration bundle validation and expense CSV import for cutovers with API and CLI coverage
 - [x] Tenant period lock on core write paths
