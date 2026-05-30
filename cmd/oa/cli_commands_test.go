@@ -6813,6 +6813,46 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd/2026/3/xml":
 			w.Header().Set("Content-Type", "application/xml")
 			_, _ = w.Write([]byte("<KMD>ok</KMD>"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tax/eu-vat/oss":
+			w.Header().Set("Content-Type", "application/json")
+			assert.Equal(t, "2026", r.URL.Query().Get("year"))
+			assert.Equal(t, "1", r.URL.Query().Get("quarter"))
+			assert.Equal(t, "true", r.URL.Query().Get("include_b2b"))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tenant_id":      "tenant-1",
+				"year":           2026,
+				"quarter":        1,
+				"period_start":   "2026-01-01T00:00:00Z",
+				"period_end":     "2026-03-31T23:59:59Z",
+				"scheme":         "UNION",
+				"currency":       "EUR",
+				"include_b2b":    true,
+				"generated_at":   "2026-03-31T12:00:00Z",
+				"taxable_amount": "100.00",
+				"vat_amount":     "19.00",
+				"total_amount":   "119.00",
+				"invoice_count":  1,
+				"line_count":     1,
+				"summary": []map[string]any{{
+					"country_code":   "DE",
+					"country_name":   "Germany",
+					"invoice_count":  1,
+					"line_count":     1,
+					"taxable_amount": "100.00",
+					"vat_amount":     "19.00",
+					"total_amount":   "119.00",
+				}},
+				"rows": []map[string]any{{
+					"country_code":   "DE",
+					"country_name":   "Germany",
+					"vat_rate":       "19.00",
+					"invoice_count":  1,
+					"line_count":     1,
+					"taxable_amount": "100.00",
+					"vat_amount":     "19.00",
+					"total_amount":   "119.00",
+				}},
+			})
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -6882,6 +6922,12 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"tax", "kmd", "export-xml", "--year", "2026", "--month", "3"})
 	require.NoError(t, err)
 	assert.Equal(t, "<KMD>ok</KMD>", stdout.String())
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tax", "oss", "report", "--year", "2026", "--quarter", "1", "--include-b2b"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "EU VAT OSS 2026-Q1")
+	assert.Contains(t, stdout.String(), "DE Germany")
 }
 
 func TestCLIDocumentCommands(t *testing.T) {

@@ -159,6 +159,63 @@ func (h *Handlers) HandleGenerateKMDINF(w http.ResponseWriter, r *http.Request) 
 	respondJSON(w, http.StatusOK, report)
 }
 
+// HandleGenerateEUVATOSS generates a quarterly EU VAT OSS report.
+// @Summary Generate EU VAT OSS report
+// @Description Generate quarterly EU VAT OSS destination-country totals from non-Estonian EU sales invoices
+// @Tags Tax
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param year query int true "Year"
+// @Param quarter query int true "Quarter"
+// @Param include_b2b query bool false "Include contacts with VAT numbers"
+// @Success 200 {object} tax.EUVATOSSReport
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/tax/eu-vat/oss [get]
+func (h *Handlers) HandleGenerateEUVATOSS(w http.ResponseWriter, r *http.Request) {
+	tenantCtx := h.tenantContextFromRequest(r)
+
+	year, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("year")))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid year")
+		return
+	}
+	if year < 2020 || year > 2100 {
+		respondError(w, http.StatusBadRequest, "Invalid year")
+		return
+	}
+	quarter, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("quarter")))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid quarter")
+		return
+	}
+	if quarter < 1 || quarter > 4 {
+		respondError(w, http.StatusBadRequest, "Invalid quarter")
+		return
+	}
+	includeB2B := false
+	if raw := strings.TrimSpace(r.URL.Query().Get("include_b2b")); raw != "" {
+		includeB2B, err = strconv.ParseBool(raw)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "Invalid include_b2b")
+			return
+		}
+	}
+
+	report, err := h.taxService.GenerateEUVATOSS(r.Context(), tenantCtx.tenantID, tenantCtx.schemaName, &tax.EUVATOSSReportRequest{
+		Year:       year,
+		Quarter:    quarter,
+		IncludeB2B: includeB2B,
+	})
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, report)
+}
+
 // HandleExportKMD exports a KMD declaration to XML
 // @Summary Export KMD to XML
 // @Description Export a KMD declaration to Estonian e-MTA XML format

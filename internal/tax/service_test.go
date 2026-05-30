@@ -19,6 +19,8 @@ type MockRepository struct {
 	queryVATDataErr        error
 	queryKMDINFDataResult  []KMDINFReportRow
 	queryKMDINFDataErr     error
+	queryEUVATOSSResult    []EUVATOSSReportRow
+	queryEUVATOSSErr       error
 	saveDeclarationErr     error
 	getDeclarationResult   *KMDDeclaration
 	existingDeclarations   map[string]*KMDDeclaration
@@ -44,6 +46,13 @@ func (m *MockRepository) QueryKMDINFData(ctx context.Context, schemaName, tenant
 		return nil, m.queryKMDINFDataErr
 	}
 	return m.queryKMDINFDataResult, nil
+}
+
+func (m *MockRepository) QueryEUVATOSSData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time, includeB2B bool) ([]EUVATOSSReportRow, error) {
+	if m.queryEUVATOSSErr != nil {
+		return nil, m.queryEUVATOSSErr
+	}
+	return m.queryEUVATOSSResult, nil
 }
 
 func (m *MockRepository) SaveDeclaration(ctx context.Context, schemaName string, decl *KMDDeclaration) error {
@@ -421,6 +430,80 @@ func TestService_GenerateKMDINF_ValidationAndRepositoryErrors(t *testing.T) {
 	_, err = svc.GenerateKMDINF(context.Background(), "tenant-1", "test_schema", &KMDINFReportRequest{Year: 2026, Month: 3})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "query KMD INF data")
+}
+
+func TestService_GenerateEUVATOSS_Success(t *testing.T) {
+	repo := &MockRepository{
+		queryEUVATOSSResult: []EUVATOSSReportRow{
+			{
+				CountryCode:   "DE",
+				VATRate:       decimal.NewFromInt(19),
+				InvoiceCount:  1,
+				LineCount:     1,
+				TaxableAmount: decimal.NewFromInt(100),
+				VATAmount:     decimal.NewFromInt(19),
+				TotalAmount:   decimal.NewFromInt(119),
+			},
+			{
+				CountryCode:   "FI",
+				VATRate:       decimal.NewFromInt(24),
+				InvoiceCount:  2,
+				LineCount:     3,
+				TaxableAmount: decimal.NewFromInt(200),
+				VATAmount:     decimal.NewFromInt(48),
+				TotalAmount:   decimal.NewFromInt(248),
+			},
+		},
+	}
+	svc := NewServiceWithRepository(repo)
+
+	report, err := svc.GenerateEUVATOSS(context.Background(), "tenant-1", "test_schema", &EUVATOSSReportRequest{
+		Year:       2026,
+		Quarter:    1,
+		IncludeB2B: true,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.Equal(t, "tenant-1", report.TenantID)
+	assert.Equal(t, 2026, report.Year)
+	assert.Equal(t, 1, report.Quarter)
+	assert.Equal(t, "UNION", report.Scheme)
+	assert.Equal(t, "EUR", report.Currency)
+	assert.Equal(t, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), report.PeriodStart)
+	assert.Equal(t, time.Date(2026, 4, 1, 0, 0, 0, -1, time.UTC), report.PeriodEnd)
+	assert.True(t, report.IncludeB2B)
+	assert.True(t, report.TaxableAmount.Equal(decimal.NewFromInt(300)))
+	assert.True(t, report.VATAmount.Equal(decimal.NewFromInt(67)))
+	assert.Equal(t, 3, report.InvoiceCount)
+	assert.Equal(t, 4, report.LineCount)
+	require.Len(t, report.Summary, 2)
+	assert.Equal(t, "DE", report.Summary[0].CountryCode)
+	assert.Equal(t, "Germany", report.Summary[0].CountryName)
+	assert.Equal(t, "FI", report.Summary[1].CountryCode)
+	assert.Equal(t, "Finland", report.Summary[1].CountryName)
+}
+
+func TestService_GenerateEUVATOSS_ValidationAndRepositoryErrors(t *testing.T) {
+	svc := NewServiceWithRepository(&MockRepository{})
+
+	_, err := svc.GenerateEUVATOSS(context.Background(), "tenant-1", "test_schema", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "request is required")
+
+	_, err = svc.GenerateEUVATOSS(context.Background(), "tenant-1", "test_schema", &EUVATOSSReportRequest{Year: 2019, Quarter: 1})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid year")
+
+	_, err = svc.GenerateEUVATOSS(context.Background(), "tenant-1", "test_schema", &EUVATOSSReportRequest{Year: 2026, Quarter: 5})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid quarter")
+
+	repo := &MockRepository{queryEUVATOSSErr: errors.New("query failed")}
+	svc = NewServiceWithRepository(repo)
+	_, err = svc.GenerateEUVATOSS(context.Background(), "tenant-1", "test_schema", &EUVATOSSReportRequest{Year: 2026, Quarter: 1})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "query EU VAT OSS data")
 }
 
 func TestService_GetKMD_Success(t *testing.T) {

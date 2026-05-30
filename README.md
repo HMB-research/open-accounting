@@ -131,6 +131,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 | Feature | Description |
 |---------|-------------|
 | **KMD Declaration** | VAT declaration generation with export for manual filing |
+| **EU VAT OSS Report** | Quarterly destination-country and VAT-rate report for non-Estonian EU sales |
 | **TSD Declaration** | Payroll tax declaration with XML/CSV export |
 | **e-MTA Export** | XML export for manual upload to the Estonian Tax Board |
 | **Estonian Defaults** | Pre-configured for Estonian accounting standards |

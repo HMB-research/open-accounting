@@ -3,7 +3,9 @@ package tax
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,6 +24,42 @@ type VATEntry struct {
 // Service provides tax declaration operations
 type Service struct {
 	repo Repository
+}
+
+const (
+	euVATOSSSchemeUnion        = "UNION"
+	euVATOSSBaseCurrency       = "EUR"
+	euVATOSSCountryCodeSQLList = "'AT','BE','BG','CY','CZ','DE','DK','EE','EL','ES','FI','FR','HR','HU','IE','IT','LT','LU','LV','MT','NL','PL','PT','RO','SE','SI','SK'"
+)
+
+var euVATOSSCountryNames = map[string]string{
+	"AT": "Austria",
+	"BE": "Belgium",
+	"BG": "Bulgaria",
+	"CY": "Cyprus",
+	"CZ": "Czechia",
+	"DE": "Germany",
+	"DK": "Denmark",
+	"EE": "Estonia",
+	"EL": "Greece",
+	"ES": "Spain",
+	"FI": "Finland",
+	"FR": "France",
+	"HR": "Croatia",
+	"HU": "Hungary",
+	"IE": "Ireland",
+	"IT": "Italy",
+	"LT": "Lithuania",
+	"LU": "Luxembourg",
+	"LV": "Latvia",
+	"MT": "Malta",
+	"NL": "Netherlands",
+	"PL": "Poland",
+	"PT": "Portugal",
+	"RO": "Romania",
+	"SE": "Sweden",
+	"SI": "Slovenia",
+	"SK": "Slovakia",
 }
 
 // NewService creates a new tax service with a PostgreSQL repository
@@ -135,6 +173,52 @@ func (s *Service) GenerateKMDINF(ctx context.Context, tenantID, schemaName strin
 		GeneratedAt: time.Now(),
 		Rows:        rows,
 		Summary:     summarizeKMDINFRows(rows),
+	}
+
+	return report, nil
+}
+
+// GenerateEUVATOSS generates a quarterly EU VAT OSS report.
+func (s *Service) GenerateEUVATOSS(ctx context.Context, tenantID, schemaName string, req *EUVATOSSReportRequest) (*EUVATOSSReport, error) {
+	if req == nil {
+		return nil, fmt.Errorf("request is required")
+	}
+	if req.Year < 2020 || req.Year > 2100 {
+		return nil, fmt.Errorf("invalid year")
+	}
+	if req.Quarter < 1 || req.Quarter > 4 {
+		return nil, fmt.Errorf("invalid quarter")
+	}
+
+	startDate := time.Date(req.Year, time.Month((req.Quarter-1)*3+1), 1, 0, 0, 0, 0, time.UTC)
+	endDate := startDate.AddDate(0, 3, 0)
+
+	rows, err := s.repo.QueryEUVATOSSData(ctx, schemaName, tenantID, startDate, endDate, req.IncludeB2B)
+	if err != nil {
+		return nil, fmt.Errorf("query EU VAT OSS data: %w", err)
+	}
+
+	normalizedRows := normalizeEUVATOSSRows(rows)
+	report := &EUVATOSSReport{
+		TenantID:    tenantID,
+		Year:        req.Year,
+		Quarter:     req.Quarter,
+		PeriodStart: startDate,
+		PeriodEnd:   endDate.Add(-time.Nanosecond),
+		Scheme:      euVATOSSSchemeUnion,
+		Currency:    euVATOSSBaseCurrency,
+		IncludeB2B:  req.IncludeB2B,
+		GeneratedAt: time.Now(),
+		Rows:        normalizedRows,
+		Summary:     summarizeEUVATOSSRows(normalizedRows),
+	}
+
+	for _, row := range normalizedRows {
+		report.TaxableAmount = report.TaxableAmount.Add(row.TaxableAmount)
+		report.VATAmount = report.VATAmount.Add(row.VATAmount)
+		report.TotalAmount = report.TotalAmount.Add(row.TotalAmount)
+		report.LineCount += row.LineCount
+		report.InvoiceCount += row.InvoiceCount
 	}
 
 	return report, nil
@@ -254,4 +338,54 @@ func summarizeKMDINFRows(rows []KMDINFReportRow) []KMDINFPartSummary {
 		result = append(result, *summary)
 	}
 	return result
+}
+
+func normalizeEUVATOSSRows(rows []EUVATOSSReportRow) []EUVATOSSReportRow {
+	normalized := make([]EUVATOSSReportRow, len(rows))
+	for i, row := range rows {
+		row.CountryCode = strings.ToUpper(strings.TrimSpace(row.CountryCode))
+		row.CountryName = euVATOSSCountryName(row.CountryCode)
+		normalized[i] = row
+	}
+	sort.SliceStable(normalized, func(i, j int) bool {
+		if normalized[i].CountryCode == normalized[j].CountryCode {
+			return normalized[i].VATRate.LessThan(normalized[j].VATRate)
+		}
+		return normalized[i].CountryCode < normalized[j].CountryCode
+	})
+	return normalized
+}
+
+func summarizeEUVATOSSRows(rows []EUVATOSSReportRow) []EUVATOSSCountrySummary {
+	summaries := make(map[string]*EUVATOSSCountrySummary)
+	order := make([]string, 0)
+	for _, row := range rows {
+		summary, ok := summaries[row.CountryCode]
+		if !ok {
+			summary = &EUVATOSSCountrySummary{
+				CountryCode: row.CountryCode,
+				CountryName: row.CountryName,
+			}
+			summaries[row.CountryCode] = summary
+			order = append(order, row.CountryCode)
+		}
+		summary.InvoiceCount += row.InvoiceCount
+		summary.LineCount += row.LineCount
+		summary.TaxableAmount = summary.TaxableAmount.Add(row.TaxableAmount)
+		summary.VATAmount = summary.VATAmount.Add(row.VATAmount)
+		summary.TotalAmount = summary.TotalAmount.Add(row.TotalAmount)
+	}
+	sort.Strings(order)
+	result := make([]EUVATOSSCountrySummary, 0, len(order))
+	for _, code := range order {
+		result = append(result, *summaries[code])
+	}
+	return result
+}
+
+func euVATOSSCountryName(code string) string {
+	if name, ok := euVATOSSCountryNames[strings.ToUpper(strings.TrimSpace(code))]; ok {
+		return name
+	}
+	return strings.ToUpper(strings.TrimSpace(code))
 }

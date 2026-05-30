@@ -1877,6 +1877,45 @@ func TestPrintTaxReports(t *testing.T) {
 	assert.Contains(t, infBuf.String(), "KMD INF 2026-03")
 	assert.Contains(t, infBuf.String(), "A sales")
 	assert.Contains(t, infBuf.String(), "Alpha OU")
+
+	var ossBuf bytes.Buffer
+	printEUVATOSSReport(&ossBuf, &tax.EUVATOSSReport{
+		TenantID:      "tenant-1",
+		Year:          2026,
+		Quarter:       1,
+		PeriodStart:   time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		PeriodEnd:     time.Date(2026, 3, 31, 23, 59, 59, 0, time.UTC),
+		Scheme:        "UNION",
+		Currency:      "EUR",
+		GeneratedAt:   now,
+		TaxableAmount: decimal.NewFromInt(100),
+		VATAmount:     decimal.NewFromInt(19),
+		TotalAmount:   decimal.NewFromInt(119),
+		InvoiceCount:  1,
+		LineCount:     1,
+		Summary: []tax.EUVATOSSCountrySummary{{
+			CountryCode:   "DE",
+			CountryName:   "Germany",
+			InvoiceCount:  1,
+			LineCount:     1,
+			TaxableAmount: decimal.NewFromInt(100),
+			VATAmount:     decimal.NewFromInt(19),
+			TotalAmount:   decimal.NewFromInt(119),
+		}},
+		Rows: []tax.EUVATOSSReportRow{{
+			CountryCode:   "DE",
+			CountryName:   "Germany",
+			VATRate:       decimal.NewFromInt(19),
+			InvoiceCount:  1,
+			LineCount:     1,
+			TaxableAmount: decimal.NewFromInt(100),
+			VATAmount:     decimal.NewFromInt(19),
+			TotalAmount:   decimal.NewFromInt(119),
+		}},
+	})
+	assert.Contains(t, ossBuf.String(), "EU VAT OSS 2026-Q1")
+	assert.Contains(t, ossBuf.String(), "DE Germany")
+	assert.Contains(t, ossBuf.String(), "VAT: 19")
 }
 
 func TestFormatHelpers(t *testing.T) {

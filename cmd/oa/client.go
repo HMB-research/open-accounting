@@ -2410,6 +2410,21 @@ func (c *apiClient) generateKMDINF(ctx context.Context, tenantID string, year, m
 	return &resp, nil
 }
 
+func (c *apiClient) generateEUVATOSS(ctx context.Context, tenantID string, year, quarter int, includeB2B bool) (*tax.EUVATOSSReport, error) {
+	values := url.Values{}
+	values.Set("year", strconv.Itoa(year))
+	values.Set("quarter", strconv.Itoa(quarter))
+	if includeB2B {
+		values.Set("include_b2b", "true")
+	}
+
+	var resp tax.EUVATOSSReport
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "tax", "eu-vat", "oss"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) exportKMDXML(ctx context.Context, tenantID string, year, month int) ([]byte, error) {
 	return c.requestRaw(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "tax", "kmd", strconv.Itoa(year), strconv.Itoa(month), "xml"), nil, c.apiToken)
 }

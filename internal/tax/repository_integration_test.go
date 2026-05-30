@@ -173,6 +173,98 @@ func TestPostgresRepository_QueryKMDINFData(t *testing.T) {
 	}
 }
 
+func TestPostgresRepository_QueryEUVATOSSData(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	deContactID := uuid.New().String()
+	fiContactID := uuid.New().String()
+	eeContactID := uuid.New().String()
+	noContactID := uuid.New().String()
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.contacts (id, tenant_id, name, contact_type, vat_number, country_code, is_active, created_at, updated_at)
+		VALUES
+			($1, $5, 'German Consumer', 'CUSTOMER', '', 'DE', true, NOW(), NOW()),
+			($2, $5, 'Finnish VAT Customer', 'CUSTOMER', 'FI12345678', 'FI', true, NOW(), NOW()),
+			($3, $5, 'Estonian Customer', 'CUSTOMER', '', 'EE', true, NOW(), NOW()),
+			($4, $5, 'Norwegian Customer', 'CUSTOMER', '', 'NO', true, NOW(), NOW())
+	`, deContactID, fiContactID, eeContactID, noContactID, tenant.ID)
+	if err != nil {
+		t.Fatalf("insert contacts: %v", err)
+	}
+
+	insertInvoiceLine := func(number, contactID, status string, issueDate time.Time, vatRate, subtotal, vat, total decimal.Decimal) {
+		t.Helper()
+		invoiceID := uuid.New().String()
+		_, err := pool.Exec(ctx, `
+			INSERT INTO `+tenant.SchemaName+`.invoices (
+				id, tenant_id, invoice_number, invoice_type, contact_id, issue_date, due_date,
+				currency, exchange_rate, subtotal, vat_amount, total,
+				base_subtotal, base_vat_amount, base_total, amount_paid, status,
+				created_by, created_at, updated_at
+			) VALUES ($1, $2, $3, 'SALES', $4, $5, $5, 'EUR', 1, $6, $7, $8, $6, $7, $8, 0, $9, $10, NOW(), NOW())
+		`, invoiceID, tenant.ID, number, contactID, issueDate, subtotal, vat, total, status, uuid.New().String())
+		if err != nil {
+			t.Fatalf("insert invoice %s: %v", number, err)
+		}
+		_, err = pool.Exec(ctx, `
+			INSERT INTO `+tenant.SchemaName+`.invoice_lines (
+				id, tenant_id, invoice_id, line_number, description, quantity, unit_price,
+				discount_percent, vat_rate, vat_treatment, line_subtotal, line_vat, line_total
+			) VALUES ($1, $2, $3, 1, 'OSS sale', 1, $4, 0, $5, 'STANDARD', $6, $7, $8)
+		`, uuid.New().String(), tenant.ID, invoiceID, subtotal, vatRate, subtotal, vat, total)
+		if err != nil {
+			t.Fatalf("insert invoice line %s: %v", number, err)
+		}
+	}
+
+	q1Date := time.Date(2026, 2, 5, 0, 0, 0, 0, time.UTC)
+	insertInvoiceLine("DE-1", deContactID, "SENT", q1Date, decimal.NewFromInt(19), decimal.NewFromInt(100), decimal.NewFromInt(19), decimal.NewFromInt(119))
+	insertInvoiceLine("FI-1", fiContactID, "SENT", q1Date, decimal.NewFromInt(24), decimal.NewFromInt(200), decimal.NewFromInt(48), decimal.NewFromInt(248))
+	insertInvoiceLine("EE-1", eeContactID, "SENT", q1Date, decimal.NewFromInt(22), decimal.NewFromInt(100), decimal.NewFromInt(22), decimal.NewFromInt(122))
+	insertInvoiceLine("NO-1", noContactID, "SENT", q1Date, decimal.NewFromInt(25), decimal.NewFromInt(100), decimal.NewFromInt(25), decimal.NewFromInt(125))
+	insertInvoiceLine("DE-Q2", deContactID, "SENT", time.Date(2026, 4, 5, 0, 0, 0, 0, time.UTC), decimal.NewFromInt(19), decimal.NewFromInt(100), decimal.NewFromInt(19), decimal.NewFromInt(119))
+	insertInvoiceLine("DE-DRAFT", deContactID, "DRAFT", q1Date, decimal.NewFromInt(19), decimal.NewFromInt(100), decimal.NewFromInt(19), decimal.NewFromInt(119))
+
+	rows, err := repo.QueryEUVATOSSData(
+		ctx,
+		tenant.SchemaName,
+		tenant.ID,
+		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
+		false,
+	)
+	if err != nil {
+		t.Fatalf("QueryEUVATOSSData failed: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected one B2C OSS row, got %d: %#v", len(rows), rows)
+	}
+	if rows[0].CountryCode != "DE" || !rows[0].VATAmount.Equal(decimal.NewFromInt(19)) {
+		t.Fatalf("expected German OSS row with 19 VAT, got %#v", rows[0])
+	}
+
+	rows, err = repo.QueryEUVATOSSData(
+		ctx,
+		tenant.SchemaName,
+		tenant.ID,
+		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
+		true,
+	)
+	if err != nil {
+		t.Fatalf("QueryEUVATOSSData include B2B failed: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected B2C and VAT-registered EU rows, got %d: %#v", len(rows), rows)
+	}
+	if rows[1].CountryCode != "FI" || !rows[1].TaxableAmount.Equal(decimal.NewFromInt(200)) {
+		t.Fatalf("expected Finnish include-B2B row, got %#v", rows[1])
+	}
+}
+
 func TestPostgresRepository_QueryVATDataIncludesReverseChargePurchases(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
