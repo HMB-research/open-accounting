@@ -226,18 +226,59 @@ func (s *Service) Update(ctx context.Context, tenantID, schemaName, assetID stri
 		return nil, fmt.Errorf("only draft or active assets can be updated")
 	}
 
+	var category *AssetCategory
+	if categoryID := trimmedStringPtr(req.CategoryID); categoryID != "" {
+		cat, err := s.repo.GetCategoryByID(ctx, schemaName, tenantID, categoryID)
+		if err != nil {
+			return nil, fmt.Errorf("get category: %w", err)
+		}
+		category = cat
+		existing.CategoryID = &categoryID
+	}
+
 	// Update fields
-	existing.Name = req.Name
-	existing.Description = req.Description
-	existing.CategoryID = req.CategoryID
-	existing.SerialNumber = req.SerialNumber
-	existing.Location = req.Location
-	existing.DepreciationMethod = req.DepreciationMethod
-	existing.UsefulLifeMonths = req.UsefulLifeMonths
-	existing.ResidualValue = req.ResidualValue
-	existing.AssetAccountID = req.AssetAccountID
-	existing.DepreciationExpenseAccountID = req.DepreciationExpenseAccountID
-	existing.AccumulatedDepreciationAcctID = req.AccumulatedDepreciationAcctID
+	if strings.TrimSpace(req.Name) != "" {
+		existing.Name = req.Name
+	}
+	if strings.TrimSpace(req.Description) != "" {
+		existing.Description = req.Description
+	}
+	if strings.TrimSpace(req.SerialNumber) != "" {
+		existing.SerialNumber = req.SerialNumber
+	}
+	if strings.TrimSpace(req.Location) != "" {
+		existing.Location = req.Location
+	}
+	if req.DepreciationMethod != "" {
+		existing.DepreciationMethod = req.DepreciationMethod
+	} else if category != nil && category.DepreciationMethod != "" {
+		existing.DepreciationMethod = category.DepreciationMethod
+	}
+	if req.UsefulLifeMonths > 0 {
+		existing.UsefulLifeMonths = req.UsefulLifeMonths
+	} else if category != nil && category.DefaultUsefulLifeMonths > 0 {
+		existing.UsefulLifeMonths = category.DefaultUsefulLifeMonths
+	}
+	if !req.ResidualValue.IsZero() {
+		existing.ResidualValue = req.ResidualValue
+	} else if category != nil && category.DefaultResidualValuePercent.GreaterThan(decimal.Zero) {
+		existing.ResidualValue = existing.PurchaseCost.Mul(category.DefaultResidualValuePercent).Div(decimal.NewFromInt(100)).Round(2)
+	}
+	if req.AssetAccountID != nil {
+		existing.AssetAccountID = nonEmptyStringPtr(*req.AssetAccountID)
+	} else if category != nil && category.AssetAccountID != nil {
+		existing.AssetAccountID = category.AssetAccountID
+	}
+	if req.DepreciationExpenseAccountID != nil {
+		existing.DepreciationExpenseAccountID = nonEmptyStringPtr(*req.DepreciationExpenseAccountID)
+	} else if category != nil && category.DepreciationExpenseAccountID != nil {
+		existing.DepreciationExpenseAccountID = category.DepreciationExpenseAccountID
+	}
+	if req.AccumulatedDepreciationAcctID != nil {
+		existing.AccumulatedDepreciationAcctID = nonEmptyStringPtr(*req.AccumulatedDepreciationAcctID)
+	} else if category != nil && category.AccumulatedDepreciationAcctID != nil {
+		existing.AccumulatedDepreciationAcctID = category.AccumulatedDepreciationAcctID
+	}
 	existing.UpdatedAt = time.Now()
 
 	if existing.DepreciationMethod == "" {
@@ -444,6 +485,14 @@ func trimmedStringPtr(value *string) string {
 		return ""
 	}
 	return strings.TrimSpace(*value)
+}
+
+func nonEmptyStringPtr(value string) *string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 func depreciationJournalDescription(asset *FixedAsset) string {
