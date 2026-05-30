@@ -259,7 +259,9 @@ func (r *PostgresRepository) RemoveUserFromTenant(ctx context.Context, tenantID,
 func (r *PostgresRepository) GetUserRole(ctx context.Context, tenantID, userID string) (string, error) {
 	var role string
 	err := r.db.QueryRow(ctx, `
-		SELECT role FROM tenant_users WHERE tenant_id = $1 AND user_id = $2
+		SELECT role
+		FROM tenant_users
+		WHERE tenant_id = $1 AND user_id = $2 AND COALESCE(is_active, true) = true
 	`, tenantID, userID).Scan(&role)
 	if err == pgx.ErrNoRows {
 		return "", ErrUserNotInTenant

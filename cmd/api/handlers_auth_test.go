@@ -68,6 +68,7 @@ func (m *mockTenantRepository) CreateTenant(ctx context.Context, t *tenant.Tenan
 			UserID:    ownerID,
 			Role:      tenant.RoleOwner,
 			IsDefault: true,
+			IsActive:  true,
 			CreatedAt: time.Now(),
 		})
 	}
@@ -208,6 +209,9 @@ func (m *mockTenantRepository) GetUserRole(ctx context.Context, tenantID, userID
 	users := m.tenantUsers[tenantID]
 	for _, u := range users {
 		if u.UserID == userID {
+			if !u.IsActive && !u.CreatedAt.IsZero() {
+				return "", tenant.ErrUserNotInTenant
+			}
 			return u.Role, nil
 		}
 	}
@@ -232,6 +236,9 @@ func (m *mockTenantRepository) ListUserTenants(ctx context.Context, userID strin
 	for tenantID, users := range m.tenantUsers {
 		for _, u := range users {
 			if u.UserID == userID {
+				if !u.IsActive && !u.CreatedAt.IsZero() {
+					continue
+				}
 				t := m.tenants[tenantID]
 				if t != nil {
 					result = append(result, tenant.TenantMembership{
@@ -1440,6 +1447,22 @@ func TestTenantContext(t *testing.T) {
 			setupMock: func(m *mockTenantRepository) {
 				m.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
 				// User is NOT a member
+			},
+			wantStatus:     http.StatusForbidden,
+			wantErrContain: "Access denied",
+		},
+		{
+			name:     "inactive tenant membership",
+			tenantID: "tenant-1",
+			claims: &auth.Claims{
+				UserID: "user-1",
+				Email:  "user@example.com",
+			},
+			setupMock: func(m *mockTenantRepository) {
+				m.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				m.tenantUsers["tenant-1"] = []tenant.TenantUser{
+					{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleAdmin, IsActive: false, CreatedAt: time.Now()},
+				}
 			},
 			wantStatus:     http.StatusForbidden,
 			wantErrContain: "Access denied",

@@ -172,7 +172,7 @@ go run ./cmd/oa invitations accept \
   --base-url http://localhost:8080
 ```
 
-`users update-role` accepts `admin`, `accountant`, or `viewer`. The `owner` role is assigned only at tenant creation and cannot be granted through the CLI role-update flow. `users set-status --active false` suspends tenant access without deleting the membership, revokes active refresh sessions, and records tenant plus auth audit events; `--active true` restores tenant login/refresh access. `users sessions`, `users security-events`, and the tenant-user revocation commands require a tenant admin or owner and record audit events when sessions are revoked. Use `--password-stdin` on `invitations accept` to avoid placing a new-user password in shell history.
+`users update-role` accepts `admin`, `accountant`, or `viewer`. The `owner` role is assigned only at tenant creation and cannot be granted through the CLI role-update flow. `users set-status --active false` suspends tenant access without deleting the membership, revokes active refresh sessions, and blocks existing tenant-scoped access/API-token use; `--active true` restores tenant login/refresh/API-token access. `users sessions`, `users security-events`, and the tenant-user revocation commands require a tenant admin or owner and record audit events when sessions are revoked. Use `--password-stdin` on `invitations accept` to avoid placing a new-user password in shell history.
 
 ## Plugins
 
@@ -1111,6 +1111,6 @@ go run ./cmd/oa documents upload --entity-type asset --entity-id <asset-id> --fi
 
 - Normal data commands use the stored API token, not the login password.
 - API tokens are tenant-scoped. A token created for one tenant cannot be used on another tenant path.
-- API tokens belong to the authenticated user that created them and can be revoked later.
+- API tokens belong to the authenticated user that created them, stop working while that user's tenant membership is suspended, and can be revoked later.
 - `auth status` verifies the stored token by calling `/api/v1/me`.
 - Use `--json` on list/create/import commands if you want machine-readable output.
