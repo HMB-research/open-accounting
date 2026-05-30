@@ -371,7 +371,7 @@ The codebase uses the **Repository Pattern** for data access, providing abstract
 
 ### Repository Interface Structure
 
-Each domain package defines a `Repository` interface and provides a PostgreSQL implementation:
+Each domain package defines a `Repository` interface and provides an ORM-backed implementation:
 
 ```go
 // Repository interface (domain contract)
@@ -382,17 +382,18 @@ type Repository interface {
     // ...
 }
 
-// PostgresRepository implementation
-type PostgresRepository struct {
-    db *pgxpool.Pool
+// GORMRepository implementation
+type GORMRepository struct {
+    db *gorm.DB
 }
 ```
 
 ### Data Access Direction
 
-- `pgx` is the primary runtime path for tenant-domain repositories.
+- ORM-backed repositories are the preferred runtime path for tenant-domain persistence.
+- Direct `pgx`/SQL paths should stay isolated to migrations or repository methods where the ORM cannot express the query clearly.
 - `sqlc` is used for shared/public schema tables where generation is straightforward.
-- `gorm` adapters exist behind build tags for legacy or optional paths, and tenant-scoped adapters now use explicit schema-qualified tables instead of relying on `search_path`.
+- Tenant-scoped adapters use explicit schema-qualified tables instead of relying on connection-level `search_path`.
 
 ### Multi-Tenant Schema Qualification
 
