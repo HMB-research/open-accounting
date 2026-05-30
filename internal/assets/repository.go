@@ -176,15 +176,17 @@ func (r *PostgresRepository) Create(ctx context.Context, schemaName string, asse
 			depreciation_method, useful_life_months, residual_value, depreciation_start_date,
 			accumulated_depreciation, book_value, last_depreciation_date,
 			disposal_date, disposal_method, disposal_proceeds, disposal_notes,
+			disposal_journal_entry_id,
 			asset_account_id, depreciation_expense_account_id, accumulated_depreciation_account_id,
 			created_at, created_by, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
 	`, schemaName),
 		asset.ID, asset.TenantID, asset.AssetNumber, asset.Name, asset.Description, asset.CategoryID, asset.Status,
 		asset.PurchaseDate, asset.PurchaseCost, asset.SupplierID, asset.InvoiceID, asset.SerialNumber, asset.Location,
 		asset.DepreciationMethod, asset.UsefulLifeMonths, asset.ResidualValue, asset.DepreciationStartDate,
 		asset.AccumulatedDepreciation, asset.BookValue, asset.LastDepreciationDate,
 		asset.DisposalDate, disposalMethodString(asset.DisposalMethod), asset.DisposalProceeds, asset.DisposalNotes,
+		asset.DisposalJournalEntryID,
 		asset.AssetAccountID, asset.DepreciationExpenseAccountID, asset.AccumulatedDepreciationAcctID,
 		asset.CreatedAt, asset.CreatedBy, asset.UpdatedAt,
 	)
@@ -205,6 +207,7 @@ func (r *PostgresRepository) GetByID(ctx context.Context, schemaName, tenantID, 
 		       depreciation_method, useful_life_months, residual_value, depreciation_start_date,
 		       accumulated_depreciation, book_value, last_depreciation_date,
 		       disposal_date, disposal_method, disposal_proceeds, COALESCE(disposal_notes, ''),
+		       disposal_journal_entry_id,
 		       asset_account_id, depreciation_expense_account_id, accumulated_depreciation_account_id,
 		       created_at, created_by, updated_at
 		FROM %s.fixed_assets
@@ -215,6 +218,7 @@ func (r *PostgresRepository) GetByID(ctx context.Context, schemaName, tenantID, 
 		&a.DepreciationMethod, &a.UsefulLifeMonths, &a.ResidualValue, &depStartDate,
 		&a.AccumulatedDepreciation, &a.BookValue, &lastDepDate,
 		&dispDate, &dispMethod, &a.DisposalProceeds, &a.DisposalNotes,
+		&a.DisposalJournalEntryID,
 		&a.AssetAccountID, &a.DepreciationExpenseAccountID, &a.AccumulatedDepreciationAcctID,
 		&a.CreatedAt, &a.CreatedBy, &a.UpdatedAt,
 	)
@@ -242,6 +246,7 @@ func (r *PostgresRepository) List(ctx context.Context, schemaName, tenantID stri
 		       depreciation_method, useful_life_months, residual_value, depreciation_start_date,
 		       accumulated_depreciation, book_value, last_depreciation_date,
 		       disposal_date, disposal_method, disposal_proceeds, COALESCE(disposal_notes, ''),
+		       disposal_journal_entry_id,
 		       asset_account_id, depreciation_expense_account_id, accumulated_depreciation_account_id,
 		       created_at, created_by, updated_at
 		FROM %s.fixed_assets
@@ -287,6 +292,7 @@ func (r *PostgresRepository) List(ctx context.Context, schemaName, tenantID stri
 			&a.DepreciationMethod, &a.UsefulLifeMonths, &a.ResidualValue, &depStartDate,
 			&a.AccumulatedDepreciation, &a.BookValue, &lastDepDate,
 			&dispDate, &dispMethod, &a.DisposalProceeds, &a.DisposalNotes,
+			&a.DisposalJournalEntryID,
 			&a.AssetAccountID, &a.DepreciationExpenseAccountID, &a.AccumulatedDepreciationAcctID,
 			&a.CreatedAt, &a.CreatedBy, &a.UpdatedAt,
 		); err != nil {
@@ -354,14 +360,16 @@ func (r *PostgresRepository) UpdateDisposal(ctx context.Context, schemaName stri
 		    disposal_method = $3,
 		    disposal_proceeds = $4,
 		    disposal_notes = $5,
-		    updated_at = $6
-		WHERE id = $7 AND tenant_id = $8 AND status = 'ACTIVE'
+		    disposal_journal_entry_id = $6,
+		    updated_at = $7
+		WHERE id = $8 AND tenant_id = $9 AND status = 'ACTIVE'
 	`, schemaName),
 		status,
 		asset.DisposalDate,
 		disposalMethodString(asset.DisposalMethod),
 		asset.DisposalProceeds,
 		asset.DisposalNotes,
+		asset.DisposalJournalEntryID,
 		time.Now(),
 		asset.ID,
 		asset.TenantID,

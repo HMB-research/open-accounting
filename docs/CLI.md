@@ -592,13 +592,19 @@ go run ./cmd/oa documents review --id <document-id> --status APPROVED --note "As
 go run ./cmd/oa assets activate --id <asset-id>
 go run ./cmd/oa documents upload --entity-type asset --entity-id <asset-id> --file ./asset-sale-approval.pdf --document-type supporting_document
 go run ./cmd/oa documents review --id <document-id> --status APPROVED --note "Asset disposal evidence accepted"
-go run ./cmd/oa assets dispose --id <asset-id> --disposal-date 2026-05-01 --method SOLD --proceeds 900.00
+go run ./cmd/oa assets dispose \
+  --id <asset-id> \
+  --disposal-date 2026-05-01 \
+  --method SOLD \
+  --proceeds 900.00 \
+  --proceeds-account-id <cash-account-id> \
+  --gain-loss-account-id <asset-disposal-gain-account-id>
 go run ./cmd/oa assets depreciate --id <asset-id>
 go run ./cmd/oa assets depreciation --id <asset-id>
 go run ./cmd/oa assets delete --id <asset-id>
 ```
 
-Asset statuses are `DRAFT`, `ACTIVE`, `DISPOSED`, and `SOLD`. Asset categories provide defaults for depreciation method, useful life, residual percent, and asset/depreciation account IDs when those fields are omitted on `assets create` or when `assets update` changes category without overriding them; omitted category and account values are preserved on ordinary updates. Activating a draft asset requires approved `asset_record`, `receipt`, or `contract` evidence attached to the `asset` entity; pending or missing evidence returns a conflict before the asset can enter depreciation. Disposing or selling an active asset requires approved `supporting_document` or `contract` evidence attached to the same asset, then persists the disposal date, method, proceeds, and notes. Depreciation methods are `STRAIGHT_LINE`, `DECLINING_BALANCE`, and `UNITS_OF_PRODUCTION`; disposal methods are `SOLD`, `SCRAPPED`, `DONATED`, and `LOST`. When an asset has both depreciation expense and accumulated depreciation account IDs, `assets depreciate` posts a balanced `ASSET_DEPRECIATION` journal entry and `assets depreciation` shows the linked journal ID. Asset CSV imports require `name`, `purchase_date`, and `purchase_cost`; optional columns include `asset_number`, `category_id`, `category_name`, `status`, depreciation/book-value fields, disposal fields, and account IDs.
+Asset statuses are `DRAFT`, `ACTIVE`, `DISPOSED`, and `SOLD`. Asset categories provide defaults for depreciation method, useful life, residual percent, and asset/depreciation account IDs when those fields are omitted on `assets create` or when `assets update` changes category without overriding them; omitted category and account values are preserved on ordinary updates. Activating a draft asset requires approved `asset_record`, `receipt`, or `contract` evidence attached to the `asset` entity; pending or missing evidence returns a conflict before the asset can enter depreciation. Disposing or selling an active asset requires approved `supporting_document` or `contract` evidence attached to the same asset, then persists the disposal date, method, proceeds, notes, and disposal journal ID. Depreciation methods are `STRAIGHT_LINE`, `DECLINING_BALANCE`, and `UNITS_OF_PRODUCTION`; disposal methods are `SOLD`, `SCRAPPED`, `DONATED`, and `LOST`. `assets depreciate` requires depreciation expense and accumulated depreciation account IDs, posts a balanced `ASSET_DEPRECIATION` journal entry, and `assets depreciation` shows the linked journal ID. `assets dispose` requires asset and accumulated-depreciation account links, posts a balanced `ASSET_DISPOSAL` journal that removes asset cost, clears accumulated depreciation, records proceeds to `--proceeds-account-id`, and posts any gain or loss to `--gain-loss-account-id`; the gain/loss account must be `REVENUE` for gains and `EXPENSE` for losses. Asset CSV imports require `name`, `purchase_date`, and `purchase_cost`; optional columns include `asset_number`, `category_id`, `category_name`, `status`, depreciation/book-value fields, disposal fields, and account IDs.
 
 ## Inventory
 

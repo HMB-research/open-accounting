@@ -2798,6 +2798,10 @@ func TestCLIAssetCommands(t *testing.T) {
 			assert.Equal(t, assets.DisposalSold, req.DisposalMethod)
 			assert.True(t, req.DisposalProceeds.Equal(decimal.RequireFromString("900.00")))
 			assert.Equal(t, "Sold to employee", req.DisposalNotes)
+			require.NotNil(t, req.DisposalProceedsAccountID)
+			assert.Equal(t, "cash-account", *req.DisposalProceedsAccountID)
+			require.NotNil(t, req.DisposalGainLossAccountID)
+			assert.Equal(t, "asset-disposal-gain", *req.DisposalGainLossAccountID)
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "disposed"})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-1/depreciation":
 			w.WriteHeader(http.StatusCreated)
@@ -2901,6 +2905,8 @@ func TestCLIAssetCommands(t *testing.T) {
 		"--disposal-date", "2026-05-01",
 		"--method", "sold",
 		"--proceeds", "900.00",
+		"--proceeds-account-id", "cash-account",
+		"--gain-loss-account-id", "asset-disposal-gain",
 		"--notes", "Sold to employee",
 	})
 	require.NoError(t, err)

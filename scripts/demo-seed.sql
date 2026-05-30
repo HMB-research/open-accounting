@@ -71,6 +71,7 @@ SELECT add_payroll_tables('tenant_acme');
 SELECT add_recurring_email_fields_to_schema('tenant_acme');
 SELECT add_quotes_and_orders_tables('tenant_acme');
 SELECT add_fixed_assets_tables('tenant_acme');
+SELECT add_fixed_asset_disposal_journal_links('tenant_acme');
 SELECT create_inventory_tables('tenant_acme');
 
 -- =============================================================================

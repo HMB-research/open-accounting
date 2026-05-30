@@ -2,6 +2,7 @@ package assets
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -538,6 +539,24 @@ func TestRepository_UpdateDisposalPersistsDetails(t *testing.T) {
 	cat := createTestCategory(t, repo, pool, tenant.SchemaName, tenant.ID)
 	disposalDate := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	disposalMethod := DisposalSold
+	disposalJournalEntryID := uuid.New().String()
+	createdBy := uuid.New().String()
+	if _, err := pool.Exec(ctx, fmt.Sprintf(`
+		INSERT INTO %s.journal_entries (
+			id, tenant_id, entry_number, entry_date, description, reference, source_type, status, created_by
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, 'POSTED', $8)
+	`, tenant.SchemaName),
+		disposalJournalEntryID,
+		tenant.ID,
+		"JE-DISPOSE",
+		disposalDate,
+		"Asset disposal",
+		"AST-DISPOSE",
+		SourceTypeAssetDisposal,
+		createdBy,
+	); err != nil {
+		t.Fatalf("insert disposal journal entry failed: %v", err)
+	}
 
 	asset := &FixedAsset{
 		ID:                            uuid.New().String(),
@@ -557,6 +576,7 @@ func TestRepository_UpdateDisposalPersistsDetails(t *testing.T) {
 		DisposalMethod:                &disposalMethod,
 		DisposalProceeds:              decimal.NewFromFloat(1250.00),
 		DisposalNotes:                 "Board-approved asset sale",
+		DisposalJournalEntryID:        &disposalJournalEntryID,
 		AssetAccountID:                cat.AssetAccountID,
 		DepreciationExpenseAccountID:  cat.DepreciationExpenseAccountID,
 		AccumulatedDepreciationAcctID: cat.AccumulatedDepreciationAcctID,
@@ -573,6 +593,9 @@ func TestRepository_UpdateDisposalPersistsDetails(t *testing.T) {
 	}
 	if created.DisposalDate == nil || !created.DisposalDate.Equal(disposalDate) {
 		t.Errorf("expected create to persist disposal date %s, got %v", disposalDate, created.DisposalDate)
+	}
+	if created.DisposalJournalEntryID == nil || *created.DisposalJournalEntryID != disposalJournalEntryID {
+		t.Errorf("expected create to persist disposal journal %s, got %v", disposalJournalEntryID, created.DisposalJournalEntryID)
 	}
 
 	if err := repo.UpdateDisposal(ctx, tenant.SchemaName, asset, AssetStatusSold); err != nil {
@@ -598,6 +621,9 @@ func TestRepository_UpdateDisposalPersistsDetails(t *testing.T) {
 	}
 	if retrieved.DisposalNotes != "Board-approved asset sale" {
 		t.Errorf("expected disposal notes to persist, got %q", retrieved.DisposalNotes)
+	}
+	if retrieved.DisposalJournalEntryID == nil || *retrieved.DisposalJournalEntryID != disposalJournalEntryID {
+		t.Errorf("expected disposal journal %s, got %v", disposalJournalEntryID, retrieved.DisposalJournalEntryID)
 	}
 }
 

@@ -3455,6 +3455,7 @@ export interface FixedAsset {
   disposal_method?: DisposalMethod;
   disposal_proceeds?: Decimal;
   disposal_notes?: string;
+  disposal_journal_entry_id?: string;
   asset_account_id?: string;
   depreciation_expense_account_id?: string;
   accumulated_depreciation_account_id?: string;
@@ -3526,6 +3527,8 @@ export interface DisposeAssetRequest {
   disposal_method: DisposalMethod;
   disposal_proceeds?: string;
   disposal_notes?: string;
+  disposal_proceeds_account_id?: string;
+  disposal_gain_loss_account_id?: string;
 }
 
 export interface AssetFilter {

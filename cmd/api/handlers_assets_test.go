@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/tenant"
@@ -174,6 +175,7 @@ func (m *mockAssetsRepository) UpdateDisposal(ctx context.Context, schemaName st
 		a.DisposalMethod = asset.DisposalMethod
 		a.DisposalProceeds = asset.DisposalProceeds
 		a.DisposalNotes = asset.DisposalNotes
+		a.DisposalJournalEntryID = asset.DisposalJournalEntryID
 		return nil
 	}
 	return errAssetNotFound
@@ -227,7 +229,7 @@ func (m *mockAssetsRepository) UpdateAssetDepreciation(ctx context.Context, sche
 
 func setupAssetsTestHandlers() (*Handlers, *mockAssetsRepository, *mockTenantRepository) {
 	assetsRepo := newMockAssetsRepository()
-	assetsSvc := assets.NewServiceWithRepository(assetsRepo)
+	assetsSvc := assets.NewServiceWithRepositoryAndAccounting(assetsRepo, newAssetHandlerAccounting())
 
 	tenantRepo := newMockTenantRepository()
 	tenantSvc := tenant.NewServiceWithRepository(tenantRepo)
@@ -237,6 +239,41 @@ func setupAssetsTestHandlers() (*Handlers, *mockAssetsRepository, *mockTenantRep
 		tenantService: tenantSvc,
 	}
 	return h, assetsRepo, tenantRepo
+}
+
+type assetHandlerAccounting struct {
+	accounts  map[string]*accounting.Account
+	postedIDs []string
+}
+
+func newAssetHandlerAccounting() *assetHandlerAccounting {
+	return &assetHandlerAccounting{
+		accounts: map[string]*accounting.Account{
+			"fixed-assets":             {ID: "fixed-assets", AccountType: accounting.AccountTypeAsset},
+			"accumulated-depreciation": {ID: "accumulated-depreciation", AccountType: accounting.AccountTypeAsset},
+			"cash-account":             {ID: "cash-account", AccountType: accounting.AccountTypeAsset},
+			"asset-disposal-gain":      {ID: "asset-disposal-gain", AccountType: accounting.AccountTypeRevenue},
+			"asset-disposal-loss":      {ID: "asset-disposal-loss", AccountType: accounting.AccountTypeExpense},
+			"depreciation-expense":     {ID: "depreciation-expense", AccountType: accounting.AccountTypeExpense},
+		},
+	}
+}
+
+func (a *assetHandlerAccounting) GetAccount(_ context.Context, _, _, accountID string) (*accounting.Account, error) {
+	account, ok := a.accounts[accountID]
+	if !ok {
+		return nil, errors.New("account not found")
+	}
+	return account, nil
+}
+
+func (a *assetHandlerAccounting) CreateJournalEntry(_ context.Context, _, tenantID string, _ *accounting.CreateJournalEntryRequest) (*accounting.JournalEntry, error) {
+	return &accounting.JournalEntry{ID: "asset-je-1", TenantID: tenantID, Status: accounting.StatusDraft}, nil
+}
+
+func (a *assetHandlerAccounting) PostJournalEntry(_ context.Context, _, _, entryID, _ string) error {
+	a.postedIDs = append(a.postedIDs, entryID)
+	return nil
 }
 
 func TestListAssetCategories(t *testing.T) {
@@ -750,18 +787,24 @@ func TestDisposeAsset(t *testing.T) {
 	}
 
 	repo.assets["asset-1"] = &assets.FixedAsset{
-		ID:           "asset-1",
-		TenantID:     "tenant-1",
-		Name:         "Dell Laptop",
-		Status:       assets.AssetStatusActive,
-		PurchaseDate: time.Now().AddDate(-2, 0, 0),
-		PurchaseCost: decimal.NewFromInt(1500),
+		ID:                            "asset-1",
+		TenantID:                      "tenant-1",
+		Name:                          "Dell Laptop",
+		Status:                        assets.AssetStatusActive,
+		PurchaseDate:                  time.Now().AddDate(-2, 0, 0),
+		PurchaseCost:                  decimal.NewFromInt(1500),
+		AccumulatedDepreciation:       decimal.NewFromInt(900),
+		BookValue:                     decimal.NewFromInt(600),
+		AssetAccountID:                stringPtr("fixed-assets"),
+		AccumulatedDepreciationAcctID: stringPtr("accumulated-depreciation"),
 	}
 
 	body := map[string]interface{}{
-		"disposal_date":     time.Now().Format(time.RFC3339),
-		"disposal_method":   "SOLD",
-		"disposal_proceeds": "500.00",
+		"disposal_date":                 time.Now().Format(time.RFC3339),
+		"disposal_method":               "SOLD",
+		"disposal_proceeds":             "500.00",
+		"disposal_proceeds_account_id":  "cash-account",
+		"disposal_gain_loss_account_id": "asset-disposal-loss",
 	}
 	bodyBytes, _ := json.Marshal(body)
 
@@ -778,6 +821,7 @@ func TestDisposeAsset(t *testing.T) {
 	require.NotNil(t, repo.assets["asset-1"].DisposalMethod)
 	assert.Equal(t, assets.DisposalSold, *repo.assets["asset-1"].DisposalMethod)
 	assert.True(t, repo.assets["asset-1"].DisposalProceeds.Equal(decimal.RequireFromString("500.00")))
+	require.NotNil(t, repo.assets["asset-1"].DisposalJournalEntryID)
 }
 
 func TestDisposeAssetRequiresApprovedAssetEvidence(t *testing.T) {
@@ -791,12 +835,16 @@ func TestDisposeAssetRequiresApprovedAssetEvidence(t *testing.T) {
 	}
 
 	repo.assets["asset-1"] = &assets.FixedAsset{
-		ID:           "asset-1",
-		TenantID:     "tenant-1",
-		Name:         "Dell Laptop",
-		Status:       assets.AssetStatusActive,
-		PurchaseDate: time.Now().AddDate(-2, 0, 0),
-		PurchaseCost: decimal.NewFromInt(1500),
+		ID:                            "asset-1",
+		TenantID:                      "tenant-1",
+		Name:                          "Dell Laptop",
+		Status:                        assets.AssetStatusActive,
+		PurchaseDate:                  time.Now().AddDate(-2, 0, 0),
+		PurchaseCost:                  decimal.NewFromInt(1500),
+		AccumulatedDepreciation:       decimal.NewFromInt(900),
+		BookValue:                     decimal.NewFromInt(600),
+		AssetAccountID:                stringPtr("fixed-assets"),
+		AccumulatedDepreciationAcctID: stringPtr("accumulated-depreciation"),
 	}
 
 	docRepo.docs["doc-1"] = &documents.Document{
@@ -813,9 +861,11 @@ func TestDisposeAssetRequiresApprovedAssetEvidence(t *testing.T) {
 
 	newRequest := func() *http.Request {
 		body := map[string]interface{}{
-			"disposal_date":     "2026-05-01T00:00:00Z",
-			"disposal_method":   "SOLD",
-			"disposal_proceeds": "500.00",
+			"disposal_date":                 "2026-05-01T00:00:00Z",
+			"disposal_method":               "SOLD",
+			"disposal_proceeds":             "500.00",
+			"disposal_proceeds_account_id":  "cash-account",
+			"disposal_gain_loss_account_id": "asset-disposal-loss",
 		}
 		bodyBytes, _ := json.Marshal(body)
 		req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/assets/asset-1/dispose", bytes.NewReader(bodyBytes))
@@ -840,6 +890,7 @@ func TestDisposeAssetRequiresApprovedAssetEvidence(t *testing.T) {
 	assert.Equal(t, assets.AssetStatusSold, repo.assets["asset-1"].Status)
 	require.NotNil(t, repo.assets["asset-1"].DisposalDate)
 	assert.Equal(t, "2026-05-01", repo.assets["asset-1"].DisposalDate.Format("2006-01-02"))
+	require.NotNil(t, repo.assets["asset-1"].DisposalJournalEntryID)
 }
 
 func TestRecordDepreciation(t *testing.T) {
@@ -851,16 +902,18 @@ func TestRecordDepreciation(t *testing.T) {
 	}
 
 	repo.assets["asset-1"] = &assets.FixedAsset{
-		ID:                 "asset-1",
-		TenantID:           "tenant-1",
-		Name:               "Dell Laptop",
-		Status:             assets.AssetStatusActive,
-		PurchaseDate:       time.Now().AddDate(-1, 0, 0),
-		PurchaseCost:       decimal.NewFromInt(1500),
-		UsefulLifeMonths:   36,
-		ResidualValue:      decimal.NewFromInt(150),
-		DepreciationMethod: assets.DepreciationStraightLine,
-		BookValue:          decimal.NewFromInt(1500),
+		ID:                            "asset-1",
+		TenantID:                      "tenant-1",
+		Name:                          "Dell Laptop",
+		Status:                        assets.AssetStatusActive,
+		PurchaseDate:                  time.Now().AddDate(-1, 0, 0),
+		PurchaseCost:                  decimal.NewFromInt(1500),
+		UsefulLifeMonths:              36,
+		ResidualValue:                 decimal.NewFromInt(150),
+		DepreciationMethod:            assets.DepreciationStraightLine,
+		BookValue:                     decimal.NewFromInt(1500),
+		DepreciationExpenseAccountID:  stringPtr("depreciation-expense"),
+		AccumulatedDepreciationAcctID: stringPtr("accumulated-depreciation"),
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/assets/asset-1/depreciate", nil)

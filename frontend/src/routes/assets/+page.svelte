@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { api, type FixedAsset, type AssetStatus, type AssetCategory, type DepreciationEntry, type DepreciationMethod, type DisposalMethod } from '$lib/api';
+	import { api, type Account, type FixedAsset, type AssetStatus, type AssetCategory, type DepreciationEntry, type DepreciationMethod, type DisposalMethod } from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
 	import DocumentManager from '$lib/components/DocumentManager.svelte';
@@ -10,6 +10,7 @@
 
 	let assets = $state<FixedAsset[]>([]);
 	let categories = $state<AssetCategory[]>([]);
+	let accounts = $state<Account[]>([]);
 	let isLoading = $state(true);
 	let error = $state('');
 	let showCreateAsset = $state(false);
@@ -40,7 +41,11 @@
 	let disposeDate = $state(new Date().toISOString().split('T')[0]);
 	let disposeMethod = $state<DisposalMethod>('SOLD');
 	let disposeProceeds = $state('');
+	let disposeProceedsAccountId = $state('');
+	let disposeGainLossAccountId = $state('');
 	let disposeNotes = $state('');
+	let hasDisposalProceeds = $derived(disposeMethod === 'SOLD' && disposalProceedsAmount().greaterThan(0));
+	let disposalGainLossType = $derived(disposalGainLossAccountType());
 
 	$effect(() => {
 		const tenantId = $page.url.searchParams.get('tenant');
@@ -54,16 +59,18 @@
 		error = '';
 
 		try {
-			const [assetData, categoryData] = await Promise.all([
+			const [assetData, categoryData, accountData] = await Promise.all([
 				api.listAssets(tenantId, {
 					status: filterStatus || undefined,
 					from_date: filterFromDate || undefined,
 					to_date: filterToDate || undefined
 				}),
-				api.listAssetCategories(tenantId)
+				api.listAssetCategories(tenantId),
+				api.listAccounts(tenantId, true)
 			]);
 			assets = assetData;
 			categories = categoryData;
+			accounts = accountData;
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load data';
 		} finally {
@@ -139,8 +146,33 @@
 		disposeDate = new Date().toISOString().split('T')[0];
 		disposeMethod = 'SOLD';
 		disposeProceeds = '';
+		disposeProceedsAccountId = defaultAccountId('ASSET');
+		disposeGainLossAccountId = defaultAccountId('EXPENSE');
 		disposeNotes = '';
+		syncDisposalAccounts();
 		showDisposeModal = true;
+	}
+
+	function handleDisposeMethodChange() {
+		if (disposeMethod !== 'SOLD' && disposeProceeds !== '') {
+			disposeProceeds = '';
+		}
+		syncDisposalAccounts();
+	}
+
+	function syncDisposalAccounts() {
+		if (!selectedAsset) return;
+		if (disposalProceedsAmount().greaterThan(0) && !isAccountOfType(disposeProceedsAccountId, 'ASSET')) {
+			disposeProceedsAccountId = defaultAccountId('ASSET');
+		}
+
+		const gainLossType = disposalGainLossAccountType();
+		if (gainLossType && !isAccountOfType(disposeGainLossAccountId, gainLossType)) {
+			disposeGainLossAccountId = defaultAccountId(gainLossType);
+		}
+		if (!gainLossType && disposeGainLossAccountId !== '') {
+			disposeGainLossAccountId = '';
+		}
 	}
 
 	async function disposeAsset(e: Event) {
@@ -148,12 +180,30 @@
 		const tenantId = $page.url.searchParams.get('tenant');
 		if (!tenantId || !selectedAsset) return;
 
+		if (!selectedAsset.asset_account_id || !selectedAsset.accumulated_depreciation_account_id) {
+			error = m.assets_accountingConfigRequired();
+			return;
+		}
+
+		const proceeds = disposalProceedsAmount();
+		const gainLoss = disposalGainLossAmount();
+		if (proceeds.greaterThan(0) && !disposeProceedsAccountId) {
+			error = m.assets_proceedsAccountRequired();
+			return;
+		}
+		if (!gainLoss.isZero() && !disposeGainLossAccountId) {
+			error = m.assets_gainLossAccountRequired();
+			return;
+		}
+
 		try {
 			await api.disposeAsset(tenantId, selectedAsset.id, {
 				disposal_date: disposeDate,
 				disposal_method: disposeMethod,
-				disposal_proceeds: disposeProceeds || undefined,
-				disposal_notes: disposeNotes || undefined
+				disposal_proceeds: proceeds.greaterThan(0) ? proceeds.toFixed(2) : undefined,
+				disposal_notes: disposeNotes || undefined,
+				disposal_proceeds_account_id: proceeds.greaterThan(0) ? disposeProceedsAccountId : undefined,
+				disposal_gain_loss_account_id: !gainLoss.isZero() ? disposeGainLossAccountId : undefined
 			});
 			showDisposeModal = false;
 			selectedAsset = null;
@@ -251,6 +301,53 @@
 		if (!categoryId) return '-';
 		const category = categories.find((c) => c.id === categoryId);
 		return category?.name || '-';
+	}
+
+	function accountOptions(type: Account['account_type']): Account[] {
+		return accounts.filter((account) => account.account_type === type && account.is_active);
+	}
+
+	function defaultAccountId(type: Account['account_type']): string {
+		return accountOptions(type)[0]?.id || '';
+	}
+
+	function isAccountOfType(accountId: string, type: Account['account_type']): boolean {
+		return accounts.some((account) => account.id === accountId && account.account_type === type && account.is_active);
+	}
+
+	function accountLabel(account: Account): string {
+		return `${account.code} ${account.name}`;
+	}
+
+	function disposalProceedsAmount(): Decimal {
+		if (disposeMethod !== 'SOLD') return new Decimal(0);
+		return parseDecimalInput(disposeProceeds);
+	}
+
+	function disposalBookValue(asset: FixedAsset): Decimal {
+		return new Decimal(asset.purchase_cost).minus(asset.accumulated_depreciation);
+	}
+
+	function disposalGainLossAmount(): Decimal {
+		if (!selectedAsset) return new Decimal(0);
+		return disposalProceedsAmount().minus(disposalBookValue(selectedAsset));
+	}
+
+	function disposalGainLossAccountType(): Account['account_type'] | '' {
+		const amount = disposalGainLossAmount();
+		if (amount.greaterThan(0)) return 'REVENUE';
+		if (amount.lessThan(0)) return 'EXPENSE';
+		return '';
+	}
+
+	function parseDecimalInput(value: string): Decimal {
+		const trimmed = value.trim();
+		if (trimmed === '') return new Decimal(0);
+		try {
+			return new Decimal(trimmed);
+		} catch {
+			return new Decimal(0);
+		}
 	}
 </script>
 
@@ -469,7 +566,7 @@
 					</div>
 					<div class="form-group">
 						<label class="label" for="dispose-method">{m.assets_disposalMethod()} *</label>
-						<select class="input" id="dispose-method" bind:value={disposeMethod} required>
+						<select class="input" id="dispose-method" bind:value={disposeMethod} onchange={handleDisposeMethodChange} required>
 							<option value="SOLD">{m.assets_disposalSold()}</option>
 							<option value="SCRAPPED">{m.assets_disposalScrapped()}</option>
 							<option value="DONATED">{m.assets_disposalDonated()}</option>
@@ -481,7 +578,37 @@
 				{#if disposeMethod === 'SOLD'}
 					<div class="form-group">
 						<label class="label" for="dispose-proceeds">{m.assets_disposalProceeds()}</label>
-						<input class="input" type="number" step="0.01" min="0" id="dispose-proceeds" bind:value={disposeProceeds} />
+						<input class="input" type="number" step="0.01" min="0" id="dispose-proceeds" bind:value={disposeProceeds} oninput={syncDisposalAccounts} />
+					</div>
+				{/if}
+
+				{#if hasDisposalProceeds || disposalGainLossType}
+					<div class="form-row">
+						{#if hasDisposalProceeds}
+							<div class="form-group">
+								<label class="label" for="dispose-proceeds-account">{m.assets_disposalProceedsAccount()} *</label>
+								<select class="input" id="dispose-proceeds-account" bind:value={disposeProceedsAccountId} required>
+									<option value="">{m.journal_selectAccount()}</option>
+									{#each accountOptions('ASSET') as account (account.id)}
+										<option value={account.id}>{accountLabel(account)}</option>
+									{/each}
+								</select>
+							</div>
+						{/if}
+
+						{#if disposalGainLossType}
+							<div class="form-group">
+								<label class="label" for="dispose-gain-loss-account">
+									{disposalGainLossType === 'REVENUE' ? m.assets_disposalGainAccount() : m.assets_disposalLossAccount()} *
+								</label>
+								<select class="input" id="dispose-gain-loss-account" bind:value={disposeGainLossAccountId} required>
+									<option value="">{m.journal_selectAccount()}</option>
+									{#each accountOptions(disposalGainLossType) as account (account.id)}
+										<option value={account.id}>{accountLabel(account)}</option>
+									{/each}
+								</select>
+							</div>
+						{/if}
 					</div>
 				{/if}
 
