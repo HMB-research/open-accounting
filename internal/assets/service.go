@@ -3,31 +3,47 @@ package assets
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 )
 
+type accountingPoster interface {
+	GetAccount(ctx context.Context, schemaName, tenantID, accountID string) (*accounting.Account, error)
+	CreateJournalEntry(ctx context.Context, schemaName, tenantID string, req *accounting.CreateJournalEntryRequest) (*accounting.JournalEntry, error)
+	PostJournalEntry(ctx context.Context, schemaName, tenantID, entryID, userID string) error
+}
+
 // Service provides fixed asset operations
 type Service struct {
-	db   *pgxpool.Pool
-	repo Repository
+	db     *pgxpool.Pool
+	repo   Repository
+	ledger accountingPoster
 }
 
 // NewService creates a new assets service with a PostgreSQL repository
 func NewService(db *pgxpool.Pool) *Service {
 	return &Service{
-		db:   db,
-		repo: NewPostgresRepository(db),
+		db:     db,
+		repo:   NewPostgresRepository(db),
+		ledger: accounting.NewService(db),
 	}
 }
 
 // NewServiceWithRepository creates a new assets service with a custom repository
 func NewServiceWithRepository(repo Repository) *Service {
+	return NewServiceWithRepositoryAndAccounting(repo, nil)
+}
+
+// NewServiceWithRepositoryAndAccounting creates a new assets service with custom repository and ledger poster.
+func NewServiceWithRepositoryAndAccounting(repo Repository, ledger accountingPoster) *Service {
 	return &Service{
-		repo: repo,
+		repo:   repo,
+		ledger: ledger,
 	}
 }
 
@@ -305,6 +321,12 @@ func (s *Service) RecordDepreciation(ctx context.Context, tenantID, schemaName, 
 		CreatedBy:          userID,
 	}
 
+	journalEntryID, err := s.recordDepreciationJournal(ctx, schemaName, tenantID, asset, entry, userID)
+	if err != nil {
+		return nil, err
+	}
+	entry.JournalEntryID = journalEntryID
+
 	if err := s.repo.CreateDepreciationEntry(ctx, schemaName, entry); err != nil {
 		return nil, fmt.Errorf("create depreciation entry: %w", err)
 	}
@@ -320,6 +342,101 @@ func (s *Service) RecordDepreciation(ctx context.Context, tenantID, schemaName, 
 	}
 
 	return entry, nil
+}
+
+func (s *Service) recordDepreciationJournal(ctx context.Context, schemaName, tenantID string, asset *FixedAsset, entry *DepreciationEntry, userID string) (*string, error) {
+	expenseAccountID := trimmedStringPtr(asset.DepreciationExpenseAccountID)
+	accumulatedAccountID := trimmedStringPtr(asset.AccumulatedDepreciationAcctID)
+	if expenseAccountID == "" && accumulatedAccountID == "" {
+		return nil, nil
+	}
+	if expenseAccountID == "" || accumulatedAccountID == "" {
+		return nil, fmt.Errorf("%w: depreciation expense and accumulated depreciation accounts are required together", ErrAssetAccountingInvalid)
+	}
+	if s.ledger == nil {
+		return nil, fmt.Errorf("%w: accounting service is unavailable", ErrAssetAccountingInvalid)
+	}
+	expenseAccount, err := s.ledger.GetAccount(ctx, schemaName, tenantID, expenseAccountID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: load depreciation expense account: %v", ErrAssetAccountingInvalid, err)
+	}
+	if expenseAccount.AccountType != accounting.AccountTypeExpense {
+		return nil, fmt.Errorf("%w: depreciation expense account must be EXPENSE", ErrAssetAccountingInvalid)
+	}
+	accumulatedAccount, err := s.ledger.GetAccount(ctx, schemaName, tenantID, accumulatedAccountID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: load accumulated depreciation account: %v", ErrAssetAccountingInvalid, err)
+	}
+	if accumulatedAccount.AccountType != accounting.AccountTypeAsset {
+		return nil, fmt.Errorf("%w: accumulated depreciation account must be ASSET", ErrAssetAccountingInvalid)
+	}
+
+	sourceID := entry.ID
+	description := depreciationJournalDescription(asset)
+	journalEntry, err := s.ledger.CreateJournalEntry(ctx, schemaName, tenantID, &accounting.CreateJournalEntryRequest{
+		EntryDate:   entry.PeriodEnd,
+		Description: description,
+		Reference:   depreciationJournalReference(asset, entry),
+		SourceType:  SourceTypeAssetDepreciation,
+		SourceID:    &sourceID,
+		UserID:      userID,
+		Lines: []accounting.CreateJournalEntryLineReq{
+			{
+				AccountID:    expenseAccountID,
+				Description:  description,
+				DebitAmount:  entry.DepreciationAmount,
+				CreditAmount: decimal.Zero,
+			},
+			{
+				AccountID:    accumulatedAccountID,
+				Description:  description,
+				DebitAmount:  decimal.Zero,
+				CreditAmount: entry.DepreciationAmount,
+			},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create depreciation journal: %w", err)
+	}
+	if err := s.ledger.PostJournalEntry(ctx, schemaName, tenantID, journalEntry.ID, userID); err != nil {
+		return nil, fmt.Errorf("post depreciation journal: %w", err)
+	}
+
+	return &journalEntry.ID, nil
+}
+
+func trimmedStringPtr(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
+}
+
+func depreciationJournalDescription(asset *FixedAsset) string {
+	assetNumber := strings.TrimSpace(asset.AssetNumber)
+	name := strings.TrimSpace(asset.Name)
+	switch {
+	case assetNumber != "" && name != "":
+		return fmt.Sprintf("Depreciation %s - %s", assetNumber, name)
+	case assetNumber != "":
+		return fmt.Sprintf("Depreciation %s", assetNumber)
+	case name != "":
+		return fmt.Sprintf("Depreciation %s", name)
+	default:
+		return fmt.Sprintf("Depreciation asset %s", asset.ID)
+	}
+}
+
+func depreciationJournalReference(asset *FixedAsset, entry *DepreciationEntry) string {
+	assetNumber := strings.TrimSpace(asset.AssetNumber)
+	if assetNumber == "" {
+		assetNumber = strings.TrimSpace(asset.ID)
+	}
+	period := entry.PeriodEnd.Format("2006-01")
+	if period == "0001-01" {
+		return assetNumber
+	}
+	return fmt.Sprintf("%s-%s", assetNumber, period)
 }
 
 // GetDepreciationHistory retrieves depreciation entries for an asset

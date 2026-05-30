@@ -3262,7 +3262,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Record monthly depreciation for an active fixed asset",
+                "description": "Record monthly depreciation for an active fixed asset and post a depreciation journal entry when depreciation accounts are configured",
                 "consumes": [
                     "application/json"
                 ],

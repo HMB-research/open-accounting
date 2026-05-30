@@ -7972,7 +7972,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Record monthly depreciation for an active fixed asset
+      description: Record monthly depreciation for an active fixed asset and post
+        a depreciation journal entry when depreciation accounts are configured
       parameters:
       - description: Tenant ID
         in: path

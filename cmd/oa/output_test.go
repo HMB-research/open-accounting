@@ -1191,6 +1191,8 @@ func TestPrintAssetOutputs(t *testing.T) {
 		CreatedAt:          now,
 		CreatedBy:          "user-1",
 	}
+	journalEntryID := "je-1"
+	entry.JournalEntryID = &journalEntryID
 
 	var categoriesBuf bytes.Buffer
 	printAssetCategoriesTable(&categoriesBuf, []assets.AssetCategory{category})
@@ -1214,6 +1216,7 @@ func TestPrintAssetOutputs(t *testing.T) {
 	printDepreciationEntriesTable(&depreciationBuf, []assets.DepreciationEntry{entry})
 	assert.Contains(t, depreciationBuf.String(), "dep-1")
 	assert.Contains(t, depreciationBuf.String(), "25")
+	assert.Contains(t, depreciationBuf.String(), "je-1")
 }
 
 func TestPrintInventoryOutputs(t *testing.T) {
