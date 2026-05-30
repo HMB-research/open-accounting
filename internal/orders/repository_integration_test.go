@@ -14,7 +14,7 @@ func TestRepository_CreateAndGetOrder(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create a contact for the order
@@ -92,7 +92,7 @@ func TestRepository_GetByID_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Use a valid UUID that doesn't exist in the database
@@ -107,7 +107,7 @@ func TestRepository_ListOrders(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create contact
@@ -157,7 +157,7 @@ func TestRepository_ListOrders_WithFilter(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create contact
@@ -231,7 +231,7 @@ func TestRepository_UpdateOrder(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create contact
@@ -291,7 +291,7 @@ func TestRepository_UpdateStatus(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create contact
@@ -343,7 +343,7 @@ func TestRepository_DeleteOrder(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create contact
@@ -390,7 +390,7 @@ func TestRepository_GenerateNumber(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// First number
@@ -447,7 +447,7 @@ func TestRepository_SetConvertedToInvoice(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create contact
@@ -499,7 +499,7 @@ func TestRepository_ListOrders_WithContactFilter(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create two contacts
