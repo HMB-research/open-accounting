@@ -27,7 +27,7 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 		{
 			Kind:       KindExpenses,
 			FileName:   "expenses.csv",
-			CSVContent: "expense_date,merchant,expense_account_id,payment_account_id,amount\n2026-05-30,Office Store,expense-account,cash-account,42\n",
+			CSVContent: "expense_date,merchant,expense_account_code,payment_account_code,amount\n2026-05-30,Office Store,5500,1000,42\n",
 		},
 		{
 			Kind:       KindInvoices,
