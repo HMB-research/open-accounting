@@ -91,6 +91,49 @@ func (h *Handlers) CreateExpense(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, expense)
 }
 
+// ImportExpenses imports expense claims from CSV.
+// @Summary Import expenses
+// @Description Import expense claims from CSV. Imported expenses can be draft, submitted, approved, or rejected; posted expenses must be posted through the workflow.
+// @Tags Expenses
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body expenses.ImportExpensesRequest true "CSV import payload"
+// @Success 200 {object} expenses.ImportExpensesResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/expenses/import [post]
+func (h *Handlers) ImportExpenses(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req expenses.ImportExpensesRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+	req.UserID = claims.UserID
+
+	lockDate, err := h.getTenantPeriodLockDate(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to validate period lock")
+		return
+	}
+	req.LockDate = lockDate
+
+	result, err := h.expensesService.ImportExpensesCSV(r.Context(), schemaName, tenantID, &req)
+	if err != nil {
+		respondExpenseError(w, err)
+		return
+	}
+	respondJSON(w, http.StatusOK, result)
+}
+
 // GetExpense returns one expense.
 // @Summary Get expense
 // @Description Get expense claim details

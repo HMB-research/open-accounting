@@ -74,6 +74,28 @@ type CreateExpenseRequest struct {
 	UserID           string          `json:"-"`
 }
 
+type ImportExpensesRequest struct {
+	CSVContent string     `json:"csv_content"`
+	FileName   string     `json:"file_name,omitempty"`
+	UserID     string     `json:"-"`
+	LockDate   *time.Time `json:"-"`
+}
+
+type ImportExpensesResult struct {
+	FileName        string                   `json:"file_name,omitempty"`
+	RowsProcessed   int                      `json:"rows_processed"`
+	ExpensesCreated int                      `json:"expenses_created"`
+	RowsSkipped     int                      `json:"rows_skipped"`
+	Errors          []ImportExpensesRowError `json:"errors,omitempty"`
+}
+
+type ImportExpensesRowError struct {
+	Row           int    `json:"row"`
+	ExpenseNumber string `json:"expense_number,omitempty"`
+	Merchant      string `json:"merchant,omitempty"`
+	Message       string `json:"message"`
+}
+
 type ListExpensesFilter struct {
 	Status ExpenseStatus `json:"status,omitempty"`
 	Limit  int           `json:"limit,omitempty"`

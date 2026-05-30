@@ -213,7 +213,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 |---------|-------|---------------|-----------------|--------|
 | CSV export | ✅ | ✅ | ✅ | Implemented |
 | Excel export | ✅ | ✅ | ✅ | Implemented for core financial statements, cash flow, aging, balance confirmations, contact statements, sales margin, budget-vs-actual, and cost-center budget reports |
-| Data migration tools | ✅ | ✅ | ⚠️ | Partial: CSV imports cover setup data, invoices, opening balances, employees, finalized payroll history, leave balances, and multiple operational-history files; a migration bundle validator now checks required columns and cross-file references before import, but full incumbent-system migration remains incomplete |
+| Data migration tools | ✅ | ✅ | ⚠️ | Partial: CSV imports cover setup data, invoices, expenses, opening balances, employees, finalized payroll history, leave balances, and multiple operational-history files; a migration bundle validator now checks required columns and cross-file references before import, but full incumbent-system migration remains incomplete |
 
 ---
 
@@ -226,7 +226,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Responsive web design | ⚠️ | ✅ | ✅ | Implemented |
 | Native mobile app | ❌ | ✅ (Android) | ❌ | **Gap** |
 | Receipt capture | ❌ | ✅ | ✅ | Implemented through receipt documents linked to expenses; native mobile capture and OCR remain separate gaps |
-| Expense tracking | ❌ | ✅ | ✅ | Implemented through draft/submitted/approved/rejected/posted expense claims with receipt enforcement and ledger posting |
+| Expense tracking | ❌ | ✅ | ✅ | Implemented through draft/submitted/approved/rejected/posted expense claims with receipt enforcement, CSV import, and ledger posting |
 
 ---
 

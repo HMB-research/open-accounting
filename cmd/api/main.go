@@ -755,6 +755,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				// Expenses
 				r.Get("/expenses", h.ListExpenses)
 				r.Post("/expenses", h.CreateExpense)
+				r.Post("/expenses/import", h.ImportExpenses)
 				r.Get("/expenses/{expenseID}", h.GetExpense)
 				r.Post("/expenses/{expenseID}/submit", h.SubmitExpense)
 				r.Post("/expenses/{expenseID}/approve", h.ApproveExpense)

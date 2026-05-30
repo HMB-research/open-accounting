@@ -6,6 +6,7 @@ const (
 	KindAccounts        FileKind = "accounts"
 	KindContacts        FileKind = "contacts"
 	KindEmployees       FileKind = "employees"
+	KindExpenses        FileKind = "expenses"
 	KindInvoices        FileKind = "invoices"
 	KindPayments        FileKind = "payments"
 	KindPayrollHistory  FileKind = "payroll_history"

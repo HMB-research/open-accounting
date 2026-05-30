@@ -6066,6 +6066,63 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/expenses/import": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Import expense claims from CSV. Imported expenses can be draft, submitted, approved, or rejected; posted expenses must be posted through the workflow.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Expenses"
+                ],
+                "summary": "Import expenses",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "CSV import payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_expenses.ImportExpensesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_expenses.ImportExpensesResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/expenses/{expenseID}": {
             "get": {
                 "security": [
@@ -18591,6 +18648,7 @@ const docTemplate = `{
                 "accounts",
                 "contacts",
                 "employees",
+                "expenses",
                 "invoices",
                 "payments",
                 "payroll_history",
@@ -18602,6 +18660,7 @@ const docTemplate = `{
                 "KindAccounts",
                 "KindContacts",
                 "KindEmployees",
+                "KindExpenses",
                 "KindInvoices",
                 "KindPayments",
                 "KindPayrollHistory",
@@ -19254,6 +19313,57 @@ const docTemplate = `{
                 "StatusRejected",
                 "StatusPosted"
             ]
+        },
+        "github_com_HMB-research_open-accounting_internal_expenses.ImportExpensesRequest": {
+            "type": "object",
+            "properties": {
+                "csv_content": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_expenses.ImportExpensesResult": {
+            "type": "object",
+            "properties": {
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_expenses.ImportExpensesRowError"
+                    }
+                },
+                "expenses_created": {
+                    "type": "integer"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "rows_processed": {
+                    "type": "integer"
+                },
+                "rows_skipped": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_expenses.ImportExpensesRowError": {
+            "type": "object",
+            "properties": {
+                "expense_number": {
+                    "type": "string"
+                },
+                "merchant": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "row": {
+                    "type": "integer"
+                }
+            }
         },
         "github_com_HMB-research_open-accounting_internal_expenses.RejectExpenseRequest": {
             "type": "object",
