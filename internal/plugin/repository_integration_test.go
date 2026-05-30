@@ -5,13 +5,15 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/testutil"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func TestPostgresRepository_PluginLifecycle(t *testing.T) {
+func TestRepository_PluginLifecycle(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := newPluginGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create a plugin
@@ -98,10 +100,10 @@ func TestPostgresRepository_PluginLifecycle(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_TenantPluginOperations(t *testing.T) {
+func TestRepository_TenantPluginOperations(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newPluginGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create a plugin first
@@ -196,9 +198,9 @@ func TestPostgresRepository_TenantPluginOperations(t *testing.T) {
 	_, _ = repo.DeletePlugin(ctx, plugin.ID)
 }
 
-func TestPostgresRepository_ListPlugins(t *testing.T) {
+func TestRepository_ListPlugins(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := newPluginGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create a couple of plugins
@@ -235,9 +237,9 @@ func TestPostgresRepository_ListPlugins(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_CreateAndUpdatePlugin(t *testing.T) {
+func TestRepository_CreateAndUpdatePlugin(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := newPluginGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create plugin via CreatePlugin (not InsertPluginReturning)
@@ -295,10 +297,10 @@ func TestPostgresRepository_CreateAndUpdatePlugin(t *testing.T) {
 	_, _ = repo.DeletePlugin(ctx, pluginID)
 }
 
-func TestPostgresRepository_TenantPluginCRUD(t *testing.T) {
+func TestRepository_TenantPluginCRUD(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newPluginGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create a plugin
@@ -378,10 +380,10 @@ func TestPostgresRepository_TenantPluginCRUD(t *testing.T) {
 	_, _ = repo.DeletePlugin(ctx, plugin.ID)
 }
 
-func TestPostgresRepository_DisableAllTenantsForPlugin(t *testing.T) {
+func TestRepository_DisableAllTenantsForPlugin(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newPluginGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create a plugin
@@ -433,9 +435,9 @@ func TestPostgresRepository_DisableAllTenantsForPlugin(t *testing.T) {
 	_, _ = repo.DeletePlugin(ctx, plugin.ID)
 }
 
-func TestPostgresRepository_RegistryOperations(t *testing.T) {
+func TestRepository_RegistryOperations(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := newPluginGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create registry
@@ -500,4 +502,14 @@ func TestPostgresRepository_RegistryOperations(t *testing.T) {
 	if affected != 1 {
 		t.Errorf("expected 1 row affected, got %d", affected)
 	}
+}
+
+func newPluginGORMRepository(t *testing.T, pool *pgxpool.Pool) *GORMRepository {
+	t.Helper()
+
+	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	if err != nil {
+		t.Fatalf("create gorm repository: %v", err)
+	}
+	return NewGORMRepository(gormDB)
 }
