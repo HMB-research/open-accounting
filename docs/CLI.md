@@ -156,7 +156,9 @@ go run ./cmd/oa users update-role --id <user-id> --role accountant
 go run ./cmd/oa users set-status --id <user-id> --active false
 go run ./cmd/oa users sessions --id <user-id>
 go run ./cmd/oa users sessions --id <user-id> --include-inactive
+go run ./cmd/oa users api-tokens --id <user-id>
 go run ./cmd/oa users security-events --id <user-id> --limit 50
+go run ./cmd/oa users revoke-api-token --id <user-id> --token-id <token-id>
 go run ./cmd/oa users revoke-session --id <user-id> --session-id <session-id>
 go run ./cmd/oa users revoke-all-sessions --id <user-id>
 go run ./cmd/oa users remove --id <user-id>
@@ -172,7 +174,7 @@ go run ./cmd/oa invitations accept \
   --base-url http://localhost:8080
 ```
 
-`users update-role` accepts `admin`, `accountant`, or `viewer`. The `owner` role is assigned only at tenant creation and cannot be granted through the CLI role-update flow. `users set-status --active false` suspends tenant access without deleting the membership, revokes active refresh sessions, and blocks existing tenant-scoped access/API-token use; `--active true` restores tenant login/refresh/API-token access. `users sessions`, `users security-events`, and the tenant-user revocation commands require a tenant admin or owner and record audit events when sessions are revoked. Use `--password-stdin` on `invitations accept` to avoid placing a new-user password in shell history.
+`users update-role` accepts `admin`, `accountant`, or `viewer`. The `owner` role is assigned only at tenant creation and cannot be granted through the CLI role-update flow. `users set-status --active false` suspends tenant access without deleting the membership, revokes active refresh sessions, and blocks existing tenant-scoped access/API-token use; `--active true` restores tenant login/refresh/API-token access. `users sessions`, `users api-tokens`, `users security-events`, and the tenant-user revocation commands require a tenant admin or owner and record audit events when sessions or API tokens are revoked. Use `--password-stdin` on `invitations accept` to avoid placing a new-user password in shell history.
 
 ## Plugins
 

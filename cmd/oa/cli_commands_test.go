@@ -687,6 +687,15 @@ func TestCLIUsersCommands(t *testing.T) {
 					CreatedAt:    time.Date(2026, 5, 30, 12, 0, 0, 0, time.UTC),
 				},
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-2/api-tokens":
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"id":           "token-1",
+				"name":         "CLI",
+				"token_prefix": "oa_token_123",
+				"created_at":   "2026-03-12T00:00:00Z",
+			}})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-2/api-tokens/token-1":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "revoked"})
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-2":
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "removed"})
 		default:
@@ -730,6 +739,17 @@ func TestCLIUsersCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), auth.SecurityAuditActionLogin)
 	assert.Contains(t, stdout.String(), "target@example.com")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"users", "api-tokens", "--id", "user-2"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "token-1")
+	assert.Contains(t, stdout.String(), "CLI")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"users", "revoke-api-token", "--id", "user-2", "--token-id", "token-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Revoked API token token-1 for user user-2")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"users", "revoke-session", "--id", "user-2", "--session-id", "session-1"})

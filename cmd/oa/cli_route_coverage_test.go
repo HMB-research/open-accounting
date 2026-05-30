@@ -1151,6 +1151,10 @@ func tenantCLICommand(method, path string) (string, bool) {
 		})
 	case "/users/{userID}/sessions/{sessionID}":
 		return commandForMethod(method, map[string]string{"DELETE": "users revoke-session"})
+	case "/users/{userID}/api-tokens":
+		return commandForMethod(method, map[string]string{"GET": "users api-tokens"})
+	case "/users/{userID}/api-tokens/{tokenID}":
+		return commandForMethod(method, map[string]string{"DELETE": "users revoke-api-token"})
 	case "/users/{userID}/security-events":
 		return commandForMethod(method, map[string]string{"GET": "users security-events"})
 	case "/invitations":

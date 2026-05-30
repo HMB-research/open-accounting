@@ -936,6 +936,27 @@ definitions:
           type: number
         type: array
     type: object
+  github_com_HMB-research_open-accounting_internal_apitoken.APIToken:
+    properties:
+      created_at:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      last_used_at:
+        type: string
+      name:
+        type: string
+      revoked_at:
+        type: string
+      tenant_id:
+        type: string
+      token_prefix:
+        type: string
+      user_id:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_assets.AssetCategory:
     properties:
       accumulated_depreciation_account_id:
@@ -15524,6 +15545,126 @@ paths:
       security:
       - BearerAuth: []
       summary: Remove user from tenant
+      tags:
+      - Users
+  /tenants/{tenantID}/users/{userID}/api-tokens:
+    get:
+      description: List active API tokens for a user who belongs to the tenant. Requires
+        owner or admin role.
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: User ID
+        in: path
+        name: userID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_apitoken.APIToken'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List tenant user API tokens
+      tags:
+      - Users
+  /tenants/{tenantID}/users/{userID}/api-tokens/{tokenID}:
+    delete:
+      description: Revoke one active API token for a user who belongs to the tenant.
+        Requires owner or admin role.
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: User ID
+        in: path
+        name: userID
+        required: true
+        type: string
+      - description: API token ID
+        in: path
+        name: tokenID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Revoke tenant user API token
       tags:
       - Users
   /tenants/{tenantID}/users/{userID}/role:

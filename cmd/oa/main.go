@@ -182,9 +182,11 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  users update-role         Update a tenant user role")
 	_, _ = fmt.Fprintln(a.stdout, "  users set-status          Suspend or restore tenant user access")
 	_, _ = fmt.Fprintln(a.stdout, "  users sessions            List tenant user refresh sessions")
+	_, _ = fmt.Fprintln(a.stdout, "  users api-tokens          List tenant user API tokens")
 	_, _ = fmt.Fprintln(a.stdout, "  users security-events     List tenant user auth security events")
 	_, _ = fmt.Fprintln(a.stdout, "  users revoke-session      Revoke a tenant user refresh session")
 	_, _ = fmt.Fprintln(a.stdout, "  users revoke-all-sessions Revoke all tenant user refresh sessions")
+	_, _ = fmt.Fprintln(a.stdout, "  users revoke-api-token    Revoke a tenant user API token")
 	_, _ = fmt.Fprintln(a.stdout, "  users remove              Remove a tenant user")
 	_, _ = fmt.Fprintln(a.stdout, "  invitations list          List pending tenant invitations")
 	_, _ = fmt.Fprintln(a.stdout, "  invitations create        Invite a user")
@@ -1405,6 +1407,46 @@ func (a *cliApp) runUsers(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, events)
 		}
 		printSecurityAuditEvents(a.stdout, events)
+		return nil
+
+	case "api-tokens":
+		fs := flag.NewFlagSet("users api-tokens", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		userID := fs.String("id", "", "User id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*userID) == "" {
+			return errors.New("id is required")
+		}
+
+		tokens, err := client.listTenantUserAPITokens(ctx, cfg.TenantID, strings.TrimSpace(*userID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, tokens)
+		}
+		printAPITokensTable(a.stdout, tokens)
+		return nil
+
+	case "revoke-api-token":
+		fs := flag.NewFlagSet("users revoke-api-token", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		userID := fs.String("id", "", "User id")
+		tokenID := fs.String("token-id", "", "API token id")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*userID) == "" || strings.TrimSpace(*tokenID) == "" {
+			return errors.New("id and token-id are required")
+		}
+
+		if err := client.revokeTenantUserAPIToken(ctx, cfg.TenantID, strings.TrimSpace(*userID), strings.TrimSpace(*tokenID)); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Revoked API token %s for user %s\n", strings.TrimSpace(*tokenID), strings.TrimSpace(*userID))
 		return nil
 
 	case "revoke-session":
