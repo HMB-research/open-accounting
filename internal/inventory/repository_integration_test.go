@@ -789,6 +789,9 @@ func TestRepository_CreateAndListMovements(t *testing.T) {
 		Quantity:     decimal.NewFromInt(50),
 		UnitCost:     decimal.NewFromFloat(10.00),
 		TotalCost:    decimal.NewFromFloat(500.00),
+		LotNumber:    "LOT-2026-01",
+		SerialNumber: "SN-001",
+		ExpiryDate:   "2027-01-31",
 		Reference:    "PO-001",
 		Notes:        "Initial stock inbound",
 		MovementDate: time.Now(),
@@ -809,6 +812,15 @@ func TestRepository_CreateAndListMovements(t *testing.T) {
 	}
 	if movements[0].MovementType != "IN" {
 		t.Errorf("expected movement type 'IN', got '%s'", movements[0].MovementType)
+	}
+	if movements[0].LotNumber != "LOT-2026-01" {
+		t.Errorf("expected lot number to round-trip, got %q", movements[0].LotNumber)
+	}
+	if movements[0].SerialNumber != "SN-001" {
+		t.Errorf("expected serial number to round-trip, got %q", movements[0].SerialNumber)
+	}
+	if movements[0].ExpiryDate != "2027-01-31" {
+		t.Errorf("expected expiry date to round-trip, got %q", movements[0].ExpiryDate)
 	}
 }
 

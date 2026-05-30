@@ -1285,6 +1285,9 @@ func TestPrintInventoryOutputs(t *testing.T) {
 		Quantity:     decimal.NewFromInt(2),
 		UnitCost:     decimal.NewFromFloat(10.5),
 		TotalCost:    decimal.NewFromInt(21),
+		LotNumber:    "LOT-2026-01",
+		SerialNumber: "SN-001",
+		ExpiryDate:   "2027-01-31",
 		Reference:    "ADJ-1",
 		Notes:        "Cycle count",
 		MovementDate: now,
@@ -1355,6 +1358,9 @@ func TestPrintInventoryOutputs(t *testing.T) {
 	var movementsBuf bytes.Buffer
 	printInventoryMovementsTable(&movementsBuf, []inventory.InventoryMovement{movement})
 	assert.Contains(t, movementsBuf.String(), "ADJUSTMENT")
+	assert.Contains(t, movementsBuf.String(), "LOT-2026-01")
+	assert.Contains(t, movementsBuf.String(), "SN-001")
+	assert.Contains(t, movementsBuf.String(), "2027-01-31")
 	assert.Contains(t, movementsBuf.String(), "Cycle count")
 
 	var valuationBuf bytes.Buffer

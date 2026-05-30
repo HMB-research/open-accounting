@@ -3164,6 +3164,9 @@ func TestCLIInventoryCommands(t *testing.T) {
 		"quantity":      "2.00",
 		"unit_cost":     "10.50",
 		"total_cost":    "21.00",
+		"lot_number":    "LOT-2026-01",
+		"serial_number": "SN-001",
+		"expiry_date":   "2027-01-31",
 		"reference":     "ADJ-1",
 		"notes":         "Cycle count",
 		"movement_date": "2026-03-15T00:00:00Z",
@@ -3198,7 +3201,7 @@ func TestCLIInventoryCommands(t *testing.T) {
 	categoryImportFile := writeTempCSV(t, "categories.csv", "name,description\nParts,Spare parts\n")
 	importFile := writeTempCSV(t, "products.csv", "code,name,sales_price\nSKU-001,Widget,15.00\n")
 	warehouseImportFile := writeTempCSV(t, "warehouses.csv", "code,name,address,is_default\nMAIN,Main warehouse,Tallinn,true\n")
-	stockImportFile := writeTempCSV(t, "stock.csv", "product_code,warehouse_code,quantity\nSKU-001,MAIN,12\n")
+	stockImportFile := writeTempCSV(t, "stock.csv", "product_code,warehouse_code,quantity,lot_number,expiry_date\nSKU-001,MAIN,12,LOT-2026-01,2027-01-31\n")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -3326,6 +3329,9 @@ func TestCLIInventoryCommands(t *testing.T) {
 			assert.Equal(t, "wh-1", req.WarehouseID)
 			assert.Equal(t, "-2", req.Quantity)
 			assert.Equal(t, "10.5", req.UnitCost)
+			assert.Equal(t, "LOT-2026-01", req.LotNumber)
+			assert.Equal(t, "SN-001", req.SerialNumber)
+			assert.Equal(t, "2027-01-31", req.ExpiryDate)
 			assert.Equal(t, "Cycle count", req.Reason)
 			_ = json.NewEncoder(w).Encode(movementPayload)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/stock-import":
@@ -3333,6 +3339,7 @@ func TestCLIInventoryCommands(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "stock.csv", req.FileName)
 			assert.Contains(t, req.CSVContent, "SKU-001")
+			assert.Contains(t, req.CSVContent, "LOT-2026-01")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"rows_processed":       1,
 				"adjustments_imported": 1,
@@ -3513,7 +3520,7 @@ func TestCLIInventoryCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Deleted warehouse wh-1")
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"inventory", "adjust", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "-2.00", "--unit-cost", "10.50", "--reason", "Cycle count"})
+	err = app.run(context.Background(), []string{"inventory", "adjust", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "-2.00", "--unit-cost", "10.50", "--lot-number", "LOT-2026-01", "--serial-number", "SN-001", "--expiry-date", "2027-01-31", "--reason", "Cycle count"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Adjusted stock for product prod-1 by -2 in warehouse wh-1")
 

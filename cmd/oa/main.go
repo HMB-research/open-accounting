@@ -6932,6 +6932,9 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		warehouseID := fs.String("warehouse-id", "", "Warehouse id")
 		quantityFlag := fs.String("quantity", "", "Signed quantity adjustment")
 		unitCostFlag := fs.String("unit-cost", "0", "Unit cost")
+		lotNumber := fs.String("lot-number", "", "Lot or batch number")
+		serialNumber := fs.String("serial-number", "", "Serial number")
+		expiryDate := fs.String("expiry-date", "", "Lot expiry date in YYYY-MM-DD")
 		reason := fs.String("reason", "", "Adjustment reason")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
@@ -6954,13 +6957,19 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
+		if _, err := parseOptionalDate("expiry-date", *expiryDate); err != nil {
+			return err
+		}
 
 		movement, err := client.adjustStock(ctx, cfg.TenantID, &inventory.AdjustStockRequest{
-			ProductID:   strings.TrimSpace(*productID),
-			WarehouseID: strings.TrimSpace(*warehouseID),
-			Quantity:    quantity.String(),
-			UnitCost:    unitCost.String(),
-			Reason:      strings.TrimSpace(*reason),
+			ProductID:    strings.TrimSpace(*productID),
+			WarehouseID:  strings.TrimSpace(*warehouseID),
+			Quantity:     quantity.String(),
+			UnitCost:     unitCost.String(),
+			LotNumber:    strings.TrimSpace(*lotNumber),
+			SerialNumber: strings.TrimSpace(*serialNumber),
+			ExpiryDate:   strings.TrimSpace(*expiryDate),
+			Reason:       strings.TrimSpace(*reason),
 		})
 		if err != nil {
 			return err
