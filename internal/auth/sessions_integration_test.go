@@ -44,6 +44,19 @@ func TestRefreshSessionServiceLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, allSessions, 2)
 
+	err = service.RevokeAllRefreshSessions(ctx, userID)
+	require.NoError(t, err)
+
+	activeSessions, err = service.ListRefreshSessions(ctx, userID, false)
+	require.NoError(t, err)
+	require.Empty(t, activeSessions)
+
+	// Create one more active session so the single-session revoke path remains covered.
+	newTokenID = uuid.NewString()
+	newHash = HashRefreshToken("new-refresh-token-after-all-revoke")
+	err = service.CreateRefreshSession(ctx, userID, newTokenID, newHash, expiresAt.Add(2*time.Hour))
+	require.NoError(t, err)
+
 	err = service.RotateRefreshSession(ctx, userID, oldTokenID, oldHash, uuid.NewString(), HashRefreshToken("reuse"), expiresAt)
 	assert.ErrorIs(t, err, ErrRefreshSessionInvalid)
 

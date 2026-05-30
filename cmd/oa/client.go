@@ -178,6 +178,17 @@ func (c *apiClient) revokeAuthSession(ctx context.Context, sessionID, accessToke
 	return c.request(ctx, http.MethodDelete, "/api/v1/auth/sessions/"+url.PathEscape(sessionID), nil, bearerToken, nil)
 }
 
+func (c *apiClient) changePassword(ctx context.Context, currentPassword, newPassword, accessToken string) error {
+	bearerToken := strings.TrimSpace(accessToken)
+	if bearerToken == "" {
+		bearerToken = c.apiToken
+	}
+	return c.request(ctx, http.MethodPut, "/api/v1/auth/password", map[string]string{
+		"current_password": currentPassword,
+		"new_password":     newPassword,
+	}, bearerToken, nil)
+}
+
 func (c *apiClient) health(ctx context.Context) (string, error) {
 	payload, err := c.requestRaw(ctx, http.MethodGet, "/health", nil, "")
 	if err != nil {

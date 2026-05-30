@@ -39,6 +39,7 @@ type Repository interface {
 	CreateUser(ctx context.Context, user *User) error
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
 	GetUserByID(ctx context.Context, userID string) (*User, error)
+	UpdateUserPassword(ctx context.Context, userID, passwordHash string, updatedAt time.Time) error
 
 	// Invitation operations
 	CreateInvitation(ctx context.Context, inv *UserInvitation) error
@@ -396,6 +397,22 @@ func (r *PostgresRepository) GetUserByID(ctx context.Context, userID string) (*U
 		return nil, fmt.Errorf("get user: %w", err)
 	}
 	return &u, nil
+}
+
+// UpdateUserPassword updates a user's password hash.
+func (r *PostgresRepository) UpdateUserPassword(ctx context.Context, userID, passwordHash string, updatedAt time.Time) error {
+	tag, err := r.db.Exec(ctx, `
+		UPDATE users
+		SET password_hash = $2, updated_at = $3
+		WHERE id = $1
+	`, userID, passwordHash, updatedAt)
+	if err != nil {
+		return fmt.Errorf("update user password: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+	return nil
 }
 
 // CreateInvitation creates a new user invitation

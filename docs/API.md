@@ -117,6 +117,21 @@ Content-Type: application/json
 }
 ```
 
+### Change Password
+
+Change the authenticated user's password. The current password must match, the new password must be at least 8 characters, and active refresh-token sessions are revoked after a successful change.
+
+```http
+PUT /auth/password
+Authorization: Bearer <access-token-or-api-token>
+Content-Type: application/json
+
+{
+  "current_password": "old-password",
+  "new_password": "new-password"
+}
+```
+
 ### Auth Sessions
 
 List and revoke refresh-token sessions for the authenticated user.
