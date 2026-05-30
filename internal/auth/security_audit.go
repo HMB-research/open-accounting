@@ -20,6 +20,7 @@ const (
 	SecurityAuditActionPasswordResetCompleted = "password_reset_completed"
 	SecurityAuditActionSessionRevoked         = "session_revoked"
 	SecurityAuditActionAllSessionsRevoked     = "all_sessions_revoked"
+	SecurityAuditActionAPITokenCreated        = "api_token_created"
 	SecurityAuditActionAPITokenRevoked        = "api_token_revoked"
 	SecurityAuditActionTenantAccessSuspended  = "tenant_access_suspended"
 	SecurityAuditActionTenantAccessRestored   = "tenant_access_restored"

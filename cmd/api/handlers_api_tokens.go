@@ -60,6 +60,23 @@ func (h *Handlers) CreateAPIToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	metadata := map[string]string{
+		"tenant_id":    tenantID,
+		"token_id":     result.APIToken.ID,
+		"token_prefix": result.APIToken.TokenPrefix,
+	}
+	if result.APIToken.ExpiresAt != nil {
+		metadata["expires_at"] = result.APIToken.ExpiresAt.Format(time.RFC3339)
+	}
+	h.recordSecurityAuditEvent(r, &auth.SecurityAuditEvent{
+		ActorUserID:  claims.UserID,
+		ActorEmail:   claims.Email,
+		Action:       auth.SecurityAuditActionAPITokenCreated,
+		TargetUserID: claims.UserID,
+		TargetEmail:  claims.Email,
+		Metadata:     metadata,
+	})
+
 	respondJSON(w, http.StatusCreated, result)
 }
 
@@ -77,6 +94,21 @@ func (h *Handlers) RevokeAPIToken(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	targetEmail := claims.Email
+	if targetEmail == "" {
+		targetEmail = h.userEmailForAudit(r.Context(), claims.UserID)
+	}
+	h.recordSecurityAuditEvent(r, &auth.SecurityAuditEvent{
+		ActorUserID:  claims.UserID,
+		ActorEmail:   claims.Email,
+		Action:       auth.SecurityAuditActionAPITokenRevoked,
+		TargetUserID: claims.UserID,
+		TargetEmail:  targetEmail,
+		Metadata: map[string]string{
+			"tenant_id": tenantID,
+			"token_id":  tokenID,
+		},
+	})
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
 }

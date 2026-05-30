@@ -66,7 +66,8 @@ func setupAPITokenHandlers() (*Handlers, *mockAPITokenRepository) {
 	service := apitoken.NewServiceWithRepository(repo)
 
 	return &Handlers{
-		apiTokenService: service,
+		apiTokenService:      service,
+		securityAuditService: &mockSecurityAuditService{},
 	}, repo
 }
 
@@ -85,6 +86,7 @@ func TestCreateAPIToken(t *testing.T) {
 	h, _ := setupAPITokenHandlers()
 	claims := &auth.Claims{
 		UserID:   "user-1",
+		Email:    "user@example.com",
 		TenantID: "tenant-1",
 		Role:     tenant.RoleOwner,
 	}
@@ -105,12 +107,19 @@ func TestCreateAPIToken(t *testing.T) {
 	require.NotNil(t, resp.APIToken)
 	assert.Equal(t, "CLI token", resp.APIToken.Name)
 	assert.NotEmpty(t, resp.Token)
+
+	auditEvents := h.securityAuditService.(*mockSecurityAuditService).events
+	require.NotEmpty(t, auditEvents)
+	assert.Equal(t, auth.SecurityAuditActionAPITokenCreated, auditEvents[0].Action)
+	assert.Equal(t, "user-1", auditEvents[0].TargetUserID)
+	assert.Equal(t, resp.APIToken.ID, auditEvents[0].Metadata["token_id"])
 }
 
 func TestListAPITokens(t *testing.T) {
 	h, repo := setupAPITokenHandlers()
 	claims := &auth.Claims{
 		UserID:   "user-1",
+		Email:    "user@example.com",
 		TenantID: "tenant-1",
 		Role:     tenant.RoleOwner,
 	}
@@ -162,6 +171,12 @@ func TestRevokeAPIToken(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
 	require.NotNil(t, repo.tokens["token-1"].RevokedAt)
+
+	auditEvents := h.securityAuditService.(*mockSecurityAuditService).events
+	require.NotEmpty(t, auditEvents)
+	assert.Equal(t, auth.SecurityAuditActionAPITokenRevoked, auditEvents[0].Action)
+	assert.Equal(t, "user-1", auditEvents[0].TargetUserID)
+	assert.Equal(t, "token-1", auditEvents[0].Metadata["token_id"])
 }
 
 func TestListTenantUserAPITokens(t *testing.T) {
