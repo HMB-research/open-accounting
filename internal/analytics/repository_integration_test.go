@@ -11,11 +11,11 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func TestPostgresRepository_GetReceivablesSummary(t *testing.T) {
+func TestGORMRepository_GetReceivablesSummary(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "analytics-test@example.com")
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create a contact
@@ -55,11 +55,11 @@ func TestPostgresRepository_GetReceivablesSummary(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetPayablesSummary(t *testing.T) {
+func TestGORMRepository_GetPayablesSummary(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "analytics-payables-test@example.com")
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create a vendor contact
@@ -99,11 +99,11 @@ func TestPostgresRepository_GetPayablesSummary(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetInvoiceCounts(t *testing.T) {
+func TestGORMRepository_GetInvoiceCounts(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "analytics-counts-test@example.com")
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create a contact
@@ -162,10 +162,10 @@ func TestPostgresRepository_GetInvoiceCounts(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetRevenueExpenses_Empty(t *testing.T) {
+func TestGORMRepository_GetRevenueExpenses_Empty(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	now := time.Now()
@@ -187,10 +187,10 @@ func TestPostgresRepository_GetRevenueExpenses_Empty(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetMonthlyRevenueExpenses_Empty(t *testing.T) {
+func TestGORMRepository_GetMonthlyRevenueExpenses_Empty(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Get monthly data with no journal entries
@@ -215,10 +215,10 @@ func TestPostgresRepository_GetMonthlyRevenueExpenses_Empty(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetMonthlyCashFlow_Empty(t *testing.T) {
+func TestGORMRepository_GetMonthlyCashFlow_Empty(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Get monthly cash flow with no payments
@@ -243,10 +243,10 @@ func TestPostgresRepository_GetMonthlyCashFlow_Empty(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetAgingByContact_Empty(t *testing.T) {
+func TestGORMRepository_GetAgingByContact_Empty(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Get aging data for receivables (SALES invoices)
@@ -261,10 +261,10 @@ func TestPostgresRepository_GetAgingByContact_Empty(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetTopCustomers_Empty(t *testing.T) {
+func TestGORMRepository_GetTopCustomers_Empty(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Get top customers with no data
@@ -279,11 +279,11 @@ func TestPostgresRepository_GetTopCustomers_Empty(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetAgingByContact_WithData(t *testing.T) {
+func TestGORMRepository_GetAgingByContact_WithData(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "analytics-aging-test@example.com")
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create a customer contact
@@ -354,11 +354,11 @@ func TestPostgresRepository_GetAgingByContact_WithData(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetTopCustomers_WithData(t *testing.T) {
+func TestGORMRepository_GetTopCustomers_WithData(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "analytics-top-test@example.com")
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create three customers with different invoice totals
@@ -417,11 +417,11 @@ func TestPostgresRepository_GetTopCustomers_WithData(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetMonthlyRevenueExpenses_WithData(t *testing.T) {
+func TestGORMRepository_GetMonthlyRevenueExpenses_WithData(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "analytics-monthly-rev-test@example.com")
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// We need to create journal entries for revenue/expenses
@@ -507,11 +507,11 @@ func TestPostgresRepository_GetMonthlyRevenueExpenses_WithData(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetMonthlyCashFlow_WithData(t *testing.T) {
+func TestGORMRepository_GetMonthlyCashFlow_WithData(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "analytics-cashflow-test@example.com")
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create a customer contact
@@ -587,23 +587,23 @@ func TestPostgresRepository_GetMonthlyCashFlow_WithData(t *testing.T) {
 	}
 }
 
-func TestNewPostgresRepository(t *testing.T) {
+func TestNewRepository(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	if repo == nil {
-		t.Fatal("NewPostgresRepository returned nil")
+		t.Fatal("NewRepository returned nil")
 	}
-	if repo.pool != pool {
-		t.Error("repository pool does not match provided pool")
+	if repo.db == nil {
+		t.Error("repository database handle is nil")
 	}
 }
 
-func TestPostgresRepository_GetRevenueExpenses_WithData(t *testing.T) {
+func TestGORMRepository_GetRevenueExpenses_WithData(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "analytics-revexp-test@example.com")
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Get revenue account (4000 range)
@@ -710,11 +710,11 @@ func TestPostgresRepository_GetRevenueExpenses_WithData(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetRevenueExpenses_DraftNotIncluded(t *testing.T) {
+func TestGORMRepository_GetRevenueExpenses_DraftNotIncluded(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "analytics-draft-test@example.com")
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Get revenue account
@@ -780,11 +780,11 @@ func TestPostgresRepository_GetRevenueExpenses_DraftNotIncluded(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetReceivablesSummary_WithOverdue(t *testing.T) {
+func TestGORMRepository_GetReceivablesSummary_WithOverdue(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "analytics-ar-overdue-test@example.com")
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create a contact
@@ -839,11 +839,11 @@ func TestPostgresRepository_GetReceivablesSummary_WithOverdue(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetReceivablesSummary_ExcludesPaidAndVoided(t *testing.T) {
+func TestGORMRepository_GetReceivablesSummary_ExcludesPaidAndVoided(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "analytics-ar-exclude-test@example.com")
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create a contact
@@ -893,11 +893,11 @@ func TestPostgresRepository_GetReceivablesSummary_ExcludesPaidAndVoided(t *testi
 	}
 }
 
-func TestPostgresRepository_GetPayablesSummary_WithOverdue(t *testing.T) {
+func TestGORMRepository_GetPayablesSummary_WithOverdue(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "analytics-ap-overdue-test@example.com")
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create a vendor contact
@@ -952,11 +952,11 @@ func TestPostgresRepository_GetPayablesSummary_WithOverdue(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetPayablesSummary_ExcludesPaidAndVoided(t *testing.T) {
+func TestGORMRepository_GetPayablesSummary_ExcludesPaidAndVoided(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "analytics-ap-exclude-test@example.com")
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create a vendor contact
@@ -1006,11 +1006,11 @@ func TestPostgresRepository_GetPayablesSummary_ExcludesPaidAndVoided(t *testing.
 	}
 }
 
-func TestPostgresRepository_GetTopCustomers_Limit(t *testing.T) {
+func TestGORMRepository_GetTopCustomers_Limit(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "analytics-toplimit-test@example.com")
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create 5 customers with different invoice totals
@@ -1069,11 +1069,11 @@ func TestPostgresRepository_GetTopCustomers_Limit(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetTopCustomers_ExcludesVoided(t *testing.T) {
+func TestGORMRepository_GetTopCustomers_ExcludesVoided(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "analytics-topvoided-test@example.com")
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create a customer
@@ -1131,11 +1131,11 @@ func TestPostgresRepository_GetTopCustomers_ExcludesVoided(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetTopCustomers_IncludesBothContactType(t *testing.T) {
+func TestGORMRepository_GetTopCustomers_IncludesBothContactType(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "analytics-topboth-test@example.com")
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create a contact with contact_type = 'BOTH' (customer and supplier)
@@ -1180,11 +1180,11 @@ func TestPostgresRepository_GetTopCustomers_IncludesBothContactType(t *testing.T
 	}
 }
 
-func TestPostgresRepository_GetAgingByContact_Payables(t *testing.T) {
+func TestGORMRepository_GetAgingByContact_Payables(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "analytics-aging-ap-test@example.com")
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create a vendor contact
@@ -1252,10 +1252,10 @@ func TestPostgresRepository_GetAgingByContact_Payables(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetMonthlyRevenueExpenses_DifferentMonths(t *testing.T) {
+func TestGORMRepository_GetMonthlyRevenueExpenses_DifferentMonths(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Test with 3 months
@@ -1277,10 +1277,10 @@ func TestPostgresRepository_GetMonthlyRevenueExpenses_DifferentMonths(t *testing
 	}
 }
 
-func TestPostgresRepository_GetMonthlyCashFlow_DifferentMonths(t *testing.T) {
+func TestGORMRepository_GetMonthlyCashFlow_DifferentMonths(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Test with 3 months
@@ -1302,11 +1302,11 @@ func TestPostgresRepository_GetMonthlyCashFlow_DifferentMonths(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetInvoiceCounts_OnlyCountsSales(t *testing.T) {
+func TestGORMRepository_GetInvoiceCounts_OnlyCountsSales(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "analytics-counts-sales-test@example.com")
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create contacts
