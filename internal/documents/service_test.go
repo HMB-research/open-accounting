@@ -234,7 +234,7 @@ func TestService_GetReviewQueueFiltersClosePackDocuments(t *testing.T) {
 	}
 }
 
-func TestService_UploadAcceptsCommercialDocuments(t *testing.T) {
+func TestService_UploadAcceptsWorkflowDocuments(t *testing.T) {
 	t.Parallel()
 
 	store, err := NewLocalStore(t.TempDir())
@@ -251,6 +251,7 @@ func TestService_UploadAcceptsCommercialDocuments(t *testing.T) {
 	}{
 		{name: "quote", entityType: EntityTypeQuote, entityID: "quote-1"},
 		{name: "order", entityType: EntityTypeOrder, entityID: "order-1"},
+		{name: "leave", entityType: EntityTypeLeaveRecord, entityID: "leave-1"},
 	}
 
 	for _, tt := range tests {
@@ -268,7 +269,7 @@ func TestService_UploadAcceptsCommercialDocuments(t *testing.T) {
 				t.Fatalf("UploadDocument failed: %v", err)
 			}
 			if doc.EntityType != tt.entityType || doc.EntityID != tt.entityID || doc.DocumentType != DocumentTypeContract {
-				t.Fatalf("unexpected commercial document: %#v", doc)
+				t.Fatalf("unexpected workflow document: %#v", doc)
 			}
 		})
 	}

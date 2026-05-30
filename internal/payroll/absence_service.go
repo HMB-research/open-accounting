@@ -5,32 +5,46 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 )
 
+type leaveEvidenceEvaluator interface {
+	EvaluateEvidencePolicy(ctx context.Context, schemaName, tenantID string, req *documents.EvidencePolicyRequest) ([]documents.EvidencePolicyResult, error)
+}
+
 // AbsenceService handles leave/absence management business logic
 type AbsenceService struct {
-	repo AbsenceRepository
-	uuid UUIDGenerator
+	repo     AbsenceRepository
+	uuid     UUIDGenerator
+	evidence leaveEvidenceEvaluator
 }
 
 // NewAbsenceService creates a new absence service
 func NewAbsenceService(repo AbsenceRepository, uuid UUIDGenerator) *AbsenceService {
+	return NewAbsenceServiceWithEvidence(repo, uuid, nil)
+}
+
+// NewAbsenceServiceWithEvidence creates a new absence service with document evidence enforcement.
+func NewAbsenceServiceWithEvidence(repo AbsenceRepository, uuid UUIDGenerator, evidence leaveEvidenceEvaluator) *AbsenceService {
 	return &AbsenceService{
-		repo: repo,
-		uuid: uuid,
+		repo:     repo,
+		uuid:     uuid,
+		evidence: evidence,
 	}
 }
 
 // NewAbsenceServiceWithPool creates a new absence service using a PostgreSQL connection pool
 func NewAbsenceServiceWithPool(pool *pgxpool.Pool) *AbsenceService {
+	return NewAbsenceServiceWithPoolAndEvidence(pool, nil)
+}
+
+// NewAbsenceServiceWithPoolAndEvidence creates a PostgreSQL-backed absence service with document evidence enforcement.
+func NewAbsenceServiceWithPoolAndEvidence(pool *pgxpool.Pool, evidence leaveEvidenceEvaluator) *AbsenceService {
 	pgRepo := NewPostgresRepository(pool)
 	absenceRepo := NewAbsencePostgresRepository(pgRepo)
-	return &AbsenceService{
-		repo: absenceRepo,
-		uuid: &DefaultUUIDGenerator{},
-	}
+	return NewAbsenceServiceWithEvidence(absenceRepo, &DefaultUUIDGenerator{}, evidence)
 }
 
 // ListAbsenceTypes returns all absence types for a tenant
@@ -200,6 +214,14 @@ func (s *AbsenceService) ApproveLeaveRecord(ctx context.Context, schemaName, ten
 		return nil, ErrLeaveRecordNotPending
 	}
 
+	absenceType, err := s.repo.GetAbsenceType(ctx, schemaName, tenantID, record.AbsenceTypeID)
+	if err != nil {
+		return nil, fmt.Errorf("get absence type: %w", err)
+	}
+	if err := s.requireApprovedLeaveDocument(ctx, schemaName, tenantID, record, absenceType); err != nil {
+		return nil, err
+	}
+
 	now := time.Now()
 	record.Status = LeaveApproved
 	record.ApprovedAt = &now
@@ -227,6 +249,36 @@ func (s *AbsenceService) ApproveLeaveRecord(ctx context.Context, schemaName, ten
 	}
 
 	return record, nil
+}
+
+func (s *AbsenceService) requireApprovedLeaveDocument(ctx context.Context, schemaName, tenantID string, record *LeaveRecord, absenceType *AbsenceType) error {
+	if record == nil || absenceType == nil || !absenceType.RequiresDocument {
+		return nil
+	}
+	if s.evidence == nil {
+		return fmt.Errorf("%w: document evidence service is unavailable", ErrApprovedLeaveDocumentRequired)
+	}
+
+	results, err := s.evidence.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
+		EntityType: documents.EntityTypeLeaveRecord,
+		EntityIDs:  []string{record.ID},
+		Rules: []documents.EvidencePolicyRule{{
+			DocumentTypes: []string{
+				documents.DocumentTypeSupportingDocument,
+				documents.DocumentTypeTaxSupport,
+			},
+			MinCount:        1,
+			RequireApproved: true,
+		}},
+	})
+	if err != nil {
+		return fmt.Errorf("evaluate leave record evidence: %w", err)
+	}
+	if len(results) == 0 || !results[0].Compliant {
+		return fmt.Errorf("%w before approving leave record %s", ErrApprovedLeaveDocumentRequired, record.ID)
+	}
+
+	return nil
 }
 
 // RejectLeaveRecord rejects a pending leave request

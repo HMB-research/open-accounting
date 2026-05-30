@@ -3,6 +3,7 @@
 The repository includes a Go CLI at `cmd/oa` for scriptable reads and mutations against the API.
 
 The CLI uses a tenant-scoped API token for normal operation:
+
 - `auth init` uses email/password once to bootstrap a token
 - the CLI creates a tenant-scoped API token through the API
 - later reads and writes use that stored API token, not the login password
@@ -389,12 +390,14 @@ go run ./cmd/oa leave records create \
   --working-days 3 \
   --notes "Summer leave"
 go run ./cmd/oa leave records get --id <leave-record-id>
+go run ./cmd/oa documents upload --entity-type leave_record --entity-id <leave-record-id> --file ./medical-certificate.pdf --document-type supporting_document
+go run ./cmd/oa documents review --id <document-id> --status APPROVED --note "Leave evidence accepted"
 go run ./cmd/oa leave records approve --id <leave-record-id>
 go run ./cmd/oa leave records reject --id <leave-record-id> --reason "Staffing shortage"
 go run ./cmd/oa leave records cancel --id <leave-record-id>
 ```
 
-Use `--json` on leave-management reads and mutations for automation. Leave record statuses are `PENDING`, `APPROVED`, `REJECTED`, and `CANCELLED`.
+Use `--json` on leave-management reads and mutations for automation. Leave record statuses are `PENDING`, `APPROVED`, `REJECTED`, and `CANCELLED`. Absence types marked `requires_document=true` block approval until the leave record has at least one approved `supporting_document` or `tax_support` document attached with `--entity-type leave_record`.
 
 ## TSD declarations
 
@@ -987,7 +990,7 @@ go run ./cmd/oa documents mark-reviewed --id <document-id>
 go run ./cmd/oa documents delete --id <document-id>
 ```
 
-`documents upload` accepts either `--retention-until YYYY-MM-DD` or `--retention-years N` up to `100`; `--retention-years` sets `retention_until` to the upload date plus the selected number of years, and the two retention flags cannot be combined. Supported entity types include invoices, journal entries, payments, bank transactions, fixed assets, expenses, quotes, orders, and year-end close packs. `documents review-queue` returns a tenant-wide reviewer queue, defaulting to `PENDING` documents; filter by `--entity-type year_end_close --document-type close_pack` for fiscal-year close-pack approvals, and use `--status all` for audit review. `documents evidence-policy` checks required evidence for one or more entity IDs. Repeat `--document-type` or `--required-document-type` to allow several document types in the rule, set `--min-count` for the required count, and use `--require-approved` when pending or reviewed-but-unapproved evidence must fail. `documents retention` returns a tenant-wide queue of documents whose `retention_until` is due by the cutoff, with optional missing-retention records. `documents retention-set` corrects one document's `retention_until` date or clears it with `--clear`. `documents review` supports `REVIEWED`, `APPROVED`, and `REJECTED`; rejected documents require a review note. `documents download` uses the server-provided filename when `--output` is omitted. Use `--output -` to stream the document content to stdout.
+`documents upload` accepts either `--retention-until YYYY-MM-DD` or `--retention-years N` up to `100`; `--retention-years` sets `retention_until` to the upload date plus the selected number of years, and the two retention flags cannot be combined. Supported entity types include invoices, journal entries, payments, bank transactions, fixed assets, expenses, quotes, orders, year-end close packs, and leave records. `documents review-queue` returns a tenant-wide reviewer queue, defaulting to `PENDING` documents; filter by `--entity-type year_end_close --document-type close_pack` for fiscal-year close-pack approvals or `--entity-type leave_record` for leave evidence approvals, and use `--status all` for audit review. `documents evidence-policy` checks required evidence for one or more entity IDs. Repeat `--document-type` or `--required-document-type` to allow several document types in the rule, set `--min-count` for the required count, and use `--require-approved` when pending or reviewed-but-unapproved evidence must fail. `documents retention` returns a tenant-wide queue of documents whose `retention_until` is due by the cutoff, with optional missing-retention records. `documents retention-set` corrects one document's `retention_until` date or clears it with `--clear`. `documents review` supports `REVIEWED`, `APPROVED`, and `REJECTED`; rejected documents require a review note. `documents download` uses the server-provided filename when `--output` is omitted. Use `--output -` to stream the document content to stdout.
 
 ## Journal entries
 

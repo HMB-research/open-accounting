@@ -128,7 +128,7 @@ func main() {
 	bankingService := banking.NewService(pool)
 	taxService := tax.NewService(pool)
 	payrollService := payroll.NewService(pool)
-	absenceService := payroll.NewAbsenceServiceWithPool(pool)
+	absenceService := payroll.NewAbsenceServiceWithPoolAndEvidence(pool, documentsService)
 	pluginService := plugin.NewService(pool, "./plugins")
 	quotesService := quotes.NewService(pool)
 	ordersService := orders.NewService(pool)

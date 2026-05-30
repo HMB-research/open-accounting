@@ -29,6 +29,7 @@ curl -H "Authorization: Bearer <access_token-or-api-token>" \
 ```
 
 Bearer auth supports two token types:
+
 - JWT access tokens from `/auth/login` and `/auth/refresh`
 - tenant-scoped API tokens created under `/tenants/{tenantId}/api-tokens`
 
@@ -50,6 +51,7 @@ Content-Type: application/json
 ```
 
 **Response (201 Created):**
+
 ```json
 {
   "id": "uuid",
@@ -74,6 +76,7 @@ Content-Type: application/json
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "access_token": "eyJhbGc...",
@@ -216,6 +219,7 @@ Content-Type: application/json
 ```
 
 **Response (201 Created):**
+
 ```json
 {
   "token": "oa_...",
@@ -254,6 +258,7 @@ Authorization: Bearer <token>
 ```
 
 **Response:**
+
 ```json
 {
   "id": "uuid",
@@ -271,6 +276,7 @@ Authorization: Bearer <token>
 ```
 
 **Response:**
+
 ```json
 [
   {
@@ -449,6 +455,7 @@ Content-Type: application/json
 When `settings.period_lock_date` is set, core write paths reject back-dated operations on or before the lock date with `409 Conflict`.
 
 This currently applies to:
+
 - journal entry create, post, and void
 - invoice create and void
 - payment creation
@@ -524,6 +531,7 @@ file=<binary>
 
 - accepts PDFs, images, CSV files, text files, and similar supporting records
 - maximum file size is `10 MB`
+- supported `entity_type` values currently include `invoice`, `journal_entry`, `payment`, `bank_transaction`, `asset`, `expense`, `quote`, `order`, `year_end_close`, and `leave_record`
 - supported `document_type` values currently include `supporting_document`, `receipt`, `reconciliation_evidence`, `contract`, `asset_record`, `tax_support`, `close_pack`, and `other`
 - uploads start in `PENDING` review status and can carry optional retention metadata
 - set either `retention_until=YYYY-MM-DD` or `retention_years=N` up to `100`; `retention_years` derives `retention_until` from the upload date, and the two fields cannot be combined
@@ -643,9 +651,11 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `active_only` (bool): Filter for active accounts
 
 **Response:**
+
 ```json
 [
   {
@@ -705,12 +715,14 @@ Content-Type: application/json
 ```
 
 Rows are grouped by `invoice_number` and `invoice_type`. Contacts are resolved by the first populated contact identifier in this priority order:
+
 - `contact_code`
 - `contact_reg_code`
 - `contact_email`
 - `contact_name`
 
 **Response (200 OK):**
+
 ```json
 {
   "file_name": "invoices.csv",
@@ -841,8 +853,16 @@ Create templates with the same line format as manual journal entries, including 
   "frequency": "MONTHLY",
   "start_date": "2026-04-30T00:00:00Z",
   "lines": [
-    {"account_id": "expense-account-id", "description": "Rent expense", "debit_amount": "500.00"},
-    {"account_id": "accrual-account-id", "description": "Accrued rent", "credit_amount": "500.00"}
+    {
+      "account_id": "expense-account-id",
+      "description": "Rent expense",
+      "debit_amount": "500.00"
+    },
+    {
+      "account_id": "accrual-account-id",
+      "description": "Accrued rent",
+      "credit_amount": "500.00"
+    }
   ]
 }
 ```
@@ -927,6 +947,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `type` (string): `CUSTOMER`, `SUPPLIER`, or `BOTH`
 - `active_only` (boolean): Return active contacts only
 - `search` (string): Search by name or email
@@ -1008,6 +1029,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `active_only` (boolean): return only active employees
 
 ### Create Employee
@@ -1093,6 +1115,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `active_on` (date, optional): return only components active on the given `YYYY-MM-DD` date
 
 ### Import Employees
@@ -1111,6 +1134,7 @@ Content-Type: application/json
 Supported header aliases include `employee_number` / `employee_no`, `personal_code` / `isikukood`, `employment_type` / `type`, `base_salary` / `salary`, and `salary_effective_from` / `effective_from`.
 
 **Response (200 OK):**
+
 ```json
 {
   "file_name": "employees.csv",
@@ -1131,6 +1155,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `year` (integer): optional period-year filter
 
 ### Create Payroll Run
@@ -1233,18 +1258,21 @@ Content-Type: application/json
 Each CSV row represents one employee payslip. Rows are grouped into a single payroll run by `period_year` + `period_month`.
 
 Required columns:
+
 - `period_year`
 - `period_month`
 - `gross_salary`
 - at least one employee identifier per row
 
 Employee matching supports:
+
 - `employee_number`
 - `personal_code`
 - `email`
 - `first_name` + `last_name`
 
 Supported statuses:
+
 - `APPROVED`
 - `PAID`
 - `DECLARED`
@@ -1256,6 +1284,7 @@ If `taxable_income`, `net_salary`, or `total_employer_cost` is omitted, the impo
 This importer records historical payroll runs and payslips only. It does not import leave balances, tax declaration submission history, accounting journal entries, or incumbent-system audit logs.
 
 **Response (200 OK):**
+
 ```json
 {
   "file_name": "payroll-history.csv",
@@ -1282,6 +1311,7 @@ Content-Type: application/json
 The importer creates or updates leave balances by employee + absence type + year.
 
 Required columns:
+
 - `year`
 - one absence type identifier: `absence_type_code`, `absence_type`, or `absence_type_id`
 - at least one employee identifier per row
@@ -1289,6 +1319,7 @@ Required columns:
 Employee matching supports the same identifiers as historical payroll import. Absence types can be matched by code, name, Estonian name, or id. If `entitled_days` is omitted, the absence type default is used. `carryover_days`, `used_days`, and `pending_days` default to zero.
 
 **Response (200 OK):**
+
 ```json
 {
   "file_name": "leave-balances.csv",
@@ -1364,6 +1395,8 @@ Create a leave record:
 }
 ```
 
+If the absence type has `requires_document=true`, approving a leave record requires at least one approved `supporting_document` or `tax_support` document attached to the `leave_record` entity. Missing or pending evidence returns `409 Conflict`.
+
 Reject a leave record:
 
 ```json
@@ -1386,6 +1419,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `type` (string): `SALES`, `PURCHASE`, or `CREDIT_NOTE`
 - `status` (string): `DRAFT`, `SENT`, `PARTIALLY_PAID`, `PAID`, `OVERDUE`, `VOIDED`
 - `contact_id` (uuid): Filter by contact
@@ -1464,6 +1498,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `status` (string): `DRAFT`, `SENT`, `ACCEPTED`, `REJECTED`, `EXPIRED`, or `CONVERTED`
 - `contact_id` (uuid): Filter by contact
 - `from_date` (date): Filter from quote date, `YYYY-MM-DD`
@@ -1570,6 +1605,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `status` (string): `PENDING`, `CONFIRMED`, `PROCESSING`, `SHIPPED`, `DELIVERED`, or `CANCELED`
 - `contact_id` (uuid): Filter by contact
 - `from_date` (date): Filter from order date, `YYYY-MM-DD`
@@ -1924,6 +1960,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `status` (string): `DRAFT`, `ACTIVE`, `DISPOSED`, or `SOLD`
 - `category_id` (uuid): Filter by asset category
 - `search` (string): Search asset name or asset number
@@ -2035,6 +2072,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `product_type` (string): `GOODS` or `SERVICE`
 - `status` (string): `ACTIVE` or `INACTIVE`
 - `category_id` (uuid): Filter by product category
@@ -2307,6 +2345,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `type` (string): `RECEIVED` or `MADE`
 - `method` (string): Filter by payment method
 - `contact_id` (uuid): Filter by contact
@@ -3044,6 +3083,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `as_of_date` (string): Date in YYYY-MM-DD format
 - `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
 
@@ -3055,6 +3095,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `as_of_date` (string): Date in YYYY-MM-DD format
 - `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
 
@@ -3066,6 +3107,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `as_of` (string): Date in YYYY-MM-DD format
 - `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
 
@@ -3077,6 +3119,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `start` (string, required): Start date in YYYY-MM-DD format
 - `end` (string, required): End date in YYYY-MM-DD format
 - `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
@@ -3091,6 +3134,7 @@ Authorization: Bearer <token>
 Combines trial balance, balance sheet, and income statement totals across selected tenant IDs the caller can view. Tenant-scoped API tokens are limited to their own tenant.
 
 **Query Parameters:**
+
 - `tenant_ids` (string): Comma-separated tenant IDs to consolidate; defaults to `{tenantId}`
 - `tenant_id` (string, repeatable): Alternative repeated tenant selector
 - `as_of` or `as_of_date` (string): Balance sheet and trial balance date in YYYY-MM-DD format
@@ -3107,6 +3151,7 @@ Authorization: Bearer <token>
 Builds a fiscal-year annual report pack from the year-end close readiness, trial balance, balance sheet, income statement, and cash-flow statement.
 
 **Query Parameters:**
+
 - `period_end_date` (string, required): Fiscal year-end date in YYYY-MM-DD format
 - `cash_flow_method` (string): `direct` (default) or `indirect`
 
@@ -3118,6 +3163,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `start_date` (string, required): Start date in YYYY-MM-DD format
 - `end_date` (string, required): End date in YYYY-MM-DD format
 - `method` (string): `direct` (default) or `indirect`. Indirect operating cash flow starts with net income and adjusts for depreciation/amortization plus receivables, inventory, and payables deltas.
@@ -3135,6 +3181,7 @@ Authorization: Bearer <token>
 Stores tenant-level account-code mappings under tenant settings. Request-level cash-flow query parameters still take precedence for one-off reports.
 
 **PUT Body:**
+
 ```json
 {
   "operating_account_codes": ["PREPAY"],
@@ -3151,6 +3198,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
 
 ### Payables Aging
@@ -3161,6 +3209,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
 
 ### Balance Confirmation Summary
@@ -3171,6 +3220,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `type` (string, required): `RECEIVABLE` or `PAYABLE`
 - `as_of_date` (string, required): Date in YYYY-MM-DD format
 - `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
@@ -3183,6 +3233,7 @@ Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `type` (string, required): `RECEIVABLE` or `PAYABLE`
 - `as_of_date` (string, required): Date in YYYY-MM-DD format
 - `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
@@ -3197,6 +3248,7 @@ Authorization: Bearer <token>
 Returns one customer or supplier statement with opening balance, period invoices, period payments, and closing balance.
 
 **Query Parameters:**
+
 - `type` (string, required): `RECEIVABLE` for customer statements or `PAYABLE` for supplier statements
 - `start_date` (string, required): Start date in YYYY-MM-DD format
 - `end_date` (string, required): End date in YYYY-MM-DD format
@@ -3212,6 +3264,7 @@ Authorization: Bearer <token>
 Returns sales invoice line revenue, estimated product cost from product purchase prices, customer rollups, margin, and margin percent for a period.
 
 **Query Parameters:**
+
 - `start_date` (string, required): Start date in YYYY-MM-DD format
 - `end_date` (string, required): End date in YYYY-MM-DD format
 - `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
@@ -3226,6 +3279,7 @@ Authorization: Bearer <token>
 Returns customer-level revenue, estimated product cost from product purchase prices, profit, profit percent, and supporting sales invoice line detail for a period.
 
 **Query Parameters:**
+
 - `start_date` (string, required): Start date in YYYY-MM-DD format
 - `end_date` (string, required): End date in YYYY-MM-DD format
 - `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
@@ -3240,6 +3294,7 @@ Authorization: Bearer <token>
 Returns cost-center budget, actual expense, budget-used percentage, and over-budget flags for the requested period.
 
 **Query Parameters:**
+
 - `start_date` (string): Start date in YYYY-MM-DD format. Defaults to the start of the current year.
 - `end_date` (string): End date in YYYY-MM-DD format. Defaults to today.
 - `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
@@ -3445,10 +3500,10 @@ All errors return JSON with an `error` field:
 
 ### Common Status Codes
 
-| Code | Meaning |
-|------|---------|
-| 400 | Bad Request - Invalid input |
-| 401 | Unauthorized - Missing/invalid token |
-| 403 | Forbidden - Insufficient permissions |
-| 404 | Not Found - Resource doesn't exist |
-| 500 | Internal Server Error |
+| Code | Meaning                              |
+| ---- | ------------------------------------ |
+| 400  | Bad Request - Invalid input          |
+| 401  | Unauthorized - Missing/invalid token |
+| 403  | Forbidden - Insufficient permissions |
+| 404  | Not Found - Resource doesn't exist   |
+| 500  | Internal Server Error                |

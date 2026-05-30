@@ -11815,7 +11815,8 @@ paths:
       - Leave Management
   /tenants/{tenantID}/leave-records/{recordID}/approve:
     post:
-      description: Approve a pending leave request
+      description: Approve a pending leave request. Absence types marked requires_document
+        require approved leave-record supporting evidence before approval.
       parameters:
       - description: Tenant ID
         in: path

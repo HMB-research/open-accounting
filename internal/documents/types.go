@@ -12,6 +12,7 @@ const (
 	EntityTypeQuote        = "quote"
 	EntityTypeOrder        = "order"
 	EntityTypeYearEndClose = "year_end_close"
+	EntityTypeLeaveRecord  = "leave_record"
 
 	DocumentTypeSupportingDocument = "supporting_document"
 	DocumentTypeReceipt            = "receipt"
