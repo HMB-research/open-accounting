@@ -2898,6 +2898,15 @@ Authorization: Bearer <token>
 
 Pass `include_inactive=true` to include revoked and expired refresh-token sessions. Requires an owner or admin role, and the target user must belong to the tenant.
 
+### List Tenant User Security Events
+
+```http
+GET /tenants/{tenantId}/users/{userId}/security-events?limit=50
+Authorization: Bearer <token>
+```
+
+Requires an owner or admin role. Returns recent auth security events where the target tenant user is actor or target. `limit` defaults to `50` and must be between `1` and `200`.
+
 ### Revoke Tenant User Session
 
 ```http

@@ -668,6 +668,19 @@ func TestCLIUsersCommands(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "revoked"})
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-2/sessions":
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "revoked"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-2/security-events":
+			assert.Equal(t, "3", r.URL.Query().Get("limit"))
+			_ = json.NewEncoder(w).Encode([]auth.SecurityAuditEvent{
+				{
+					ID:           "event-1",
+					ActorUserID:  "user-2",
+					ActorEmail:   "target@example.com",
+					Action:       auth.SecurityAuditActionLogin,
+					TargetUserID: "user-2",
+					TargetEmail:  "target@example.com",
+					CreatedAt:    time.Date(2026, 5, 30, 12, 0, 0, 0, time.UTC),
+				},
+			})
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-2":
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "removed"})
 		default:
@@ -700,6 +713,12 @@ func TestCLIUsersCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "session-1")
 	assert.Contains(t, stdout.String(), "active")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"users", "security-events", "--id", "user-2", "--limit", "3"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), auth.SecurityAuditActionLogin)
+	assert.Contains(t, stdout.String(), "target@example.com")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"users", "revoke-session", "--id", "user-2", "--session-id", "session-1"})

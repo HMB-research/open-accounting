@@ -1315,6 +1315,46 @@ func TestTenantUserAuthSessions(t *testing.T) {
 	})
 }
 
+func TestTenantUserSecurityAuditEvents(t *testing.T) {
+	h, repo := setupTenantTestHandlers()
+	repo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+		{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner},
+		{TenantID: "tenant-1", UserID: "user-2", Role: tenant.RoleViewer},
+	}
+	h.securityAuditService.(*mockSecurityAuditService).events = []auth.SecurityAuditEvent{
+		{
+			ID:           "event-1",
+			ActorUserID:  "user-2",
+			ActorEmail:   "target@example.com",
+			Action:       auth.SecurityAuditActionLogin,
+			TargetUserID: "user-2",
+			TargetEmail:  "target@example.com",
+			CreatedAt:    time.Now(),
+		},
+		{
+			ID:           "event-other",
+			ActorUserID:  "other-user",
+			Action:       auth.SecurityAuditActionLogin,
+			TargetUserID: "other-user",
+			CreatedAt:    time.Now(),
+		},
+	}
+
+	claims := &auth.Claims{UserID: "user-1", Email: "owner@example.com", TenantID: "tenant-1", Role: tenant.RoleOwner}
+	req := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/users/user-2/security-events?limit=5", nil, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "userID": "user-2"})
+	w := httptest.NewRecorder()
+
+	h.ListTenantUserSecurityAuditEvents(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	var resp []auth.SecurityAuditEvent
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	require.Len(t, resp, 1)
+	assert.Equal(t, "event-1", resp[0].ID)
+	assert.Equal(t, auth.SecurityAuditActionLogin, resp[0].Action)
+}
+
 func TestTenantUserAuthSessionRevocationAuditsActions(t *testing.T) {
 	adminClaims := &auth.Claims{
 		UserID:   "user-1",

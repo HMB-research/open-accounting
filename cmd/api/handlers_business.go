@@ -2382,7 +2382,7 @@ func (h *Handlers) ListTenantUsers(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} object{error=string}
 // @Router /tenants/{tenantID}/users/{userID}/sessions [get]
 func (h *Handlers) ListTenantUserAuthSessions(w http.ResponseWriter, r *http.Request) {
-	_, _, ok := h.authorizeTenantUserSessionAdmin(w, r)
+	_, _, ok := h.authorizeTenantUserAdmin(w, r)
 	if !ok {
 		return
 	}
@@ -2402,6 +2402,50 @@ func (h *Handlers) ListTenantUserAuthSessions(w http.ResponseWriter, r *http.Req
 	respondJSON(w, http.StatusOK, sessions)
 }
 
+// ListTenantUserSecurityAuditEvents returns auth security audit events for one tenant user.
+// @Summary List tenant user security audit events
+// @Description List recent auth security events where the tenant user is actor or target. Requires owner or admin role.
+// @Tags Users
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param userID path string true "User ID"
+// @Param limit query int false "Maximum events to return" default(50)
+// @Success 200 {array} auth.SecurityAuditEvent
+// @Failure 400 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/users/{userID}/security-events [get]
+func (h *Handlers) ListTenantUserSecurityAuditEvents(w http.ResponseWriter, r *http.Request) {
+	_, _, ok := h.authorizeTenantUserAdmin(w, r)
+	if !ok {
+		return
+	}
+	if h.securityAuditService == nil {
+		respondError(w, http.StatusInternalServerError, "Security audit service unavailable")
+		return
+	}
+
+	limit := 50
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed <= 0 || parsed > 200 {
+			respondError(w, http.StatusBadRequest, "Limit must be between 1 and 200")
+			return
+		}
+		limit = parsed
+	}
+
+	events, err := h.securityAuditService.ListUserEvents(r.Context(), chi.URLParam(r, "userID"), limit)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list security audit events")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, events)
+}
+
 // RevokeTenantUserAuthSession revokes one refresh-token session for a tenant user.
 // @Summary Revoke tenant user auth session
 // @Description Revoke one active refresh-token session for a user who belongs to the tenant. Requires owner or admin role.
@@ -2418,7 +2462,7 @@ func (h *Handlers) ListTenantUserAuthSessions(w http.ResponseWriter, r *http.Req
 // @Failure 500 {object} object{error=string}
 // @Router /tenants/{tenantID}/users/{userID}/sessions/{sessionID} [delete]
 func (h *Handlers) RevokeTenantUserAuthSession(w http.ResponseWriter, r *http.Request) {
-	claims, targetRole, ok := h.authorizeTenantUserSessionAdmin(w, r)
+	claims, targetRole, ok := h.authorizeTenantUserAdmin(w, r)
 	if !ok {
 		return
 	}
@@ -2488,7 +2532,7 @@ func (h *Handlers) RevokeTenantUserAuthSession(w http.ResponseWriter, r *http.Re
 // @Failure 500 {object} object{error=string}
 // @Router /tenants/{tenantID}/users/{userID}/sessions [delete]
 func (h *Handlers) RevokeTenantUserAuthSessions(w http.ResponseWriter, r *http.Request) {
-	claims, targetRole, ok := h.authorizeTenantUserSessionAdmin(w, r)
+	claims, targetRole, ok := h.authorizeTenantUserAdmin(w, r)
 	if !ok {
 		return
 	}
@@ -2531,7 +2575,7 @@ func (h *Handlers) RevokeTenantUserAuthSessions(w http.ResponseWriter, r *http.R
 	respondJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
 }
 
-func (h *Handlers) authorizeTenantUserSessionAdmin(w http.ResponseWriter, r *http.Request) (*auth.Claims, string, bool) {
+func (h *Handlers) authorizeTenantUserAdmin(w http.ResponseWriter, r *http.Request) (*auth.Claims, string, bool) {
 	claims, _ := auth.GetClaims(r.Context())
 	if !auth.CanManageUsers(claims.Role) {
 		respondError(w, http.StatusForbidden, "Permission denied")
