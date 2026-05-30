@@ -15,6 +15,7 @@ import (
 
 type accountingPoster interface {
 	GetAccount(ctx context.Context, schemaName, tenantID, accountID string) (*accounting.Account, error)
+	ListAccounts(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]accounting.Account, error)
 	CreateJournalEntry(ctx context.Context, schemaName, tenantID string, req *accounting.CreateJournalEntryRequest) (*accounting.JournalEntry, error)
 	PostJournalEntry(ctx context.Context, schemaName, tenantID, entryID, userID string) error
 }

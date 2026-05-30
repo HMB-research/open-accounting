@@ -181,8 +181,8 @@ type fakeAccountingPoster struct {
 func newFakeAccountingPoster() *fakeAccountingPoster {
 	return &fakeAccountingPoster{
 		accounts: map[string]*accounting.Account{
-			"expense-account": {ID: "expense-account", AccountType: accounting.AccountTypeExpense},
-			"cash-account":    {ID: "cash-account", AccountType: accounting.AccountTypeAsset},
+			"expense-account": {ID: "expense-account", Code: "5500", AccountType: accounting.AccountTypeExpense},
+			"cash-account":    {ID: "cash-account", Code: "1000", AccountType: accounting.AccountTypeAsset},
 		},
 	}
 }
@@ -193,6 +193,14 @@ func (f *fakeAccountingPoster) GetAccount(_ context.Context, _, _, accountID str
 		return nil, errors.New("account not found")
 	}
 	return account, nil
+}
+
+func (f *fakeAccountingPoster) ListAccounts(_ context.Context, _, _ string, _ bool) ([]accounting.Account, error) {
+	accounts := make([]accounting.Account, 0, len(f.accounts))
+	for _, account := range f.accounts {
+		accounts = append(accounts, *account)
+	}
+	return accounts, nil
 }
 
 func (f *fakeAccountingPoster) CreateJournalEntry(_ context.Context, _, tenantID string, req *accounting.CreateJournalEntryRequest) (*accounting.JournalEntry, error) {

@@ -1788,11 +1788,11 @@ Content-Type: application/json
 ```json
 {
   "file_name": "expenses.csv",
-  "csv_content": "expense_number,expense_date,merchant,description,expense_account_id,payment_account_id,amount,status\nEXP-LEG-1,2026-05-30,Office Store,Toner,uuid,uuid,120.50,DRAFT\n"
+  "csv_content": "expense_number,expense_date,merchant,description,expense_account_code,payment_account_code,amount,status\nEXP-LEG-1,2026-05-30,Office Store,Toner,5500,1000,120.50,DRAFT\n"
 }
 ```
 
-Expense imports create unposted expense claims and return row-level errors for invalid rows. Supported imported statuses are `DRAFT`, `SUBMITTED`, `APPROVED`, and `REJECTED`; `POSTED` must be reached through the normal approval/posting workflow so ledger entries are created consistently. If the tenant period is locked, locked expense-date rows are skipped in the import result.
+Expense imports create unposted expense claims and return row-level errors for invalid rows. Account references can use `expense_account_id`/`payment_account_id` or chart codes via `expense_account_code`/`payment_account_code`. Supported imported statuses are `DRAFT`, `SUBMITTED`, `APPROVED`, and `REJECTED`; `POSTED` must be reached through the normal approval/posting workflow so ledger entries are created consistently. If the tenant period is locked, locked expense-date rows are skipped in the import result.
 
 ### Receipt Evidence
 

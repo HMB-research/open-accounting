@@ -22,8 +22,8 @@ func setupExpenseHandlers() (*Handlers, *expenseHandlerRepository, *expenseHandl
 	expenseRepo := &expenseHandlerRepository{expenses: make(map[string]*expenses.Expense)}
 	accountingSvc := &expenseHandlerAccounting{
 		accounts: map[string]*accounting.Account{
-			"expense-account": {ID: "expense-account", AccountType: accounting.AccountTypeExpense},
-			"cash-account":    {ID: "cash-account", AccountType: accounting.AccountTypeAsset},
+			"expense-account": {ID: "expense-account", Code: "5500", AccountType: accounting.AccountTypeExpense},
+			"cash-account":    {ID: "cash-account", Code: "1000", AccountType: accounting.AccountTypeAsset},
 		},
 	}
 	evidence := &expenseHandlerEvidence{compliant: false}
@@ -227,6 +227,14 @@ func (a *expenseHandlerAccounting) GetAccount(_ context.Context, _, _, accountID
 		return nil, errors.New("account not found")
 	}
 	return account, nil
+}
+
+func (a *expenseHandlerAccounting) ListAccounts(_ context.Context, _, _ string, _ bool) ([]accounting.Account, error) {
+	accounts := make([]accounting.Account, 0, len(a.accounts))
+	for _, account := range a.accounts {
+		accounts = append(accounts, *account)
+	}
+	return accounts, nil
 }
 
 func (a *expenseHandlerAccounting) CreateJournalEntry(_ context.Context, _, tenantID string, req *accounting.CreateJournalEntryRequest) (*accounting.JournalEntry, error) {

@@ -18,32 +18,34 @@ type expenseImportRow struct {
 }
 
 var expenseImportHeaderAliases = map[string]string{
-	"expense_number":     "expense_number",
-	"expense_no":         "expense_number",
-	"number":             "expense_number",
-	"date":               "expense_date",
-	"expense_date":       "expense_date",
-	"merchant":           "merchant",
-	"supplier":           "merchant",
-	"vendor":             "merchant",
-	"description":        "description",
-	"notes":              "description",
-	"employee_id":        "employee_id",
-	"contact_id":         "contact_id",
-	"expense_account_id": "expense_account_id",
-	"expense_account":    "expense_account_id",
-	"payment_account_id": "payment_account_id",
-	"payment_account":    "payment_account_id",
-	"amount":             "amount",
-	"currency":           "currency",
-	"exchange_rate":      "exchange_rate",
-	"requires_receipt":   "requires_receipt",
-	"receipt_required":   "requires_receipt",
-	"status":             "status",
-	"rejection_reason":   "rejection_reason",
-	"submitted_at":       "submitted_at",
-	"approved_at":        "approved_at",
-	"rejected_at":        "rejected_at",
+	"expense_number":       "expense_number",
+	"expense_no":           "expense_number",
+	"number":               "expense_number",
+	"date":                 "expense_date",
+	"expense_date":         "expense_date",
+	"merchant":             "merchant",
+	"supplier":             "merchant",
+	"vendor":               "merchant",
+	"description":          "description",
+	"notes":                "description",
+	"employee_id":          "employee_id",
+	"contact_id":           "contact_id",
+	"expense_account_id":   "expense_account_id",
+	"expense_account":      "expense_account_id",
+	"expense_account_code": "expense_account_code",
+	"payment_account_id":   "payment_account_id",
+	"payment_account":      "payment_account_id",
+	"payment_account_code": "payment_account_code",
+	"amount":               "amount",
+	"currency":             "currency",
+	"exchange_rate":        "exchange_rate",
+	"requires_receipt":     "requires_receipt",
+	"receipt_required":     "requires_receipt",
+	"status":               "status",
+	"rejection_reason":     "rejection_reason",
+	"submitted_at":         "submitted_at",
+	"approved_at":          "approved_at",
+	"rejected_at":          "rejected_at",
 }
 
 func (s *Service) ImportExpensesCSV(ctx context.Context, schemaName, tenantID string, req *ImportExpensesRequest) (*ImportExpensesResult, error) {
@@ -68,11 +70,15 @@ func (s *Service) ImportExpensesCSV(ctx context.Context, schemaName, tenantID st
 		Errors:   []ImportExpensesRowError{},
 	}
 	usedNumbers := map[string]bool{}
+	accountIDsByCode, err := s.expenseImportAccountIDsByCode(ctx, schemaName, tenantID, rows)
+	if err != nil {
+		return nil, err
+	}
 
 	for _, row := range rows {
 		result.RowsProcessed++
 
-		expense, err := s.buildExpenseFromImportRow(ctx, schemaName, tenantID, userID, row, req.LockDate, usedNumbers)
+		expense, err := s.buildExpenseFromImportRow(ctx, schemaName, tenantID, userID, row, req.LockDate, usedNumbers, accountIDsByCode)
 		if err != nil {
 			appendExpenseImportRowError(result, row, err)
 			continue
@@ -98,6 +104,7 @@ func (s *Service) buildExpenseFromImportRow(
 	row expenseImportRow,
 	lockDate *time.Time,
 	usedNumbers map[string]bool,
+	accountIDsByCode map[string]string,
 ) (*Expense, error) {
 	expenseDate, err := parseExpenseImportDate(row.values["expense_date"], "expense_date")
 	if err != nil {
@@ -111,13 +118,13 @@ func (s *Service) buildExpenseFromImportRow(
 	if merchant == "" {
 		return nil, fmt.Errorf("merchant is required")
 	}
-	expenseAccountID := strings.TrimSpace(row.values["expense_account_id"])
-	if expenseAccountID == "" {
-		return nil, fmt.Errorf("expense_account_id is required")
+	expenseAccountID, err := resolveExpenseImportAccountID(row, "expense_account_id", "expense_account_code", accountIDsByCode)
+	if err != nil {
+		return nil, err
 	}
-	paymentAccountID := strings.TrimSpace(row.values["payment_account_id"])
-	if paymentAccountID == "" {
-		return nil, fmt.Errorf("payment_account_id is required")
+	paymentAccountID, err := resolveExpenseImportAccountID(row, "payment_account_id", "payment_account_code", accountIDsByCode)
+	if err != nil {
+		return nil, err
 	}
 
 	amount, err := parseExpenseImportDecimal(row.values["amount"], "amount")
@@ -241,6 +248,51 @@ func applyExpenseImportStatusMetadata(expense *Expense, row expenseImportRow, us
 		expense.RejectionReason = reason
 	}
 	return nil
+}
+
+func (s *Service) expenseImportAccountIDsByCode(ctx context.Context, schemaName, tenantID string, rows []expenseImportRow) (map[string]string, error) {
+	usesAccountCodes := false
+	for _, row := range rows {
+		if strings.TrimSpace(row.values["expense_account_code"]) != "" || strings.TrimSpace(row.values["payment_account_code"]) != "" {
+			usesAccountCodes = true
+			break
+		}
+	}
+	if !usesAccountCodes {
+		return nil, nil
+	}
+	if s.accounting == nil {
+		return nil, fmt.Errorf("accounting service is required to resolve expense account codes")
+	}
+
+	accounts, err := s.accounting.ListAccounts(ctx, schemaName, tenantID, false)
+	if err != nil {
+		return nil, fmt.Errorf("list accounts for expense import: %w", err)
+	}
+	accountIDsByCode := make(map[string]string, len(accounts))
+	for _, account := range accounts {
+		key := normalizedExpenseImportKey(account.Code)
+		if key != "" {
+			accountIDsByCode[key] = account.ID
+		}
+	}
+	return accountIDsByCode, nil
+}
+
+func resolveExpenseImportAccountID(row expenseImportRow, idField, codeField string, accountIDsByCode map[string]string) (string, error) {
+	accountID := strings.TrimSpace(row.values[idField])
+	if accountID != "" {
+		return accountID, nil
+	}
+	accountCode := strings.TrimSpace(row.values[codeField])
+	if accountCode == "" {
+		return "", fmt.Errorf("%s or %s is required", idField, codeField)
+	}
+	accountID, ok := accountIDsByCode[normalizedExpenseImportKey(accountCode)]
+	if !ok {
+		return "", fmt.Errorf("account code %q was not found for %s", accountCode, codeField)
+	}
+	return accountID, nil
 }
 
 func parseExpenseImportRows(content string) ([]expenseImportRow, error) {

@@ -17,9 +17,9 @@ func TestServiceImportExpensesCSV(t *testing.T) {
 	result, err := service.ImportExpensesCSV(context.Background(), "tenant_acme", "tenant-1", &ImportExpensesRequest{
 		FileName: "expenses.csv",
 		UserID:   "user-1",
-		CSVContent: "expense_number,expense_date,merchant,description,expense_account_id,payment_account_id,amount,currency,exchange_rate,requires_receipt,status\n" +
-			"EXP-LEG-1,2026-05-30,Office Store,Toner,expense-account,cash-account,120.50,EUR,1,true,DRAFT\n" +
-			"EXP-LEG-2,2026-05-31,Taxi,Ride,expense-account,cash-account,25.00,EUR,1,false,APPROVED\n",
+		CSVContent: "expense_number,expense_date,merchant,description,expense_account_code,payment_account_code,amount,currency,exchange_rate,requires_receipt,status\n" +
+			"EXP-LEG-1,2026-05-30,Office Store,Toner,5500,1000,120.50,EUR,1,true,DRAFT\n" +
+			"EXP-LEG-2,2026-05-31,Taxi,Ride,5500,1000,25.00,EUR,1,false,APPROVED\n",
 	})
 
 	require.NoError(t, err)
@@ -32,6 +32,8 @@ func TestServiceImportExpensesCSV(t *testing.T) {
 	assert.Equal(t, StatusDraft, repo.expensesByNumber(t, "EXP-LEG-1").Status)
 	approved := repo.expensesByNumber(t, "EXP-LEG-2")
 	assert.Equal(t, StatusApproved, approved.Status)
+	assert.Equal(t, "expense-account", approved.ExpenseAccountID)
+	assert.Equal(t, "cash-account", approved.PaymentAccountID)
 	assert.False(t, approved.RequiresReceipt)
 	require.NotNil(t, approved.ApprovedAt)
 }
