@@ -37,6 +37,7 @@ import (
 var (
 	errApprovedReconciliationEvidenceRequired  = errors.New("approved reconciliation evidence is required")
 	errApprovedAssetActivationEvidenceRequired = errors.New("approved asset activation evidence is required")
+	errApprovedAssetDisposalEvidenceRequired   = errors.New("approved asset disposal evidence is required")
 	errApprovedJournalEntryEvidenceRequired    = errors.New("approved journal-entry evidence is required")
 	errApprovedPaymentReceiptEvidenceRequired  = errors.New("approved payment receipt evidence is required")
 	errApprovedPurchaseInvoiceEvidenceRequired = errors.New("approved purchase-invoice evidence is required")
@@ -5539,7 +5540,7 @@ func (h *Handlers) requireApprovedAssetActivationEvidence(ctx context.Context, s
 
 // DisposeAsset marks an asset as disposed
 // @Summary Dispose fixed asset
-// @Description Mark an active fixed asset as disposed or sold
+// @Description Mark an active fixed asset as disposed or sold after approved disposal evidence is attached
 // @Tags Fixed Assets
 // @Accept json
 // @Produce json
@@ -5549,6 +5550,7 @@ func (h *Handlers) requireApprovedAssetActivationEvidence(ctx context.Context, s
 // @Param request body assets.DisposeAssetRequest true "Disposal details"
 // @Success 200 {object} object{status=string}
 // @Failure 400 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
 // @Router /tenants/{tenantID}/assets/{assetID}/dispose [post]
 func (h *Handlers) DisposeAsset(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetClaims(r.Context())
@@ -5564,12 +5566,59 @@ func (h *Handlers) DisposeAsset(w http.ResponseWriter, r *http.Request) {
 
 	req.UserID = claims.UserID
 
+	if err := h.requireApprovedAssetDisposalEvidence(r.Context(), schemaName, tenantID, assetID); err != nil {
+		status := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, errApprovedAssetDisposalEvidenceRequired):
+			status = http.StatusConflict
+		case strings.Contains(err.Error(), "get asset"):
+			status = http.StatusBadRequest
+		}
+		respondError(w, status, err.Error())
+		return
+	}
+
 	if err := h.assetsService.Dispose(r.Context(), tenantID, schemaName, assetID, &req); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "disposed"})
+}
+
+func (h *Handlers) requireApprovedAssetDisposalEvidence(ctx context.Context, schemaName, tenantID, assetID string) error {
+	if h.documentsService == nil {
+		return nil
+	}
+
+	asset, err := h.assetsService.GetByID(ctx, tenantID, schemaName, assetID)
+	if err != nil {
+		return fmt.Errorf("get asset: %w", err)
+	}
+	if asset.Status != assets.AssetStatusActive {
+		return nil
+	}
+
+	results, err := h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
+		EntityType: documents.EntityTypeAsset,
+		EntityIDs:  []string{assetID},
+		Rules: []documents.EvidencePolicyRule{{
+			DocumentTypes: []string{
+				documents.DocumentTypeSupportingDocument,
+				documents.DocumentTypeContract,
+			},
+			MinCount:        1,
+			RequireApproved: true,
+		}},
+	})
+	if err != nil {
+		return fmt.Errorf("evaluate asset disposal evidence: %w", err)
+	}
+	if len(results) == 0 || !results[0].Compliant {
+		return fmt.Errorf("%w before disposing fixed asset %s", errApprovedAssetDisposalEvidenceRequired, assetID)
+	}
+
+	return nil
 }
 
 // RecordDepreciation records depreciation for an asset

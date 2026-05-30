@@ -164,6 +164,21 @@ func (m *mockAssetsRepository) UpdateStatus(ctx context.Context, schemaName, ten
 	return errAssetNotFound
 }
 
+func (m *mockAssetsRepository) UpdateDisposal(ctx context.Context, schemaName string, asset *assets.FixedAsset, status assets.AssetStatus) error {
+	if m.updateErr != nil {
+		return m.updateErr
+	}
+	if a, ok := m.assets[asset.ID]; ok && a.TenantID == asset.TenantID && a.Status == assets.AssetStatusActive {
+		a.Status = status
+		a.DisposalDate = asset.DisposalDate
+		a.DisposalMethod = asset.DisposalMethod
+		a.DisposalProceeds = asset.DisposalProceeds
+		a.DisposalNotes = asset.DisposalNotes
+		return nil
+	}
+	return errAssetNotFound
+}
+
 func (m *mockAssetsRepository) Delete(ctx context.Context, schemaName, tenantID, assetID string) error {
 	if m.deleteErr != nil {
 		return m.deleteErr
@@ -759,6 +774,72 @@ func TestDisposeAsset(t *testing.T) {
 	h.DisposeAsset(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, assets.AssetStatusSold, repo.assets["asset-1"].Status)
+	require.NotNil(t, repo.assets["asset-1"].DisposalMethod)
+	assert.Equal(t, assets.DisposalSold, *repo.assets["asset-1"].DisposalMethod)
+	assert.True(t, repo.assets["asset-1"].DisposalProceeds.Equal(decimal.RequireFromString("500.00")))
+}
+
+func TestDisposeAssetRequiresApprovedAssetEvidence(t *testing.T) {
+	h, repo, tenantRepo := setupAssetsTestHandlers()
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	repo.assets["asset-1"] = &assets.FixedAsset{
+		ID:           "asset-1",
+		TenantID:     "tenant-1",
+		Name:         "Dell Laptop",
+		Status:       assets.AssetStatusActive,
+		PurchaseDate: time.Now().AddDate(-2, 0, 0),
+		PurchaseCost: decimal.NewFromInt(1500),
+	}
+
+	docRepo.docs["doc-1"] = &documents.Document{
+		ID:           "doc-1",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypeAsset,
+		EntityID:     "asset-1",
+		DocumentType: documents.DocumentTypeSupportingDocument,
+		FileName:     "asset-disposal-approval.pdf",
+		ReviewStatus: documents.ReviewStatusPending,
+		UploadedBy:   "user-1",
+		CreatedAt:    time.Now(),
+	}
+
+	newRequest := func() *http.Request {
+		body := map[string]interface{}{
+			"disposal_date":     "2026-05-01T00:00:00Z",
+			"disposal_method":   "SOLD",
+			"disposal_proceeds": "500.00",
+		}
+		bodyBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/assets/asset-1/dispose", bytes.NewReader(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "assetID": "asset-1"})
+		return req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+	}
+
+	rr := httptest.NewRecorder()
+	h.DisposeAsset(rr, newRequest())
+
+	require.Equal(t, http.StatusConflict, rr.Code)
+	assert.Contains(t, rr.Body.String(), "approved asset disposal evidence is required")
+	assert.Equal(t, assets.AssetStatusActive, repo.assets["asset-1"].Status)
+
+	docRepo.docs["doc-1"].ReviewStatus = documents.ReviewStatusApproved
+
+	rr = httptest.NewRecorder()
+	h.DisposeAsset(rr, newRequest())
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, assets.AssetStatusSold, repo.assets["asset-1"].Status)
+	require.NotNil(t, repo.assets["asset-1"].DisposalDate)
+	assert.Equal(t, "2026-05-01", repo.assets["asset-1"].DisposalDate.Format("2006-01-02"))
 }
 
 func TestRecordDepreciation(t *testing.T) {

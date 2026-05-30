@@ -162,6 +162,22 @@ func (r *MockRepository) UpdateStatus(ctx context.Context, schemaName, tenantID,
 	return nil
 }
 
+// UpdateDisposal implements Repository
+func (r *MockRepository) UpdateDisposal(ctx context.Context, schemaName string, asset *FixedAsset, status AssetStatus) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	existing, exists := r.Assets[asset.ID]
+	if !exists || existing.TenantID != asset.TenantID || existing.Status != AssetStatusActive {
+		return ErrAssetNotFound
+	}
+	existing.Status = status
+	existing.DisposalDate = asset.DisposalDate
+	existing.DisposalMethod = asset.DisposalMethod
+	existing.DisposalProceeds = asset.DisposalProceeds
+	existing.DisposalNotes = asset.DisposalNotes
+	return nil
+}
+
 // Delete implements Repository
 func (r *MockRepository) Delete(ctx context.Context, schemaName, tenantID, assetID string) error {
 	r.mu.Lock()
@@ -895,6 +911,7 @@ func TestService_Activate_NotDraft(t *testing.T) {
 func TestService_Dispose(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
+	disposalDate := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 
 	ts.repo.Assets["a1"] = &FixedAsset{
 		ID:       "a1",
@@ -904,7 +921,7 @@ func TestService_Dispose(t *testing.T) {
 	}
 
 	req := &DisposeAssetRequest{
-		DisposalDate:     time.Now(),
+		DisposalDate:     disposalDate,
 		DisposalMethod:   DisposalSold,
 		DisposalProceeds: decimal.NewFromInt(100),
 		DisposalNotes:    "Sold to company X",
@@ -915,6 +932,12 @@ func TestService_Dispose(t *testing.T) {
 
 	asset, _ := ts.repo.GetByID(ctx, "test_schema", "tenant-1", "a1")
 	assert.Equal(t, AssetStatusSold, asset.Status)
+	require.NotNil(t, asset.DisposalDate)
+	assert.Equal(t, disposalDate, *asset.DisposalDate)
+	require.NotNil(t, asset.DisposalMethod)
+	assert.Equal(t, DisposalSold, *asset.DisposalMethod)
+	assert.True(t, asset.DisposalProceeds.Equal(decimal.NewFromInt(100)))
+	assert.Equal(t, "Sold to company X", asset.DisposalNotes)
 }
 
 func TestService_Dispose_NotActive(t *testing.T) {

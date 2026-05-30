@@ -8007,7 +8007,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Mark an active fixed asset as disposed or sold
+      description: Mark an active fixed asset as disposed or sold after approved disposal
+        evidence is attached
       parameters:
       - description: Tenant ID
         in: path
@@ -8037,6 +8038,13 @@ paths:
             type: object
         "400":
           description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
           schema:
             properties:
               error:
