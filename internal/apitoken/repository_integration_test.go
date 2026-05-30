@@ -71,6 +71,45 @@ func TestPostgresRepositoryTokenLifecycle(t *testing.T) {
 	}
 }
 
+func TestPostgresRepositoryValidationRejectsInactiveTenantUser(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	userID := testutil.CreateTestUser(t, pool, "apitoken-inactive-membership@example.com")
+	testutil.AddUserToTenant(t, pool, tenant.ID, userID, "admin")
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+	rawToken := "oa_inactive_membership_raw_token"
+	token := &APIToken{
+		ID:          uuid.New().String(),
+		TenantID:    tenant.ID,
+		UserID:      userID,
+		Name:        "Suspension Token",
+		TokenPrefix: rawToken[:14],
+		CreatedAt:   time.Now().UTC(),
+	}
+	tokenHash := hashToken(rawToken)
+
+	if err := repo.CreateToken(ctx, token, tokenHash); err != nil {
+		t.Fatalf("CreateToken failed: %v", err)
+	}
+	if _, err := repo.GetValidationRecord(ctx, tokenHash, time.Now().Add(time.Minute)); err != nil {
+		t.Fatalf("GetValidationRecord before suspension failed: %v", err)
+	}
+
+	if _, err := pool.Exec(ctx, `
+		UPDATE tenant_users
+		SET is_active = false
+		WHERE tenant_id = $1 AND user_id = $2
+	`, tenant.ID, userID); err != nil {
+		t.Fatalf("failed to suspend tenant user: %v", err)
+	}
+
+	if _, err := repo.GetValidationRecord(ctx, tokenHash, time.Now().Add(time.Minute)); err != ErrTokenNotFound {
+		t.Fatalf("expected ErrTokenNotFound for inactive tenant user, got %v", err)
+	}
+}
+
 func TestPostgresRepositoryRevokeMissingToken(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)

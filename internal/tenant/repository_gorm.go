@@ -252,7 +252,7 @@ func (r *GORMRepository) GetUserRole(ctx context.Context, tenantID, userID strin
 	var role string
 	err := r.db.WithContext(ctx).Model(&models.TenantUserModel{}).
 		Select("role").
-		Where("tenant_id = ? AND user_id = ?", tenantID, userID).
+		Where("tenant_id = ? AND user_id = ? AND COALESCE(is_active, true) = true", tenantID, userID).
 		Scan(&role).Error
 	if err != nil {
 		return "", fmt.Errorf("get user role: %w", err)

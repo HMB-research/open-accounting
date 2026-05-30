@@ -32,7 +32,7 @@ Bearer auth supports two token types:
 - JWT access tokens from `/auth/login` and `/auth/refresh`
 - tenant-scoped API tokens created under `/tenants/{tenantId}/api-tokens`
 
-Refresh tokens are accepted only by `/auth/refresh`; they cannot authorize API requests. Access tokens cannot be used as refresh tokens.
+Refresh tokens are accepted only by `/auth/refresh`; they cannot authorize API requests. Access tokens cannot be used as refresh tokens. Suspended tenant memberships cannot use tenant endpoints, and tenant-scoped API tokens stop validating while their owning membership is suspended.
 
 ### Register
 
@@ -193,7 +193,7 @@ Authorization: Bearer <access-token-or-api-token>
 
 ## API Tokens
 
-Tenant-scoped API tokens are intended for CLI and automation usage. They are valid only for the tenant path they were created for.
+Tenant-scoped API tokens are intended for CLI and automation usage. They are valid only for the tenant path they were created for, and only while the owning user's tenant membership is active.
 
 ### List API Tokens
 
@@ -2921,7 +2921,7 @@ Content-Type: application/json
 }
 ```
 
-Requires an owner or admin role. Users cannot suspend or restore themselves, and owner memberships cannot be suspended. Suspended users cannot log in or refresh tokens for that tenant; suspending a user revokes active refresh sessions and records tenant and auth security audit events.
+Requires an owner or admin role. Users cannot suspend or restore themselves, and owner memberships cannot be suspended. Suspended users cannot log in, refresh tokens, use existing tenant-scoped access tokens, or validate tenant-scoped API tokens for that tenant; suspending a user revokes active refresh sessions and records tenant and auth security audit events.
 
 ### Revoke Tenant User Session
 

@@ -78,6 +78,7 @@ func (m *MockRepository) CreateTenant(ctx context.Context, tenant *Tenant, setti
 			UserID:    ownerID,
 			Role:      RoleOwner,
 			IsDefault: true,
+			IsActive:  true,
 			CreatedAt: time.Now(),
 		})
 	}
@@ -236,6 +237,9 @@ func (m *MockRepository) GetUserRole(ctx context.Context, tenantID, userID strin
 	}
 	for _, u := range m.tenantUsers[tenantID] {
 		if u.UserID == userID {
+			if !u.IsActive && !u.CreatedAt.IsZero() {
+				return "", ErrUserNotInTenant
+			}
 			return u.Role, nil
 		}
 	}
@@ -260,6 +264,9 @@ func (m *MockRepository) ListUserTenants(ctx context.Context, userID string) ([]
 	for tenantID, users := range m.tenantUsers {
 		for _, u := range users {
 			if u.UserID == userID {
+				if !u.IsActive && !u.CreatedAt.IsZero() {
+					continue
+				}
 				if t, ok := m.tenants[tenantID]; ok {
 					memberships = append(memberships, TenantMembership{
 						Tenant:    *t,
@@ -450,6 +457,9 @@ func (m *MockRepository) AddTestUser(u *User) {
 }
 
 func (m *MockRepository) AddTestTenantUser(tu TenantUser) {
+	if !tu.IsActive && tu.CreatedAt.IsZero() {
+		tu.IsActive = true
+	}
 	m.tenantUsers[tu.TenantID] = append(m.tenantUsers[tu.TenantID], tu)
 }
 

@@ -126,7 +126,7 @@ func (r *PostgresRepository) GetValidationRecord(ctx context.Context, tokenHash 
 		FROM api_tokens at
 		JOIN users u ON u.id = at.user_id AND u.is_active = true
 		JOIN tenants t ON t.id = at.tenant_id AND t.is_active = true
-		JOIN tenant_users tu ON tu.tenant_id = at.tenant_id AND tu.user_id = at.user_id
+		JOIN tenant_users tu ON tu.tenant_id = at.tenant_id AND tu.user_id = at.user_id AND COALESCE(tu.is_active, true) = true
 		WHERE at.token_hash = $1
 			AND at.revoked_at IS NULL
 			AND (at.expires_at IS NULL OR at.expires_at > $2)

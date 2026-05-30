@@ -113,7 +113,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 |---------|-------------|
 | **Tenant Isolation** | Schema-per-tenant for complete data separation |
 | **User Management** | Invite users, assign roles, manage permissions |
-| **JWT and API token auth** | Purpose-scoped JWT access/refresh tokens with revocable refresh sessions plus tenant-scoped API tokens for automation |
+| **JWT and API token auth** | Purpose-scoped JWT access/refresh tokens with revocable refresh sessions plus suspend-aware tenant-scoped API tokens for automation |
 | **RBAC** | Role-based access control with permission checks |
 | **API Rate Limiting** | Token bucket rate limiting with configurable thresholds |
 

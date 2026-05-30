@@ -1210,6 +1210,32 @@ func TestPostgresRepository_GetUserRole_NotInTenant(t *testing.T) {
 	}
 }
 
+func TestPostgresRepository_GetUserRole_InactiveMembership(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+	testTenant := testutil.CreateTestTenant(t, pool)
+	userID := testutil.CreateTestUser(t, pool, "tenant-role-inactive@example.com")
+	testutil.AddUserToTenant(t, pool, testTenant.ID, userID, RoleViewer)
+
+	if err := repo.SetTenantUserActive(ctx, testTenant.ID, userID, false); err != nil {
+		t.Fatalf("SetTenantUserActive failed: %v", err)
+	}
+
+	_, err := repo.GetUserRole(ctx, testTenant.ID, userID)
+	if err != ErrUserNotInTenant {
+		t.Fatalf("expected ErrUserNotInTenant for inactive membership, got %v", err)
+	}
+
+	membership, err := repo.GetTenantUser(ctx, testTenant.ID, userID)
+	if err != nil {
+		t.Fatalf("GetTenantUser failed: %v", err)
+	}
+	if membership.IsActive {
+		t.Fatal("expected inactive membership to remain readable through GetTenantUser")
+	}
+}
+
 func TestPostgresRepository_CheckUserIsMember_False(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	repo := NewPostgresRepository(pool)
