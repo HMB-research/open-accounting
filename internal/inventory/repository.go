@@ -499,14 +499,16 @@ func (r *PostgresRepository) CreateMovement(ctx context.Context, schemaName stri
 	query := `
 		INSERT INTO %s (
 			id, tenant_id, product_id, warehouse_id, movement_type, quantity, unit_cost, total_cost,
-			lot_number, serial_number, expiry_date, reference, to_warehouse_id, notes, movement_date, created_at, created_by
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`
+			lot_number, serial_number, expiry_date, reference, source_type, source_id, to_warehouse_id,
+			notes, movement_date, created_at, created_by
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`
 
 	return r.execInTable(ctx, schemaName, "inventory_movements", query,
 		movement.ID, movement.TenantID, movement.ProductID, movement.WarehouseID,
 		movement.MovementType, movement.Quantity, movement.UnitCost, movement.TotalCost,
 		nullIfEmpty(movement.LotNumber), nullIfEmpty(movement.SerialNumber), nullIfEmpty(movement.ExpiryDate),
-		movement.Reference, nullIfEmpty(movement.ToWarehouseID), movement.Notes, movement.MovementDate,
+		movement.Reference, nullIfEmpty(movement.SourceType), nullIfEmpty(movement.SourceID),
+		nullIfEmpty(movement.ToWarehouseID), movement.Notes, movement.MovementDate,
 		movement.CreatedAt, movement.CreatedBy,
 	)
 }
@@ -516,7 +518,8 @@ func (r *PostgresRepository) ListMovements(ctx context.Context, schemaName, tena
 	query := `
 		SELECT id, tenant_id, product_id, warehouse_id, movement_type, quantity, unit_cost, total_cost,
 			COALESCE(lot_number, ''), COALESCE(serial_number, ''), COALESCE(expiry_date::text, ''),
-			COALESCE(reference, ''), to_warehouse_id, COALESCE(notes, ''), movement_date, created_at, COALESCE(created_by::text, '')
+			COALESCE(reference, ''), COALESCE(source_type, ''), COALESCE(source_id::text, ''),
+			to_warehouse_id, COALESCE(notes, ''), movement_date, created_at, COALESCE(created_by::text, '')
 		FROM %s
 		WHERE tenant_id = $1 AND product_id = $2
 		ORDER BY movement_date DESC, created_at DESC`
@@ -534,7 +537,7 @@ func (r *PostgresRepository) ListMovements(ctx context.Context, schemaName, tena
 		if err := rows.Scan(
 			&m.ID, &m.TenantID, &m.ProductID, &m.WarehouseID, &m.MovementType,
 			&m.Quantity, &m.UnitCost, &m.TotalCost, &m.LotNumber, &m.SerialNumber, &m.ExpiryDate, &m.Reference,
-			&toWarehouseID, &m.Notes, &m.MovementDate, &m.CreatedAt, &m.CreatedBy,
+			&m.SourceType, &m.SourceID, &toWarehouseID, &m.Notes, &m.MovementDate, &m.CreatedAt, &m.CreatedBy,
 		); err != nil {
 			return nil, err
 		}

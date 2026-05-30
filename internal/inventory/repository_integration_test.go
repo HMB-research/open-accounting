@@ -780,6 +780,7 @@ func TestRepository_CreateAndListMovements(t *testing.T) {
 	}
 
 	// Create movements
+	sourceID := uuid.New().String()
 	movement := &InventoryMovement{
 		ID:           uuid.New().String(),
 		TenantID:     tenant.ID,
@@ -793,6 +794,8 @@ func TestRepository_CreateAndListMovements(t *testing.T) {
 		SerialNumber: "SN-001",
 		ExpiryDate:   "2027-01-31",
 		Reference:    "PO-001",
+		SourceType:   "purchase_order",
+		SourceID:     sourceID,
 		Notes:        "Initial stock inbound",
 		MovementDate: time.Now(),
 		CreatedAt:    time.Now(),
@@ -821,6 +824,12 @@ func TestRepository_CreateAndListMovements(t *testing.T) {
 	}
 	if movements[0].ExpiryDate != "2027-01-31" {
 		t.Errorf("expected expiry date to round-trip, got %q", movements[0].ExpiryDate)
+	}
+	if movements[0].SourceType != "purchase_order" {
+		t.Errorf("expected source type to round-trip, got %q", movements[0].SourceType)
+	}
+	if movements[0].SourceID != sourceID {
+		t.Errorf("expected source ID to round-trip, got %q", movements[0].SourceID)
 	}
 }
 
