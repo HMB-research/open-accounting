@@ -183,6 +183,26 @@ func TestService_Create(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:     "Valid reverse-charge purchase invoice",
+			tenantID: "tenant-1",
+			req: &CreateInvoiceRequest{
+				InvoiceType: InvoiceTypePurchase,
+				ContactID:   "contact-2",
+				IssueDate:   time.Now(),
+				DueDate:     time.Now().AddDate(0, 0, 30),
+				Lines: []CreateInvoiceLineRequest{
+					{
+						Description:  "EU service",
+						Quantity:     decimal.NewFromInt(1),
+						UnitPrice:    decimal.NewFromFloat(100.00),
+						VATRate:      decimal.NewFromInt(22),
+						VATTreatment: VATTreatmentReverseCharge,
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name:     "Missing contact",
 			tenantID: "tenant-1",
 			req: &CreateInvoiceRequest{
@@ -241,6 +261,17 @@ func TestService_Create(t *testing.T) {
 			}
 			if invoice.Status != StatusDraft {
 				t.Errorf("Status = %q, want %q", invoice.Status, StatusDraft)
+			}
+			if tt.name == "Valid reverse-charge purchase invoice" {
+				if !invoice.VATAmount.IsZero() {
+					t.Errorf("VATAmount = %s, want 0", invoice.VATAmount)
+				}
+				if !invoice.Total.Equal(decimal.NewFromFloat(100)) {
+					t.Errorf("Total = %s, want 100", invoice.Total)
+				}
+				if invoice.Lines[0].VATTreatment != VATTreatmentReverseCharge {
+					t.Errorf("VATTreatment = %s, want %s", invoice.Lines[0].VATTreatment, VATTreatmentReverseCharge)
+				}
 			}
 		})
 	}

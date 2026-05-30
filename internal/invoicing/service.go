@@ -71,6 +71,10 @@ func (s *Service) Create(ctx context.Context, tenantID, schemaName string, req *
 
 	// Convert request lines to invoice lines
 	for i, reqLine := range req.Lines {
+		vatTreatment, err := NormalizeVATTreatment(string(reqLine.VATTreatment))
+		if err != nil {
+			return nil, err
+		}
 		line := InvoiceLine{
 			ID:              uuid.New().String(),
 			TenantID:        tenantID,
@@ -81,6 +85,7 @@ func (s *Service) Create(ctx context.Context, tenantID, schemaName string, req *
 			UnitPrice:       reqLine.UnitPrice,
 			DiscountPercent: reqLine.DiscountPercent,
 			VATRate:         reqLine.VATRate,
+			VATTreatment:    vatTreatment,
 			AccountID:       reqLine.AccountID,
 			ProductID:       reqLine.ProductID,
 		}

@@ -63,17 +63,22 @@ func (r *PostgresRepository) Create(ctx context.Context, schemaName string, invo
 	for i := range invoice.Lines {
 		line := &invoice.Lines[i]
 		line.InvoiceID = invoice.ID
+		treatment, err := NormalizeVATTreatment(string(line.VATTreatment))
+		if err != nil {
+			return err
+		}
+		line.VATTreatment = treatment
 
 		_, err = tx.Exec(ctx, fmt.Sprintf(`
 			INSERT INTO %s.invoice_lines (
 				id, tenant_id, invoice_id, line_number, description, quantity, unit,
-				unit_price, discount_percent, vat_rate, line_subtotal, line_vat, line_total,
+				unit_price, discount_percent, vat_rate, vat_treatment, line_subtotal, line_vat, line_total,
 				account_id, product_id
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 		`, schemaName),
 			line.ID, line.TenantID, line.InvoiceID, line.LineNumber, line.Description,
 			line.Quantity, line.Unit, line.UnitPrice, line.DiscountPercent, line.VATRate,
-			line.LineSubtotal, line.LineVAT, line.LineTotal, line.AccountID, line.ProductID,
+			line.VATTreatment, line.LineSubtotal, line.LineVAT, line.LineTotal, line.AccountID, line.ProductID,
 		)
 		if err != nil {
 			return fmt.Errorf("insert invoice line: %w", err)
@@ -111,7 +116,7 @@ func (r *PostgresRepository) GetByID(ctx context.Context, schemaName, tenantID, 
 
 	rows, err := r.db.Query(ctx, fmt.Sprintf(`
 		SELECT id, tenant_id, invoice_id, line_number, COALESCE(description, ''), quantity, COALESCE(unit, ''),
-		       unit_price, discount_percent, vat_rate, line_subtotal, line_vat, line_total,
+		       unit_price, discount_percent, vat_rate, COALESCE(vat_treatment, 'STANDARD'), line_subtotal, line_vat, line_total,
 		       account_id, product_id
 		FROM %s.invoice_lines
 		WHERE invoice_id = $1 AND tenant_id = $2
@@ -127,7 +132,7 @@ func (r *PostgresRepository) GetByID(ctx context.Context, schemaName, tenantID, 
 		if err := rows.Scan(
 			&line.ID, &line.TenantID, &line.InvoiceID, &line.LineNumber, &line.Description,
 			&line.Quantity, &line.Unit, &line.UnitPrice, &line.DiscountPercent, &line.VATRate,
-			&line.LineSubtotal, &line.LineVAT, &line.LineTotal, &line.AccountID, &line.ProductID,
+			&line.VATTreatment, &line.LineSubtotal, &line.LineVAT, &line.LineTotal, &line.AccountID, &line.ProductID,
 		); err != nil {
 			return nil, fmt.Errorf("scan invoice line: %w", err)
 		}
