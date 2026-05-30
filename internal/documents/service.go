@@ -423,6 +423,10 @@ func normalizeEntityType(value string) (string, error) {
 		return EntityTypeAsset, nil
 	case EntityTypeExpense:
 		return EntityTypeExpense, nil
+	case EntityTypeQuote:
+		return EntityTypeQuote, nil
+	case EntityTypeOrder:
+		return EntityTypeOrder, nil
 	case EntityTypeYearEndClose:
 		return EntityTypeYearEndClose, nil
 	default:

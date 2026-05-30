@@ -498,7 +498,7 @@ Authorization: Bearer <token>
 
 ### Document Attachments
 
-Document attachments currently support `invoice`, `journal_entry`, `payment`, `bank_transaction`, `asset`, `expense`, and `year_end_close` entities.
+Document attachments currently support `invoice`, `journal_entry`, `payment`, `bank_transaction`, `asset`, `expense`, `quote`, `order`, and `year_end_close` entities.
 
 #### List Documents
 
