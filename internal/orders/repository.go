@@ -2,12 +2,17 @@ package orders
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/HMB-research/open-accounting/internal/database"
+	"github.com/HMB-research/open-accounting/internal/models"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Repository defines the contract for order data access
@@ -32,375 +37,331 @@ var ErrOrderNotFound = fmt.Errorf("order not found")
 // ErrOrderStockReservationNotFound is returned when an order stock reservation is not found.
 var ErrOrderStockReservationNotFound = fmt.Errorf("order stock reservation not found")
 
-// PostgresRepository implements Repository using PostgreSQL
-type PostgresRepository struct {
-	db *pgxpool.Pool
+// GORMRepository implements Repository with the shared ORM layer.
+type GORMRepository struct {
+	db *gorm.DB
 }
 
-// NewPostgresRepository creates a new PostgreSQL repository
-func NewPostgresRepository(db *pgxpool.Pool) *PostgresRepository {
-	return &PostgresRepository{db: db}
+func NewRepository(db *pgxpool.Pool) *GORMRepository {
+	if db == nil {
+		return &GORMRepository{}
+	}
+	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	if err != nil {
+		panic(fmt.Errorf("create orders GORM repository: %w", err))
+	}
+	return NewGORMRepository(gormDB)
+}
+
+func NewGORMRepository(db *gorm.DB) *GORMRepository {
+	return &GORMRepository{db: db}
+}
+
+func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
+	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
 }
 
 // Create inserts a new order with its lines
-func (r *PostgresRepository) Create(ctx context.Context, schemaName string, order *Order) error {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	_, err = tx.Exec(ctx, fmt.Sprintf(`
-		INSERT INTO %s.orders (
-			id, tenant_id, order_number, contact_id, order_date, expected_delivery,
-			status, currency, exchange_rate, subtotal, vat_amount, total,
-			notes, quote_id, created_at, created_by, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-	`, schemaName),
-		order.ID, order.TenantID, order.OrderNumber, order.ContactID,
-		order.OrderDate, order.ExpectedDelivery, order.Status, order.Currency,
-		order.ExchangeRate, order.Subtotal, order.VATAmount, order.Total,
-		order.Notes, order.QuoteID, order.CreatedAt, order.CreatedBy, order.UpdatedAt,
-	)
-	if err != nil {
-		return fmt.Errorf("insert order: %w", err)
-	}
-
-	for i := range order.Lines {
-		line := &order.Lines[i]
-		line.OrderID = order.ID
-
-		_, err = tx.Exec(ctx, fmt.Sprintf(`
-			INSERT INTO %s.order_lines (
-				id, tenant_id, order_id, line_number, description, quantity, unit,
-				unit_price, discount_percent, vat_rate, line_subtotal, line_vat, line_total,
-				product_id
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-		`, schemaName),
-			line.ID, line.TenantID, line.OrderID, line.LineNumber, line.Description,
-			line.Quantity, line.Unit, line.UnitPrice, line.DiscountPercent, line.VATRate,
-			line.LineSubtotal, line.LineVAT, line.LineTotal, line.ProductID,
-		)
+func (r *GORMRepository) Create(ctx context.Context, schemaName string, order *Order) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		ordersTable, err := database.TenantTable(tx, schemaName, "orders")
 		if err != nil {
+			return fmt.Errorf("qualify orders table: %w", err)
+		}
+		if err := ordersTable.Create(orderToModel(order)).Error; err != nil {
+			return fmt.Errorf("insert order: %w", err)
+		}
+
+		if len(order.Lines) == 0 {
+			return nil
+		}
+
+		linesTable, err := database.TenantTable(tx, schemaName, "order_lines")
+		if err != nil {
+			return fmt.Errorf("qualify order lines table: %w", err)
+		}
+		lineModels := make([]models.OrderLine, len(order.Lines))
+		for i := range order.Lines {
+			order.Lines[i].OrderID = order.ID
+			lineModels[i] = *orderLineToModel(&order.Lines[i])
+		}
+		if err := linesTable.Create(&lineModels).Error; err != nil {
 			return fmt.Errorf("insert order line: %w", err)
 		}
-	}
-
-	return tx.Commit(ctx)
+		return nil
+	})
 }
 
 // GetByID retrieves an order by ID with its lines
-func (r *PostgresRepository) GetByID(ctx context.Context, schemaName, tenantID, orderID string) (*Order, error) {
-	var o Order
-	var expectedDelivery *time.Time
-	err := r.db.QueryRow(ctx, fmt.Sprintf(`
-		SELECT id, tenant_id, order_number, contact_id, order_date, expected_delivery,
-		       status, currency, exchange_rate, subtotal, vat_amount, total,
-		       COALESCE(notes, ''), quote_id, converted_to_invoice_id,
-		       created_at, created_by, updated_at
-		FROM %s.orders
-		WHERE id = $1 AND tenant_id = $2
-	`, schemaName), orderID, tenantID).Scan(
-		&o.ID, &o.TenantID, &o.OrderNumber, &o.ContactID, &o.OrderDate, &expectedDelivery,
-		&o.Status, &o.Currency, &o.ExchangeRate, &o.Subtotal, &o.VATAmount, &o.Total,
-		&o.Notes, &o.QuoteID, &o.ConvertedToInvoiceID,
-		&o.CreatedAt, &o.CreatedBy, &o.UpdatedAt,
-	)
-	if err == pgx.ErrNoRows {
+func (r *GORMRepository) GetByID(ctx context.Context, schemaName, tenantID, orderID string) (*Order, error) {
+	db, err := r.tenantTable(ctx, schemaName, "orders")
+	if err != nil {
+		return nil, fmt.Errorf("qualify orders table: %w", err)
+	}
+
+	var orderModel models.Order
+	err = db.Where("id = ? AND tenant_id = ?", orderID, tenantID).First(&orderModel).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrOrderNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get order: %w", err)
 	}
-	o.ExpectedDelivery = expectedDelivery
 
-	rows, err := r.db.Query(ctx, fmt.Sprintf(`
-		SELECT id, tenant_id, order_id, line_number, COALESCE(description, ''), quantity, COALESCE(unit, ''),
-		       unit_price, discount_percent, vat_rate, line_subtotal, line_vat, line_total,
-		       product_id
-		FROM %s.order_lines
-		WHERE order_id = $1 AND tenant_id = $2
-		ORDER BY line_number
-	`, schemaName), orderID, tenantID)
+	order := orderFromModel(&orderModel)
+	lines, err := r.listOrderLines(ctx, schemaName, tenantID, orderID)
 	if err != nil {
-		return nil, fmt.Errorf("get order lines: %w", err)
+		return nil, err
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var line OrderLine
-		if err := rows.Scan(
-			&line.ID, &line.TenantID, &line.OrderID, &line.LineNumber, &line.Description,
-			&line.Quantity, &line.Unit, &line.UnitPrice, &line.DiscountPercent, &line.VATRate,
-			&line.LineSubtotal, &line.LineVAT, &line.LineTotal, &line.ProductID,
-		); err != nil {
-			return nil, fmt.Errorf("scan order line: %w", err)
-		}
-		o.Lines = append(o.Lines, line)
-	}
-
-	return &o, nil
+	order.Lines = lines
+	return order, nil
 }
 
 // List retrieves orders with optional filtering
-func (r *PostgresRepository) List(ctx context.Context, schemaName, tenantID string, filter *OrderFilter) ([]Order, error) {
-	query := fmt.Sprintf(`
-		SELECT id, tenant_id, order_number, contact_id, order_date, expected_delivery,
-		       status, currency, exchange_rate, subtotal, vat_amount, total,
-		       COALESCE(notes, ''), quote_id, converted_to_invoice_id,
-		       created_at, created_by, updated_at
-		FROM %s.orders
-		WHERE tenant_id = $1
-	`, schemaName)
+func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, filter *OrderFilter) ([]Order, error) {
+	db, err := r.tenantTable(ctx, schemaName, "orders")
+	if err != nil {
+		return nil, fmt.Errorf("qualify orders table: %w", err)
+	}
 
-	args := []interface{}{tenantID}
-	argNum := 2
-
+	query := db.Where("tenant_id = ?", tenantID)
 	if filter != nil {
 		if filter.Status != "" {
-			query += fmt.Sprintf(" AND status = $%d", argNum)
-			args = append(args, filter.Status)
-			argNum++
+			query = query.Where("status = ?", string(filter.Status))
 		}
 		if filter.ContactID != "" {
-			query += fmt.Sprintf(" AND contact_id = $%d", argNum)
-			args = append(args, filter.ContactID)
-			argNum++
+			query = query.Where("contact_id = ?", filter.ContactID)
 		}
 		if filter.FromDate != nil {
-			query += fmt.Sprintf(" AND order_date >= $%d", argNum)
-			args = append(args, filter.FromDate)
-			argNum++
+			query = query.Where("order_date >= ?", filter.FromDate)
 		}
 		if filter.ToDate != nil {
-			query += fmt.Sprintf(" AND order_date <= $%d", argNum)
-			args = append(args, filter.ToDate)
-			argNum++
+			query = query.Where("order_date <= ?", filter.ToDate)
 		}
-		if filter.Search != "" {
-			query += fmt.Sprintf(" AND (order_number ILIKE $%d)", argNum)
-			args = append(args, "%"+filter.Search+"%")
+		if strings.TrimSpace(filter.Search) != "" {
+			query = query.Where("order_number ILIKE ?", "%"+strings.TrimSpace(filter.Search)+"%")
 		}
 	}
 
-	query += " ORDER BY order_date DESC, order_number DESC"
-
-	rows, err := r.db.Query(ctx, query, args...)
-	if err != nil {
+	var orderModels []models.Order
+	if err := query.
+		Order("order_date DESC").
+		Order("order_number DESC").
+		Find(&orderModels).Error; err != nil {
 		return nil, fmt.Errorf("list orders: %w", err)
 	}
-	defer rows.Close()
 
-	var orders []Order
-	for rows.Next() {
-		var o Order
-		var expectedDelivery *time.Time
-		if err := rows.Scan(
-			&o.ID, &o.TenantID, &o.OrderNumber, &o.ContactID, &o.OrderDate, &expectedDelivery,
-			&o.Status, &o.Currency, &o.ExchangeRate, &o.Subtotal, &o.VATAmount, &o.Total,
-			&o.Notes, &o.QuoteID, &o.ConvertedToInvoiceID,
-			&o.CreatedAt, &o.CreatedBy, &o.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan order: %w", err)
-		}
-		o.ExpectedDelivery = expectedDelivery
-		orders = append(orders, o)
+	orders := make([]Order, len(orderModels))
+	for i := range orderModels {
+		orders[i] = *orderFromModel(&orderModels[i])
 	}
-
 	return orders, nil
 }
 
 // Update updates an order and its lines
-func (r *PostgresRepository) Update(ctx context.Context, schemaName string, order *Order) error {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	result, err := tx.Exec(ctx, fmt.Sprintf(`
-		UPDATE %s.orders
-		SET contact_id = $1, order_date = $2, expected_delivery = $3, currency = $4,
-		    exchange_rate = $5, subtotal = $6, vat_amount = $7, total = $8,
-		    notes = $9, updated_at = $10
-		WHERE id = $11 AND tenant_id = $12 AND status IN ('PENDING', 'CONFIRMED')
-	`, schemaName),
-		order.ContactID, order.OrderDate, order.ExpectedDelivery, order.Currency,
-		order.ExchangeRate, order.Subtotal, order.VATAmount, order.Total,
-		order.Notes, time.Now(), order.ID, order.TenantID,
-	)
-	if err != nil {
-		return fmt.Errorf("update order: %w", err)
-	}
-	if result.RowsAffected() == 0 {
-		return ErrOrderNotFound
-	}
-
-	// Delete existing lines and insert new ones
-	_, err = tx.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.order_lines WHERE order_id = $1`, schemaName), order.ID)
-	if err != nil {
-		return fmt.Errorf("delete order lines: %w", err)
-	}
-
-	for i := range order.Lines {
-		line := &order.Lines[i]
-		line.OrderID = order.ID
-
-		_, err = tx.Exec(ctx, fmt.Sprintf(`
-			INSERT INTO %s.order_lines (
-				id, tenant_id, order_id, line_number, description, quantity, unit,
-				unit_price, discount_percent, vat_rate, line_subtotal, line_vat, line_total,
-				product_id
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-		`, schemaName),
-			line.ID, line.TenantID, line.OrderID, line.LineNumber, line.Description,
-			line.Quantity, line.Unit, line.UnitPrice, line.DiscountPercent, line.VATRate,
-			line.LineSubtotal, line.LineVAT, line.LineTotal, line.ProductID,
-		)
+func (r *GORMRepository) Update(ctx context.Context, schemaName string, order *Order) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		ordersTable, err := database.TenantTable(tx, schemaName, "orders")
 		if err != nil {
+			return fmt.Errorf("qualify orders table: %w", err)
+		}
+		result := ordersTable.Where("id = ? AND tenant_id = ? AND status IN ?", order.ID, order.TenantID, []string{string(OrderStatusPending), string(OrderStatusConfirmed)}).
+			Updates(map[string]interface{}{
+				"contact_id":        order.ContactID,
+				"order_date":        order.OrderDate,
+				"expected_delivery": order.ExpectedDelivery,
+				"currency":          order.Currency,
+				"exchange_rate":     order.ExchangeRate.String(),
+				"subtotal":          order.Subtotal.String(),
+				"vat_amount":        order.VATAmount.String(),
+				"total":             order.Total.String(),
+				"notes":             order.Notes,
+				"updated_at":        time.Now(),
+			})
+		if result.Error != nil {
+			return fmt.Errorf("update order: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return ErrOrderNotFound
+		}
+
+		linesTable, err := database.TenantTable(tx, schemaName, "order_lines")
+		if err != nil {
+			return fmt.Errorf("qualify order lines table: %w", err)
+		}
+		if err := linesTable.Where("order_id = ?", order.ID).Delete(&models.OrderLine{}).Error; err != nil {
+			return fmt.Errorf("delete order lines: %w", err)
+		}
+		if len(order.Lines) == 0 {
+			return nil
+		}
+
+		lineModels := make([]models.OrderLine, len(order.Lines))
+		for i := range order.Lines {
+			order.Lines[i].OrderID = order.ID
+			lineModels[i] = *orderLineToModel(&order.Lines[i])
+		}
+		if err := linesTable.Create(&lineModels).Error; err != nil {
 			return fmt.Errorf("insert order line: %w", err)
 		}
-	}
-
-	return tx.Commit(ctx)
+		return nil
+	})
 }
 
 // UpdateStatus updates the status of an order
-func (r *PostgresRepository) UpdateStatus(ctx context.Context, schemaName, tenantID, orderID string, status OrderStatus) error {
-	result, err := r.db.Exec(ctx, fmt.Sprintf(`
-		UPDATE %s.orders
-		SET status = $1, updated_at = $2
-		WHERE id = $3 AND tenant_id = $4
-	`, schemaName), status, time.Now(), orderID, tenantID)
+func (r *GORMRepository) UpdateStatus(ctx context.Context, schemaName, tenantID, orderID string, status OrderStatus) error {
+	db, err := r.tenantTable(ctx, schemaName, "orders")
 	if err != nil {
-		return fmt.Errorf("update status: %w", err)
+		return fmt.Errorf("qualify orders table: %w", err)
 	}
-	if result.RowsAffected() == 0 {
+
+	result := db.Where("id = ? AND tenant_id = ?", orderID, tenantID).
+		Updates(map[string]interface{}{
+			"status":     string(status),
+			"updated_at": time.Now(),
+		})
+	if result.Error != nil {
+		return fmt.Errorf("update status: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
 		return ErrOrderNotFound
 	}
 	return nil
 }
 
 // Delete removes an order (only pending)
-func (r *PostgresRepository) Delete(ctx context.Context, schemaName, tenantID, orderID string) error {
-	result, err := r.db.Exec(ctx, fmt.Sprintf(`
-		DELETE FROM %s.orders
-		WHERE id = $1 AND tenant_id = $2 AND status = 'PENDING'
-	`, schemaName), orderID, tenantID)
+func (r *GORMRepository) Delete(ctx context.Context, schemaName, tenantID, orderID string) error {
+	db, err := r.tenantTable(ctx, schemaName, "orders")
 	if err != nil {
-		return fmt.Errorf("delete order: %w", err)
+		return fmt.Errorf("qualify orders table: %w", err)
 	}
-	if result.RowsAffected() == 0 {
+
+	result := db.Where("id = ? AND tenant_id = ? AND status = ?", orderID, tenantID, string(OrderStatusPending)).
+		Delete(&models.Order{})
+	if result.Error != nil {
+		return fmt.Errorf("delete order: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
 		return ErrOrderNotFound
 	}
 	return nil
 }
 
 // GenerateNumber generates a new order number
-func (r *PostgresRepository) GenerateNumber(ctx context.Context, schemaName, tenantID string) (string, error) {
-	var seq int
-	err := r.db.QueryRow(ctx, fmt.Sprintf(`
-		SELECT COALESCE(MAX(CAST(SUBSTRING(order_number FROM 'ORD-([0-9]+)') AS INTEGER)), 0) + 1
-		FROM %s.orders WHERE tenant_id = $1
-	`, schemaName), tenantID).Scan(&seq)
+func (r *GORMRepository) GenerateNumber(ctx context.Context, schemaName, tenantID string) (string, error) {
+	db, err := r.tenantTable(ctx, schemaName, "orders")
 	if err != nil {
-		return "", fmt.Errorf("generate order number: %w", err)
+		return "", fmt.Errorf("qualify orders table: %w", err)
 	}
 
+	var seq int
+	if err := db.
+		Select(`
+			COALESCE(MAX(
+				CASE
+					WHEN order_number ~ ? THEN CAST(SUBSTRING(order_number FROM ?) AS INTEGER)
+					ELSE 0
+				END
+			), 0) + 1
+		`, "ORD-[0-9]+$", "ORD-([0-9]+)$").
+		Where("tenant_id = ?", tenantID).
+		Scan(&seq).Error; err != nil {
+		return "", fmt.Errorf("generate order number: %w", err)
+	}
 	return fmt.Sprintf("ORD-%05d", seq), nil
 }
 
 // SetConvertedToInvoice marks an order as converted to an invoice
-func (r *PostgresRepository) SetConvertedToInvoice(ctx context.Context, schemaName, tenantID, orderID, invoiceID string) error {
-	result, err := r.db.Exec(ctx, fmt.Sprintf(`
-		UPDATE %s.orders
-		SET converted_to_invoice_id = $1, updated_at = $2
-		WHERE id = $3 AND tenant_id = $4
-	`, schemaName), invoiceID, time.Now(), orderID, tenantID)
+func (r *GORMRepository) SetConvertedToInvoice(ctx context.Context, schemaName, tenantID, orderID, invoiceID string) error {
+	db, err := r.tenantTable(ctx, schemaName, "orders")
 	if err != nil {
-		return fmt.Errorf("set converted to invoice: %w", err)
+		return fmt.Errorf("qualify orders table: %w", err)
 	}
-	if result.RowsAffected() == 0 {
+
+	result := db.Where("id = ? AND tenant_id = ?", orderID, tenantID).
+		Updates(map[string]interface{}{
+			"converted_to_invoice_id": invoiceID,
+			"updated_at":              time.Now(),
+		})
+	if result.Error != nil {
+		return fmt.Errorf("set converted to invoice: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
 		return ErrOrderNotFound
 	}
 	return nil
 }
 
 // ListStockReservations retrieves current stock reservations for an order.
-func (r *PostgresRepository) ListStockReservations(ctx context.Context, schemaName, tenantID, orderID string) ([]OrderStockReservation, error) {
-	rows, err := r.db.Query(ctx, fmt.Sprintf(`
-		SELECT id, tenant_id, order_id, product_id, warehouse_id, quantity, status,
-		       COALESCE(reason, ''), created_at, COALESCE(created_by::text, ''),
-		       updated_at, released_at, COALESCE(released_by::text, '')
-		FROM %s.order_stock_reservations
-		WHERE tenant_id = $1 AND order_id = $2
-		ORDER BY created_at, product_id, warehouse_id
-	`, schemaName), tenantID, orderID)
+func (r *GORMRepository) ListStockReservations(ctx context.Context, schemaName, tenantID, orderID string) ([]OrderStockReservation, error) {
+	db, err := r.tenantTable(ctx, schemaName, "order_stock_reservations")
 	if err != nil {
+		return nil, fmt.Errorf("qualify order stock reservations table: %w", err)
+	}
+
+	var reservationModels []models.OrderStockReservation
+	if err := db.
+		Where("tenant_id = ? AND order_id = ?", tenantID, orderID).
+		Order("created_at ASC").
+		Order("product_id ASC").
+		Order("warehouse_id ASC").
+		Find(&reservationModels).Error; err != nil {
 		return nil, fmt.Errorf("list order stock reservations: %w", err)
 	}
-	defer rows.Close()
-
-	var reservations []OrderStockReservation
-	for rows.Next() {
-		reservation, err := scanOrderStockReservation(rows)
-		if err != nil {
-			return nil, err
-		}
-		reservations = append(reservations, *reservation)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate order stock reservations: %w", err)
-	}
-	return reservations, nil
+	return stockReservationsFromModels(reservationModels), nil
 }
 
 // GetStockReservation retrieves one order stock reservation.
-func (r *PostgresRepository) GetStockReservation(ctx context.Context, schemaName, tenantID, orderID, productID, warehouseID string) (*OrderStockReservation, error) {
-	row := r.db.QueryRow(ctx, fmt.Sprintf(`
-		SELECT id, tenant_id, order_id, product_id, warehouse_id, quantity, status,
-		       COALESCE(reason, ''), created_at, COALESCE(created_by::text, ''),
-		       updated_at, released_at, COALESCE(released_by::text, '')
-		FROM %s.order_stock_reservations
-		WHERE tenant_id = $1 AND order_id = $2 AND product_id = $3 AND warehouse_id = $4
-	`, schemaName), tenantID, orderID, productID, warehouseID)
+func (r *GORMRepository) GetStockReservation(ctx context.Context, schemaName, tenantID, orderID, productID, warehouseID string) (*OrderStockReservation, error) {
+	db, err := r.tenantTable(ctx, schemaName, "order_stock_reservations")
+	if err != nil {
+		return nil, fmt.Errorf("qualify order stock reservations table: %w", err)
+	}
 
-	reservation, err := scanOrderStockReservation(row)
-	if err == pgx.ErrNoRows {
+	var reservationModel models.OrderStockReservation
+	err = db.
+		Where("tenant_id = ? AND order_id = ? AND product_id = ? AND warehouse_id = ?", tenantID, orderID, productID, warehouseID).
+		First(&reservationModel).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrOrderStockReservationNotFound
 	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get order stock reservation: %w", err)
 	}
-	return reservation, nil
+	return stockReservationFromModel(&reservationModel), nil
 }
 
 // UpsertStockReservation increases or recreates an order stock reservation.
-func (r *PostgresRepository) UpsertStockReservation(ctx context.Context, schemaName string, reservation *OrderStockReservation) error {
-	_, err := r.db.Exec(ctx, fmt.Sprintf(`
-		INSERT INTO %s.order_stock_reservations AS osr (
-			id, tenant_id, order_id, product_id, warehouse_id, quantity, status, reason,
-			created_by, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, 'RESERVED', NULLIF($7, ''), NULLIF($8, '')::uuid, NOW(), NOW())
-		ON CONFLICT (tenant_id, order_id, product_id, warehouse_id) DO UPDATE SET
-			quantity = osr.quantity + EXCLUDED.quantity,
-			status = 'RESERVED',
-			reason = COALESCE(EXCLUDED.reason, osr.reason),
-			updated_at = NOW(),
-			released_at = NULL,
-			released_by = NULL
-	`, schemaName),
-		reservation.ID, reservation.TenantID, reservation.OrderID, reservation.ProductID,
-		reservation.WarehouseID, reservation.Quantity, reservation.Reason, reservation.CreatedBy,
-	)
+func (r *GORMRepository) UpsertStockReservation(ctx context.Context, schemaName string, reservation *OrderStockReservation) error {
+	db, err := r.tenantTable(ctx, schemaName, "order_stock_reservations")
 	if err != nil {
+		return fmt.Errorf("qualify order stock reservations table: %w", err)
+	}
+
+	reservationModel := stockReservationToModel(reservation)
+	if err := db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "tenant_id"},
+			{Name: "order_id"},
+			{Name: "product_id"},
+			{Name: "warehouse_id"},
+		},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"quantity":    gorm.Expr("order_stock_reservations.quantity + EXCLUDED.quantity"),
+			"status":      OrderStockReservationStatusReserved,
+			"reason":      gorm.Expr("COALESCE(EXCLUDED.reason, order_stock_reservations.reason)"),
+			"updated_at":  time.Now(),
+			"released_at": nil,
+			"released_by": nil,
+		}),
+	}).Create(reservationModel).Error; err != nil {
 		return fmt.Errorf("upsert order stock reservation: %w", err)
 	}
 	return nil
 }
 
 // ReleaseStockReservation decreases an order stock reservation.
-func (r *PostgresRepository) ReleaseStockReservation(
+func (r *GORMRepository) ReleaseStockReservation(
 	ctx context.Context,
 	schemaName string,
 	tenantID string,
@@ -411,52 +372,190 @@ func (r *PostgresRepository) ReleaseStockReservation(
 	reason string,
 	releasedBy string,
 ) (*OrderStockReservation, error) {
-	row := r.db.QueryRow(ctx, fmt.Sprintf(`
-		UPDATE %s.order_stock_reservations
-		SET quantity = quantity - $5,
-		    status = CASE WHEN quantity - $5 <= 0 THEN 'RELEASED' ELSE 'RESERVED' END,
-		    reason = COALESCE(NULLIF($6, ''), reason),
-		    updated_at = NOW(),
-		    released_at = CASE WHEN quantity - $5 <= 0 THEN NOW() ELSE released_at END,
-		    released_by = CASE WHEN quantity - $5 <= 0 THEN NULLIF($7, '')::uuid ELSE released_by END
-		WHERE tenant_id = $1 AND order_id = $2 AND product_id = $3 AND warehouse_id = $4 AND quantity >= $5
-		RETURNING id, tenant_id, order_id, product_id, warehouse_id, quantity, status,
-		          COALESCE(reason, ''), created_at, COALESCE(created_by::text, ''),
-		          updated_at, released_at, COALESCE(released_by::text, '')
-	`, schemaName), tenantID, orderID, productID, warehouseID, quantity, reason, releasedBy)
+	db, err := r.tenantTable(ctx, schemaName, "order_stock_reservations")
+	if err != nil {
+		return nil, fmt.Errorf("qualify order stock reservations table: %w", err)
+	}
 
-	reservation, err := scanOrderStockReservation(row)
-	if err == pgx.ErrNoRows {
+	releasedByValue := nilIfEmpty(releasedBy)
+	result := db.Model(&models.OrderStockReservation{}).
+		Where("tenant_id = ? AND order_id = ? AND product_id = ? AND warehouse_id = ? AND quantity >= ?", tenantID, orderID, productID, warehouseID, quantity).
+		Updates(map[string]interface{}{
+			"quantity":    gorm.Expr("quantity - ?", quantity),
+			"status":      gorm.Expr("CASE WHEN quantity - ? <= 0 THEN ? ELSE ? END", quantity, OrderStockReservationStatusReleased, OrderStockReservationStatusReserved),
+			"reason":      gorm.Expr("COALESCE(?, reason)", nilIfEmpty(reason)),
+			"updated_at":  time.Now(),
+			"released_at": gorm.Expr("CASE WHEN quantity - ? <= 0 THEN ? ELSE released_at END", quantity, time.Now()),
+			"released_by": gorm.Expr("CASE WHEN quantity - ? <= 0 THEN ? ELSE released_by END", quantity, releasedByValue),
+		})
+	if result.Error != nil {
+		return nil, fmt.Errorf("release order stock reservation: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
 		return nil, ErrOrderStockReservationNotFound
 	}
+	return r.GetStockReservation(ctx, schemaName, tenantID, orderID, productID, warehouseID)
+}
+
+func (r *GORMRepository) listOrderLines(ctx context.Context, schemaName, tenantID, orderID string) ([]OrderLine, error) {
+	db, err := r.tenantTable(ctx, schemaName, "order_lines")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("qualify order lines table: %w", err)
 	}
-	return reservation, nil
+
+	var lineModels []models.OrderLine
+	if err := db.
+		Where("order_id = ? AND tenant_id = ?", orderID, tenantID).
+		Order("line_number ASC").
+		Find(&lineModels).Error; err != nil {
+		return nil, fmt.Errorf("get order lines: %w", err)
+	}
+
+	lines := make([]OrderLine, len(lineModels))
+	for i := range lineModels {
+		lines[i] = *orderLineFromModel(&lineModels[i])
+	}
+	return lines, nil
 }
 
-type orderStockReservationScanner interface {
-	Scan(dest ...interface{}) error
+func orderToModel(order *Order) *models.Order {
+	return &models.Order{
+		ID:                   order.ID,
+		TenantID:             order.TenantID,
+		OrderNumber:          order.OrderNumber,
+		ContactID:            order.ContactID,
+		OrderDate:            order.OrderDate,
+		ExpectedDelivery:     order.ExpectedDelivery,
+		Status:               string(order.Status),
+		Currency:             order.Currency,
+		ExchangeRate:         models.Decimal{Decimal: order.ExchangeRate},
+		Subtotal:             models.Decimal{Decimal: order.Subtotal},
+		VATAmount:            models.Decimal{Decimal: order.VATAmount},
+		Total:                models.Decimal{Decimal: order.Total},
+		Notes:                order.Notes,
+		QuoteID:              order.QuoteID,
+		ConvertedToInvoiceID: order.ConvertedToInvoiceID,
+		CreatedAt:            order.CreatedAt,
+		CreatedBy:            order.CreatedBy,
+		UpdatedAt:            order.UpdatedAt,
+	}
 }
 
-func scanOrderStockReservation(scanner orderStockReservationScanner) (*OrderStockReservation, error) {
-	var reservation OrderStockReservation
-	if err := scanner.Scan(
-		&reservation.ID,
-		&reservation.TenantID,
-		&reservation.OrderID,
-		&reservation.ProductID,
-		&reservation.WarehouseID,
-		&reservation.Quantity,
-		&reservation.Status,
-		&reservation.Reason,
-		&reservation.CreatedAt,
-		&reservation.CreatedBy,
-		&reservation.UpdatedAt,
-		&reservation.ReleasedAt,
-		&reservation.ReleasedBy,
-	); err != nil {
-		return nil, err
+func orderFromModel(order *models.Order) *Order {
+	return &Order{
+		ID:                   order.ID,
+		TenantID:             order.TenantID,
+		OrderNumber:          order.OrderNumber,
+		ContactID:            order.ContactID,
+		OrderDate:            order.OrderDate,
+		ExpectedDelivery:     order.ExpectedDelivery,
+		Status:               OrderStatus(order.Status),
+		Currency:             order.Currency,
+		ExchangeRate:         order.ExchangeRate.Decimal,
+		Subtotal:             order.Subtotal.Decimal,
+		VATAmount:            order.VATAmount.Decimal,
+		Total:                order.Total.Decimal,
+		Notes:                order.Notes,
+		QuoteID:              order.QuoteID,
+		ConvertedToInvoiceID: order.ConvertedToInvoiceID,
+		CreatedAt:            order.CreatedAt,
+		CreatedBy:            order.CreatedBy,
+		UpdatedAt:            order.UpdatedAt,
 	}
-	return &reservation, nil
+}
+
+func orderLineToModel(line *OrderLine) *models.OrderLine {
+	return &models.OrderLine{
+		ID:              line.ID,
+		TenantID:        line.TenantID,
+		OrderID:         line.OrderID,
+		LineNumber:      line.LineNumber,
+		Description:     line.Description,
+		Quantity:        models.Decimal{Decimal: line.Quantity},
+		Unit:            line.Unit,
+		UnitPrice:       models.Decimal{Decimal: line.UnitPrice},
+		DiscountPercent: models.Decimal{Decimal: line.DiscountPercent},
+		VATRate:         models.Decimal{Decimal: line.VATRate},
+		LineSubtotal:    models.Decimal{Decimal: line.LineSubtotal},
+		LineVAT:         models.Decimal{Decimal: line.LineVAT},
+		LineTotal:       models.Decimal{Decimal: line.LineTotal},
+		ProductID:       line.ProductID,
+	}
+}
+
+func orderLineFromModel(line *models.OrderLine) *OrderLine {
+	return &OrderLine{
+		ID:              line.ID,
+		TenantID:        line.TenantID,
+		OrderID:         line.OrderID,
+		LineNumber:      line.LineNumber,
+		Description:     line.Description,
+		Quantity:        line.Quantity.Decimal,
+		Unit:            line.Unit,
+		UnitPrice:       line.UnitPrice.Decimal,
+		DiscountPercent: line.DiscountPercent.Decimal,
+		VATRate:         line.VATRate.Decimal,
+		LineSubtotal:    line.LineSubtotal.Decimal,
+		LineVAT:         line.LineVAT.Decimal,
+		LineTotal:       line.LineTotal.Decimal,
+		ProductID:       line.ProductID,
+	}
+}
+
+func stockReservationToModel(reservation *OrderStockReservation) *models.OrderStockReservation {
+	return &models.OrderStockReservation{
+		ID:          reservation.ID,
+		TenantID:    reservation.TenantID,
+		OrderID:     reservation.OrderID,
+		ProductID:   reservation.ProductID,
+		WarehouseID: reservation.WarehouseID,
+		Quantity:    models.Decimal{Decimal: reservation.Quantity},
+		Status:      reservation.Status,
+		Reason:      nilIfEmpty(reservation.Reason),
+		CreatedAt:   reservation.CreatedAt,
+		CreatedBy:   nilIfEmpty(reservation.CreatedBy),
+		UpdatedAt:   reservation.UpdatedAt,
+		ReleasedAt:  reservation.ReleasedAt,
+		ReleasedBy:  nilIfEmpty(reservation.ReleasedBy),
+	}
+}
+
+func stockReservationFromModel(reservation *models.OrderStockReservation) *OrderStockReservation {
+	return &OrderStockReservation{
+		ID:          reservation.ID,
+		TenantID:    reservation.TenantID,
+		OrderID:     reservation.OrderID,
+		ProductID:   reservation.ProductID,
+		WarehouseID: reservation.WarehouseID,
+		Quantity:    reservation.Quantity.Decimal,
+		Status:      reservation.Status,
+		Reason:      valueOrEmpty(reservation.Reason),
+		CreatedAt:   reservation.CreatedAt,
+		CreatedBy:   valueOrEmpty(reservation.CreatedBy),
+		UpdatedAt:   reservation.UpdatedAt,
+		ReleasedAt:  reservation.ReleasedAt,
+		ReleasedBy:  valueOrEmpty(reservation.ReleasedBy),
+	}
+}
+
+func stockReservationsFromModels(reservationModels []models.OrderStockReservation) []OrderStockReservation {
+	reservations := make([]OrderStockReservation, len(reservationModels))
+	for i := range reservationModels {
+		reservations[i] = *stockReservationFromModel(&reservationModels[i])
+	}
+	return reservations
+}
+
+func nilIfEmpty(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func valueOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
