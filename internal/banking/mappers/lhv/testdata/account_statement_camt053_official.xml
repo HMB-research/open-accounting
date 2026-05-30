@@ -1,0 +1,213 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02 camt.053.001.02.xsd">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>10001115</MsgId>
+      <CreDtTm>2025-06-05T14:50:18.574675</CreDtTm>
+    </GrpHdr>
+    <Stmt>
+      <Id>10001115GBP</Id>
+      <CreDtTm>2025-06-05T14:50:18.575554</CreDtTm>
+      <FrToDt>
+        <FrDtTm>2025-06-01T00:00:00</FrDtTm>
+        <ToDtTm>2025-06-05T14:50:18.575565</ToDtTm>
+      </FrToDt>
+      <Acct>
+        <Id>
+          <IBAN>GB12LHVB04031312345678</IBAN>
+        </Id>
+        <Ccy>GBP</Ccy>
+        <Svcr>
+          <FinInstnId>
+            <BIC>LHVBGB2LXXX</BIC>
+            <Nm>LHV BANK LIMITED</Nm>
+            <PstlAdr>
+              <AdrTp>BIZZ</AdrTp>
+              <StrtNm>Angel Court</StrtNm>
+              <BldgNb>1</BldgNb>
+              <PstCd>EC2R 7HJ</PstCd>
+              <TwnNm>London</TwnNm>
+              <Ctry>GB</Ctry>
+            </PstlAdr>
+          </FinInstnId>
+        </Svcr>
+      </Acct>
+      <Bal>
+        <Tp>
+          <CdOrPrtry>
+            <Cd>OPBD</Cd>
+          </CdOrPrtry>
+        </Tp>
+        <Amt Ccy="GBP">10000.0</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt>
+          <Dt>2025-06-01</Dt>
+        </Dt>
+      </Bal>
+      <Bal>
+        <Tp>
+          <CdOrPrtry>
+            <Cd>CLBD</Cd>
+          </CdOrPrtry>
+        </Tp>
+        <Amt Ccy="GBP">9999.0</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt>
+          <Dt>2025-06-01</Dt>
+        </Dt>
+      </Bal>
+      <TxsSummry>
+        <TtlCdtNtries/>
+        <TtlDbtNtries>
+          <NbOfNtries>1</NbOfNtries>
+          <Sum>1.0</Sum>
+        </TtlDbtNtries>
+      </TxsSummry>
+      <Ntry>
+        <Amt Ccy="GBP">1.0</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2025-06-05</Dt>
+        </BookgDt>
+        <ValDt>
+          <DtTm>2025-06-05T10:00:00</DtTm>
+        </ValDt>
+        <AcctSvcrRef>C0924B9E44C044D39A828B7E34F4D145</AcctSvcrRef>
+        <BkTxCd>
+          <Domn>
+            <Cd>PMNT</Cd>
+            <Fmly>
+              <Cd>ICDT</Cd>
+              <SubFmlyCd>OTHR</SubFmlyCd>
+            </Fmly>
+          </Domn>
+          <Prtry>
+            <Cd>INTERNAL</Cd>
+          </Prtry>
+        </BkTxCd>
+        <NtryDtls>
+          <TxDtls>
+            <Refs>
+              <AcctSvcrRef>C0924B9E44C044D39A828B7E34F4D145</AcctSvcrRef>
+              <InstrId>50137</InstrId>
+            </Refs>
+            <AmtDtls>
+              <InstdAmt>
+                <Amt Ccy="GBP">1.0</Amt>
+              </InstdAmt>
+              <TxAmt>
+                <Amt Ccy="GBP">1.0</Amt>
+              </TxAmt>
+            </AmtDtls>
+            <RmtInf>
+              <Ustrd>GBP payment</Ustrd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Stmt>
+    <Stmt>
+      <Id>10001115EUR</Id>
+      <CreDtTm>2025-06-05T14:50:18.575712</CreDtTm>
+      <FrToDt>
+        <FrDtTm>2025-06-01T00:00:00</FrDtTm>
+        <ToDtTm>2025-06-05T14:50:18.575719</ToDtTm>
+      </FrToDt>
+      <Acct>
+        <Id>
+          <IBAN>GB12LHVB04031312345679</IBAN>
+        </Id>
+        <Ccy>EUR</Ccy>
+        <Svcr>
+          <FinInstnId>
+            <BIC>LHVBGB2LXXX</BIC>
+            <Nm>LHV BANK LIMITED</Nm>
+            <PstlAdr>
+              <AdrTp>BIZZ</AdrTp>
+              <StrtNm>Angel Court</StrtNm>
+              <BldgNb>1</BldgNb>
+              <PstCd>EC2R 7HJ</PstCd>
+              <TwnNm>London</TwnNm>
+              <Ctry>GB</Ctry>
+            </PstlAdr>
+          </FinInstnId>
+        </Svcr>
+      </Acct>
+      <Bal>
+        <Tp>
+          <CdOrPrtry>
+            <Cd>OPBD</Cd>
+          </CdOrPrtry>
+        </Tp>
+        <Amt Ccy="EUR">5000.0</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt>
+          <Dt>2025-06-01</Dt>
+        </Dt>
+      </Bal>
+      <Bal>
+        <Tp>
+          <CdOrPrtry>
+            <Cd>CLBD</Cd>
+          </CdOrPrtry>
+        </Tp>
+        <Amt Ccy="EUR">4999.0</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt>
+          <Dt>2025-06-01</Dt>
+        </Dt>
+      </Bal>
+      <TxsSummry>
+        <TtlCdtNtries/>
+        <TtlDbtNtries>
+          <NbOfNtries>1</NbOfNtries>
+          <Sum>1.0</Sum>
+        </TtlDbtNtries>
+      </TxsSummry>
+      <Ntry>
+        <Amt Ccy="EUR">1.0</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2025-06-05</Dt>
+        </BookgDt>
+        <ValDt>
+          <DtTm>2025-06-05T10:00:00</DtTm>
+        </ValDt>
+        <AcctSvcrRef>7CAC8F3C708940C1AF9F0B3E4EB64478</AcctSvcrRef>
+        <BkTxCd>
+          <Domn>
+            <Cd>PMNT</Cd>
+            <Fmly>
+              <Cd>ICDT</Cd>
+              <SubFmlyCd>OTHR</SubFmlyCd>
+            </Fmly>
+          </Domn>
+          <Prtry>
+            <Cd>INTERNAL</Cd>
+          </Prtry>
+        </BkTxCd>
+        <NtryDtls>
+          <TxDtls>
+            <Refs>
+              <AcctSvcrRef>7CAC8F3C708940C1AF9F0B3E4EB64478</AcctSvcrRef>
+              <InstrId>50137</InstrId>
+            </Refs>
+            <AmtDtls>
+              <InstdAmt>
+                <Amt Ccy="EUR">1.0</Amt>
+              </InstdAmt>
+              <TxAmt>
+                <Amt Ccy="EUR">1.0</Amt>
+              </TxAmt>
+            </AmtDtls>
+            <RmtInf>
+              <Ustrd>EUR payment</Ustrd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>

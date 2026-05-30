@@ -3,6 +3,7 @@ package banking
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -38,6 +39,14 @@ func (s *Service) ImportTransactions(ctx context.Context, schemaName, tenantID, 
 		amount, err := decimal.NewFromString(row.Amount)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: invalid amount '%s'", i+1, row.Amount))
+			continue
+		}
+		if !bankStatementAccountMatches(row.SourceAccount, account.AccountNumber) {
+			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: source account '%s' does not match bank account '%s'", i+1, row.SourceAccount, account.AccountNumber))
+			continue
+		}
+		if !bankStatementCurrencyMatches(row.Currency, account.Currency) {
+			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: currency '%s' does not match bank account currency '%s'", i+1, row.Currency, account.Currency))
 			continue
 		}
 
@@ -91,4 +100,26 @@ func (s *Service) ImportTransactions(ctx context.Context, schemaName, tenantID, 
 	}
 
 	return result, nil
+}
+
+func bankStatementAccountMatches(sourceAccount, bankAccount string) bool {
+	source := normalizeBankStatementComparable(sourceAccount)
+	if source == "" {
+		return true
+	}
+	return source == normalizeBankStatementComparable(bankAccount)
+}
+
+func bankStatementCurrencyMatches(rowCurrency, accountCurrency string) bool {
+	row := strings.ToUpper(strings.TrimSpace(rowCurrency))
+	if row == "" {
+		return true
+	}
+	return row == strings.ToUpper(strings.TrimSpace(accountCurrency))
+}
+
+func normalizeBankStatementComparable(value string) string {
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	normalized = strings.ReplaceAll(normalized, " ", "")
+	return normalized
 }

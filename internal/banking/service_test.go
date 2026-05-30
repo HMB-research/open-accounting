@@ -411,6 +411,72 @@ func TestNewServiceWithRepository(t *testing.T) {
 	}
 }
 
+func TestService_ImportTransactionsRejectsMismatchedStatementAccountOrCurrency(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo)
+	ctx := context.Background()
+	repo.accounts["acc-1"] = &BankAccount{
+		ID:            "acc-1",
+		TenantID:      testTenantID,
+		AccountNumber: "EE457700771000676899",
+		Currency:      "EUR",
+	}
+
+	result, err := service.ImportTransactions(ctx, testSchemaName, testTenantID, "acc-1", &ImportCSVRequest{
+		FileName:       "lhv.xml",
+		SkipDuplicates: true,
+		Transactions: []CSVTransactionRow{
+			{
+				Date:          "2026-03-15",
+				Amount:        "100.00",
+				Currency:      "EUR",
+				SourceAccount: "EE45 7700 7710 0067 6899",
+				Description:   "Client payment",
+				ExternalID:    "match-1",
+			},
+			{
+				Date:          "2026-03-16",
+				Amount:        "25.00",
+				Currency:      "EUR",
+				SourceAccount: "EE111",
+				Description:   "Wrong account",
+				ExternalID:    "wrong-account",
+			},
+			{
+				Date:          "2026-03-17",
+				Amount:        "10.00",
+				Currency:      "GBP",
+				SourceAccount: "EE457700771000676899",
+				Description:   "Wrong currency",
+				ExternalID:    "wrong-currency",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ImportTransactions() error = %v", err)
+	}
+	if result.TransactionsImported != 1 {
+		t.Fatalf("expected 1 imported transaction, got %d", result.TransactionsImported)
+	}
+	if len(result.Errors) != 2 {
+		t.Fatalf("expected 2 row errors, got %#v", result.Errors)
+	}
+	if !strings.Contains(result.Errors[0], "source account") {
+		t.Fatalf("expected source account error, got %q", result.Errors[0])
+	}
+	if !strings.Contains(result.Errors[1], "currency") {
+		t.Fatalf("expected currency error, got %q", result.Errors[1])
+	}
+	if len(repo.transactions) != 1 {
+		t.Fatalf("expected one persisted transaction, got %d", len(repo.transactions))
+	}
+	for _, tx := range repo.transactions {
+		if tx.Currency != "EUR" || tx.Description != "Client payment" {
+			t.Fatalf("unexpected persisted transaction: %#v", tx)
+		}
+	}
+}
+
 func TestService_CreateBankAccount(t *testing.T) {
 	tests := []struct {
 		name      string

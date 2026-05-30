@@ -8,11 +8,14 @@ import (
 )
 
 func TestParseTransactions(t *testing.T) {
-	rows, err := ParseTransactions("date;amount;description;reference;counterparty_name;counterparty_account;external_id\n2026-03-15;100.00;Client payment;REF-1;Acme;EE111;ext-1\n")
+	rows, err := ParseTransactions("date;value_date;amount;currency;source_account;description;reference;counterparty_name;counterparty_account;external_id\n2026-03-15;2026-03-16;100.00;EUR;EE999;Client payment;REF-1;Acme;EE111;ext-1\n")
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, "2026-03-15", rows[0].Date)
+	assert.Equal(t, "2026-03-16", rows[0].ValueDate)
 	assert.Equal(t, "100.00", rows[0].Amount)
+	assert.Equal(t, "EUR", rows[0].Currency)
+	assert.Equal(t, "EE999", rows[0].SourceAccount)
 	assert.Equal(t, "Client payment", rows[0].Description)
 	assert.Equal(t, "REF-1", rows[0].Reference)
 	assert.Equal(t, "Acme", rows[0].CounterpartyName)

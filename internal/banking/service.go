@@ -8,6 +8,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 // Service provides bank reconciliation operations
@@ -18,9 +21,23 @@ type Service struct {
 
 // NewService creates a new banking service
 func NewService(db *pgxpool.Pool) *Service {
+	if db == nil {
+		return &Service{}
+	}
+	gormDB, err := newGORMDBFromPool(db)
+	if err != nil {
+		panic(fmt.Errorf("create banking GORM repository: %w", err))
+	}
 	return &Service{
 		db:   db,
-		repo: NewPostgresRepository(db),
+		repo: NewGORMRepository(gormDB),
+	}
+}
+
+// NewServiceWithGORM creates a banking service backed by an existing GORM handle.
+func NewServiceWithGORM(db *gorm.DB) *Service {
+	return &Service{
+		repo: NewGORMRepository(db),
 	}
 }
 
@@ -29,6 +46,20 @@ func NewServiceWithRepository(repo Repository) *Service {
 	return &Service{
 		repo: repo,
 	}
+}
+
+func newGORMDBFromPool(pool *pgxpool.Pool) (*gorm.DB, error) {
+	if pool == nil {
+		return nil, fmt.Errorf("database connection not available")
+	}
+	return newGORMDBFromConnString(pool.Config().ConnString())
+}
+
+func newGORMDBFromConnString(connString string) (*gorm.DB, error) {
+	return gorm.Open(postgres.Open(connString), &gorm.Config{
+		Logger:                 logger.Default.LogMode(logger.Warn),
+		SkipDefaultTransaction: true,
+	})
 }
 
 // EnsureSchema creates the bank reconciliation tables if they don't exist

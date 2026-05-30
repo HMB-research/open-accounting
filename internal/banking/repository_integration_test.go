@@ -30,11 +30,29 @@ func ensureReconciliationSchema(t *testing.T, pool *pgxpool.Pool, schemaName str
 	}
 }
 
+func newTestGORMRepository(t *testing.T, pool *pgxpool.Pool) *GORMRepository {
+	t.Helper()
+	db, err := newGORMDBFromPool(pool)
+	if err != nil {
+		t.Fatalf("create GORM banking repository: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get GORM sql DB: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Fatalf("close GORM sql DB: %v", err)
+		}
+	})
+	return NewGORMRepository(db)
+}
+
 func TestRepository_CreateAndGetBankAccount(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create a GL account first (bank accounts reference GL accounts)
@@ -87,7 +105,7 @@ func TestRepository_ListBankAccounts(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account
@@ -170,7 +188,7 @@ func TestRepository_UpdateBankAccount(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account
@@ -226,7 +244,7 @@ func TestRepository_DeleteBankAccount(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account
@@ -272,7 +290,7 @@ func TestRepository_GetBankAccount_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	_, err := repo.GetBankAccount(ctx, tenant.SchemaName, tenant.ID, uuid.New().String())
@@ -288,7 +306,7 @@ func TestRepository_CreateTransaction(t *testing.T) {
 	// Ensure reconciliation schema is in place (adds reconciliation_id column to bank_transactions)
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account and bank account
@@ -368,7 +386,7 @@ func TestRepository_IsTransactionDuplicate(t *testing.T) {
 	// Ensure reconciliation schema is in place
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account and bank account
@@ -459,7 +477,7 @@ func TestRepository_CalculateAccountBalance(t *testing.T) {
 	// Ensure reconciliation schema is in place
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account and bank account
@@ -523,7 +541,7 @@ func TestRepository_ReconciliationLifecycle(t *testing.T) {
 	// Ensure reconciliation schema is in place
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account and bank account with unique code
@@ -623,7 +641,7 @@ func TestRepository_GetTransaction_MatchUnmatch(t *testing.T) {
 	// Ensure reconciliation schema is in place
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account and bank account with unique code
@@ -749,7 +767,7 @@ func TestRepository_AddTransactionToReconciliation(t *testing.T) {
 	// Ensure reconciliation schema is in place
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account and bank account with unique code
@@ -851,7 +869,7 @@ func TestRepository_ListTransactionsWithFilters(t *testing.T) {
 	// Ensure reconciliation schema is in place
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account and bank account
@@ -995,7 +1013,7 @@ func TestRepository_GetTransaction_NotFound(t *testing.T) {
 	// Ensure reconciliation schema is in place
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	_, err := repo.GetTransaction(ctx, tenant.SchemaName, tenant.ID, uuid.New().String())
@@ -1011,7 +1029,7 @@ func TestRepository_GetReconciliation_NotFound(t *testing.T) {
 	// Ensure reconciliation schema is in place
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	_, err := repo.GetReconciliation(ctx, tenant.SchemaName, tenant.ID, uuid.New().String())
@@ -1024,7 +1042,7 @@ func TestRepository_UnsetDefaultAccounts(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account
@@ -1083,7 +1101,7 @@ func TestRepository_CountTransactionsForAccount(t *testing.T) {
 	// Ensure reconciliation schema is in place
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account and bank account
@@ -1155,7 +1173,7 @@ func TestRepository_DeleteBankAccount_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Try to delete a non-existent account
@@ -1172,7 +1190,7 @@ func TestRepository_MatchTransaction_AlreadyMatched(t *testing.T) {
 
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account and bank account
@@ -1260,7 +1278,7 @@ func TestRepository_MatchTransaction_NotFound(t *testing.T) {
 
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Try to match a non-existent transaction
@@ -1276,7 +1294,7 @@ func TestRepository_UnmatchTransaction_NotMatched(t *testing.T) {
 
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account and bank account
@@ -1339,7 +1357,7 @@ func TestRepository_UnmatchTransaction_NotFound(t *testing.T) {
 
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Try to unmatch a non-existent transaction
@@ -1356,7 +1374,7 @@ func TestRepository_CompleteReconciliation_AlreadyCompleted(t *testing.T) {
 
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account and bank account
@@ -1424,7 +1442,7 @@ func TestRepository_CompleteReconciliation_NotFound(t *testing.T) {
 
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Try to complete a non-existent reconciliation
@@ -1440,7 +1458,7 @@ func TestRepository_AddTransactionToReconciliation_NotFound(t *testing.T) {
 
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Try to add a non-existent transaction to reconciliation
@@ -1454,7 +1472,7 @@ func TestRepository_ListBankAccounts_CurrencyFilter(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account
@@ -1532,7 +1550,7 @@ func TestRepository_ListBankAccounts_EmptyResult(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// List accounts for a tenant with no accounts
@@ -1556,7 +1574,7 @@ func TestRepository_ListTransactions_EmptyResult(t *testing.T) {
 
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// List transactions for a tenant with no transactions
@@ -1580,7 +1598,7 @@ func TestRepository_ListReconciliations_EmptyResult(t *testing.T) {
 
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create a bank account but no reconciliations
@@ -1633,7 +1651,7 @@ func TestRepository_CalculateAccountBalance_EmptyAccount(t *testing.T) {
 
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account and bank account
@@ -1682,7 +1700,7 @@ func TestRepository_CreateTransaction_WithAllFields(t *testing.T) {
 
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account and bank account
@@ -1768,7 +1786,7 @@ func TestRepository_ListBankAccounts_CombinedFilters(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account
@@ -1820,7 +1838,7 @@ func TestRepository_IsTransactionDuplicate_NoExternalID(t *testing.T) {
 
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account and bank account
@@ -1900,7 +1918,7 @@ func TestRepository_CompleteReconciliation_UpdatesMatchedTransactions(t *testing
 
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account and bank account
@@ -2011,7 +2029,7 @@ func TestRepository_BankAccount_NullGLAccountID(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create a bank account without GL account ID
@@ -2049,7 +2067,7 @@ func TestRepository_ListTransactions_NoFilter(t *testing.T) {
 
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account and bank account
@@ -2117,7 +2135,7 @@ func TestRepository_MultipleReconciliations_SameBankAccount(t *testing.T) {
 
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account and bank account
@@ -2193,7 +2211,7 @@ func TestRepository_CreateImportRecord(t *testing.T) {
 
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account and bank account
@@ -2274,7 +2292,7 @@ func TestRepository_GetImportHistory(t *testing.T) {
 
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account and bank account
@@ -2361,7 +2379,7 @@ func TestRepository_GetImportHistory_EmptyResult(t *testing.T) {
 
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account and bank account
@@ -2414,7 +2432,7 @@ func TestRepository_GetImportHistory_Limit(t *testing.T) {
 
 	ensureReconciliationSchema(t, pool, tenant.SchemaName)
 
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create GL account and bank account

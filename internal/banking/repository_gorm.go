@@ -1,5 +1,3 @@
-//go:build gorm
-
 package banking
 
 import (
@@ -461,15 +459,25 @@ func (r *GORMRepository) IsTransactionDuplicate(ctx context.Context, schemaName,
 		}
 	}
 
-	// Check by date and amount
-	var count int64
-	err = db.Where("tenant_id = ? AND bank_account_id = ? AND transaction_date = ? AND amount = ?",
-		tenantID, bankAccountID, date, amount.String()).
-		Count(&count).Error
+	db, err = r.tenantTable(ctx, schemaName, "bank_transactions")
 	if err != nil {
+		return false, err
+	}
+
+	// Check by date and amount. Compare decimal values after loading matching
+	// date rows so numeric scale differences do not affect duplicate detection.
+	var candidates []models.BankTransaction
+	if err := db.Where("tenant_id = ? AND bank_account_id = ?", tenantID, bankAccountID).
+		Find(&candidates).Error; err != nil {
 		return false, fmt.Errorf("check duplicate: %w", err)
 	}
-	return count > 0, nil
+	for _, candidate := range candidates {
+		if candidate.TransactionDate.Format("2006-01-02") == date.Format("2006-01-02") &&
+			candidate.Amount.Equal(amount) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // CreateReconciliation inserts a new reconciliation
@@ -774,3 +782,5 @@ func bankStatementImportToModel(i *BankStatementImport) *models.BankStatementImp
 		CreatedAt:            i.CreatedAt,
 	}
 }
+
+var _ Repository = (*GORMRepository)(nil)

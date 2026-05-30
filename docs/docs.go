@@ -19684,6 +19684,9 @@ const docTemplate = `{
                 "counterparty_name": {
                     "type": "string"
                 },
+                "currency": {
+                    "type": "string"
+                },
                 "date": {
                     "type": "string"
                 },
@@ -19694,6 +19697,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "reference": {
+                    "type": "string"
+                },
+                "source_account": {
                     "type": "string"
                 },
                 "value_date": {

@@ -232,6 +232,8 @@ type CSVTransactionRow struct {
 	Date                string `json:"date"`
 	ValueDate           string `json:"value_date,omitempty"`
 	Amount              string `json:"amount"`
+	Currency            string `json:"currency,omitempty"`
+	SourceAccount       string `json:"source_account,omitempty"`
 	Description         string `json:"description"`
 	Reference           string `json:"reference,omitempty"`
 	CounterpartyName    string `json:"counterparty_name,omitempty"`

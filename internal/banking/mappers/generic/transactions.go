@@ -21,6 +21,8 @@ func ParseTransactions(content string) ([]banking.CSVTransactionRow, error) {
 			Date:                mappers.Field(record, parsed.Index, "date", "transaction_date"),
 			ValueDate:           mappers.Field(record, parsed.Index, "value_date"),
 			Amount:              mappers.Field(record, parsed.Index, "amount", "sum"),
+			Currency:            mappers.Field(record, parsed.Index, "currency"),
+			SourceAccount:       mappers.Field(record, parsed.Index, "source_account", "client_account", "account_number", "bank_account"),
 			Description:         mappers.Field(record, parsed.Index, "description", "details", "selgitus"),
 			Reference:           mappers.Field(record, parsed.Index, "reference", "payment_reference"),
 			CounterpartyName:    mappers.Field(record, parsed.Index, "counterparty_name", "counterparty", "name"),
