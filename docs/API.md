@@ -2932,7 +2932,7 @@ Returns cost-center budget, actual expense, budget-used percentage, and over-bud
 
 ---
 
-## Estonian Tax (KMD)
+## Estonian and EU Tax (KMD/OSS)
 
 ### List KMD Declarations
 
@@ -2964,6 +2964,15 @@ Authorization: Bearer <token>
 ```
 
 Generates KMD INF A/B appendix rows from domestic VAT-bearing sales and purchase invoices whose partner-period taxable total reaches the threshold excluding VAT. The default threshold is `1000`.
+
+### Generate EU VAT OSS Report
+
+```http
+GET /tenants/{tenantId}/tax/eu-vat/oss?year=2026&quarter=1
+Authorization: Bearer <token>
+```
+
+Returns quarterly EU VAT One Stop Shop report totals grouped by destination member state and VAT rate from non-Estonian EU sales invoice lines. The report uses base-currency invoice amounts and excludes contacts with VAT numbers by default. Add `include_b2b=true` for a reconciliation view that includes VAT-registered contacts.
 
 ### Import Historical KMD Declarations
 

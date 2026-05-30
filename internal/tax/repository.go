@@ -29,6 +29,9 @@ type Repository interface {
 	// QueryKMDINFData queries invoice rows eligible for the KMD INF appendix.
 	QueryKMDINFData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time, threshold decimal.Decimal) ([]KMDINFReportRow, error)
 
+	// QueryEUVATOSSData queries EU VAT OSS destination-country aggregates.
+	QueryEUVATOSSData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time, includeB2B bool) ([]EUVATOSSReportRow, error)
+
 	// SaveDeclaration saves a KMD declaration (upsert)
 	SaveDeclaration(ctx context.Context, schemaName string, decl *KMDDeclaration) error
 
@@ -240,6 +243,62 @@ func (r *PostgresRepository) QueryKMDINFData(ctx context.Context, schemaName, te
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate KMD INF rows: %w", err)
+	}
+
+	return result, nil
+}
+
+// QueryEUVATOSSData queries EU VAT OSS destination-country aggregates.
+func (r *PostgresRepository) QueryEUVATOSSData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time, includeB2B bool) ([]EUVATOSSReportRow, error) {
+	rows, err := r.db.Query(ctx, fmt.Sprintf(`
+		SELECT
+			COALESCE(NULLIF(UPPER(c.country_code), ''), 'EE') AS country_code,
+			il.vat_rate,
+			COUNT(DISTINCT i.id) AS invoice_count,
+			COUNT(*) AS line_count,
+			SUM(il.line_subtotal * i.exchange_rate) AS taxable_amount,
+			SUM(il.line_vat * i.exchange_rate) AS vat_amount,
+			SUM(il.line_total * i.exchange_rate) AS total_amount
+		FROM %s.invoices i
+		JOIN %s.contacts c ON c.id = i.contact_id AND c.tenant_id = i.tenant_id
+		JOIN %s.invoice_lines il ON il.invoice_id = i.id AND il.tenant_id = i.tenant_id
+		WHERE i.tenant_id = $1
+			AND i.invoice_type = 'SALES'
+			AND i.status NOT IN ('DRAFT', 'VOIDED')
+			AND i.issue_date >= $2
+			AND i.issue_date < $3
+			AND COALESCE(NULLIF(UPPER(c.country_code), ''), 'EE') IN (%s)
+			AND COALESCE(NULLIF(UPPER(c.country_code), ''), 'EE') <> 'EE'
+			AND COALESCE(NULLIF(il.vat_treatment, ''), 'STANDARD') = 'STANDARD'
+			AND il.vat_rate > 0
+			AND il.line_vat <> 0
+			AND ($4 OR COALESCE(NULLIF(TRIM(c.vat_number), ''), '') = '')
+		GROUP BY country_code, il.vat_rate
+		ORDER BY country_code, il.vat_rate
+	`, schemaName, schemaName, schemaName, euVATOSSCountryCodeSQLList), tenantID, startDate, endDate, includeB2B)
+	if err != nil {
+		return nil, fmt.Errorf("query EU VAT OSS data: %w", err)
+	}
+	defer rows.Close()
+
+	result := []EUVATOSSReportRow{}
+	for rows.Next() {
+		var row EUVATOSSReportRow
+		if err := rows.Scan(
+			&row.CountryCode,
+			&row.VATRate,
+			&row.InvoiceCount,
+			&row.LineCount,
+			&row.TaxableAmount,
+			&row.VATAmount,
+			&row.TotalAmount,
+		); err != nil {
+			return nil, fmt.Errorf("scan EU VAT OSS row: %w", err)
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate EU VAT OSS rows: %w", err)
 	}
 
 	return result, nil

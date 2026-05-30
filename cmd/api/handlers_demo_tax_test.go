@@ -26,6 +26,8 @@ type mockTaxRepository struct {
 	queryVATDataErr        error
 	queryKMDINFDataResult  []tax.KMDINFReportRow
 	queryKMDINFDataErr     error
+	queryEUVATOSSResult    []tax.EUVATOSSReportRow
+	queryEUVATOSSErr       error
 	saveDeclarationErr     error
 	getDeclarationResult   *tax.KMDDeclaration
 	existingDeclarations   map[string]*tax.KMDDeclaration
@@ -51,6 +53,13 @@ func (m *mockTaxRepository) QueryKMDINFData(ctx context.Context, schemaName, ten
 		return nil, m.queryKMDINFDataErr
 	}
 	return m.queryKMDINFDataResult, nil
+}
+
+func (m *mockTaxRepository) QueryEUVATOSSData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time, includeB2B bool) ([]tax.EUVATOSSReportRow, error) {
+	if m.queryEUVATOSSErr != nil {
+		return nil, m.queryEUVATOSSErr
+	}
+	return m.queryEUVATOSSResult, nil
 }
 
 func (m *mockTaxRepository) SaveDeclaration(ctx context.Context, schemaName string, decl *tax.KMDDeclaration) error {
@@ -169,6 +178,28 @@ func TestKMDHandlers(t *testing.T) {
 	assert.Equal(t, tax.KMDINFPartSales, infReport.Rows[0].Part)
 	assert.True(t, infReport.Threshold.Equal(decimal.NewFromInt(1000)))
 
+	taxRepo.queryEUVATOSSResult = []tax.EUVATOSSReportRow{{
+		CountryCode:   "DE",
+		VATRate:       decimal.NewFromInt(19),
+		InvoiceCount:  1,
+		LineCount:     1,
+		TaxableAmount: decimal.NewFromInt(100),
+		VATAmount:     decimal.NewFromInt(19),
+		TotalAmount:   decimal.NewFromInt(119),
+	}}
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/tax/eu-vat/oss?year=2026&quarter=1", nil), map[string]string{
+		"tenantID": "tenant-1",
+	})
+	rr = httptest.NewRecorder()
+	h.HandleGenerateEUVATOSS(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var ossReport tax.EUVATOSSReport
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&ossReport))
+	require.Len(t, ossReport.Rows, 1)
+	assert.Equal(t, "DE", ossReport.Rows[0].CountryCode)
+	assert.Equal(t, "Germany", ossReport.Rows[0].CountryName)
+	assert.True(t, ossReport.VATAmount.Equal(decimal.NewFromInt(19)))
+
 	taxRepo.getDeclarationResult = &tax.KMDDeclaration{
 		ID:             "decl-export",
 		TenantID:       tenantRecord.ID,
@@ -269,6 +300,26 @@ func TestKMDHandlersValidationAndErrorPaths(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, rr.Code, rr.Body.String())
 	assert.Contains(t, rr.Body.String(), "inf query failed")
 	taxRepo.queryKMDINFDataErr = nil
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/tax/eu-vat/oss?year=bad&quarter=1", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.HandleGenerateEUVATOSS(rr, req)
+	require.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "Invalid year")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/tax/eu-vat/oss?year=2026&quarter=5", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.HandleGenerateEUVATOSS(rr, req)
+	require.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "Invalid quarter")
+
+	taxRepo.queryEUVATOSSErr = errors.New("oss query failed")
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/tax/eu-vat/oss?year=2026&quarter=1", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.HandleGenerateEUVATOSS(rr, req)
+	require.Equal(t, http.StatusInternalServerError, rr.Code, rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "oss query failed")
+	taxRepo.queryEUVATOSSErr = nil
 
 	tenantRepo.getTenantErr = tenant.ErrTenantNotFound
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/tax/kmd/2025/2/xml", nil), map[string]string{

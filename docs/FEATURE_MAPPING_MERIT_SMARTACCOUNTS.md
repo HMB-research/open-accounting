@@ -182,7 +182,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Multi-rate VAT | ✅ | ✅ | ✅ | Implemented |
 | VAT declaration (KMD) | ✅ | ✅ | ✅ | Implemented with generation, listing, e-MTA XML export, KMD INF A/B reporting, historical import, API/CLI coverage, and tests; direct e-MTA submission remains a separate blocker |
 | e-MTA VAT submission | ✅ | ✅ | ❌ | **Blocker** |
-| EU VAT (MOSS) | ✅ | ✅ | ❌ | **Gap** |
+| EU VAT (MOSS) | ✅ | ✅ | ✅ | Implemented as quarterly EU VAT OSS report grouped by destination member state and VAT rate, with API/CLI coverage for manual filing support |
 | Reverse charge VAT | ✅ | ✅ | ✅ | Implemented - invoice lines support reverse-charge treatment through API, CLI, CSV import, persistence, and KMD self-assessed output/input VAT aggregation |
 
 ### 6.2 Annual Reporting

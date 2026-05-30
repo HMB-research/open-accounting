@@ -4944,6 +4944,81 @@ definitions:
       year:
         type: integer
     type: object
+  github_com_HMB-research_open-accounting_internal_tax.EUVATOSSCountrySummary:
+    properties:
+      country_code:
+        type: string
+      country_name:
+        type: string
+      invoice_count:
+        type: integer
+      line_count:
+        type: integer
+      taxable_amount:
+        type: number
+      total_amount:
+        type: number
+      vat_amount:
+        type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_tax.EUVATOSSReport:
+    properties:
+      currency:
+        type: string
+      generated_at:
+        type: string
+      include_b2b:
+        type: boolean
+      invoice_count:
+        type: integer
+      line_count:
+        type: integer
+      period_end:
+        type: string
+      period_start:
+        type: string
+      quarter:
+        type: integer
+      rows:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tax.EUVATOSSReportRow'
+        type: array
+      scheme:
+        type: string
+      summary:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tax.EUVATOSSCountrySummary'
+        type: array
+      taxable_amount:
+        type: number
+      tenant_id:
+        type: string
+      total_amount:
+        type: number
+      vat_amount:
+        type: number
+      year:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_tax.EUVATOSSReportRow:
+    properties:
+      country_code:
+        type: string
+      country_name:
+        type: string
+      invoice_count:
+        type: integer
+      line_count:
+        type: integer
+      taxable_amount:
+        type: number
+      total_amount:
+        type: number
+      vat_amount:
+        type: number
+      vat_rate:
+        type: number
+    type: object
   github_com_HMB-research_open-accounting_internal_tax.ImportKMDHistoryRequest:
     properties:
       csv_content:
@@ -13833,6 +13908,56 @@ paths:
       summary: Test SMTP configuration
       tags:
       - Email
+  /tenants/{tenantID}/tax/eu-vat/oss:
+    get:
+      description: Generate quarterly EU VAT OSS destination-country totals from non-Estonian
+        EU sales invoices
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Year
+        in: query
+        name: year
+        required: true
+        type: integer
+      - description: Quarter
+        in: query
+        name: quarter
+        required: true
+        type: integer
+      - description: Include contacts with VAT numbers
+        in: query
+        name: include_b2b
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tax.EUVATOSSReport'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Generate EU VAT OSS report
+      tags:
+      - Tax
   /tenants/{tenantID}/tax/kmd:
     get:
       description: Get all KMD declarations for a tenant

@@ -279,6 +279,77 @@ func (r *GORMRepository) QueryKMDINFData(ctx context.Context, schemaName, tenant
 	return rows, nil
 }
 
+// QueryEUVATOSSData queries EU VAT OSS destination-country aggregates.
+func (r *GORMRepository) QueryEUVATOSSData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time, includeB2B bool) ([]EUVATOSSReportRow, error) {
+	invoicesTable, err := database.QualifiedTable(schemaName, "invoices")
+	if err != nil {
+		return nil, err
+	}
+	contactsTable, err := database.QualifiedTable(schemaName, "contacts")
+	if err != nil {
+		return nil, err
+	}
+	invoiceLinesTable, err := database.QualifiedTable(schemaName, "invoice_lines")
+	if err != nil {
+		return nil, err
+	}
+
+	var results []struct {
+		CountryCode   string
+		VATRate       models.Decimal
+		InvoiceCount  int
+		LineCount     int
+		TaxableAmount models.Decimal
+		VATAmount     models.Decimal
+		TotalAmount   models.Decimal
+	}
+
+	err = r.db.WithContext(ctx).Raw(fmt.Sprintf(`
+		SELECT
+			COALESCE(NULLIF(UPPER(c.country_code), ''), 'EE') AS country_code,
+			il.vat_rate,
+			COUNT(DISTINCT i.id) AS invoice_count,
+			COUNT(*) AS line_count,
+			SUM(il.line_subtotal * i.exchange_rate) AS taxable_amount,
+			SUM(il.line_vat * i.exchange_rate) AS vat_amount,
+			SUM(il.line_total * i.exchange_rate) AS total_amount
+		FROM %s i
+		JOIN %s c ON c.id = i.contact_id AND c.tenant_id = i.tenant_id
+		JOIN %s il ON il.invoice_id = i.id AND il.tenant_id = i.tenant_id
+		WHERE i.tenant_id = ?
+			AND i.invoice_type = 'SALES'
+			AND i.status NOT IN ('DRAFT', 'VOIDED')
+			AND i.issue_date >= ?
+			AND i.issue_date < ?
+			AND COALESCE(NULLIF(UPPER(c.country_code), ''), 'EE') IN (%s)
+			AND COALESCE(NULLIF(UPPER(c.country_code), ''), 'EE') <> 'EE'
+			AND COALESCE(NULLIF(il.vat_treatment, ''), 'STANDARD') = 'STANDARD'
+			AND il.vat_rate > 0
+			AND il.line_vat <> 0
+			AND (? OR COALESCE(NULLIF(TRIM(c.vat_number), ''), '') = '')
+		GROUP BY country_code, il.vat_rate
+		ORDER BY country_code, il.vat_rate
+	`, invoicesTable, contactsTable, invoiceLinesTable, euVATOSSCountryCodeSQLList), tenantID, startDate, endDate, includeB2B).Scan(&results).Error
+	if err != nil {
+		return nil, fmt.Errorf("query EU VAT OSS data: %w", err)
+	}
+
+	rows := make([]EUVATOSSReportRow, len(results))
+	for i, result := range results {
+		rows[i] = EUVATOSSReportRow{
+			CountryCode:   result.CountryCode,
+			VATRate:       result.VATRate.Decimal,
+			InvoiceCount:  result.InvoiceCount,
+			LineCount:     result.LineCount,
+			TaxableAmount: result.TaxableAmount.Decimal,
+			VATAmount:     result.VATAmount.Decimal,
+			TotalAmount:   result.TotalAmount.Decimal,
+		}
+	}
+
+	return rows, nil
+}
+
 // SaveDeclaration saves a KMD declaration (upsert)
 func (r *GORMRepository) SaveDeclaration(ctx context.Context, schemaName string, decl *KMDDeclaration) error {
 	declarationsDB, err := r.tenantTable(ctx, schemaName, "kmd_declarations")

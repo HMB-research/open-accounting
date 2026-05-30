@@ -2540,6 +2540,55 @@ func printKMDINFReport(w io.Writer, report *tax.KMDINFReport) {
 	_ = tw.Flush()
 }
 
+func printEUVATOSSReport(w io.Writer, report *tax.EUVATOSSReport) {
+	_, _ = fmt.Fprintf(w, "EU VAT OSS %04d-Q%d (%s)\n", report.Year, report.Quarter, report.Scheme)
+	_, _ = fmt.Fprintf(w, "Period: %s to %s\n", formatDate(report.PeriodStart), formatDate(report.PeriodEnd))
+	_, _ = fmt.Fprintf(w, "Currency: %s\n", report.Currency)
+	_, _ = fmt.Fprintf(w, "Taxable: %s\n", report.TaxableAmount.String())
+	_, _ = fmt.Fprintf(w, "VAT: %s\n", report.VATAmount.String())
+	_, _ = fmt.Fprintf(w, "Total: %s\n", report.TotalAmount.String())
+
+	if len(report.Summary) > 0 {
+		tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		_, _ = fmt.Fprintln(tw, "COUNTRY\tINVOICES\tLINES\tTAXABLE\tVAT\tTOTAL")
+		for _, summary := range report.Summary {
+			_, _ = fmt.Fprintf(
+				tw,
+				"%s %s\t%d\t%d\t%s\t%s\t%s\n",
+				summary.CountryCode,
+				summary.CountryName,
+				summary.InvoiceCount,
+				summary.LineCount,
+				summary.TaxableAmount.String(),
+				summary.VATAmount.String(),
+				summary.TotalAmount.String(),
+			)
+		}
+		_ = tw.Flush()
+	}
+	if len(report.Rows) == 0 {
+		return
+	}
+
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "COUNTRY\tVAT RATE\tINVOICES\tLINES\tTAXABLE\tVAT\tTOTAL")
+	for _, row := range report.Rows {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s %s\t%s\t%d\t%d\t%s\t%s\t%s\n",
+			row.CountryCode,
+			row.CountryName,
+			row.VATRate.String(),
+			row.InvoiceCount,
+			row.LineCount,
+			row.TaxableAmount.String(),
+			row.VATAmount.String(),
+			row.TotalAmount.String(),
+		)
+	}
+	_ = tw.Flush()
+}
+
 func kmdINFPartLabel(part tax.KMDINFPart) string {
 	switch part {
 	case tax.KMDINFPartSales:

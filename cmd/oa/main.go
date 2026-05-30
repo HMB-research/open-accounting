@@ -246,6 +246,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  tax kmd inf               Generate KMD INF appendix report")
 	_, _ = fmt.Fprintln(a.stdout, "  tax kmd import-history    Import historical KMD declarations from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  tax kmd export-xml        Export KMD XML")
+	_, _ = fmt.Fprintln(a.stdout, "  tax oss report            Generate EU VAT OSS report")
 	_, _ = fmt.Fprintln(a.stdout, "  invoices list             List invoices")
 	_, _ = fmt.Fprintln(a.stdout, "  invoices create           Create an invoice")
 	_, _ = fmt.Fprintln(a.stdout, "  invoices get              Show one invoice")
@@ -9030,6 +9031,9 @@ func (a *cliApp) runTax(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New("tax subcommand required")
 	}
+	if args[0] == "oss" {
+		return a.runTaxOSS(ctx, args[1:])
+	}
 	if args[0] != "kmd" {
 		return fmt.Errorf("unknown tax subcommand %q", args[0])
 	}
@@ -9179,6 +9183,48 @@ func (a *cliApp) runTax(ctx context.Context, args []string) error {
 	default:
 		return fmt.Errorf("unknown tax kmd subcommand %q", args[1])
 	}
+}
+
+func (a *cliApp) runTaxOSS(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("tax oss subcommand required")
+	}
+	if args[0] != "report" {
+		return fmt.Errorf("unknown tax oss subcommand %q", args[0])
+	}
+
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	fs := flag.NewFlagSet("tax oss report", flag.ContinueOnError)
+	fs.SetOutput(a.stderr)
+	yearFlag := fs.String("year", "", "Report year")
+	quarterFlag := fs.String("quarter", "", "Report quarter")
+	includeB2B := fs.Bool("include-b2b", false, "Include contacts with VAT numbers")
+	asJSON := fs.Bool("json", false, "Output JSON")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	year, err := strconv.Atoi(strings.TrimSpace(*yearFlag))
+	if err != nil || year < 2020 || year > 2100 {
+		return errors.New("year must be between 2020 and 2100")
+	}
+	quarter, err := strconv.Atoi(strings.TrimSpace(*quarterFlag))
+	if err != nil || quarter < 1 || quarter > 4 {
+		return errors.New("quarter must be between 1 and 4")
+	}
+
+	report, err := client.generateEUVATOSS(ctx, cfg.TenantID, year, quarter, *includeB2B)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return printJSON(a.stdout, report)
+	}
+	printEUVATOSSReport(a.stdout, report)
+	return nil
 }
 
 func (a *cliApp) runReports(ctx context.Context, args []string) error {

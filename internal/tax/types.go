@@ -78,6 +78,56 @@ type KMDINFReportRequest struct {
 	Threshold decimal.Decimal `json:"threshold,omitempty"`
 }
 
+// EUVATOSSReport contains quarterly EU VAT One Stop Shop reporting totals.
+type EUVATOSSReport struct {
+	TenantID      string                   `json:"tenant_id"`
+	Year          int                      `json:"year"`
+	Quarter       int                      `json:"quarter"`
+	PeriodStart   time.Time                `json:"period_start"`
+	PeriodEnd     time.Time                `json:"period_end"`
+	Scheme        string                   `json:"scheme"`
+	Currency      string                   `json:"currency"`
+	IncludeB2B    bool                     `json:"include_b2b"`
+	GeneratedAt   time.Time                `json:"generated_at"`
+	Summary       []EUVATOSSCountrySummary `json:"summary"`
+	Rows          []EUVATOSSReportRow      `json:"rows"`
+	TaxableAmount decimal.Decimal          `json:"taxable_amount"`
+	VATAmount     decimal.Decimal          `json:"vat_amount"`
+	TotalAmount   decimal.Decimal          `json:"total_amount"`
+	InvoiceCount  int                      `json:"invoice_count"`
+	LineCount     int                      `json:"line_count"`
+}
+
+// EUVATOSSCountrySummary summarizes OSS report rows for one member state.
+type EUVATOSSCountrySummary struct {
+	CountryCode   string          `json:"country_code"`
+	CountryName   string          `json:"country_name"`
+	InvoiceCount  int             `json:"invoice_count"`
+	LineCount     int             `json:"line_count"`
+	TaxableAmount decimal.Decimal `json:"taxable_amount"`
+	VATAmount     decimal.Decimal `json:"vat_amount"`
+	TotalAmount   decimal.Decimal `json:"total_amount"`
+}
+
+// EUVATOSSReportRow represents one OSS destination-country and VAT-rate aggregate.
+type EUVATOSSReportRow struct {
+	CountryCode   string          `json:"country_code"`
+	CountryName   string          `json:"country_name"`
+	VATRate       decimal.Decimal `json:"vat_rate"`
+	InvoiceCount  int             `json:"invoice_count"`
+	LineCount     int             `json:"line_count"`
+	TaxableAmount decimal.Decimal `json:"taxable_amount"`
+	VATAmount     decimal.Decimal `json:"vat_amount"`
+	TotalAmount   decimal.Decimal `json:"total_amount"`
+}
+
+// EUVATOSSReportRequest contains EU VAT OSS report options.
+type EUVATOSSReportRequest struct {
+	Year       int  `json:"year"`
+	Quarter    int  `json:"quarter"`
+	IncludeB2B bool `json:"include_b2b,omitempty"`
+}
+
 // KMDRow represents a single row in the KMD declaration
 type KMDRow struct {
 	Code        string          `json:"code"`        // KMD row code (1, 2, 3, etc.)
