@@ -27,11 +27,15 @@ type parsedRow struct {
 }
 
 type bundleIndexes struct {
-	files     map[FileKind]bool
-	accounts  map[string]bool
-	contacts  map[string]bool
-	employees map[string]bool
-	invoices  map[string]bool
+	files             map[FileKind]bool
+	accounts          map[string]bool
+	contacts          map[string]bool
+	employees         map[string]bool
+	invoices          map[string]bool
+	costCenters       map[string]bool
+	productCategories map[string]bool
+	products          map[string]bool
+	warehouses        map[string]bool
 }
 
 var fileSpecs = map[FileKind]fileSpec{
@@ -156,6 +160,23 @@ var fileSpecs = map[FileKind]fileSpec{
 		}),
 		requiredGroups: [][]string{{"payment_type"}, {"payment_date"}, {"amount"}},
 	},
+	KindBankTransactions: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"date":                 "date",
+			"transaction_date":     "date",
+			"booking_date":         "date",
+			"value_date":           "value_date",
+			"amount":               "amount",
+			"description":          "description",
+			"details":              "description",
+			"reference":            "reference",
+			"counterparty_name":    "counterparty_name",
+			"counterparty":         "counterparty_name",
+			"counterparty_account": "counterparty_account",
+			"external_id":          "external_id",
+		}),
+		requiredGroups: [][]string{{"date"}, {"amount"}},
+	},
 	KindPayrollHistory: {
 		aliases: mergeAliases(employeeReferenceAliases(), map[string]string{
 			"period_year":   "period_year",
@@ -188,6 +209,242 @@ var fileSpecs = map[FileKind]fileSpec{
 			{"employee_number", "personal_code", "email", "first_name", "name"},
 			{"absence_type_code", "absence_type", "absence_type_id"},
 		},
+	},
+	KindKMDHistory: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"period_year":        "year",
+			"declaration_year":   "year",
+			"kmd_year":           "year",
+			"period_month":       "month",
+			"declaration_month":  "month",
+			"kmd_month":          "month",
+			"declaration_status": "status",
+			"submitted_at":       "submitted_at",
+			"submitted_date":     "submitted_at",
+			"submission_date":    "submitted_at",
+			"row_code":           "row_code",
+			"code":               "row_code",
+			"kmd_row":            "row_code",
+			"kmd_code":           "row_code",
+			"row_description":    "description",
+			"tax_base":           "tax_base",
+			"base":               "tax_base",
+			"taxable_amount":     "tax_base",
+			"tax_amount":         "tax_amount",
+			"vat_amount":         "tax_amount",
+			"amount":             "tax_amount",
+			"total_output_vat":   "total_output_vat",
+			"output_vat":         "total_output_vat",
+			"total_input_vat":    "total_input_vat",
+			"input_vat":          "total_input_vat",
+		}),
+		requiredGroups: [][]string{{"year"}, {"month"}, {"row_code"}},
+	},
+	KindQuotes: {
+		aliases: mergeAliases(commercialDocumentAliases(), map[string]string{
+			"quote_number":     "quote_number",
+			"quotation_number": "quote_number",
+			"offer_number":     "quote_number",
+			"number":           "quote_number",
+			"quote_no":         "quote_number",
+			"quote_date":       "quote_date",
+			"date":             "quote_date",
+			"valid_until":      "valid_until",
+			"valid_to":         "valid_until",
+			"expiry_date":      "valid_until",
+			"expires_at":       "valid_until",
+		}),
+		requiredGroups: commercialDocumentRequiredGroups("quote_number", "quote_date"),
+	},
+	KindOrders: {
+		aliases: mergeAliases(commercialDocumentAliases(), map[string]string{
+			"order_number":      "order_number",
+			"sales_order":       "order_number",
+			"sales_order_no":    "order_number",
+			"number":            "order_number",
+			"order_no":          "order_number",
+			"order_date":        "order_date",
+			"date":              "order_date",
+			"expected_delivery": "expected_delivery",
+			"delivery_date":     "expected_delivery",
+			"quote_id":          "quote_id",
+		}),
+		requiredGroups: commercialDocumentRequiredGroups("order_number", "order_date"),
+	},
+	KindRecurringInvoices: {
+		aliases: mergeAliases(commercialDocumentAliases(), map[string]string{
+			"template":                 "name",
+			"template_name":            "name",
+			"recurring_name":           "name",
+			"frequency":                "frequency",
+			"start_date":               "start_date",
+			"end_date":                 "end_date",
+			"next_generation_date":     "next_generation_date",
+			"next_date":                "next_generation_date",
+			"payment_terms_days":       "payment_terms_days",
+			"payment_terms":            "payment_terms_days",
+			"send_email_on_generation": "send_email_on_generation",
+			"send_email":               "send_email_on_generation",
+			"email_template_type":      "email_template_type",
+			"recipient_email_override": "recipient_email_override",
+			"recipient_email":          "recipient_email_override",
+			"attach_pdf_to_email":      "attach_pdf_to_email",
+			"attach_pdf":               "attach_pdf_to_email",
+			"email_subject_override":   "email_subject_override",
+			"email_subject":            "email_subject_override",
+			"email_message":            "email_message",
+			"account_id":               "account_id",
+		}),
+		requiredGroups: append(commercialDocumentRequiredGroups("name", "start_date"), []string{"frequency"}),
+	},
+	KindCostCenters: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"cost_center_code":        "code",
+			"cc_code":                 "code",
+			"cost_center_name":        "name",
+			"cc_name":                 "name",
+			"parent_id":               "parent_id",
+			"parent_code":             "parent_code",
+			"parent":                  "parent_code",
+			"parent_cost_center_code": "parent_code",
+			"budget_amount":           "budget_amount",
+			"budget":                  "budget_amount",
+			"budget_period":           "budget_period",
+			"is_active":               "is_active",
+			"active":                  "is_active",
+		}),
+		requiredGroups: [][]string{{"code"}, {"name"}},
+	},
+	KindProductCategories: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"category":         "name",
+			"category_name":    "name",
+			"product_category": "name",
+			"parent":           "parent_name",
+			"parent_name":      "parent_name",
+			"parent_category":  "parent_name",
+		}),
+		requiredGroups: [][]string{{"name"}},
+	},
+	KindWarehouses: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"warehouse_code": "code",
+			"location_code":  "code",
+			"storage_code":   "code",
+			"warehouse_name": "name",
+			"location_name":  "name",
+			"storage_name":   "name",
+			"address":        "address",
+			"is_default":     "is_default",
+			"default":        "is_default",
+			"is_active":      "is_active",
+			"active":         "is_active",
+		}),
+		requiredGroups: [][]string{{"code"}, {"name"}},
+	},
+	KindProducts: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"product_code":         "code",
+			"sku":                  "code",
+			"item_code":            "code",
+			"product_name":         "name",
+			"item_name":            "name",
+			"product_type":         "product_type",
+			"type":                 "product_type",
+			"category_id":          "category_id",
+			"category":             "category_name",
+			"category_name":        "category_name",
+			"unit":                 "unit",
+			"unit_of_measure":      "unit",
+			"purchase_price":       "purchase_price",
+			"cost_price":           "purchase_price",
+			"cost":                 "purchase_price",
+			"sales_price":          "sales_price",
+			"sale_price":           "sales_price",
+			"selling_price":        "sales_price",
+			"price":                "sales_price",
+			"vat_rate":             "vat_rate",
+			"vat":                  "vat_rate",
+			"min_stock_level":      "min_stock_level",
+			"minimum_stock":        "min_stock_level",
+			"reorder_point":        "reorder_point",
+			"sale_account_id":      "sale_account_id",
+			"sales_account_id":     "sale_account_id",
+			"purchase_account_id":  "purchase_account_id",
+			"inventory_account_id": "inventory_account_id",
+			"track_inventory":      "track_inventory",
+			"track_stock":          "track_inventory",
+			"is_active":            "is_active",
+			"active":               "is_active",
+			"barcode":              "barcode",
+			"supplier_id":          "supplier_id",
+			"lead_time_days":       "lead_time_days",
+		}),
+		requiredGroups: [][]string{{"name"}, {"sales_price"}},
+	},
+	KindStockAdjustments: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"product":        "product_code",
+			"product_code":   "product_code",
+			"sku":            "product_code",
+			"item_code":      "product_code",
+			"product_id":     "product_id",
+			"warehouse":      "warehouse_code",
+			"warehouse_code": "warehouse_code",
+			"location_code":  "warehouse_code",
+			"warehouse_id":   "warehouse_id",
+			"quantity":       "quantity",
+			"qty":            "quantity",
+			"opening_qty":    "quantity",
+			"opening_stock":  "quantity",
+			"unit_cost":      "unit_cost",
+			"cost":           "unit_cost",
+			"reason":         "reason",
+			"notes":          "reason",
+		}),
+		requiredGroups: [][]string{{"product_id", "product_code"}, {"warehouse_id", "warehouse_code"}, {"quantity"}},
+	},
+	KindFixedAssets: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"asset_number":                        "asset_number",
+			"asset_no":                            "asset_number",
+			"asset_code":                          "asset_number",
+			"code":                                "asset_number",
+			"number":                              "asset_number",
+			"fixed_asset_number":                  "asset_number",
+			"asset_name":                          "name",
+			"category_id":                         "category_id",
+			"category":                            "category_name",
+			"category_name":                       "category_name",
+			"purchase_date":                       "purchase_date",
+			"acquisition_date":                    "purchase_date",
+			"date":                                "purchase_date",
+			"purchase_cost":                       "purchase_cost",
+			"acquisition_cost":                    "purchase_cost",
+			"cost":                                "purchase_cost",
+			"price":                               "purchase_cost",
+			"supplier_id":                         "supplier_id",
+			"invoice_id":                          "invoice_id",
+			"serial_number":                       "serial_number",
+			"serial_no":                           "serial_number",
+			"depreciation_method":                 "depreciation_method",
+			"useful_life_months":                  "useful_life_months",
+			"life_months":                         "useful_life_months",
+			"residual_value":                      "residual_value",
+			"depreciation_start_date":             "depreciation_start_date",
+			"accumulated_depreciation":            "accumulated_depreciation",
+			"book_value":                          "book_value",
+			"carrying_value":                      "book_value",
+			"last_depreciation_date":              "last_depreciation_date",
+			"disposal_date":                       "disposal_date",
+			"disposal_method":                     "disposal_method",
+			"disposal_proceeds":                   "disposal_proceeds",
+			"disposal_notes":                      "disposal_notes",
+			"asset_account_id":                    "asset_account_id",
+			"depreciation_expense_account_id":     "depreciation_expense_account_id",
+			"accumulated_depreciation_account_id": "accumulated_depreciation_account_id",
+		}),
+		requiredGroups: [][]string{{"name"}, {"purchase_date"}, {"purchase_cost"}},
 	},
 	KindOpeningBalances: {
 		aliases: mergeAliases(commonAliases(), map[string]string{
@@ -351,11 +608,15 @@ func parseBundleFile(file BundleFile, spec fileSpec) (parsedFile, FileValidation
 
 func buildIndexes(files []parsedFile) bundleIndexes {
 	indexes := bundleIndexes{
-		files:     map[FileKind]bool{},
-		accounts:  map[string]bool{},
-		contacts:  map[string]bool{},
-		employees: map[string]bool{},
-		invoices:  map[string]bool{},
+		files:             map[FileKind]bool{},
+		accounts:          map[string]bool{},
+		contacts:          map[string]bool{},
+		employees:         map[string]bool{},
+		invoices:          map[string]bool{},
+		costCenters:       map[string]bool{},
+		productCategories: map[string]bool{},
+		products:          map[string]bool{},
+		warehouses:        map[string]bool{},
 	}
 	for _, file := range files {
 		indexes.files[file.kind] = true
@@ -374,6 +635,20 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 				addIndexValue(indexes.invoices, row.values["invoice_number"])
 				addIndexValue(indexes.invoices, row.values["invoice_id"])
 				addIndexValue(indexes.invoices, row.values["id"])
+			case KindCostCenters:
+				addIndexValue(indexes.costCenters, row.values["code"])
+				addIndexValue(indexes.costCenters, row.values["id"])
+			case KindProductCategories:
+				addIndexValue(indexes.productCategories, row.values["name"])
+				addIndexValue(indexes.productCategories, row.values["id"])
+			case KindProducts:
+				addIndexValue(indexes.products, row.values["code"])
+				addIndexValue(indexes.products, row.values["id"])
+				addIndexValue(indexes.products, row.values["name"])
+			case KindWarehouses:
+				addIndexValue(indexes.warehouses, row.values["code"])
+				addIndexValue(indexes.warehouses, row.values["id"])
+				addIndexValue(indexes.warehouses, row.values["name"])
 			}
 		}
 	}
@@ -386,6 +661,9 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 		case KindInvoices:
 			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
 				[]string{"contact_code", "contact_reg_code", "contact_email", "contact_name"})
+		case KindQuotes, KindOrders, KindRecurringInvoices:
+			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
+				[]string{"contact_code", "contact_reg_code", "contact_email", "contact_name"})
 		case KindPayments:
 			checkTargetReference(report, indexes.files[KindInvoices], indexes.invoices, file, row, KindInvoices,
 				[]string{"invoice_number"})
@@ -394,6 +672,20 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 		case KindOpeningBalances, KindJournalEntries:
 			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
 				[]string{"account_code"})
+		case KindCostCenters:
+			checkTargetReference(report, indexes.files[KindCostCenters], indexes.costCenters, file, row, KindCostCenters,
+				[]string{"parent_code"})
+		case KindProductCategories:
+			checkTargetReference(report, indexes.files[KindProductCategories], indexes.productCategories, file, row, KindProductCategories,
+				[]string{"parent_name"})
+		case KindProducts:
+			checkTargetReference(report, indexes.files[KindProductCategories], indexes.productCategories, file, row, KindProductCategories,
+				[]string{"category_name"})
+		case KindStockAdjustments:
+			checkTargetReference(report, indexes.files[KindProducts], indexes.products, file, row, KindProducts,
+				[]string{"product_id", "product_code"})
+			checkTargetReference(report, indexes.files[KindWarehouses], indexes.warehouses, file, row, KindWarehouses,
+				[]string{"warehouse_id", "warehouse_code"})
 		}
 	}
 }
@@ -582,6 +874,54 @@ func commonAliases() map[string]string {
 		"currency":    "currency",
 		"status":      "status",
 		"description": "description",
+	}
+}
+
+func commercialDocumentAliases() map[string]string {
+	return mergeAliases(commonAliases(), map[string]string{
+		"number":             "number",
+		"contact_id":         "contact_id",
+		"customer_id":        "contact_id",
+		"contact_code":       "contact_code",
+		"customer_code":      "contact_code",
+		"contact_reg_code":   "contact_reg_code",
+		"contact_vat_number": "contact_reg_code",
+		"vat_number":         "contact_reg_code",
+		"contact_email":      "contact_email",
+		"email":              "contact_email",
+		"contact_name":       "contact_name",
+		"customer_name":      "contact_name",
+		"currency":           "currency",
+		"exchange_rate":      "exchange_rate",
+		"notes":              "notes",
+		"line_description":   "line_description",
+		"description":        "line_description",
+		"quantity":           "quantity",
+		"qty":                "quantity",
+		"unit":               "unit",
+		"unit_price":         "unit_price",
+		"price":              "unit_price",
+		"discount_percent":   "discount_percent",
+		"discount":           "discount_percent",
+		"vat_rate":           "vat_rate",
+		"vat":                "vat_rate",
+		"product_id":         "product_id",
+		"invoice_type":       "invoice_type",
+		"type":               "invoice_type",
+		"is_active":          "is_active",
+		"active":             "is_active",
+	})
+}
+
+func commercialDocumentRequiredGroups(numberColumn, dateColumn string) [][]string {
+	return [][]string{
+		{numberColumn},
+		{dateColumn},
+		{"contact_id", "contact_code", "contact_reg_code", "contact_email", "contact_name"},
+		{"line_description"},
+		{"quantity"},
+		{"unit_price"},
+		{"vat_rate"},
 	}
 }
 

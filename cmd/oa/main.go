@@ -1922,8 +1922,19 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		expensesFile := fs.String("expenses", "", "Expenses CSV file")
 		invoicesFile := fs.String("invoices", "", "Invoices CSV file")
 		paymentsFile := fs.String("payments", "", "Payments CSV file")
+		bankTransactionsFile := fs.String("bank-transactions", "", "Bank transactions CSV file")
 		payrollHistoryFile := fs.String("payroll-history", "", "Historical payroll CSV file")
 		leaveBalancesFile := fs.String("leave-balances", "", "Leave balances CSV file")
+		kmdHistoryFile := fs.String("kmd-history", "", "KMD history CSV file")
+		quotesFile := fs.String("quotes", "", "Quotes CSV file")
+		ordersFile := fs.String("orders", "", "Orders CSV file")
+		recurringInvoicesFile := fs.String("recurring-invoices", "", "Recurring invoice templates CSV file")
+		costCentersFile := fs.String("cost-centers", "", "Cost centers CSV file")
+		productCategoriesFile := fs.String("product-categories", "", "Product categories CSV file")
+		warehousesFile := fs.String("warehouses", "", "Warehouses CSV file")
+		productsFile := fs.String("products", "", "Products CSV file")
+		stockFile := fs.String("stock", "", "Stock adjustments CSV file")
+		fixedAssetsFile := fs.String("fixed-assets", "", "Fixed assets CSV file")
 		openingBalancesFile := fs.String("opening-balances", "", "Opening balances CSV file")
 		journalFile := fs.String("journal", "", "Historical journal CSV file")
 		asJSON := fs.Bool("json", false, "Output JSON")
@@ -1938,8 +1949,19 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 			{kind: cutover.KindExpenses, path: *expensesFile},
 			{kind: cutover.KindInvoices, path: *invoicesFile},
 			{kind: cutover.KindPayments, path: *paymentsFile},
+			{kind: cutover.KindBankTransactions, path: *bankTransactionsFile},
 			{kind: cutover.KindPayrollHistory, path: *payrollHistoryFile},
 			{kind: cutover.KindLeaveBalances, path: *leaveBalancesFile},
+			{kind: cutover.KindKMDHistory, path: *kmdHistoryFile},
+			{kind: cutover.KindQuotes, path: *quotesFile},
+			{kind: cutover.KindOrders, path: *ordersFile},
+			{kind: cutover.KindRecurringInvoices, path: *recurringInvoicesFile},
+			{kind: cutover.KindCostCenters, path: *costCentersFile},
+			{kind: cutover.KindProductCategories, path: *productCategoriesFile},
+			{kind: cutover.KindWarehouses, path: *warehousesFile},
+			{kind: cutover.KindProducts, path: *productsFile},
+			{kind: cutover.KindStockAdjustments, path: *stockFile},
+			{kind: cutover.KindFixedAssets, path: *fixedAssetsFile},
 			{kind: cutover.KindOpeningBalances, path: *openingBalancesFile},
 			{kind: cutover.KindJournalEntries, path: *journalFile},
 		})

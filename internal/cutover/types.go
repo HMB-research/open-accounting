@@ -3,16 +3,27 @@ package cutover
 type FileKind string
 
 const (
-	KindAccounts        FileKind = "accounts"
-	KindContacts        FileKind = "contacts"
-	KindEmployees       FileKind = "employees"
-	KindExpenses        FileKind = "expenses"
-	KindInvoices        FileKind = "invoices"
-	KindPayments        FileKind = "payments"
-	KindPayrollHistory  FileKind = "payroll_history"
-	KindLeaveBalances   FileKind = "leave_balances"
-	KindOpeningBalances FileKind = "opening_balances"
-	KindJournalEntries  FileKind = "journal_entries"
+	KindAccounts          FileKind = "accounts"
+	KindContacts          FileKind = "contacts"
+	KindEmployees         FileKind = "employees"
+	KindExpenses          FileKind = "expenses"
+	KindInvoices          FileKind = "invoices"
+	KindPayments          FileKind = "payments"
+	KindBankTransactions  FileKind = "bank_transactions"
+	KindPayrollHistory    FileKind = "payroll_history"
+	KindLeaveBalances     FileKind = "leave_balances"
+	KindKMDHistory        FileKind = "kmd_history"
+	KindQuotes            FileKind = "quotes"
+	KindOrders            FileKind = "orders"
+	KindRecurringInvoices FileKind = "recurring_invoices"
+	KindCostCenters       FileKind = "cost_centers"
+	KindProductCategories FileKind = "product_categories"
+	KindWarehouses        FileKind = "warehouses"
+	KindProducts          FileKind = "products"
+	KindStockAdjustments  FileKind = "stock_adjustments"
+	KindFixedAssets       FileKind = "fixed_assets"
+	KindOpeningBalances   FileKind = "opening_balances"
+	KindJournalEntries    FileKind = "journal_entries"
 )
 
 type IssueSeverity string
