@@ -6635,7 +6635,7 @@ func (h *Handlers) GetLeaveRecord(w http.ResponseWriter, r *http.Request) {
 
 // ApproveLeaveRecord approves a leave request
 // @Summary Approve leave record
-// @Description Approve a pending leave request
+// @Description Approve a pending leave request. Absence types marked requires_document require approved leave-record supporting evidence before approval.
 // @Tags Leave Management
 // @Produce json
 // @Security BearerAuth
@@ -6652,7 +6652,11 @@ func (h *Handlers) ApproveLeaveRecord(w http.ResponseWriter, r *http.Request) {
 
 	record, err := h.absenceService.ApproveLeaveRecord(r.Context(), schemaName, tenantID, recordID, claims.UserID)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		status := http.StatusBadRequest
+		if errors.Is(err, payroll.ErrApprovedLeaveDocumentRequired) {
+			status = http.StatusConflict
+		}
+		respondError(w, status, err.Error())
 		return
 	}
 

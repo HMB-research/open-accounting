@@ -400,6 +400,8 @@ func entityTableName(entityType string) (string, error) {
 		return "orders", nil
 	case EntityTypeYearEndClose:
 		return "", nil
+	case EntityTypeLeaveRecord:
+		return "leave_records", nil
 	default:
 		return "", fmt.Errorf("unsupported document entity type")
 	}

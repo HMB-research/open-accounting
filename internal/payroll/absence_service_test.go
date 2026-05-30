@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,6 +15,20 @@ import (
 // ============================================================================
 // ABSENCE SERVICE TESTS
 // ============================================================================
+
+type fakeLeaveEvidenceEvaluator struct {
+	compliant bool
+	request   *documents.EvidencePolicyRequest
+}
+
+func (f *fakeLeaveEvidenceEvaluator) EvaluateEvidencePolicy(_ context.Context, _, _ string, req *documents.EvidencePolicyRequest) ([]documents.EvidencePolicyResult, error) {
+	f.request = req
+	return []documents.EvidencePolicyResult{{
+		EntityType: req.EntityType,
+		EntityID:   req.EntityIDs[0],
+		Compliant:  f.compliant,
+	}}, nil
+}
 
 func TestNewAbsenceService(t *testing.T) {
 	repo := NewMockAbsenceRepository()
@@ -395,6 +410,12 @@ func TestApproveLeaveRecord_Success(t *testing.T) {
 		WorkingDays:   decimal.NewFromInt(5),
 		Status:        LeavePending,
 	}
+	repo.AbsenceTypes["type-1"] = &AbsenceType{
+		ID:               "type-1",
+		TenantID:         "tenant-1",
+		Code:             "ANNUAL_LEAVE",
+		RequiresDocument: false,
+	}
 
 	// Setup balance with pending days
 	key := "tenant-1-emp-1-type-1-2025"
@@ -421,6 +442,71 @@ func TestApproveLeaveRecord_Success(t *testing.T) {
 	balance := repo.LeaveBalances[key]
 	assert.True(t, balance.PendingDays.IsZero())
 	assert.True(t, balance.UsedDays.Equal(decimal.NewFromInt(5)))
+}
+
+func TestApproveLeaveRecord_RequiresApprovedDocument(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	evidence := &fakeLeaveEvidenceEvaluator{compliant: false}
+	service := NewAbsenceServiceWithEvidence(repo, uuidGen, evidence)
+	ctx := context.Background()
+
+	repo.AbsenceTypes["type-1"] = &AbsenceType{
+		ID:               "type-1",
+		TenantID:         "tenant-1",
+		Code:             "SICK_LEAVE",
+		RequiresDocument: true,
+		DocumentType:     "medical_certificate",
+	}
+	repo.LeaveRecords["rec-1"] = &LeaveRecord{
+		ID:            "rec-1",
+		TenantID:      "tenant-1",
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		StartDate:     time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC),
+		WorkingDays:   decimal.NewFromInt(2),
+		Status:        LeavePending,
+	}
+
+	_, err := service.ApproveLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "approver-1")
+
+	require.ErrorIs(t, err, ErrApprovedLeaveDocumentRequired)
+	require.NotNil(t, evidence.request)
+	assert.Equal(t, documents.EntityTypeLeaveRecord, evidence.request.EntityType)
+	assert.Equal(t, []string{"rec-1"}, evidence.request.EntityIDs)
+	assert.Equal(t, []string{documents.DocumentTypeSupportingDocument, documents.DocumentTypeTaxSupport}, evidence.request.Rules[0].DocumentTypes)
+	assert.True(t, evidence.request.Rules[0].RequireApproved)
+	assert.Equal(t, LeavePending, repo.LeaveRecords["rec-1"].Status)
+}
+
+func TestApproveLeaveRecord_WithApprovedDocument(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	evidence := &fakeLeaveEvidenceEvaluator{compliant: true}
+	service := NewAbsenceServiceWithEvidence(repo, uuidGen, evidence)
+	ctx := context.Background()
+
+	repo.AbsenceTypes["type-1"] = &AbsenceType{
+		ID:               "type-1",
+		TenantID:         "tenant-1",
+		Code:             "SICK_LEAVE",
+		RequiresDocument: true,
+	}
+	repo.LeaveRecords["rec-1"] = &LeaveRecord{
+		ID:            "rec-1",
+		TenantID:      "tenant-1",
+		EmployeeID:    "emp-1",
+		AbsenceTypeID: "type-1",
+		StartDate:     time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC),
+		WorkingDays:   decimal.NewFromInt(2),
+		Status:        LeavePending,
+	}
+
+	record, err := service.ApproveLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "approver-1")
+
+	require.NoError(t, err)
+	assert.Equal(t, LeaveApproved, record.Status)
+	assert.Equal(t, "approver-1", record.ApprovedBy)
 }
 
 func TestApproveLeaveRecord_NotPending(t *testing.T) {

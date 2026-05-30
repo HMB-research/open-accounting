@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestDocumentEntityConstraintAllowsCommercialRecords(t *testing.T) {
+func TestDocumentEntityConstraintAllowsWorkflowRecords(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
@@ -23,7 +23,7 @@ func TestDocumentEntityConstraintAllowsCommercialRecords(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	for _, entityType := range []string{EntityTypeExpense, EntityTypeQuote, EntityTypeOrder} {
+	for _, entityType := range []string{EntityTypeExpense, EntityTypeQuote, EntityTypeOrder, EntityTypeLeaveRecord} {
 		// #nosec G201 -- table is schema-qualified by database.QualifiedTable in test setup.
 		_, err := pool.Exec(ctx, fmt.Sprintf(`
 			INSERT INTO %s (

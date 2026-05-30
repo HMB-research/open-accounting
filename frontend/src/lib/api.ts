@@ -448,10 +448,7 @@ class ApiClient {
     );
   }
 
-  async createInvitation(
-    tenantId: string,
-    data: CreateInvitationRequest,
-  ) {
+  async createInvitation(tenantId: string, data: CreateInvitationRequest) {
     return this.request<UserInvitation>(
       "POST",
       `/api/v1/tenants/${tenantId}/invitations`,
@@ -668,7 +665,9 @@ class ApiClient {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}) as ApiError);
-      throw new Error(error.error || "Failed to download year-end audit archive");
+      throw new Error(
+        error.error || "Failed to download year-end audit archive",
+      );
     }
 
     const blob = await response.blob();
@@ -2699,6 +2698,10 @@ export interface DocumentAttachment {
     | "payment"
     | "bank_transaction"
     | "asset"
+    | "expense"
+    | "quote"
+    | "order"
+    | "leave_record"
     | "year_end_close";
   entity_id: string;
   document_type:
@@ -2741,7 +2744,9 @@ export interface DocumentReviewSummary {
   has_rejected: boolean;
 }
 
-export type DocumentReviewStatusFilter = DocumentAttachment["review_status"] | "ALL";
+export type DocumentReviewStatusFilter =
+  | DocumentAttachment["review_status"]
+  | "ALL";
 
 export interface DocumentReviewQueueFilter {
   entity_type?: DocumentAttachment["entity_type"] | "";
@@ -2808,8 +2813,12 @@ export interface EvidencePolicyResult {
   approved_count: number;
   rejected_count: number;
   missing_evidence: boolean;
-  document_type_counts?: Partial<Record<DocumentAttachment["document_type"], number>>;
-  approved_document_type_counts?: Partial<Record<DocumentAttachment["document_type"], number>>;
+  document_type_counts?: Partial<
+    Record<DocumentAttachment["document_type"], number>
+  >;
+  approved_document_type_counts?: Partial<
+    Record<DocumentAttachment["document_type"], number>
+  >;
   rule_results?: EvidencePolicyRuleResult[];
   violations?: EvidencePolicyRuleResult[];
 }
@@ -4129,7 +4138,11 @@ export interface UpdateBankAccountRequest {
   is_active?: boolean;
 }
 
-export type BankTransactionImportFormat = "auto" | "generic" | "lhv" | "lhv-camt";
+export type BankTransactionImportFormat =
+  | "auto"
+  | "generic"
+  | "lhv"
+  | "lhv-camt";
 
 export interface ImportTransactionsRequest {
   csv_content: string;

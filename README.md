@@ -40,10 +40,10 @@ DEMO_MODE=true DEMO_RESET_SECRET=test-demo-secret go run ./cmd/api
 curl -X POST http://localhost:8080/api/demo/reset -H 'X-Demo-Secret: test-demo-secret'
 ```
 
-| Credential | Value |
-|------------|-------|
-| **Email** | `demo1@example.com` |
-| **Password** | `demo12345` |
+| Credential   | Value               |
+| ------------ | ------------------- |
+| **Email**    | `demo1@example.com` |
+| **Password** | `demo12345`         |
 
 ---
 
@@ -67,88 +67,97 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 > Status note: features listed below exist in the repository. That does not mean each one is production-hardened, accountant-grade, or at full parity with proprietary incumbents.
 
 ### Core Accounting
-| Feature | Description |
-|---------|-------------|
-| **Chart of Accounts** | Hierarchical 5-type account structure (Asset, Liability, Equity, Revenue, Expense) |
-| **Journal Entries** | Draft → Posted → Void workflow with reversal entries |
-| **Multi-Currency** | Support for multiple currencies with exchange rate tracking |
-| **Trial Balance** | Real-time balance reports as of any date |
-| **Balance Sheet** | Assets, liabilities, and equity statement |
-| **Income Statement** | Revenue and expense summary (P&L) |
-| **Consolidated Reporting** | Multi-company trial balance, balance sheet, and income statement consolidation |
-| **Report Exports** | Export to Excel, CSV, or PDF formats |
-| **VAT Tracking** | Date-aware VAT rates for proper EU compliance |
+
+| Feature                    | Description                                                                        |
+| -------------------------- | ---------------------------------------------------------------------------------- |
+| **Chart of Accounts**      | Hierarchical 5-type account structure (Asset, Liability, Equity, Revenue, Expense) |
+| **Journal Entries**        | Draft → Posted → Void workflow with reversal entries                               |
+| **Multi-Currency**         | Support for multiple currencies with exchange rate tracking                        |
+| **Trial Balance**          | Real-time balance reports as of any date                                           |
+| **Balance Sheet**          | Assets, liabilities, and equity statement                                          |
+| **Income Statement**       | Revenue and expense summary (P&L)                                                  |
+| **Consolidated Reporting** | Multi-company trial balance, balance sheet, and income statement consolidation     |
+| **Report Exports**         | Export to Excel, CSV, or PDF formats                                               |
+| **VAT Tracking**           | Date-aware VAT rates for proper EU compliance                                      |
 
 ### Business Operations
-| Feature | Description |
-|---------|-------------|
-| **Invoicing** | Sales and purchase invoices with line items and VAT |
-| **Quotes** | Sales quotes with draft/sent/accepted workflow, conversion to orders, and grouped CSV import |
-| **Orders** | Order management with quote linking, status tracking, and grouped CSV import |
-| **Contacts** | Customer and supplier management |
-| **Payments** | Payment recording with invoice allocation |
-| **Expenses** | Receipt-backed expense claims with approval and ledger posting |
-| **PDF Generation** | Professional invoice PDFs with customizable branding |
-| **Recurring Invoices** | Automated invoice generation on schedule with grouped CSV import |
+
+| Feature                | Description                                                                                  |
+| ---------------------- | -------------------------------------------------------------------------------------------- |
+| **Invoicing**          | Sales and purchase invoices with line items and VAT                                          |
+| **Quotes**             | Sales quotes with draft/sent/accepted workflow, conversion to orders, and grouped CSV import |
+| **Orders**             | Order management with quote linking, status tracking, and grouped CSV import                 |
+| **Contacts**           | Customer and supplier management                                                             |
+| **Payments**           | Payment recording with invoice allocation                                                    |
+| **Expenses**           | Receipt-backed expense claims with approval and ledger posting                               |
+| **PDF Generation**     | Professional invoice PDFs with customizable branding                                         |
+| **Recurring Invoices** | Automated invoice generation on schedule with grouped CSV import                             |
 
 ### Fixed Assets
-| Feature | Description |
-|---------|-------------|
-| **Asset Tracking** | Register, import, and track fixed assets with serial numbers and locations |
-| **Asset Categories** | IT Equipment, Office Furniture, Vehicles, Software with depreciation settings |
-| **Depreciation** | Straight-line and declining balance methods with configurable useful life |
-| **Asset Lifecycle** | Draft → Active → Disposed/Sold/Scrapped status workflow |
-| **Depreciation Entries** | Automatic depreciation calculations with audit trail and required linked ledger posting |
-| **Disposal Accounting** | Approved disposals can post balanced ledger entries for cost removal, accumulated depreciation, proceeds, gains, and losses |
+
+| Feature                  | Description                                                                                                                 |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| **Asset Tracking**       | Register, import, and track fixed assets with serial numbers and locations                                                  |
+| **Asset Categories**     | IT Equipment, Office Furniture, Vehicles, Software with depreciation settings                                               |
+| **Depreciation**         | Straight-line and declining balance methods with configurable useful life                                                   |
+| **Asset Lifecycle**      | Draft → Active → Disposed/Sold/Scrapped status workflow                                                                     |
+| **Depreciation Entries** | Automatic depreciation calculations with audit trail and required linked ledger posting                                     |
+| **Disposal Accounting**  | Approved disposals can post balanced ledger entries for cost removal, accumulated depreciation, proceeds, gains, and losses |
 
 ### Banking & Reconciliation
-| Feature | Description |
-|---------|-------------|
-| **Bank Accounts** | Track multiple bank accounts per company |
-| **Transaction Import** | CSV import for bank statements |
-| **Auto-Matching** | Intelligent matching of transactions to payments |
-| **Reconciliation** | Full bank reconciliation workflow |
+
+| Feature                | Description                                      |
+| ---------------------- | ------------------------------------------------ |
+| **Bank Accounts**      | Track multiple bank accounts per company         |
+| **Transaction Import** | CSV import for bank statements                   |
+| **Auto-Matching**      | Intelligent matching of transactions to payments |
+| **Reconciliation**     | Full bank reconciliation workflow                |
 
 ### Multi-Tenant & Security
-| Feature | Description |
-|---------|-------------|
-| **Tenant Isolation** | Schema-per-tenant for complete data separation |
-| **User Management** | Invite users, assign roles, manage permissions |
+
+| Feature                    | Description                                                                                                                         |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **Tenant Isolation**       | Schema-per-tenant for complete data separation                                                                                      |
+| **User Management**        | Invite users, assign roles, manage permissions                                                                                      |
 | **JWT and API token auth** | Purpose-scoped JWT access/refresh tokens with revocable refresh sessions plus suspend-aware tenant-scoped API tokens for automation |
-| **RBAC** | Role-based access control with permission checks |
-| **API Rate Limiting** | Token bucket rate limiting with configurable thresholds |
+| **RBAC**                   | Role-based access control with permission checks                                                                                    |
+| **API Rate Limiting**      | Token bucket rate limiting with configurable thresholds                                                                             |
 
 ### Payroll (Estonian)
-| Feature | Description |
-|---------|-------------|
-| **Employee Management** | Full employee lifecycle with personal codes |
-| **Estonian Tax Calculations** | Income tax, social tax, unemployment insurance |
-| **Funded Pension (II Pillar)** | Configurable pension contribution rates |
-| **Payroll Runs** | Monthly payroll with draft → approved → paid workflow |
-| **Payslips** | Detailed breakdown of earnings and deductions |
-| **TSD Declaration** | Annex 1 generation with XML/CSV export for e-MTA |
-| **Historical Payroll Import** | CSV import of finalized prior payroll runs and payslips through API, web UI, and CLI |
-| **Leave Balance Import** | CSV import of employee leave balances for migration cutovers through API, web UI, and CLI |
-| **Migration Preflight** | Non-mutating CSV bundle validation for required columns and cross-file references before cutover imports, including expenses, commercial history, inventory, banking, tax, and fixed assets |
+
+| Feature                        | Description                                                                                                                                                                                 |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Employee Management**        | Full employee lifecycle with personal codes                                                                                                                                                 |
+| **Estonian Tax Calculations**  | Income tax, social tax, unemployment insurance                                                                                                                                              |
+| **Funded Pension (II Pillar)** | Configurable pension contribution rates                                                                                                                                                     |
+| **Payroll Runs**               | Monthly payroll with draft → approved → paid workflow                                                                                                                                       |
+| **Payslips**                   | Detailed breakdown of earnings and deductions                                                                                                                                               |
+| **TSD Declaration**            | Annex 1 generation with XML/CSV export for e-MTA                                                                                                                                            |
+| **Historical Payroll Import**  | CSV import of finalized prior payroll runs and payslips through API, web UI, and CLI                                                                                                        |
+| **Leave Balance Import**       | CSV import of employee leave balances for migration cutovers through API, web UI, and CLI                                                                                                   |
+| **Leave Evidence**             | Approved supporting documents can be required before approving documented leave/absence records                                                                                             |
+| **Migration Preflight**        | Non-mutating CSV bundle validation for required columns and cross-file references before cutover imports, including expenses, commercial history, inventory, banking, tax, and fixed assets |
 
 ### Estonian Compliance
-| Feature | Description |
-|---------|-------------|
-| **KMD Declaration** | VAT declaration generation with export for manual filing |
+
+| Feature               | Description                                                                 |
+| --------------------- | --------------------------------------------------------------------------- |
+| **KMD Declaration**   | VAT declaration generation with export for manual filing                    |
 | **EU VAT OSS Report** | Quarterly destination-country and VAT-rate report for non-Estonian EU sales |
-| **TSD Declaration** | Payroll tax declaration with XML/CSV export |
-| **e-MTA Export** | XML export for manual upload to the Estonian Tax Board |
-| **Estonian Defaults** | Pre-configured for Estonian accounting standards |
+| **TSD Declaration**   | Payroll tax declaration with XML/CSV export                                 |
+| **e-MTA Export**      | XML export for manual upload to the Estonian Tax Board                      |
+| **Estonian Defaults** | Pre-configured for Estonian accounting standards                            |
 
 ### Plugin Marketplace
-| Feature | Description |
-|---------|-------------|
-| **Plugin Registries** | Add custom plugin marketplaces (GitHub/GitLab) |
-| **Permission System** | Fine-grained permissions with risk levels |
-| **Event Hooks** | 27+ events for plugin integration |
+
+| Feature               | Description                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Plugin Registries** | Add custom plugin marketplaces (GitHub/GitLab)                                                                |
+| **Permission System** | Fine-grained permissions with risk levels                                                                     |
+| **Event Hooks**       | 27+ events for plugin integration                                                                             |
 | **Outbound Webhooks** | Tenant webhook endpoints with event subscriptions, HMAC signatures, test delivery, and delivery audit history |
-| **UI Slots** | Extend dashboard, invoices, and more |
-| **Two-Level Control** | Instance-wide install, per-tenant enable |
+| **UI Slots**          | Extend dashboard, invoices, and more                                                                          |
+| **Two-Level Control** | Instance-wide install, per-tenant enable                                                                      |
 
 > 📖 See [Plugin Documentation](docs/PLUGINS.md) for development guide
 
@@ -156,17 +165,17 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 
 ## 🛠 Technology Stack
 
-| Layer | Technology |
-|-------|------------|
-| **Backend** | Go 1.26+, Chi router, pgx/v5, sqlc (shared tables) |
-| **Frontend** | SvelteKit 2, Svelte 5, Vite 7, TypeScript |
-| **i18n** | Paraglide-JS (compile-time translations) |
-| **Database** | PostgreSQL 16+ |
-| **Auth** | JWT access/refresh tokens plus tenant-scoped API tokens |
-| **API Docs** | Swagger/OpenAPI |
-| **Testing** | Go unit tests, backend integration tests, Vitest, Playwright demo suite |
-| **CI/CD** | GitHub Actions, Codecov |
-| **Container** | Docker, Docker Compose |
+| Layer         | Technology                                                              |
+| ------------- | ----------------------------------------------------------------------- |
+| **Backend**   | Go 1.26+, Chi router, pgx/v5, sqlc (shared tables)                      |
+| **Frontend**  | SvelteKit 2, Svelte 5, Vite 7, TypeScript                               |
+| **i18n**      | Paraglide-JS (compile-time translations)                                |
+| **Database**  | PostgreSQL 16+                                                          |
+| **Auth**      | JWT access/refresh tokens plus tenant-scoped API tokens                 |
+| **API Docs**  | Swagger/OpenAPI                                                         |
+| **Testing**   | Go unit tests, backend integration tests, Vitest, Playwright demo suite |
+| **CI/CD**     | GitHub Actions, Codecov                                                 |
+| **Container** | Docker, Docker Compose                                                  |
 
 ---
 
@@ -277,40 +286,41 @@ open-accounting/
 
 ## 📚 Documentation
 
-| Document | Description |
-|----------|-------------|
-| [API Reference](docs/API.md) | Complete REST API documentation with examples |
-| [Architecture](docs/ARCHITECTURE.md) | System design, multi-tenancy, authentication flow |
-| [CLI Guide](docs/CLI.md) | API-token bootstrap, token management, and import examples for the `oa` CLI |
-| [Deployment](docs/DEPLOYMENT.md) | Production deployment guide |
-| [EMTA Integration](docs/EMTA_INTEGRATION.md) | Estonian Tax Board integration guide |
-| [Plugins](docs/PLUGINS.md) | Plugin development and marketplace guide |
-| [E2E Testing](docs/plans/2026-01-09-e2e-test-consolidation-design.md) | End-to-end testing architecture |
-| [Swagger UI](/swagger/) | Interactive API explorer (when server is running) |
+| Document                                                              | Description                                                                 |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [API Reference](docs/API.md)                                          | Complete REST API documentation with examples                               |
+| [Architecture](docs/ARCHITECTURE.md)                                  | System design, multi-tenancy, authentication flow                           |
+| [CLI Guide](docs/CLI.md)                                              | API-token bootstrap, token management, and import examples for the `oa` CLI |
+| [Deployment](docs/DEPLOYMENT.md)                                      | Production deployment guide                                                 |
+| [EMTA Integration](docs/EMTA_INTEGRATION.md)                          | Estonian Tax Board integration guide                                        |
+| [Plugins](docs/PLUGINS.md)                                            | Plugin development and marketplace guide                                    |
+| [E2E Testing](docs/plans/2026-01-09-e2e-test-consolidation-design.md) | End-to-end testing architecture                                             |
+| [Swagger UI](/swagger/)                                               | Interactive API explorer (when server is running)                           |
 
 ---
 
 ## ⚙️ Configuration
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | *Required* |
-| `PORT` | API server port | `8080` |
-| `APP_ENV` | Set to `production` to enable production config validation | unset |
-| `JWT_SECRET` | JWT signing key, min 32 chars when `APP_ENV=production` | development-only fallback outside production |
-| `ALLOWED_ORIGINS` | CORS allowed origins; required in production | local dev origins outside production |
-| `PASSWORD_RESET_BASE_URL` | Frontend reset URL used in password reset emails | unset |
-| `PASSWORD_RESET_SMTP_*` | Global SMTP settings for password reset email delivery | unset |
-| `PASSWORD_RESET_EXPOSE_TOKEN` | Return reset tokens in API responses for local/dev only | `false` |
-| `SCHEDULER_ENABLED` | Enable recurring invoice, recurring journal, and reminder scheduler jobs | `true` |
-| `RECURRING_INVOICE_SCHEDULE` | Cron schedule for recurring invoice generation | `0 6 * * *` |
-| `RECURRING_JOURNAL_ENTRY_SCHEDULE` | Cron schedule for recurring journal entry generation | `15 6 * * *` |
+| Variable                           | Description                                                              | Default                                      |
+| ---------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------- |
+| `DATABASE_URL`                     | PostgreSQL connection string                                             | _Required_                                   |
+| `PORT`                             | API server port                                                          | `8080`                                       |
+| `APP_ENV`                          | Set to `production` to enable production config validation               | unset                                        |
+| `JWT_SECRET`                       | JWT signing key, min 32 chars when `APP_ENV=production`                  | development-only fallback outside production |
+| `ALLOWED_ORIGINS`                  | CORS allowed origins; required in production                             | local dev origins outside production         |
+| `PASSWORD_RESET_BASE_URL`          | Frontend reset URL used in password reset emails                         | unset                                        |
+| `PASSWORD_RESET_SMTP_*`            | Global SMTP settings for password reset email delivery                   | unset                                        |
+| `PASSWORD_RESET_EXPOSE_TOKEN`      | Return reset tokens in API responses for local/dev only                  | `false`                                      |
+| `SCHEDULER_ENABLED`                | Enable recurring invoice, recurring journal, and reminder scheduler jobs | `true`                                       |
+| `RECURRING_INVOICE_SCHEDULE`       | Cron schedule for recurring invoice generation                           | `0 6 * * *`                                  |
+| `RECURRING_JOURNAL_ENTRY_SCHEDULE` | Cron schedule for recurring journal entry generation                     | `15 6 * * *`                                 |
 
 ---
 
 ## 🗺 Roadmap
 
 ### Working in repo
+
 - Feature presence only; not a claim of production parity or operational maturity.
 
 - [x] Double-entry bookkeeping with journal entries
@@ -360,6 +370,7 @@ open-accounting/
 - [x] Backup creation, offsite sync, health-check, and restore-drill scripts for self-hosted operations
 
 ### Still missing for reliable production use
+
 - [ ] Remaining external migration imports beyond payroll, tax history, commercial history, payments, expenses, inventory, fixed assets, bank transactions, opening balances, and historical journals
 - [ ] Automated document policy enforcement in remaining workflow blockers
 - [ ] Remaining auth administration hardening beyond tenant-scoped session/status/API-token controls
@@ -396,7 +407,9 @@ A huge thank you to our supporters who help make this project possible!
 ### Sponsors
 
 <!-- sponsors -->
-*Become the first sponsor! [Support us on GitHub Sponsors](https://github.com/sponsors/HMB-research) or [Ko-fi](https://ko-fi.com/tsopic)*
+
+_Become the first sponsor! [Support us on GitHub Sponsors](https://github.com/sponsors/HMB-research) or [Ko-fi](https://ko-fi.com/tsopic)_
+
 <!-- sponsors -->
 
 ---

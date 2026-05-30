@@ -30,11 +30,12 @@ type AbsenceRepository interface {
 
 // Error definitions for absence management
 var (
-	ErrAbsenceTypeNotFound      = fmt.Errorf("absence type not found")
-	ErrLeaveBalanceNotFound     = fmt.Errorf("leave balance not found")
-	ErrLeaveRecordNotFound      = fmt.Errorf("leave record not found")
-	ErrInsufficientLeaveBalance = fmt.Errorf("insufficient leave balance")
-	ErrLeaveRecordNotPending    = fmt.Errorf("leave record is not in pending status")
+	ErrAbsenceTypeNotFound           = fmt.Errorf("absence type not found")
+	ErrLeaveBalanceNotFound          = fmt.Errorf("leave balance not found")
+	ErrLeaveRecordNotFound           = fmt.Errorf("leave record not found")
+	ErrInsufficientLeaveBalance      = fmt.Errorf("insufficient leave balance")
+	ErrLeaveRecordNotPending         = fmt.Errorf("leave record is not in pending status")
+	ErrApprovedLeaveDocumentRequired = fmt.Errorf("approved leave document is required")
 )
 
 // AbsencePostgresRepository implements AbsenceRepository using PostgreSQL

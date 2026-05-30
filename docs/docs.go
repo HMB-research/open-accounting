@@ -9113,7 +9113,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Approve a pending leave request",
+                "description": "Approve a pending leave request. Absence types marked requires_document require approved leave-record supporting evidence before approval.",
                 "produces": [
                     "application/json"
                 ],
