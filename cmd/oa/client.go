@@ -2536,6 +2536,28 @@ func (c *apiClient) getIncomeStatement(ctx context.Context, tenantID, startDate,
 	return &resp, nil
 }
 
+func (c *apiClient) getConsolidatedReport(ctx context.Context, tenantID, asOfDate, startDate, endDate, tenantIDs string) (*reports.ConsolidatedFinancialReport, error) {
+	values := url.Values{}
+	if strings.TrimSpace(asOfDate) != "" {
+		values.Set("as_of", strings.TrimSpace(asOfDate))
+	}
+	if strings.TrimSpace(startDate) != "" {
+		values.Set("start", strings.TrimSpace(startDate))
+	}
+	if strings.TrimSpace(endDate) != "" {
+		values.Set("end", strings.TrimSpace(endDate))
+	}
+	if strings.TrimSpace(tenantIDs) != "" {
+		values.Set("tenant_ids", strings.TrimSpace(tenantIDs))
+	}
+
+	var resp reports.ConsolidatedFinancialReport
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "reports", "consolidated"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) getAnnualReport(ctx context.Context, tenantID, periodEndDate, cashFlowMethod string) (*reports.AnnualReport, error) {
 	values := url.Values{}
 	values.Set("period_end_date", strings.TrimSpace(periodEndDate))

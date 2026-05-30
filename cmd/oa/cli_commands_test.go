@@ -5160,6 +5160,59 @@ func TestCLIReportsCommands(t *testing.T) {
 				"total_expenses": "700.00",
 				"net_income":     "500.00",
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/consolidated":
+			require.Equal(t, "2026-03-31", r.URL.Query().Get("as_of"))
+			require.Equal(t, "2026-01-01", r.URL.Query().Get("start"))
+			require.Equal(t, "2026-03-31", r.URL.Query().Get("end"))
+			require.Equal(t, "tenant-1,tenant-2", r.URL.Query().Get("tenant_ids"))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tenant_id":    "tenant-1",
+				"tenant_ids":   []string{"tenant-1", "tenant-2"},
+				"tenant_count": 2,
+				"as_of_date":   "2026-03-31T00:00:00Z",
+				"start_date":   "2026-01-01T00:00:00Z",
+				"end_date":     "2026-03-31T00:00:00Z",
+				"generated_at": "2026-03-31T12:00:00Z",
+				"balance_sheet": map[string]any{
+					"tenant_id":         "consolidated",
+					"as_of_date":        "2026-03-31T00:00:00Z",
+					"generated_at":      "2026-03-31T12:00:00Z",
+					"assets":            []map[string]any{},
+					"liabilities":       []map[string]any{},
+					"equity":            []map[string]any{},
+					"total_assets":      "1000.00",
+					"total_liabilities": "400.00",
+					"total_equity":      "600.00",
+					"retained_earnings": "100.00",
+					"is_balanced":       true,
+				},
+				"income_statement": map[string]any{
+					"tenant_id":      "consolidated",
+					"start_date":     "2026-01-01T00:00:00Z",
+					"end_date":       "2026-03-31T00:00:00Z",
+					"generated_at":   "2026-03-31T12:00:00Z",
+					"revenue":        []map[string]any{},
+					"expenses":       []map[string]any{},
+					"total_revenue":  "1200.00",
+					"total_expenses": "700.00",
+					"net_income":     "500.00",
+				},
+				"entities": []map[string]any{{
+					"tenant_id":   "tenant-1",
+					"tenant_name": "Alpha",
+					"tenant_slug": "alpha",
+					"balance_sheet": map[string]any{
+						"total_assets":      "500.00",
+						"total_liabilities": "200.00",
+						"total_equity":      "300.00",
+					},
+					"income_statement": map[string]any{
+						"total_revenue":  "600.00",
+						"total_expenses": "350.00",
+						"net_income":     "250.00",
+					},
+				}},
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/annual":
 			require.Equal(t, "2026-12-31", r.URL.Query().Get("period_end_date"))
 			require.Equal(t, "indirect", r.URL.Query().Get("cash_flow_method"))
@@ -5645,6 +5698,12 @@ func TestCLIReportsCommands(t *testing.T) {
 	incomeStatementPDF, err := os.ReadFile(incomeStatementPDFPath)
 	require.NoError(t, err)
 	assert.Equal(t, []byte("%PDF income statement"), incomeStatementPDF)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "consolidated", "--as-of", "2026-03-31", "--start", "2026-01-01", "--end", "2026-03-31", "--tenant-ids", "tenant-1,tenant-2"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Consolidated report (2 tenants)")
+	assert.Contains(t, stdout.String(), "Net income: 500")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"reports", "annual", "--period-end", "2026-12-31", "--cash-flow-method", "indirect"})

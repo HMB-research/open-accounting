@@ -17,6 +17,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -555,6 +556,82 @@ func TestReportHandlers(t *testing.T) {
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/income-statement?start=2026-01-31&end=2026-01-01", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.GetIncomeStatement(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestGetConsolidatedReport(t *testing.T) {
+	h, tenantRepo, accountingRepo := setupAccountingTestHandlers()
+	tenantRepo.addTestTenant("tenant-1", "Alpha", "alpha")
+	tenantRepo.addTestTenant("tenant-2", "Beta", "beta")
+	tenantRepo.tenantUsers["tenant-1"] = []tenant.TenantUser{{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner}}
+	tenantRepo.tenantUsers["tenant-2"] = []tenant.TenantUser{{TenantID: "tenant-2", UserID: "user-1", Role: tenant.RoleViewer}}
+
+	accountingRepo.trialBalances = []accounting.AccountBalance{
+		{
+			AccountID:     "cash",
+			AccountCode:   "1000",
+			AccountName:   "Cash",
+			AccountType:   accounting.AccountTypeAsset,
+			DebitBalance:  decimal.NewFromInt(100),
+			CreditBalance: decimal.Zero,
+			NetBalance:    decimal.NewFromInt(100),
+		},
+		{
+			AccountID:     "sales",
+			AccountCode:   "4000",
+			AccountName:   "Sales",
+			AccountType:   accounting.AccountTypeRevenue,
+			DebitBalance:  decimal.Zero,
+			CreditBalance: decimal.NewFromInt(80),
+			NetBalance:    decimal.NewFromInt(-80),
+		},
+		{
+			AccountID:     "expenses",
+			AccountCode:   "5000",
+			AccountName:   "Expenses",
+			AccountType:   accounting.AccountTypeExpense,
+			DebitBalance:  decimal.NewFromInt(20),
+			CreditBalance: decimal.Zero,
+			NetBalance:    decimal.NewFromInt(20),
+		},
+	}
+	accountingRepo.periodBalances = accountingRepo.trialBalances
+
+	req := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/reports/consolidated?tenant_ids=tenant-1,tenant-2&as_of=2026-12-31&start=2026-01-01&end=2026-12-31", nil, &auth.Claims{
+		UserID: "user-1",
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr := httptest.NewRecorder()
+	h.GetConsolidatedReport(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var report reports.ConsolidatedFinancialReport
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&report))
+	assert.Equal(t, "tenant-1", report.TenantID)
+	assert.Equal(t, 2, report.TenantCount)
+	require.NotNil(t, report.BalanceSheet)
+	assert.True(t, report.BalanceSheet.TotalAssets.Equal(decimal.NewFromInt(200)))
+	require.NotNil(t, report.IncomeStatement)
+	assert.True(t, report.IncomeStatement.TotalRevenue.Equal(decimal.NewFromInt(160)))
+	assert.True(t, report.IncomeStatement.TotalExpenses.Equal(decimal.NewFromInt(40)))
+	assert.True(t, report.IncomeStatement.NetIncome.Equal(decimal.NewFromInt(120)))
+
+	req = makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/reports/consolidated?tenant_ids=tenant-1,tenant-2", nil, &auth.Claims{
+		UserID:    "user-1",
+		TenantID:  "tenant-1",
+		TokenKind: auth.TokenKindAPIToken,
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetConsolidatedReport(rr, req)
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+
+	req = makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/reports/consolidated?as_of=bad-date", nil, &auth.Claims{
+		UserID: "user-1",
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetConsolidatedReport(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
 

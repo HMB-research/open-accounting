@@ -52,7 +52,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Multiple companies | ✅ | ✅ | ✅ | Implemented |
 | Company switching | ✅ | ✅ | ✅ | Implemented |
 | Shared chart of accounts | ❌ | ❌ | ❌ | N/A |
-| Consolidated reporting | ✅ | ✅ | ❌ | **Gap** |
+| Consolidated reporting | ✅ | ✅ | ✅ | Implemented as multi-tenant consolidated trial balance, balance sheet, and income statement report with API/CLI coverage and tenant-access checks |
 
 ---
 

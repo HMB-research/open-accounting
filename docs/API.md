@@ -2783,6 +2783,22 @@ Authorization: Bearer <token>
 - `end` (string, required): End date in YYYY-MM-DD format
 - `format` (string): `json` (default), `csv`, `xlsx`, or `pdf`
 
+### Consolidated Financial Report
+
+```http
+GET /tenants/{tenantId}/reports/consolidated?tenant_ids=tenant-a,tenant-b&as_of=2026-12-31&start=2026-01-01&end=2026-12-31
+Authorization: Bearer <token>
+```
+
+Combines trial balance, balance sheet, and income statement totals across selected tenant IDs the caller can view. Tenant-scoped API tokens are limited to their own tenant.
+
+**Query Parameters:**
+- `tenant_ids` (string): Comma-separated tenant IDs to consolidate; defaults to `{tenantId}`
+- `tenant_id` (string, repeatable): Alternative repeated tenant selector
+- `as_of` or `as_of_date` (string): Balance sheet and trial balance date in YYYY-MM-DD format
+- `start` (string): Income statement start date; defaults to Jan 1 of the `as_of` year
+- `end` (string): Income statement end date; defaults to `as_of`
+
 ### Annual Report
 
 ```http

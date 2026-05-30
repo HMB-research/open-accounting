@@ -75,6 +75,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 | **Trial Balance** | Real-time balance reports as of any date |
 | **Balance Sheet** | Assets, liabilities, and equity statement |
 | **Income Statement** | Revenue and expense summary (P&L) |
+| **Consolidated Reporting** | Multi-company trial balance, balance sheet, and income statement consolidation |
 | **Report Exports** | Export to Excel, CSV, or PDF formats |
 | **VAT Tracking** | Date-aware VAT rates for proper EU compliance |
 
