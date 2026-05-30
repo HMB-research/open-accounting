@@ -2887,6 +2887,33 @@ Authorization: Bearer <token>
 
 Requires an owner or admin role. Returns recent tenant administration audit events for user role changes, user removals, invitation creation, and invitation revocation. `limit` defaults to `50` and must be between `1` and `200`.
 
+### List Tenant User Sessions
+
+```http
+GET /tenants/{tenantId}/users/{userId}/sessions
+Authorization: Bearer <token>
+```
+
+Pass `include_inactive=true` to include revoked and expired refresh-token sessions. Requires an owner or admin role, and the target user must belong to the tenant.
+
+### Revoke Tenant User Session
+
+```http
+DELETE /tenants/{tenantId}/users/{userId}/sessions/{sessionId}
+Authorization: Bearer <token>
+```
+
+Requires an owner or admin role. The revocation is recorded in both auth security events and tenant audit events.
+
+### Revoke All Tenant User Sessions
+
+```http
+DELETE /tenants/{tenantId}/users/{userId}/sessions
+Authorization: Bearer <token>
+```
+
+Requires an owner or admin role. Revokes every active refresh-token session for the target tenant user and records auth and tenant audit events.
+
 ### Remove Tenant User
 
 ```http

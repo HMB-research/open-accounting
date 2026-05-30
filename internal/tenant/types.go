@@ -80,11 +80,13 @@ type PeriodCloseEvent struct {
 }
 
 const (
-	AuditActionUserRoleUpdated   = "user_role_updated"
-	AuditActionUserRemoved       = "user_removed"
-	AuditActionInvitationCreated = "invitation_created"
-	AuditActionInvitationRevoked = "invitation_revoked"
-	AuditActionTenantUpdated     = "tenant_updated"
+	AuditActionUserRoleUpdated     = "user_role_updated"
+	AuditActionUserRemoved         = "user_removed"
+	AuditActionInvitationCreated   = "invitation_created"
+	AuditActionInvitationRevoked   = "invitation_revoked"
+	AuditActionTenantUpdated       = "tenant_updated"
+	AuditActionUserSessionRevoked  = "user_session_revoked"
+	AuditActionUserSessionsRevoked = "user_sessions_revoked"
 
 	AuditTargetUser       = "user"
 	AuditTargetInvitation = "invitation"

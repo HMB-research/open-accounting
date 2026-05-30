@@ -28,8 +28,10 @@ func setupTenantTestHandlers() (*Handlers, *mockTenantRepository) {
 	tokenSvc := auth.NewTokenService("test-secret-key-for-testing-only", 15*time.Minute, 7*24*time.Hour)
 
 	h := &Handlers{
-		tenantService: tenantSvc,
-		tokenService:  tokenSvc,
+		tenantService:         tenantSvc,
+		tokenService:          tokenSvc,
+		refreshSessionService: newMockRefreshSessionService(),
+		securityAuditService:  &mockSecurityAuditService{},
 	}
 
 	return h, repo
@@ -1246,6 +1248,146 @@ func TestListTenantAuditEvents(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTenantUserAuthSessions(t *testing.T) {
+	adminClaims := &auth.Claims{
+		UserID:   "user-1",
+		Email:    "owner@example.com",
+		TenantID: "tenant-1",
+		Role:     tenant.RoleOwner,
+	}
+
+	t.Run("admin can list member sessions", func(t *testing.T) {
+		h, repo := setupTenantTestHandlers()
+		repo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+			{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner},
+			{TenantID: "tenant-1", UserID: "user-2", Role: tenant.RoleViewer},
+		}
+		sessions := h.refreshSessionService.(*mockRefreshSessionService)
+		sessions.sessions["session-1"] = mockRefreshSession{userID: "user-2", expiresAt: time.Now().Add(time.Hour)}
+		sessions.sessions["session-2"] = mockRefreshSession{userID: "user-2", expiresAt: time.Now().Add(time.Hour), revoked: true}
+		sessions.sessions["session-3"] = mockRefreshSession{userID: "other-user", expiresAt: time.Now().Add(time.Hour)}
+
+		req := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/users/user-2/sessions", nil, adminClaims)
+		req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "userID": "user-2"})
+		w := httptest.NewRecorder()
+
+		h.ListTenantUserAuthSessions(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+		var resp []auth.RefreshSession
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+		require.Len(t, resp, 1)
+		assert.Equal(t, "session-1", resp[0].ID)
+		assert.Equal(t, "user-2", resp[0].UserID)
+	})
+
+	t.Run("viewer cannot list member sessions", func(t *testing.T) {
+		h, _ := setupTenantTestHandlers()
+		req := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/users/user-2/sessions", nil, &auth.Claims{
+			UserID:   "user-3",
+			Email:    "viewer@example.com",
+			TenantID: "tenant-1",
+			Role:     tenant.RoleViewer,
+		})
+		req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "userID": "user-2"})
+		w := httptest.NewRecorder()
+
+		h.ListTenantUserAuthSessions(w, req)
+
+		assert.Equal(t, http.StatusForbidden, w.Code)
+	})
+
+	t.Run("target user must belong to tenant", func(t *testing.T) {
+		h, repo := setupTenantTestHandlers()
+		repo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+			{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner},
+		}
+		req := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/users/user-2/sessions", nil, adminClaims)
+		req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "userID": "user-2"})
+		w := httptest.NewRecorder()
+
+		h.ListTenantUserAuthSessions(w, req)
+
+		require.Equal(t, http.StatusNotFound, w.Code, "response body: %s", w.Body.String())
+		assert.Contains(t, w.Body.String(), "User not found in tenant")
+	})
+}
+
+func TestTenantUserAuthSessionRevocationAuditsActions(t *testing.T) {
+	adminClaims := &auth.Claims{
+		UserID:   "user-1",
+		Email:    "owner@example.com",
+		TenantID: "tenant-1",
+		Role:     tenant.RoleOwner,
+	}
+
+	t.Run("revoke one session", func(t *testing.T) {
+		h, repo := setupTenantTestHandlers()
+		repo.addTestUser("user-2", "target@example.com", "Target User", "password123", true)
+		repo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+			{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner},
+			{TenantID: "tenant-1", UserID: "user-2", Role: tenant.RoleViewer},
+		}
+		sessions := h.refreshSessionService.(*mockRefreshSessionService)
+		sessions.sessions["session-1"] = mockRefreshSession{userID: "user-2", expiresAt: time.Now().Add(time.Hour)}
+
+		req := makeAuthenticatedRequest(http.MethodDelete, "/tenants/tenant-1/users/user-2/sessions/session-1", nil, adminClaims)
+		req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "userID": "user-2", "sessionID": "session-1"})
+		w := httptest.NewRecorder()
+
+		h.RevokeTenantUserAuthSession(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+		assert.True(t, sessions.sessions["session-1"].revoked)
+		require.Len(t, repo.auditEvents["tenant-1"], 1)
+		event := repo.auditEvents["tenant-1"][0]
+		assert.Equal(t, tenant.AuditActionUserSessionRevoked, event.Action)
+		assert.Equal(t, tenant.AuditTargetUser, event.TargetType)
+		assert.Equal(t, "user-2", event.TargetID)
+		assert.Equal(t, "target@example.com", event.TargetEmail)
+		assert.Equal(t, "session-1", event.Metadata["session_id"])
+
+		securityEvents := h.securityAuditService.(*mockSecurityAuditService).events
+		require.Len(t, securityEvents, 1)
+		assert.Equal(t, auth.SecurityAuditActionSessionRevoked, securityEvents[0].Action)
+		assert.Equal(t, "user-1", securityEvents[0].ActorUserID)
+		assert.Equal(t, "user-2", securityEvents[0].TargetUserID)
+		assert.Equal(t, "tenant-1", securityEvents[0].Metadata["tenant_id"])
+	})
+
+	t.Run("revoke all sessions", func(t *testing.T) {
+		h, repo := setupTenantTestHandlers()
+		repo.addTestUser("user-2", "target@example.com", "Target User", "password123", true)
+		repo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+			{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner},
+			{TenantID: "tenant-1", UserID: "user-2", Role: tenant.RoleAdmin},
+		}
+		sessions := h.refreshSessionService.(*mockRefreshSessionService)
+		sessions.sessions["session-1"] = mockRefreshSession{userID: "user-2", expiresAt: time.Now().Add(time.Hour)}
+		sessions.sessions["session-2"] = mockRefreshSession{userID: "user-2", expiresAt: time.Now().Add(time.Hour)}
+
+		req := makeAuthenticatedRequest(http.MethodDelete, "/tenants/tenant-1/users/user-2/sessions", nil, adminClaims)
+		req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "userID": "user-2"})
+		w := httptest.NewRecorder()
+
+		h.RevokeTenantUserAuthSessions(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+		assert.True(t, sessions.sessions["session-1"].revoked)
+		assert.True(t, sessions.sessions["session-2"].revoked)
+		require.Len(t, repo.auditEvents["tenant-1"], 1)
+		event := repo.auditEvents["tenant-1"][0]
+		assert.Equal(t, tenant.AuditActionUserSessionsRevoked, event.Action)
+		assert.Equal(t, "user-2", event.TargetID)
+		assert.Equal(t, tenant.RoleAdmin, event.Metadata["role"])
+
+		securityEvents := h.securityAuditService.(*mockSecurityAuditService).events
+		require.Len(t, securityEvents, 1)
+		assert.Equal(t, auth.SecurityAuditActionAllSessionsRevoked, securityEvents[0].Action)
+		assert.Equal(t, "user-2", securityEvents[0].TargetUserID)
+	})
 }
 
 func TestTenantAdministrationAuditEventsRecorded(t *testing.T) {

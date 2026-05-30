@@ -360,6 +360,27 @@ func (c *apiClient) updateTenantUserRole(ctx context.Context, tenantID, userID, 
 	return c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "users", userID, "role"), map[string]string{"role": role}, c.apiToken, nil)
 }
 
+func (c *apiClient) listTenantUserAuthSessions(ctx context.Context, tenantID, userID string, includeInactive bool) ([]refreshSession, error) {
+	values := url.Values{}
+	if includeInactive {
+		values.Set("include_inactive", "true")
+	}
+
+	var resp []refreshSession
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "users", userID, "sessions"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) revokeTenantUserAuthSession(ctx context.Context, tenantID, userID, sessionID string) error {
+	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "users", userID, "sessions", sessionID), nil, c.apiToken, nil)
+}
+
+func (c *apiClient) revokeTenantUserAuthSessions(ctx context.Context, tenantID, userID string) error {
+	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "users", userID, "sessions"), nil, c.apiToken, nil)
+}
+
 func (c *apiClient) listInvitations(ctx context.Context, tenantID string) ([]tenant.UserInvitation, error) {
 	var resp []tenant.UserInvitation
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "invitations"), nil, c.apiToken, &resp); err != nil {
