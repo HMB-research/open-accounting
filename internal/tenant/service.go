@@ -17,15 +17,13 @@ var slugRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$`)
 
 // Service provides tenant management operations
 type Service struct {
-	db   *pgxpool.Pool
 	repo Repository
 }
 
-// NewService creates a new tenant service
+// NewService creates a new tenant service with an ORM-backed repository.
 func NewService(db *pgxpool.Pool) *Service {
 	return &Service{
-		db:   db,
-		repo: NewPostgresRepository(db),
+		repo: NewRepository(db),
 	}
 }
 
