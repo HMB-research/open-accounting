@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/plugin"
 )
 
@@ -33,9 +34,16 @@ type Service struct {
 	now        func() time.Time
 }
 
-// NewService creates a webhook service backed by PostgreSQL.
+// NewService creates a webhook service backed by the ORM repository.
 func NewService(pool *pgxpool.Pool) *Service {
-	return NewServiceWithRepository(NewPostgresRepository(pool), &http.Client{Timeout: defaultHTTPTimeout})
+	if pool == nil {
+		return NewServiceWithRepository(nil, &http.Client{Timeout: defaultHTTPTimeout})
+	}
+	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	if err != nil {
+		panic(fmt.Errorf("create webhook GORM repository: %w", err))
+	}
+	return NewServiceWithRepository(NewGORMRepository(gormDB), &http.Client{Timeout: defaultHTTPTimeout})
 }
 
 // NewServiceWithRepository creates a webhook service with injected dependencies.
