@@ -1902,6 +1902,9 @@ func TestCLIQuoteCommands(t *testing.T) {
 			assert.Equal(t, "Updated consulting", req.Lines[0].Description)
 			_ = json.NewEncoder(w).Encode(quotePayload("quote-1", "QUO-00002", "DRAFT"))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-1/send":
+			var req documentEvidenceRequirementRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.True(t, req.RequireApprovedEvidence)
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "sent"})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-1/accept":
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
@@ -2019,7 +2022,7 @@ func TestCLIQuoteCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Quote QUO-00002")
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"quotes", "send", "--id", "quote-1"})
+	err = app.run(context.Background(), []string{"quotes", "send", "--id", "quote-1", "--require-approved-evidence"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Sent quote quote-1")
 
@@ -2254,6 +2257,9 @@ func TestCLIOrderCommands(t *testing.T) {
 			assert.Equal(t, "Updated consulting", req.Lines[0].Description)
 			_ = json.NewEncoder(w).Encode(orderPayload("order-1", "ORD-00002", "CONFIRMED"))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1/confirm":
+			var req documentEvidenceRequirementRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.True(t, req.RequireApprovedEvidence)
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "confirmed"})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1/process":
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "processing"})
@@ -2357,7 +2363,7 @@ func TestCLIOrderCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Order ORD-00002")
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"orders", "confirm", "--id", "order-1"})
+	err = app.run(context.Background(), []string{"orders", "confirm", "--id", "order-1", "--require-approved-evidence"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Confirmed order order-1")
 

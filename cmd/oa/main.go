@@ -5343,6 +5343,7 @@ func (a *cliApp) runQuotes(ctx context.Context, args []string) error {
 		fs := flag.NewFlagSet("quotes "+args[0], flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
 		quoteID := fs.String("id", "", "Quote id")
+		requireApprovedEvidence := fs.Bool("require-approved-evidence", false, "Require approved quote evidence before sending")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -5350,8 +5351,11 @@ func (a *cliApp) runQuotes(ctx context.Context, args []string) error {
 		if strings.TrimSpace(*quoteID) == "" {
 			return errors.New("id is required")
 		}
+		if *requireApprovedEvidence && args[0] != "send" {
+			return errors.New("require-approved-evidence is only supported for quotes send")
+		}
 
-		result, err := client.updateQuoteStatus(ctx, cfg.TenantID, strings.TrimSpace(*quoteID), args[0])
+		result, err := client.updateQuoteStatus(ctx, cfg.TenantID, strings.TrimSpace(*quoteID), args[0], *requireApprovedEvidence)
 		if err != nil {
 			return err
 		}
@@ -5767,6 +5771,7 @@ func (a *cliApp) runOrders(ctx context.Context, args []string) error {
 		fs := flag.NewFlagSet("orders "+args[0], flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
 		orderID := fs.String("id", "", "Order id")
+		requireApprovedEvidence := fs.Bool("require-approved-evidence", false, "Require approved order evidence before confirming")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -5774,8 +5779,11 @@ func (a *cliApp) runOrders(ctx context.Context, args []string) error {
 		if strings.TrimSpace(*orderID) == "" {
 			return errors.New("id is required")
 		}
+		if *requireApprovedEvidence && args[0] != "confirm" {
+			return errors.New("require-approved-evidence is only supported for orders confirm")
+		}
 
-		result, err := client.updateOrderStatus(ctx, cfg.TenantID, strings.TrimSpace(*orderID), args[0])
+		result, err := client.updateOrderStatus(ctx, cfg.TenantID, strings.TrimSpace(*orderID), args[0], *requireApprovedEvidence)
 		if err != nil {
 			return err
 		}
