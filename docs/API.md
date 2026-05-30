@@ -482,7 +482,7 @@ Content-Type: application/json
 }
 ```
 
-Returns a non-mutating cutover report with required-column checks and cross-file reference issues for supported migration CSV files. Supported `kind` values are `accounts`, `contacts`, `employees`, `expenses`, `invoices`, `payments`, `bank_transactions`, `payroll_history`, `leave_balances`, `kmd_history`, `quotes`, `orders`, `recurring_invoices`, `cost_centers`, `product_categories`, `warehouses`, `products`, `stock_adjustments`, `fixed_assets`, `opening_balances`, and `journal_entries`. Stock-adjustment validation recognizes optional lot metadata columns including `lot_number`, `serial_number`, and `expiry_date` plus common aliases such as `batch`, `serial`, and `expiration_date`.
+Returns a non-mutating cutover report with required-column checks and cross-file reference issues for supported migration CSV files. Supported `kind` values are `accounts`, `contacts`, `employees`, `expenses`, `invoices`, `payments`, `bank_accounts`, `bank_transactions`, `payroll_history`, `leave_balances`, `kmd_history`, `quotes`, `orders`, `recurring_invoices`, `cost_centers`, `product_categories`, `warehouses`, `products`, `stock_adjustments`, `fixed_assets`, `opening_balances`, and `journal_entries`. Stock-adjustment validation recognizes optional lot metadata columns including `lot_number`, `serial_number`, and `expiry_date` plus common aliases such as `batch`, `serial`, and `expiration_date`.
 
 When the related files are present in the same bundle, the validator also checks references such as commercial documents to contacts, payments to invoices, payroll/leave rows to employees, products to product categories, stock rows to products and warehouses, cost centers to parent cost centers, product categories to parent categories, and opening balances or journals to accounts.
 
@@ -2655,6 +2655,7 @@ Reverse carry-forward:
 ```http
 GET /tenants/{tenantId}/bank-accounts?active_only=true
 POST /tenants/{tenantId}/bank-accounts
+POST /tenants/{tenantId}/bank-accounts/import
 GET /tenants/{tenantId}/bank-accounts/{accountId}
 PUT /tenants/{tenantId}/bank-accounts/{accountId}
 DELETE /tenants/{tenantId}/bank-accounts/{accountId}
@@ -2676,6 +2677,29 @@ Create a bank account:
 ```
 
 Update supports `name`, `bank_name`, `swift_code`, `gl_account_id`, `is_active`, and `is_default`.
+
+Import bank account master data:
+
+```json
+{
+  "file_name": "bank-accounts.csv",
+  "skip_duplicates": true,
+  "rows": [
+    {
+      "name": "Main bank",
+      "account_number": "EE471000001020145685",
+      "bank_name": "LHV",
+      "swift_code": "LHVBEE22",
+      "currency": "EUR",
+      "gl_account_id": "uuid",
+      "is_default": "true",
+      "is_active": "true"
+    }
+  ]
+}
+```
+
+Bank account imports require `name` and `account_number`, skip duplicate account numbers when `skip_duplicates` is true, and report invalid or duplicate rows without creating placeholder accounts.
 
 ### Bank Auto-Match Rules
 
@@ -2726,7 +2750,20 @@ Authorization: Bearer <token>
 
 Transaction statuses are `UNMATCHED`, `MATCHED`, and `RECONCILED`.
 
-Import pre-parsed transactions:
+Import raw statement content with the shared bank mappers:
+
+```json
+{
+  "file_name": "lhv-bank.csv",
+  "format": "lhv",
+  "csv_content": "Client account;Document number;Date;Beneficiary's/remitter's account;Beneficiary's/remitter's name;Debit/Credit (D/C);Amount;Reference number;Archival ID;Details;Currency;Personal identification code or registry code;Beneficiary's/remitter's bank's BIC;Payment initiator's name;Entry reference;Account service provider's reference\nEE457700771000676899;123;2026-03-15;EE111;Acme;C;100,00;REF-1;202603150001;Client payment;EUR;12345678;LHVBEE22;;ENTRY-1;ext-1\n",
+  "skip_duplicates": true
+}
+```
+
+`format` supports `auto`, `generic`, `lhv`, and `lhv-camt`. `auto` detects LHV Internet Bank CSV and LHV Connect camt.053 XML before falling back to generic headers. The LHV CSV mapper follows the 2026 Internet Bank account statement columns documented by LHV. The LHV camt.053 mapper is covered by LHV Connect's official `ACCOUNT_STATEMENT_CAMT.053A.xml` sample.
+
+Pre-parsed transaction rows are also supported for clients that normalize statements before calling the API:
 
 ```json
 {

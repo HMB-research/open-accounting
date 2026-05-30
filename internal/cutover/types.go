@@ -9,6 +9,7 @@ const (
 	KindExpenses          FileKind = "expenses"
 	KindInvoices          FileKind = "invoices"
 	KindPayments          FileKind = "payments"
+	KindBankAccounts      FileKind = "bank_accounts"
 	KindBankTransactions  FileKind = "bank_transactions"
 	KindPayrollHistory    FileKind = "payroll_history"
 	KindLeaveBalances     FileKind = "leave_balances"

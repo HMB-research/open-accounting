@@ -149,6 +149,7 @@ type CreateBankAccountRequest struct {
 	Currency      string  `json:"currency,omitempty"`
 	GLAccountID   *string `json:"gl_account_id,omitempty"`
 	IsDefault     bool    `json:"is_default"`
+	IsActive      *bool   `json:"is_active,omitempty"`
 }
 
 // UpdateBankAccountRequest is the request to update a bank account
@@ -188,11 +189,42 @@ type UpdateBankMatchRuleRequest struct {
 	IsActive           *bool           `json:"is_active,omitempty"`
 }
 
-// ImportCSVRequest is the request to import transactions from CSV
+// ImportCSVRequest is the request to import bank transactions from raw statement
+// content or already normalized rows.
 type ImportCSVRequest struct {
 	FileName       string              `json:"file_name,omitempty"`
-	Transactions   []CSVTransactionRow `json:"transactions"`
+	CSVContent     string              `json:"csv_content,omitempty"`
+	Format         string              `json:"format,omitempty"`
+	Transactions   []CSVTransactionRow `json:"transactions,omitempty"`
 	SkipDuplicates bool                `json:"skip_duplicates"`
+}
+
+// ImportBankAccountsRequest is the request to import bank account master data.
+type ImportBankAccountsRequest struct {
+	FileName       string              `json:"file_name,omitempty"`
+	Rows           []CSVBankAccountRow `json:"rows"`
+	SkipDuplicates bool                `json:"skip_duplicates"`
+}
+
+// CSVBankAccountRow represents a bank account row in CSV import payloads.
+type CSVBankAccountRow struct {
+	Name          string `json:"name"`
+	AccountNumber string `json:"account_number"`
+	BankName      string `json:"bank_name,omitempty"`
+	SwiftCode     string `json:"swift_code,omitempty"`
+	Currency      string `json:"currency,omitempty"`
+	GLAccountID   string `json:"gl_account_id,omitempty"`
+	IsDefault     string `json:"is_default,omitempty"`
+	IsActive      string `json:"is_active,omitempty"`
+}
+
+// ImportBankAccountsResult is the result of a bank account import.
+type ImportBankAccountsResult struct {
+	FileName         string   `json:"file_name"`
+	RowsProcessed    int      `json:"rows_processed"`
+	AccountsImported int      `json:"accounts_imported"`
+	RowsSkipped      int      `json:"rows_skipped"`
+	Errors           []string `json:"errors,omitempty"`
 }
 
 // CSVTransactionRow represents a row in the CSV import

@@ -267,6 +267,7 @@ go run ./cmd/oa migration validate \
   --expenses ./expenses.csv \
   --invoices ./invoices.csv \
   --payments ./payments.csv \
+  --bank-accounts ./bank-accounts.csv \
   --bank-transactions ./bank-transactions.csv \
   --payroll-history ./payroll-history.csv \
   --leave-balances ./leave-balances.csv \
@@ -285,7 +286,7 @@ go run ./cmd/oa migration validate \
 go run ./cmd/oa migration validate --contacts ./contacts.csv --invoices ./invoices.csv --json
 ```
 
-`migration validate` is a non-mutating cutover preflight. It checks required CSV column groups and same-bundle cross-file references for accounts, contacts, employees, expenses, invoices, payments, bank transactions, payroll history, leave balances, KMD history, quotes, orders, recurring invoice templates, cost centers, product categories, warehouses, products, stock adjustments, fixed assets, opening balances, and historical journal entries before you run the individual import commands. Stock-adjustment validation recognizes optional lot metadata columns such as `lot_number`, `serial_number`, and `expiry_date`, plus aliases including `batch`, `serial`, and `expiration_date`.
+`migration validate` is a non-mutating cutover preflight. It checks required CSV column groups and same-bundle cross-file references for accounts, contacts, employees, expenses, invoices, payments, bank accounts, bank transactions, payroll history, leave balances, KMD history, quotes, orders, recurring invoice templates, cost centers, product categories, warehouses, products, stock adjustments, fixed assets, opening balances, and historical journal entries before you run the individual import commands. Stock-adjustment validation recognizes optional lot metadata columns such as `lot_number`, `serial_number`, and `expiry_date`, plus aliases including `batch`, `serial`, and `expiration_date`.
 
 ## Accounts
 
@@ -812,6 +813,7 @@ go run ./cmd/oa banking accounts create \
   --currency EUR \
   --gl-account-id <asset-account-id> \
   --default
+go run ./cmd/oa banking accounts import --file ./bank-accounts.csv
 go run ./cmd/oa banking accounts get --id <bank-account-id>
 go run ./cmd/oa banking accounts update --id <bank-account-id> --bank-name SEB --active true
 go run ./cmd/oa banking accounts delete --id <bank-account-id>
@@ -835,7 +837,8 @@ go run ./cmd/oa banking transactions list \
   --status UNMATCHED \
   --from 2026-03-01 \
   --to 2026-03-31
-go run ./cmd/oa banking transactions import --account-id <bank-account-id> --file ./bank.csv
+go run ./cmd/oa banking transactions import --account-id <bank-account-id> --file ./lhv-bank.csv --format lhv
+go run ./cmd/oa banking transactions import --account-id <bank-account-id> --file ./ACCOUNT_STATEMENT_CAMT.053A.xml --format lhv-camt
 go run ./cmd/oa banking transactions import-history --account-id <bank-account-id>
 go run ./cmd/oa banking transactions get --id <transaction-id>
 go run ./cmd/oa banking transactions suggestions --id <transaction-id>
@@ -858,7 +861,7 @@ go run ./cmd/oa banking reconciliations get --id <reconciliation-id>
 go run ./cmd/oa banking reconciliations complete --id <reconciliation-id>
 ```
 
-Bank transaction statuses are `UNMATCHED`, `MATCHED`, and `RECONCILED`. Follow-up statuses are `NONE`, `EVIDENCE_REQUIRED`, and `READY_TO_MATCH`. Auto-match rule fields are `DESCRIPTION`, `REFERENCE`, `COUNTERPARTY_NAME`, and `COUNTERPARTY_ACCOUNT`; omit `--bank-account-id` or pass `--global` on update for tenant-wide rules. Reconciliation completion blocks matched transactions marked `EVIDENCE_REQUIRED` until they have approved `reconciliation_evidence` documents; use `documents upload`, `documents review`, and `documents evidence-policy` to resolve evidence failures. Bank CSV imports accept comma, semicolon, or tab delimiters with headers such as `date`, `amount`, `description`, `reference`, `counterparty_name`, `counterparty_account`, `value_date`, and `external_id`. Use `--json` on banking read and mutation commands for automation.
+Bank transaction statuses are `UNMATCHED`, `MATCHED`, and `RECONCILED`. Follow-up statuses are `NONE`, `EVIDENCE_REQUIRED`, and `READY_TO_MATCH`. Auto-match rule fields are `DESCRIPTION`, `REFERENCE`, `COUNTERPARTY_NAME`, and `COUNTERPARTY_ACCOUNT`; omit `--bank-account-id` or pass `--global` on update for tenant-wide rules. Reconciliation completion blocks matched transactions marked `EVIDENCE_REQUIRED` until they have approved `reconciliation_evidence` documents; use `documents upload`, `documents review`, and `documents evidence-policy` to resolve evidence failures. Bank account CSV imports require `name` and `account_number`; optional columns include `bank_name`, `swift_code`, `currency`, `gl_account_id`, `is_default`, and `is_active`. Bank transaction CSV imports accept comma, semicolon, or tab delimiters. Use `--format lhv` for LHV Internet Bank account statement CSV exports with the documented 2026 columns: `Client account`, `Document number`, `Date`, `Beneficiary's/remitter's account`, `Beneficiary's/remitter's name`, `Debit/Credit (D/C)`, `Amount`, `Reference number`, `Archival ID`, `Details`, `Currency`, personal or registry code, counterparty bank BIC, payment initiator name, `Entry reference`, and `Account service provider's reference`. Use `--format lhv-camt` for LHV Connect camt.053 account statement XML; the parser is covered against LHV's official `ACCOUNT_STATEMENT_CAMT.053A.xml` sample. `--format auto` detects LHV CSV and LHV camt.053 layouts and otherwise uses the generic headers `date`, `amount`, `description`, `reference`, `counterparty_name`, `counterparty_account`, `value_date`, and `external_id`. Use `--json` on banking read and mutation commands for automation.
 
 ## Reports
 

@@ -1255,6 +1255,14 @@ func (c *apiClient) createBankAccount(ctx context.Context, tenantID string, req 
 	return &resp, nil
 }
 
+func (c *apiClient) importBankAccounts(ctx context.Context, tenantID string, req *banking.ImportBankAccountsRequest) (*banking.ImportBankAccountsResult, error) {
+	var resp banking.ImportBankAccountsResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "bank-accounts", "import"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) getBankAccount(ctx context.Context, tenantID, accountID string) (*banking.BankAccount, error) {
 	var resp banking.BankAccount
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "bank-accounts", accountID), nil, c.apiToken, &resp); err != nil {

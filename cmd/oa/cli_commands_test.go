@@ -1104,6 +1104,7 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 
 	contactsFile := writeTempCSV(t, "contacts.csv", "contact_code,name\nCUST-1,Customer One\n")
 	invoicesFile := writeTempCSV(t, "invoices.csv", "invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\nINV-1,CUST-404,2026-05-30,Work,1,100,22\n")
+	bankAccountsFile := writeTempCSV(t, "bank-accounts.csv", "name,account_number\nMain bank,EE471000001020145685\n")
 	bankFile := writeTempCSV(t, "bank.csv", "date,amount,description\n2026-05-31,100,Customer receipt\n")
 	kmdFile := writeTempCSV(t, "kmd.csv", "year,month,row_code,tax_base,tax_amount\n2026,5,1,100,22\n")
 	quotesFile := writeTempCSV(t, "quotes.csv", "quote_number,quote_date,contact_code,line_description,quantity,unit_price,vat_rate\nQ-1,2026-05-30,CUST-1,Work,1,100,22\n")
@@ -1140,6 +1141,7 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 						assert.Contains(t, file.CSVContent, "2027-05-30")
 					}
 				}
+				assert.True(t, kinds[cutover.KindBankAccounts])
 				assert.True(t, kinds[cutover.KindBankTransactions])
 				assert.True(t, kinds[cutover.KindKMDHistory])
 				assert.True(t, kinds[cutover.KindQuotes])
@@ -1189,6 +1191,7 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 		"migration", "validate",
 		"--contacts", contactsFile,
 		"--invoices", invoicesFile,
+		"--bank-accounts", bankAccountsFile,
 		"--bank-transactions", bankFile,
 		"--kmd-history", kmdFile,
 		"--quotes", quotesFile,
@@ -5141,7 +5144,8 @@ func TestCLIBankingCommands(t *testing.T) {
 		APIToken:   "oa_saved_token",
 	}))
 
-	importFile := writeTempCSV(t, "bank.csv", "date;amount;description;reference;counterparty_name;external_id\n2026-03-15;100.00;Client payment;REF-1;Acme;ext-1\n")
+	bankAccountsFile := writeTempCSV(t, "bank-accounts.csv", "name,account_number,bank_name,swift_code,currency,gl_account_id,is_default,is_active\nReserve bank,EE999,LHV,LHVBEE22,EUR,acc-bank,false,true\n")
+	importFile := writeTempCSV(t, "lhv-bank.csv", "Client account;Document number;Date;Beneficiary's/remitter's account;Beneficiary's/remitter's name;Debit/Credit (D/C);Amount;Reference number;Archival ID;Details;Currency;Personal identification code or registry code;Beneficiary's/remitter's bank's BIC;Payment initiator's name;Entry reference;Account service provider's reference\nEE457700771000676899;123;2026-03-15;EE111;Acme;C;100,00;REF-1;202603150001;Client payment;EUR;12345678;LHVBEE22;;ENTRY-1;ext-1\n")
 	glAccountID := "acc-bank"
 	paymentID := "pay-1"
 	reconciliationID := "rec-1"
@@ -5259,6 +5263,21 @@ func TestCLIBankingCommands(t *testing.T) {
 			assert.True(t, req.IsDefault)
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(accountPayload(true))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/import":
+			var req banking.ImportBankAccountsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "bank-accounts.csv", req.FileName)
+			assert.True(t, req.SkipDuplicates)
+			require.Len(t, req.Rows, 1)
+			assert.Equal(t, "Reserve bank", req.Rows[0].Name)
+			assert.Equal(t, "EE999", req.Rows[0].AccountNumber)
+			assert.Equal(t, "acc-bank", req.Rows[0].GLAccountID)
+			_ = json.NewEncoder(w).Encode(banking.ImportBankAccountsResult{
+				FileName:         "bank-accounts.csv",
+				RowsProcessed:    1,
+				AccountsImported: 1,
+				RowsSkipped:      0,
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-1":
 			_ = json.NewEncoder(w).Encode(accountPayload(true))
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-1":
@@ -5321,11 +5340,13 @@ func TestCLIBankingCommands(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-1/import":
 			var req banking.ImportCSVRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
-			assert.Equal(t, "bank.csv", req.FileName)
+			assert.Equal(t, "lhv-bank.csv", req.FileName)
 			require.Len(t, req.Transactions, 1)
 			assert.Equal(t, "2026-03-15", req.Transactions[0].Date)
-			assert.Equal(t, "100.00", req.Transactions[0].Amount)
+			assert.Equal(t, "100", req.Transactions[0].Amount)
 			assert.Equal(t, "Client payment", req.Transactions[0].Description)
+			assert.Equal(t, "Acme", req.Transactions[0].CounterpartyName)
+			assert.Equal(t, "ext-1", req.Transactions[0].ExternalID)
 			assert.True(t, req.SkipDuplicates)
 			_ = json.NewEncoder(w).Encode(importPayload)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-1/import-history":
@@ -5386,6 +5407,11 @@ func TestCLIBankingCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"banking", "accounts", "create", "--name", "Main bank", "--account-number", "EE471000001020145685", "--bank-name", "LHV", "--swift-code", "LHVBEE22", "--currency", "eur", "--gl-account-id", "acc-bank", "--default"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created bank account Main bank (bank-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"banking", "accounts", "import", "--file", bankAccountsFile})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Imported: 1")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"banking", "accounts", "get", "--id", "bank-1"})
@@ -8399,9 +8425,28 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	assert.Equal(t, "10.00", bankRows[0].Amount)
 	assert.Equal(t, "Payment", bankRows[0].Description)
 
+	lhvRows, err := parseBankTransactionCSVRowsWithFormat("Client account;Document number;Date;Beneficiary's/remitter's account;Beneficiary's/remitter's name;Debit/Credit (D/C);Amount;Reference number;Archival ID;Details;Currency;Personal identification code or registry code;Beneficiary's/remitter's bank's BIC;Payment initiator's name;Entry reference;Account service provider's reference\nEE457700771000676899;123;2026-03-15;EE111;Acme;D;10,50;REF-1;202603150001;Payment;EUR;12345678;LHVBEE22;;ENTRY-1;ext-1\n", "lhv")
+	require.NoError(t, err)
+	require.Len(t, lhvRows, 1)
+	assert.Equal(t, "-10.5", lhvRows[0].Amount)
+	assert.Equal(t, "Acme", lhvRows[0].CounterpartyName)
+	assert.Equal(t, "ext-1", lhvRows[0].ExternalID)
+
 	_, err = parseBankTransactionCSVRows("")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "bank transaction CSV is empty")
+
+	bankAccountRows, err := parseBankAccountCSVRows("account_name;iban;bank;bic;currency;gl_account_id;default;active\nMain bank;EE123;LHV;LHVBEE22;eur;acc-bank;yes;true\n")
+	require.NoError(t, err)
+	require.Len(t, bankAccountRows, 1)
+	assert.Equal(t, "Main bank", bankAccountRows[0].Name)
+	assert.Equal(t, "EE123", bankAccountRows[0].AccountNumber)
+	assert.Equal(t, "acc-bank", bankAccountRows[0].GLAccountID)
+	assert.Equal(t, "yes", bankAccountRows[0].IsDefault)
+
+	_, err = parseBankAccountCSVRows("name,bank_name\nNo number,LHV\n")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires name and account_number")
 
 	var allocations allocationFlags
 	require.NoError(t, allocations.Set("inv-1:12.50"))

@@ -347,7 +347,7 @@ open-accounting/
 - [x] Tenant admin controls for member API-token inspection and revocation
 - [x] Tenant admin security-event visibility for member auth activity
 - [x] Tenant admin suspension/restoration of member tenant access with session revocation and audit events
-- [x] CSV import for chart of accounts, contacts, employees, invoices, quotes, orders, recurring invoice templates, payments, expenses, bank transactions, cost centers, product categories/warehouses/products/stock, fixed assets, opening balances, and historical journals
+- [x] CSV import for chart of accounts, contacts, employees, invoices, quotes, orders, recurring invoice templates, payments, expenses, bank accounts, bank transactions, cost centers, product categories/warehouses/products/stock, fixed assets, opening balances, and historical journals
 - [x] Migration bundle validation for cutover imports with API and CLI coverage across expenses, commercial history, inventory, banking, tax, and fixed assets
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings

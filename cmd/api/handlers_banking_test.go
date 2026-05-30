@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -541,6 +542,94 @@ func TestCreateBankAccount(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestImportBankAccounts(t *testing.T) {
+	h, repo, tenantRepo := setupBankingTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+	repo.accounts["existing"] = &banking.BankAccount{
+		ID:            "existing",
+		TenantID:      "tenant-1",
+		Name:          "Existing bank",
+		AccountNumber: "EE000",
+		Currency:      "EUR",
+		IsActive:      true,
+	}
+
+	body := map[string]interface{}{
+		"file_name":       "bank-accounts.csv",
+		"skip_duplicates": true,
+		"rows": []map[string]string{
+			{
+				"name":           "Main bank",
+				"account_number": "EE471000001020145685",
+				"bank_name":      "LHV",
+				"swift_code":     "LHVBEE22",
+				"currency":       "EUR",
+				"gl_account_id":  "gl-bank",
+				"is_default":     "true",
+			},
+			{
+				"name":           "Existing duplicate",
+				"account_number": "EE000",
+			},
+		},
+	}
+	bodyBytes, _ := json.Marshal(body)
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/bank-accounts/import", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.ImportBankAccounts(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	var result banking.ImportBankAccountsResult
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&result))
+	assert.Equal(t, "bank-accounts.csv", result.FileName)
+	assert.Equal(t, 2, result.RowsProcessed)
+	assert.Equal(t, 1, result.AccountsImported)
+	assert.Equal(t, 1, result.RowsSkipped)
+
+	var imported *banking.BankAccount
+	for _, account := range repo.accounts {
+		if account.AccountNumber == "EE471000001020145685" {
+			imported = account
+			break
+		}
+	}
+	require.NotNil(t, imported)
+	assert.Equal(t, "Main bank", imported.Name)
+	assert.Equal(t, "LHVBEE22", imported.SwiftCode)
+	require.NotNil(t, imported.GLAccountID)
+	assert.Equal(t, "gl-bank", *imported.GLAccountID)
+	assert.True(t, imported.IsDefault)
+}
+
+func TestImportBankAccountsRejectsEmptyRows(t *testing.T) {
+	h, _, tenantRepo := setupBankingTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/bank-accounts/import", strings.NewReader(`{"rows":[]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.ImportBankAccounts(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "No bank accounts")
 }
 
 func TestGetBankAccount(t *testing.T) {
@@ -1183,13 +1272,21 @@ func TestImportBankTransactions(t *testing.T) {
 			wantErr:    "No transactions",
 		},
 		{
+			name: "raw generic CSV content",
+			body: map[string]interface{}{
+				"file_name":       "statement.csv",
+				"format":          "generic",
+				"csv_content":     "date,amount,description,external_id\n2026-03-15,100.00,Client payment,bank-ext-1\n",
+				"skip_duplicates": true,
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
 			name:       "invalid JSON",
 			body:       nil,
 			wantStatus: http.StatusBadRequest,
 			wantErr:    "Invalid",
 		},
-		// Note: Valid import tests require database integration testing
-		// as ImportTransactions uses database transactions directly
 	}
 
 	for _, tt := range tests {

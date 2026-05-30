@@ -999,6 +999,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 			"GET":  "banking accounts list",
 			"POST": "banking accounts create",
 		})
+	case "/bank-accounts/import":
+		return commandForMethod(method, map[string]string{"POST": "banking accounts import"})
 	case "/bank-accounts/{accountID}":
 		return commandForMethod(method, map[string]string{
 			"GET":    "banking accounts get",
