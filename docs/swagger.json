@@ -9289,7 +9289,7 @@
         },
         "/tenants/{tenantID}/migration/validate": {
             "post": {
-                "description": "Validate CSV cutover files for required columns and cross-file references before running imports",
+                "description": "Validate CSV and XML cutover files for required columns and cross-file references before running imports",
                 "consumes": [
                     "application/json"
                 ],
@@ -20301,6 +20301,9 @@
                 },
                 "kind": {
                     "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileKind"
+                },
+                "xml_content": {
+                    "type": "string"
                 }
             }
         },
@@ -20352,6 +20355,7 @@
                 "employees",
                 "expenses",
                 "invoices",
+                "e_invoices",
                 "payments",
                 "bank_accounts",
                 "bank_transactions",
@@ -20376,6 +20380,7 @@
                 "KindEmployees",
                 "KindExpenses",
                 "KindInvoices",
+                "KindEInvoices",
                 "KindPayments",
                 "KindBankAccounts",
                 "KindBankTransactions",

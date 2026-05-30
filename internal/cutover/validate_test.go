@@ -17,7 +17,7 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 		{
 			Kind:       KindContacts,
 			FileName:   "contacts.csv",
-			CSVContent: "contact_code,name,email\nCUST-1,Customer One,ap@example.com\n",
+			CSVContent: "contact_code,name,email,reg_code\nCUST-1,Customer One,ap@example.com,12345678\n",
 		},
 		{
 			Kind:       KindEmployees,
@@ -33,6 +33,11 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 			Kind:       KindInvoices,
 			FileName:   "invoices.csv",
 			CSVContent: "invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\nINV-1,CUST-1,2026-05-30,Work,1,100,22\n",
+		},
+		{
+			Kind:       KindEInvoices,
+			FileName:   "e-invoices.xml",
+			XMLContent: cutoverEInvoiceXML("BILL-2026-001", "Supplier OÜ", "12345678"),
 		},
 		{
 			Kind:       KindPayments,
@@ -120,20 +125,28 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 	require.NotNil(t, report)
 	assert.True(t, report.Summary.Ready)
 	assert.Equal(t, 0, report.Summary.ErrorCount)
-	assert.Equal(t, 25, report.Summary.RowsValidated)
+	assert.Equal(t, 26, report.Summary.RowsValidated)
 	assert.Empty(t, report.Issues)
 
 	var stockValidation FileValidation
+	var eInvoiceValidation FileValidation
 	for _, file := range report.Files {
 		if file.Kind == KindStockAdjustments {
 			stockValidation = file
-			break
+		}
+		if file.Kind == KindEInvoices {
+			eInvoiceValidation = file
 		}
 	}
 	require.Equal(t, KindStockAdjustments, stockValidation.Kind)
 	assert.Contains(t, stockValidation.Headers, "lot_number")
 	assert.Contains(t, stockValidation.Headers, "serial_number")
 	assert.Contains(t, stockValidation.Headers, "expiry_date")
+
+	require.Equal(t, KindEInvoices, eInvoiceValidation.Kind)
+	assert.Equal(t, 1, eInvoiceValidation.Rows)
+	assert.Contains(t, eInvoiceValidation.Headers, "invoice_number")
+	assert.Contains(t, eInvoiceValidation.Headers, "contact_reg_code")
 }
 
 func TestValidateBundleReportsInventoryReferenceIssues(t *testing.T) {
@@ -198,6 +211,68 @@ func TestValidateBundleReportsMissingColumnsAndReferences(t *testing.T) {
 	assert.Equal(t, KindContacts, report.Issues[1].TargetKind)
 }
 
+func TestValidateBundleAcceptsEInvoiceXMLAndPaymentReference(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "name,reg_code\nSupplier OÜ,12345678\n",
+		},
+		{
+			Kind:       KindEInvoices,
+			FileName:   "e-invoices.xml",
+			XMLContent: cutoverEInvoiceXML("BILL-2026-001", "Supplier OÜ", "12345678"),
+		},
+		{
+			Kind:       KindPayments,
+			FileName:   "payments.csv",
+			CSVContent: "payment_type,payment_date,amount,invoice_number\nPAID,2026-05-31,122,BILL-2026-001\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 3, report.Summary.RowsValidated)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsEInvoiceContactReferenceIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "name,reg_code\nOther Supplier,87654321\n",
+		},
+		{
+			Kind:       KindEInvoices,
+			FileName:   "e-invoices.xml",
+			XMLContent: cutoverEInvoiceXML("BILL-2026-001", "Supplier OÜ", "12345678"),
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindEInvoices, report.Issues[0].Kind)
+	assert.Equal(t, KindContacts, report.Issues[0].TargetKind)
+	assert.Equal(t, "12345678", report.Issues[0].Value)
+}
+
+func TestValidateBundleReportsInvalidEInvoiceXML(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{Kind: KindEInvoices, FileName: "bad.xml", XMLContent: "<Invoice></Invoice>"},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	require.Len(t, report.Issues, 1)
+	assert.Contains(t, report.Issues[0].Message, "root element must be E_Invoice")
+}
+
 func TestValidateBundleRejectsUnsupportedKind(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{Kind: "unknown", FileName: "unknown.csv", CSVContent: "id\n1\n"},
@@ -208,4 +283,50 @@ func TestValidateBundleRejectsUnsupportedKind(t *testing.T) {
 	assert.False(t, report.Summary.Ready)
 	require.Len(t, report.Issues, 1)
 	assert.Contains(t, report.Issues[0].Message, "unsupported migration file kind")
+}
+
+func cutoverEInvoiceXML(number, sellerName, sellerRegCode string) string {
+	return `<E_Invoice>
+  <Invoice invoiceId="` + number + `">
+    <InvoiceParties>
+      <SellerParty>
+        <Name>` + sellerName + `</Name>
+        <RegNumber>` + sellerRegCode + `</RegNumber>
+        <VATRegNumber>EE` + sellerRegCode + `</VATRegNumber>
+        <ContactData>
+          <E-mailAddress>supplier@example.com</E-mailAddress>
+        </ContactData>
+      </SellerParty>
+      <BuyerParty>
+        <Name>Buyer OÜ</Name>
+        <RegNumber>87654321</RegNumber>
+      </BuyerParty>
+    </InvoiceParties>
+    <InvoiceInformation>
+      <Type type="DEB"></Type>
+      <InvoiceNumber>` + number + `</InvoiceNumber>
+      <InvoiceContentText>Office supplies</InvoiceContentText>
+      <InvoiceDate>2026-03-15</InvoiceDate>
+      <DueDate>2026-03-29</DueDate>
+    </InvoiceInformation>
+    <InvoiceSumGroup>
+      <Currency>EUR</Currency>
+    </InvoiceSumGroup>
+    <InvoiceItem>
+      <InvoiceItemGroup>
+        <ItemEntry>
+          <Description>Office chairs</Description>
+          <ItemDetailInfo>
+            <ItemAmount>1</ItemAmount>
+            <ItemPrice>100.00</ItemPrice>
+          </ItemDetailInfo>
+          <VAT><VATRate>22</VATRate></VAT>
+        </ItemEntry>
+      </InvoiceItemGroup>
+    </InvoiceItem>
+    <PaymentInfo>
+      <PayDueDate>2026-03-29</PayDueDate>
+    </PaymentInfo>
+  </Invoice>
+</E_Invoice>`
 }

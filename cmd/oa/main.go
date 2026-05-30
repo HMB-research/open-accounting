@@ -208,7 +208,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  webhooks delete           Delete a webhook endpoint")
 	_, _ = fmt.Fprintln(a.stdout, "  webhooks deliveries       List webhook deliveries")
 	_, _ = fmt.Fprintln(a.stdout, "  webhooks test             Send a test webhook delivery")
-	_, _ = fmt.Fprintln(a.stdout, "  migration validate        Validate CSV migration bundle references")
+	_, _ = fmt.Fprintln(a.stdout, "  migration validate        Validate CSV/XML migration bundle references")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins list        List installed plugins")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins search      Search plugin repositories")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins get         Show an installed plugin")
@@ -1990,6 +1990,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		employeesFile := fs.String("employees", "", "Employees CSV file")
 		expensesFile := fs.String("expenses", "", "Expenses CSV file")
 		invoicesFile := fs.String("invoices", "", "Invoices CSV file")
+		eInvoicesFile := fs.String("e-invoices", "", "Estonian e-invoice XML file")
 		paymentsFile := fs.String("payments", "", "Payments CSV file")
 		bankAccountsFile := fs.String("bank-accounts", "", "Bank accounts CSV file")
 		bankTransactionsFile := fs.String("bank-transactions", "", "Bank transactions CSV file")
@@ -2018,6 +2019,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 			{kind: cutover.KindEmployees, path: *employeesFile},
 			{kind: cutover.KindExpenses, path: *expensesFile},
 			{kind: cutover.KindInvoices, path: *invoicesFile},
+			{kind: cutover.KindEInvoices, path: *eInvoicesFile},
 			{kind: cutover.KindPayments, path: *paymentsFile},
 			{kind: cutover.KindBankAccounts, path: *bankAccountsFile},
 			{kind: cutover.KindBankTransactions, path: *bankTransactionsFile},
@@ -2040,7 +2042,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 			return err
 		}
 		if len(files) == 0 {
-			return errors.New("at least one migration CSV file is required")
+			return errors.New("at least one migration CSV or XML file is required")
 		}
 
 		report, err := client.validateMigrationBundle(ctx, cfg.TenantID, &cutover.ValidateBundleRequest{Files: files})
@@ -2070,15 +2072,21 @@ func buildMigrationBundleFiles(inputs []migrationFileInput) ([]cutover.BundleFil
 		if pathValue == "" {
 			continue
 		}
-		content, fileName, err := readFileInput(pathValue, string(input.kind)+".csv")
+		defaultFileName := string(input.kind) + ".csv"
+		if input.kind == cutover.KindEInvoices {
+			defaultFileName = string(input.kind) + ".xml"
+		}
+		content, fileName, err := readFileInput(pathValue, defaultFileName)
 		if err != nil {
 			return nil, err
 		}
-		files = append(files, cutover.BundleFile{
-			Kind:       input.kind,
-			FileName:   fileName,
-			CSVContent: string(content),
-		})
+		file := cutover.BundleFile{Kind: input.kind, FileName: fileName}
+		if input.kind == cutover.KindEInvoices {
+			file.XMLContent = string(content)
+		} else {
+			file.CSVContent = string(content)
+		}
+		files = append(files, file)
 	}
 	return files, nil
 }

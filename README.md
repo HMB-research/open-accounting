@@ -20,7 +20,7 @@
 >
 > Full local baseline last verified on 2026-05-28:
 > `go test ./...`, `golangci-lint run`, `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)`, `cd frontend && bun run lint`, `cd frontend && bun run check`, `cd frontend && bun run test`, `cd frontend && bun run build`, `cd frontend && bun run test:e2e:smoke`, and the full local `demo-chromium` Playwright project pass against fresh PostgreSQL-backed demo environments.
-> Production hardening, deeper historical cutover tooling beyond the current payroll, tax, commercial history, payment, expense, inventory, fixed-asset, bank-transaction, opening-balance, historical-journal, and migration-preflight coverage, deeper accountant exception actions, and automated document retention/reconciliation policy enforcement are still in progress.
+> Production hardening, deeper historical cutover tooling beyond the current payroll, tax, commercial history, e-invoice XML, payment, expense, inventory, fixed-asset, bank-transaction, opening-balance, historical-journal, and migration-preflight coverage, deeper accountant exception actions, and automated document retention/reconciliation policy enforcement are still in progress.
 
 CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API token once and then uses that token for subsequent reads and mutations.
 
@@ -136,7 +136,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 | **Historical Payroll Import**  | CSV import of finalized prior payroll runs and payslips through API, web UI, and CLI                                                                                                        |
 | **Leave Balance Import**       | CSV import of employee leave balances for migration cutovers through API, web UI, and CLI                                                                                                   |
 | **Leave Evidence**             | Approved supporting documents can be required before approving documented leave/absence records                                                                                             |
-| **Migration Preflight**        | Non-mutating CSV bundle validation for required columns and cross-file references before cutover imports, including expenses, commercial history, inventory, banking, tax, and fixed assets |
+| **Migration Preflight**        | Non-mutating CSV/XML bundle validation for required columns and cross-file references before cutover imports, including e-invoice XML, expenses, commercial history, inventory, banking, tax, and fixed assets |
 
 ### Estonian Compliance
 
@@ -358,7 +358,7 @@ open-accounting/
 - [x] Tenant admin security-event visibility for member auth activity
 - [x] Tenant admin suspension/restoration of member tenant access with session revocation and audit events
 - [x] CSV import for chart of accounts, contacts, employees, invoices, quotes, orders, recurring invoice templates, payments, expenses, bank accounts, bank transactions, cost centers, product categories/warehouses/products/stock, fixed assets, opening balances, and historical journals
-- [x] Migration bundle validation for cutover imports with API and CLI coverage across expenses, commercial history, inventory, banking, tax, and fixed assets
+- [x] Migration bundle validation for cutover imports with API and CLI coverage across e-invoice XML, expenses, commercial history, inventory, banking, tax, and fixed assets
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings
 - [x] Fiscal-year close readiness and retained-earnings carry-forward workflow

@@ -267,6 +267,7 @@ go run ./cmd/oa migration validate \
   --employees ./employees.csv \
   --expenses ./expenses.csv \
   --invoices ./invoices.csv \
+  --e-invoices ./supplier-einvoices.xml \
   --payments ./payments.csv \
   --bank-accounts ./bank-accounts.csv \
   --bank-transactions ./bank-transactions.csv \
@@ -284,10 +285,10 @@ go run ./cmd/oa migration validate \
   --fixed-assets ./fixed-assets.csv \
   --opening-balances ./opening-balances.csv \
   --journal ./journal-entries.csv
-go run ./cmd/oa migration validate --contacts ./contacts.csv --invoices ./invoices.csv --json
+go run ./cmd/oa migration validate --contacts ./contacts.csv --invoices ./invoices.csv --e-invoices ./supplier-einvoices.xml --json
 ```
 
-`migration validate` is a non-mutating cutover preflight. It checks required CSV column groups and same-bundle cross-file references for accounts, contacts, employees, expenses, invoices, payments, bank accounts, bank transactions, payroll history, leave balances, KMD history, quotes, orders, recurring invoice templates, cost centers, product categories, warehouses, products, stock adjustments, fixed assets, opening balances, and historical journal entries before you run the individual import commands. Stock-adjustment validation recognizes optional lot metadata columns such as `lot_number`, `serial_number`, and `expiry_date`, plus aliases including `batch`, `serial`, and `expiration_date`.
+`migration validate` is a non-mutating cutover preflight. It checks required CSV column groups, Estonian e-invoice XML payloads, and same-bundle cross-file references for accounts, contacts, employees, expenses, invoices, e-invoices, payments, bank accounts, bank transactions, payroll history, leave balances, KMD history, quotes, orders, recurring invoice templates, cost centers, product categories, warehouses, products, stock adjustments, fixed assets, opening balances, and historical journal entries before you run the individual import commands. Stock-adjustment validation recognizes optional lot metadata columns such as `lot_number`, `serial_number`, and `expiry_date`, plus aliases including `batch`, `serial`, and `expiration_date`.
 
 ## Accounts
 
