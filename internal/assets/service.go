@@ -246,7 +246,7 @@ func (s *Service) Dispose(ctx context.Context, tenantID, schemaName, assetID str
 		newStatus = AssetStatusDisposed
 	}
 
-	if err := s.repo.UpdateStatus(ctx, schemaName, tenantID, assetID, newStatus); err != nil {
+	if err := s.repo.UpdateDisposal(ctx, schemaName, asset, newStatus); err != nil {
 		return fmt.Errorf("dispose asset: %w", err)
 	}
 	return nil

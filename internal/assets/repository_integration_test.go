@@ -528,6 +528,79 @@ func TestRepository_UpdateStatus(t *testing.T) {
 	}
 }
 
+func TestRepository_UpdateDisposalPersistsDetails(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	cat := createTestCategory(t, repo, pool, tenant.SchemaName, tenant.ID)
+	disposalDate := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	disposalMethod := DisposalSold
+
+	asset := &FixedAsset{
+		ID:                            uuid.New().String(),
+		TenantID:                      tenant.ID,
+		AssetNumber:                   "AST-DISPOSE",
+		Name:                          "Disposal Test Asset",
+		CategoryID:                    &cat.ID,
+		Status:                        AssetStatusActive,
+		PurchaseDate:                  time.Now(),
+		PurchaseCost:                  decimal.NewFromFloat(5000.00),
+		DepreciationMethod:            DepreciationStraightLine,
+		UsefulLifeMonths:              60,
+		ResidualValue:                 decimal.Zero,
+		AccumulatedDepreciation:       decimal.Zero,
+		BookValue:                     decimal.NewFromFloat(5000.00),
+		DisposalDate:                  &disposalDate,
+		DisposalMethod:                &disposalMethod,
+		DisposalProceeds:              decimal.NewFromFloat(1250.00),
+		DisposalNotes:                 "Board-approved asset sale",
+		AssetAccountID:                cat.AssetAccountID,
+		DepreciationExpenseAccountID:  cat.DepreciationExpenseAccountID,
+		AccumulatedDepreciationAcctID: cat.AccumulatedDepreciationAcctID,
+		CreatedAt:                     time.Now(),
+		CreatedBy:                     uuid.New().String(),
+		UpdatedAt:                     time.Now(),
+	}
+	if err := repo.Create(ctx, tenant.SchemaName, asset); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	created, err := repo.GetByID(ctx, tenant.SchemaName, tenant.ID, asset.ID)
+	if err != nil {
+		t.Fatalf("GetByID after create failed: %v", err)
+	}
+	if created.DisposalDate == nil || !created.DisposalDate.Equal(disposalDate) {
+		t.Errorf("expected create to persist disposal date %s, got %v", disposalDate, created.DisposalDate)
+	}
+
+	if err := repo.UpdateDisposal(ctx, tenant.SchemaName, asset, AssetStatusSold); err != nil {
+		t.Fatalf("UpdateDisposal failed: %v", err)
+	}
+
+	retrieved, err := repo.GetByID(ctx, tenant.SchemaName, tenant.ID, asset.ID)
+	if err != nil {
+		t.Fatalf("GetByID failed: %v", err)
+	}
+
+	if retrieved.Status != AssetStatusSold {
+		t.Errorf("expected status %s, got %s", AssetStatusSold, retrieved.Status)
+	}
+	if retrieved.DisposalDate == nil || !retrieved.DisposalDate.Equal(disposalDate) {
+		t.Errorf("expected disposal date %s, got %v", disposalDate, retrieved.DisposalDate)
+	}
+	if retrieved.DisposalMethod == nil || *retrieved.DisposalMethod != DisposalSold {
+		t.Errorf("expected disposal method %s, got %v", DisposalSold, retrieved.DisposalMethod)
+	}
+	if !retrieved.DisposalProceeds.Equal(decimal.NewFromFloat(1250.00)) {
+		t.Errorf("expected disposal proceeds 1250.00, got %s", retrieved.DisposalProceeds)
+	}
+	if retrieved.DisposalNotes != "Board-approved asset sale" {
+		t.Errorf("expected disposal notes to persist, got %q", retrieved.DisposalNotes)
+	}
+}
+
 func TestRepository_DeleteAsset(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
