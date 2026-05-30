@@ -424,7 +424,7 @@ Content-Type: application/json
 }
 ```
 
-Returns a non-mutating cutover report with required-column checks and cross-file reference issues for supported migration CSV files. Supported `kind` values are `accounts`, `contacts`, `employees`, `invoices`, `payments`, `payroll_history`, `leave_balances`, `opening_balances`, and `journal_entries`.
+Returns a non-mutating cutover report with required-column checks and cross-file reference issues for supported migration CSV files. Supported `kind` values are `accounts`, `contacts`, `employees`, `expenses`, `invoices`, `payments`, `payroll_history`, `leave_balances`, `opening_balances`, and `journal_entries`.
 
 ### List Recent Journal Entries
 
@@ -1776,6 +1776,23 @@ Content-Type: application/json
 ```
 
 `expense_account_id` must point to an `EXPENSE` account when posted. `payment_account_id` must point to an `ASSET` or `LIABILITY` account and is credited by the posted journal entry.
+
+### Import Expenses
+
+```http
+POST /tenants/{tenantId}/expenses/import
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "file_name": "expenses.csv",
+  "csv_content": "expense_number,expense_date,merchant,description,expense_account_id,payment_account_id,amount,status\nEXP-LEG-1,2026-05-30,Office Store,Toner,uuid,uuid,120.50,DRAFT\n"
+}
+```
+
+Expense imports create unposted expense claims and return row-level errors for invalid rows. Supported imported statuses are `DRAFT`, `SUBMITTED`, `APPROVED`, and `REJECTED`; `POSTED` must be reached through the normal approval/posting workflow so ledger entries are created consistently. If the tenant period is locked, locked expense-date rows are skipped in the import result.
 
 ### Receipt Evidence
 

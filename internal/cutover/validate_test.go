@@ -25,6 +25,11 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 			CSVContent: "employee_number,first_name,last_name,email\nEMP-1,Mari,Maasikas,mari@example.com\n",
 		},
 		{
+			Kind:       KindExpenses,
+			FileName:   "expenses.csv",
+			CSVContent: "expense_date,merchant,expense_account_id,payment_account_id,amount\n2026-05-30,Office Store,expense-account,cash-account,42\n",
+		},
+		{
 			Kind:       KindInvoices,
 			FileName:   "invoices.csv",
 			CSVContent: "invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\nINV-1,CUST-1,2026-05-30,Work,1,100,22\n",
@@ -45,7 +50,7 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 	require.NotNil(t, report)
 	assert.True(t, report.Summary.Ready)
 	assert.Equal(t, 0, report.Summary.ErrorCount)
-	assert.Equal(t, 7, report.Summary.RowsValidated)
+	assert.Equal(t, 8, report.Summary.RowsValidated)
 	assert.Empty(t, report.Issues)
 }
 

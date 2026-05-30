@@ -77,6 +77,32 @@ var fileSpecs = map[FileKind]fileSpec{
 		}),
 		requiredGroups: [][]string{{"first_name", "name"}, {"last_name", "name"}},
 	},
+	KindExpenses: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"expense_number":     "expense_number",
+			"expense_no":         "expense_number",
+			"number":             "expense_number",
+			"date":               "expense_date",
+			"expense_date":       "expense_date",
+			"supplier":           "merchant",
+			"vendor":             "merchant",
+			"merchant":           "merchant",
+			"notes":              "description",
+			"employee_id":        "employee_id",
+			"contact_id":         "contact_id",
+			"expense_account_id": "expense_account_id",
+			"payment_account_id": "payment_account_id",
+			"requires_receipt":   "requires_receipt",
+			"receipt_required":   "requires_receipt",
+		}),
+		requiredGroups: [][]string{
+			{"expense_date"},
+			{"merchant"},
+			{"expense_account_id"},
+			{"payment_account_id"},
+			{"amount"},
+		},
+	},
 	KindInvoices: {
 		aliases: mergeAliases(commonAliases(), map[string]string{
 			"invoice_number":     "invoice_number",

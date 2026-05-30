@@ -272,6 +272,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  invoices send             Mark an invoice sent")
 	_, _ = fmt.Fprintln(a.stdout, "  invoices void             Void an invoice")
 	_, _ = fmt.Fprintln(a.stdout, "  invoices import           Import invoices from CSV")
+	_, _ = fmt.Fprintln(a.stdout, "  expenses import           Import expenses from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  payments list             List payments")
 	_, _ = fmt.Fprintln(a.stdout, "  payments create           Create a payment")
 	_, _ = fmt.Fprintln(a.stdout, "  payments import           Import payments from CSV")
@@ -1713,6 +1714,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		accountsFile := fs.String("accounts", "", "Accounts CSV file")
 		contactsFile := fs.String("contacts", "", "Contacts CSV file")
 		employeesFile := fs.String("employees", "", "Employees CSV file")
+		expensesFile := fs.String("expenses", "", "Expenses CSV file")
 		invoicesFile := fs.String("invoices", "", "Invoices CSV file")
 		paymentsFile := fs.String("payments", "", "Payments CSV file")
 		payrollHistoryFile := fs.String("payroll-history", "", "Historical payroll CSV file")
@@ -1728,6 +1730,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 			{kind: cutover.KindAccounts, path: *accountsFile},
 			{kind: cutover.KindContacts, path: *contactsFile},
 			{kind: cutover.KindEmployees, path: *employeesFile},
+			{kind: cutover.KindExpenses, path: *expensesFile},
 			{kind: cutover.KindInvoices, path: *invoicesFile},
 			{kind: cutover.KindPayments, path: *paymentsFile},
 			{kind: cutover.KindPayrollHistory, path: *payrollHistoryFile},
@@ -5994,6 +5997,34 @@ func (a *cliApp) runExpenses(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, expense)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Created expense %s (%s)\n", expense.ExpenseNumber, expense.ID)
+		return nil
+
+	case "import":
+		fs := flag.NewFlagSet("expenses import", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		filePath := fs.String("file", "", "CSV file path")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*filePath) == "" {
+			return errors.New("file is required")
+		}
+		content, fileName, err := readCSVInput(*filePath)
+		if err != nil {
+			return err
+		}
+		result, err := client.importExpenses(ctx, cfg.TenantID, &expenses.ImportExpensesRequest{
+			FileName:   fileName,
+			CSVContent: content,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Processed %d rows, created %d expenses, skipped %d rows\n", result.RowsProcessed, result.ExpensesCreated, result.RowsSkipped)
 		return nil
 
 	case "get":

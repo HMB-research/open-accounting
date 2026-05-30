@@ -149,6 +149,26 @@ func TestExpenseHandlersReject(t *testing.T) {
 	assert.Equal(t, "Need project code", rejected.RejectionReason)
 }
 
+func TestExpenseHandlersImport(t *testing.T) {
+	h, repo, _ := setupExpenseHandlers()
+	claims := createTestClaims("user-1", "user@example.com", "tenant-1", "admin")
+	req := withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/expenses/import", expenses.ImportExpensesRequest{
+		FileName: "expenses.csv",
+		CSVContent: "expense_number,expense_date,merchant,expense_account_id,payment_account_id,amount,status\n" +
+			"EXP-IMP-1,2026-05-30,Office Store,expense-account,cash-account,120.50,DRAFT\n",
+	}, claims), map[string]string{"tenantID": "tenant-1"})
+
+	w := httptest.NewRecorder()
+	h.ImportExpenses(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var result expenses.ImportExpensesResult
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&result))
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.ExpensesCreated)
+	require.Len(t, repo.expenses, 1)
+}
+
 type expenseHandlerRepository struct {
 	expenses map[string]*expenses.Expense
 	counter  int

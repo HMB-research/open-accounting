@@ -511,6 +511,14 @@ func (c *apiClient) createExpense(ctx context.Context, tenantID string, req *exp
 	return &resp, nil
 }
 
+func (c *apiClient) importExpenses(ctx context.Context, tenantID string, req *expenses.ImportExpensesRequest) (*expenses.ImportExpensesResult, error) {
+	var resp expenses.ImportExpensesResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "expenses", "import"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) getExpense(ctx context.Context, tenantID, expenseID string) (*expenses.Expense, error) {
 	var resp expenses.Expense
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "expenses", expenseID), nil, c.apiToken, &resp); err != nil {

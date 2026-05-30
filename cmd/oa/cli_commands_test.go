@@ -2757,6 +2757,7 @@ func TestCLIExpenseCommands(t *testing.T) {
 		}
 		return payload
 	}
+	importFile := writeTempCSV(t, "expenses.csv", "expense_number,expense_date,merchant,expense_account_id,payment_account_id,amount,status\nEXP-IMP-1,2026-05-30,Office Store,expense-account,cash-account,120.50,DRAFT\n")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -2781,6 +2782,16 @@ func TestCLIExpenseCommands(t *testing.T) {
 			assert.False(t, *req.RequiresReceipt)
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(expensePayload("DRAFT"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/import":
+			var req expenses.ImportExpensesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "expenses.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "EXP-IMP-1")
+			_ = json.NewEncoder(w).Encode(expenses.ImportExpensesResult{
+				FileName:        "expenses.csv",
+				RowsProcessed:   1,
+				ExpensesCreated: 1,
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/expense-1":
 			_ = json.NewEncoder(w).Encode(expensePayload("SUBMITTED"))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/expense-1/submit":
@@ -2822,6 +2833,11 @@ func TestCLIExpenseCommands(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created expense EXP-00001 (expense-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"expenses", "import", "--file", importFile})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 expenses, skipped 0 rows")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"expenses", "get", "--id", "expense-1"})

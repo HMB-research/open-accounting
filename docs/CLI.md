@@ -219,6 +219,7 @@ go run ./cmd/oa expenses create \
   --payment-account-id <cash-or-liability-account-id> \
   --amount 120.50 \
   --requires-receipt=true
+go run ./cmd/oa expenses import --file ./expenses.csv
 go run ./cmd/oa expenses get --id <expense-id>
 go run ./cmd/oa documents upload --entity-type expense --entity-id <expense-id> --file ./receipt.pdf --document-type receipt
 go run ./cmd/oa documents review --id <document-id> --status APPROVED --note "Receipt accepted"
@@ -228,7 +229,7 @@ go run ./cmd/oa expenses reject --id <expense-id> --reason "Need project code"
 go run ./cmd/oa expenses post --id <expense-id>
 ```
 
-Expense statuses are `DRAFT`, `SUBMITTED`, `APPROVED`, `REJECTED`, and `POSTED`. Posting an approved expense creates and posts a balanced journal entry using `--expense-account-id` as the debit line and `--payment-account-id` as the credit line. Receipt-backed expenses require at least one approved `receipt` document linked with `entity-type expense` before approval or posting.
+Expense statuses are `DRAFT`, `SUBMITTED`, `APPROVED`, `REJECTED`, and `POSTED`. Posting an approved expense creates and posts a balanced journal entry using `--expense-account-id` as the debit line and `--payment-account-id` as the credit line. Receipt-backed expenses require at least one approved `receipt` document linked with `entity-type expense` before approval or posting. Expense CSV imports require `expense_date`, `merchant`, `expense_account_id`, `payment_account_id`, and `amount`; optional columns include `expense_number`, `description`, `employee_id`, `contact_id`, `currency`, `exchange_rate`, `requires_receipt`, `status`, `submitted_at`, `approved_at`, `rejected_at`, and `rejection_reason`. Imported `POSTED` rows are rejected so posting still creates ledger entries through the workflow.
 
 ## Manage API tokens
 
@@ -247,6 +248,7 @@ go run ./cmd/oa migration validate \
   --accounts ./accounts.csv \
   --contacts ./contacts.csv \
   --employees ./employees.csv \
+  --expenses ./expenses.csv \
   --invoices ./invoices.csv \
   --payments ./payments.csv \
   --payroll-history ./payroll-history.csv \
@@ -256,7 +258,7 @@ go run ./cmd/oa migration validate \
 go run ./cmd/oa migration validate --contacts ./contacts.csv --invoices ./invoices.csv --json
 ```
 
-`migration validate` is a non-mutating cutover preflight. It checks required CSV column groups and cross-file references for accounts, contacts, employees, invoices, payments, payroll history, leave balances, opening balances, and historical journal entries before you run the individual import commands.
+`migration validate` is a non-mutating cutover preflight. It checks required CSV column groups and cross-file references for accounts, contacts, employees, expenses, invoices, payments, payroll history, leave balances, opening balances, and historical journal entries before you run the individual import commands.
 
 ## Accounts
 
