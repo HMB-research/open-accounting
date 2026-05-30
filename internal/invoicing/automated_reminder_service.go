@@ -23,7 +23,7 @@ type AutomatedReminderService struct {
 func NewAutomatedReminderService(db *pgxpool.Pool, emailService *email.Service) *AutomatedReminderService {
 	return &AutomatedReminderService{
 		db:           db,
-		ruleRepo:     NewReminderRulePostgresRepository(db),
+		ruleRepo:     NewReminderRuleRepository(db),
 		emailService: emailService,
 	}
 }

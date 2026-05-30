@@ -13,7 +13,7 @@ func TestReminderRuleIntegration(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewReminderRulePostgresRepository(pool)
+	repo := NewReminderRuleRepository(pool)
 	ctx := context.Background()
 
 	// The reminder_rules table is created by the migration via create_tenant_schema.
@@ -158,8 +158,8 @@ func TestReminderRepositoriesIntegration(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "reminders-integration@example.com")
-	reminderRepo := NewReminderPostgresRepository(pool)
-	ruleRepo := NewReminderRulePostgresRepository(pool)
+	reminderRepo := NewReminderRepository(pool)
+	ruleRepo := NewReminderRuleRepository(pool)
 	ctx := context.Background()
 
 	if _, err := pool.Exec(ctx, `DELETE FROM `+tenant.SchemaName+`.reminder_rules WHERE tenant_id = $1`, tenant.ID); err != nil {
