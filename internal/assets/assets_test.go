@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1027,6 +1028,78 @@ func TestService_RecordDepreciation(t *testing.T) {
 	assert.True(t, entry.BookValueAfter.Equal(decimal.NewFromInt(11000)))
 }
 
+func TestService_RecordDepreciationCreatesAndPostsJournalWhenAccountsConfigured(t *testing.T) {
+	repo := NewMockRepository()
+	ledger := newFakeAssetAccountingPoster()
+	svc := NewServiceWithRepositoryAndAccounting(repo, ledger)
+	ctx := context.Background()
+
+	expenseAccountID := "depreciation-expense"
+	accumulatedAccountID := "accumulated-depreciation"
+	repo.Assets["a1"] = &FixedAsset{
+		ID:                            "a1",
+		TenantID:                      "tenant-1",
+		AssetNumber:                   "FA-00001",
+		Name:                          "Equipment",
+		Status:                        AssetStatusActive,
+		PurchaseCost:                  decimal.NewFromInt(12000),
+		ResidualValue:                 decimal.NewFromInt(0),
+		UsefulLifeMonths:              12,
+		DepreciationMethod:            DepreciationStraightLine,
+		AccumulatedDepreciation:       decimal.Zero,
+		BookValue:                     decimal.NewFromInt(12000),
+		DepreciationExpenseAccountID:  &expenseAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedAccountID,
+	}
+
+	periodStart := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	periodEnd := time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC)
+	entry, err := svc.RecordDepreciation(ctx, "tenant-1", "test_schema", "a1", "user-1", periodStart, periodEnd)
+	require.NoError(t, err)
+
+	require.NotNil(t, entry.JournalEntryID)
+	assert.Equal(t, "je-1", *entry.JournalEntryID)
+	assert.Equal(t, []string{"je-1"}, ledger.postedIDs)
+	require.NotNil(t, ledger.createdRequest)
+	assert.Equal(t, SourceTypeAssetDepreciation, ledger.createdRequest.SourceType)
+	require.NotNil(t, ledger.createdRequest.SourceID)
+	assert.Equal(t, entry.ID, *ledger.createdRequest.SourceID)
+	assert.Equal(t, "FA-00001-2026-04", ledger.createdRequest.Reference)
+	assert.Equal(t, periodEnd, ledger.createdRequest.EntryDate)
+	require.Len(t, ledger.createdRequest.Lines, 2)
+	assert.Equal(t, expenseAccountID, ledger.createdRequest.Lines[0].AccountID)
+	assert.True(t, ledger.createdRequest.Lines[0].DebitAmount.Equal(decimal.NewFromInt(1000)))
+	assert.Equal(t, accumulatedAccountID, ledger.createdRequest.Lines[1].AccountID)
+	assert.True(t, ledger.createdRequest.Lines[1].CreditAmount.Equal(decimal.NewFromInt(1000)))
+}
+
+func TestService_RecordDepreciationRejectsPartialAccountingConfiguration(t *testing.T) {
+	repo := NewMockRepository()
+	ledger := newFakeAssetAccountingPoster()
+	svc := NewServiceWithRepositoryAndAccounting(repo, ledger)
+	ctx := context.Background()
+
+	expenseAccountID := "depreciation-expense"
+	repo.Assets["a1"] = &FixedAsset{
+		ID:                           "a1",
+		TenantID:                     "tenant-1",
+		Name:                         "Equipment",
+		Status:                       AssetStatusActive,
+		PurchaseCost:                 decimal.NewFromInt(12000),
+		ResidualValue:                decimal.NewFromInt(0),
+		UsefulLifeMonths:             12,
+		DepreciationMethod:           DepreciationStraightLine,
+		AccumulatedDepreciation:      decimal.Zero,
+		BookValue:                    decimal.NewFromInt(12000),
+		DepreciationExpenseAccountID: &expenseAccountID,
+	}
+
+	now := time.Now()
+	_, err := svc.RecordDepreciation(ctx, "tenant-1", "test_schema", "a1", "user-1", now.AddDate(0, -1, 0), now)
+	require.ErrorIs(t, err, ErrAssetAccountingInvalid)
+	assert.Empty(t, ledger.postedIDs)
+}
+
 func TestService_RecordDepreciation_NotActive(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
@@ -1079,6 +1152,39 @@ func TestService_GetDepreciationHistory(t *testing.T) {
 	entries, err := ts.svc.GetDepreciationHistory(ctx, "tenant-1", "test_schema", "a1")
 	require.NoError(t, err)
 	assert.Len(t, entries, 2)
+}
+
+type fakeAssetAccountingPoster struct {
+	accounts       map[string]*accounting.Account
+	createdRequest *accounting.CreateJournalEntryRequest
+	postedIDs      []string
+}
+
+func newFakeAssetAccountingPoster() *fakeAssetAccountingPoster {
+	return &fakeAssetAccountingPoster{
+		accounts: map[string]*accounting.Account{
+			"depreciation-expense":     {ID: "depreciation-expense", AccountType: accounting.AccountTypeExpense},
+			"accumulated-depreciation": {ID: "accumulated-depreciation", AccountType: accounting.AccountTypeAsset},
+		},
+	}
+}
+
+func (f *fakeAssetAccountingPoster) GetAccount(_ context.Context, _, _, accountID string) (*accounting.Account, error) {
+	account, ok := f.accounts[accountID]
+	if !ok {
+		return nil, fmt.Errorf("account not found")
+	}
+	return account, nil
+}
+
+func (f *fakeAssetAccountingPoster) CreateJournalEntry(_ context.Context, _, tenantID string, req *accounting.CreateJournalEntryRequest) (*accounting.JournalEntry, error) {
+	f.createdRequest = req
+	return &accounting.JournalEntry{ID: "je-1", TenantID: tenantID, Status: accounting.StatusDraft}, nil
+}
+
+func (f *fakeAssetAccountingPoster) PostJournalEntry(_ context.Context, _, _, entryID, _ string) error {
+	f.postedIDs = append(f.postedIDs, entryID)
+	return nil
 }
 
 func TestNewService(t *testing.T) {

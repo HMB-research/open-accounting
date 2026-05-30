@@ -5623,7 +5623,7 @@ func (h *Handlers) requireApprovedAssetDisposalEvidence(ctx context.Context, sch
 
 // RecordDepreciation records depreciation for an asset
 // @Summary Record depreciation
-// @Description Record monthly depreciation for an active fixed asset
+// @Description Record monthly depreciation for an active fixed asset and post a depreciation journal entry when depreciation accounts are configured
 // @Tags Fixed Assets
 // @Accept json
 // @Produce json

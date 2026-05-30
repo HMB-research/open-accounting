@@ -1103,11 +1103,15 @@ func printAsset(w io.Writer, asset *assets.FixedAsset) {
 
 func printDepreciationEntriesTable(w io.Writer, entries []assets.DepreciationEntry) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "ID\tDATE\tPERIOD\tAMOUNT\tACCUMULATED\tBOOK VALUE")
+	_, _ = fmt.Fprintln(tw, "ID\tDATE\tPERIOD\tAMOUNT\tACCUMULATED\tBOOK VALUE\tJOURNAL")
 	for _, entry := range entries {
+		journalID := ""
+		if entry.JournalEntryID != nil {
+			journalID = strings.TrimSpace(*entry.JournalEntryID)
+		}
 		_, _ = fmt.Fprintf(
 			tw,
-			"%s\t%s\t%s..%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%s..%s\t%s\t%s\t%s\t%s\n",
 			entry.ID,
 			formatDate(entry.DepreciationDate),
 			formatDate(entry.PeriodStart),
@@ -1115,6 +1119,7 @@ func printDepreciationEntriesTable(w io.Writer, entries []assets.DepreciationEnt
 			entry.DepreciationAmount.String(),
 			entry.AccumulatedTotal.String(),
 			entry.BookValueAfter.String(),
+			journalID,
 		)
 	}
 	_ = tw.Flush()

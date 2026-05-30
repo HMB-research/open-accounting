@@ -1993,7 +1993,7 @@ GET /tenants/{tenantId}/assets/{assetId}/depreciation
 Authorization: Bearer <token>
 ```
 
-Recording depreciation uses the current month according to the server-side service.
+Recording depreciation uses the current month according to the server-side service. When the asset has both `depreciation_expense_account_id` and `accumulated_depreciation_account_id`, recording depreciation also creates and posts a balanced `ASSET_DEPRECIATION` journal entry and returns its ID as `journal_entry_id` on the depreciation entry. If only one of those accounts is configured, the request is rejected as an invalid asset accounting configuration.
 
 ---
 

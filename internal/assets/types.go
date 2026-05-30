@@ -36,6 +36,15 @@ const (
 	DisposalLost     DisposalMethod = "LOST"
 )
 
+const (
+	// SourceTypeAssetDepreciation marks journal entries posted from fixed-asset depreciation.
+	SourceTypeAssetDepreciation = "ASSET_DEPRECIATION"
+)
+
+var (
+	ErrAssetAccountingInvalid = errors.New("asset accounting configuration is invalid")
+)
+
 // AssetCategory represents a category of fixed assets
 type AssetCategory struct {
 	ID                            string             `json:"id"`
