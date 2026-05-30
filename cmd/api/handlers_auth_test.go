@@ -506,6 +506,39 @@ func (m *mockPasswordResetService) ResetPassword(ctx context.Context, resetToken
 	return userID, nil
 }
 
+type mockSecurityAuditService struct {
+	events []auth.SecurityAuditEvent
+	err    error
+}
+
+func (m *mockSecurityAuditService) RecordEvent(ctx context.Context, event *auth.SecurityAuditEvent) error {
+	if m.err != nil {
+		return m.err
+	}
+	eventCopy := *event
+	if eventCopy.CreatedAt.IsZero() {
+		eventCopy.CreatedAt = time.Now()
+	}
+	m.events = append([]auth.SecurityAuditEvent{eventCopy}, m.events...)
+	return nil
+}
+
+func (m *mockSecurityAuditService) ListUserEvents(ctx context.Context, userID string, limit int) ([]auth.SecurityAuditEvent, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	var events []auth.SecurityAuditEvent
+	for _, event := range m.events {
+		if event.ActorUserID == userID || event.TargetUserID == userID {
+			events = append(events, event)
+		}
+	}
+	if limit > 0 && len(events) > limit {
+		events = events[:limit]
+	}
+	return events, nil
+}
+
 // =============================================================================
 // Test Setup Helpers
 // =============================================================================
@@ -521,6 +554,7 @@ func setupAuthTestHandlers() (*Handlers, *mockTenantRepository) {
 		tokenService:          tokenSvc,
 		refreshSessionService: newMockRefreshSessionService(),
 		passwordResetService:  newMockPasswordResetService(),
+		securityAuditService:  &mockSecurityAuditService{},
 	}
 
 	return h, repo
@@ -1039,6 +1073,10 @@ func TestRequestPasswordReset(t *testing.T) {
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
 	assert.Equal(t, "accepted", resp["status"])
 	assert.Equal(t, "reset-token-123", resp["reset_token"])
+	auditEvents := h.securityAuditService.(*mockSecurityAuditService).events
+	require.Len(t, auditEvents, 1)
+	assert.Equal(t, auth.SecurityAuditActionPasswordResetRequested, auditEvents[0].Action)
+	assert.Equal(t, "user@example.com", auditEvents[0].TargetEmail)
 }
 
 func TestResetPasswordRevokesRefreshSessions(t *testing.T) {
@@ -1066,6 +1104,11 @@ func TestResetPasswordRevokesRefreshSessions(t *testing.T) {
 	var activeSessions []auth.RefreshSession
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&activeSessions))
 	assert.Empty(t, activeSessions)
+
+	auditEvents := h.securityAuditService.(*mockSecurityAuditService).events
+	require.Len(t, auditEvents, 1)
+	assert.Equal(t, auth.SecurityAuditActionPasswordResetCompleted, auditEvents[0].Action)
+	assert.Equal(t, user.ID, auditEvents[0].TargetUserID)
 }
 
 func TestResetPasswordRejectsInvalidToken(t *testing.T) {
@@ -1095,6 +1138,33 @@ func TestBuildPasswordResetURL(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestListSecurityAuditEvents(t *testing.T) {
+	h, repo := setupAuthTestHandlers()
+	user := repo.addTestUser("user-1", "user@example.com", "Test User", "password123", true)
+	h.securityAuditService.(*mockSecurityAuditService).events = []auth.SecurityAuditEvent{
+		{
+			ID:           "event-1",
+			ActorUserID:  user.ID,
+			ActorEmail:   user.Email,
+			Action:       auth.SecurityAuditActionPasswordChanged,
+			TargetUserID: user.ID,
+			TargetEmail:  user.Email,
+			CreatedAt:    time.Now(),
+		},
+	}
+
+	claims := createTestClaims(user.ID, user.Email, "", "")
+	req := makeAuthenticatedRequest(http.MethodGet, "/auth/security-events?limit=10", nil, claims)
+	w := httptest.NewRecorder()
+	h.ListSecurityAuditEvents(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	var events []auth.SecurityAuditEvent
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&events))
+	require.Len(t, events, 1)
+	assert.Equal(t, auth.SecurityAuditActionPasswordChanged, events[0].Action)
+}
+
 func TestChangePasswordRevokesRefreshSessions(t *testing.T) {
 	h, repo := setupAuthTestHandlers()
 	user := repo.addTestUser("user-1", "user@example.com", "Test User", "oldpassword123", true)
@@ -1120,6 +1190,11 @@ func TestChangePasswordRevokesRefreshSessions(t *testing.T) {
 	var activeSessions []auth.RefreshSession
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&activeSessions))
 	assert.Empty(t, activeSessions)
+
+	auditEvents := h.securityAuditService.(*mockSecurityAuditService).events
+	require.Len(t, auditEvents, 1)
+	assert.Equal(t, auth.SecurityAuditActionPasswordChanged, auditEvents[0].Action)
+	assert.Equal(t, user.ID, auditEvents[0].ActorUserID)
 }
 
 func TestChangePasswordRejectsWrongCurrentPassword(t *testing.T) {

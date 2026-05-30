@@ -53,6 +53,7 @@ type Handlers struct {
 	passwordResetBaseURL     string
 	passwordResetSMTPConfig  *email.SMTPConfig
 	passwordResetMailer      email.MailSender
+	securityAuditService     securityAuditManager
 	apiTokenService          *apitoken.Service
 	tenantService            *tenant.Service
 	accountingService        *accounting.Service
@@ -94,6 +95,11 @@ type refreshSessionManager interface {
 type passwordResetManager interface {
 	RequestPasswordReset(ctx context.Context, email, requestIP, userAgent string) (*auth.PasswordResetRequestResult, error)
 	ResetPassword(ctx context.Context, resetToken, newPassword string) (string, error)
+}
+
+type securityAuditManager interface {
+	RecordEvent(ctx context.Context, event *auth.SecurityAuditEvent) error
+	ListUserEvents(ctx context.Context, userID string, limit int) ([]auth.SecurityAuditEvent, error)
 }
 
 // getSchemaName returns the schema name for a tenant
@@ -279,6 +285,16 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "Failed to create refresh session")
 		return
 	}
+	h.recordSecurityAuditEvent(r, &auth.SecurityAuditEvent{
+		ActorUserID:  user.ID,
+		ActorEmail:   user.Email,
+		Action:       auth.SecurityAuditActionLogin,
+		TargetUserID: user.ID,
+		TargetEmail:  user.Email,
+		Metadata: map[string]string{
+			"tenant_id": tenantID,
+		},
+	})
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"access_token":  accessToken,
@@ -420,6 +436,17 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "Failed to revoke refresh session")
 		return
 	}
+	targetEmail := h.userEmailForAudit(r.Context(), refreshClaims.Subject)
+	h.recordSecurityAuditEvent(r, &auth.SecurityAuditEvent{
+		ActorUserID:  refreshClaims.Subject,
+		ActorEmail:   targetEmail,
+		Action:       auth.SecurityAuditActionLogout,
+		TargetUserID: refreshClaims.Subject,
+		TargetEmail:  targetEmail,
+		Metadata: map[string]string{
+			"session_id": refreshClaims.ID,
+		},
+	})
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
 }
@@ -460,6 +487,11 @@ func (h *Handlers) RequestPasswordReset(w http.ResponseWriter, r *http.Request) 
 		if err := h.deliverPasswordReset(r.Context(), result); err != nil {
 			log.Warn().Err(err).Str("email", result.Email).Msg("Failed to deliver password reset email")
 		}
+		h.recordSecurityAuditEvent(r, &auth.SecurityAuditEvent{
+			Action:       auth.SecurityAuditActionPasswordResetRequested,
+			TargetUserID: result.UserID,
+			TargetEmail:  result.Email,
+		})
 	}
 
 	response := map[string]interface{}{
@@ -522,6 +554,12 @@ func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "Failed to revoke refresh sessions")
 		return
 	}
+	targetEmail := h.userEmailForAudit(r.Context(), userID)
+	h.recordSecurityAuditEvent(r, &auth.SecurityAuditEvent{
+		Action:       auth.SecurityAuditActionPasswordResetCompleted,
+		TargetUserID: userID,
+		TargetEmail:  targetEmail,
+	})
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "password_reset"})
 }
@@ -592,6 +630,32 @@ func buildPasswordResetURL(baseURL, resetToken string) (string, error) {
 	return parsed.String(), nil
 }
 
+func (h *Handlers) recordSecurityAuditEvent(r *http.Request, event *auth.SecurityAuditEvent) {
+	if h.securityAuditService == nil || event == nil {
+		return
+	}
+	if event.RequestIP == "" {
+		event.RequestIP = r.RemoteAddr
+	}
+	if event.UserAgent == "" {
+		event.UserAgent = r.UserAgent()
+	}
+	if err := h.securityAuditService.RecordEvent(r.Context(), event); err != nil {
+		log.Warn().Err(err).Str("action", event.Action).Msg("Failed to record security audit event")
+	}
+}
+
+func (h *Handlers) userEmailForAudit(ctx context.Context, userID string) string {
+	if h.tenantService == nil || strings.TrimSpace(userID) == "" {
+		return ""
+	}
+	user, err := h.tenantService.GetUserByID(ctx, userID)
+	if err != nil {
+		return ""
+	}
+	return user.Email
+}
+
 // ChangePassword changes the authenticated user's password.
 // @Summary Change password
 // @Description Change the authenticated user's password after verifying the current password. Active refresh-token sessions are revoked after a successful change.
@@ -640,6 +704,13 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "Failed to revoke refresh sessions")
 		return
 	}
+	h.recordSecurityAuditEvent(r, &auth.SecurityAuditEvent{
+		ActorUserID:  claims.UserID,
+		ActorEmail:   claims.Email,
+		Action:       auth.SecurityAuditActionPasswordChanged,
+		TargetUserID: claims.UserID,
+		TargetEmail:  claims.Email,
+	})
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "password_changed"})
 }
@@ -709,6 +780,16 @@ func (h *Handlers) RevokeAuthSession(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "Failed to revoke refresh session")
 		return
 	}
+	h.recordSecurityAuditEvent(r, &auth.SecurityAuditEvent{
+		ActorUserID:  claims.UserID,
+		ActorEmail:   claims.Email,
+		Action:       auth.SecurityAuditActionSessionRevoked,
+		TargetUserID: claims.UserID,
+		TargetEmail:  claims.Email,
+		Metadata: map[string]string{
+			"session_id": sessionID,
+		},
+	})
 	respondJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
 }
 
@@ -736,7 +817,53 @@ func (h *Handlers) RevokeAllAuthSessions(w http.ResponseWriter, r *http.Request)
 		respondError(w, http.StatusInternalServerError, "Failed to revoke refresh sessions")
 		return
 	}
+	h.recordSecurityAuditEvent(r, &auth.SecurityAuditEvent{
+		ActorUserID:  claims.UserID,
+		ActorEmail:   claims.Email,
+		Action:       auth.SecurityAuditActionAllSessionsRevoked,
+		TargetUserID: claims.UserID,
+		TargetEmail:  claims.Email,
+	})
 	respondJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
+}
+
+// ListSecurityAuditEvents lists security audit events for the authenticated user.
+// @Summary List security audit events
+// @Description List recent auth security events where the authenticated user is actor or target
+// @Tags Auth
+// @Produce json
+// @Security BearerAuth
+// @Param limit query int false "Maximum number of events to return"
+// @Success 200 {array} auth.SecurityAuditEvent
+// @Failure 401 {object} object{error=string}
+// @Router /auth/security-events [get]
+func (h *Handlers) ListSecurityAuditEvents(w http.ResponseWriter, r *http.Request) {
+	claims, ok := auth.GetClaims(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+	if h.securityAuditService == nil {
+		respondError(w, http.StatusInternalServerError, "Security audit service unavailable")
+		return
+	}
+
+	limit := 50
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		parsedLimit, err := strconv.Atoi(rawLimit)
+		if err != nil || parsedLimit <= 0 {
+			respondError(w, http.StatusBadRequest, "Invalid limit")
+			return
+		}
+		limit = parsedLimit
+	}
+
+	events, err := h.securityAuditService.ListUserEvents(r.Context(), claims.UserID, limit)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list security audit events")
+		return
+	}
+	respondJSON(w, http.StatusOK, events)
 }
 
 func (h *Handlers) generateRefreshTokenWithClaims(userID string) (string, *auth.RefreshClaims, error) {

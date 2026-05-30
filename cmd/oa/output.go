@@ -16,6 +16,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/analytics"
 	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/assets"
+	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/cutover"
@@ -144,6 +145,28 @@ func printRefreshSessions(w io.Writer, sessions []refreshSession) {
 			formatTimePtr(session.LastUsedAt),
 			session.ExpiresAt.Format(time.RFC3339),
 			status,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printSecurityAuditEvents(w io.Writer, events []auth.SecurityAuditEvent) {
+	if len(events) == 0 {
+		_, _ = fmt.Fprintln(w, "No security audit events found")
+		return
+	}
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "CREATED\tACTION\tACTOR\tTARGET\tIP\tMETADATA")
+	for _, event := range events {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			event.CreatedAt.Format(time.RFC3339),
+			event.Action,
+			firstNonEmpty(event.ActorEmail, event.ActorUserID, "-"),
+			firstNonEmpty(event.TargetEmail, event.TargetUserID, "-"),
+			firstNonEmpty(event.RequestIP, "-"),
+			formatStringMap(event.Metadata),
 		)
 	}
 	_ = tw.Flush()

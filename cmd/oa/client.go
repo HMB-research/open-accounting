@@ -21,6 +21,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/analytics"
 	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/assets"
+	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/cutover"
@@ -176,6 +177,22 @@ func (c *apiClient) resetPassword(ctx context.Context, token, newPassword string
 		"token":        token,
 		"new_password": newPassword,
 	}, "", nil)
+}
+
+func (c *apiClient) listSecurityAuditEvents(ctx context.Context, limit int, accessToken string) ([]auth.SecurityAuditEvent, error) {
+	apiPath := "/api/v1/auth/security-events"
+	if limit > 0 {
+		apiPath += "?limit=" + strconv.Itoa(limit)
+	}
+	bearerToken := strings.TrimSpace(accessToken)
+	if bearerToken == "" {
+		bearerToken = c.apiToken
+	}
+	var events []auth.SecurityAuditEvent
+	if err := c.request(ctx, http.MethodGet, apiPath, nil, bearerToken, &events); err != nil {
+		return nil, err
+	}
+	return events, nil
 }
 
 func (c *apiClient) listAuthSessions(ctx context.Context, includeInactive bool, accessToken string) ([]refreshSession, error) {

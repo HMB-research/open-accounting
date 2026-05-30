@@ -26,6 +26,7 @@ var ErrPasswordResetTokenInvalid = errors.New("password reset token invalid")
 // PasswordResetRequestResult describes the outcome of a password reset request.
 type PasswordResetRequestResult struct {
 	Email     string     `json:"email,omitempty"`
+	UserID    string     `json:"-"`
 	Issued    bool       `json:"issued"`
 	Throttled bool       `json:"throttled,omitempty"`
 	Token     string     `json:"reset_token,omitempty"`
@@ -81,6 +82,7 @@ func (s *PasswordResetService) RequestPasswordReset(ctx context.Context, email, 
 	if err != nil {
 		return nil, fmt.Errorf("find user for password reset: %w", err)
 	}
+	result.UserID = userID
 
 	now := s.now().UTC()
 	var recentRequestExists bool

@@ -18,6 +18,7 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/assets"
+	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/cutover"
@@ -242,6 +243,22 @@ func TestCLIAuthInitStatusAndLogoutFlow(t *testing.T) {
 					"expires_at": "2026-06-04T12:00:00Z",
 				},
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/auth/security-events":
+			require.Equal(t, "Bearer oa_raw_token_123456789", r.Header.Get("Authorization"))
+			assert.Equal(t, "5", r.URL.Query().Get("limit"))
+			_ = json.NewEncoder(w).Encode([]auth.SecurityAuditEvent{
+				{
+					ID:           "event-1",
+					ActorUserID:  "user-1",
+					ActorEmail:   "cli@example.com",
+					Action:       auth.SecurityAuditActionPasswordChanged,
+					TargetUserID: "user-1",
+					TargetEmail:  "cli@example.com",
+					RequestIP:    "192.0.2.10",
+					Metadata:     map[string]string{"source": "cli"},
+					CreatedAt:    time.Date(2026, 5, 30, 12, 0, 0, 0, time.UTC),
+				},
+			})
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/auth/sessions/session-1":
 			require.Equal(t, "Bearer oa_raw_token_123456789", r.Header.Get("Authorization"))
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "revoked"})
@@ -300,6 +317,12 @@ func TestCLIAuthInitStatusAndLogoutFlow(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "session-1")
 	assert.Contains(t, stdout.String(), "active")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"auth", "security-events", "--limit", "5"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), auth.SecurityAuditActionPasswordChanged)
+	assert.Contains(t, stdout.String(), "cli@example.com")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"auth", "revoke-session", "--id", "session-1"})

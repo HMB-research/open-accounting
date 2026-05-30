@@ -1233,6 +1233,31 @@ definitions:
       user_id:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_auth.SecurityAuditEvent:
+    properties:
+      action:
+        type: string
+      actor_email:
+        type: string
+      actor_user_id:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      request_ip:
+        type: string
+      target_email:
+        type: string
+      target_user_id:
+        type: string
+      user_agent:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_banking.BankAccount:
     properties:
       account_number:
@@ -6712,6 +6737,36 @@ paths:
                 type: string
             type: object
       summary: Register new user
+      tags:
+      - Auth
+  /auth/security-events:
+    get:
+      description: List recent auth security events where the authenticated user is
+        actor or target
+      parameters:
+      - description: Maximum number of events to return
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_auth.SecurityAuditEvent'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List security audit events
       tags:
       - Auth
   /auth/sessions:

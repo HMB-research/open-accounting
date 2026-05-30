@@ -166,6 +166,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  auth request-password-reset Request password reset instructions")
 	_, _ = fmt.Fprintln(a.stdout, "  auth reset-password       Reset a password with a one-time token")
 	_, _ = fmt.Fprintln(a.stdout, "  auth sessions             List refresh token sessions")
+	_, _ = fmt.Fprintln(a.stdout, "  auth security-events      List auth security audit events")
 	_, _ = fmt.Fprintln(a.stdout, "  auth revoke-session       Revoke a refresh token session by id")
 	_, _ = fmt.Fprintln(a.stdout, "  auth revoke-all-sessions  Revoke all refresh token sessions")
 	_, _ = fmt.Fprintln(a.stdout, "  auth change-password      Change the current user's password")
@@ -973,6 +974,29 @@ func (a *cliApp) runAuth(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, sessions)
 		}
 		printRefreshSessions(a.stdout, sessions)
+		return nil
+
+	case "security-events":
+		cfg, client, err := a.loadTokenClient()
+		if err != nil {
+			return err
+		}
+
+		fs := flag.NewFlagSet("auth security-events", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		limit := fs.Int("limit", 50, "Maximum number of events to return")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		events, err := client.listSecurityAuditEvents(ctx, *limit, cfg.APIToken)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, events)
+		}
+		printSecurityAuditEvents(a.stdout, events)
 		return nil
 
 	case "revoke-session":

@@ -108,6 +108,7 @@ func main() {
 	tokenService := auth.NewTokenService(cfg.JWTSecret, cfg.AccessExpiry, cfg.RefreshExpiry)
 	refreshSessionService := auth.NewRefreshSessionService(pool)
 	passwordResetService := auth.NewPasswordResetService(pool)
+	securityAuditService := auth.NewSecurityAuditService(pool)
 	apiTokenService := apitoken.NewService(pool)
 	tokenService.SetAPITokenValidator(apiTokenService)
 	tenantService := tenant.NewService(pool)
@@ -174,6 +175,7 @@ func main() {
 		passwordResetBaseURL:     cfg.PasswordReset.BaseURL,
 		passwordResetSMTPConfig:  cfg.PasswordReset.SMTPConfig,
 		passwordResetMailer:      &email.DefaultMailSender{},
+		securityAuditService:     securityAuditService,
 		apiTokenService:          apiTokenService,
 		tenantService:            tenantService,
 		accountingService:        accountingService,
@@ -438,6 +440,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 			r.Get("/auth/sessions", h.ListAuthSessions)
 			r.Delete("/auth/sessions", h.RevokeAllAuthSessions)
 			r.Delete("/auth/sessions/{sessionID}", h.RevokeAuthSession)
+			r.Get("/auth/security-events", h.ListSecurityAuditEvents)
 
 			// Tenant management
 			r.Post("/tenants", h.CreateTenant)
