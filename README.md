@@ -298,6 +298,9 @@ open-accounting/
 | `APP_ENV` | Set to `production` to enable production config validation | unset |
 | `JWT_SECRET` | JWT signing key, min 32 chars when `APP_ENV=production` | development-only fallback outside production |
 | `ALLOWED_ORIGINS` | CORS allowed origins; required in production | local dev origins outside production |
+| `PASSWORD_RESET_BASE_URL` | Frontend reset URL used in password reset emails | unset |
+| `PASSWORD_RESET_SMTP_*` | Global SMTP settings for password reset email delivery | unset |
+| `PASSWORD_RESET_EXPOSE_TOKEN` | Return reset tokens in API responses for local/dev only | `false` |
 | `SCHEDULER_ENABLED` | Enable recurring invoice, recurring journal, and reminder scheduler jobs | `true` |
 | `RECURRING_INVOICE_SCHEDULE` | Cron schedule for recurring invoice generation | `0 6 * * *` |
 | `RECURRING_JOURNAL_ENTRY_SCHEDULE` | Cron schedule for recurring journal entry generation | `15 6 * * *` |
@@ -336,6 +339,7 @@ open-accounting/
 - [x] Access/refresh JWT purpose separation
 - [x] Revocable, single-use refresh token sessions
 - [x] CLI/API refresh-session listing and revocation
+- [x] One-time password reset flow with expiring tokens, request throttling, and refresh-session revocation
 - [x] CSV import for chart of accounts, contacts, employees, invoices, quotes, orders, recurring invoice templates, payments, cost centers, product categories/warehouses/products/stock, fixed assets, and opening balances
 - [x] Migration bundle validation and expense CSV import for cutovers with API and CLI coverage
 - [x] Tenant period lock on core write paths

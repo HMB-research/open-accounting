@@ -132,6 +132,31 @@ Content-Type: application/json
 }
 ```
 
+### Password Reset
+
+Request a one-time password reset token. The endpoint returns the same accepted response whether the account exists or not. Token issuance is throttled for repeated active-account requests. In production, configure `PASSWORD_RESET_BASE_URL` plus `PASSWORD_RESET_SMTP_*` settings to send the token by email; `PASSWORD_RESET_EXPOSE_TOKEN=true` is intended only for local/development automation.
+
+```http
+POST /auth/password-reset/request
+Content-Type: application/json
+
+{
+  "email": "user@example.com"
+}
+```
+
+Confirm the reset with the one-time token and a new password. The token must be unused and unexpired, the new password must be at least 8 characters, and active refresh-token sessions are revoked after a successful reset.
+
+```http
+POST /auth/password-reset/confirm
+Content-Type: application/json
+
+{
+  "token": "reset-token",
+  "new_password": "new-password"
+}
+```
+
 ### Auth Sessions
 
 List and revoke refresh-token sessions for the authenticated user.

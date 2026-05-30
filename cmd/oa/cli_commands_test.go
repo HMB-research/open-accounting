@@ -371,6 +371,23 @@ func TestCLIAuthPublicCommands(t *testing.T) {
 				"token_type":   "Bearer",
 				"expires_in":   900,
 			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/password-reset/request":
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "new@example.com", req["email"])
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"status":      "accepted",
+				"message":     "If the email belongs to an active account, reset instructions have been prepared.",
+				"reset_token": "reset-token-123",
+				"expires_at":  "2026-05-30T12:00:00Z",
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/password-reset/confirm":
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "reset-token-123", req["token"])
+			assert.Equal(t, "newpassword123", req["new_password"])
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "password_reset"})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/logout":
 			var req map[string]string
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -400,6 +417,17 @@ func TestCLIAuthPublicCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "jwt-refreshed")
 	assert.Contains(t, stdout.String(), "900 seconds")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"auth", "request-password-reset", "--base-url", server.URL, "--email", "new@example.com"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Password reset requested")
+	assert.Contains(t, stdout.String(), "reset-token-123")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"auth", "reset-password", "--base-url", server.URL, "--token", "reset-token-123", "--new-password", "newpassword123"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Reset password")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"auth", "logout", "--base-url", server.URL, "--refresh-token", "refresh-123"})

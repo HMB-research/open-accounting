@@ -114,6 +114,9 @@ go run ./cmd/oa auth status
 go run ./cmd/oa auth tenants
 go run ./cmd/oa auth login --email you@example.com --password 'your-password' --tenant-id <tenant-id>
 go run ./cmd/oa auth refresh --refresh-token <refresh-token> --tenant-id <tenant-id>
+go run ./cmd/oa auth request-password-reset --email you@example.com
+go run ./cmd/oa auth reset-password --token <reset-token> --new-password <new>
+printf '%s\n' '<new-password>' | go run ./cmd/oa auth reset-password --token <reset-token> --password-stdin
 go run ./cmd/oa auth sessions
 go run ./cmd/oa auth sessions --include-inactive
 go run ./cmd/oa auth revoke-session --id <session-id>
@@ -124,7 +127,7 @@ go run ./cmd/oa auth logout --refresh-token <refresh-token>
 go run ./cmd/oa auth logout
 ```
 
-`auth login` and `auth refresh` print short-lived JWT tokens. `auth refresh` returns a replacement refresh token and revokes the presented refresh session. `auth sessions` lists refresh sessions for the current user, `auth revoke-session` revokes one session by id, and `auth revoke-all-sessions` revokes every active refresh session for the user. `auth change-password` verifies the current password, stores the new password, and revokes active refresh sessions. `auth logout --refresh-token` revokes that refresh session on the server before removing local CLI config. The normal automation flow still uses `auth init`, which stores a tenant-scoped API token.
+`auth login` and `auth refresh` print short-lived JWT tokens. `auth refresh` returns a replacement refresh token and revokes the presented refresh session. `auth request-password-reset` starts the non-enumerating account recovery flow; production reset tokens are emailed through the server's `PASSWORD_RESET_SMTP_*` settings, while local/dev servers may expose the token when `PASSWORD_RESET_EXPOSE_TOKEN=true`. `auth reset-password` consumes a one-time reset token, stores the new password, and revokes active refresh sessions. `auth sessions` lists refresh sessions for the current user, `auth revoke-session` revokes one session by id, and `auth revoke-all-sessions` revokes every active refresh session for the user. `auth change-password` verifies the current password, stores the new password, and revokes active refresh sessions. `auth logout --refresh-token` revokes that refresh session on the server before removing local CLI config. The normal automation flow still uses `auth init`, which stores a tenant-scoped API token.
 
 ## Tenant administration
 
