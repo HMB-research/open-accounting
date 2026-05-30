@@ -5,15 +5,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/testutil"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 )
 
-func TestPostgresRepository_CreatePayment(t *testing.T) {
+func TestGORMRepository_CreatePayment(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newPaymentsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create test contact
@@ -63,10 +65,10 @@ func TestPostgresRepository_CreatePayment(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_List(t *testing.T) {
+func TestGORMRepository_List(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newPaymentsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create test contact
@@ -113,10 +115,10 @@ func TestPostgresRepository_List(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_CreateAllocation(t *testing.T) {
+func TestGORMRepository_CreateAllocation(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newPaymentsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create test contact
@@ -192,10 +194,10 @@ func TestPostgresRepository_CreateAllocation(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetNextPaymentNumber(t *testing.T) {
+func TestGORMRepository_GetNextPaymentNumber(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newPaymentsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Get first payment number
@@ -251,10 +253,10 @@ func TestPostgresRepository_GetNextPaymentNumber(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetUnallocatedPayments(t *testing.T) {
+func TestGORMRepository_GetUnallocatedPayments(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newPaymentsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create test contact
@@ -312,10 +314,10 @@ func TestPostgresRepository_GetUnallocatedPayments(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_ListWithFilters(t *testing.T) {
+func TestGORMRepository_ListWithFilters(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newPaymentsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create test contacts
@@ -437,10 +439,10 @@ func TestPostgresRepository_ListWithFilters(t *testing.T) {
 	})
 }
 
-func TestPostgresRepository_GetByID_NotFound(t *testing.T) {
+func TestGORMRepository_GetByID_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newPaymentsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Try to get a non-existent payment
@@ -450,10 +452,10 @@ func TestPostgresRepository_GetByID_NotFound(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetAllocations_Empty(t *testing.T) {
+func TestGORMRepository_GetAllocations_Empty(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newPaymentsGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create a contact and payment with no allocations
@@ -497,4 +499,14 @@ func TestPostgresRepository_GetAllocations_Empty(t *testing.T) {
 	if len(allocations) != 0 {
 		t.Errorf("expected 0 allocations for new payment, got %d", len(allocations))
 	}
+}
+
+func newPaymentsGORMRepository(t *testing.T, pool *pgxpool.Pool) *GORMRepository {
+	t.Helper()
+
+	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	if err != nil {
+		t.Fatalf("create gorm repository: %v", err)
+	}
+	return NewGORMRepository(gormDB)
 }
