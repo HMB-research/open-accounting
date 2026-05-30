@@ -180,6 +180,15 @@ DELETE /auth/sessions
 Authorization: Bearer <access-token-or-api-token>
 ```
 
+### Security Events
+
+List recent auth security audit events where the authenticated user is the actor or target.
+
+```http
+GET /auth/security-events?limit=50
+Authorization: Bearer <access-token-or-api-token>
+```
+
 ---
 
 ## API Tokens
