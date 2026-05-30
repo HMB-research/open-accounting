@@ -1328,7 +1328,7 @@ class ApiClient {
   async getProductStockLevels(tenantId: string, productId: string) {
     return this.request<StockLevel[]>(
       "GET",
-      `/api/v1/tenants/${tenantId}/products/${productId}/stock`,
+      `/api/v1/tenants/${tenantId}/products/${productId}/stock-levels`,
     );
   }
 
@@ -3615,6 +3615,9 @@ export interface InventoryMovement {
   quantity: Decimal;
   unit_cost: Decimal;
   total_cost: Decimal;
+  lot_number?: string;
+  serial_number?: string;
+  expiry_date?: string;
   reference?: string;
   source_type?: string;
   source_id?: string;
@@ -3691,6 +3694,9 @@ export interface AdjustStockRequest {
   warehouse_id: string;
   quantity: string;
   unit_cost?: string;
+  lot_number?: string;
+  serial_number?: string;
+  expiry_date?: string;
   reason?: string;
 }
 
