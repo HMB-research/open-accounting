@@ -106,12 +106,24 @@ func (s *Service) DeleteCategory(ctx context.Context, tenantID, schemaName, cate
 
 // Create creates a new fixed asset
 func (s *Service) Create(ctx context.Context, tenantID, schemaName string, req *CreateAssetRequest) (*FixedAsset, error) {
+	categoryID := trimmedStringPtr(req.CategoryID)
+	var category *AssetCategory
+	var normalizedCategoryID *string
+	if categoryID != "" {
+		cat, err := s.repo.GetCategoryByID(ctx, schemaName, tenantID, categoryID)
+		if err != nil {
+			return nil, fmt.Errorf("get category: %w", err)
+		}
+		category = cat
+		normalizedCategoryID = &categoryID
+	}
+
 	asset := &FixedAsset{
 		ID:                            uuid.New().String(),
 		TenantID:                      tenantID,
 		Name:                          req.Name,
 		Description:                   req.Description,
-		CategoryID:                    req.CategoryID,
+		CategoryID:                    normalizedCategoryID,
 		Status:                        AssetStatusDraft,
 		PurchaseDate:                  req.PurchaseDate,
 		PurchaseCost:                  req.PurchaseCost,
@@ -133,10 +145,32 @@ func (s *Service) Create(ctx context.Context, tenantID, schemaName string, req *
 
 	// Set defaults
 	if asset.DepreciationMethod == "" {
-		asset.DepreciationMethod = DepreciationStraightLine
+		if category != nil && category.DepreciationMethod != "" {
+			asset.DepreciationMethod = category.DepreciationMethod
+		} else {
+			asset.DepreciationMethod = DepreciationStraightLine
+		}
 	}
 	if asset.UsefulLifeMonths <= 0 {
-		asset.UsefulLifeMonths = 60
+		if category != nil && category.DefaultUsefulLifeMonths > 0 {
+			asset.UsefulLifeMonths = category.DefaultUsefulLifeMonths
+		} else {
+			asset.UsefulLifeMonths = 60
+		}
+	}
+	if asset.ResidualValue.IsZero() && category != nil && category.DefaultResidualValuePercent.GreaterThan(decimal.Zero) {
+		asset.ResidualValue = asset.PurchaseCost.Mul(category.DefaultResidualValuePercent).Div(decimal.NewFromInt(100)).Round(2)
+	}
+	if category != nil {
+		if asset.AssetAccountID == nil {
+			asset.AssetAccountID = category.AssetAccountID
+		}
+		if asset.DepreciationExpenseAccountID == nil {
+			asset.DepreciationExpenseAccountID = category.DepreciationExpenseAccountID
+		}
+		if asset.AccumulatedDepreciationAcctID == nil {
+			asset.AccumulatedDepreciationAcctID = category.AccumulatedDepreciationAcctID
+		}
 	}
 
 	// Calculate initial book value

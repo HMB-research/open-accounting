@@ -1913,6 +1913,7 @@ Authorization: Bearer <token>
 ```
 
 Create category payloads accept `name`, `description`, `depreciation_method`, `default_useful_life_months`, `default_residual_value_percent`, and optional account IDs.
+When a new asset references a category, omitted depreciation method, useful life, residual value, asset account, depreciation expense account, and accumulated depreciation account values inherit from that category.
 
 ### List Assets
 

@@ -705,6 +705,46 @@ func TestService_CreateAsset_Defaults(t *testing.T) {
 	assert.Equal(t, 60, asset.UsefulLifeMonths)
 }
 
+func TestService_CreateAsset_InheritsCategoryDefaults(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	assetAccountID := "asset-account"
+	depreciationExpenseAccountID := "depreciation-expense"
+	accumulatedDepreciationAccountID := "accumulated-depreciation"
+	ts.repo.Categories["cat-1"] = &AssetCategory{
+		ID:                            "cat-1",
+		TenantID:                      "tenant-1",
+		Name:                          "Equipment",
+		DepreciationMethod:            DepreciationDecliningBalance,
+		DefaultUsefulLifeMonths:       36,
+		DefaultResidualValuePercent:   decimal.NewFromInt(10),
+		AssetAccountID:                &assetAccountID,
+		DepreciationExpenseAccountID:  &depreciationExpenseAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedDepreciationAccountID,
+	}
+	categoryID := "cat-1"
+
+	asset, err := ts.svc.Create(ctx, "tenant-1", "test_schema", &CreateAssetRequest{
+		Name:         "Laptop",
+		CategoryID:   &categoryID,
+		PurchaseDate: time.Now(),
+		PurchaseCost: decimal.NewFromInt(1200),
+		UserID:       "user-1",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, DepreciationDecliningBalance, asset.DepreciationMethod)
+	assert.Equal(t, 36, asset.UsefulLifeMonths)
+	assert.True(t, asset.ResidualValue.Equal(decimal.NewFromInt(120)))
+	require.NotNil(t, asset.AssetAccountID)
+	assert.Equal(t, assetAccountID, *asset.AssetAccountID)
+	require.NotNil(t, asset.DepreciationExpenseAccountID)
+	assert.Equal(t, depreciationExpenseAccountID, *asset.DepreciationExpenseAccountID)
+	require.NotNil(t, asset.AccumulatedDepreciationAcctID)
+	assert.Equal(t, accumulatedDepreciationAccountID, *asset.AccumulatedDepreciationAcctID)
+}
+
 func TestService_ImportAssetsCSV(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
