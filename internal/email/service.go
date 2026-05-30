@@ -11,6 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/wneessen/go-mail"
+
+	"github.com/HMB-research/open-accounting/internal/database"
 )
 
 // MailSender is an interface for sending mail (for testing)
@@ -54,16 +56,21 @@ func (d *DefaultMailSender) SendMail(config *SMTPConfig, m *mail.Msg) error {
 
 // Service handles email operations
 type Service struct {
-	db     *pgxpool.Pool
 	repo   Repository
 	mailer MailSender
 }
 
 // NewService creates a new email service
 func NewService(db *pgxpool.Pool) *Service {
+	if db == nil {
+		return &Service{mailer: &DefaultMailSender{}}
+	}
+	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	if err != nil {
+		panic(fmt.Errorf("create email GORM repository: %w", err))
+	}
 	return &Service{
-		db:     db,
-		repo:   NewPostgresRepository(db),
+		repo:   NewGORMRepository(gormDB),
 		mailer: &DefaultMailSender{},
 	}
 }

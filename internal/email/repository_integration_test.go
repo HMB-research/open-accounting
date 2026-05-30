@@ -6,8 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/testutil"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // contains is a helper to check if a string contains a substring
@@ -16,11 +18,11 @@ func contains(s, substr string) bool {
 }
 
 // setupEmailTest creates a tenant and ensures email schema
-func setupEmailTest(t *testing.T) (*testutil.TestTenant, *PostgresRepository, context.Context) {
+func setupEmailTest(t *testing.T) (*testutil.TestTenant, *GORMRepository, context.Context) {
 	t.Helper()
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newEmailGORMRepository(t, pool)
 	ctx := context.Background()
 
 	if err := repo.EnsureSchema(ctx, tenant.SchemaName); err != nil {
@@ -30,10 +32,10 @@ func setupEmailTest(t *testing.T) (*testutil.TestTenant, *PostgresRepository, co
 	return tenant, repo, ctx
 }
 
-func TestPostgresRepository_EnsureSchema(t *testing.T) {
+func TestGORMRepository_EnsureSchema(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newEmailGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// EnsureSchema should create email tables
@@ -61,9 +63,9 @@ func TestPostgresRepository_EnsureSchema(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_EnsureSchema_InvalidSchema(t *testing.T) {
+func TestGORMRepository_EnsureSchema_InvalidSchema(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := newEmailGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Test with an invalid schema name that doesn't exist
@@ -74,10 +76,10 @@ func TestPostgresRepository_EnsureSchema_InvalidSchema(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetAndUpdateTenantSettings(t *testing.T) {
+func TestGORMRepository_GetAndUpdateTenantSettings(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newEmailGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Get initial tenant settings
@@ -113,9 +115,9 @@ func TestPostgresRepository_GetAndUpdateTenantSettings(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetTenantSettings_NotFound(t *testing.T) {
+func TestGORMRepository_GetTenantSettings_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := newEmailGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Get settings for non-existent tenant
@@ -125,9 +127,9 @@ func TestPostgresRepository_GetTenantSettings_NotFound(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_UpdateTenantSettings_NonexistentTenant(t *testing.T) {
+func TestGORMRepository_UpdateTenantSettings_NonexistentTenant(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := newEmailGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Update settings for non-existent tenant (should not error, just no rows affected)
@@ -139,7 +141,7 @@ func TestPostgresRepository_UpdateTenantSettings_NonexistentTenant(t *testing.T)
 	}
 }
 
-func TestPostgresRepository_TemplateOperations(t *testing.T) {
+func TestGORMRepository_TemplateOperations(t *testing.T) {
 	tenant, repo, ctx := setupEmailTest(t)
 
 	// Create/Upsert a template
@@ -201,7 +203,7 @@ func TestPostgresRepository_TemplateOperations(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetTemplate_NotFound(t *testing.T) {
+func TestGORMRepository_GetTemplate_NotFound(t *testing.T) {
 	tenant, repo, ctx := setupEmailTest(t)
 
 	// Get non-existent template
@@ -211,10 +213,10 @@ func TestPostgresRepository_GetTemplate_NotFound(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetTemplate_InvalidSchema(t *testing.T) {
+func TestGORMRepository_GetTemplate_InvalidSchema(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newEmailGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Get template from non-existent schema - this tests the error path
@@ -228,10 +230,10 @@ func TestPostgresRepository_GetTemplate_InvalidSchema(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_ListTemplates_InvalidSchema(t *testing.T) {
+func TestGORMRepository_ListTemplates_InvalidSchema(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newEmailGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// List templates from non-existent schema - this tests the query error path
@@ -241,10 +243,10 @@ func TestPostgresRepository_ListTemplates_InvalidSchema(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_UpsertTemplate_InvalidSchema(t *testing.T) {
+func TestGORMRepository_UpsertTemplate_InvalidSchema(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newEmailGORMRepository(t, pool)
 	ctx := context.Background()
 
 	template := &EmailTemplate{
@@ -263,7 +265,7 @@ func TestPostgresRepository_UpsertTemplate_InvalidSchema(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_EmailLogOperations(t *testing.T) {
+func TestGORMRepository_EmailLogOperations(t *testing.T) {
 	tenant, repo, ctx := setupEmailTest(t)
 
 	// Create email log
@@ -361,7 +363,7 @@ func TestPostgresRepository_EmailLogOperations(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_ListTemplates_Empty(t *testing.T) {
+func TestGORMRepository_ListTemplates_Empty(t *testing.T) {
 	tenant, repo, ctx := setupEmailTest(t)
 
 	// Clear any default templates that were created by migrations
@@ -383,7 +385,7 @@ func TestPostgresRepository_ListTemplates_Empty(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetEmailLog_Empty(t *testing.T) {
+func TestGORMRepository_GetEmailLog_Empty(t *testing.T) {
 	tenant, repo, ctx := setupEmailTest(t)
 
 	// Get email logs when none exist
@@ -398,7 +400,7 @@ func TestPostgresRepository_GetEmailLog_Empty(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetEmailLog_DefaultLimit(t *testing.T) {
+func TestGORMRepository_GetEmailLog_DefaultLimit(t *testing.T) {
 	tenant, repo, ctx := setupEmailTest(t)
 
 	// Create some email logs
@@ -439,10 +441,10 @@ func TestPostgresRepository_GetEmailLog_DefaultLimit(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetEmailLog_InvalidSchema(t *testing.T) {
+func TestGORMRepository_GetEmailLog_InvalidSchema(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newEmailGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Get email logs from non-existent schema - this tests the query error path
@@ -452,7 +454,7 @@ func TestPostgresRepository_GetEmailLog_InvalidSchema(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_CreateEmailLog_WithRelatedID(t *testing.T) {
+func TestGORMRepository_CreateEmailLog_WithRelatedID(t *testing.T) {
 	tenant, repo, ctx := setupEmailTest(t)
 
 	// Create email log with related ID (e.g., an invoice ID)
@@ -496,7 +498,7 @@ func TestPostgresRepository_CreateEmailLog_WithRelatedID(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_CreateEmailLog_WithoutRelatedID(t *testing.T) {
+func TestGORMRepository_CreateEmailLog_WithoutRelatedID(t *testing.T) {
 	tenant, repo, ctx := setupEmailTest(t)
 
 	// Create email log without related ID (empty string)
@@ -541,10 +543,10 @@ func TestPostgresRepository_CreateEmailLog_WithoutRelatedID(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_CreateEmailLog_InvalidSchema(t *testing.T) {
+func TestGORMRepository_CreateEmailLog_InvalidSchema(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newEmailGORMRepository(t, pool)
 	ctx := context.Background()
 
 	log := &EmailLog{
@@ -563,9 +565,9 @@ func TestPostgresRepository_CreateEmailLog_InvalidSchema(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_UpdateEmailLogStatus_InvalidSchema(t *testing.T) {
+func TestGORMRepository_UpdateEmailLogStatus_InvalidSchema(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := newEmailGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Update status in non-existent schema
@@ -575,7 +577,7 @@ func TestPostgresRepository_UpdateEmailLogStatus_InvalidSchema(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_ParseAndMergeSMTPConfig(t *testing.T) {
+func TestGORMRepository_ParseAndMergeSMTPConfig(t *testing.T) {
 	// Test ParseSMTPConfig - uses flat keys like smtp_host, smtp_port, etc.
 	validJSON := []byte(`{"smtp_host":"mail.example.com","smtp_port":587,"smtp_username":"user","smtp_password":"pass","smtp_from_email":"noreply@example.com","smtp_from_name":"Test Company"}`)
 	config, err := ParseSMTPConfig(validJSON)
@@ -760,7 +762,7 @@ func TestMergeSMTPConfig_UpdatePassword(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_ListTemplates_MultipleTemplates(t *testing.T) {
+func TestGORMRepository_ListTemplates_MultipleTemplates(t *testing.T) {
 	tenant, repo, ctx := setupEmailTest(t)
 
 	// Clear any default templates that were created by migrations
@@ -827,7 +829,7 @@ func TestPostgresRepository_ListTemplates_MultipleTemplates(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_UpsertTemplate_UpdateExisting(t *testing.T) {
+func TestGORMRepository_UpsertTemplate_UpdateExisting(t *testing.T) {
 	tenant, repo, ctx := setupEmailTest(t)
 
 	// Create initial template
@@ -878,7 +880,7 @@ func TestPostgresRepository_UpsertTemplate_UpdateExisting(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetEmailLog_Limit(t *testing.T) {
+func TestGORMRepository_GetEmailLog_Limit(t *testing.T) {
 	tenant, repo, ctx := setupEmailTest(t)
 
 	// Create 10 email logs
@@ -912,7 +914,7 @@ func TestPostgresRepository_GetEmailLog_Limit(t *testing.T) {
 	// Since we added a small delay between creations, the last created should be first
 }
 
-func TestPostgresRepository_EmailLog_AllStatuses(t *testing.T) {
+func TestGORMRepository_EmailLog_AllStatuses(t *testing.T) {
 	tenant, repo, ctx := setupEmailTest(t)
 
 	// Test all status types
@@ -946,7 +948,7 @@ func TestPostgresRepository_EmailLog_AllStatuses(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_Template_NullBodyText(t *testing.T) {
+func TestGORMRepository_Template_NullBodyText(t *testing.T) {
 	tenant, repo, ctx := setupEmailTest(t)
 
 	// Create template without body_text (should use empty string via COALESCE)
@@ -977,7 +979,7 @@ func TestPostgresRepository_Template_NullBodyText(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_EmailLog_NullRecipientName(t *testing.T) {
+func TestGORMRepository_EmailLog_NullRecipientName(t *testing.T) {
 	tenant, repo, ctx := setupEmailTest(t)
 
 	// Create log without recipient name
@@ -1020,15 +1022,25 @@ func TestPostgresRepository_EmailLog_NullRecipientName(t *testing.T) {
 	}
 }
 
-func TestNewPostgresRepository(t *testing.T) {
+func TestNewGORMRepository(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 
-	repo := NewPostgresRepository(pool)
+	repo := newEmailGORMRepository(t, pool)
 	if repo == nil {
 		t.Error("expected non-nil repository")
 	}
 
-	if repo.db != pool {
-		t.Error("expected repository db to be the provided pool")
+	if repo.db == nil {
+		t.Error("expected repository db to be set")
 	}
+}
+
+func newEmailGORMRepository(t *testing.T, pool *pgxpool.Pool) *GORMRepository {
+	t.Helper()
+
+	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	if err != nil {
+		t.Fatalf("create gorm repository: %v", err)
+	}
+	return NewGORMRepository(gormDB)
 }
