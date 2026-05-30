@@ -59,6 +59,9 @@ const (
 	// Email events
 	EventEmailSent   = "email.sent"
 	EventEmailFailed = "email.failed"
+
+	// Webhook events
+	EventWebhookTest = "webhook.test"
 )
 
 // Event represents an event emitted by the system
@@ -280,6 +283,7 @@ var AllEventTypes = []string{
 	EventTenantUpdated,
 	EventEmailSent,
 	EventEmailFailed,
+	EventWebhookTest,
 }
 
 // IsValidEventType checks if an event type is valid

@@ -30,6 +30,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
+	"github.com/HMB-research/open-accounting/internal/webhooks"
 )
 
 func printJSON(w io.Writer, value any) error {
@@ -320,6 +321,64 @@ func printTenantPluginsTable(w io.Writer, plugins []plugin.TenantPlugin) {
 		)
 	}
 	_ = tw.Flush()
+}
+
+func printWebhookEndpointsTable(w io.Writer, endpoints []webhooks.Endpoint) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNAME\tURL\tEVENTS\tACTIVE\tSECRET\tLAST DELIVERY")
+	for _, endpoint := range endpoints {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%t\t%t\t%s\n",
+			endpoint.ID,
+			endpoint.Name,
+			endpoint.URL,
+			strings.Join(endpoint.Events, ","),
+			endpoint.IsActive,
+			endpoint.SecretSet,
+			formatTimePtr(endpoint.LastDeliveryAt),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printWebhookEndpoint(w io.Writer, endpoint *webhooks.Endpoint) {
+	if endpoint == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "Webhook endpoint %s (%s)\n", endpoint.Name, endpoint.ID)
+	_, _ = fmt.Fprintf(w, "URL: %s\n", endpoint.URL)
+	_, _ = fmt.Fprintf(w, "Events: %s\n", strings.Join(endpoint.Events, ", "))
+	_, _ = fmt.Fprintf(w, "Active: %t\n", endpoint.IsActive)
+	_, _ = fmt.Fprintf(w, "Secret set: %t\n", endpoint.SecretSet)
+	if endpoint.LastDeliveryAt != nil {
+		_, _ = fmt.Fprintf(w, "Last delivery: %s\n", endpoint.LastDeliveryAt.Format(time.RFC3339))
+	}
+}
+
+func printWebhookDeliveriesTable(w io.Writer, deliveries []webhooks.Delivery) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "DELIVERED\tEVENT\tSTATUS\tHTTP\tERROR")
+	for _, delivery := range deliveries {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%d\t%s\n",
+			delivery.DeliveredAt.Format(time.RFC3339),
+			delivery.EventType,
+			delivery.Status,
+			delivery.StatusCode,
+			delivery.Error,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printWebhookDeliveryResult(w io.Writer, result *webhooks.DeliveryResult) {
+	if result == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "Webhook event %s (%s)\n", result.Event.Type, result.Event.ID)
+	printWebhookDeliveriesTable(w, result.Deliveries)
 }
 
 func printAccountsTable(w io.Writer, accounts []accounting.Account) {

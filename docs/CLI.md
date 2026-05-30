@@ -186,6 +186,25 @@ go run ./cmd/oa admin plugins uninstall --id <plugin-id>
 
 Use `--permission` repeatedly when enabling an instance-level plugin with multiple permissions.
 
+## Webhooks
+
+```bash
+go run ./cmd/oa webhooks events
+go run ./cmd/oa webhooks list --active-only
+go run ./cmd/oa webhooks create \
+  --name "CRM notifications" \
+  --url https://crm.example.com/open-accounting/webhook \
+  --events invoice.created,payment.received \
+  --secret "$WEBHOOK_SECRET"
+go run ./cmd/oa webhooks get --id <webhook-id>
+go run ./cmd/oa webhooks update --id <webhook-id> --events invoice.created,webhook.test --active true
+go run ./cmd/oa webhooks deliveries --id <webhook-id> --limit 20
+go run ./cmd/oa webhooks test --id <webhook-id> --event webhook.test --payload-json '{"source":"cli"}'
+go run ./cmd/oa webhooks delete --id <webhook-id>
+```
+
+Webhook deliveries are signed with `X-Open-Accounting-Signature: sha256=<hmac>` when a secret is set. Delivery requests also include `X-Open-Accounting-Event`, `X-Open-Accounting-Event-ID`, and `X-Open-Accounting-Tenant-ID`.
+
 ## Manage API tokens
 
 ```bash

@@ -37,6 +37,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
+	"github.com/HMB-research/open-accounting/internal/webhooks"
 )
 
 // Handlers contains all HTTP handlers
@@ -69,6 +70,7 @@ type Handlers struct {
 	automatedReminderService *invoicing.AutomatedReminderService
 	costCenterService        *accounting.CostCenterService
 	interestService          *invoicing.InterestService
+	webhookService           *webhooks.Service
 }
 
 type refreshSessionManager interface {
@@ -1081,6 +1083,7 @@ func (h *Handlers) CreateJournalEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.emitWebhookEvent(plugin.EventJournalEntryCreated, tenantID, entry)
 	respondJSON(w, http.StatusCreated, entry)
 }
 
@@ -1126,6 +1129,7 @@ func (h *Handlers) PostJournalEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.emitWebhookEvent(plugin.EventJournalEntryPosted, tenantID, map[string]string{"journal_entry_id": entryID})
 	respondJSON(w, http.StatusOK, map[string]string{"status": "posted"})
 }
 
@@ -1205,6 +1209,7 @@ func (h *Handlers) VoidJournalEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.emitWebhookEvent(plugin.EventJournalEntryVoided, tenantID, reversal)
 	respondJSON(w, http.StatusOK, reversal)
 }
 

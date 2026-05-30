@@ -201,7 +201,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Feature | Merit | SmartAccounts | Open Accounting | Status |
 |---------|-------|---------------|-----------------|--------|
 | REST API | ✅ | ✅ | ✅ | Implemented |
-| Webhook notifications | ⚠️ | ❌ | ⚠️ | Partial |
+| Webhook notifications | ⚠️ | ❌ | ✅ | Implemented as tenant outbound webhook endpoints with event subscriptions, signed POST delivery, test delivery, delivery history, and CLI/API coverage |
 | WooCommerce | ❌ | ✅ | ❌ | **Gap** |
 | Shopify | ❌ | ❌ | ❌ | **Gap** |
 | Scoro | ❌ | ✅ | ❌ | **Gap** |

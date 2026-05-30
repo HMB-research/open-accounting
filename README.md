@@ -143,6 +143,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 | **Plugin Registries** | Add custom plugin marketplaces (GitHub/GitLab) |
 | **Permission System** | Fine-grained permissions with risk levels |
 | **Event Hooks** | 27+ events for plugin integration |
+| **Outbound Webhooks** | Tenant webhook endpoints with event subscriptions, HMAC signatures, test delivery, and delivery audit history |
 | **UI Slots** | Extend dashboard, invoices, and more |
 | **Two-Level Control** | Instance-wide install, per-tenant enable |
 
@@ -314,6 +315,7 @@ open-accounting/
 - [x] User invitation system
 - [x] Dashboard analytics with charts
 - [x] Email notifications
+- [x] Webhook notifications
 - [x] Recurring invoice automation
 - [x] Balance sheet and income statement reports
 - [x] Payroll module with Estonian TSD declarations

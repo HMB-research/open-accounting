@@ -42,6 +42,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/scheduler"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
+	"github.com/HMB-research/open-accounting/internal/webhooks"
 )
 
 // Config holds the application configuration
@@ -126,6 +127,8 @@ func main() {
 	automatedReminderService := invoicing.NewAutomatedReminderService(pool, emailService)
 	costCenterService := accounting.NewCostCenterService(pool)
 	interestService := invoicing.NewInterestService(pool)
+	webhookService := webhooks.NewService(pool)
+	webhookService.RegisterPluginHooks(pluginService.GetHookRegistry())
 
 	// Load enabled plugins on startup
 	if err := pluginService.LoadEnabledPlugins(ctx); err != nil {
@@ -179,6 +182,7 @@ func main() {
 		automatedReminderService: automatedReminderService,
 		costCenterService:        costCenterService,
 		interestService:          interestService,
+		webhookService:           webhookService,
 	}
 
 	// Setup router
@@ -731,6 +735,16 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Delete("/users/{userID}", h.RemoveTenantUser)
 				r.Put("/users/{userID}/role", h.UpdateTenantUserRole)
 				r.Get("/audit-events", h.ListTenantAuditEvents)
+
+				// Webhooks
+				r.Get("/webhooks/events", h.ListWebhookEventTypes)
+				r.Get("/webhooks", h.ListWebhookEndpoints)
+				r.Post("/webhooks", h.CreateWebhookEndpoint)
+				r.Get("/webhooks/{webhookID}", h.GetWebhookEndpoint)
+				r.Put("/webhooks/{webhookID}", h.UpdateWebhookEndpoint)
+				r.Delete("/webhooks/{webhookID}", h.DeleteWebhookEndpoint)
+				r.Get("/webhooks/{webhookID}/deliveries", h.ListWebhookDeliveries)
+				r.Post("/webhooks/{webhookID}/test", h.TestWebhookEndpoint)
 
 				// Invitations
 				r.Get("/invitations", h.ListInvitations)

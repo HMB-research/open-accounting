@@ -3073,6 +3073,68 @@ Content-Type: application/json
 
 ---
 
+## Webhooks
+
+### List Supported Events
+
+```http
+GET /tenants/{tenantId}/webhooks/events
+Authorization: Bearer <token>
+```
+
+Returns event names such as `invoice.created`, `payment.received`, `journal_entry.posted`, `bank_transaction.matched`, `payroll.approved`, and `webhook.test`.
+
+### Create Webhook Endpoint
+
+```http
+POST /tenants/{tenantId}/webhooks
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "CRM notifications",
+  "url": "https://crm.example.com/open-accounting/webhook",
+  "events": ["invoice.created", "payment.received"],
+  "secret": "shared-hmac-secret",
+  "is_active": true
+}
+```
+
+Endpoint responses include `secret_set` but never return the secret value. Deliveries are signed with `X-Open-Accounting-Signature: sha256=<hmac>` when a secret is configured, and include event, event ID, and tenant ID headers.
+
+### Manage Webhook Endpoints
+
+```http
+GET /tenants/{tenantId}/webhooks?active_only=true
+GET /tenants/{tenantId}/webhooks/{webhookId}
+PUT /tenants/{tenantId}/webhooks/{webhookId}
+DELETE /tenants/{tenantId}/webhooks/{webhookId}
+```
+
+`PUT` accepts the same mutable fields as create. Set `secret` to an empty string to clear the signing secret.
+
+### Test And Audit Deliveries
+
+```http
+POST /tenants/{tenantId}/webhooks/{webhookId}/test
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "event_type": "webhook.test",
+  "payload": {"source": "manual-check"}
+}
+```
+
+```http
+GET /tenants/{tenantId}/webhooks/{webhookId}/deliveries?limit=50
+Authorization: Bearer <token>
+```
+
+Delivery history records status, HTTP status code, response body excerpt, error text, event ID/type, and the request body sent.
+
+---
+
 ## Error Responses
 
 All errors return JSON with an `error` field:
