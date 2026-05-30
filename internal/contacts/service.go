@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -14,9 +15,16 @@ type Service struct {
 	repo Repository
 }
 
-// NewService creates a new contacts service with a PostgreSQL repository
+// NewService creates a new contacts service with an ORM-backed repository.
 func NewService(db *pgxpool.Pool) *Service {
-	return &Service{repo: NewPostgresRepository(db)}
+	if db == nil {
+		return &Service{}
+	}
+	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	if err != nil {
+		panic(fmt.Errorf("create contacts GORM repository: %w", err))
+	}
+	return &Service{repo: NewGORMRepository(gormDB)}
 }
 
 // NewServiceWithRepository creates a new contacts service with a custom repository
