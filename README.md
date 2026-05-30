@@ -344,6 +344,7 @@ open-accounting/
 - [x] Tenant audit events for organization settings changes
 - [x] Tenant admin controls for member refresh-session inspection and revocation
 - [x] Tenant admin security-event visibility for member auth activity
+- [x] Tenant admin suspension/restoration of member tenant access with session revocation and audit events
 - [x] CSV import for chart of accounts, contacts, employees, invoices, quotes, orders, recurring invoice templates, payments, cost centers, product categories/warehouses/products/stock, fixed assets, and opening balances
 - [x] Migration bundle validation for cutover imports with API and CLI coverage across expenses, commercial history, inventory, banking, tax, and fixed assets
 - [x] Tenant period lock on core write paths
@@ -358,7 +359,7 @@ open-accounting/
 ### Still missing for reliable production use
 - [ ] Remaining external migration imports beyond payroll, tax history, quote/order/recurring-template, cost-center/product-category/warehouse/product/stock, and fixed assets
 - [ ] Automated document policy enforcement in remaining workflow blockers
-- [ ] Broader auth administration controls beyond tenant-scoped session response
+- [ ] Remaining auth administration hardening beyond tenant-scoped session/status controls
 - [ ] E-invoice, direct bank feeds, SEPA initiation, and automatic e-MTA submission
 
 ---

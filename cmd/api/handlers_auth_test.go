@@ -191,6 +191,7 @@ func (m *mockTenantRepository) AddUserToTenant(ctx context.Context, tenantID, us
 		TenantID:  tenantID,
 		UserID:    userID,
 		Role:      role,
+		IsActive:  true,
 		CreatedAt: time.Now(),
 	})
 	return nil
@@ -211,6 +212,19 @@ func (m *mockTenantRepository) GetUserRole(ctx context.Context, tenantID, userID
 		}
 	}
 	return "", tenant.ErrUserNotInTenant
+}
+
+func (m *mockTenantRepository) GetTenantUser(ctx context.Context, tenantID, userID string) (*tenant.TenantUser, error) {
+	users := m.tenantUsers[tenantID]
+	for _, u := range users {
+		if u.UserID == userID {
+			if !u.IsActive && u.CreatedAt.IsZero() {
+				u.IsActive = true
+			}
+			return &u, nil
+		}
+	}
+	return nil, tenant.ErrUserNotInTenant
 }
 
 func (m *mockTenantRepository) ListUserTenants(ctx context.Context, userID string) ([]tenant.TenantMembership, error) {
@@ -238,6 +252,17 @@ func (m *mockTenantRepository) ListTenantUsers(ctx context.Context, tenantID str
 
 func (m *mockTenantRepository) UpdateTenantUserRole(ctx context.Context, tenantID, userID, role string) error {
 	return nil
+}
+
+func (m *mockTenantRepository) SetTenantUserActive(ctx context.Context, tenantID, userID string, active bool) error {
+	users := m.tenantUsers[tenantID]
+	for i := range users {
+		if users[i].UserID == userID {
+			m.tenantUsers[tenantID][i].IsActive = active
+			return nil
+		}
+	}
+	return tenant.ErrUserNotInTenant
 }
 
 func (m *mockTenantRepository) RemoveTenantUser(ctx context.Context, tenantID, userID string) error {

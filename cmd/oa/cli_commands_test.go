@@ -647,6 +647,7 @@ func TestCLIUsersCommands(t *testing.T) {
 				"user_id":    "user-2",
 				"role":       "viewer",
 				"is_default": false,
+				"is_active":  true,
 				"created_at": "2026-03-12T00:00:00Z",
 			}})
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-2/role":
@@ -654,6 +655,11 @@ func TestCLIUsersCommands(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "accountant", req["role"])
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-2/status":
+			var req map[string]bool
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.False(t, req["is_active"])
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "updated", "is_active": false})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-2/sessions":
 			assert.Equal(t, "true", r.URL.Query().Get("include_inactive"))
 			_ = json.NewEncoder(w).Encode([]map[string]string{
@@ -707,6 +713,11 @@ func TestCLIUsersCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"users", "update-role", "--id", "user-2", "--role", "owner"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "role must be one of")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"users", "set-status", "--id", "user-2", "--active", "false"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Updated user user-2 active status to false")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"users", "sessions", "--id", "user-2", "--include-inactive"})

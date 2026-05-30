@@ -1355,6 +1355,92 @@ func TestTenantUserSecurityAuditEvents(t *testing.T) {
 	assert.Equal(t, auth.SecurityAuditActionLogin, resp[0].Action)
 }
 
+func TestUpdateTenantUserStatusSuspendsAccess(t *testing.T) {
+	h, repo := setupTenantTestHandlers()
+	repo.addTestUser("user-1", "owner@example.com", "Owner", "password", true)
+	repo.addTestUser("user-2", "target@example.com", "Target", "password", true)
+	repo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+		{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner, IsActive: true, CreatedAt: time.Now()},
+		{TenantID: "tenant-1", UserID: "user-2", Role: tenant.RoleViewer, IsActive: true, CreatedAt: time.Now()},
+	}
+	refreshSvc := h.refreshSessionService.(*mockRefreshSessionService)
+	refreshSvc.sessions["session-1"] = mockRefreshSession{
+		userID:    "user-2",
+		tokenHash: "hash",
+		expiresAt: time.Now().Add(time.Hour),
+	}
+
+	claims := &auth.Claims{UserID: "user-1", Email: "owner@example.com", TenantID: "tenant-1", Role: tenant.RoleOwner}
+	req := makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1/users/user-2/status", map[string]bool{"is_active": false}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "userID": "user-2"})
+	w := httptest.NewRecorder()
+
+	h.UpdateTenantUserStatus(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	membership, err := repo.GetTenantUser(req.Context(), "tenant-1", "user-2")
+	require.NoError(t, err)
+	assert.False(t, membership.IsActive)
+	assert.True(t, refreshSvc.sessions["session-1"].revoked)
+
+	require.NotEmpty(t, repo.auditEvents["tenant-1"])
+	assert.Equal(t, tenant.AuditActionUserStatusUpdated, repo.auditEvents["tenant-1"][0].Action)
+	assert.Equal(t, "false", repo.auditEvents["tenant-1"][0].Metadata["new_active"])
+
+	auditEvents := h.securityAuditService.(*mockSecurityAuditService).events
+	require.NotEmpty(t, auditEvents)
+	assert.Equal(t, auth.SecurityAuditActionTenantAccessSuspended, auditEvents[0].Action)
+	assert.Equal(t, "target@example.com", auditEvents[0].TargetEmail)
+}
+
+func TestUpdateTenantUserStatusRejectsSelfAndOwner(t *testing.T) {
+	tests := []struct {
+		name           string
+		targetUserID   string
+		setupMock      func(*mockTenantRepository)
+		wantErrContain string
+	}{
+		{
+			name:           "cannot suspend yourself",
+			targetUserID:   "user-1",
+			wantErrContain: "Cannot update your own tenant access status",
+		},
+		{
+			name:         "cannot suspend owner",
+			targetUserID: "user-owner",
+			setupMock: func(m *mockTenantRepository) {
+				m.tenantUsers["tenant-1"] = append(m.tenantUsers["tenant-1"], tenant.TenantUser{
+					TenantID: "tenant-1", UserID: "user-owner", Role: tenant.RoleOwner, IsActive: true,
+				})
+			},
+			wantErrContain: "cannot change owner membership status",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, repo := setupTenantTestHandlers()
+			repo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+				{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner, IsActive: true},
+			}
+			if tt.setupMock != nil {
+				tt.setupMock(repo)
+			}
+			claims := &auth.Claims{UserID: "user-1", Email: "owner@example.com", TenantID: "tenant-1", Role: tenant.RoleOwner}
+			req := makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1/users/"+tt.targetUserID+"/status", map[string]bool{"is_active": false}, claims)
+			req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "userID": tt.targetUserID})
+			w := httptest.NewRecorder()
+
+			h.UpdateTenantUserStatus(w, req)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code, "response body: %s", w.Body.String())
+			var resp map[string]string
+			require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+			assert.Contains(t, resp["error"], tt.wantErrContain)
+		})
+	}
+}
+
 func TestTenantUserAuthSessionRevocationAuditsActions(t *testing.T) {
 	adminClaims := &auth.Claims{
 		UserID:   "user-1",

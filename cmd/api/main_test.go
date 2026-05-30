@@ -132,6 +132,7 @@ func TestSetupRouterRegistersCoreRoutes(t *testing.T) {
 	assert.Contains(t, routes, "DELETE /api/v1/tenants/{tenantID}/users/{userID}/sessions")
 	assert.Contains(t, routes, "DELETE /api/v1/tenants/{tenantID}/users/{userID}/sessions/{sessionID}")
 	assert.Contains(t, routes, "GET /api/v1/tenants/{tenantID}/users/{userID}/security-events")
+	assert.Contains(t, routes, "PUT /api/v1/tenants/{tenantID}/users/{userID}/status")
 	assert.Contains(t, routes, "GET /api/v1/tenants/{tenantID}/period-close-events")
 	assert.Contains(t, routes, "POST /api/v1/tenants/{tenantID}/period-close")
 	assert.Contains(t, routes, "POST /api/v1/tenants/{tenantID}/period-reopen")

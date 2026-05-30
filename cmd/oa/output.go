@@ -219,14 +219,15 @@ func printTenant(w io.Writer, tenantRecord *tenant.Tenant) {
 
 func printTenantUsersTable(w io.Writer, users []tenant.TenantUser) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "USER\tROLE\tDEFAULT\tCREATED")
+	_, _ = fmt.Fprintln(tw, "USER\tROLE\tDEFAULT\tACTIVE\tCREATED")
 	for _, user := range users {
 		_, _ = fmt.Fprintf(
 			tw,
-			"%s\t%s\t%t\t%s\n",
+			"%s\t%s\t%t\t%t\t%s\n",
 			user.UserID,
 			user.Role,
 			user.IsDefault,
+			user.IsActive,
 			user.CreatedAt.Format(time.RFC3339),
 		)
 	}

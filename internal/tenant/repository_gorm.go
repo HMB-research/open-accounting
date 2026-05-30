@@ -223,9 +223,9 @@ func (r *GORMRepository) ListTenantAuditEvents(ctx context.Context, tenantID str
 func (r *GORMRepository) AddUserToTenant(ctx context.Context, tenantID, userID, role string) error {
 	// Use raw SQL for ON CONFLICT upsert
 	err := r.db.WithContext(ctx).Exec(`
-		INSERT INTO tenant_users (tenant_id, user_id, role, is_default, created_at)
-		VALUES (?, ?, ?, false, NOW())
-		ON CONFLICT (tenant_id, user_id) DO UPDATE SET role = EXCLUDED.role
+		INSERT INTO tenant_users (tenant_id, user_id, role, is_default, is_active, created_at)
+		VALUES (?, ?, ?, false, true, NOW())
+		ON CONFLICT (tenant_id, user_id) DO UPDATE SET role = EXCLUDED.role, is_active = true
 	`, tenantID, userID, role).Error
 	if err != nil {
 		return fmt.Errorf("add user to tenant: %w", err)
@@ -263,6 +263,28 @@ func (r *GORMRepository) GetUserRole(ctx context.Context, tenantID, userID strin
 	return role, nil
 }
 
+// GetTenantUser returns one tenant membership, including inactive memberships.
+func (r *GORMRepository) GetTenantUser(ctx context.Context, tenantID, userID string) (*TenantUser, error) {
+	var tu models.TenantUserModel
+	err := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND user_id = ?", tenantID, userID).
+		First(&tu).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, ErrUserNotInTenant
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get tenant user: %w", err)
+	}
+	return &TenantUser{
+		TenantID:  tu.TenantID,
+		UserID:    tu.UserID,
+		Role:      tu.Role,
+		IsDefault: tu.IsDefault,
+		IsActive:  tu.IsActive,
+		CreatedAt: tu.CreatedAt,
+	}, nil
+}
+
 // ListUserTenants retrieves all tenants a user belongs to
 func (r *GORMRepository) ListUserTenants(ctx context.Context, userID string) ([]TenantMembership, error) {
 	var results []struct {
@@ -275,7 +297,7 @@ func (r *GORMRepository) ListUserTenants(ctx context.Context, userID string) ([]
 		SELECT t.*, tu.role, tu.is_default
 		FROM tenants t
 		JOIN tenant_users tu ON tu.tenant_id = t.id
-		WHERE tu.user_id = ? AND t.is_active = true
+		WHERE tu.user_id = ? AND t.is_active = true AND COALESCE(tu.is_active, true) = true
 		ORDER BY tu.is_default DESC, t.name
 	`, userID).Scan(&results).Error
 	if err != nil {
@@ -311,6 +333,7 @@ func (r *GORMRepository) ListTenantUsers(ctx context.Context, tenantID string) (
 			UserID:    tu.UserID,
 			Role:      tu.Role,
 			IsDefault: tu.IsDefault,
+			IsActive:  tu.IsActive,
 			CreatedAt: tu.CreatedAt,
 		}
 	}
@@ -324,6 +347,20 @@ func (r *GORMRepository) UpdateTenantUserRole(ctx context.Context, tenantID, use
 		Where("tenant_id = ? AND user_id = ?", tenantID, userID).
 		Update("role", newRole).Error; err != nil {
 		return fmt.Errorf("update role: %w", err)
+	}
+	return nil
+}
+
+// SetTenantUserActive updates a tenant membership active flag.
+func (r *GORMRepository) SetTenantUserActive(ctx context.Context, tenantID, userID string, active bool) error {
+	result := r.db.WithContext(ctx).Model(&models.TenantUserModel{}).
+		Where("tenant_id = ? AND user_id = ?", tenantID, userID).
+		Update("is_active", active)
+	if result.Error != nil {
+		return fmt.Errorf("update tenant user status: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrUserNotInTenant
 	}
 	return nil
 }
@@ -469,9 +506,9 @@ func (r *GORMRepository) AcceptInvitation(ctx context.Context, inv *UserInvitati
 
 		// Add user to tenant using raw SQL for ON CONFLICT
 		err := tx.Exec(`
-			INSERT INTO tenant_users (tenant_id, user_id, role, is_default, invited_by, invited_at, created_at)
-			VALUES (?, ?, ?, false, ?, NOW(), NOW())
-			ON CONFLICT (tenant_id, user_id) DO UPDATE SET role = EXCLUDED.role
+			INSERT INTO tenant_users (tenant_id, user_id, role, is_default, is_active, invited_by, invited_at, created_at)
+			VALUES (?, ?, ?, false, true, ?, NOW(), NOW())
+			ON CONFLICT (tenant_id, user_id) DO UPDATE SET role = EXCLUDED.role, is_active = true
 		`, inv.TenantID, userID, inv.Role, inv.InvitedBy).Error
 		if err != nil {
 			return fmt.Errorf("add user to tenant: %w", err)

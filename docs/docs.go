@@ -15639,6 +15639,116 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/users/{userID}/status": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Suspend or restore a tenant user's membership. Suspended users cannot log in or refresh tokens for the tenant. Suspending revokes active refresh sessions.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Update tenant user status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "User ID",
+                        "name": "userID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Membership status",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "is_active": {
+                                    "type": "boolean"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "is_active": {
+                                    "type": "boolean"
+                                },
+                                "status": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/warehouses/import": {
             "post": {
                 "security": [
@@ -19356,8 +19466,19 @@ const docTemplate = `{
                 "expenses",
                 "invoices",
                 "payments",
+                "bank_transactions",
                 "payroll_history",
                 "leave_balances",
+                "kmd_history",
+                "quotes",
+                "orders",
+                "recurring_invoices",
+                "cost_centers",
+                "product_categories",
+                "warehouses",
+                "products",
+                "stock_adjustments",
+                "fixed_assets",
                 "opening_balances",
                 "journal_entries"
             ],
@@ -19368,8 +19489,19 @@ const docTemplate = `{
                 "KindExpenses",
                 "KindInvoices",
                 "KindPayments",
+                "KindBankTransactions",
                 "KindPayrollHistory",
                 "KindLeaveBalances",
+                "KindKMDHistory",
+                "KindQuotes",
+                "KindOrders",
+                "KindRecurringInvoices",
+                "KindCostCenters",
+                "KindProductCategories",
+                "KindWarehouses",
+                "KindProducts",
+                "KindStockAdjustments",
+                "KindFixedAssets",
                 "KindOpeningBalances",
                 "KindJournalEntries"
             ]
@@ -25093,6 +25225,9 @@ const docTemplate = `{
             "properties": {
                 "created_at": {
                     "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
                 },
                 "is_default": {
                     "type": "boolean"

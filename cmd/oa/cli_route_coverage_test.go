@@ -1142,6 +1142,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 		return commandForMethod(method, map[string]string{"DELETE": "users remove"})
 	case "/users/{userID}/role":
 		return commandForMethod(method, map[string]string{"PUT": "users update-role"})
+	case "/users/{userID}/status":
+		return commandForMethod(method, map[string]string{"PUT": "users set-status"})
 	case "/users/{userID}/sessions":
 		return commandForMethod(method, map[string]string{
 			"GET":    "users sessions",

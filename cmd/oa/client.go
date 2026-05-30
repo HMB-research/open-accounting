@@ -360,6 +360,10 @@ func (c *apiClient) updateTenantUserRole(ctx context.Context, tenantID, userID, 
 	return c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "users", userID, "role"), map[string]string{"role": role}, c.apiToken, nil)
 }
 
+func (c *apiClient) updateTenantUserStatus(ctx context.Context, tenantID, userID string, active bool) error {
+	return c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "users", userID, "status"), map[string]bool{"is_active": active}, c.apiToken, nil)
+}
+
 func (c *apiClient) listTenantUserAuthSessions(ctx context.Context, tenantID, userID string, includeInactive bool) ([]refreshSession, error) {
 	values := url.Values{}
 	if includeInactive {
