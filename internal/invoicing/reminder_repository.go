@@ -5,264 +5,251 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
+	"github.com/HMB-research/open-accounting/internal/models"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 )
 
-// ReminderPostgresRepository implements ReminderRepository for PostgreSQL
-type ReminderPostgresRepository struct {
-	db *pgxpool.Pool
+// ReminderGORMRepository implements ReminderRepository with the shared ORM layer.
+type ReminderGORMRepository struct {
+	db *gorm.DB
 }
 
-// NewReminderPostgresRepository creates a new PostgreSQL reminder repository
-func NewReminderPostgresRepository(db *pgxpool.Pool) *ReminderPostgresRepository {
-	return &ReminderPostgresRepository{db: db}
+func NewReminderRepository(db *pgxpool.Pool) *ReminderGORMRepository {
+	if db == nil {
+		return &ReminderGORMRepository{}
+	}
+	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	if err != nil {
+		panic(fmt.Errorf("create reminder GORM repository: %w", err))
+	}
+	return NewReminderGORMRepository(gormDB)
 }
 
-// GetOverdueInvoices retrieves all overdue sales invoices
-func (r *ReminderPostgresRepository) GetOverdueInvoices(ctx context.Context, schemaName, tenantID string, asOfDate time.Time) ([]OverdueInvoice, error) {
-	query := fmt.Sprintf(`
-		SELECT
+func NewReminderGORMRepository(db *gorm.DB) *ReminderGORMRepository {
+	return &ReminderGORMRepository{db: db}
+}
+
+func (r *ReminderGORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
+	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+}
+
+// GetOverdueInvoices retrieves all overdue sales invoices.
+func (r *ReminderGORMRepository) GetOverdueInvoices(ctx context.Context, schemaName, tenantID string, asOfDate time.Time) ([]OverdueInvoice, error) {
+	invoicesTable, err := database.QualifiedTable(schemaName, "invoices")
+	if err != nil {
+		return nil, fmt.Errorf("qualify invoices table: %w", err)
+	}
+	contactsTable, err := database.QualifiedTable(schemaName, "contacts")
+	if err != nil {
+		return nil, fmt.Errorf("qualify contacts table: %w", err)
+	}
+
+	var rows []struct {
+		ID                string
+		InvoiceNumber     string
+		ContactID         string
+		ContactName       string
+		ContactEmail      string
+		IssueDate         time.Time
+		DueDate           time.Time
+		Total             decimal.Decimal
+		AmountPaid        decimal.Decimal
+		OutstandingAmount decimal.Decimal
+		Currency          string
+		DaysOverdue       int
+	}
+	if err := r.db.WithContext(ctx).
+		Table(invoicesTable+" AS i").
+		Select(`
 			i.id,
 			i.invoice_number,
 			i.contact_id,
-			c.name as contact_name,
-			COALESCE(c.email, '') as contact_email,
+			c.name AS contact_name,
+			COALESCE(c.email, '') AS contact_email,
 			i.issue_date,
 			i.due_date,
 			i.total,
 			i.amount_paid,
-			(i.total - i.amount_paid) as outstanding_amount,
+			(i.total - i.amount_paid) AS outstanding_amount,
 			i.currency,
-			GREATEST(0, ($2::date - i.due_date)::int) as days_overdue
-		FROM %s.invoices i
-		JOIN %s.contacts c ON i.contact_id = c.id
-		WHERE i.tenant_id = $1
-			AND i.invoice_type = 'SALES'
-			AND i.status NOT IN ('PAID', 'VOIDED')
-			AND i.due_date < $2
-			AND (i.total - i.amount_paid) > 0
-		ORDER BY days_overdue DESC, i.total DESC
-	`, schemaName, schemaName)
-
-	rows, err := r.db.Query(ctx, query, tenantID, asOfDate)
-	if err != nil {
+			GREATEST(0, (?::date - i.due_date)::int) AS days_overdue
+		`, asOfDate).
+		Joins("JOIN "+contactsTable+" AS c ON i.contact_id = c.id").
+		Where("i.tenant_id = ?", tenantID).
+		Where("i.invoice_type = ?", "SALES").
+		Where("i.status NOT IN ?", []string{"PAID", "VOIDED"}).
+		Where("i.due_date < ?", asOfDate).
+		Where("(i.total - i.amount_paid) > ?", 0).
+		Order("days_overdue DESC, i.total DESC").
+		Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("query overdue invoices: %w", err)
 	}
-	defer rows.Close()
 
-	invoices := []OverdueInvoice{}
-	for rows.Next() {
-		var inv OverdueInvoice
-		var issueDate, dueDate time.Time
-
-		if err := rows.Scan(
-			&inv.ID,
-			&inv.InvoiceNumber,
-			&inv.ContactID,
-			&inv.ContactName,
-			&inv.ContactEmail,
-			&issueDate,
-			&dueDate,
-			&inv.Total,
-			&inv.AmountPaid,
-			&inv.OutstandingAmount,
-			&inv.Currency,
-			&inv.DaysOverdue,
-		); err != nil {
-			return nil, fmt.Errorf("scan row: %w", err)
-		}
-
-		inv.IssueDate = issueDate.Format("2006-01-02")
-		inv.DueDate = dueDate.Format("2006-01-02")
-		invoices = append(invoices, inv)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate rows: %w", err)
+	invoices := make([]OverdueInvoice, 0, len(rows))
+	for _, row := range rows {
+		invoices = append(invoices, OverdueInvoice{
+			ID:                row.ID,
+			InvoiceNumber:     row.InvoiceNumber,
+			ContactID:         row.ContactID,
+			ContactName:       row.ContactName,
+			ContactEmail:      row.ContactEmail,
+			IssueDate:         row.IssueDate.Format("2006-01-02"),
+			DueDate:           row.DueDate.Format("2006-01-02"),
+			Total:             row.Total,
+			AmountPaid:        row.AmountPaid,
+			OutstandingAmount: row.OutstandingAmount,
+			Currency:          row.Currency,
+			DaysOverdue:       row.DaysOverdue,
+		})
 	}
 
 	return invoices, nil
 }
 
-// GetReminderCount gets the number of reminders sent for an invoice
-func (r *ReminderPostgresRepository) GetReminderCount(ctx context.Context, schemaName, tenantID, invoiceID string) (int, *time.Time, error) {
-	// Ensure table exists before querying
-	if err := r.ensureReminderTable(ctx, schemaName); err != nil {
-		return 0, nil, err
+// GetReminderCount gets the number of reminders sent for an invoice.
+func (r *ReminderGORMRepository) GetReminderCount(ctx context.Context, schemaName, tenantID, invoiceID string) (int, *time.Time, error) {
+	db, err := r.tenantTable(ctx, schemaName, "payment_reminders")
+	if err != nil {
+		return 0, nil, fmt.Errorf("qualify payment reminders table: %w", err)
 	}
 
-	query := fmt.Sprintf(`
-		SELECT COUNT(*), MAX(sent_at)
-		FROM %s.payment_reminders
-		WHERE tenant_id = $1 AND invoice_id = $2 AND status = 'SENT'
-	`, schemaName)
-
-	var count int
-	var lastSentAt *time.Time
-
-	err := r.db.QueryRow(ctx, query, tenantID, invoiceID).Scan(&count, &lastSentAt)
-	if err != nil {
+	var row struct {
+		Count      int
+		LastSentAt *time.Time
+	}
+	if err := db.
+		Select("COUNT(*)::int AS count, MAX(sent_at) AS last_sent_at").
+		Where("tenant_id = ? AND invoice_id = ? AND status = ?", tenantID, invoiceID, ReminderStatusSent).
+		Scan(&row).Error; err != nil {
 		return 0, nil, fmt.Errorf("query reminder count: %w", err)
 	}
 
-	return count, lastSentAt, nil
+	return row.Count, row.LastSentAt, nil
 }
 
-// CreateReminder creates a new payment reminder record
-func (r *ReminderPostgresRepository) CreateReminder(ctx context.Context, schemaName string, reminder *PaymentReminder) error {
-	// Ensure table exists
-	if err := r.ensureReminderTable(ctx, schemaName); err != nil {
-		return err
+// CreateReminder creates a new payment reminder record.
+func (r *ReminderGORMRepository) CreateReminder(ctx context.Context, schemaName string, reminder *PaymentReminder) error {
+	db, err := r.tenantTable(ctx, schemaName, "payment_reminders")
+	if err != nil {
+		return fmt.Errorf("qualify payment reminders table: %w", err)
 	}
 
-	query := fmt.Sprintf(`
-		INSERT INTO %s.payment_reminders (
-			id, tenant_id, invoice_id, invoice_number, contact_id, contact_name,
-			contact_email, rule_id, trigger_type, days_offset, reminder_number,
-			status, sent_at, error_message, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-	`, schemaName)
-
-	_, err := r.db.Exec(ctx, query,
-		reminder.ID,
-		reminder.TenantID,
-		reminder.InvoiceID,
-		reminder.InvoiceNumber,
-		reminder.ContactID,
-		reminder.ContactName,
-		reminder.ContactEmail,
-		reminder.RuleID,
-		reminder.TriggerType,
-		reminder.DaysOffset,
-		reminder.ReminderNumber,
-		reminder.Status,
-		reminder.SentAt,
-		reminder.ErrorMessage,
-		reminder.CreatedAt,
-		reminder.UpdatedAt,
-	)
-
-	if err != nil {
+	if err := db.Create(paymentReminderToModel(reminder)).Error; err != nil {
 		return fmt.Errorf("insert reminder: %w", err)
 	}
-
 	return nil
 }
 
-// UpdateReminderStatus updates the status of a reminder
-func (r *ReminderPostgresRepository) UpdateReminderStatus(ctx context.Context, schemaName, reminderID string, status ReminderStatus, sentAt *time.Time, errorMsg string) error {
-	query := fmt.Sprintf(`
-		UPDATE %s.payment_reminders
-		SET status = $1, sent_at = $2, error_message = $3, updated_at = $4
-		WHERE id = $5
-	`, schemaName)
-
-	_, err := r.db.Exec(ctx, query, status, sentAt, errorMsg, time.Now(), reminderID)
+// UpdateReminderStatus updates the status of a reminder.
+func (r *ReminderGORMRepository) UpdateReminderStatus(ctx context.Context, schemaName, reminderID string, status ReminderStatus, sentAt *time.Time, errorMsg string) error {
+	db, err := r.tenantTable(ctx, schemaName, "payment_reminders")
 	if err != nil {
+		return fmt.Errorf("qualify payment reminders table: %w", err)
+	}
+
+	if err := db.Model(&models.PaymentReminder{}).
+		Where("id = ?", reminderID).
+		Updates(map[string]interface{}{
+			"status":        string(status),
+			"sent_at":       sentAt,
+			"error_message": nilIfEmpty(errorMsg),
+			"updated_at":    time.Now(),
+		}).Error; err != nil {
 		return fmt.Errorf("update reminder status: %w", err)
 	}
 
 	return nil
 }
 
-// GetRemindersByInvoice gets all reminders for an invoice
-func (r *ReminderPostgresRepository) GetRemindersByInvoice(ctx context.Context, schemaName, tenantID, invoiceID string) ([]PaymentReminder, error) {
-	// Ensure table exists
-	if err := r.ensureReminderTable(ctx, schemaName); err != nil {
-		return nil, err
+// GetRemindersByInvoice gets all reminders for an invoice.
+func (r *ReminderGORMRepository) GetRemindersByInvoice(ctx context.Context, schemaName, tenantID, invoiceID string) ([]PaymentReminder, error) {
+	db, err := r.tenantTable(ctx, schemaName, "payment_reminders")
+	if err != nil {
+		return nil, fmt.Errorf("qualify payment reminders table: %w", err)
 	}
 
-	query := fmt.Sprintf(`
-		SELECT id, tenant_id, invoice_id, invoice_number, contact_id, contact_name,
-			   contact_email, reminder_number, status, sent_at, error_message,
-			   created_at, updated_at
-		FROM %s.payment_reminders
-		WHERE tenant_id = $1 AND invoice_id = $2
-		ORDER BY created_at DESC
-	`, schemaName)
-
-	rows, err := r.db.Query(ctx, query, tenantID, invoiceID)
-	if err != nil {
+	var reminderModels []models.PaymentReminder
+	if err := db.
+		Where("tenant_id = ? AND invoice_id = ?", tenantID, invoiceID).
+		Order("created_at DESC").
+		Find(&reminderModels).Error; err != nil {
 		return nil, fmt.Errorf("query reminders: %w", err)
 	}
-	defer rows.Close()
 
-	reminders := []PaymentReminder{}
-	for rows.Next() {
-		var rem PaymentReminder
-		if err := rows.Scan(
-			&rem.ID,
-			&rem.TenantID,
-			&rem.InvoiceID,
-			&rem.InvoiceNumber,
-			&rem.ContactID,
-			&rem.ContactName,
-			&rem.ContactEmail,
-			&rem.ReminderNumber,
-			&rem.Status,
-			&rem.SentAt,
-			&rem.ErrorMessage,
-			&rem.CreatedAt,
-			&rem.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan row: %w", err)
-		}
-		reminders = append(reminders, rem)
+	reminders := make([]PaymentReminder, len(reminderModels))
+	for i := range reminderModels {
+		reminders[i] = *paymentReminderFromModel(&reminderModels[i])
 	}
-
 	return reminders, nil
 }
 
-// ensureReminderTable creates the payment_reminders table if it doesn't exist
-func (r *ReminderPostgresRepository) ensureReminderTable(ctx context.Context, schemaName string) error {
-	// Note: tenant_id references public.tenants because the tenants table is in
-	// the public schema, not in tenant-specific schemas
-	query := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS %s.payment_reminders (
-			id UUID PRIMARY KEY,
-			tenant_id UUID NOT NULL REFERENCES public.tenants(id),
-			invoice_id UUID NOT NULL,
-			invoice_number VARCHAR(50) NOT NULL,
-			contact_id UUID NOT NULL,
-			contact_name VARCHAR(255) NOT NULL,
-			contact_email VARCHAR(255),
-			rule_id UUID,
-			trigger_type VARCHAR(20) NOT NULL DEFAULT 'AFTER_DUE',
-			days_offset INTEGER NOT NULL DEFAULT 0,
-			reminder_number INTEGER NOT NULL DEFAULT 1,
-			status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
-			sent_at TIMESTAMP WITH TIME ZONE,
-			error_message TEXT,
-			created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-		);
-
-		ALTER TABLE %s.payment_reminders
-			ADD COLUMN IF NOT EXISTS rule_id UUID;
-		ALTER TABLE %s.payment_reminders
-			ADD COLUMN IF NOT EXISTS trigger_type VARCHAR(20) NOT NULL DEFAULT 'AFTER_DUE';
-		ALTER TABLE %s.payment_reminders
-			ADD COLUMN IF NOT EXISTS days_offset INTEGER NOT NULL DEFAULT 0;
-
-		CREATE INDEX IF NOT EXISTS idx_payment_reminders_tenant_id
-			ON %s.payment_reminders(tenant_id);
-		CREATE INDEX IF NOT EXISTS idx_payment_reminders_invoice_id
-			ON %s.payment_reminders(invoice_id);
-	`, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName)
-
-	_, err := r.db.Exec(ctx, query)
-	return err
+func paymentReminderToModel(reminder *PaymentReminder) *models.PaymentReminder {
+	return &models.PaymentReminder{
+		ID:             reminder.ID,
+		TenantID:       reminder.TenantID,
+		InvoiceID:      reminder.InvoiceID,
+		InvoiceNumber:  reminder.InvoiceNumber,
+		ContactID:      reminder.ContactID,
+		ContactName:    reminder.ContactName,
+		ContactEmail:   nilIfEmpty(reminder.ContactEmail),
+		RuleID:         reminder.RuleID,
+		TriggerType:    reminder.TriggerType,
+		DaysOffset:     reminder.DaysOffset,
+		ReminderNumber: reminder.ReminderNumber,
+		Status:         string(reminder.Status),
+		SentAt:         reminder.SentAt,
+		ErrorMessage:   nilIfEmpty(reminder.ErrorMessage),
+		CreatedAt:      reminder.CreatedAt,
+		UpdatedAt:      reminder.UpdatedAt,
+	}
 }
 
-// MockReminderRepository for testing
+func paymentReminderFromModel(reminder *models.PaymentReminder) *PaymentReminder {
+	return &PaymentReminder{
+		ID:             reminder.ID,
+		TenantID:       reminder.TenantID,
+		InvoiceID:      reminder.InvoiceID,
+		InvoiceNumber:  reminder.InvoiceNumber,
+		ContactID:      reminder.ContactID,
+		ContactName:    reminder.ContactName,
+		ContactEmail:   valueOrEmpty(reminder.ContactEmail),
+		RuleID:         reminder.RuleID,
+		TriggerType:    reminder.TriggerType,
+		DaysOffset:     reminder.DaysOffset,
+		ReminderNumber: reminder.ReminderNumber,
+		Status:         ReminderStatus(reminder.Status),
+		SentAt:         reminder.SentAt,
+		ErrorMessage:   valueOrEmpty(reminder.ErrorMessage),
+		CreatedAt:      reminder.CreatedAt,
+		UpdatedAt:      reminder.UpdatedAt,
+	}
+}
+
+func nilIfEmpty(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func valueOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+// MockReminderRepository for testing.
 type MockReminderRepository struct {
 	OverdueInvoices []OverdueInvoice
 	Reminders       map[string][]PaymentReminder
 	GetOverdueErr   error
 }
 
-// NewMockReminderRepository creates a new mock reminder repository
+// NewMockReminderRepository creates a new mock reminder repository.
 func NewMockReminderRepository() *MockReminderRepository {
 	return &MockReminderRepository{
 		OverdueInvoices: make([]OverdueInvoice, 0),
@@ -270,7 +257,7 @@ func NewMockReminderRepository() *MockReminderRepository {
 	}
 }
 
-// GetOverdueInvoices returns mock overdue invoices
+// GetOverdueInvoices returns mock overdue invoices.
 func (m *MockReminderRepository) GetOverdueInvoices(ctx context.Context, schemaName, tenantID string, asOfDate time.Time) ([]OverdueInvoice, error) {
 	if m.GetOverdueErr != nil {
 		return nil, m.GetOverdueErr
@@ -278,7 +265,7 @@ func (m *MockReminderRepository) GetOverdueInvoices(ctx context.Context, schemaN
 	return m.OverdueInvoices, nil
 }
 
-// GetReminderCount returns mock reminder count
+// GetReminderCount returns mock reminder count.
 func (m *MockReminderRepository) GetReminderCount(ctx context.Context, schemaName, tenantID, invoiceID string) (int, *time.Time, error) {
 	reminders := m.Reminders[invoiceID]
 	count := 0
@@ -294,13 +281,13 @@ func (m *MockReminderRepository) GetReminderCount(ctx context.Context, schemaNam
 	return count, lastSent, nil
 }
 
-// CreateReminder creates a mock reminder
+// CreateReminder creates a mock reminder.
 func (m *MockReminderRepository) CreateReminder(ctx context.Context, schemaName string, reminder *PaymentReminder) error {
 	m.Reminders[reminder.InvoiceID] = append(m.Reminders[reminder.InvoiceID], *reminder)
 	return nil
 }
 
-// UpdateReminderStatus updates mock reminder status
+// UpdateReminderStatus updates mock reminder status.
 func (m *MockReminderRepository) UpdateReminderStatus(ctx context.Context, schemaName, reminderID string, status ReminderStatus, sentAt *time.Time, errorMsg string) error {
 	for invoiceID, reminders := range m.Reminders {
 		for i, r := range reminders {
@@ -315,12 +302,12 @@ func (m *MockReminderRepository) UpdateReminderStatus(ctx context.Context, schem
 	return nil
 }
 
-// GetRemindersByInvoice returns mock reminders for an invoice
+// GetRemindersByInvoice returns mock reminders for an invoice.
 func (m *MockReminderRepository) GetRemindersByInvoice(ctx context.Context, schemaName, tenantID, invoiceID string) ([]PaymentReminder, error) {
 	return m.Reminders[invoiceID], nil
 }
 
-// AddMockOverdueInvoice adds a mock overdue invoice for testing
+// AddMockOverdueInvoice adds a mock overdue invoice for testing.
 func (m *MockReminderRepository) AddMockOverdueInvoice(id, invoiceNumber, contactID, contactName, contactEmail, currency string, total, amountPaid decimal.Decimal, daysOverdue int) {
 	m.OverdueInvoices = append(m.OverdueInvoices, OverdueInvoice{
 		ID:                id,

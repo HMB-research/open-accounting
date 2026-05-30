@@ -41,7 +41,7 @@ type ReminderService struct {
 func NewReminderService(db *pgxpool.Pool, emailService *email.Service) *ReminderService {
 	return &ReminderService{
 		db:           db,
-		repo:         NewReminderPostgresRepository(db),
+		repo:         NewReminderRepository(db),
 		emailService: emailService,
 	}
 }
