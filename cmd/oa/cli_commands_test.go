@@ -1104,6 +1104,7 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 
 	contactsFile := writeTempCSV(t, "contacts.csv", "contact_code,name\nCUST-1,Customer One\n")
 	invoicesFile := writeTempCSV(t, "invoices.csv", "invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\nINV-1,CUST-404,2026-05-30,Work,1,100,22\n")
+	eInvoicesFile := writeTempCSV(t, "e-invoices.xml", "<E_Invoice><Invoice invoiceId=\"BILL-1\"><InvoiceParties><SellerParty><Name>Supplier</Name></SellerParty><BuyerParty><Name>Buyer</Name></BuyerParty></InvoiceParties><InvoiceInformation><InvoiceNumber>BILL-1</InvoiceNumber><InvoiceDate>2026-03-15</InvoiceDate></InvoiceInformation><InvoiceSumGroup><Currency>EUR</Currency></InvoiceSumGroup><InvoiceItem><InvoiceItemGroup><ItemEntry><Description>Service</Description><ItemDetailInfo><ItemAmount>1</ItemAmount><ItemPrice>100</ItemPrice></ItemDetailInfo><VAT><VATRate>22</VATRate></VAT></ItemEntry></InvoiceItemGroup></InvoiceItem><PaymentInfo><PayDueDate>2026-03-29</PayDueDate></PaymentInfo></Invoice></E_Invoice>")
 	bankAccountsFile := writeTempCSV(t, "bank-accounts.csv", "name,account_number\nMain bank,EE471000001020145685\n")
 	bankFile := writeTempCSV(t, "bank.csv", "date,amount,description\n2026-05-31,100,Customer receipt\n")
 	kmdFile := writeTempCSV(t, "kmd.csv", "year,month,row_code,tax_base,tax_amount\n2026,5,1,100,22\n")
@@ -1140,9 +1141,14 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 						assert.Contains(t, file.CSVContent, "SN-1")
 						assert.Contains(t, file.CSVContent, "2027-05-30")
 					}
+					if file.Kind == cutover.KindEInvoices {
+						assert.Empty(t, file.CSVContent)
+						assert.Contains(t, file.XMLContent, "<E_Invoice>")
+					}
 				}
 				assert.True(t, kinds[cutover.KindBankAccounts])
 				assert.True(t, kinds[cutover.KindBankTransactions])
+				assert.True(t, kinds[cutover.KindEInvoices])
 				assert.True(t, kinds[cutover.KindKMDHistory])
 				assert.True(t, kinds[cutover.KindQuotes])
 				assert.True(t, kinds[cutover.KindOrders])
@@ -1191,6 +1197,7 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 		"migration", "validate",
 		"--contacts", contactsFile,
 		"--invoices", invoicesFile,
+		"--e-invoices", eInvoicesFile,
 		"--bank-accounts", bankAccountsFile,
 		"--bank-transactions", bankFile,
 		"--kmd-history", kmdFile,

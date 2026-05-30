@@ -6,9 +6,9 @@ import (
 	"github.com/HMB-research/open-accounting/internal/cutover"
 )
 
-// ValidateMigrationBundle validates a non-mutating CSV migration bundle.
+// ValidateMigrationBundle validates a non-mutating CSV/XML migration bundle.
 // @Summary Validate migration bundle
-// @Description Validate CSV cutover files for required columns and cross-file references before running imports
+// @Description Validate CSV and XML cutover files for required columns and cross-file references before running imports
 // @Tags Migration
 // @Accept json
 // @Produce json

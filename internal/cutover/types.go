@@ -8,6 +8,7 @@ const (
 	KindEmployees         FileKind = "employees"
 	KindExpenses          FileKind = "expenses"
 	KindInvoices          FileKind = "invoices"
+	KindEInvoices         FileKind = "e_invoices"
 	KindPayments          FileKind = "payments"
 	KindBankAccounts      FileKind = "bank_accounts"
 	KindBankTransactions  FileKind = "bank_transactions"
@@ -37,7 +38,8 @@ const (
 type BundleFile struct {
 	Kind       FileKind `json:"kind"`
 	FileName   string   `json:"file_name"`
-	CSVContent string   `json:"csv_content"`
+	CSVContent string   `json:"csv_content,omitempty"`
+	XMLContent string   `json:"xml_content,omitempty"`
 }
 
 type ValidateBundleRequest struct {

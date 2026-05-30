@@ -484,14 +484,19 @@ Content-Type: application/json
       "kind": "invoices",
       "file_name": "invoices.csv",
       "csv_content": "invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\nINV-1,CUST-1,2026-05-30,Work,1,100,22\n"
+    },
+    {
+      "kind": "e_invoices",
+      "file_name": "supplier-einvoices.xml",
+      "xml_content": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><E_Invoice>...</E_Invoice>"
     }
   ]
 }
 ```
 
-Returns a non-mutating cutover report with required-column checks and cross-file reference issues for supported migration CSV files. Supported `kind` values are `accounts`, `contacts`, `employees`, `expenses`, `invoices`, `payments`, `bank_accounts`, `bank_transactions`, `payroll_history`, `leave_balances`, `kmd_history`, `quotes`, `orders`, `recurring_invoices`, `cost_centers`, `product_categories`, `warehouses`, `products`, `stock_adjustments`, `fixed_assets`, `opening_balances`, and `journal_entries`. Stock-adjustment validation recognizes optional lot metadata columns including `lot_number`, `serial_number`, and `expiry_date` plus common aliases such as `batch`, `serial`, and `expiration_date`.
+Returns a non-mutating cutover report with required-column checks and cross-file reference issues for supported migration CSV files plus Estonian e-invoice XML bundles. Supported `kind` values are `accounts`, `contacts`, `employees`, `expenses`, `invoices`, `e_invoices`, `payments`, `bank_accounts`, `bank_transactions`, `payroll_history`, `leave_balances`, `kmd_history`, `quotes`, `orders`, `recurring_invoices`, `cost_centers`, `product_categories`, `warehouses`, `products`, `stock_adjustments`, `fixed_assets`, `opening_balances`, and `journal_entries`. CSV files use `csv_content`; `e_invoices` files use `xml_content`. Stock-adjustment validation recognizes optional lot metadata columns including `lot_number`, `serial_number`, and `expiry_date` plus common aliases such as `batch`, `serial`, and `expiration_date`.
 
-When the related files are present in the same bundle, the validator also checks references such as commercial documents to contacts, payments to invoices, payroll/leave rows to employees, products to product categories, stock rows to products and warehouses, cost centers to parent cost centers, product categories to parent categories, and opening balances or journals to accounts.
+When the related files are present in the same bundle, the validator also checks references such as commercial documents and e-invoice suppliers to contacts, payments to CSV or XML invoices, payroll/leave rows to employees, products to product categories, stock rows to products and warehouses, cost centers to parent cost centers, product categories to parent categories, and opening balances or journals to accounts.
 
 ### List Recent Journal Entries
 

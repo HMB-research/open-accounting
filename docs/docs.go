@@ -9300,7 +9300,7 @@ const docTemplate = `{
         },
         "/tenants/{tenantID}/migration/validate": {
             "post": {
-                "description": "Validate CSV cutover files for required columns and cross-file references before running imports",
+                "description": "Validate CSV and XML cutover files for required columns and cross-file references before running imports",
                 "consumes": [
                     "application/json"
                 ],
@@ -20312,6 +20312,9 @@ const docTemplate = `{
                 },
                 "kind": {
                     "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileKind"
+                },
+                "xml_content": {
+                    "type": "string"
                 }
             }
         },
@@ -20363,6 +20366,7 @@ const docTemplate = `{
                 "employees",
                 "expenses",
                 "invoices",
+                "e_invoices",
                 "payments",
                 "bank_accounts",
                 "bank_transactions",
@@ -20387,6 +20391,7 @@ const docTemplate = `{
                 "KindEmployees",
                 "KindExpenses",
                 "KindInvoices",
+                "KindEInvoices",
                 "KindPayments",
                 "KindBankAccounts",
                 "KindBankTransactions",

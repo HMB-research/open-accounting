@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"github.com/HMB-research/open-accounting/internal/invoicing/mappers/einvoice"
 )
 
 type fileSpec struct {
@@ -51,19 +53,22 @@ var fileSpecs = map[FileKind]fileSpec{
 	},
 	KindContacts: {
 		aliases: mergeAliases(commonAliases(), map[string]string{
-			"contact_name":      "name",
-			"company":           "name",
-			"company_name":      "name",
-			"contact_code":      "code",
-			"customer_code":     "code",
-			"supplier_code":     "code",
-			"contact_type":      "contact_type",
-			"type":              "contact_type",
-			"reg_code":          "reg_code",
-			"registration_code": "reg_code",
-			"registry_code":     "reg_code",
-			"contact_email":     "email",
-			"e_mail":            "email",
+			"contact_name":       "name",
+			"company":            "name",
+			"company_name":       "name",
+			"contact_code":       "code",
+			"customer_code":      "code",
+			"supplier_code":      "code",
+			"contact_type":       "contact_type",
+			"type":               "contact_type",
+			"reg_code":           "reg_code",
+			"registration_code":  "reg_code",
+			"registry_code":      "reg_code",
+			"vat_number":         "vat_number",
+			"vat_reg_number":     "vat_number",
+			"contact_vat_number": "vat_number",
+			"contact_email":      "email",
+			"e_mail":             "email",
 		}),
 		requiredGroups: [][]string{{"name"}},
 	},
@@ -120,7 +125,8 @@ var fileSpecs = map[FileKind]fileSpec{
 			"customer_code":      "contact_code",
 			"supplier_code":      "contact_code",
 			"contact_reg_code":   "contact_reg_code",
-			"contact_vat_number": "contact_reg_code",
+			"contact_vat_number": "contact_vat_number",
+			"vat_number":         "contact_vat_number",
 			"contact_email":      "contact_email",
 			"email":              "contact_email",
 			"contact_name":       "contact_name",
@@ -137,7 +143,7 @@ var fileSpecs = map[FileKind]fileSpec{
 		requiredGroups: [][]string{
 			{"invoice_number"},
 			{"issue_date"},
-			{"contact_code", "contact_reg_code", "contact_email", "contact_name"},
+			{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"},
 			{"line_description"},
 			{"quantity"},
 			{"unit_price"},
@@ -510,8 +516,7 @@ func ValidateBundle(req *ValidateBundleRequest) (*BundleValidationReport, error)
 	report := &BundleValidationReport{}
 	parsed := make([]parsedFile, 0, len(req.Files))
 	for _, file := range req.Files {
-		spec, ok := fileSpecs[file.Kind]
-		if !ok {
+		if !isSupportedBundleKind(file.Kind) {
 			report.addIssue(ValidationIssue{
 				Severity: SeverityError,
 				Kind:     file.Kind,
@@ -521,7 +526,7 @@ func ValidateBundle(req *ValidateBundleRequest) (*BundleValidationReport, error)
 			continue
 		}
 
-		parsedFile, validation, err := parseBundleFile(file, spec)
+		parsedFile, validation, err := parseBundleFileByKind(file)
 		report.Files = append(report.Files, validation)
 		if err != nil {
 			report.addIssue(ValidationIssue{
@@ -563,6 +568,22 @@ func ValidateBundle(req *ValidateBundleRequest) (*BundleValidationReport, error)
 
 	report.Summary.Ready = report.Summary.ErrorCount == 0
 	return report, nil
+}
+
+func parseBundleFileByKind(file BundleFile) (parsedFile, FileValidation, error) {
+	if file.Kind == KindEInvoices {
+		return parseEInvoiceBundleFile(file)
+	}
+
+	return parseBundleFile(file, fileSpecs[file.Kind])
+}
+
+func isSupportedBundleKind(kind FileKind) bool {
+	if kind == KindEInvoices {
+		return true
+	}
+	_, ok := fileSpecs[kind]
+	return ok
 }
 
 func parseBundleFile(file BundleFile, spec fileSpec) (parsedFile, FileValidation, error) {
@@ -639,6 +660,42 @@ func parseBundleFile(file BundleFile, spec fileSpec) (parsedFile, FileValidation
 	return parsedFile{kind: file.Kind, fileName: fileName, headers: validation.Headers, rows: rows}, validation, nil
 }
 
+func parseEInvoiceBundleFile(file BundleFile) (parsedFile, FileValidation, error) {
+	fileName := displayFileName(file)
+	validation := FileValidation{
+		Kind:     file.Kind,
+		FileName: fileName,
+		Headers:  []string{"invoice_number", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"},
+	}
+
+	invoices, err := einvoice.Parse(file.XMLContent)
+	if err != nil {
+		return parsedFile{}, validation, err
+	}
+
+	rows := make([]parsedRow, 0, len(invoices))
+	for index, invoice := range invoices {
+		rows = append(rows, parsedRow{
+			number: index + 1,
+			values: map[string]string{
+				"invoice_id":          invoice.ID,
+				"invoice_number":      invoice.Number,
+				"contact_reg_code":    invoice.Seller.RegNumber,
+				"contact_vat_number":  invoice.Seller.VATRegNumber,
+				"contact_email":       invoice.Seller.Email,
+				"contact_name":        invoice.Seller.Name,
+				"buyer_reg_code":      invoice.Buyer.RegNumber,
+				"buyer_vat_number":    invoice.Buyer.VATRegNumber,
+				"buyer_contact_email": invoice.Buyer.Email,
+				"buyer_contact_name":  invoice.Buyer.Name,
+			},
+		})
+	}
+
+	validation.Rows = len(rows)
+	return parsedFile{kind: file.Kind, fileName: fileName, headers: validation.Headers, rows: rows}, validation, nil
+}
+
 func buildIndexes(files []parsedFile) bundleIndexes {
 	indexes := bundleIndexes{
 		files:             map[FileKind]bool{},
@@ -660,11 +717,12 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 			case KindContacts:
 				addIndexValue(indexes.contacts, row.values["code"])
 				addIndexValue(indexes.contacts, row.values["reg_code"])
+				addIndexValue(indexes.contacts, row.values["vat_number"])
 				addIndexValue(indexes.contacts, row.values["email"])
 				addIndexValue(indexes.contacts, row.values["name"])
 			case KindEmployees:
 				addEmployeeIndexValues(indexes.employees, row.values)
-			case KindInvoices:
+			case KindInvoices, KindEInvoices:
 				addIndexValue(indexes.invoices, row.values["invoice_number"])
 				addIndexValue(indexes.invoices, row.values["invoice_id"])
 				addIndexValue(indexes.invoices, row.values["id"])
@@ -691,14 +749,14 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 func validateReferences(report *BundleValidationReport, indexes bundleIndexes, file parsedFile) {
 	for _, row := range file.rows {
 		switch file.kind {
-		case KindInvoices:
+		case KindInvoices, KindEInvoices:
 			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
-				[]string{"contact_code", "contact_reg_code", "contact_email", "contact_name"})
+				[]string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"})
 		case KindQuotes, KindOrders, KindRecurringInvoices:
 			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
-				[]string{"contact_code", "contact_reg_code", "contact_email", "contact_name"})
+				[]string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"})
 		case KindPayments:
-			checkTargetReference(report, indexes.files[KindInvoices], indexes.invoices, file, row, KindInvoices,
+			checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
 				[]string{"invoice_number"})
 		case KindPayrollHistory, KindLeaveBalances:
 			checkEmployeeReference(report, indexes, file, row)
@@ -844,6 +902,9 @@ func displayFileName(file BundleFile) string {
 	if strings.TrimSpace(file.FileName) != "" {
 		return strings.TrimSpace(file.FileName)
 	}
+	if file.Kind == KindEInvoices {
+		return string(file.Kind) + ".xml"
+	}
 	return string(file.Kind) + ".csv"
 }
 
@@ -918,8 +979,8 @@ func commercialDocumentAliases() map[string]string {
 		"contact_code":       "contact_code",
 		"customer_code":      "contact_code",
 		"contact_reg_code":   "contact_reg_code",
-		"contact_vat_number": "contact_reg_code",
-		"vat_number":         "contact_reg_code",
+		"contact_vat_number": "contact_vat_number",
+		"vat_number":         "contact_vat_number",
 		"contact_email":      "contact_email",
 		"email":              "contact_email",
 		"contact_name":       "contact_name",
@@ -950,7 +1011,7 @@ func commercialDocumentRequiredGroups(numberColumn, dateColumn string) [][]strin
 	return [][]string{
 		{numberColumn},
 		{dateColumn},
-		{"contact_id", "contact_code", "contact_reg_code", "contact_email", "contact_name"},
+		{"contact_id", "contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"},
 		{"line_description"},
 		{"quantity"},
 		{"unit_price"},
