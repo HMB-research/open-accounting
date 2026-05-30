@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
@@ -19,11 +20,18 @@ type Service struct {
 	accounting *accounting.Service
 }
 
-// NewService creates a new invoicing service with a PostgreSQL repository
+// NewService creates a new invoicing service with an ORM-backed repository.
 func NewService(db *pgxpool.Pool, accountingService *accounting.Service) *Service {
+	if db == nil {
+		return &Service{accounting: accountingService}
+	}
+	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	if err != nil {
+		panic(fmt.Errorf("create invoicing GORM repository: %w", err))
+	}
 	return &Service{
 		db:         db,
-		repo:       NewPostgresRepository(db),
+		repo:       NewGORMRepository(gormDB),
 		accounting: accountingService,
 	}
 }

@@ -286,6 +286,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  invoices send             Mark an invoice sent")
 	_, _ = fmt.Fprintln(a.stdout, "  invoices void             Void an invoice")
 	_, _ = fmt.Fprintln(a.stdout, "  invoices import           Import invoices from CSV")
+	_, _ = fmt.Fprintln(a.stdout, "  invoices import-einvoice  Import Estonian e-invoice XML")
 	_, _ = fmt.Fprintln(a.stdout, "  expenses import           Import expenses from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  payments list             List payments")
 	_, _ = fmt.Fprintln(a.stdout, "  payments create           Create a payment")
@@ -3107,6 +3108,41 @@ func (a *cliApp) runInvoices(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, result)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Processed %d rows, created %d invoices, imported %d lines, skipped %d rows\n", result.RowsProcessed, result.InvoicesCreated, result.LinesImported, result.RowsSkipped)
+		return nil
+
+	case "import-einvoice":
+		fs := flag.NewFlagSet("invoices import-einvoice", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		filePath := fs.String("file", "", "Estonian e-invoice XML file path")
+		invoiceTypeFlag := fs.String("invoice-type", "", "Override invoice type: SALES, PURCHASE, or CREDIT_NOTE")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*filePath) == "" {
+			return errors.New("file is required")
+		}
+		invoiceType, err := parseOptionalInvoiceType(*invoiceTypeFlag)
+		if err != nil {
+			return err
+		}
+
+		data, fileName, err := readFileInput(*filePath, "stdin.xml")
+		if err != nil {
+			return err
+		}
+		result, err := client.importEInvoice(ctx, cfg.TenantID, &invoicing.ImportEInvoiceRequest{
+			FileName:    fileName,
+			XMLContent:  string(data),
+			InvoiceType: invoiceType,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Processed %d e-invoices, created %d invoices, imported %d lines, skipped %d e-invoices\n", result.RowsProcessed, result.InvoicesCreated, result.LinesImported, result.RowsSkipped)
 		return nil
 
 	default:

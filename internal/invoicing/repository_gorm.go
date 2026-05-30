@@ -1,5 +1,3 @@
-//go:build gorm
-
 package invoicing
 
 import (
@@ -36,6 +34,10 @@ func (r *GORMRepository) Create(ctx context.Context, schemaName string, invoice 
 	}
 
 	return invoicesDB.Transaction(func(tx *gorm.DB) error {
+		invoicesTx, err := database.TenantTable(tx, schemaName, "invoices")
+		if err != nil {
+			return err
+		}
 		linesDB, err := database.TenantTable(tx, schemaName, "invoice_lines")
 		if err != nil {
 			return err
@@ -43,7 +45,7 @@ func (r *GORMRepository) Create(ctx context.Context, schemaName string, invoice 
 
 		// Insert invoice
 		invModel := invoiceToModel(invoice)
-		if err := tx.Create(invModel).Error; err != nil {
+		if err := invoicesTx.Create(invModel).Error; err != nil {
 			return fmt.Errorf("insert invoice: %w", err)
 		}
 
@@ -196,9 +198,10 @@ func (r *GORMRepository) GenerateNumber(ctx context.Context, schemaName, tenantI
 	}
 
 	prefix := "INV"
-	if invoiceType == InvoiceTypePurchase {
+	switch invoiceType {
+	case InvoiceTypePurchase:
 		prefix = "BILL"
-	} else if invoiceType == InvoiceTypeCreditNote {
+	case InvoiceTypeCreditNote:
 		prefix = "CN"
 	}
 

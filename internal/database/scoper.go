@@ -1,5 +1,3 @@
-//go:build gorm
-
 package database
 
 import (

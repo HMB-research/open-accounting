@@ -7580,6 +7580,63 @@
                 }
             }
         },
+        "/tenants/{tenantID}/invoices/import-einvoice": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Import invoices from manual Estonian e-invoice XML upload and skip duplicate, invalid, or locked invoices",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Invoices"
+                ],
+                "summary": "Import Estonian e-invoice XML",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Estonian e-invoice XML import payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.ImportEInvoiceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.ImportInvoicesResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/invoices/overdue": {
             "get": {
                 "security": [
@@ -21630,6 +21687,20 @@
                 },
                 "trigger_type": {
                     "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.TriggerType"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_invoicing.ImportEInvoiceRequest": {
+            "type": "object",
+            "properties": {
+                "file_name": {
+                    "type": "string"
+                },
+                "invoice_type": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.InvoiceType"
+                },
+                "xml_content": {
+                    "type": "string"
                 }
             }
         },

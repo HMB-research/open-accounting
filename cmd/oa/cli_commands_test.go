@@ -4048,6 +4048,7 @@ func TestCLIContactsInvoicesAndJournalCommands(t *testing.T) {
 
 	contactsFile := writeTempCSV(t, "contacts.csv", "name,email\nAcme,hello@example.com\n")
 	invoicesFile := writeTempCSV(t, "invoices.csv", "invoice_number,contact_name,total\nINV-1,Acme,100\n")
+	eInvoiceFile := writeTempCSV(t, "einvoice.xml", "<E_Invoice><Invoice invoiceId=\"BILL-1\"><InvoiceParties><SellerParty><Name>Supplier</Name></SellerParty><BuyerParty><Name>Buyer</Name></BuyerParty></InvoiceParties><InvoiceInformation><InvoiceNumber>BILL-1</InvoiceNumber><InvoiceDate>2026-03-15</InvoiceDate></InvoiceInformation><InvoiceSumGroup><Currency>EUR</Currency></InvoiceSumGroup><InvoiceItem><InvoiceItemGroup><ItemEntry><Description>Service</Description><ItemDetailInfo><ItemAmount>1</ItemAmount><ItemPrice>100</ItemPrice></ItemDetailInfo><VAT><VATRate>22</VATRate></VAT></ItemEntry></InvoiceItemGroup></InvoiceItem><PaymentInfo><PayDueDate>2026-03-29</PayDueDate></PaymentInfo></Invoice></E_Invoice>")
 	openingBalancesFile := writeTempCSV(t, "opening-balances.csv", "account_code,debit,credit\n1000,500,0\n")
 	contactPayload := func(name string, active bool) map[string]any {
 		return map[string]any{
@@ -4115,6 +4116,18 @@ func TestCLIContactsInvoicesAndJournalCommands(t *testing.T) {
 				"rows_skipped":     0,
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/import":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed":   1,
+				"invoices_created": 1,
+				"lines_imported":   1,
+				"rows_skipped":     0,
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/import-einvoice":
+			var req invoicing.ImportEInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "einvoice.xml", req.FileName)
+			assert.Equal(t, invoicing.InvoiceTypePurchase, req.InvoiceType)
+			assert.Contains(t, req.XMLContent, "<E_Invoice>")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"rows_processed":   1,
 				"invoices_created": 1,
@@ -4197,6 +4210,11 @@ func TestCLIContactsInvoicesAndJournalCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"invoices", "import", "--file", invoicesFile})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 invoices, imported 1 lines, skipped 0 rows")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"invoices", "import-einvoice", "--file", eInvoiceFile, "--invoice-type", "PURCHASE"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Processed 1 e-invoices, created 1 invoices, imported 1 lines, skipped 0 e-invoices")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{

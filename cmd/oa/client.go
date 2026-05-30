@@ -825,6 +825,14 @@ func (c *apiClient) importInvoices(ctx context.Context, tenantID string, req *in
 	return &resp, nil
 }
 
+func (c *apiClient) importEInvoice(ctx context.Context, tenantID string, req *invoicing.ImportEInvoiceRequest) (*invoicing.ImportInvoicesResult, error) {
+	var resp invoicing.ImportInvoicesResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "invoices", "import-einvoice"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) listInvoices(ctx context.Context, tenantID string, filter invoicing.InvoiceFilter) ([]invoicing.Invoice, error) {
 	values := url.Values{}
 	if filter.InvoiceType != "" {

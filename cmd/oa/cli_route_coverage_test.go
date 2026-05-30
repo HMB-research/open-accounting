@@ -701,6 +701,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 		})
 	case "/invoices/import":
 		return commandForMethod(method, map[string]string{"POST": "invoices import"})
+	case "/invoices/import-einvoice":
+		return commandForMethod(method, map[string]string{"POST": "invoices import-einvoice"})
 	case "/invoices/overdue":
 		return commandForMethod(method, map[string]string{"GET": "reminders overdue"})
 	case "/invoices/reminders":

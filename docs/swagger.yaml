@@ -2779,6 +2779,15 @@ definitions:
       trigger_type:
         $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.TriggerType'
     type: object
+  github_com_HMB-research_open-accounting_internal_invoicing.ImportEInvoiceRequest:
+    properties:
+      file_name:
+        type: string
+      invoice_type:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.InvoiceType'
+      xml_content:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_invoicing.ImportInvoicesRequest:
     properties:
       csv_content:
@@ -11070,6 +11079,43 @@ paths:
       security:
       - BearerAuth: []
       summary: Import invoices
+      tags:
+      - Invoices
+  /tenants/{tenantID}/invoices/import-einvoice:
+    post:
+      consumes:
+      - application/json
+      description: Import invoices from manual Estonian e-invoice XML upload and skip
+        duplicate, invalid, or locked invoices
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Estonian e-invoice XML import payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.ImportEInvoiceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.ImportInvoicesResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Import Estonian e-invoice XML
       tags:
       - Invoices
   /tenants/{tenantID}/invoices/overdue:

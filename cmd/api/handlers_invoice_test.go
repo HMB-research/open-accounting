@@ -675,6 +675,113 @@ func TestImportInvoices(t *testing.T) {
 	}
 }
 
+func TestImportEInvoice(t *testing.T) {
+	h, tenantRepo, invoiceRepo, contactsRepo := setupInvoiceImportTestHandlers()
+	tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+	contact := contactsRepo.addTestContact("supplier-1", "tenant-1", "Supplier OÜ", contacts.ContactTypeSupplier, true)
+	contact.RegCode = "12345678"
+	contact.VATNumber = "EE12345678"
+
+	claims := &auth.Claims{UserID: "user-1", TenantID: "tenant-1", Role: tenant.RoleOwner}
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/invoices/import-einvoice", map[string]interface{}{
+		"file_name":   "supplier.xml",
+		"xml_content": handlerEInvoiceXML(),
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	w := httptest.NewRecorder()
+
+	h.ImportEInvoice(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	var resp invoicing.ImportInvoicesResult
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, "supplier.xml", resp.FileName)
+	assert.Equal(t, 1, resp.RowsProcessed)
+	assert.Equal(t, 1, resp.InvoicesCreated)
+	assert.Equal(t, 1, resp.LinesImported)
+	assert.Zero(t, resp.RowsSkipped)
+
+	require.Len(t, invoiceRepo.invoices, 1)
+	for _, invoice := range invoiceRepo.invoices {
+		assert.Equal(t, "BILL-2026-001", invoice.InvoiceNumber)
+		assert.Equal(t, invoicing.InvoiceTypePurchase, invoice.InvoiceType)
+		assert.Equal(t, "supplier-1", invoice.ContactID)
+	}
+}
+
+func TestImportEInvoiceRejectsMissingXML(t *testing.T) {
+	h, tenantRepo, _, _ := setupInvoiceImportTestHandlers()
+	tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+
+	claims := &auth.Claims{UserID: "user-1", TenantID: "tenant-1", Role: tenant.RoleOwner}
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/invoices/import-einvoice", map[string]interface{}{
+		"file_name": "supplier.xml",
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	w := httptest.NewRecorder()
+
+	h.ImportEInvoice(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	var resp map[string]string
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Contains(t, resp["error"], "xml_content is required")
+}
+
+func handlerEInvoiceXML() string {
+	return `<?xml version="1.0" encoding="UTF-8"?>
+<E_Invoice>
+  <Header>
+    <Date>2026-03-15</Date>
+    <FileId>file-1</FileId>
+    <Version>1.2</Version>
+  </Header>
+  <Invoice invoiceId="BILL-2026-001" regNumber="87654321" sellerRegnumber="12345678">
+    <InvoiceParties>
+      <SellerParty>
+        <Name>Supplier OÜ</Name>
+        <RegNumber>12345678</RegNumber>
+        <VATRegNumber>EE12345678</VATRegNumber>
+      </SellerParty>
+      <BuyerParty>
+        <Name>Buyer OÜ</Name>
+        <RegNumber>87654321</RegNumber>
+      </BuyerParty>
+    </InvoiceParties>
+    <InvoiceInformation>
+      <Type type="DEB"></Type>
+      <DocumentName>Invoice</DocumentName>
+      <InvoiceNumber>BILL-2026-001</InvoiceNumber>
+      <InvoiceContentText>Office supplies</InvoiceContentText>
+      <PaymentReferenceNumber>RF18539007547034</PaymentReferenceNumber>
+      <InvoiceDate>2026-03-15</InvoiceDate>
+      <DueDate>2026-03-29</DueDate>
+    </InvoiceInformation>
+    <InvoiceSumGroup>
+      <Currency>EUR</Currency>
+    </InvoiceSumGroup>
+    <InvoiceItem>
+      <InvoiceItemGroup>
+        <ItemEntry>
+          <Description>Office chairs</Description>
+          <ItemDetailInfo>
+            <ItemUnit>pcs</ItemUnit>
+            <ItemAmount>2</ItemAmount>
+            <ItemPrice>100.00</ItemPrice>
+          </ItemDetailInfo>
+          <VAT><VATRate>22</VATRate></VAT>
+        </ItemEntry>
+      </InvoiceItemGroup>
+    </InvoiceItem>
+    <PaymentInfo>
+      <Currency>EUR</Currency>
+      <PayDueDate>2026-03-29</PayDueDate>
+      <PaymentId>RF18539007547034</PaymentId>
+    </PaymentInfo>
+  </Invoice>
+</E_Invoice>`
+}
+
 // =============================================================================
 // GetInvoice Handler Tests
 // =============================================================================
