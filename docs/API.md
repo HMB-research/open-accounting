@@ -2889,7 +2889,7 @@ GET /tenants/{tenantId}/audit-events?limit=50
 Authorization: Bearer <token>
 ```
 
-Requires an owner or admin role. Returns recent tenant administration audit events for user role changes, user removals, invitation creation, and invitation revocation. `limit` defaults to `50` and must be between `1` and `200`.
+Requires an owner or admin role. Returns recent tenant administration audit events for user role changes, user status changes, user removals, invitation creation, and invitation revocation. `limit` defaults to `50` and must be between `1` and `200`.
 
 ### List Tenant User Sessions
 
@@ -2908,6 +2908,20 @@ Authorization: Bearer <token>
 ```
 
 Requires an owner or admin role. Returns recent auth security events where the target tenant user is actor or target. `limit` defaults to `50` and must be between `1` and `200`.
+
+### Update Tenant User Status
+
+```http
+PUT /tenants/{tenantId}/users/{userId}/status
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "is_active": false
+}
+```
+
+Requires an owner or admin role. Users cannot suspend or restore themselves, and owner memberships cannot be suspended. Suspended users cannot log in or refresh tokens for that tenant; suspending a user revokes active refresh sessions and records tenant and auth security audit events.
 
 ### Revoke Tenant User Session
 

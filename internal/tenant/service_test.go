@@ -210,6 +210,7 @@ func (m *MockRepository) AddUserToTenant(ctx context.Context, tenantID, userID, 
 		UserID:    userID,
 		Role:      role,
 		IsDefault: false,
+		IsActive:  true,
 		CreatedAt: time.Now(),
 	})
 	return nil
@@ -239,6 +240,16 @@ func (m *MockRepository) GetUserRole(ctx context.Context, tenantID, userID strin
 		}
 	}
 	return "", ErrUserNotInTenant
+}
+
+func (m *MockRepository) GetTenantUser(ctx context.Context, tenantID, userID string) (*TenantUser, error) {
+	for _, u := range m.tenantUsers[tenantID] {
+		if u.UserID == userID {
+			user := u
+			return &user, nil
+		}
+	}
+	return nil, ErrUserNotInTenant
 }
 
 func (m *MockRepository) ListUserTenants(ctx context.Context, userID string) ([]TenantMembership, error) {
@@ -280,6 +291,16 @@ func (m *MockRepository) UpdateTenantUserRole(ctx context.Context, tenantID, use
 		}
 	}
 	return nil
+}
+
+func (m *MockRepository) SetTenantUserActive(ctx context.Context, tenantID, userID string, active bool) error {
+	for i := range m.tenantUsers[tenantID] {
+		if m.tenantUsers[tenantID][i].UserID == userID {
+			m.tenantUsers[tenantID][i].IsActive = active
+			return nil
+		}
+	}
+	return ErrUserNotInTenant
 }
 
 func (m *MockRepository) RemoveTenantUser(ctx context.Context, tenantID, userID string) error {
@@ -1891,6 +1912,32 @@ func TestService_UpdateTenantUserRole(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+func TestService_SetTenantUserActive(t *testing.T) {
+	t.Run("suspends non-owner membership", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-1", Role: RoleViewer, IsActive: true})
+		svc := NewServiceWithRepository(repo)
+
+		err := svc.SetTenantUserActive(context.Background(), "tenant-1", "user-1", false)
+
+		require.NoError(t, err)
+		membership, err := repo.GetTenantUser(context.Background(), "tenant-1", "user-1")
+		require.NoError(t, err)
+		assert.False(t, membership.IsActive)
+	})
+
+	t.Run("cannot change owner membership status", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "owner-1", Role: RoleOwner, IsActive: true})
+		svc := NewServiceWithRepository(repo)
+
+		err := svc.SetTenantUserActive(context.Background(), "tenant-1", "owner-1", false)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot change owner membership status")
+	})
 }
 
 func TestService_ListTenantUsers(t *testing.T) {

@@ -87,6 +87,7 @@ const (
 	AuditActionTenantUpdated       = "tenant_updated"
 	AuditActionUserSessionRevoked  = "user_session_revoked"
 	AuditActionUserSessionsRevoked = "user_sessions_revoked"
+	AuditActionUserStatusUpdated   = "user_status_updated"
 
 	AuditTargetUser       = "user"
 	AuditTargetInvitation = "invitation"
@@ -161,6 +162,7 @@ type TenantUser struct {
 	UserID    string    `json:"user_id"`
 	Role      string    `json:"role"`
 	IsDefault bool      `json:"is_default"`
+	IsActive  bool      `json:"is_active"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

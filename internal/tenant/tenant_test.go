@@ -557,6 +557,7 @@ func TestTenantUser(t *testing.T) {
 		UserID:    "user-456",
 		Role:      RoleAccountant,
 		IsDefault: true,
+		IsActive:  true,
 		CreatedAt: now,
 	}
 
@@ -571,6 +572,7 @@ func TestTenantUser(t *testing.T) {
 	assert.Equal(t, tu.UserID, decoded.UserID)
 	assert.Equal(t, tu.Role, decoded.Role)
 	assert.Equal(t, tu.IsDefault, decoded.IsDefault)
+	assert.Equal(t, tu.IsActive, decoded.IsActive)
 }
 
 func TestUserWithTenants(t *testing.T) {

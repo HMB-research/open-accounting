@@ -52,6 +52,7 @@ type TenantUserModel struct {
 	UserID    string     `gorm:"column:user_id;type:uuid;primaryKey" json:"user_id"`
 	Role      string     `gorm:"size:50;not null" json:"role"`
 	IsDefault bool       `gorm:"column:is_default;not null;default:false" json:"is_default"`
+	IsActive  bool       `gorm:"column:is_active;not null;default:true" json:"is_active"`
 	InvitedBy *string    `gorm:"column:invited_by;type:uuid" json:"invited_by,omitempty"`
 	InvitedAt *time.Time `gorm:"column:invited_at" json:"invited_at,omitempty"`
 	CreatedAt time.Time  `gorm:"not null;default:now()" json:"created_at"`

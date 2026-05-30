@@ -1043,6 +1043,7 @@ func TestTenantUserModel_Fields(t *testing.T) {
 		UserID:    "user-1",
 		Role:      "ADMIN",
 		IsDefault: true,
+		IsActive:  true,
 		InvitedBy: &invitedBy,
 		InvitedAt: &now,
 		CreatedAt: now,
@@ -1053,6 +1054,9 @@ func TestTenantUserModel_Fields(t *testing.T) {
 	}
 	if !tu.IsDefault {
 		t.Error("expected IsDefault to be true")
+	}
+	if !tu.IsActive {
+		t.Error("expected IsActive to be true")
 	}
 }
 

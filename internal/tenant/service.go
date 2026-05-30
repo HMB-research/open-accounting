@@ -250,6 +250,15 @@ func (s *Service) GetUserRole(ctx context.Context, tenantID, userID string) (str
 	return role, err
 }
 
+// GetTenantUser retrieves one tenant membership, including inactive memberships.
+func (s *Service) GetTenantUser(ctx context.Context, tenantID, userID string) (*TenantUser, error) {
+	membership, err := s.repo.GetTenantUser(ctx, tenantID, userID)
+	if err == ErrUserNotInTenant {
+		return nil, fmt.Errorf("user not member of tenant")
+	}
+	return membership, err
+}
+
 // CreateUser creates a new user
 func (s *Service) CreateUser(ctx context.Context, req *CreateUserRequest) (*User, error) {
 	// Hash password with cost 12 (stronger than default 10)
@@ -518,6 +527,24 @@ func (s *Service) UpdateTenantUserRole(ctx context.Context, tenantID, userID, ne
 	}
 
 	return s.repo.UpdateTenantUserRole(ctx, tenantID, userID, newRole)
+}
+
+// SetTenantUserActive suspends or restores a user's membership in one tenant.
+func (s *Service) SetTenantUserActive(ctx context.Context, tenantID, userID string, active bool) error {
+	membership, err := s.repo.GetTenantUser(ctx, tenantID, userID)
+	if err == ErrUserNotInTenant {
+		return fmt.Errorf("user not found in tenant")
+	}
+	if err != nil {
+		return fmt.Errorf("check current membership: %w", err)
+	}
+	if membership.Role == RoleOwner {
+		return fmt.Errorf("cannot change owner membership status")
+	}
+	if membership.IsActive == active {
+		return nil
+	}
+	return s.repo.SetTenantUserActive(ctx, tenantID, userID, active)
 }
 
 // ListTenantUsers lists all users in a tenant

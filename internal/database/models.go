@@ -28,6 +28,7 @@ type TenantUser struct {
 	UserID    uuid.UUID          `db:"user_id" json:"user_id"`
 	Role      string             `db:"role" json:"role"`
 	IsDefault bool               `db:"is_default" json:"is_default"`
+	IsActive  bool               `db:"is_active" json:"is_active"`
 	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 

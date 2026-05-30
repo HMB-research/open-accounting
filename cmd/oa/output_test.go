@@ -97,10 +97,12 @@ func TestPrintTables(t *testing.T) {
 		UserID:    "user-1",
 		Role:      tenant.RoleAdmin,
 		IsDefault: true,
+		IsActive:  true,
 		CreatedAt: now,
 	}})
 	assert.Contains(t, tenantUsersBuf.String(), "user-1")
 	assert.Contains(t, tenantUsersBuf.String(), "admin")
+	assert.Contains(t, tenantUsersBuf.String(), "true")
 
 	var invitationsBuf bytes.Buffer
 	printInvitationsTable(&invitationsBuf, []tenant.UserInvitation{{

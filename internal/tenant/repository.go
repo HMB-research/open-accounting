@@ -30,9 +30,11 @@ type Repository interface {
 	AddUserToTenant(ctx context.Context, tenantID, userID, role string) error
 	RemoveUserFromTenant(ctx context.Context, tenantID, userID string) error
 	GetUserRole(ctx context.Context, tenantID, userID string) (string, error)
+	GetTenantUser(ctx context.Context, tenantID, userID string) (*TenantUser, error)
 	ListUserTenants(ctx context.Context, userID string) ([]TenantMembership, error)
 	ListTenantUsers(ctx context.Context, tenantID string) ([]TenantUser, error)
 	UpdateTenantUserRole(ctx context.Context, tenantID, userID, newRole string) error
+	SetTenantUserActive(ctx context.Context, tenantID, userID string, active bool) error
 	RemoveTenantUser(ctx context.Context, tenantID, userID string) error
 
 	// User operations
@@ -229,9 +231,9 @@ func (r *PostgresRepository) CompleteOnboarding(ctx context.Context, tenantID st
 // AddUserToTenant adds a user to a tenant with a specified role
 func (r *PostgresRepository) AddUserToTenant(ctx context.Context, tenantID, userID, role string) error {
 	_, err := r.db.Exec(ctx, `
-		INSERT INTO tenant_users (tenant_id, user_id, role, is_default)
-		VALUES ($1, $2, $3, false)
-		ON CONFLICT (tenant_id, user_id) DO UPDATE SET role = $3
+		INSERT INTO tenant_users (tenant_id, user_id, role, is_default, is_active)
+		VALUES ($1, $2, $3, false, true)
+		ON CONFLICT (tenant_id, user_id) DO UPDATE SET role = $3, is_active = true
 	`, tenantID, userID, role)
 	if err != nil {
 		return fmt.Errorf("add user to tenant: %w", err)
@@ -268,6 +270,23 @@ func (r *PostgresRepository) GetUserRole(ctx context.Context, tenantID, userID s
 	return role, nil
 }
 
+// GetTenantUser returns one tenant membership, including inactive memberships.
+func (r *PostgresRepository) GetTenantUser(ctx context.Context, tenantID, userID string) (*TenantUser, error) {
+	var u TenantUser
+	err := r.db.QueryRow(ctx, `
+		SELECT tenant_id, user_id, role, is_default, COALESCE(is_active, true), created_at
+		FROM tenant_users
+		WHERE tenant_id = $1 AND user_id = $2
+	`, tenantID, userID).Scan(&u.TenantID, &u.UserID, &u.Role, &u.IsDefault, &u.IsActive, &u.CreatedAt)
+	if err == pgx.ErrNoRows {
+		return nil, ErrUserNotInTenant
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get tenant user: %w", err)
+	}
+	return &u, nil
+}
+
 // ListUserTenants retrieves all tenants a user belongs to
 func (r *PostgresRepository) ListUserTenants(ctx context.Context, userID string) ([]TenantMembership, error) {
 	rows, err := r.db.Query(ctx, `
@@ -275,7 +294,7 @@ func (r *PostgresRepository) ListUserTenants(ctx context.Context, userID string)
 		       tu.role, tu.is_default
 		FROM tenants t
 		JOIN tenant_users tu ON tu.tenant_id = t.id
-		WHERE tu.user_id = $1 AND t.is_active = true
+		WHERE tu.user_id = $1 AND t.is_active = true AND COALESCE(tu.is_active, true) = true
 		ORDER BY tu.is_default DESC, t.name
 	`, userID)
 	if err != nil {
@@ -308,7 +327,7 @@ func (r *PostgresRepository) ListUserTenants(ctx context.Context, userID string)
 // ListTenantUsers lists all users in a tenant
 func (r *PostgresRepository) ListTenantUsers(ctx context.Context, tenantID string) ([]TenantUser, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT tu.tenant_id, tu.user_id, tu.role, tu.is_default, tu.created_at
+		SELECT tu.tenant_id, tu.user_id, tu.role, tu.is_default, COALESCE(tu.is_active, true), tu.created_at
 		FROM tenant_users tu
 		WHERE tu.tenant_id = $1
 		ORDER BY tu.created_at
@@ -321,7 +340,7 @@ func (r *PostgresRepository) ListTenantUsers(ctx context.Context, tenantID strin
 	var users []TenantUser
 	for rows.Next() {
 		var u TenantUser
-		if err := rows.Scan(&u.TenantID, &u.UserID, &u.Role, &u.IsDefault, &u.CreatedAt); err != nil {
+		if err := rows.Scan(&u.TenantID, &u.UserID, &u.Role, &u.IsDefault, &u.IsActive, &u.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan tenant user: %w", err)
 		}
 		users = append(users, u)
@@ -335,6 +354,22 @@ func (r *PostgresRepository) UpdateTenantUserRole(ctx context.Context, tenantID,
 	_, err := r.db.Exec(ctx, `UPDATE tenant_users SET role = $3 WHERE tenant_id = $1 AND user_id = $2`, tenantID, userID, newRole)
 	if err != nil {
 		return fmt.Errorf("update role: %w", err)
+	}
+	return nil
+}
+
+// SetTenantUserActive updates a tenant membership active flag.
+func (r *PostgresRepository) SetTenantUserActive(ctx context.Context, tenantID, userID string, active bool) error {
+	tag, err := r.db.Exec(ctx, `
+		UPDATE tenant_users
+		SET is_active = $3
+		WHERE tenant_id = $1 AND user_id = $2
+	`, tenantID, userID, active)
+	if err != nil {
+		return fmt.Errorf("update tenant user status: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrUserNotInTenant
 	}
 	return nil
 }
@@ -474,9 +509,9 @@ func (r *PostgresRepository) AcceptInvitation(ctx context.Context, inv *UserInvi
 
 	// Add user to tenant
 	_, err = tx.Exec(ctx, `
-		INSERT INTO tenant_users (tenant_id, user_id, role, is_default, invited_by, invited_at, created_at)
-		VALUES ($1, $2, $3, false, $4, NOW(), NOW())
-		ON CONFLICT (tenant_id, user_id) DO UPDATE SET role = EXCLUDED.role
+		INSERT INTO tenant_users (tenant_id, user_id, role, is_default, is_active, invited_by, invited_at, created_at)
+		VALUES ($1, $2, $3, false, true, $4, NOW(), NOW())
+		ON CONFLICT (tenant_id, user_id) DO UPDATE SET role = EXCLUDED.role, is_active = true
 	`, inv.TenantID, userID, inv.Role, inv.InvitedBy)
 	if err != nil {
 		return fmt.Errorf("add user to tenant: %w", err)

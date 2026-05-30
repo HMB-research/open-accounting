@@ -20,6 +20,8 @@ const (
 	SecurityAuditActionPasswordResetCompleted = "password_reset_completed"
 	SecurityAuditActionSessionRevoked         = "session_revoked"
 	SecurityAuditActionAllSessionsRevoked     = "all_sessions_revoked"
+	SecurityAuditActionTenantAccessSuspended  = "tenant_access_suspended"
+	SecurityAuditActionTenantAccessRestored   = "tenant_access_restored"
 )
 
 // SecurityAuditEvent records an auth-sensitive account action.

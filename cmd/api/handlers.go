@@ -257,13 +257,17 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	tenantID := ""
 	role := ""
 	if req.TenantID != "" {
-		r, err := h.tenantService.GetUserRole(r.Context(), req.TenantID, user.ID)
+		membership, err := h.tenantService.GetTenantUser(r.Context(), req.TenantID, user.ID)
 		if err != nil {
 			respondError(w, http.StatusForbidden, "Access denied to tenant")
 			return
 		}
+		if !membership.IsActive {
+			respondError(w, http.StatusForbidden, "Tenant access is suspended")
+			return
+		}
 		tenantID = req.TenantID
-		role = r
+		role = membership.Role
 	}
 
 	accessToken, err := h.tokenService.GenerateAccessToken(user.ID, user.Email, tenantID, role)
@@ -353,13 +357,17 @@ func (h *Handlers) RefreshToken(w http.ResponseWriter, r *http.Request) {
 	tenantID := ""
 	role := ""
 	if req.TenantID != "" {
-		r, err := h.tenantService.GetUserRole(r.Context(), req.TenantID, user.ID)
+		membership, err := h.tenantService.GetTenantUser(r.Context(), req.TenantID, user.ID)
 		if err != nil {
 			respondError(w, http.StatusForbidden, "Access denied to tenant")
 			return
 		}
+		if !membership.IsActive {
+			respondError(w, http.StatusForbidden, "Tenant access is suspended")
+			return
+		}
 		tenantID = req.TenantID
-		role = r
+		role = membership.Role
 	}
 
 	accessToken, err := h.tokenService.GenerateAccessToken(user.ID, user.Email, tenantID, role)

@@ -2446,6 +2446,104 @@ func (h *Handlers) ListTenantUserSecurityAuditEvents(w http.ResponseWriter, r *h
 	respondJSON(w, http.StatusOK, events)
 }
 
+// UpdateTenantUserStatus suspends or restores one tenant user's access.
+// @Summary Update tenant user status
+// @Description Suspend or restore a tenant user's membership. Suspended users cannot log in or refresh tokens for the tenant. Suspending revokes active refresh sessions.
+// @Tags Users
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param userID path string true "User ID"
+// @Param request body object{is_active=bool} true "Membership status"
+// @Success 200 {object} object{status=string,is_active=bool}
+// @Failure 400 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/users/{userID}/status [put]
+func (h *Handlers) UpdateTenantUserStatus(w http.ResponseWriter, r *http.Request) {
+	claims, targetRole, ok := h.authorizeTenantUserAdmin(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID := chi.URLParam(r, "tenantID")
+	userID := chi.URLParam(r, "userID")
+	if userID == claims.UserID {
+		respondError(w, http.StatusBadRequest, "Cannot update your own tenant access status")
+		return
+	}
+
+	var req struct {
+		IsActive *bool `json:"is_active"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if req.IsActive == nil {
+		respondError(w, http.StatusBadRequest, "is_active is required")
+		return
+	}
+
+	current, err := h.tenantService.GetTenantUser(r.Context(), tenantID, userID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "User not found in tenant")
+		return
+	}
+	if !*req.IsActive && h.refreshSessionService == nil {
+		respondError(w, http.StatusInternalServerError, "Refresh session service unavailable")
+		return
+	}
+
+	if err := h.tenantService.SetTenantUserActive(r.Context(), tenantID, userID, *req.IsActive); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !*req.IsActive {
+		if err := h.refreshSessionService.RevokeAllRefreshSessions(r.Context(), userID); err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to revoke refresh sessions")
+			return
+		}
+	}
+
+	targetEmail := h.userEmailForAudit(r.Context(), userID)
+	securityAction := auth.SecurityAuditActionTenantAccessSuspended
+	if *req.IsActive {
+		securityAction = auth.SecurityAuditActionTenantAccessRestored
+	}
+	h.recordSecurityAuditEvent(r, &auth.SecurityAuditEvent{
+		ActorUserID:  claims.UserID,
+		ActorEmail:   claims.Email,
+		Action:       securityAction,
+		TargetUserID: userID,
+		TargetEmail:  targetEmail,
+		Metadata: map[string]string{
+			"tenant_id":       tenantID,
+			"previous_active": strconv.FormatBool(current.IsActive),
+			"new_active":      strconv.FormatBool(*req.IsActive),
+		},
+	})
+	if !h.recordTenantAuditEvent(w, r, &tenant.TenantAuditEvent{
+		TenantID:    tenantID,
+		ActorUserID: claims.UserID,
+		Action:      tenant.AuditActionUserStatusUpdated,
+		TargetType:  tenant.AuditTargetUser,
+		TargetID:    userID,
+		TargetEmail: targetEmail,
+		Metadata: map[string]string{
+			"role":            targetRole,
+			"previous_active": strconv.FormatBool(current.IsActive),
+			"new_active":      strconv.FormatBool(*req.IsActive),
+		},
+	}) {
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{"status": "updated", "is_active": *req.IsActive})
+}
+
 // RevokeTenantUserAuthSession revokes one refresh-token session for a tenant user.
 // @Summary Revoke tenant user auth session
 // @Description Revoke one active refresh-token session for a user who belongs to the tenant. Requires owner or admin role.

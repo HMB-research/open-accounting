@@ -180,6 +180,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  tenant audit-events       List tenant administration audit events")
 	_, _ = fmt.Fprintln(a.stdout, "  users list                List tenant users")
 	_, _ = fmt.Fprintln(a.stdout, "  users update-role         Update a tenant user role")
+	_, _ = fmt.Fprintln(a.stdout, "  users set-status          Suspend or restore tenant user access")
 	_, _ = fmt.Fprintln(a.stdout, "  users sessions            List tenant user refresh sessions")
 	_, _ = fmt.Fprintln(a.stdout, "  users security-events     List tenant user auth security events")
 	_, _ = fmt.Fprintln(a.stdout, "  users revoke-session      Revoke a tenant user refresh session")
@@ -1333,6 +1334,28 @@ func (a *cliApp) runUsers(ctx context.Context, args []string) error {
 			return err
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Updated user %s role to %s\n", strings.TrimSpace(*userID), strings.TrimSpace(*role))
+		return nil
+
+	case "set-status":
+		fs := flag.NewFlagSet("users set-status", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		userID := fs.String("id", "", "User id")
+		activeFlag := fs.String("active", "", "Tenant access active state: true or false")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*userID) == "" || strings.TrimSpace(*activeFlag) == "" {
+			return errors.New("id and active are required")
+		}
+		active, err := strconv.ParseBool(strings.TrimSpace(*activeFlag))
+		if err != nil {
+			return fmt.Errorf("parse active: %w", err)
+		}
+
+		if err := client.updateTenantUserStatus(ctx, cfg.TenantID, strings.TrimSpace(*userID), active); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Updated user %s active status to %t\n", strings.TrimSpace(*userID), active)
 		return nil
 
 	case "sessions":
