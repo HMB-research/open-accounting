@@ -25,6 +25,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
+	"github.com/HMB-research/open-accounting/internal/expenses"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
@@ -481,6 +482,53 @@ func (c *apiClient) listWebhookDeliveries(ctx context.Context, tenantID, endpoin
 func (c *apiClient) testWebhookEndpoint(ctx context.Context, tenantID, endpointID string, req *webhooks.TestDeliveryRequest) (*webhooks.DeliveryResult, error) {
 	var resp webhooks.DeliveryResult
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "webhooks", endpointID, "test"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) listExpenses(ctx context.Context, tenantID string, filter expenses.ListExpensesFilter) ([]expenses.Expense, error) {
+	values := url.Values{}
+	if filter.Status != "" {
+		values.Set("status", string(filter.Status))
+	}
+	if filter.Limit > 0 {
+		values.Set("limit", strconv.Itoa(filter.Limit))
+	}
+	var resp []expenses.Expense
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "expenses"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createExpense(ctx context.Context, tenantID string, req *expenses.CreateExpenseRequest) (*expenses.Expense, error) {
+	var resp expenses.Expense
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "expenses"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getExpense(ctx context.Context, tenantID, expenseID string) (*expenses.Expense, error) {
+	var resp expenses.Expense
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "expenses", expenseID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) updateExpenseStatus(ctx context.Context, tenantID, expenseID, action string) (*expenses.Expense, error) {
+	var resp expenses.Expense
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "expenses", expenseID, action), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) rejectExpense(ctx context.Context, tenantID, expenseID string, req *expenses.RejectExpenseRequest) (*expenses.Expense, error) {
+	var resp expenses.Expense
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "expenses", expenseID, "reject"), req, c.apiToken, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil

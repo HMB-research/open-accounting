@@ -19,6 +19,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
+	"github.com/HMB-research/open-accounting/internal/expenses"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
@@ -905,6 +906,62 @@ func printAssetCategory(w io.Writer, category *assets.AssetCategory) {
 	}
 	if category.AccumulatedDepreciationAcctID != nil && strings.TrimSpace(*category.AccumulatedDepreciationAcctID) != "" {
 		_, _ = fmt.Fprintf(w, "Accumulated depreciation account: %s\n", *category.AccumulatedDepreciationAcctID)
+	}
+}
+
+func printExpensesTable(w io.Writer, expenseList []expenses.Expense) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNUMBER\tDATE\tMERCHANT\tSTATUS\tAMOUNT\tCURRENCY\tRECEIPT\tJOURNAL")
+	for _, expense := range expenseList {
+		journalID := ""
+		if expense.JournalEntryID != nil {
+			journalID = *expense.JournalEntryID
+		}
+		receipt := "no"
+		if expense.RequiresReceipt {
+			receipt = "yes"
+		}
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			expense.ID,
+			expense.ExpenseNumber,
+			formatDate(expense.ExpenseDate),
+			expense.Merchant,
+			expense.Status,
+			expense.Amount.String(),
+			expense.Currency,
+			receipt,
+			journalID,
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printExpense(w io.Writer, expense *expenses.Expense) {
+	_, _ = fmt.Fprintf(w, "Expense %s %s (%s)\n", expense.ExpenseNumber, expense.Merchant, expense.Status)
+	_, _ = fmt.Fprintf(w, "ID: %s\n", expense.ID)
+	_, _ = fmt.Fprintf(w, "Date: %s\n", formatDate(expense.ExpenseDate))
+	if strings.TrimSpace(expense.Description) != "" {
+		_, _ = fmt.Fprintf(w, "Description: %s\n", expense.Description)
+	}
+	if expense.EmployeeID != nil && strings.TrimSpace(*expense.EmployeeID) != "" {
+		_, _ = fmt.Fprintf(w, "Employee: %s\n", *expense.EmployeeID)
+	}
+	if expense.ContactID != nil && strings.TrimSpace(*expense.ContactID) != "" {
+		_, _ = fmt.Fprintf(w, "Contact: %s\n", *expense.ContactID)
+	}
+	_, _ = fmt.Fprintf(w, "Expense account: %s\n", expense.ExpenseAccountID)
+	_, _ = fmt.Fprintf(w, "Payment account: %s\n", expense.PaymentAccountID)
+	_, _ = fmt.Fprintf(w, "Amount: %s %s\n", expense.Amount.String(), expense.Currency)
+	_, _ = fmt.Fprintf(w, "Exchange rate: %s\n", expense.ExchangeRate.String())
+	_, _ = fmt.Fprintf(w, "Base amount: %s\n", expense.BaseAmount.String())
+	_, _ = fmt.Fprintf(w, "Requires receipt: %t\n", expense.RequiresReceipt)
+	if expense.JournalEntryID != nil && strings.TrimSpace(*expense.JournalEntryID) != "" {
+		_, _ = fmt.Fprintf(w, "Journal entry: %s\n", *expense.JournalEntryID)
+	}
+	if strings.TrimSpace(expense.RejectionReason) != "" {
+		_, _ = fmt.Fprintf(w, "Rejection reason: %s\n", expense.RejectionReason)
 	}
 }
 

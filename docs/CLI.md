@@ -205,6 +205,31 @@ go run ./cmd/oa webhooks delete --id <webhook-id>
 
 Webhook deliveries are signed with `X-Open-Accounting-Signature: sha256=<hmac>` when a secret is set. Delivery requests also include `X-Open-Accounting-Event`, `X-Open-Accounting-Event-ID`, and `X-Open-Accounting-Tenant-ID`.
 
+## Expenses
+
+```bash
+go run ./cmd/oa expenses list --status SUBMITTED --limit 25
+go run ./cmd/oa expenses create \
+  --merchant "Office Store" \
+  --description "Printer toner" \
+  --expense-date 2026-05-30 \
+  --employee-id <employee-id> \
+  --contact-id <supplier-id> \
+  --expense-account-id <expense-account-id> \
+  --payment-account-id <cash-or-liability-account-id> \
+  --amount 120.50 \
+  --requires-receipt=true
+go run ./cmd/oa expenses get --id <expense-id>
+go run ./cmd/oa documents upload --entity-type expense --entity-id <expense-id> --file ./receipt.pdf --document-type receipt
+go run ./cmd/oa documents review --id <document-id> --status APPROVED --note "Receipt accepted"
+go run ./cmd/oa expenses submit --id <expense-id>
+go run ./cmd/oa expenses approve --id <expense-id>
+go run ./cmd/oa expenses reject --id <expense-id> --reason "Need project code"
+go run ./cmd/oa expenses post --id <expense-id>
+```
+
+Expense statuses are `DRAFT`, `SUBMITTED`, `APPROVED`, `REJECTED`, and `POSTED`. Posting an approved expense creates and posts a balanced journal entry using `--expense-account-id` as the debit line and `--payment-account-id` as the credit line. Receipt-backed expenses require at least one approved `receipt` document linked with `entity-type expense` before approval or posting.
+
 ## Manage API tokens
 
 ```bash

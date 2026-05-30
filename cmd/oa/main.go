@@ -25,6 +25,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
+	"github.com/HMB-research/open-accounting/internal/expenses"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
@@ -81,6 +82,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runPlugins(ctx, args[1:])
 	case "webhooks":
 		return a.runWebhooks(ctx, args[1:])
+	case "expenses":
+		return a.runExpenses(ctx, args[1:])
 	case "admin":
 		return a.runAdmin(ctx, args[1:])
 	case "tokens":
@@ -365,6 +368,13 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  recurring-invoices resume Resume a recurring invoice template")
 	_, _ = fmt.Fprintln(a.stdout, "  recurring-invoices generate  Generate one recurring invoice")
 	_, _ = fmt.Fprintln(a.stdout, "  recurring-invoices generate-due  Generate all due recurring invoices")
+	_, _ = fmt.Fprintln(a.stdout, "  expenses list             List expense claims")
+	_, _ = fmt.Fprintln(a.stdout, "  expenses create           Create an expense claim")
+	_, _ = fmt.Fprintln(a.stdout, "  expenses get              Show one expense claim")
+	_, _ = fmt.Fprintln(a.stdout, "  expenses submit           Submit an expense for approval")
+	_, _ = fmt.Fprintln(a.stdout, "  expenses approve          Approve a receipt-backed expense")
+	_, _ = fmt.Fprintln(a.stdout, "  expenses reject           Reject a submitted expense")
+	_, _ = fmt.Fprintln(a.stdout, "  expenses post             Post an approved expense to the ledger")
 	_, _ = fmt.Fprintln(a.stdout, "  assets categories list    List fixed asset categories")
 	_, _ = fmt.Fprintln(a.stdout, "  assets categories create  Create a fixed asset category")
 	_, _ = fmt.Fprintln(a.stdout, "  assets categories get     Show one fixed asset category")
@@ -5798,6 +5808,180 @@ func (a *cliApp) runRecurringInvoices(ctx context.Context, args []string) error 
 	}
 }
 
+func (a *cliApp) runExpenses(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("expenses subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("expenses list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		statusFlag := fs.String("status", "", "Expense status")
+		limit := fs.Int("limit", 100, "Maximum expenses to return")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		status, err := parseOptionalExpenseStatus(*statusFlag)
+		if err != nil {
+			return err
+		}
+
+		expenseList, err := client.listExpenses(ctx, cfg.TenantID, expenses.ListExpensesFilter{
+			Status: status,
+			Limit:  *limit,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, expenseList)
+		}
+		printExpensesTable(a.stdout, expenseList)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("expenses create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		merchant := fs.String("merchant", "", "Merchant")
+		description := fs.String("description", "", "Description")
+		expenseDate := fs.String("expense-date", "", "Expense date in YYYY-MM-DD")
+		employeeID := fs.String("employee-id", "", "Employee id")
+		contactID := fs.String("contact-id", "", "Supplier/contact id")
+		expenseAccountID := fs.String("expense-account-id", "", "Expense account id")
+		paymentAccountID := fs.String("payment-account-id", "", "Payment or reimbursement account id")
+		amountFlag := fs.String("amount", "", "Expense amount")
+		currency := fs.String("currency", "EUR", "Currency code")
+		exchangeRateFlag := fs.String("exchange-rate", "1", "Exchange rate to base currency")
+		requiresReceipt := fs.Bool("requires-receipt", true, "Require an approved receipt before approval/posting")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*merchant) == "" {
+			return errors.New("merchant is required")
+		}
+		if strings.TrimSpace(*expenseAccountID) == "" {
+			return errors.New("expense-account-id is required")
+		}
+		if strings.TrimSpace(*paymentAccountID) == "" {
+			return errors.New("payment-account-id is required")
+		}
+		expenseDateValue, err := parseRequiredDate("expense-date", *expenseDate)
+		if err != nil {
+			return err
+		}
+		amount, err := parseRequiredPositiveDecimal("amount", *amountFlag)
+		if err != nil {
+			return err
+		}
+		exchangeRate, err := parseRequiredPositiveDecimal("exchange-rate", *exchangeRateFlag)
+		if err != nil {
+			return err
+		}
+
+		expense, err := client.createExpense(ctx, cfg.TenantID, &expenses.CreateExpenseRequest{
+			ExpenseDate:      expenseDateValue,
+			Merchant:         strings.TrimSpace(*merchant),
+			Description:      strings.TrimSpace(*description),
+			EmployeeID:       optionalStringPtr(*employeeID),
+			ContactID:        optionalStringPtr(*contactID),
+			ExpenseAccountID: strings.TrimSpace(*expenseAccountID),
+			PaymentAccountID: strings.TrimSpace(*paymentAccountID),
+			Amount:           amount,
+			Currency:         strings.ToUpper(strings.TrimSpace(*currency)),
+			ExchangeRate:     exchangeRate,
+			RequiresReceipt:  requiresReceipt,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, expense)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created expense %s (%s)\n", expense.ExpenseNumber, expense.ID)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("expenses get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		expenseID := fs.String("id", "", "Expense id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*expenseID) == "" {
+			return errors.New("id is required")
+		}
+
+		expense, err := client.getExpense(ctx, cfg.TenantID, strings.TrimSpace(*expenseID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, expense)
+		}
+		printExpense(a.stdout, expense)
+		return nil
+
+	case "submit", "approve", "post":
+		fs := flag.NewFlagSet("expenses "+args[0], flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		expenseID := fs.String("id", "", "Expense id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*expenseID) == "" {
+			return errors.New("id is required")
+		}
+
+		expense, err := client.updateExpenseStatus(ctx, cfg.TenantID, strings.TrimSpace(*expenseID), args[0])
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, expense)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "%s expense %s\n", expenseActionPastTense(args[0]), strings.TrimSpace(*expenseID))
+		return nil
+
+	case "reject":
+		fs := flag.NewFlagSet("expenses reject", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		expenseID := fs.String("id", "", "Expense id")
+		reason := fs.String("reason", "", "Rejection reason")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*expenseID) == "" {
+			return errors.New("id is required")
+		}
+		if strings.TrimSpace(*reason) == "" {
+			return errors.New("reason is required")
+		}
+
+		expense, err := client.rejectExpense(ctx, cfg.TenantID, strings.TrimSpace(*expenseID), &expenses.RejectExpenseRequest{Reason: strings.TrimSpace(*reason)})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, expense)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Rejected expense %s\n", strings.TrimSpace(*expenseID))
+		return nil
+
+	default:
+		return fmt.Errorf("unknown expenses subcommand %q", args[0])
+	}
+}
+
 func (a *cliApp) runAssets(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New("assets subcommand required")
@@ -11008,6 +11192,19 @@ func parseOptionalAssetStatus(value string) (assets.AssetStatus, error) {
 	}
 }
 
+func parseOptionalExpenseStatus(value string) (expenses.ExpenseStatus, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	switch expenses.ExpenseStatus(normalized) {
+	case expenses.StatusDraft, expenses.StatusSubmitted, expenses.StatusApproved, expenses.StatusRejected, expenses.StatusPosted:
+		return expenses.ExpenseStatus(normalized), nil
+	default:
+		return "", fmt.Errorf("invalid expense status %q", value)
+	}
+}
+
 func parseOptionalProductType(value string) (inventory.ProductType, error) {
 	if strings.TrimSpace(value) == "" {
 		return "", nil
@@ -11234,6 +11431,19 @@ func orderActionPastTense(action string) string {
 		return "Delivered"
 	case "cancel":
 		return "Canceled"
+	default:
+		return titleLabel(action)
+	}
+}
+
+func expenseActionPastTense(action string) string {
+	switch action {
+	case "submit":
+		return "Submitted"
+	case "approve":
+		return "Approved"
+	case "post":
+		return "Posted"
 	default:
 		return titleLabel(action)
 	}

@@ -564,6 +564,21 @@ func tenantCLICommand(method, path string) (string, bool) {
 		return commandForMethod(method, map[string]string{"GET": "webhooks deliveries"})
 	case "/webhooks/{webhookID}/test":
 		return commandForMethod(method, map[string]string{"POST": "webhooks test"})
+	case "/expenses":
+		return commandForMethod(method, map[string]string{
+			"GET":  "expenses list",
+			"POST": "expenses create",
+		})
+	case "/expenses/{expenseID}":
+		return commandForMethod(method, map[string]string{"GET": "expenses get"})
+	case "/expenses/{expenseID}/submit":
+		return commandForMethod(method, map[string]string{"POST": "expenses submit"})
+	case "/expenses/{expenseID}/approve":
+		return commandForMethod(method, map[string]string{"POST": "expenses approve"})
+	case "/expenses/{expenseID}/reject":
+		return commandForMethod(method, map[string]string{"POST": "expenses reject"})
+	case "/expenses/{expenseID}/post":
+		return commandForMethod(method, map[string]string{"POST": "expenses post"})
 	case "/period-close-events":
 		return commandForMethod(method, map[string]string{"GET": "close events"})
 	case "/period-close":

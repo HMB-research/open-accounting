@@ -8,6 +8,7 @@ const (
 	EntityTypePayment      = "payment"
 	EntityTypeBankTxn      = "bank_transaction"
 	EntityTypeAsset        = "asset"
+	EntityTypeExpense      = "expense"
 	EntityTypeYearEndClose = "year_end_close"
 
 	DocumentTypeSupportingDocument = "supporting_document"

@@ -2012,6 +2012,111 @@ definitions:
       subject:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_expenses.CreateExpenseRequest:
+    properties:
+      amount:
+        type: number
+      contact_id:
+        type: string
+      currency:
+        type: string
+      description:
+        type: string
+      employee_id:
+        type: string
+      exchange_rate:
+        type: number
+      expense_account_id:
+        type: string
+      expense_date:
+        type: string
+      merchant:
+        type: string
+      payment_account_id:
+        type: string
+      requires_receipt:
+        type: boolean
+    type: object
+  github_com_HMB-research_open-accounting_internal_expenses.Expense:
+    properties:
+      amount:
+        type: number
+      approved_at:
+        type: string
+      approved_by:
+        type: string
+      base_amount:
+        type: number
+      contact_id:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      currency:
+        type: string
+      description:
+        type: string
+      employee_id:
+        type: string
+      exchange_rate:
+        type: number
+      expense_account_id:
+        type: string
+      expense_date:
+        type: string
+      expense_number:
+        type: string
+      id:
+        type: string
+      journal_entry_id:
+        type: string
+      merchant:
+        type: string
+      payment_account_id:
+        type: string
+      posted_at:
+        type: string
+      posted_by:
+        type: string
+      rejected_at:
+        type: string
+      rejected_by:
+        type: string
+      rejection_reason:
+        type: string
+      requires_receipt:
+        type: boolean
+      status:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_expenses.ExpenseStatus'
+      submitted_at:
+        type: string
+      submitted_by:
+        type: string
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_expenses.ExpenseStatus:
+    enum:
+    - DRAFT
+    - SUBMITTED
+    - APPROVED
+    - REJECTED
+    - POSTED
+    type: string
+    x-enum-varnames:
+    - StatusDraft
+    - StatusSubmitted
+    - StatusApproved
+    - StatusRejected
+    - StatusPosted
+  github_com_HMB-research_open-accounting_internal_expenses.RejectExpenseRequest:
+    properties:
+      reason:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_inventory.ImportProductCategoriesRequest:
     properties:
       csv_content:
@@ -9289,6 +9394,275 @@ paths:
       summary: Import employees
       tags:
       - Payroll
+  /tenants/{tenantID}/expenses:
+    get:
+      description: List expense claims with optional status filtering
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Expense status
+        in: query
+        name: status
+        type: string
+      - description: Maximum expenses to return
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_expenses.Expense'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List expenses
+      tags:
+      - Expenses
+    post:
+      consumes:
+      - application/json
+      description: Create a draft expense claim. Receipt-backed expenses can be linked
+        to uploaded receipt documents with entity_type=expense.
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Expense details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_expenses.CreateExpenseRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_expenses.Expense'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create expense
+      tags:
+      - Expenses
+  /tenants/{tenantID}/expenses/{expenseID}:
+    get:
+      description: Get expense claim details
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Expense ID
+        in: path
+        name: expenseID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_expenses.Expense'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get expense
+      tags:
+      - Expenses
+  /tenants/{tenantID}/expenses/{expenseID}/approve:
+    post:
+      description: Approve a submitted expense. If the expense requires receipts,
+        at least one approved receipt document must be linked.
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Expense ID
+        in: path
+        name: expenseID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_expenses.Expense'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Approve expense
+      tags:
+      - Expenses
+  /tenants/{tenantID}/expenses/{expenseID}/post:
+    post:
+      description: Create and post a balanced journal entry for an approved expense
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Expense ID
+        in: path
+        name: expenseID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_expenses.Expense'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Post expense
+      tags:
+      - Expenses
+  /tenants/{tenantID}/expenses/{expenseID}/reject:
+    post:
+      consumes:
+      - application/json
+      description: Reject a submitted expense with a reason
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Expense ID
+        in: path
+        name: expenseID
+        required: true
+        type: string
+      - description: Rejection details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_expenses.RejectExpenseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_expenses.Expense'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Reject expense
+      tags:
+      - Expenses
+  /tenants/{tenantID}/expenses/{expenseID}/submit:
+    post:
+      description: Move a draft or rejected expense into submitted status
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Expense ID
+        in: path
+        name: expenseID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_expenses.Expense'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Submit expense
+      tags:
+      - Expenses
   /tenants/{tenantID}/inventory/stock-import:
     post:
       consumes:
