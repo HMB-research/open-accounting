@@ -71,7 +71,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Credit notes | ✅ | ✅ | ✅ | Implemented |
 | Invoice reminders | ✅ | ✅ | ✅ | Implemented |
 | Recurring invoices | ✅ | ✅ | ✅ | Implemented |
-| E-invoice (Estonian e-arve) | ✅ | ✅ | ❌ | **Blocker** |
+| E-invoice (Estonian e-arve) | ✅ | ✅ | ⚠️ | Manual Estonian e-invoice XML import is implemented through API/CLI; direct operator-network sending/receiving remains blocked |
 | Offers/Quotes | ✅ | ✅ | ✅ | Implemented with quote lifecycle, import, and quote-to-invoice conversion through API/CLI |
 
 ### 2.2 Purchase Invoices
@@ -82,7 +82,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Expense categorization | ✅ | ✅ | ✅ | Implemented |
 | Supplier management | ✅ | ✅ | ✅ | Implemented |
 | OCR scanning | ✅ | ✅ | ❌ | **Blocker** |
-| E-invoice import | ✅ | ✅ | ❌ | **Blocker** |
+| E-invoice import | ✅ | ✅ | ✅ | Manual Estonian e-invoice XML import is implemented through API/CLI; operator-network receiving remains blocked |
 
 ---
 
@@ -235,9 +235,9 @@ This is a competitive-gap document, not the authoritative current-state status p
 These features cannot be implemented without external dependencies or significant infrastructure:
 
 ### 1. **E-Invoice (e-arve) Integration**
-- **Requirement**: Connect to Omniva e-invoice center
+- **Requirement**: Direct operator-network send/receive through Omniva or another e-invoice operator
 - **Blocker**: Requires partnership agreement with Omniva and certificate authentication
-- **Workaround**: Manual PDF invoice sending (implemented)
+- **Workaround**: Manual Estonian e-invoice XML import and manual PDF invoice sending are implemented
 
 ### 2. **Bank Feed Integration (Swedbank Gateway, SEB, LHV)**
 - **Requirement**: Direct bank API access

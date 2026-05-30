@@ -653,6 +653,56 @@ func (h *Handlers) ImportInvoices(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, result)
 }
 
+// ImportEInvoice imports invoices from Estonian e-invoice XML data.
+// @Summary Import Estonian e-invoice XML
+// @Description Import invoices from manual Estonian e-invoice XML upload and skip duplicate, invalid, or locked invoices
+// @Tags Invoices
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body invoicing.ImportEInvoiceRequest true "Estonian e-invoice XML import payload"
+// @Success 200 {object} invoicing.ImportInvoicesResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/invoices/import-einvoice [post]
+func (h *Handlers) ImportEInvoice(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req invoicing.ImportEInvoiceRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if strings.TrimSpace(req.XMLContent) == "" {
+		respondError(w, http.StatusBadRequest, "xml_content is required")
+		return
+	}
+
+	if req.FileName == "" {
+		req.FileName = "einvoice_import.xml"
+	}
+	req.UserID = claims.UserID
+
+	contactsList, err := h.contactsService.List(r.Context(), tenantID, schemaName, nil)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load contacts")
+		return
+	}
+
+	result, err := h.invoicingService.ImportEInvoiceXML(r.Context(), tenantID, schemaName, contactsList, &req, func(issueDate time.Time) error {
+		return h.ensurePeriodUnlocked(r.Context(), tenantID, issueDate)
+	})
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // GetInvoice returns an invoice by ID
 // @Summary Get invoice
 // @Description Get invoice details by ID

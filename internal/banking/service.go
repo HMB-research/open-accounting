@@ -6,11 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 // Service provides bank reconciliation operations
@@ -24,7 +23,7 @@ func NewService(db *pgxpool.Pool) *Service {
 	if db == nil {
 		return &Service{}
 	}
-	gormDB, err := newGORMDBFromPool(db)
+	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create banking GORM repository: %w", err))
 	}
@@ -46,20 +45,6 @@ func NewServiceWithRepository(repo Repository) *Service {
 	return &Service{
 		repo: repo,
 	}
-}
-
-func newGORMDBFromPool(pool *pgxpool.Pool) (*gorm.DB, error) {
-	if pool == nil {
-		return nil, fmt.Errorf("database connection not available")
-	}
-	return newGORMDBFromConnString(pool.Config().ConnString())
-}
-
-func newGORMDBFromConnString(connString string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(connString), &gorm.Config{
-		Logger:                 logger.Default.LogMode(logger.Warn),
-		SkipDefaultTransaction: true,
-	})
 }
 
 // EnsureSchema creates the bank reconciliation tables if they don't exist

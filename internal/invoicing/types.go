@@ -239,6 +239,14 @@ type ImportInvoicesRequest struct {
 	UserID     string `json:"-"`
 }
 
+// ImportEInvoiceRequest contains Estonian e-invoice XML for manual invoice import.
+type ImportEInvoiceRequest struct {
+	XMLContent  string      `json:"xml_content"`
+	FileName    string      `json:"file_name,omitempty"`
+	InvoiceType InvoiceType `json:"invoice_type,omitempty"`
+	UserID      string      `json:"-"`
+}
+
 // ImportInvoicesResult summarizes a bulk invoice import.
 type ImportInvoicesResult struct {
 	FileName        string                   `json:"file_name,omitempty"`

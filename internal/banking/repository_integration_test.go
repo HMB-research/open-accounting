@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/testutil"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -32,7 +33,7 @@ func ensureReconciliationSchema(t *testing.T, pool *pgxpool.Pool, schemaName str
 
 func newTestGORMRepository(t *testing.T, pool *pgxpool.Pool) *GORMRepository {
 	t.Helper()
-	db, err := newGORMDBFromPool(pool)
+	db, err := database.NewGormDBFromPool(context.Background(), pool)
 	if err != nil {
 		t.Fatalf("create GORM banking repository: %v", err)
 	}

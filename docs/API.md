@@ -733,6 +733,34 @@ Rows are grouped by `invoice_number` and `invoice_type`. Contacts are resolved b
 }
 ```
 
+### Import Estonian E-Invoice XML
+
+```http
+POST /tenants/{tenantId}/invoices/import-einvoice
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "file_name": "supplier-einvoice.xml",
+  "invoice_type": "PURCHASE",
+  "xml_content": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><E_Invoice>...</E_Invoice>"
+}
+```
+
+Imports local Estonian e-invoice XML files using the official `E_Invoice` structure. If `invoice_type` is omitted, debit invoices import as `PURCHASE`; credit invoices import as `CREDIT_NOTE`. Use `invoice_type: "SALES"` only when importing an outbound sales e-invoice file. Contacts are matched from the e-invoice party block by registry code, VAT number, email, or name. Direct operator-network send/receive is not covered by this endpoint.
+
+**Response (200 OK):**
+
+```json
+{
+  "file_name": "supplier-einvoice.xml",
+  "rows_processed": 1,
+  "invoices_created": 1,
+  "lines_imported": 2,
+  "rows_skipped": 0
+}
+```
+
 **Account Types:** `ASSET`, `LIABILITY`, `EQUITY`, `REVENUE`, `EXPENSE`
 
 ### Import Accounts

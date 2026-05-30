@@ -466,9 +466,10 @@ go run ./cmd/oa invoices pdf --id <invoice-id> --output ./invoice.pdf
 go run ./cmd/oa invoices send --id <invoice-id>
 go run ./cmd/oa invoices void --id <invoice-id>
 go run ./cmd/oa invoices import --file ./invoices.csv
+go run ./cmd/oa invoices import-einvoice --file ./supplier-einvoice.xml --invoice-type PURCHASE
 ```
 
-Use `--line` repeatedly on `invoices create` for multi-line invoices. Each line is comma-separated `key=value` pairs with `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, `vat_treatment`, `reverse_charge`, `account_id`, and `product_id`. Set `vat_treatment=reverse_charge` or `reverse_charge=true` for purchase invoices where VAT is self-assessed: the VAT rate is retained for KMD reporting but VAT is not added to the invoice total. Use `--type PURCHASE` with a supplier contact to enter purchase invoices and supplier bills; `account_id` should point at the expense, asset, or other posting account for that purchase line. Sending or emailing a draft purchase invoice requires at least one approved `receipt`, `supporting_document`, or `tax_support` document attached to the `invoice` entity.
+Use `--line` repeatedly on `invoices create` for multi-line invoices. Each line is comma-separated `key=value` pairs with `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, `vat_treatment`, `reverse_charge`, `account_id`, and `product_id`. Set `vat_treatment=reverse_charge` or `reverse_charge=true` for purchase invoices where VAT is self-assessed: the VAT rate is retained for KMD reporting but VAT is not added to the invoice total. Use `--type PURCHASE` with a supplier contact to enter purchase invoices and supplier bills; `account_id` should point at the expense, asset, or other posting account for that purchase line. `invoices import-einvoice` imports local Estonian `E_Invoice` XML files and matches contacts by registry code, VAT number, email, or name; omit `--invoice-type` to default debit e-invoices to `PURCHASE` and credit e-invoices to `CREDIT_NOTE`. Sending or emailing a draft purchase invoice requires at least one approved `receipt`, `supporting_document`, or `tax_support` document attached to the `invoice` entity.
 
 ## Quotes
 

@@ -746,6 +746,9 @@ func buildInvoiceImportContactLookup(existingContacts []contacts.Contact) *invoi
 		if key := normalizedInvoiceImportKey(contact.RegCode); key != "" {
 			lookup.byRegCode[key] = contact
 		}
+		if key := normalizedInvoiceImportKey(contact.VATNumber); key != "" {
+			lookup.byRegCode[key] = contact
+		}
 		if key := normalizedInvoiceImportKey(contact.Email); key != "" {
 			lookup.byEmail[key] = contact
 		}

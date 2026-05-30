@@ -533,6 +533,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/invoices", h.ListInvoices)
 				r.Post("/invoices", h.CreateInvoice)
 				r.Post("/invoices/import", h.ImportInvoices)
+				r.Post("/invoices/import-einvoice", h.ImportEInvoice)
 				r.Get("/invoices/{invoiceID}", h.GetInvoice)
 				r.Get("/invoices/{invoiceID}/pdf", h.GetInvoicePDF)
 				r.Post("/invoices/{invoiceID}/send", h.SendInvoice)

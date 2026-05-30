@@ -84,7 +84,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 
 | Feature                | Description                                                                                  |
 | ---------------------- | -------------------------------------------------------------------------------------------- |
-| **Invoicing**          | Sales and purchase invoices with line items and VAT                                          |
+| **Invoicing**          | Sales and purchase invoices with line items, VAT, CSV import, and manual Estonian e-invoice XML import |
 | **Quotes**             | Sales quotes with draft/sent/accepted workflow, conversion to orders, and grouped CSV import |
 | **Orders**             | Order management with quote linking, status tracking, and grouped CSV import                 |
 | **Contacts**           | Customer and supplier management                                                             |
@@ -374,7 +374,7 @@ open-accounting/
 - [ ] Remaining external migration imports beyond payroll, tax history, commercial history, payments, expenses, inventory, fixed assets, bank transactions, opening balances, and historical journals
 - [ ] Automated document policy enforcement in remaining workflow blockers
 - [ ] Remaining auth administration hardening beyond tenant-scoped session/status/API-token controls
-- [ ] E-invoice, direct bank feeds, SEPA initiation, and automatic e-MTA submission
+- [ ] Direct e-invoice operator send/receive, direct bank feeds, SEPA initiation, and automatic e-MTA submission
 
 ---
 
