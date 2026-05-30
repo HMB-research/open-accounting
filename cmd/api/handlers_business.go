@@ -39,6 +39,7 @@ var (
 	errApprovedAssetActivationEvidenceRequired = errors.New("approved asset activation evidence is required")
 	errApprovedJournalEntryEvidenceRequired    = errors.New("approved journal-entry evidence is required")
 	errApprovedPaymentReceiptEvidenceRequired  = errors.New("approved payment receipt evidence is required")
+	errApprovedPurchaseInvoiceEvidenceRequired = errors.New("approved purchase-invoice evidence is required")
 )
 
 // =============================================================================
@@ -675,7 +676,7 @@ func (h *Handlers) GetInvoice(w http.ResponseWriter, r *http.Request) {
 
 // SendInvoice marks an invoice as sent
 // @Summary Send invoice
-// @Description Mark an invoice as sent to the customer
+// @Description Mark an invoice as sent to the customer. Draft purchase invoices require approved invoice evidence before sending.
 // @Tags Invoices
 // @Produce json
 // @Security BearerAuth
@@ -689,6 +690,18 @@ func (h *Handlers) SendInvoice(w http.ResponseWriter, r *http.Request) {
 	invoiceID := chi.URLParam(r, "invoiceID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
 
+	if err := h.requireApprovedPurchaseInvoiceEvidence(r.Context(), schemaName, tenantID, invoiceID); err != nil {
+		status := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, errApprovedPurchaseInvoiceEvidenceRequired):
+			status = http.StatusConflict
+		case strings.Contains(err.Error(), "get invoice"):
+			status = http.StatusBadRequest
+		}
+		respondError(w, status, err.Error())
+		return
+	}
+
 	if err := h.invoicingService.Send(r.Context(), tenantID, schemaName, invoiceID); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -696,6 +709,42 @@ func (h *Handlers) SendInvoice(w http.ResponseWriter, r *http.Request) {
 
 	h.emitWebhookEvent(plugin.EventInvoiceSent, tenantID, map[string]string{"invoice_id": invoiceID})
 	respondJSON(w, http.StatusOK, map[string]string{"status": "sent"})
+}
+
+func (h *Handlers) requireApprovedPurchaseInvoiceEvidence(ctx context.Context, schemaName, tenantID, invoiceID string) error {
+	if h.documentsService == nil {
+		return nil
+	}
+
+	invoice, err := h.invoicingService.GetByID(ctx, tenantID, schemaName, invoiceID)
+	if err != nil {
+		return fmt.Errorf("get invoice: %w", err)
+	}
+	if invoice.InvoiceType != invoicing.InvoiceTypePurchase || invoice.Status != invoicing.StatusDraft {
+		return nil
+	}
+
+	results, err := h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
+		EntityType: documents.EntityTypeInvoice,
+		EntityIDs:  []string{invoiceID},
+		Rules: []documents.EvidencePolicyRule{{
+			DocumentTypes: []string{
+				documents.DocumentTypeReceipt,
+				documents.DocumentTypeSupportingDocument,
+				documents.DocumentTypeTaxSupport,
+			},
+			MinCount:        1,
+			RequireApproved: true,
+		}},
+	})
+	if err != nil {
+		return fmt.Errorf("evaluate purchase invoice evidence: %w", err)
+	}
+	if len(results) == 0 || !results[0].Compliant {
+		return fmt.Errorf("%w before sending purchase invoice %s", errApprovedPurchaseInvoiceEvidenceRequired, invoiceID)
+	}
+
+	return nil
 }
 
 // VoidInvoice voids an invoice
