@@ -264,14 +264,25 @@ go run ./cmd/oa migration validate \
   --expenses ./expenses.csv \
   --invoices ./invoices.csv \
   --payments ./payments.csv \
+  --bank-transactions ./bank-transactions.csv \
   --payroll-history ./payroll-history.csv \
   --leave-balances ./leave-balances.csv \
+  --kmd-history ./kmd-history.csv \
+  --quotes ./quotes.csv \
+  --orders ./orders.csv \
+  --recurring-invoices ./recurring-invoices.csv \
+  --cost-centers ./cost-centers.csv \
+  --product-categories ./product-categories.csv \
+  --warehouses ./warehouses.csv \
+  --products ./products.csv \
+  --stock ./stock.csv \
+  --fixed-assets ./fixed-assets.csv \
   --opening-balances ./opening-balances.csv \
   --journal ./journal-entries.csv
 go run ./cmd/oa migration validate --contacts ./contacts.csv --invoices ./invoices.csv --json
 ```
 
-`migration validate` is a non-mutating cutover preflight. It checks required CSV column groups and cross-file references for accounts, contacts, employees, expenses, invoices, payments, payroll history, leave balances, opening balances, and historical journal entries before you run the individual import commands.
+`migration validate` is a non-mutating cutover preflight. It checks required CSV column groups and same-bundle cross-file references for accounts, contacts, employees, expenses, invoices, payments, bank transactions, payroll history, leave balances, KMD history, quotes, orders, recurring invoice templates, cost centers, product categories, warehouses, products, stock adjustments, fixed assets, opening balances, and historical journal entries before you run the individual import commands.
 
 ## Accounts
 

@@ -1073,6 +1073,17 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 
 	contactsFile := writeTempCSV(t, "contacts.csv", "contact_code,name\nCUST-1,Customer One\n")
 	invoicesFile := writeTempCSV(t, "invoices.csv", "invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\nINV-1,CUST-404,2026-05-30,Work,1,100,22\n")
+	bankFile := writeTempCSV(t, "bank.csv", "date,amount,description\n2026-05-31,100,Customer receipt\n")
+	kmdFile := writeTempCSV(t, "kmd.csv", "year,month,row_code,tax_base,tax_amount\n2026,5,1,100,22\n")
+	quotesFile := writeTempCSV(t, "quotes.csv", "quote_number,quote_date,contact_code,line_description,quantity,unit_price,vat_rate\nQ-1,2026-05-30,CUST-1,Work,1,100,22\n")
+	ordersFile := writeTempCSV(t, "orders.csv", "order_number,order_date,contact_code,line_description,quantity,unit_price,vat_rate\nSO-1,2026-05-30,CUST-1,Work,1,100,22\n")
+	recurringFile := writeTempCSV(t, "recurring.csv", "name,frequency,start_date,contact_code,line_description,quantity,unit_price,vat_rate\nMonthly,MONTHLY,2026-06-01,CUST-1,Work,1,100,22\n")
+	costCentersFile := writeTempCSV(t, "cost-centers.csv", "code,name\nCC-1,Sales\n")
+	categoriesFile := writeTempCSV(t, "categories.csv", "category_name\nWidgets\n")
+	warehousesFile := writeTempCSV(t, "warehouses.csv", "warehouse_code,warehouse_name\nMAIN,Main warehouse\n")
+	productsFile := writeTempCSV(t, "products.csv", "product_code,name,category_name,sales_price\nSKU-1,Widget,Widgets,10\n")
+	stockFile := writeTempCSV(t, "stock.csv", "product_code,warehouse_code,quantity\nSKU-1,MAIN,5\n")
+	assetsFile := writeTempCSV(t, "assets.csv", "asset_number,name,purchase_date,purchase_cost\nFA-1,Laptop,2026-05-30,1200\n")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -1087,6 +1098,23 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 			assert.Equal(t, "contacts.csv", req.Files[0].FileName)
 			if len(req.Files) == 2 {
 				assert.Contains(t, req.Files[1].CSVContent, "CUST-404")
+			}
+			if len(req.Files) > 2 {
+				kinds := map[cutover.FileKind]bool{}
+				for _, file := range req.Files {
+					kinds[file.Kind] = true
+				}
+				assert.True(t, kinds[cutover.KindBankTransactions])
+				assert.True(t, kinds[cutover.KindKMDHistory])
+				assert.True(t, kinds[cutover.KindQuotes])
+				assert.True(t, kinds[cutover.KindOrders])
+				assert.True(t, kinds[cutover.KindRecurringInvoices])
+				assert.True(t, kinds[cutover.KindCostCenters])
+				assert.True(t, kinds[cutover.KindProductCategories])
+				assert.True(t, kinds[cutover.KindWarehouses])
+				assert.True(t, kinds[cutover.KindProducts])
+				assert.True(t, kinds[cutover.KindStockAdjustments])
+				assert.True(t, kinds[cutover.KindFixedAssets])
 			}
 			_ = json.NewEncoder(w).Encode(cutover.BundleValidationReport{
 				Summary: cutover.BundleValidationSummary{
@@ -1121,7 +1149,22 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 	t.Setenv("OA_BASE_URL", server.URL)
 
 	app, stdout, _ := newTestCLIApp()
-	err := app.run(context.Background(), []string{"migration", "validate", "--contacts", contactsFile, "--invoices", invoicesFile})
+	err := app.run(context.Background(), []string{
+		"migration", "validate",
+		"--contacts", contactsFile,
+		"--invoices", invoicesFile,
+		"--bank-transactions", bankFile,
+		"--kmd-history", kmdFile,
+		"--quotes", quotesFile,
+		"--orders", ordersFile,
+		"--recurring-invoices", recurringFile,
+		"--cost-centers", costCentersFile,
+		"--product-categories", categoriesFile,
+		"--warehouses", warehousesFile,
+		"--products", productsFile,
+		"--stock", stockFile,
+		"--fixed-assets", assetsFile,
+	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Migration validation: blocked")
 	assert.Contains(t, stdout.String(), "CUST-404")
