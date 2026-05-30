@@ -213,7 +213,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 |---------|-------|---------------|-----------------|--------|
 | CSV export | ✅ | ✅ | ✅ | Implemented |
 | Excel export | ✅ | ✅ | ✅ | Implemented for core financial statements, cash flow, aging, balance confirmations, contact statements, sales margin, budget-vs-actual, and cost-center budget reports |
-| Data migration tools | ✅ | ✅ | ⚠️ | Partial: CSV imports cover setup data, invoices, opening balances, employees, finalized payroll history, and leave balances; full incumbent-system migration is still incomplete |
+| Data migration tools | ✅ | ✅ | ⚠️ | Partial: CSV imports cover setup data, invoices, opening balances, employees, finalized payroll history, leave balances, and multiple operational-history files; a migration bundle validator now checks required columns and cross-file references before import, but full incumbent-system migration remains incomplete |
 
 ---
 

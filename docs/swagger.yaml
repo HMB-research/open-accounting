@@ -1733,6 +1733,114 @@ definitions:
       vat_number:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_cutover.BundleFile:
+    properties:
+      csv_content:
+        type: string
+      file_name:
+        type: string
+      kind:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileKind'
+    type: object
+  github_com_HMB-research_open-accounting_internal_cutover.BundleValidationReport:
+    properties:
+      files:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileValidation'
+        type: array
+      issues:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.ValidationIssue'
+        type: array
+      summary:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.BundleValidationSummary'
+    type: object
+  github_com_HMB-research_open-accounting_internal_cutover.BundleValidationSummary:
+    properties:
+      error_count:
+        type: integer
+      files_validated:
+        type: integer
+      ready:
+        type: boolean
+      rows_validated:
+        type: integer
+      warning_count:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_cutover.FileKind:
+    enum:
+    - accounts
+    - contacts
+    - employees
+    - invoices
+    - payments
+    - payroll_history
+    - leave_balances
+    - opening_balances
+    - journal_entries
+    type: string
+    x-enum-varnames:
+    - KindAccounts
+    - KindContacts
+    - KindEmployees
+    - KindInvoices
+    - KindPayments
+    - KindPayrollHistory
+    - KindLeaveBalances
+    - KindOpeningBalances
+    - KindJournalEntries
+  github_com_HMB-research_open-accounting_internal_cutover.FileValidation:
+    properties:
+      file_name:
+        type: string
+      headers:
+        items:
+          type: string
+        type: array
+      kind:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileKind'
+      missing_columns:
+        items:
+          type: string
+        type: array
+      rows:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_cutover.IssueSeverity:
+    enum:
+    - ERROR
+    - WARNING
+    type: string
+    x-enum-varnames:
+    - SeverityError
+    - SeverityWarning
+  github_com_HMB-research_open-accounting_internal_cutover.ValidateBundleRequest:
+    properties:
+      files:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.BundleFile'
+        type: array
+    type: object
+  github_com_HMB-research_open-accounting_internal_cutover.ValidationIssue:
+    properties:
+      field:
+        type: string
+      file_name:
+        type: string
+      kind:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileKind'
+      message:
+        type: string
+      row:
+        type: integer
+      severity:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.IssueSeverity'
+      target_kind:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileKind'
+      value:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_documents.Document:
     properties:
       content_type:
@@ -11044,6 +11152,55 @@ paths:
       summary: Reject leave record
       tags:
       - Leave Management
+  /tenants/{tenantID}/migration/validate:
+    post:
+      consumes:
+      - application/json
+      description: Validate CSV cutover files for required columns and cross-file
+        references before running imports
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Migration bundle files
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.ValidateBundleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.BundleValidationReport'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      summary: Validate migration bundle
+      tags:
+      - Migration
   /tenants/{tenantID}/orders:
     get:
       description: Get all orders for a tenant with optional filtering

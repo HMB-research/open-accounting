@@ -8513,6 +8513,80 @@
                 }
             }
         },
+        "/tenants/{tenantID}/migration/validate": {
+            "post": {
+                "description": "Validate CSV cutover files for required columns and cross-file references before running imports",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Migration"
+                ],
+                "summary": "Validate migration bundle",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Migration bundle files",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.ValidateBundleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.BundleValidationReport"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/orders": {
             "get": {
                 "security": [
@@ -18442,6 +18516,162 @@
                     "type": "string"
                 },
                 "vat_number": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_cutover.BundleFile": {
+            "type": "object",
+            "properties": {
+                "csv_content": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "kind": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileKind"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_cutover.BundleValidationReport": {
+            "type": "object",
+            "properties": {
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileValidation"
+                    }
+                },
+                "issues": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.ValidationIssue"
+                    }
+                },
+                "summary": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.BundleValidationSummary"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_cutover.BundleValidationSummary": {
+            "type": "object",
+            "properties": {
+                "error_count": {
+                    "type": "integer"
+                },
+                "files_validated": {
+                    "type": "integer"
+                },
+                "ready": {
+                    "type": "boolean"
+                },
+                "rows_validated": {
+                    "type": "integer"
+                },
+                "warning_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_cutover.FileKind": {
+            "type": "string",
+            "enum": [
+                "accounts",
+                "contacts",
+                "employees",
+                "invoices",
+                "payments",
+                "payroll_history",
+                "leave_balances",
+                "opening_balances",
+                "journal_entries"
+            ],
+            "x-enum-varnames": [
+                "KindAccounts",
+                "KindContacts",
+                "KindEmployees",
+                "KindInvoices",
+                "KindPayments",
+                "KindPayrollHistory",
+                "KindLeaveBalances",
+                "KindOpeningBalances",
+                "KindJournalEntries"
+            ]
+        },
+        "github_com_HMB-research_open-accounting_internal_cutover.FileValidation": {
+            "type": "object",
+            "properties": {
+                "file_name": {
+                    "type": "string"
+                },
+                "headers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "kind": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileKind"
+                },
+                "missing_columns": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "rows": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_cutover.IssueSeverity": {
+            "type": "string",
+            "enum": [
+                "ERROR",
+                "WARNING"
+            ],
+            "x-enum-varnames": [
+                "SeverityError",
+                "SeverityWarning"
+            ]
+        },
+        "github_com_HMB-research_open-accounting_internal_cutover.ValidateBundleRequest": {
+            "type": "object",
+            "properties": {
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.BundleFile"
+                    }
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_cutover.ValidationIssue": {
+            "type": "object",
+            "properties": {
+                "field": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "kind": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileKind"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "row": {
+                    "type": "integer"
+                },
+                "severity": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.IssueSeverity"
+                },
+                "target_kind": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileKind"
+                },
+                "value": {
                     "type": "string"
                 }
             }

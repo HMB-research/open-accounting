@@ -240,6 +240,24 @@ go run ./cmd/oa tokens revoke --id <token-id>
 
 `tokens create` returns the raw token once. Store it immediately if you need to use it outside the CLI config flow.
 
+## Migration validation
+
+```bash
+go run ./cmd/oa migration validate \
+  --accounts ./accounts.csv \
+  --contacts ./contacts.csv \
+  --employees ./employees.csv \
+  --invoices ./invoices.csv \
+  --payments ./payments.csv \
+  --payroll-history ./payroll-history.csv \
+  --leave-balances ./leave-balances.csv \
+  --opening-balances ./opening-balances.csv \
+  --journal ./journal-entries.csv
+go run ./cmd/oa migration validate --contacts ./contacts.csv --invoices ./invoices.csv --json
+```
+
+`migration validate` is a non-mutating cutover preflight. It checks required CSV column groups and cross-file references for accounts, contacts, employees, invoices, payments, payroll history, leave balances, opening balances, and historical journal entries before you run the individual import commands.
+
 ## Accounts
 
 ```bash
