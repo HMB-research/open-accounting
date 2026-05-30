@@ -12,7 +12,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func TestPostgresRepositoryLifecycle(t *testing.T) {
+func TestRepositoryLifecycle(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "expenses-integration@example.com")
