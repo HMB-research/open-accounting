@@ -20,7 +20,7 @@
 >
 > Full local baseline last verified on 2026-05-28:
 > `go test ./...`, `golangci-lint run`, `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)`, `cd frontend && bun run lint`, `cd frontend && bun run check`, `cd frontend && bun run test`, `cd frontend && bun run build`, `cd frontend && bun run test:e2e:smoke`, and the full local `demo-chromium` Playwright project pass against fresh PostgreSQL-backed demo environments.
-> Production hardening, deeper historical cutover tooling beyond the current payroll, tax, quote/order/recurring-template, cost-center/product-category/warehouse/product/stock, fixed-asset, bank-transaction, and migration-preflight coverage, deeper accountant exception actions, and automated document retention/reconciliation policy enforcement are still in progress.
+> Production hardening, deeper historical cutover tooling beyond the current payroll, tax, commercial history, payment, expense, inventory, fixed-asset, bank-transaction, opening-balance, historical-journal, and migration-preflight coverage, deeper accountant exception actions, and automated document retention/reconciliation policy enforcement are still in progress.
 
 CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API token once and then uses that token for subsequent reads and mutations.
 
@@ -340,12 +340,13 @@ open-accounting/
 - [x] Revocable, single-use refresh token sessions
 - [x] CLI/API refresh-session listing and revocation
 - [x] One-time password reset flow with expiring tokens, request throttling, and refresh-session revocation
-- [x] Auth security audit events for login, logout, password, and session actions
+- [x] Auth security audit events for login, logout, password, session, API-token, and tenant-access actions
 - [x] Tenant audit events for organization settings changes
 - [x] Tenant admin controls for member refresh-session inspection and revocation
+- [x] Tenant admin controls for member API-token inspection and revocation
 - [x] Tenant admin security-event visibility for member auth activity
 - [x] Tenant admin suspension/restoration of member tenant access with session revocation and audit events
-- [x] CSV import for chart of accounts, contacts, employees, invoices, quotes, orders, recurring invoice templates, payments, cost centers, product categories/warehouses/products/stock, fixed assets, and opening balances
+- [x] CSV import for chart of accounts, contacts, employees, invoices, quotes, orders, recurring invoice templates, payments, expenses, bank transactions, cost centers, product categories/warehouses/products/stock, fixed assets, opening balances, and historical journals
 - [x] Migration bundle validation for cutover imports with API and CLI coverage across expenses, commercial history, inventory, banking, tax, and fixed assets
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings
@@ -357,7 +358,7 @@ open-accounting/
 - [x] Backup creation, offsite sync, health-check, and restore-drill scripts for self-hosted operations
 
 ### Still missing for reliable production use
-- [ ] Remaining external migration imports beyond payroll, tax history, quote/order/recurring-template, cost-center/product-category/warehouse/product/stock, and fixed assets
+- [ ] Remaining external migration imports beyond payroll, tax history, commercial history, payments, expenses, inventory, fixed assets, bank transactions, opening balances, and historical journals
 - [ ] Automated document policy enforcement in remaining workflow blockers
 - [ ] Remaining auth administration hardening beyond tenant-scoped session/status/API-token controls
 - [ ] E-invoice, direct bank feeds, SEPA initiation, and automatic e-MTA submission
