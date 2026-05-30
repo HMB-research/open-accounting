@@ -20,16 +20,14 @@ type accountingPoster interface {
 
 // Service provides fixed asset operations
 type Service struct {
-	db     *pgxpool.Pool
 	repo   Repository
 	ledger accountingPoster
 }
 
-// NewService creates a new assets service with a PostgreSQL repository
+// NewService creates a new assets service with an ORM-backed repository.
 func NewService(db *pgxpool.Pool) *Service {
 	return &Service{
-		db:     db,
-		repo:   NewPostgresRepository(db),
+		repo:   NewRepository(db),
 		ledger: accounting.NewService(db),
 	}
 }

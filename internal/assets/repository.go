@@ -2,11 +2,15 @@ package assets
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/HMB-research/open-accounting/internal/database"
+	"github.com/HMB-research/open-accounting/internal/models"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"gorm.io/gorm"
 )
 
 // Repository defines the contract for asset data access
@@ -40,344 +44,257 @@ var ErrAssetNotFound = fmt.Errorf("asset not found")
 // ErrCategoryNotFound is returned when a category is not found
 var ErrCategoryNotFound = fmt.Errorf("category not found")
 
-// PostgresRepository implements Repository using PostgreSQL
-type PostgresRepository struct {
-	db *pgxpool.Pool
+// GORMRepository implements Repository with the shared ORM layer.
+type GORMRepository struct {
+	db *gorm.DB
 }
 
-// NewPostgresRepository creates a new PostgreSQL repository
-func NewPostgresRepository(db *pgxpool.Pool) *PostgresRepository {
-	return &PostgresRepository{db: db}
+func NewRepository(db *pgxpool.Pool) *GORMRepository {
+	if db == nil {
+		return &GORMRepository{}
+	}
+	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	if err != nil {
+		panic(fmt.Errorf("create assets GORM repository: %w", err))
+	}
+	return NewGORMRepository(gormDB)
+}
+
+func NewGORMRepository(db *gorm.DB) *GORMRepository {
+	return &GORMRepository{db: db}
+}
+
+func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
+	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
 }
 
 // CreateCategory inserts a new asset category
-func (r *PostgresRepository) CreateCategory(ctx context.Context, schemaName string, cat *AssetCategory) error {
-	_, err := r.db.Exec(ctx, fmt.Sprintf(`
-		INSERT INTO %s.asset_categories (
-			id, tenant_id, name, description, depreciation_method,
-			default_useful_life_months, default_residual_value_percent,
-			asset_account_id, depreciation_expense_account_id, accumulated_depreciation_account_id,
-			created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-	`, schemaName),
-		cat.ID, cat.TenantID, cat.Name, cat.Description, cat.DepreciationMethod,
-		cat.DefaultUsefulLifeMonths, cat.DefaultResidualValuePercent,
-		cat.AssetAccountID, cat.DepreciationExpenseAccountID, cat.AccumulatedDepreciationAcctID,
-		cat.CreatedAt, cat.UpdatedAt,
-	)
+func (r *GORMRepository) CreateCategory(ctx context.Context, schemaName string, cat *AssetCategory) error {
+	db, err := r.tenantTable(ctx, schemaName, "asset_categories")
 	if err != nil {
+		return fmt.Errorf("qualify asset categories table: %w", err)
+	}
+	if err := db.Create(assetCategoryToModel(cat)).Error; err != nil {
 		return fmt.Errorf("insert category: %w", err)
 	}
 	return nil
 }
 
 // GetCategoryByID retrieves a category by ID
-func (r *PostgresRepository) GetCategoryByID(ctx context.Context, schemaName, tenantID, categoryID string) (*AssetCategory, error) {
-	var cat AssetCategory
-	err := r.db.QueryRow(ctx, fmt.Sprintf(`
-		SELECT id, tenant_id, name, COALESCE(description, ''), depreciation_method,
-		       default_useful_life_months, default_residual_value_percent,
-		       asset_account_id, depreciation_expense_account_id, accumulated_depreciation_account_id,
-		       created_at, updated_at
-		FROM %s.asset_categories
-		WHERE id = $1 AND tenant_id = $2
-	`, schemaName), categoryID, tenantID).Scan(
-		&cat.ID, &cat.TenantID, &cat.Name, &cat.Description, &cat.DepreciationMethod,
-		&cat.DefaultUsefulLifeMonths, &cat.DefaultResidualValuePercent,
-		&cat.AssetAccountID, &cat.DepreciationExpenseAccountID, &cat.AccumulatedDepreciationAcctID,
-		&cat.CreatedAt, &cat.UpdatedAt,
-	)
-	if err == pgx.ErrNoRows {
+func (r *GORMRepository) GetCategoryByID(ctx context.Context, schemaName, tenantID, categoryID string) (*AssetCategory, error) {
+	db, err := r.tenantTable(ctx, schemaName, "asset_categories")
+	if err != nil {
+		return nil, fmt.Errorf("qualify asset categories table: %w", err)
+	}
+
+	var categoryModel models.AssetCategory
+	err = db.Where("id = ? AND tenant_id = ?", categoryID, tenantID).First(&categoryModel).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrCategoryNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get category: %w", err)
 	}
-	return &cat, nil
+	return assetCategoryFromModel(&categoryModel), nil
 }
 
 // ListCategories retrieves all categories for a tenant
-func (r *PostgresRepository) ListCategories(ctx context.Context, schemaName, tenantID string) ([]AssetCategory, error) {
-	rows, err := r.db.Query(ctx, fmt.Sprintf(`
-		SELECT id, tenant_id, name, COALESCE(description, ''), depreciation_method,
-		       default_useful_life_months, default_residual_value_percent,
-		       asset_account_id, depreciation_expense_account_id, accumulated_depreciation_account_id,
-		       created_at, updated_at
-		FROM %s.asset_categories
-		WHERE tenant_id = $1
-		ORDER BY name
-	`, schemaName), tenantID)
+func (r *GORMRepository) ListCategories(ctx context.Context, schemaName, tenantID string) ([]AssetCategory, error) {
+	db, err := r.tenantTable(ctx, schemaName, "asset_categories")
 	if err != nil {
+		return nil, fmt.Errorf("qualify asset categories table: %w", err)
+	}
+
+	var categoryModels []models.AssetCategory
+	if err := db.Where("tenant_id = ?", tenantID).Order("name ASC").Find(&categoryModels).Error; err != nil {
 		return nil, fmt.Errorf("list categories: %w", err)
 	}
-	defer rows.Close()
 
-	var categories []AssetCategory
-	for rows.Next() {
-		var cat AssetCategory
-		if err := rows.Scan(
-			&cat.ID, &cat.TenantID, &cat.Name, &cat.Description, &cat.DepreciationMethod,
-			&cat.DefaultUsefulLifeMonths, &cat.DefaultResidualValuePercent,
-			&cat.AssetAccountID, &cat.DepreciationExpenseAccountID, &cat.AccumulatedDepreciationAcctID,
-			&cat.CreatedAt, &cat.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan category: %w", err)
-		}
-		categories = append(categories, cat)
+	categories := make([]AssetCategory, len(categoryModels))
+	for i := range categoryModels {
+		categories[i] = *assetCategoryFromModel(&categoryModels[i])
 	}
 	return categories, nil
 }
 
 // UpdateCategory updates a category
-func (r *PostgresRepository) UpdateCategory(ctx context.Context, schemaName string, cat *AssetCategory) error {
-	result, err := r.db.Exec(ctx, fmt.Sprintf(`
-		UPDATE %s.asset_categories
-		SET name = $1, description = $2, depreciation_method = $3,
-		    default_useful_life_months = $4, default_residual_value_percent = $5,
-		    asset_account_id = $6, depreciation_expense_account_id = $7,
-		    accumulated_depreciation_account_id = $8, updated_at = $9
-		WHERE id = $10 AND tenant_id = $11
-	`, schemaName),
-		cat.Name, cat.Description, cat.DepreciationMethod,
-		cat.DefaultUsefulLifeMonths, cat.DefaultResidualValuePercent,
-		cat.AssetAccountID, cat.DepreciationExpenseAccountID, cat.AccumulatedDepreciationAcctID,
-		time.Now(), cat.ID, cat.TenantID,
-	)
+func (r *GORMRepository) UpdateCategory(ctx context.Context, schemaName string, cat *AssetCategory) error {
+	db, err := r.tenantTable(ctx, schemaName, "asset_categories")
 	if err != nil {
-		return fmt.Errorf("update category: %w", err)
+		return fmt.Errorf("qualify asset categories table: %w", err)
 	}
-	if result.RowsAffected() == 0 {
+
+	result := db.Where("id = ? AND tenant_id = ?", cat.ID, cat.TenantID).
+		Updates(map[string]interface{}{
+			"name":                                cat.Name,
+			"description":                         cat.Description,
+			"depreciation_method":                 string(cat.DepreciationMethod),
+			"default_useful_life_months":          cat.DefaultUsefulLifeMonths,
+			"default_residual_value_percent":      cat.DefaultResidualValuePercent.String(),
+			"asset_account_id":                    cat.AssetAccountID,
+			"depreciation_expense_account_id":     cat.DepreciationExpenseAccountID,
+			"accumulated_depreciation_account_id": cat.AccumulatedDepreciationAcctID,
+			"updated_at":                          time.Now(),
+		})
+	if result.Error != nil {
+		return fmt.Errorf("update category: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
 		return ErrCategoryNotFound
 	}
 	return nil
 }
 
 // DeleteCategory deletes a category
-func (r *PostgresRepository) DeleteCategory(ctx context.Context, schemaName, tenantID, categoryID string) error {
-	result, err := r.db.Exec(ctx, fmt.Sprintf(`
-		DELETE FROM %s.asset_categories
-		WHERE id = $1 AND tenant_id = $2
-	`, schemaName), categoryID, tenantID)
+func (r *GORMRepository) DeleteCategory(ctx context.Context, schemaName, tenantID, categoryID string) error {
+	db, err := r.tenantTable(ctx, schemaName, "asset_categories")
 	if err != nil {
-		return fmt.Errorf("delete category: %w", err)
+		return fmt.Errorf("qualify asset categories table: %w", err)
 	}
-	if result.RowsAffected() == 0 {
+
+	result := db.Where("id = ? AND tenant_id = ?", categoryID, tenantID).Delete(&models.AssetCategory{})
+	if result.Error != nil {
+		return fmt.Errorf("delete category: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
 		return ErrCategoryNotFound
 	}
 	return nil
 }
 
 // Create inserts a new fixed asset
-func (r *PostgresRepository) Create(ctx context.Context, schemaName string, asset *FixedAsset) error {
-	_, err := r.db.Exec(ctx, fmt.Sprintf(`
-		INSERT INTO %s.fixed_assets (
-			id, tenant_id, asset_number, name, description, category_id, status,
-			purchase_date, purchase_cost, supplier_id, invoice_id, serial_number, location,
-			depreciation_method, useful_life_months, residual_value, depreciation_start_date,
-			accumulated_depreciation, book_value, last_depreciation_date,
-			disposal_date, disposal_method, disposal_proceeds, disposal_notes,
-			disposal_journal_entry_id,
-			asset_account_id, depreciation_expense_account_id, accumulated_depreciation_account_id,
-			created_at, created_by, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
-	`, schemaName),
-		asset.ID, asset.TenantID, asset.AssetNumber, asset.Name, asset.Description, asset.CategoryID, asset.Status,
-		asset.PurchaseDate, asset.PurchaseCost, asset.SupplierID, asset.InvoiceID, asset.SerialNumber, asset.Location,
-		asset.DepreciationMethod, asset.UsefulLifeMonths, asset.ResidualValue, asset.DepreciationStartDate,
-		asset.AccumulatedDepreciation, asset.BookValue, asset.LastDepreciationDate,
-		asset.DisposalDate, disposalMethodString(asset.DisposalMethod), asset.DisposalProceeds, asset.DisposalNotes,
-		asset.DisposalJournalEntryID,
-		asset.AssetAccountID, asset.DepreciationExpenseAccountID, asset.AccumulatedDepreciationAcctID,
-		asset.CreatedAt, asset.CreatedBy, asset.UpdatedAt,
-	)
+func (r *GORMRepository) Create(ctx context.Context, schemaName string, asset *FixedAsset) error {
+	db, err := r.tenantTable(ctx, schemaName, "fixed_assets")
 	if err != nil {
+		return fmt.Errorf("qualify fixed assets table: %w", err)
+	}
+	if err := db.Create(fixedAssetToModel(asset)).Error; err != nil {
 		return fmt.Errorf("insert asset: %w", err)
 	}
 	return nil
 }
 
 // GetByID retrieves an asset by ID
-func (r *PostgresRepository) GetByID(ctx context.Context, schemaName, tenantID, assetID string) (*FixedAsset, error) {
-	var a FixedAsset
-	var depStartDate, lastDepDate, dispDate *time.Time
-	var dispMethod *string
-	err := r.db.QueryRow(ctx, fmt.Sprintf(`
-		SELECT id, tenant_id, asset_number, name, COALESCE(description, ''), category_id, status,
-		       purchase_date, purchase_cost, supplier_id, invoice_id, COALESCE(serial_number, ''), COALESCE(location, ''),
-		       depreciation_method, useful_life_months, residual_value, depreciation_start_date,
-		       accumulated_depreciation, book_value, last_depreciation_date,
-		       disposal_date, disposal_method, disposal_proceeds, COALESCE(disposal_notes, ''),
-		       disposal_journal_entry_id,
-		       asset_account_id, depreciation_expense_account_id, accumulated_depreciation_account_id,
-		       created_at, created_by, updated_at
-		FROM %s.fixed_assets
-		WHERE id = $1 AND tenant_id = $2
-	`, schemaName), assetID, tenantID).Scan(
-		&a.ID, &a.TenantID, &a.AssetNumber, &a.Name, &a.Description, &a.CategoryID, &a.Status,
-		&a.PurchaseDate, &a.PurchaseCost, &a.SupplierID, &a.InvoiceID, &a.SerialNumber, &a.Location,
-		&a.DepreciationMethod, &a.UsefulLifeMonths, &a.ResidualValue, &depStartDate,
-		&a.AccumulatedDepreciation, &a.BookValue, &lastDepDate,
-		&dispDate, &dispMethod, &a.DisposalProceeds, &a.DisposalNotes,
-		&a.DisposalJournalEntryID,
-		&a.AssetAccountID, &a.DepreciationExpenseAccountID, &a.AccumulatedDepreciationAcctID,
-		&a.CreatedAt, &a.CreatedBy, &a.UpdatedAt,
-	)
-	if err == pgx.ErrNoRows {
+func (r *GORMRepository) GetByID(ctx context.Context, schemaName, tenantID, assetID string) (*FixedAsset, error) {
+	db, err := r.tenantTable(ctx, schemaName, "fixed_assets")
+	if err != nil {
+		return nil, fmt.Errorf("qualify fixed assets table: %w", err)
+	}
+
+	var assetModel models.FixedAsset
+	err = db.Where("id = ? AND tenant_id = ?", assetID, tenantID).First(&assetModel).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrAssetNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get asset: %w", err)
 	}
-	a.DepreciationStartDate = depStartDate
-	a.LastDepreciationDate = lastDepDate
-	a.DisposalDate = dispDate
-	if dispMethod != nil {
-		dm := DisposalMethod(*dispMethod)
-		a.DisposalMethod = &dm
-	}
-	return &a, nil
+	return fixedAssetFromModel(&assetModel), nil
 }
 
 // List retrieves assets with optional filtering
-func (r *PostgresRepository) List(ctx context.Context, schemaName, tenantID string, filter *AssetFilter) ([]FixedAsset, error) {
-	query := fmt.Sprintf(`
-		SELECT id, tenant_id, asset_number, name, COALESCE(description, ''), category_id, status,
-		       purchase_date, purchase_cost, supplier_id, invoice_id, COALESCE(serial_number, ''), COALESCE(location, ''),
-		       depreciation_method, useful_life_months, residual_value, depreciation_start_date,
-		       accumulated_depreciation, book_value, last_depreciation_date,
-		       disposal_date, disposal_method, disposal_proceeds, COALESCE(disposal_notes, ''),
-		       disposal_journal_entry_id,
-		       asset_account_id, depreciation_expense_account_id, accumulated_depreciation_account_id,
-		       created_at, created_by, updated_at
-		FROM %s.fixed_assets
-		WHERE tenant_id = $1
-	`, schemaName)
+func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, filter *AssetFilter) ([]FixedAsset, error) {
+	db, err := r.tenantTable(ctx, schemaName, "fixed_assets")
+	if err != nil {
+		return nil, fmt.Errorf("qualify fixed assets table: %w", err)
+	}
 
-	args := []interface{}{tenantID}
-	argNum := 2
-
+	query := db.Where("tenant_id = ?", tenantID)
 	if filter != nil {
 		if filter.Status != "" {
-			query += fmt.Sprintf(" AND status = $%d", argNum)
-			args = append(args, filter.Status)
-			argNum++
+			query = query.Where("status = ?", string(filter.Status))
 		}
 		if filter.CategoryID != "" {
-			query += fmt.Sprintf(" AND category_id = $%d", argNum)
-			args = append(args, filter.CategoryID)
-			argNum++
+			query = query.Where("category_id = ?", filter.CategoryID)
 		}
-		if filter.Search != "" {
-			query += fmt.Sprintf(" AND (name ILIKE $%d OR asset_number ILIKE $%d)", argNum, argNum)
-			args = append(args, "%"+filter.Search+"%")
+		if strings.TrimSpace(filter.Search) != "" {
+			search := "%" + strings.TrimSpace(filter.Search) + "%"
+			query = query.Where("name ILIKE ? OR asset_number ILIKE ?", search, search)
 		}
 	}
 
-	query += " ORDER BY purchase_date DESC, asset_number DESC"
-
-	rows, err := r.db.Query(ctx, query, args...)
-	if err != nil {
+	var assetModels []models.FixedAsset
+	if err := query.Order("purchase_date DESC").Order("asset_number DESC").Find(&assetModels).Error; err != nil {
 		return nil, fmt.Errorf("list assets: %w", err)
 	}
-	defer rows.Close()
 
-	var assets []FixedAsset
-	for rows.Next() {
-		var a FixedAsset
-		var depStartDate, lastDepDate, dispDate *time.Time
-		var dispMethod *string
-		if err := rows.Scan(
-			&a.ID, &a.TenantID, &a.AssetNumber, &a.Name, &a.Description, &a.CategoryID, &a.Status,
-			&a.PurchaseDate, &a.PurchaseCost, &a.SupplierID, &a.InvoiceID, &a.SerialNumber, &a.Location,
-			&a.DepreciationMethod, &a.UsefulLifeMonths, &a.ResidualValue, &depStartDate,
-			&a.AccumulatedDepreciation, &a.BookValue, &lastDepDate,
-			&dispDate, &dispMethod, &a.DisposalProceeds, &a.DisposalNotes,
-			&a.DisposalJournalEntryID,
-			&a.AssetAccountID, &a.DepreciationExpenseAccountID, &a.AccumulatedDepreciationAcctID,
-			&a.CreatedAt, &a.CreatedBy, &a.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan asset: %w", err)
-		}
-		a.DepreciationStartDate = depStartDate
-		a.LastDepreciationDate = lastDepDate
-		a.DisposalDate = dispDate
-		if dispMethod != nil {
-			dm := DisposalMethod(*dispMethod)
-			a.DisposalMethod = &dm
-		}
-		assets = append(assets, a)
+	assets := make([]FixedAsset, len(assetModels))
+	for i := range assetModels {
+		assets[i] = *fixedAssetFromModel(&assetModels[i])
 	}
-
 	return assets, nil
 }
 
 // Update updates an asset
-func (r *PostgresRepository) Update(ctx context.Context, schemaName string, asset *FixedAsset) error {
-	result, err := r.db.Exec(ctx, fmt.Sprintf(`
-		UPDATE %s.fixed_assets
-		SET name = $1, description = $2, category_id = $3, serial_number = $4, location = $5,
-		    depreciation_method = $6, useful_life_months = $7, residual_value = $8,
-		    asset_account_id = $9, depreciation_expense_account_id = $10, accumulated_depreciation_account_id = $11,
-		    updated_at = $12
-		WHERE id = $13 AND tenant_id = $14 AND status IN ('DRAFT', 'ACTIVE')
-	`, schemaName),
-		asset.Name, asset.Description, asset.CategoryID, asset.SerialNumber, asset.Location,
-		asset.DepreciationMethod, asset.UsefulLifeMonths, asset.ResidualValue,
-		asset.AssetAccountID, asset.DepreciationExpenseAccountID, asset.AccumulatedDepreciationAcctID,
-		time.Now(), asset.ID, asset.TenantID,
-	)
+func (r *GORMRepository) Update(ctx context.Context, schemaName string, asset *FixedAsset) error {
+	db, err := r.tenantTable(ctx, schemaName, "fixed_assets")
 	if err != nil {
-		return fmt.Errorf("update asset: %w", err)
+		return fmt.Errorf("qualify fixed assets table: %w", err)
 	}
-	if result.RowsAffected() == 0 {
+
+	result := db.Where("id = ? AND tenant_id = ? AND status IN ?", asset.ID, asset.TenantID, []string{string(AssetStatusDraft), string(AssetStatusActive)}).
+		Updates(map[string]interface{}{
+			"name":                                asset.Name,
+			"description":                         asset.Description,
+			"category_id":                         asset.CategoryID,
+			"serial_number":                       asset.SerialNumber,
+			"location":                            asset.Location,
+			"depreciation_method":                 string(asset.DepreciationMethod),
+			"useful_life_months":                  asset.UsefulLifeMonths,
+			"residual_value":                      asset.ResidualValue.String(),
+			"asset_account_id":                    asset.AssetAccountID,
+			"depreciation_expense_account_id":     asset.DepreciationExpenseAccountID,
+			"accumulated_depreciation_account_id": asset.AccumulatedDepreciationAcctID,
+			"updated_at":                          time.Now(),
+		})
+	if result.Error != nil {
+		return fmt.Errorf("update asset: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
 		return ErrAssetNotFound
 	}
 	return nil
 }
 
 // UpdateStatus updates the status of an asset
-func (r *PostgresRepository) UpdateStatus(ctx context.Context, schemaName, tenantID, assetID string, status AssetStatus) error {
-	result, err := r.db.Exec(ctx, fmt.Sprintf(`
-		UPDATE %s.fixed_assets
-		SET status = $1, updated_at = $2
-		WHERE id = $3 AND tenant_id = $4
-	`, schemaName), status, time.Now(), assetID, tenantID)
+func (r *GORMRepository) UpdateStatus(ctx context.Context, schemaName, tenantID, assetID string, status AssetStatus) error {
+	db, err := r.tenantTable(ctx, schemaName, "fixed_assets")
 	if err != nil {
-		return fmt.Errorf("update status: %w", err)
+		return fmt.Errorf("qualify fixed assets table: %w", err)
 	}
-	if result.RowsAffected() == 0 {
+
+	result := db.Where("id = ? AND tenant_id = ?", assetID, tenantID).
+		Updates(map[string]interface{}{"status": string(status), "updated_at": time.Now()})
+	if result.Error != nil {
+		return fmt.Errorf("update status: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
 		return ErrAssetNotFound
 	}
 	return nil
 }
 
 // UpdateDisposal persists disposal details and marks the asset as sold or disposed.
-func (r *PostgresRepository) UpdateDisposal(ctx context.Context, schemaName string, asset *FixedAsset, status AssetStatus) error {
-	result, err := r.db.Exec(ctx, fmt.Sprintf(`
-		UPDATE %s.fixed_assets
-		SET status = $1,
-		    disposal_date = $2,
-		    disposal_method = $3,
-		    disposal_proceeds = $4,
-		    disposal_notes = $5,
-		    disposal_journal_entry_id = $6,
-		    updated_at = $7
-		WHERE id = $8 AND tenant_id = $9 AND status = 'ACTIVE'
-	`, schemaName),
-		status,
-		asset.DisposalDate,
-		disposalMethodString(asset.DisposalMethod),
-		asset.DisposalProceeds,
-		asset.DisposalNotes,
-		asset.DisposalJournalEntryID,
-		time.Now(),
-		asset.ID,
-		asset.TenantID,
-	)
+func (r *GORMRepository) UpdateDisposal(ctx context.Context, schemaName string, asset *FixedAsset, status AssetStatus) error {
+	db, err := r.tenantTable(ctx, schemaName, "fixed_assets")
 	if err != nil {
-		return fmt.Errorf("update disposal: %w", err)
+		return fmt.Errorf("qualify fixed assets table: %w", err)
 	}
-	if result.RowsAffected() == 0 {
+
+	result := db.Where("id = ? AND tenant_id = ? AND status = ?", asset.ID, asset.TenantID, string(AssetStatusActive)).
+		Updates(map[string]interface{}{
+			"status":                    string(status),
+			"disposal_date":             asset.DisposalDate,
+			"disposal_method":           disposalMethodString(asset.DisposalMethod),
+			"disposal_proceeds":         asset.DisposalProceeds.String(),
+			"disposal_notes":            asset.DisposalNotes,
+			"disposal_journal_entry_id": asset.DisposalJournalEntryID,
+			"updated_at":                time.Now(),
+		})
+	if result.Error != nil {
+		return fmt.Errorf("update disposal: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
 		return ErrAssetNotFound
 	}
 	return nil
@@ -392,96 +309,248 @@ func disposalMethodString(method *DisposalMethod) *string {
 }
 
 // Delete removes a draft asset
-func (r *PostgresRepository) Delete(ctx context.Context, schemaName, tenantID, assetID string) error {
-	result, err := r.db.Exec(ctx, fmt.Sprintf(`
-		DELETE FROM %s.fixed_assets
-		WHERE id = $1 AND tenant_id = $2 AND status = 'DRAFT'
-	`, schemaName), assetID, tenantID)
+func (r *GORMRepository) Delete(ctx context.Context, schemaName, tenantID, assetID string) error {
+	db, err := r.tenantTable(ctx, schemaName, "fixed_assets")
 	if err != nil {
-		return fmt.Errorf("delete asset: %w", err)
+		return fmt.Errorf("qualify fixed assets table: %w", err)
 	}
-	if result.RowsAffected() == 0 {
+
+	result := db.Where("id = ? AND tenant_id = ? AND status = ?", assetID, tenantID, string(AssetStatusDraft)).
+		Delete(&models.FixedAsset{})
+	if result.Error != nil {
+		return fmt.Errorf("delete asset: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
 		return ErrAssetNotFound
 	}
 	return nil
 }
 
 // GenerateNumber generates a new asset number
-func (r *PostgresRepository) GenerateNumber(ctx context.Context, schemaName, tenantID string) (string, error) {
-	var seq int
-	err := r.db.QueryRow(ctx, fmt.Sprintf(`
-		SELECT COALESCE(MAX(CAST(SUBSTRING(asset_number FROM 'FA-([0-9]+)') AS INTEGER)), 0) + 1
-		FROM %s.fixed_assets WHERE tenant_id = $1
-	`, schemaName), tenantID).Scan(&seq)
+func (r *GORMRepository) GenerateNumber(ctx context.Context, schemaName, tenantID string) (string, error) {
+	db, err := r.tenantTable(ctx, schemaName, "fixed_assets")
 	if err != nil {
+		return "", fmt.Errorf("qualify fixed assets table: %w", err)
+	}
+
+	var seq int
+	if err := db.
+		Select(`
+			COALESCE(MAX(
+				CASE
+					WHEN asset_number ~ ? THEN CAST(SUBSTRING(asset_number FROM ?) AS INTEGER)
+					ELSE 0
+				END
+			), 0) + 1
+		`, "FA-[0-9]+$", "FA-([0-9]+)$").
+		Where("tenant_id = ?", tenantID).
+		Scan(&seq).Error; err != nil {
 		return "", fmt.Errorf("generate asset number: %w", err)
 	}
 	return fmt.Sprintf("FA-%05d", seq), nil
 }
 
 // CreateDepreciationEntry inserts a new depreciation entry
-func (r *PostgresRepository) CreateDepreciationEntry(ctx context.Context, schemaName string, entry *DepreciationEntry) error {
-	_, err := r.db.Exec(ctx, fmt.Sprintf(`
-		INSERT INTO %s.depreciation_entries (
-			id, tenant_id, asset_id, depreciation_date, period_start, period_end,
-			depreciation_amount, accumulated_total, book_value_after, journal_entry_id, notes,
-			created_at, created_by
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-	`, schemaName),
-		entry.ID, entry.TenantID, entry.AssetID, entry.DepreciationDate, entry.PeriodStart, entry.PeriodEnd,
-		entry.DepreciationAmount, entry.AccumulatedTotal, entry.BookValueAfter, entry.JournalEntryID, entry.Notes,
-		entry.CreatedAt, entry.CreatedBy,
-	)
+func (r *GORMRepository) CreateDepreciationEntry(ctx context.Context, schemaName string, entry *DepreciationEntry) error {
+	db, err := r.tenantTable(ctx, schemaName, "depreciation_entries")
 	if err != nil {
+		return fmt.Errorf("qualify depreciation entries table: %w", err)
+	}
+	if err := db.Create(depreciationEntryToModel(entry)).Error; err != nil {
 		return fmt.Errorf("insert depreciation entry: %w", err)
 	}
 	return nil
 }
 
 // ListDepreciationEntries retrieves depreciation entries for an asset
-func (r *PostgresRepository) ListDepreciationEntries(ctx context.Context, schemaName, tenantID, assetID string) ([]DepreciationEntry, error) {
-	rows, err := r.db.Query(ctx, fmt.Sprintf(`
-		SELECT id, tenant_id, asset_id, depreciation_date, period_start, period_end,
-		       depreciation_amount, accumulated_total, book_value_after, journal_entry_id, COALESCE(notes, ''),
-		       created_at, created_by
-		FROM %s.depreciation_entries
-		WHERE asset_id = $1 AND tenant_id = $2
-		ORDER BY depreciation_date DESC
-	`, schemaName), assetID, tenantID)
+func (r *GORMRepository) ListDepreciationEntries(ctx context.Context, schemaName, tenantID, assetID string) ([]DepreciationEntry, error) {
+	db, err := r.tenantTable(ctx, schemaName, "depreciation_entries")
 	if err != nil {
+		return nil, fmt.Errorf("qualify depreciation entries table: %w", err)
+	}
+
+	var entryModels []models.DepreciationEntry
+	if err := db.
+		Where("asset_id = ? AND tenant_id = ?", assetID, tenantID).
+		Order("depreciation_date DESC").
+		Find(&entryModels).Error; err != nil {
 		return nil, fmt.Errorf("list depreciation entries: %w", err)
 	}
-	defer rows.Close()
 
-	var entries []DepreciationEntry
-	for rows.Next() {
-		var e DepreciationEntry
-		if err := rows.Scan(
-			&e.ID, &e.TenantID, &e.AssetID, &e.DepreciationDate, &e.PeriodStart, &e.PeriodEnd,
-			&e.DepreciationAmount, &e.AccumulatedTotal, &e.BookValueAfter, &e.JournalEntryID, &e.Notes,
-			&e.CreatedAt, &e.CreatedBy,
-		); err != nil {
-			return nil, fmt.Errorf("scan depreciation entry: %w", err)
-		}
-		entries = append(entries, e)
+	entries := make([]DepreciationEntry, len(entryModels))
+	for i := range entryModels {
+		entries[i] = *depreciationEntryFromModel(&entryModels[i])
 	}
 	return entries, nil
 }
 
 // UpdateAssetDepreciation updates the depreciation values on an asset
-func (r *PostgresRepository) UpdateAssetDepreciation(ctx context.Context, schemaName string, asset *FixedAsset) error {
-	result, err := r.db.Exec(ctx, fmt.Sprintf(`
-		UPDATE %s.fixed_assets
-		SET accumulated_depreciation = $1, book_value = $2, last_depreciation_date = $3, updated_at = $4
-		WHERE id = $5 AND tenant_id = $6
-	`, schemaName),
-		asset.AccumulatedDepreciation, asset.BookValue, asset.LastDepreciationDate, time.Now(), asset.ID, asset.TenantID,
-	)
+func (r *GORMRepository) UpdateAssetDepreciation(ctx context.Context, schemaName string, asset *FixedAsset) error {
+	db, err := r.tenantTable(ctx, schemaName, "fixed_assets")
 	if err != nil {
-		return fmt.Errorf("update asset depreciation: %w", err)
+		return fmt.Errorf("qualify fixed assets table: %w", err)
 	}
-	if result.RowsAffected() == 0 {
+
+	result := db.Where("id = ? AND tenant_id = ?", asset.ID, asset.TenantID).
+		Updates(map[string]interface{}{
+			"accumulated_depreciation": asset.AccumulatedDepreciation.String(),
+			"book_value":               asset.BookValue.String(),
+			"last_depreciation_date":   asset.LastDepreciationDate,
+			"updated_at":               time.Now(),
+		})
+	if result.Error != nil {
+		return fmt.Errorf("update asset depreciation: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
 		return ErrAssetNotFound
 	}
 	return nil
+}
+
+func assetCategoryToModel(category *AssetCategory) *models.AssetCategory {
+	return &models.AssetCategory{
+		ID:                            category.ID,
+		TenantID:                      category.TenantID,
+		Name:                          category.Name,
+		Description:                   category.Description,
+		DepreciationMethod:            string(category.DepreciationMethod),
+		DefaultUsefulLifeMonths:       category.DefaultUsefulLifeMonths,
+		DefaultResidualValuePercent:   models.Decimal{Decimal: category.DefaultResidualValuePercent},
+		AssetAccountID:                category.AssetAccountID,
+		DepreciationExpenseAccountID:  category.DepreciationExpenseAccountID,
+		AccumulatedDepreciationAcctID: category.AccumulatedDepreciationAcctID,
+		CreatedAt:                     category.CreatedAt,
+		UpdatedAt:                     category.UpdatedAt,
+	}
+}
+
+func assetCategoryFromModel(category *models.AssetCategory) *AssetCategory {
+	return &AssetCategory{
+		ID:                            category.ID,
+		TenantID:                      category.TenantID,
+		Name:                          category.Name,
+		Description:                   category.Description,
+		DepreciationMethod:            DepreciationMethod(category.DepreciationMethod),
+		DefaultUsefulLifeMonths:       category.DefaultUsefulLifeMonths,
+		DefaultResidualValuePercent:   category.DefaultResidualValuePercent.Decimal,
+		AssetAccountID:                category.AssetAccountID,
+		DepreciationExpenseAccountID:  category.DepreciationExpenseAccountID,
+		AccumulatedDepreciationAcctID: category.AccumulatedDepreciationAcctID,
+		CreatedAt:                     category.CreatedAt,
+		UpdatedAt:                     category.UpdatedAt,
+	}
+}
+
+func fixedAssetToModel(asset *FixedAsset) *models.FixedAsset {
+	return &models.FixedAsset{
+		ID:                            asset.ID,
+		TenantID:                      asset.TenantID,
+		AssetNumber:                   asset.AssetNumber,
+		Name:                          asset.Name,
+		Description:                   asset.Description,
+		CategoryID:                    asset.CategoryID,
+		Status:                        string(asset.Status),
+		PurchaseDate:                  asset.PurchaseDate,
+		PurchaseCost:                  models.Decimal{Decimal: asset.PurchaseCost},
+		SupplierID:                    asset.SupplierID,
+		InvoiceID:                     asset.InvoiceID,
+		SerialNumber:                  asset.SerialNumber,
+		Location:                      asset.Location,
+		DepreciationMethod:            string(asset.DepreciationMethod),
+		UsefulLifeMonths:              asset.UsefulLifeMonths,
+		ResidualValue:                 models.Decimal{Decimal: asset.ResidualValue},
+		DepreciationStartDate:         asset.DepreciationStartDate,
+		AccumulatedDepreciation:       models.Decimal{Decimal: asset.AccumulatedDepreciation},
+		BookValue:                     models.Decimal{Decimal: asset.BookValue},
+		LastDepreciationDate:          asset.LastDepreciationDate,
+		DisposalDate:                  asset.DisposalDate,
+		DisposalMethod:                disposalMethodString(asset.DisposalMethod),
+		DisposalProceeds:              models.Decimal{Decimal: asset.DisposalProceeds},
+		DisposalNotes:                 asset.DisposalNotes,
+		DisposalJournalEntryID:        asset.DisposalJournalEntryID,
+		AssetAccountID:                asset.AssetAccountID,
+		DepreciationExpenseAccountID:  asset.DepreciationExpenseAccountID,
+		AccumulatedDepreciationAcctID: asset.AccumulatedDepreciationAcctID,
+		CreatedAt:                     asset.CreatedAt,
+		CreatedBy:                     asset.CreatedBy,
+		UpdatedAt:                     asset.UpdatedAt,
+	}
+}
+
+func fixedAssetFromModel(asset *models.FixedAsset) *FixedAsset {
+	var disposalMethod *DisposalMethod
+	if asset.DisposalMethod != nil {
+		method := DisposalMethod(*asset.DisposalMethod)
+		disposalMethod = &method
+	}
+
+	return &FixedAsset{
+		ID:                            asset.ID,
+		TenantID:                      asset.TenantID,
+		AssetNumber:                   asset.AssetNumber,
+		Name:                          asset.Name,
+		Description:                   asset.Description,
+		CategoryID:                    asset.CategoryID,
+		Status:                        AssetStatus(asset.Status),
+		PurchaseDate:                  asset.PurchaseDate,
+		PurchaseCost:                  asset.PurchaseCost.Decimal,
+		SupplierID:                    asset.SupplierID,
+		InvoiceID:                     asset.InvoiceID,
+		SerialNumber:                  asset.SerialNumber,
+		Location:                      asset.Location,
+		DepreciationMethod:            DepreciationMethod(asset.DepreciationMethod),
+		UsefulLifeMonths:              asset.UsefulLifeMonths,
+		ResidualValue:                 asset.ResidualValue.Decimal,
+		DepreciationStartDate:         asset.DepreciationStartDate,
+		AccumulatedDepreciation:       asset.AccumulatedDepreciation.Decimal,
+		BookValue:                     asset.BookValue.Decimal,
+		LastDepreciationDate:          asset.LastDepreciationDate,
+		DisposalDate:                  asset.DisposalDate,
+		DisposalMethod:                disposalMethod,
+		DisposalProceeds:              asset.DisposalProceeds.Decimal,
+		DisposalNotes:                 asset.DisposalNotes,
+		DisposalJournalEntryID:        asset.DisposalJournalEntryID,
+		AssetAccountID:                asset.AssetAccountID,
+		DepreciationExpenseAccountID:  asset.DepreciationExpenseAccountID,
+		AccumulatedDepreciationAcctID: asset.AccumulatedDepreciationAcctID,
+		CreatedAt:                     asset.CreatedAt,
+		CreatedBy:                     asset.CreatedBy,
+		UpdatedAt:                     asset.UpdatedAt,
+	}
+}
+
+func depreciationEntryToModel(entry *DepreciationEntry) *models.DepreciationEntry {
+	return &models.DepreciationEntry{
+		ID:                 entry.ID,
+		TenantID:           entry.TenantID,
+		AssetID:            entry.AssetID,
+		DepreciationDate:   entry.DepreciationDate,
+		PeriodStart:        entry.PeriodStart,
+		PeriodEnd:          entry.PeriodEnd,
+		DepreciationAmount: models.Decimal{Decimal: entry.DepreciationAmount},
+		AccumulatedTotal:   models.Decimal{Decimal: entry.AccumulatedTotal},
+		BookValueAfter:     models.Decimal{Decimal: entry.BookValueAfter},
+		JournalEntryID:     entry.JournalEntryID,
+		Notes:              entry.Notes,
+		CreatedAt:          entry.CreatedAt,
+		CreatedBy:          entry.CreatedBy,
+	}
+}
+
+func depreciationEntryFromModel(entry *models.DepreciationEntry) *DepreciationEntry {
+	return &DepreciationEntry{
+		ID:                 entry.ID,
+		TenantID:           entry.TenantID,
+		AssetID:            entry.AssetID,
+		DepreciationDate:   entry.DepreciationDate,
+		PeriodStart:        entry.PeriodStart,
+		PeriodEnd:          entry.PeriodEnd,
+		DepreciationAmount: entry.DepreciationAmount.Decimal,
+		AccumulatedTotal:   entry.AccumulatedTotal.Decimal,
+		BookValueAfter:     entry.BookValueAfter.Decimal,
+		JournalEntryID:     entry.JournalEntryID,
+		Notes:              entry.Notes,
+		CreatedAt:          entry.CreatedAt,
+		CreatedBy:          entry.CreatedBy,
+	}
 }

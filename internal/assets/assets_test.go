@@ -1514,7 +1514,7 @@ func (f *fakeAssetAccountingPoster) PostJournalEntry(_ context.Context, _, _, en
 }
 
 func TestNewService(t *testing.T) {
-	// Test that NewService creates a service with PostgresRepository
+	// Test that NewService creates a service with a repository.
 	svc := NewService(nil)
 	assert.NotNil(t, svc)
 	assert.NotNil(t, svc.repo)
