@@ -5859,6 +5859,16 @@ func (h *Handlers) DeleteProduct(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetStockLevels gets stock levels for a product
+// @Summary List product stock levels
+// @Description List per-warehouse stock levels for one product
+// @Tags Inventory
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param productID path string true "Product ID"
+// @Success 200 {array} inventory.StockLevel
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/products/{productID}/stock-levels [get]
 func (h *Handlers) GetStockLevels(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	productID := chi.URLParam(r, "productID")
@@ -5874,6 +5884,16 @@ func (h *Handlers) GetStockLevels(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetInventoryMovements gets inventory movements for a product
+// @Summary List product inventory movements
+// @Description List stock movements for one product, including optional lot, serial, expiry, and source metadata
+// @Tags Inventory
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param productID path string true "Product ID"
+// @Success 200 {array} inventory.InventoryMovement
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/products/{productID}/movements [get]
 func (h *Handlers) GetInventoryMovements(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	productID := chi.URLParam(r, "productID")
@@ -6084,6 +6104,19 @@ func (h *Handlers) ImportStockAdjustments(w http.ResponseWriter, r *http.Request
 }
 
 // AdjustStock adjusts stock for a product
+// @Summary Adjust product stock
+// @Description Apply a signed stock adjustment in one warehouse, optionally recording lot number, serial number, and expiry date metadata
+// @Tags Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body inventory.AdjustStockRequest true "Stock adjustment"
+// @Success 200 {object} inventory.InventoryMovement
+// @Failure 400 {object} object{error=string}
+// @Failure 401 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/inventory/adjust [post]
 func (h *Handlers) AdjustStock(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
@@ -6111,6 +6144,19 @@ func (h *Handlers) AdjustStock(w http.ResponseWriter, r *http.Request) {
 }
 
 // TransferStock transfers stock between warehouses
+// @Summary Transfer product stock
+// @Description Move positive available stock between warehouses without changing total product stock
+// @Tags Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body inventory.TransferStockRequest true "Stock transfer"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Failure 401 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/inventory/transfer [post]
 func (h *Handlers) TransferStock(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
@@ -6137,6 +6183,18 @@ func (h *Handlers) TransferStock(w http.ResponseWriter, r *http.Request) {
 }
 
 // ReserveStock reserves available stock in a warehouse.
+// @Summary Reserve warehouse stock
+// @Description Move available stock into reserved quantity for a product in one warehouse
+// @Tags Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body inventory.StockReservationRequest true "Stock reservation"
+// @Success 200 {object} inventory.StockLevel
+// @Failure 400 {object} object{error=string}
+// @Failure 401 {object} object{error=string}
+// @Router /tenants/{tenantID}/inventory/reserve [post]
 func (h *Handlers) ReserveStock(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
@@ -6164,6 +6222,18 @@ func (h *Handlers) ReserveStock(w http.ResponseWriter, r *http.Request) {
 }
 
 // ReleaseStock releases reserved stock back to available quantity.
+// @Summary Release reserved warehouse stock
+// @Description Release reserved stock back to available quantity for a product in one warehouse
+// @Tags Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body inventory.StockReservationRequest true "Stock release"
+// @Success 200 {object} inventory.StockLevel
+// @Failure 400 {object} object{error=string}
+// @Failure 401 {object} object{error=string}
+// @Router /tenants/{tenantID}/inventory/release [post]
 func (h *Handlers) ReleaseStock(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
