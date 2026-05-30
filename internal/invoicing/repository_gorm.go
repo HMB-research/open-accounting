@@ -192,7 +192,7 @@ func (r *GORMRepository) UpdatePayment(ctx context.Context, schemaName, tenantID
 
 // GenerateNumber generates a new invoice number
 func (r *GORMRepository) GenerateNumber(ctx context.Context, schemaName, tenantID string, invoiceType InvoiceType) (string, error) {
-	invoicesTable, err := database.QualifiedTable(schemaName, "invoices")
+	db, err := r.tenantTable(ctx, schemaName, "invoices")
 	if err != nil {
 		return "", err
 	}
@@ -206,11 +206,17 @@ func (r *GORMRepository) GenerateNumber(ctx context.Context, schemaName, tenantI
 	}
 
 	var seq int
-	err = r.db.WithContext(ctx).Raw(fmt.Sprintf(`
-		SELECT COALESCE(MAX(CAST(SUBSTRING(invoice_number FROM '%s-([0-9]+)') AS INTEGER)), 0) + 1
-		FROM %s WHERE tenant_id = ? AND invoice_type = ?
-	`, prefix, invoicesTable), tenantID, invoiceType).Scan(&seq).Error
-	if err != nil {
+	if err := db.
+		Select(`
+			COALESCE(MAX(
+				CASE
+					WHEN invoice_number ~ ? THEN CAST(SUBSTRING(invoice_number FROM ?) AS INTEGER)
+					ELSE 0
+				END
+			), 0) + 1
+		`, prefix+"-[0-9]+$", prefix+"-([0-9]+)$").
+		Where("tenant_id = ? AND invoice_type = ?", tenantID, invoiceType).
+		Scan(&seq).Error; err != nil {
 		return "", fmt.Errorf("generate invoice number: %w", err)
 	}
 
