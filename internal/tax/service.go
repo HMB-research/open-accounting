@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
@@ -27,9 +28,8 @@ type Service struct {
 }
 
 const (
-	euVATOSSSchemeUnion        = "UNION"
-	euVATOSSBaseCurrency       = "EUR"
-	euVATOSSCountryCodeSQLList = "'AT','BE','BG','CY','CZ','DE','DK','EE','EL','ES','FI','FR','HR','HU','IE','IT','LT','LU','LV','MT','NL','PL','PT','RO','SE','SI','SK'"
+	euVATOSSSchemeUnion  = "UNION"
+	euVATOSSBaseCurrency = "EUR"
 )
 
 var euVATOSSCountryNames = map[string]string{
@@ -62,9 +62,16 @@ var euVATOSSCountryNames = map[string]string{
 	"SK": "Slovakia",
 }
 
-// NewService creates a new tax service with a PostgreSQL repository
+// NewService creates a new tax service with an ORM-backed repository.
 func NewService(db *pgxpool.Pool) *Service {
-	return &Service{repo: NewPostgresRepository(db)}
+	if db == nil {
+		return &Service{}
+	}
+	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	if err != nil {
+		panic(fmt.Errorf("create tax GORM repository: %w", err))
+	}
+	return &Service{repo: NewGORMRepository(gormDB)}
 }
 
 // NewServiceWithRepository creates a new tax service with an injected repository

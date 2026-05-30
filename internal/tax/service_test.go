@@ -626,8 +626,7 @@ func TestService_EnsureSchema_Error(t *testing.T) {
 
 // TestNewService_WithNilPool tests the NewService constructor with a nil pool
 func TestNewService_WithNilPool(t *testing.T) {
-	// NewService should create a service with nil pool (won't panic until used)
 	svc := NewService(nil)
 	require.NotNil(t, svc)
-	assert.NotNil(t, svc.repo)
+	assert.Nil(t, svc.repo)
 }

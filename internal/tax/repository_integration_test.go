@@ -5,15 +5,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/testutil"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 )
 
-func TestPostgresRepository_SaveDeclaration(t *testing.T) {
+func TestRepository_SaveDeclaration(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newTaxGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Ensure schema exists
@@ -59,10 +61,10 @@ func TestPostgresRepository_SaveDeclaration(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_ListDeclarations(t *testing.T) {
+func TestRepository_ListDeclarations(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newTaxGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Ensure schema exists
@@ -103,10 +105,10 @@ func TestPostgresRepository_ListDeclarations(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_QueryKMDINFData(t *testing.T) {
+func TestRepository_QueryKMDINFData(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newTaxGORMRepository(t, pool)
 	ctx := context.Background()
 
 	salesContactID := uuid.New().String()
@@ -173,10 +175,10 @@ func TestPostgresRepository_QueryKMDINFData(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_QueryEUVATOSSData(t *testing.T) {
+func TestRepository_QueryEUVATOSSData(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newTaxGORMRepository(t, pool)
 	ctx := context.Background()
 
 	deContactID := uuid.New().String()
@@ -265,10 +267,10 @@ func TestPostgresRepository_QueryEUVATOSSData(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_QueryVATDataIncludesReverseChargePurchases(t *testing.T) {
+func TestRepository_QueryVATDataIncludesReverseChargePurchases(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newTaxGORMRepository(t, pool)
 	ctx := context.Background()
 
 	contactID := uuid.New().String()
@@ -335,10 +337,10 @@ func TestPostgresRepository_QueryVATDataIncludesReverseChargePurchases(t *testin
 	}
 }
 
-func TestPostgresRepository_GetDeclaration_NotFound(t *testing.T) {
+func TestRepository_GetDeclaration_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newTaxGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Ensure schema exists
@@ -358,10 +360,10 @@ func TestPostgresRepository_GetDeclaration_NotFound(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_SaveDeclarationWithRows(t *testing.T) {
+func TestRepository_SaveDeclarationWithRows(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newTaxGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Ensure schema exists
@@ -419,10 +421,10 @@ func TestPostgresRepository_SaveDeclarationWithRows(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_QueryVATData(t *testing.T) {
+func TestRepository_QueryVATData(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newTaxGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Ensure schema exists
@@ -527,10 +529,10 @@ func TestPostgresRepository_QueryVATData(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_QueryVATData_Empty(t *testing.T) {
+func TestRepository_QueryVATData_Empty(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newTaxGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Ensure schema exists
@@ -553,10 +555,10 @@ func TestPostgresRepository_QueryVATData_Empty(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_SaveDeclaration_Update(t *testing.T) {
+func TestRepository_SaveDeclaration_Update(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newTaxGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Ensure schema exists
@@ -610,10 +612,10 @@ func TestPostgresRepository_SaveDeclaration_Update(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_SaveDeclaration_UpdateWithDifferentIDReplacesRows(t *testing.T) {
+func TestRepository_SaveDeclaration_UpdateWithDifferentIDReplacesRows(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newTaxGORMRepository(t, pool)
 	ctx := context.Background()
 
 	err := repo.EnsureSchema(ctx, tenant.SchemaName)
@@ -692,10 +694,10 @@ func TestPostgresRepository_SaveDeclaration_UpdateWithDifferentIDReplacesRows(t 
 	}
 }
 
-func TestPostgresRepository_ListDeclarations_Empty(t *testing.T) {
+func TestRepository_ListDeclarations_Empty(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newTaxGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Ensure schema exists
@@ -732,4 +734,14 @@ func TestNewService(t *testing.T) {
 	if service.repo == nil {
 		t.Error("service.repo is nil")
 	}
+}
+
+func newTaxGORMRepository(t *testing.T, pool *pgxpool.Pool) *GORMRepository {
+	t.Helper()
+
+	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	if err != nil {
+		t.Fatalf("create gorm repository: %v", err)
+	}
+	return NewGORMRepository(gormDB)
 }
