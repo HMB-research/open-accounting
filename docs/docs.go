@@ -18207,6 +18207,9 @@ const docTemplate = `{
                 },
                 "vat_rate": {
                     "type": "number"
+                },
+                "vat_treatment": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.VATTreatment"
                 }
             }
         },
@@ -18543,6 +18546,9 @@ const docTemplate = `{
                 },
                 "vat_rate": {
                     "type": "number"
+                },
+                "vat_treatment": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.VATTreatment"
                 }
             }
         },
@@ -18836,6 +18842,17 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "github_com_HMB-research_open-accounting_internal_invoicing.VATTreatment": {
+            "type": "string",
+            "enum": [
+                "STANDARD",
+                "REVERSE_CHARGE"
+            ],
+            "x-enum-varnames": [
+                "VATTreatmentStandard",
+                "VATTreatmentReverseCharge"
+            ]
         },
         "github_com_HMB-research_open-accounting_internal_orders.CreateOrderLineRequest": {
             "type": "object",

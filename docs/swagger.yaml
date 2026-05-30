@@ -2246,6 +2246,8 @@ definitions:
         type: number
       vat_rate:
         type: number
+      vat_treatment:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.VATTreatment'
     type: object
   github_com_HMB-research_open-accounting_internal_invoicing.CreateInvoiceRequest:
     properties:
@@ -2468,6 +2470,8 @@ definitions:
         type: number
       vat_rate:
         type: number
+      vat_treatment:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.VATTreatment'
     type: object
   github_com_HMB-research_open-accounting_internal_invoicing.InvoiceStatus:
     enum:
@@ -2670,6 +2674,14 @@ definitions:
       name:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_invoicing.VATTreatment:
+    enum:
+    - STANDARD
+    - REVERSE_CHARGE
+    type: string
+    x-enum-varnames:
+    - VATTreatmentStandard
+    - VATTreatmentReverseCharge
   github_com_HMB-research_open-accounting_internal_orders.CreateOrderLineRequest:
     properties:
       description:

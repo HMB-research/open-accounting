@@ -413,6 +413,46 @@ func TestCreateInvoice(t *testing.T) {
 			},
 		},
 		{
+			name:     "create reverse-charge purchase invoice",
+			tenantID: "tenant-1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			body: map[string]interface{}{
+				"invoice_type": "PURCHASE",
+				"contact_id":   "supplier-1",
+				"issue_date":   "2026-01-15T00:00:00Z",
+				"due_date":     "2026-02-15T00:00:00Z",
+				"currency":     "EUR",
+				"lines": []map[string]interface{}{
+					{
+						"description":   "EU service",
+						"quantity":      "1",
+						"unit_price":    "100.00",
+						"vat_rate":      "22",
+						"vat_treatment": "REVERSE_CHARGE",
+					},
+				},
+			},
+			setupMock: func(tr *mockTenantRepository, ir *mockInvoicingRepository) {
+				tr.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+			},
+			wantStatus: http.StatusCreated,
+			checkResponse: func(t *testing.T, resp map[string]interface{}) {
+				assert.Equal(t, "PURCHASE", resp["invoice_type"])
+				assert.Equal(t, float64(0), resp["vat_amount"])
+				assert.Equal(t, float64(100), resp["total"])
+				lines, ok := resp["lines"].([]interface{})
+				require.True(t, ok)
+				require.Len(t, lines, 1)
+				line, ok := lines[0].(map[string]interface{})
+				require.True(t, ok)
+				assert.Equal(t, "REVERSE_CHARGE", line["vat_treatment"])
+			},
+		},
+		{
 			name:     "missing contact_id",
 			tenantID: "tenant-1",
 			claims: &auth.Claims{

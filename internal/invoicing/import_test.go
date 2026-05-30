@@ -58,6 +58,40 @@ func TestService_ImportCSV(t *testing.T) {
 		}
 	})
 
+	t.Run("imports reverse charge purchase invoice lines", func(t *testing.T) {
+		repo := NewMockRepository()
+		service := NewServiceWithRepository(repo, nil)
+
+		result, err := service.ImportCSV(ctx, tenantID, schemaName, []contacts.Contact{
+			{
+				ID:               "supplier-1",
+				TenantID:         tenantID,
+				Code:             "SUP-001",
+				Name:             "EU Supplier",
+				ContactType:      contacts.ContactTypeSupplier,
+				CountryCode:      "DE",
+				PaymentTermsDays: 14,
+				IsActive:         true,
+			},
+		}, &ImportInvoicesRequest{
+			FileName: "reverse-charge.csv",
+			UserID:   "user-1",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate,vat_treatment\n" +
+				"BILL-RC-001,PURCHASE,SUP-001,2026-02-01,2026-02-15,EU service,1,100.00,22,reverse_charge\n",
+		}, nil)
+		require.NoError(t, err)
+
+		assert.Equal(t, 1, result.InvoicesCreated)
+		require.Len(t, repo.invoices, 1)
+		for _, invoice := range repo.invoices {
+			assert.True(t, invoice.VATAmount.IsZero())
+			assert.True(t, invoice.Total.Equal(decimal.RequireFromString("100")))
+			require.Len(t, invoice.Lines, 1)
+			assert.Equal(t, VATTreatmentReverseCharge, invoice.Lines[0].VATTreatment)
+			assert.True(t, invoice.Lines[0].ReverseChargeVAT().Equal(decimal.RequireFromString("22")))
+		}
+	})
+
 	t.Run("skips rows when contact is missing or invoice number already exists", func(t *testing.T) {
 		repo := NewMockRepository()
 		repo.invoices["existing"] = &Invoice{

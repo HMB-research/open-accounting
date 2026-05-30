@@ -10973,6 +10973,13 @@ func (l *invoiceLineFlags) Set(value string) error {
 			return err
 		}
 	}
+	vatTreatment, err := parseInvoiceLineVATTreatment(values["vat_treatment"], values["vat_type"], values["reverse_charge"])
+	if err != nil {
+		return err
+	}
+	if vatTreatment == invoicing.VATTreatmentReverseCharge && vatRate.LessThanOrEqual(decimal.Zero) {
+		return errors.New("line reverse charge VAT rate must be positive")
+	}
 
 	*l = append(*l, invoicing.CreateInvoiceLineRequest{
 		Description:     description,
@@ -10981,6 +10988,7 @@ func (l *invoiceLineFlags) Set(value string) error {
 		UnitPrice:       unitPrice,
 		DiscountPercent: discountPercent,
 		VATRate:         vatRate,
+		VATTreatment:    vatTreatment,
 		AccountID:       optionalStringPtr(firstNonEmpty(values["account_id"], values["account"])),
 		ProductID:       optionalStringPtr(firstNonEmpty(values["product_id"], values["product"])),
 	})
@@ -11064,6 +11072,33 @@ func (l *orderLineFlags) String() string {
 		descriptions = append(descriptions, line.Description)
 	}
 	return strings.Join(descriptions, ",")
+}
+
+func parseInvoiceLineVATTreatment(rawTreatment, rawType, rawReverseCharge string) (invoicing.VATTreatment, error) {
+	if strings.TrimSpace(rawReverseCharge) != "" {
+		reverseCharge, err := strconv.ParseBool(strings.TrimSpace(rawReverseCharge))
+		if err != nil {
+			return "", fmt.Errorf("parse reverse_charge: %w", err)
+		}
+		if reverseCharge {
+			return invoicing.VATTreatmentReverseCharge, nil
+		}
+	}
+
+	value := firstNonEmpty(rawTreatment, rawType)
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	switch normalized {
+	case "", "standard", "normal":
+		return invoicing.VATTreatmentStandard, nil
+	case "reverse_charge", "reverse-charge", "reverse charge", "reversecharge", "rc":
+		return invoicing.VATTreatmentReverseCharge, nil
+	default:
+		treatment, err := invoicing.NormalizeVATTreatment(value)
+		if err != nil {
+			return "", fmt.Errorf("invalid line vat_treatment %q", value)
+		}
+		return treatment, nil
+	}
 }
 
 type quoteLineFlags []quotes.CreateQuoteLineRequest

@@ -2,6 +2,8 @@ package invoicing
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -28,6 +30,14 @@ const (
 	StatusPaid          InvoiceStatus = "PAID"
 	StatusOverdue       InvoiceStatus = "OVERDUE"
 	StatusVoided        InvoiceStatus = "VOIDED"
+)
+
+// VATTreatment controls whether VAT is charged on the invoice line or reported separately.
+type VATTreatment string
+
+const (
+	VATTreatmentStandard      VATTreatment = "STANDARD"
+	VATTreatmentReverseCharge VATTreatment = "REVERSE_CHARGE"
 )
 
 // Invoice represents a sales or purchase invoice
@@ -73,6 +83,7 @@ type InvoiceLine struct {
 	UnitPrice       decimal.Decimal `json:"unit_price"`
 	DiscountPercent decimal.Decimal `json:"discount_percent"`
 	VATRate         decimal.Decimal `json:"vat_rate"`
+	VATTreatment    VATTreatment    `json:"vat_treatment"`
 	LineSubtotal    decimal.Decimal `json:"line_subtotal"`
 	LineVAT         decimal.Decimal `json:"line_vat"`
 	LineTotal       decimal.Decimal `json:"line_total"`
@@ -88,10 +99,25 @@ func (l *InvoiceLine) Calculate() {
 	l.LineSubtotal = grossAmount.Sub(discountAmount).Round(2)
 
 	// VAT = subtotal * vat_rate/100
-	l.LineVAT = l.LineSubtotal.Mul(l.VATRate).Div(decimal.NewFromInt(100)).Round(2)
+	if l.VATTreatment == "" {
+		l.VATTreatment = VATTreatmentStandard
+	}
+	if l.VATTreatment == VATTreatmentReverseCharge {
+		l.LineVAT = decimal.Zero
+	} else {
+		l.LineVAT = l.LineSubtotal.Mul(l.VATRate).Div(decimal.NewFromInt(100)).Round(2)
+	}
 
 	// Total = subtotal + VAT
 	l.LineTotal = l.LineSubtotal.Add(l.LineVAT)
+}
+
+// ReverseChargeVAT calculates the self-assessed VAT amount for reverse-charge reporting.
+func (l InvoiceLine) ReverseChargeVAT() decimal.Decimal {
+	if normalizeVATTreatmentOrDefault(l.VATTreatment) != VATTreatmentReverseCharge {
+		return decimal.Zero
+	}
+	return l.LineSubtotal.Mul(l.VATRate).Div(decimal.NewFromInt(100)).Round(2)
 }
 
 // Calculate computes the invoice totals from lines
@@ -144,6 +170,14 @@ func (inv *Invoice) Validate() error {
 		if line.VATRate.LessThan(decimal.Zero) {
 			return errors.New("line VAT rate cannot be negative")
 		}
+		treatment, err := NormalizeVATTreatment(string(line.VATTreatment))
+		if err != nil {
+			return err
+		}
+		inv.Lines[i].VATTreatment = treatment
+		if treatment == VATTreatmentReverseCharge && line.VATRate.LessThanOrEqual(decimal.Zero) {
+			return errors.New("reverse charge VAT rate must be positive")
+		}
 		if line.DiscountPercent.LessThan(decimal.Zero) || line.DiscountPercent.GreaterThan(decimal.NewFromInt(100)) {
 			return errors.New("line discount must be between 0 and 100")
 		}
@@ -193,6 +227,7 @@ type CreateInvoiceLineRequest struct {
 	UnitPrice       decimal.Decimal `json:"unit_price"`
 	DiscountPercent decimal.Decimal `json:"discount_percent,omitempty"`
 	VATRate         decimal.Decimal `json:"vat_rate"`
+	VATTreatment    VATTreatment    `json:"vat_treatment,omitempty"`
 	AccountID       *string         `json:"account_id,omitempty"`
 	ProductID       *string         `json:"product_id,omitempty"`
 }
@@ -229,4 +264,29 @@ type InvoiceFilter struct {
 	FromDate    *time.Time
 	ToDate      *time.Time
 	Search      string
+}
+
+// NormalizeVATTreatment validates and normalizes VAT treatment values.
+func NormalizeVATTreatment(value string) (VATTreatment, error) {
+	normalizedValue := strings.ToUpper(strings.TrimSpace(value))
+	normalizedValue = strings.ReplaceAll(normalizedValue, "-", "_")
+	normalizedValue = strings.ReplaceAll(normalizedValue, " ", "_")
+	normalized := VATTreatment(normalizedValue)
+	if normalized == "" {
+		return VATTreatmentStandard, nil
+	}
+	switch normalized {
+	case VATTreatmentStandard, VATTreatmentReverseCharge:
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("invalid VAT treatment")
+	}
+}
+
+func normalizeVATTreatmentOrDefault(treatment VATTreatment) VATTreatment {
+	normalized, err := NormalizeVATTreatment(string(treatment))
+	if err != nil {
+		return VATTreatmentStandard
+	}
+	return normalized
 }

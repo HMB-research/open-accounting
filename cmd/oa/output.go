@@ -449,21 +449,29 @@ func printInvoice(w io.Writer, invoice *invoicing.Invoice) {
 
 func printInvoiceLinesTable(w io.Writer, lines []invoicing.InvoiceLine) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "NO\tDESCRIPTION\tQTY\tUNIT\tUNIT PRICE\tVAT\tTOTAL")
+	_, _ = fmt.Fprintln(tw, "NO\tDESCRIPTION\tQTY\tUNIT\tUNIT PRICE\tVAT\tTREATMENT\tTOTAL")
 	for _, line := range lines {
 		_, _ = fmt.Fprintf(
 			tw,
-			"%d\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			"%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			line.LineNumber,
 			line.Description,
 			line.Quantity.String(),
 			line.Unit,
 			line.UnitPrice.String(),
 			line.VATRate.String(),
+			invoiceLineVATTreatmentLabel(line.VATTreatment),
 			line.LineTotal.String(),
 		)
 	}
 	_ = tw.Flush()
+}
+
+func invoiceLineVATTreatmentLabel(treatment invoicing.VATTreatment) string {
+	if treatment == "" {
+		return string(invoicing.VATTreatmentStandard)
+	}
+	return string(treatment)
 }
 
 func printQuotesTable(w io.Writer, quotesList []quotes.Quote) {

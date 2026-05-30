@@ -75,6 +75,7 @@ type InvoiceLine struct {
 	UnitPrice       Decimal `gorm:"column:unit_price;type:numeric(28,8);not null;default:0" json:"unit_price"`
 	DiscountPercent Decimal `gorm:"column:discount_percent;type:numeric(5,2);not null;default:0" json:"discount_percent"`
 	VATRate         Decimal `gorm:"column:vat_rate;type:numeric(5,2);not null;default:0" json:"vat_rate"`
+	VATTreatment    string  `gorm:"column:vat_treatment;size:30;not null;default:'STANDARD'" json:"vat_treatment"`
 	LineSubtotal    Decimal `gorm:"column:line_subtotal;type:numeric(28,8);not null;default:0" json:"line_subtotal"`
 	LineVAT         Decimal `gorm:"column:line_vat;type:numeric(28,8);not null;default:0" json:"line_vat"`
 	LineTotal       Decimal `gorm:"column:line_total;type:numeric(28,8);not null;default:0" json:"line_total"`

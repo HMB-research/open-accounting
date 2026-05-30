@@ -33,6 +33,7 @@ type invoiceImportLine struct {
 	unitPrice       decimal.Decimal
 	discountPercent decimal.Decimal
 	vatRate         decimal.Decimal
+	vatTreatment    VATTreatment
 }
 
 type invoiceImportHeader struct {
@@ -109,6 +110,9 @@ var invoiceImportHeaderAliases = map[string]string{
 	"discount":           "discount_percent",
 	"vat_rate":           "vat_rate",
 	"vat":                "vat_rate",
+	"vat_treatment":      "vat_treatment",
+	"vat_type":           "vat_treatment",
+	"reverse_charge":     "reverse_charge",
 }
 
 var invoiceImportTypeAliases = map[string]InvoiceType{
@@ -501,6 +505,13 @@ func parseInvoiceImportDataRow(row invoiceImportRow) (*invoiceImportParsedRow, e
 	if vatRate.IsNegative() {
 		return nil, fmt.Errorf("vat_rate cannot be negative")
 	}
+	vatTreatment, err := parseInvoiceImportVATTreatment(row.values["vat_treatment"], row.values["reverse_charge"])
+	if err != nil {
+		return nil, err
+	}
+	if vatTreatment == VATTreatmentReverseCharge && vatRate.LessThanOrEqual(decimal.Zero) {
+		return nil, fmt.Errorf("reverse charge VAT rate must be positive")
+	}
 
 	return &invoiceImportParsedRow{
 		header: invoiceImportHeader{
@@ -524,6 +535,7 @@ func parseInvoiceImportDataRow(row invoiceImportRow) (*invoiceImportParsedRow, e
 			unitPrice:       unitPrice,
 			discountPercent: discountPercent,
 			vatRate:         vatRate,
+			vatTreatment:    vatTreatment,
 		},
 	}, nil
 }
@@ -636,6 +648,7 @@ func buildImportedInvoice(
 			UnitPrice:       line.unitPrice,
 			DiscountPercent: line.discountPercent,
 			VATRate:         line.vatRate,
+			VATTreatment:    line.vatTreatment,
 		}
 		invoiceLine.Calculate()
 		invoice.Lines = append(invoice.Lines, invoiceLine)
@@ -805,6 +818,43 @@ func parseInvoiceImportStatus(raw string) (InvoiceStatus, error) {
 		return candidate, nil
 	default:
 		return "", fmt.Errorf("invalid status %q", raw)
+	}
+}
+
+func parseInvoiceImportVATTreatment(rawTreatment, rawReverseCharge string) (VATTreatment, error) {
+	if strings.TrimSpace(rawReverseCharge) != "" {
+		reverseCharge, err := parseInvoiceImportBool(rawReverseCharge)
+		if err != nil {
+			return "", fmt.Errorf("invalid reverse_charge")
+		}
+		if reverseCharge {
+			return VATTreatmentReverseCharge, nil
+		}
+	}
+
+	normalized := normalizedInvoiceImportKey(rawTreatment)
+	switch normalized {
+	case "", "standard", "normal":
+		return VATTreatmentStandard, nil
+	case "reverse_charge", "reversecharge", "reverse charge", "rc":
+		return VATTreatmentReverseCharge, nil
+	default:
+		treatment, err := NormalizeVATTreatment(rawTreatment)
+		if err != nil {
+			return "", fmt.Errorf("invalid vat_treatment %q", rawTreatment)
+		}
+		return treatment, nil
+	}
+}
+
+func parseInvoiceImportBool(value string) (bool, error) {
+	switch normalizedInvoiceImportKey(value) {
+	case "true", "1", "yes", "y":
+		return true, nil
+	case "false", "0", "no", "n":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid boolean")
 	}
 }
 

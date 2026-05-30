@@ -173,6 +173,76 @@ func TestPostgresRepository_QueryKMDINFData(t *testing.T) {
 	}
 }
 
+func TestPostgresRepository_QueryVATDataIncludesReverseChargePurchases(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	repo := NewPostgresRepository(pool)
+	ctx := context.Background()
+
+	contactID := uuid.New().String()
+	userID := uuid.New().String()
+	invoiceID := uuid.New().String()
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.contacts (id, tenant_id, name, contact_type, reg_code, country_code, is_active, created_at, updated_at)
+		VALUES ($1, $2, 'EU Supplier', 'SUPPLIER', 'DE123456789', 'DE', true, NOW(), NOW())
+	`, contactID, tenant.ID)
+	if err != nil {
+		t.Fatalf("insert contact: %v", err)
+	}
+
+	periodDate := time.Date(2026, 3, 5, 0, 0, 0, 0, time.UTC)
+	_, err = pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.invoices (
+			id, tenant_id, invoice_number, invoice_type, contact_id, issue_date, due_date,
+			currency, exchange_rate, subtotal, vat_amount, total,
+			base_subtotal, base_vat_amount, base_total, amount_paid, status,
+			created_by, created_at, updated_at
+		) VALUES ($1, $2, 'BILL-RC-1', 'PURCHASE', $3, $4, $4, 'EUR', 1, 100, 0, 100, 100, 0, 100, 0, 'SENT', $5, NOW(), NOW())
+	`, invoiceID, tenant.ID, contactID, periodDate, userID)
+	if err != nil {
+		t.Fatalf("insert invoice: %v", err)
+	}
+	_, err = pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.invoice_lines (
+			id, tenant_id, invoice_id, line_number, description, quantity, unit_price,
+			discount_percent, vat_rate, vat_treatment, line_subtotal, line_vat, line_total
+		) VALUES ($1, $2, $3, 1, 'EU service', 1, 100, 0, 22, 'REVERSE_CHARGE', 100, 0, 100)
+	`, uuid.New().String(), tenant.ID, invoiceID)
+	if err != nil {
+		t.Fatalf("insert invoice line: %v", err)
+	}
+
+	rows, err := repo.QueryVATData(
+		ctx,
+		tenant.SchemaName,
+		tenant.ID,
+		time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 3, 31, 23, 59, 59, 0, time.UTC),
+	)
+	if err != nil {
+		t.Fatalf("QueryVATData failed: %v", err)
+	}
+
+	byOutput := make(map[bool]VATAggregateRow)
+	for _, row := range rows {
+		byOutput[row.IsOutput] = row
+	}
+	output, ok := byOutput[true]
+	if !ok {
+		t.Fatal("expected reverse-charge output VAT row")
+	}
+	input, ok := byOutput[false]
+	if !ok {
+		t.Fatal("expected reverse-charge input VAT row")
+	}
+	if !output.TaxBase.Equal(decimal.NewFromInt(100)) || !output.TaxAmount.Equal(decimal.NewFromInt(22)) {
+		t.Fatalf("unexpected output row: %#v", output)
+	}
+	if !input.TaxBase.Equal(decimal.NewFromInt(100)) || !input.TaxAmount.Equal(decimal.NewFromInt(22)) {
+		t.Fatalf("unexpected input row: %#v", input)
+	}
+}
+
 func TestPostgresRepository_GetDeclaration_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)

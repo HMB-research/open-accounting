@@ -1298,11 +1298,11 @@ func TestCLIPurchaseInvoiceCommands(t *testing.T) {
 			"currency":        "USD",
 			"exchange_rate":   "0.93",
 			"subtotal":        "125.00",
-			"vat_amount":      "25.00",
-			"total":           "150.00",
+			"vat_amount":      "0.00",
+			"total":           "125.00",
 			"base_subtotal":   "116.25",
-			"base_vat_amount": "23.25",
-			"base_total":      "139.50",
+			"base_vat_amount": "0.00",
+			"base_total":      "116.25",
 			"amount_paid":     "0.00",
 			"status":          "DRAFT",
 			"reference":       "SUP-2026-03",
@@ -1321,9 +1321,10 @@ func TestCLIPurchaseInvoiceCommands(t *testing.T) {
 				"unit_price":       "25.00",
 				"discount_percent": "0.00",
 				"vat_rate":         "20.00",
+				"vat_treatment":    "REVERSE_CHARGE",
 				"line_subtotal":    "125.00",
-				"line_vat":         "25.00",
-				"line_total":       "150.00",
+				"line_vat":         "0.00",
+				"line_total":       "125.00",
 				"account_id":       "expense-1",
 			}},
 		}
@@ -1350,6 +1351,7 @@ func TestCLIPurchaseInvoiceCommands(t *testing.T) {
 			assert.True(t, req.ExchangeRate.Equal(decimal.RequireFromString("0.93")))
 			require.Len(t, req.Lines, 1)
 			assert.Equal(t, "Materials", req.Lines[0].Description)
+			assert.Equal(t, invoicing.VATTreatmentReverseCharge, req.Lines[0].VATTreatment)
 			require.NotNil(t, req.Lines[0].AccountID)
 			assert.Equal(t, "expense-1", *req.Lines[0].AccountID)
 			w.WriteHeader(http.StatusCreated)
@@ -1386,7 +1388,7 @@ func TestCLIPurchaseInvoiceCommands(t *testing.T) {
 		"--exchange-rate", "0.93",
 		"--reference", "SUP-2026-03",
 		"--notes", "Supplier bill",
-		"--line", "description=Materials,quantity=5,unit=unit,unit_price=25.00,vat_rate=20.00,account_id=expense-1",
+		"--line", "description=Materials,quantity=5,unit=unit,unit_price=25.00,vat_rate=20.00,vat_treatment=reverse_charge,account_id=expense-1",
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created invoice BILL-00001 (bill-1)")
@@ -7580,6 +7582,10 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	var invoiceLines invoiceLineFlags
 	require.NoError(t, invoiceLines.Set("description=Service,quantity=1,unit_price=100,vat_rate=22"))
 	assert.Equal(t, "Service", invoiceLines.String())
+	assert.Equal(t, invoicing.VATTreatmentStandard, invoiceLines[0].VATTreatment)
+
+	require.NoError(t, invoiceLines.Set("description=EU service,quantity=1,unit_price=100,vat_rate=22,reverse_charge=true"))
+	assert.Equal(t, invoicing.VATTreatmentReverseCharge, invoiceLines[1].VATTreatment)
 
 	err = invoiceLines.Set("description=Missing price,quantity=1,vat_rate=22")
 	require.Error(t, err)

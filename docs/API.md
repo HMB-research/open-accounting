@@ -612,7 +612,7 @@ Content-Type: application/json
 
 {
   "file_name": "invoices.csv",
-  "csv_content": "invoice_number,invoice_type,contact_code,issue_date,due_date,status,amount_paid,reference,notes,line_description,quantity,unit,unit_price,discount_percent,vat_rate\nINV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,SENT,0,PO-12345,Imported migration invoice,Implementation work,1,hour,100.00,0,22\nINV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,SENT,0,PO-12345,Imported migration invoice,Support retainer,1,month,50.00,0,22"
+  "csv_content": "invoice_number,invoice_type,contact_code,issue_date,due_date,status,amount_paid,reference,notes,line_description,quantity,unit,unit_price,discount_percent,vat_rate,vat_treatment\nINV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,SENT,0,PO-12345,Imported migration invoice,Implementation work,1,hour,100.00,0,22,standard\nBILL-RC-001,PURCHASE,SUP-001,2026-02-01,2026-02-15,SENT,0,,Reverse-charge supplier invoice,EU service,1,hour,100.00,0,22,reverse_charge"
 }
 ```
 
@@ -1307,7 +1307,7 @@ Authorization: Bearer <token>
 
 ### Create Invoice
 
-Use `invoice_type: "SALES"` for customer sales invoices, `invoice_type: "PURCHASE"` for supplier bills, and `invoice_type: "CREDIT_NOTE"` for credit notes. Purchase invoice lines can carry `account_id` for the expense or asset account used by downstream accounting.
+Use `invoice_type: "SALES"` for customer sales invoices, `invoice_type: "PURCHASE"` for supplier bills, and `invoice_type: "CREDIT_NOTE"` for credit notes. Purchase invoice lines can carry `account_id` for the expense or asset account used by downstream accounting. Set line `vat_treatment` to `REVERSE_CHARGE` when VAT is self-assessed; the invoice total excludes VAT while the VAT rate is retained for KMD reporting.
 
 ```http
 POST /tenants/{tenantId}/invoices
@@ -1325,7 +1325,8 @@ Content-Type: application/json
       "description": "Consulting services",
       "quantity": 10,
       "unit_price": "100.00",
-      "vat_rate": "22.00"
+      "vat_rate": "22.00",
+      "vat_treatment": "STANDARD"
     }
   ]
 }

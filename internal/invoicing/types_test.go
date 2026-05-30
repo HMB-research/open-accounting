@@ -75,6 +75,23 @@ func TestInvoiceLine_Calculate(t *testing.T) {
 		assert.True(t, line.LineVAT.IsZero())
 		assert.True(t, line.LineTotal.Equal(decimal.NewFromFloat(100)))
 	})
+
+	t.Run("reverse charge keeps VAT off invoice total", func(t *testing.T) {
+		line := InvoiceLine{
+			Quantity:        decimal.NewFromInt(2),
+			UnitPrice:       decimal.NewFromFloat(100),
+			DiscountPercent: decimal.Zero,
+			VATRate:         decimal.NewFromInt(22),
+			VATTreatment:    VATTreatmentReverseCharge,
+		}
+
+		line.Calculate()
+
+		assert.True(t, line.LineSubtotal.Equal(decimal.NewFromFloat(200)))
+		assert.True(t, line.LineVAT.IsZero())
+		assert.True(t, line.LineTotal.Equal(decimal.NewFromFloat(200)))
+		assert.True(t, line.ReverseChargeVAT().Equal(decimal.NewFromFloat(44)))
+	})
 }
 
 func TestInvoice_Calculate(t *testing.T) {
@@ -129,6 +146,28 @@ func TestInvoice_Calculate(t *testing.T) {
 		assert.True(t, inv.BaseSubtotal.Equal(decimal.NewFromFloat(92)))
 		assert.True(t, inv.BaseVATAmount.Equal(decimal.NewFromFloat(20.24)))
 		assert.True(t, inv.BaseTotal.Equal(decimal.NewFromFloat(112.24)))
+	})
+
+	t.Run("reverse charge line excludes VAT from payable total", func(t *testing.T) {
+		inv := Invoice{
+			ExchangeRate: decimal.NewFromInt(1),
+			Lines: []InvoiceLine{
+				{
+					Quantity:        decimal.NewFromInt(1),
+					UnitPrice:       decimal.NewFromFloat(100),
+					DiscountPercent: decimal.Zero,
+					VATRate:         decimal.NewFromInt(22),
+					VATTreatment:    VATTreatmentReverseCharge,
+				},
+			},
+		}
+
+		inv.Calculate()
+
+		assert.True(t, inv.Subtotal.Equal(decimal.NewFromFloat(100)))
+		assert.True(t, inv.VATAmount.IsZero())
+		assert.True(t, inv.Total.Equal(decimal.NewFromFloat(100)))
+		assert.True(t, inv.BaseVATAmount.IsZero())
 	})
 }
 
@@ -234,6 +273,25 @@ func TestInvoice_Validate(t *testing.T) {
 		err := inv.Validate()
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "VAT rate")
+	})
+
+	t.Run("invalid VAT treatment", func(t *testing.T) {
+		inv := baseInvoice()
+		inv.Lines[0].VATTreatment = VATTreatment("BAD")
+
+		err := inv.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid VAT treatment")
+	})
+
+	t.Run("reverse charge requires positive VAT rate", func(t *testing.T) {
+		inv := baseInvoice()
+		inv.Lines[0].VATTreatment = VATTreatmentReverseCharge
+		inv.Lines[0].VATRate = decimal.Zero
+
+		err := inv.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "reverse charge VAT rate")
 	})
 
 	t.Run("discount over 100", func(t *testing.T) {

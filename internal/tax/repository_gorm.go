@@ -82,6 +82,14 @@ func (r *GORMRepository) QueryVATData(ctx context.Context, schemaName, tenantID 
 	if err != nil {
 		return nil, err
 	}
+	invoicesTable, err := database.QualifiedTable(schemaName, "invoices")
+	if err != nil {
+		return nil, err
+	}
+	invoiceLinesTable, err := database.QualifiedTable(schemaName, "invoice_lines")
+	if err != nil {
+		return nil, err
+	}
 
 	var results []struct {
 		VATRate   models.Decimal
@@ -91,24 +99,74 @@ func (r *GORMRepository) QueryVATData(ctx context.Context, schemaName, tenantID 
 	}
 
 	err = r.db.WithContext(ctx).Raw(fmt.Sprintf(`
+		WITH vat_rows AS (
+			SELECT
+				COALESCE(jl.vat_rate, 0) as vat_rate,
+				CASE
+					WHEN a.account_type IN ('REVENUE', 'INCOME') THEN true
+					ELSE false
+				END as is_output,
+				SUM(jl.credit_amount - jl.debit_amount) as tax_base,
+				SUM((jl.credit_amount - jl.debit_amount) * COALESCE(jl.vat_rate, 0) / 100) as tax_amount
+			FROM %s je
+			JOIN %s jl ON je.id = jl.journal_entry_id
+			JOIN %s a ON jl.account_id = a.id
+			WHERE je.tenant_id = ?
+				AND je.status = 'POSTED'
+				AND je.entry_date >= ?
+				AND je.entry_date <= ?
+				AND COALESCE(jl.vat_rate, 0) > 0
+			GROUP BY jl.vat_rate, a.account_type
+
+			UNION ALL
+
+			SELECT
+				il.vat_rate,
+				true AS is_output,
+				SUM(il.line_subtotal * i.exchange_rate) AS tax_base,
+				SUM(il.line_subtotal * i.exchange_rate * il.vat_rate / 100) AS tax_amount
+			FROM %s i
+			JOIN %s il ON il.invoice_id = i.id AND il.tenant_id = i.tenant_id
+			WHERE i.tenant_id = ?
+				AND i.invoice_type = 'PURCHASE'
+				AND i.status NOT IN ('DRAFT', 'VOIDED')
+				AND i.issue_date >= ?
+				AND i.issue_date <= ?
+				AND il.vat_treatment = 'REVERSE_CHARGE'
+				AND il.vat_rate > 0
+			GROUP BY il.vat_rate
+
+			UNION ALL
+
+			SELECT
+				il.vat_rate,
+				false AS is_output,
+				SUM(il.line_subtotal * i.exchange_rate) AS tax_base,
+				SUM(il.line_subtotal * i.exchange_rate * il.vat_rate / 100) AS tax_amount
+			FROM %s i
+			JOIN %s il ON il.invoice_id = i.id AND il.tenant_id = i.tenant_id
+			WHERE i.tenant_id = ?
+				AND i.invoice_type = 'PURCHASE'
+				AND i.status NOT IN ('DRAFT', 'VOIDED')
+				AND i.issue_date >= ?
+				AND i.issue_date <= ?
+				AND il.vat_treatment = 'REVERSE_CHARGE'
+				AND il.vat_rate > 0
+			GROUP BY il.vat_rate
+		)
 		SELECT
-			COALESCE(jl.vat_rate, 0) as vat_rate,
-			CASE
-				WHEN a.account_type IN ('REVENUE', 'INCOME') THEN true
-				ELSE false
-			END as is_output,
-			SUM(jl.credit_amount - jl.debit_amount) as tax_base,
-			SUM((jl.credit_amount - jl.debit_amount) * COALESCE(jl.vat_rate, 0) / 100) as tax_amount
-		FROM %s je
-		JOIN %s jl ON je.id = jl.journal_entry_id
-		JOIN %s a ON jl.account_id = a.id
-		WHERE je.tenant_id = ?
-			AND je.status = 'POSTED'
-			AND je.entry_date >= ?
-			AND je.entry_date <= ?
-			AND COALESCE(jl.vat_rate, 0) > 0
-		GROUP BY jl.vat_rate, a.account_type
-	`, entriesTable, linesTable, accountsTable), tenantID, startDate, endDate).Scan(&results).Error
+			vat_rate,
+			is_output,
+			SUM(tax_base) AS tax_base,
+			SUM(tax_amount) AS tax_amount
+		FROM vat_rows
+		WHERE COALESCE(tax_amount, 0) <> 0
+		GROUP BY vat_rate, is_output
+	`, entriesTable, linesTable, accountsTable, invoicesTable, invoiceLinesTable, invoicesTable, invoiceLinesTable),
+		tenantID, startDate, endDate,
+		tenantID, startDate, endDate,
+		tenantID, startDate, endDate,
+	).Scan(&results).Error
 	if err != nil {
 		return nil, fmt.Errorf("query VAT data: %w", err)
 	}
