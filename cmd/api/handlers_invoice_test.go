@@ -14,6 +14,7 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -859,6 +860,43 @@ func TestSendInvoice(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSendPurchaseInvoiceRequiresApprovedEvidence(t *testing.T) {
+	h, tenantRepo, invoiceRepo := setupInvoiceTestHandlers()
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+
+	tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+	invoiceRepo.addTestInvoice("bill-1", "tenant-1", "supplier-1", invoicing.InvoiceTypePurchase, invoicing.StatusDraft)
+
+	claims := &auth.Claims{UserID: "user-1", TenantID: "tenant-1", Role: tenant.RoleOwner}
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/invoices/bill-1/send", nil, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "invoiceID": "bill-1"})
+	w := httptest.NewRecorder()
+
+	h.SendInvoice(w, req)
+
+	assert.Equal(t, http.StatusConflict, w.Code, "response body: %s", w.Body.String())
+	assert.Equal(t, invoicing.StatusDraft, invoiceRepo.invoices["bill-1"].Status)
+
+	docRepo.docs["doc-1"] = &documents.Document{
+		ID:           "doc-1",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypeInvoice,
+		EntityID:     "bill-1",
+		DocumentType: documents.DocumentTypeReceipt,
+		ReviewStatus: documents.ReviewStatusApproved,
+	}
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/invoices/bill-1/send", nil, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "invoiceID": "bill-1"})
+	w = httptest.NewRecorder()
+
+	h.SendInvoice(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	assert.Equal(t, invoicing.StatusSent, invoiceRepo.invoices["bill-1"].Status)
 }
 
 // =============================================================================

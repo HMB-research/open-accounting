@@ -1382,6 +1382,8 @@ POST /tenants/{tenantId}/invoices/{invoiceId}/send
 Authorization: Bearer <token>
 ```
 
+Draft purchase invoices require at least one approved `receipt`, `supporting_document`, or `tax_support` document attached to the `invoice` entity before they can be sent. Missing or pending evidence returns `409 Conflict`.
+
 ### Void Invoice
 
 ```http

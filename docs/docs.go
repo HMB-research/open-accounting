@@ -7353,7 +7353,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Mark an invoice as sent to the customer",
+                "description": "Mark an invoice as sent to the customer. Draft purchase invoices require approved invoice evidence before sending.",
                 "produces": [
                     "application/json"
                 ],

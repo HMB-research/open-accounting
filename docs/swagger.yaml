@@ -10287,7 +10287,8 @@ paths:
       - Reminders
   /tenants/{tenantID}/invoices/{invoiceID}/send:
     post:
-      description: Mark an invoice as sent to the customer
+      description: Mark an invoice as sent to the customer. Draft purchase invoices
+        require approved invoice evidence before sending.
       parameters:
       - description: Tenant ID
         in: path

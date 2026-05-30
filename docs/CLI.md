@@ -437,7 +437,7 @@ go run ./cmd/oa invoices void --id <invoice-id>
 go run ./cmd/oa invoices import --file ./invoices.csv
 ```
 
-Use `--line` repeatedly on `invoices create` for multi-line invoices. Each line is comma-separated `key=value` pairs with `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, `vat_treatment`, `reverse_charge`, `account_id`, and `product_id`. Set `vat_treatment=reverse_charge` or `reverse_charge=true` for purchase invoices where VAT is self-assessed: the VAT rate is retained for KMD reporting but VAT is not added to the invoice total. Use `--type PURCHASE` with a supplier contact to enter purchase invoices and supplier bills; `account_id` should point at the expense, asset, or other posting account for that purchase line.
+Use `--line` repeatedly on `invoices create` for multi-line invoices. Each line is comma-separated `key=value` pairs with `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, `vat_treatment`, `reverse_charge`, `account_id`, and `product_id`. Set `vat_treatment=reverse_charge` or `reverse_charge=true` for purchase invoices where VAT is self-assessed: the VAT rate is retained for KMD reporting but VAT is not added to the invoice total. Use `--type PURCHASE` with a supplier contact to enter purchase invoices and supplier bills; `account_id` should point at the expense, asset, or other posting account for that purchase line. Sending a draft purchase invoice requires at least one approved `receipt`, `supporting_document`, or `tax_support` document attached to the `invoice` entity.
 
 ## Quotes
 
