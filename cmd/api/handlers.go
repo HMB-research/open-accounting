@@ -1059,6 +1059,18 @@ func (h *Handlers) UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if !h.recordTenantAuditEvent(w, r, &tenant.TenantAuditEvent{
+		TenantID:    tenantID,
+		ActorUserID: claims.UserID,
+		Action:      tenant.AuditActionTenantUpdated,
+		TargetType:  tenant.AuditTargetTenant,
+		TargetID:    tenantID,
+		Metadata: map[string]string{
+			"role": role,
+		},
+	}) {
+		return
+	}
 
 	respondJSON(w, http.StatusOK, t)
 }
