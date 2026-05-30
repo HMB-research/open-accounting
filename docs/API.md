@@ -411,7 +411,7 @@ Authorization: Bearer <token>
 
 ### Document Attachments
 
-Document attachments currently support `invoice`, `journal_entry`, `payment`, `bank_transaction`, `asset`, and `year_end_close` entities.
+Document attachments currently support `invoice`, `journal_entry`, `payment`, `bank_transaction`, `asset`, `expense`, and `year_end_close` entities.
 
 #### List Documents
 
@@ -1712,6 +1712,80 @@ Authorization: Bearer <token>
 ```
 
 Manual generation returns the generated invoice id and invoice number. `generate-due` processes every due active recurring invoice for the tenant.
+
+---
+
+## Expenses
+
+### List Expenses
+
+```http
+GET /tenants/{tenantId}/expenses?status=SUBMITTED&limit=50
+Authorization: Bearer <token>
+```
+
+Statuses are `DRAFT`, `SUBMITTED`, `APPROVED`, `REJECTED`, and `POSTED`.
+
+### Create Expense
+
+```http
+POST /tenants/{tenantId}/expenses
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "expense_date": "2026-05-30T00:00:00Z",
+  "merchant": "Office Store",
+  "description": "Printer toner",
+  "employee_id": "uuid",
+  "contact_id": "uuid",
+  "expense_account_id": "uuid",
+  "payment_account_id": "uuid",
+  "amount": "120.50",
+  "currency": "EUR",
+  "exchange_rate": "1",
+  "requires_receipt": true
+}
+```
+
+`expense_account_id` must point to an `EXPENSE` account when posted. `payment_account_id` must point to an `ASSET` or `LIABILITY` account and is credited by the posted journal entry.
+
+### Receipt Evidence
+
+Receipt-backed expenses use the document attachment API:
+
+```http
+POST /tenants/{tenantId}/documents
+Content-Type: multipart/form-data
+
+entity_type=expense
+entity_id=<expenseId>
+document_type=receipt
+file=<binary>
+```
+
+Then approve the document with `POST /tenants/{tenantId}/documents/{documentId}/review`. Expenses with `requires_receipt=true` reject approval and posting until at least one linked `receipt` document is approved.
+
+### Lifecycle
+
+```http
+GET /tenants/{tenantId}/expenses/{expenseId}
+POST /tenants/{tenantId}/expenses/{expenseId}/submit
+POST /tenants/{tenantId}/expenses/{expenseId}/approve
+POST /tenants/{tenantId}/expenses/{expenseId}/reject
+POST /tenants/{tenantId}/expenses/{expenseId}/post
+Authorization: Bearer <token>
+```
+
+Reject payloads require a reason:
+
+```json
+{
+  "reason": "Need project code"
+}
+```
+
+Posting creates and posts a balanced journal entry with source type `EXPENSE`, using the expense account as the debit line and the payment/reimbursement account as the credit line.
 
 ---
 
@@ -3082,7 +3156,7 @@ GET /tenants/{tenantId}/webhooks/events
 Authorization: Bearer <token>
 ```
 
-Returns event names such as `invoice.created`, `payment.received`, `journal_entry.posted`, `bank_transaction.matched`, `payroll.approved`, and `webhook.test`.
+Returns event names such as `invoice.created`, `payment.received`, `journal_entry.posted`, `expense.approved`, `bank_transaction.matched`, `payroll.approved`, and `webhook.test`.
 
 ### Create Webhook Endpoint
 

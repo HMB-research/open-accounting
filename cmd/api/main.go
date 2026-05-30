@@ -28,6 +28,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
+	"github.com/HMB-research/open-accounting/internal/expenses"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	secmiddleware "github.com/HMB-research/open-accounting/internal/middleware"
@@ -129,6 +130,7 @@ func main() {
 	interestService := invoicing.NewInterestService(pool)
 	webhookService := webhooks.NewService(pool)
 	webhookService.RegisterPluginHooks(pluginService.GetHookRegistry())
+	expensesService := expenses.NewService(pool, documentsService)
 
 	// Load enabled plugins on startup
 	if err := pluginService.LoadEnabledPlugins(ctx); err != nil {
@@ -183,6 +185,7 @@ func main() {
 		costCenterService:        costCenterService,
 		interestService:          interestService,
 		webhookService:           webhookService,
+		expensesService:          expensesService,
 	}
 
 	// Setup router
@@ -745,6 +748,15 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Delete("/webhooks/{webhookID}", h.DeleteWebhookEndpoint)
 				r.Get("/webhooks/{webhookID}/deliveries", h.ListWebhookDeliveries)
 				r.Post("/webhooks/{webhookID}/test", h.TestWebhookEndpoint)
+
+				// Expenses
+				r.Get("/expenses", h.ListExpenses)
+				r.Post("/expenses", h.CreateExpense)
+				r.Get("/expenses/{expenseID}", h.GetExpense)
+				r.Post("/expenses/{expenseID}/submit", h.SubmitExpense)
+				r.Post("/expenses/{expenseID}/approve", h.ApproveExpense)
+				r.Post("/expenses/{expenseID}/reject", h.RejectExpense)
+				r.Post("/expenses/{expenseID}/post", h.PostExpense)
 
 				// Invitations
 				r.Get("/invitations", h.ListInvitations)

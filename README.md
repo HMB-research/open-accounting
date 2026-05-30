@@ -87,6 +87,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 | **Orders** | Order management with quote linking, status tracking, and grouped CSV import |
 | **Contacts** | Customer and supplier management |
 | **Payments** | Payment recording with invoice allocation |
+| **Expenses** | Receipt-backed expense claims with approval and ledger posting |
 | **PDF Generation** | Professional invoice PDFs with customizable branding |
 | **Recurring Invoices** | Automated invoice generation on schedule with grouped CSV import |
 
@@ -228,6 +229,8 @@ go run ./cmd/oa inventory categories import --file ./categories.csv
 go run ./cmd/oa inventory warehouses import --file ./warehouses.csv
 go run ./cmd/oa inventory products import --file ./products.csv
 go run ./cmd/oa inventory stock import --file ./stock.csv
+go run ./cmd/oa expenses create --merchant "Office Store" --expense-date 2026-05-30 --expense-account-id <expense-account-id> --payment-account-id <cash-account-id> --amount 120.50
+go run ./cmd/oa documents upload --entity-type expense --entity-id <expense-id> --file ./receipt.pdf --document-type receipt
 go run ./cmd/oa documents upload --entity-type bank_transaction --entity-id <transaction-id> --file ./evidence.pdf --document-type reconciliation_evidence
 go run ./cmd/oa documents evidence-policy --entity-type bank_transaction --entity-id <transaction-id> --document-type reconciliation_evidence --require-approved
 go run ./cmd/oa journal import-opening-balances --file ./opening-balances.csv --entry-date 2026-01-01
@@ -327,6 +330,7 @@ open-accounting/
 - [x] Quotes with quote-to-order conversion
 - [x] Order management
 - [x] Fixed assets with depreciation tracking
+- [x] Receipt-backed expense tracking with approval and posting
 - [x] Tenant-scoped API token auth and Go CLI
 - [x] Access/refresh JWT purpose separation
 - [x] Revocable, single-use refresh token sessions
@@ -335,7 +339,7 @@ open-accounting/
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings
 - [x] Fiscal-year close readiness and retained-earnings carry-forward workflow
-- [x] Document attachments for invoices, journal entries, payments, bank transactions, and fixed assets
+- [x] Document attachments for invoices, journal entries, payments, bank transactions, fixed assets, and expenses
 - [x] Document evidence policy evaluation through API and CLI
 - [x] Reconciliation completion blocks bank transactions marked as requiring evidence until approved evidence is attached
 - [x] Backup creation, offsite sync, health-check, and restore-drill scripts for self-hosted operations

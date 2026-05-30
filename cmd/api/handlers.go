@@ -25,6 +25,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
+	"github.com/HMB-research/open-accounting/internal/expenses"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
@@ -71,6 +72,7 @@ type Handlers struct {
 	costCenterService        *accounting.CostCenterService
 	interestService          *invoicing.InterestService
 	webhookService           *webhooks.Service
+	expensesService          *expenses.Service
 }
 
 type refreshSessionManager interface {

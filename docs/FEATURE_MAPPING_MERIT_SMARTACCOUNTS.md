@@ -225,8 +225,8 @@ This is a competitive-gap document, not the authoritative current-state status p
 |---------|-------|---------------|-----------------|--------|
 | Responsive web design | ⚠️ | ✅ | ✅ | Implemented |
 | Native mobile app | ❌ | ✅ (Android) | ❌ | **Gap** |
-| Receipt capture | ❌ | ✅ | ❌ | **Gap** |
-| Expense tracking | ❌ | ✅ | ❌ | **Gap** |
+| Receipt capture | ❌ | ✅ | ✅ | Implemented through receipt documents linked to expenses; native mobile capture and OCR remain separate gaps |
+| Expense tracking | ❌ | ✅ | ✅ | Implemented through draft/submitted/approved/rejected/posted expense claims with receipt enforcement and ledger posting |
 
 ---
 

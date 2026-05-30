@@ -244,6 +244,13 @@ Tenant outbound webhooks are the supported runtime notification path today. Use 
 - `journal_entry.posted` - Entry posted
 - `journal_entry.voided` - Entry voided
 
+#### Expense Events
+- `expense.created` - Expense claim created
+- `expense.submitted` - Expense submitted for approval
+- `expense.approved` - Expense approved
+- `expense.rejected` - Expense rejected
+- `expense.posted` - Expense posted to the ledger
+
 #### Recurring Events
 - `recurring.created` - Recurring invoice setup
 - `recurring.generated` - Invoice generated from template

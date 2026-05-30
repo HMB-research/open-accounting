@@ -37,6 +37,13 @@ const (
 	EventJournalEntryPosted  = "journal_entry.posted"
 	EventJournalEntryVoided  = "journal_entry.voided"
 
+	// Expense events
+	EventExpenseCreated   = "expense.created"
+	EventExpenseSubmitted = "expense.submitted"
+	EventExpenseApproved  = "expense.approved"
+	EventExpenseRejected  = "expense.rejected"
+	EventExpensePosted    = "expense.posted"
+
 	// Recurring invoice events
 	EventRecurringCreated   = "recurring.created"
 	EventRecurringGenerated = "recurring.generated"
@@ -270,6 +277,11 @@ var AllEventTypes = []string{
 	EventJournalEntryCreated,
 	EventJournalEntryPosted,
 	EventJournalEntryVoided,
+	EventExpenseCreated,
+	EventExpenseSubmitted,
+	EventExpenseApproved,
+	EventExpenseRejected,
+	EventExpensePosted,
 	EventRecurringCreated,
 	EventRecurringGenerated,
 	EventRecurringStopped,

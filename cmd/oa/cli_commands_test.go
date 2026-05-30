@@ -22,6 +22,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
+	"github.com/HMB-research/open-accounting/internal/expenses"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
@@ -2642,6 +2643,138 @@ func TestCLIAssetCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"assets", "delete", "--id", "asset-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Deleted asset asset-1")
+}
+
+func TestCLIExpenseCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	expensePayload := func(status string) map[string]any {
+		payload := map[string]any{
+			"id":                 "expense-1",
+			"tenant_id":          "tenant-1",
+			"expense_number":     "EXP-00001",
+			"expense_date":       "2026-05-30T00:00:00Z",
+			"merchant":           "Office Store",
+			"description":        "Printer toner",
+			"employee_id":        "employee-1",
+			"contact_id":         "supplier-1",
+			"expense_account_id": "expense-account",
+			"payment_account_id": "cash-account",
+			"amount":             "120.50",
+			"currency":           "EUR",
+			"exchange_rate":      "1",
+			"base_amount":        "120.50",
+			"requires_receipt":   false,
+			"status":             status,
+			"created_at":         "2026-05-30T12:00:00Z",
+			"created_by":         "user-1",
+			"updated_at":         "2026-05-30T12:00:00Z",
+		}
+		if status == "POSTED" {
+			payload["journal_entry_id"] = "je-1"
+		}
+		if status == "REJECTED" {
+			payload["rejection_reason"] = "Need project code"
+		}
+		return payload
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/expenses":
+			require.Equal(t, "DRAFT", r.URL.Query().Get("status"))
+			require.Equal(t, "25", r.URL.Query().Get("limit"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{expensePayload("DRAFT")})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses":
+			var req expenses.CreateExpenseRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Office Store", req.Merchant)
+			assert.Equal(t, "2026-05-30", req.ExpenseDate.Format("2006-01-02"))
+			assert.Equal(t, "expense-account", req.ExpenseAccountID)
+			assert.Equal(t, "cash-account", req.PaymentAccountID)
+			assert.True(t, req.Amount.Equal(decimal.RequireFromString("120.50")))
+			require.NotNil(t, req.EmployeeID)
+			require.NotNil(t, req.ContactID)
+			require.NotNil(t, req.RequiresReceipt)
+			assert.False(t, *req.RequiresReceipt)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(expensePayload("DRAFT"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/expense-1":
+			_ = json.NewEncoder(w).Encode(expensePayload("SUBMITTED"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/expense-1/submit":
+			_ = json.NewEncoder(w).Encode(expensePayload("SUBMITTED"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/expense-1/approve":
+			_ = json.NewEncoder(w).Encode(expensePayload("APPROVED"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/expense-1/post":
+			_ = json.NewEncoder(w).Encode(expensePayload("POSTED"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/expense-1/reject":
+			var req expenses.RejectExpenseRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Need project code", req.Reason)
+			_ = json.NewEncoder(w).Encode(expensePayload("REJECTED"))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"expenses", "list", "--status", "draft", "--limit", "25", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"expense_number": "EXP-00001"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"expenses", "create",
+		"--merchant", "Office Store",
+		"--description", "Printer toner",
+		"--expense-date", "2026-05-30",
+		"--employee-id", "employee-1",
+		"--contact-id", "supplier-1",
+		"--expense-account-id", "expense-account",
+		"--payment-account-id", "cash-account",
+		"--amount", "120.50",
+		"--requires-receipt=false",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created expense EXP-00001 (expense-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"expenses", "get", "--id", "expense-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Expense EXP-00001 Office Store")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"expenses", "submit", "--id", "expense-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Submitted expense expense-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"expenses", "approve", "--id", "expense-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Approved expense expense-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"expenses", "post", "--id", "expense-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Posted expense expense-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"expenses", "reject", "--id", "expense-1", "--reason", "Need project code"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Rejected expense expense-1")
 }
 
 func TestCLIInventoryCommands(t *testing.T) {

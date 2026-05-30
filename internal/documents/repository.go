@@ -392,6 +392,8 @@ func entityTableName(entityType string) (string, error) {
 		return "bank_transactions", nil
 	case EntityTypeAsset:
 		return "fixed_assets", nil
+	case EntityTypeExpense:
+		return "expenses", nil
 	case EntityTypeYearEndClose:
 		return "", nil
 	default:
