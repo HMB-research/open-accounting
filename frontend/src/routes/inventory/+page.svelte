@@ -58,6 +58,9 @@
 	// Stock adjustment form
 	let adjustQuantity = $state('');
 	let adjustUnitCost = $state('');
+	let adjustLotNumber = $state('');
+	let adjustSerialNumber = $state('');
+	let adjustExpiryDate = $state('');
 	let adjustReason = $state('');
 	let adjustWarehouseId = $state('');
 
@@ -246,6 +249,9 @@
 		selectedProduct = product;
 		adjustQuantity = '';
 		adjustUnitCost = '';
+		adjustLotNumber = '';
+		adjustSerialNumber = '';
+		adjustExpiryDate = '';
 		adjustReason = '';
 		adjustWarehouseId = warehouses.length > 0 ? warehouses[0].id : '';
 		showAdjustStock = true;
@@ -262,6 +268,9 @@
 				warehouse_id: adjustWarehouseId,
 				quantity: adjustQuantity,
 				unit_cost: adjustUnitCost || undefined,
+				lot_number: adjustLotNumber || undefined,
+				serial_number: adjustSerialNumber || undefined,
+				expiry_date: adjustExpiryDate || undefined,
 				reason: adjustReason || undefined
 			});
 			showAdjustStock = false;
@@ -742,16 +751,14 @@
 {/if}
 
 {#if showAdjustStock && selectedProduct}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => showAdjustStock = false} role="presentation">
-		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="adjust-stock-title" tabindex="-1">
+	<div class="modal-backdrop" onclick={() => showAdjustStock = false} onkeydown={(e) => e.key === 'Escape' && (showAdjustStock = false)} role="presentation">
+		<div class="modal card" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showAdjustStock = false)} role="dialog" aria-modal="true" aria-labelledby="adjust-stock-title" tabindex="-1">
 			<h2 id="adjust-stock-title">{m.inventory_adjustStock()}: {selectedProduct.name}</h2>
 			<form onsubmit={adjustStock}>
 				<div class="form-group">
 					<label class="label" for="adjust-warehouse">{m.inventory_warehouses()} *</label>
 					<select class="input" id="adjust-warehouse" bind:value={adjustWarehouseId} required>
-						{#each warehouses as warehouse}
+						{#each warehouses as warehouse (warehouse.id)}
 							<option value={warehouse.id}>{warehouse.name}</option>
 						{/each}
 					</select>
@@ -765,6 +772,21 @@
 					<div class="form-group">
 						<label class="label" for="adjust-cost">{m.inventory_unitCost()}</label>
 						<input class="input" type="number" step="0.01" min="0" id="adjust-cost" bind:value={adjustUnitCost} />
+					</div>
+				</div>
+
+				<div class="form-row">
+					<div class="form-group">
+						<label class="label" for="adjust-lot-number">{m.inventory_lotNumber()}</label>
+						<input class="input" type="text" id="adjust-lot-number" bind:value={adjustLotNumber} />
+					</div>
+					<div class="form-group">
+						<label class="label" for="adjust-serial-number">{m.inventory_serialNumber()}</label>
+						<input class="input" type="text" id="adjust-serial-number" bind:value={adjustSerialNumber} />
+					</div>
+					<div class="form-group">
+						<label class="label" for="adjust-expiry-date">{m.inventory_expiryDate()}</label>
+						<input class="input" type="date" id="adjust-expiry-date" bind:value={adjustExpiryDate} />
 					</div>
 				</div>
 
@@ -832,10 +854,8 @@
 {/if}
 
 {#if showMovements && selectedProduct}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => showMovements = false} role="presentation">
-		<div class="modal modal-large card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="movements-title" tabindex="-1">
+	<div class="modal-backdrop" onclick={() => showMovements = false} onkeydown={(e) => e.key === 'Escape' && (showMovements = false)} role="presentation">
+		<div class="modal modal-large card" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showMovements = false)} role="dialog" aria-modal="true" aria-labelledby="movements-title" tabindex="-1">
 			<h2 id="movements-title">{m.inventory_movements()}: {selectedProduct.name}</h2>
 
 			{#if movements.length === 0}
@@ -850,11 +870,14 @@
 								<th>{m.inventory_warehouses()}</th>
 								<th class="text-right">{m.inventory_quantity()}</th>
 								<th class="text-right">{m.inventory_unitCost()}</th>
+								<th>{m.inventory_lotNumber()}</th>
+								<th>{m.inventory_serialNumber()}</th>
+								<th>{m.inventory_expiryDate()}</th>
 								<th>{m.inventory_reference()}</th>
 							</tr>
 						</thead>
 						<tbody>
-							{#each movements as movement}
+							{#each movements as movement (movement.id)}
 								<tr>
 									<td>{formatDate(movement.movement_date)}</td>
 									<td>
@@ -865,6 +888,9 @@
 									<td>{getWarehouseName(movement.warehouse_id)}</td>
 									<td class="text-right">{formatNumber(movement.quantity)}</td>
 									<td class="text-right">{movement.unit_cost ? formatCurrency(movement.unit_cost) : '-'}</td>
+									<td>{movement.lot_number || '-'}</td>
+									<td>{movement.serial_number || '-'}</td>
+									<td>{movement.expiry_date ? formatDate(movement.expiry_date) : '-'}</td>
 									<td>{movement.reference || '-'}</td>
 								</tr>
 							{/each}
