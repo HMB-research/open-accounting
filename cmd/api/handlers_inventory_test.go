@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -24,12 +23,6 @@ var (
 	errCategoryNotFound  = errors.New("category not found")
 	errWarehouseNotFound = errors.New("warehouse not found")
 )
-
-// contextWithPlainClaims sets claims using the plain string key that some handlers expect
-// (Note: some handlers use r.Context().Value("claims") instead of auth.GetClaims())
-func contextWithPlainClaims(ctx context.Context, claims *auth.Claims) context.Context {
-	return context.WithValue(ctx, "claims", claims)
-}
 
 // mockInventoryRepository implements inventory.Repository for testing
 type mockInventoryRepository struct {
@@ -702,11 +695,8 @@ func TestAdjustStock(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/inventory/adjust", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
-			// AdjustStock handler uses r.Context().Value("claims") with plain string key
 			claims := createTestClaims("user-1", "test@example.com", "tenant-1", "owner")
-			ctx := contextWithClaims(req.Context(), claims)
-			ctx = contextWithPlainClaims(ctx, claims)
-			req = req.WithContext(ctx)
+			req = req.WithContext(contextWithClaims(req.Context(), claims))
 
 			rr := httptest.NewRecorder()
 			h.AdjustStock(rr, req)
@@ -752,9 +742,7 @@ func TestImportStockAdjustments(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
 	claims := createTestClaims("user-1", "test@example.com", "tenant-1", "owner")
-	ctx := contextWithClaims(req.Context(), claims)
-	ctx = contextWithPlainClaims(ctx, claims)
-	req = req.WithContext(ctx)
+	req = req.WithContext(contextWithClaims(req.Context(), claims))
 
 	rr := httptest.NewRecorder()
 	h.ImportStockAdjustments(rr, req)
@@ -810,9 +798,7 @@ func TestReserveAndReleaseStock(t *testing.T) {
 	reserveReq := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/inventory/reserve", bytes.NewReader(reserveBody))
 	reserveReq.Header.Set("Content-Type", "application/json")
 	reserveReq = withURLParams(reserveReq, map[string]string{"tenantID": "tenant-1"})
-	reserveCtx := contextWithClaims(reserveReq.Context(), claims)
-	reserveCtx = contextWithPlainClaims(reserveCtx, claims)
-	reserveReq = reserveReq.WithContext(reserveCtx)
+	reserveReq = reserveReq.WithContext(contextWithClaims(reserveReq.Context(), claims))
 
 	reserveRR := httptest.NewRecorder()
 	h.ReserveStock(reserveRR, reserveReq)
@@ -832,9 +818,7 @@ func TestReserveAndReleaseStock(t *testing.T) {
 	releaseReq := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/inventory/release", bytes.NewReader(releaseBody))
 	releaseReq.Header.Set("Content-Type", "application/json")
 	releaseReq = withURLParams(releaseReq, map[string]string{"tenantID": "tenant-1"})
-	releaseCtx := contextWithClaims(releaseReq.Context(), claims)
-	releaseCtx = contextWithPlainClaims(releaseCtx, claims)
-	releaseReq = releaseReq.WithContext(releaseCtx)
+	releaseReq = releaseReq.WithContext(contextWithClaims(releaseReq.Context(), claims))
 
 	releaseRR := httptest.NewRecorder()
 	h.ReleaseStock(releaseRR, releaseReq)
@@ -883,9 +867,7 @@ func TestReleaseStockRejectsOverRelease(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
 	claims := createTestClaims("user-1", "test@example.com", "tenant-1", "owner")
-	ctx := contextWithClaims(req.Context(), claims)
-	ctx = contextWithPlainClaims(ctx, claims)
-	req = req.WithContext(ctx)
+	req = req.WithContext(contextWithClaims(req.Context(), claims))
 
 	rr := httptest.NewRecorder()
 	h.ReleaseStock(rr, req)

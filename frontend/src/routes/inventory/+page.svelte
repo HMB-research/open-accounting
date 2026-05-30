@@ -77,6 +77,22 @@
 		}
 	});
 
+	function handleInventoryModalKeydown(e: KeyboardEvent) {
+		if (e.key !== 'Escape') return;
+
+		if (showAdjustStock) showAdjustStock = false;
+		if (showMovements) showMovements = false;
+	}
+
+	function formStringValue(value: string | number): string {
+		return String(value).trim();
+	}
+
+	function optionalFormStringValue(value: string | number): string | undefined {
+		const text = formStringValue(value);
+		return text === '' ? undefined : text;
+	}
+
 	async function loadData(tenantId: string) {
 		isLoading = true;
 		error = '';
@@ -266,8 +282,8 @@
 			await api.adjustStock(tenantId, {
 				product_id: selectedProduct.id,
 				warehouse_id: adjustWarehouseId,
-				quantity: adjustQuantity,
-				unit_cost: adjustUnitCost || undefined,
+				quantity: formStringValue(adjustQuantity),
+				unit_cost: optionalFormStringValue(adjustUnitCost),
 				lot_number: adjustLotNumber || undefined,
 				serial_number: adjustSerialNumber || undefined,
 				expiry_date: adjustExpiryDate || undefined,
@@ -300,7 +316,7 @@
 				product_id: selectedProduct.id,
 				from_warehouse_id: transferFromWarehouseId,
 				to_warehouse_id: transferToWarehouseId,
-				quantity: transferQuantity,
+				quantity: formStringValue(transferQuantity),
 				notes: transferNotes || undefined
 			});
 			showTransferStock = false;
@@ -317,7 +333,7 @@
 
 		selectedProduct = product;
 		try {
-			movements = await api.getProductMovements(tenantId, product.id);
+			movements = (await api.getProductMovements(tenantId, product.id)) ?? [];
 			showMovements = true;
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load movements';
@@ -375,6 +391,8 @@
 		return minLevel > 0 && current <= minLevel;
 	}
 </script>
+
+<svelte:window onkeydown={handleInventoryModalKeydown} />
 
 <svelte:head>
 	<title>{m.inventory_title()} - Open Accounting</title>
