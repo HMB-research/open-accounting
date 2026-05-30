@@ -5347,6 +5347,8 @@ func TestCLIBankingCommands(t *testing.T) {
 			assert.Equal(t, "Client payment", req.Transactions[0].Description)
 			assert.Equal(t, "Acme", req.Transactions[0].CounterpartyName)
 			assert.Equal(t, "ext-1", req.Transactions[0].ExternalID)
+			assert.Equal(t, "EE457700771000676899", req.Transactions[0].SourceAccount)
+			assert.Equal(t, "EUR", req.Transactions[0].Currency)
 			assert.True(t, req.SkipDuplicates)
 			_ = json.NewEncoder(w).Encode(importPayload)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-1/import-history":
@@ -8431,6 +8433,8 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	assert.Equal(t, "-10.5", lhvRows[0].Amount)
 	assert.Equal(t, "Acme", lhvRows[0].CounterpartyName)
 	assert.Equal(t, "ext-1", lhvRows[0].ExternalID)
+	assert.Equal(t, "EE457700771000676899", lhvRows[0].SourceAccount)
+	assert.Equal(t, "EUR", lhvRows[0].Currency)
 
 	_, err = parseBankTransactionCSVRows("")
 	require.Error(t, err)

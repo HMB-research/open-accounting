@@ -87,6 +87,8 @@ func ParseCSVTransactions(content string) ([]banking.CSVTransactionRow, error) {
 		rows = append(rows, banking.CSVTransactionRow{
 			Date:                date,
 			Amount:              amount,
+			Currency:            strings.ToUpper(mappers.Field(record, parsed.Index, "Currency", "Valuuta")),
+			SourceAccount:       mappers.Field(record, parsed.Index, "Client account", "Kliendi konto"),
 			Description:         description,
 			Reference:           mappers.Field(record, parsed.Index, "Reference number", "Viitenumber"),
 			CounterpartyName:    counterpartyName,
@@ -118,7 +120,7 @@ func ParseCAMTTransactions(content string) ([]banking.CSVTransactionRow, error) 
 	var rows []banking.CSVTransactionRow
 	for _, statement := range document.Statement.Statements {
 		for entryIndex, entry := range statement.Entries {
-			entryRows, err := rowsFromCAMTEntry(entry, entryIndex+1)
+			entryRows, err := rowsFromCAMTEntry(statement, entry, entryIndex+1)
 			if err != nil {
 				return nil, err
 			}
@@ -131,7 +133,7 @@ func ParseCAMTTransactions(content string) ([]banking.CSVTransactionRow, error) 
 	return rows, nil
 }
 
-func rowsFromCAMTEntry(entry camtEntry, entryNum int) ([]banking.CSVTransactionRow, error) {
+func rowsFromCAMTEntry(statement camtStatement, entry camtEntry, entryNum int) ([]banking.CSVTransactionRow, error) {
 	date, err := normalizeCAMTDate(firstNonEmpty(entry.BookingDate.Date, entry.ValueDate.Date, entry.ValueDate.DateTime))
 	if err != nil {
 		return nil, fmt.Errorf("LHV camt.053 entry %d has invalid date: %w", entryNum, err)
@@ -146,17 +148,17 @@ func rowsFromCAMTEntry(entry camtEntry, entryNum int) ([]banking.CSVTransactionR
 
 	transactionDetails := flattenTransactionDetails(entry)
 	if len(transactionDetails) == 0 {
-		return []banking.CSVTransactionRow{rowFromCAMTDetail(entry, camtTransactionDetails{}, date, amount)}, nil
+		return []banking.CSVTransactionRow{rowFromCAMTDetail(statement, entry, camtTransactionDetails{}, date, amount)}, nil
 	}
 
 	rows := make([]banking.CSVTransactionRow, 0, len(transactionDetails))
 	for _, detail := range transactionDetails {
-		rows = append(rows, rowFromCAMTDetail(entry, detail, date, amount))
+		rows = append(rows, rowFromCAMTDetail(statement, entry, detail, date, amount))
 	}
 	return rows, nil
 }
 
-func rowFromCAMTDetail(entry camtEntry, detail camtTransactionDetails, date, amount string) banking.CSVTransactionRow {
+func rowFromCAMTDetail(statement camtStatement, entry camtEntry, detail camtTransactionDetails, date, amount string) banking.CSVTransactionRow {
 	counterpartyName, counterpartyAccount := camtCounterparty(entry.CreditDebitIndicator, detail.RelatedParties)
 	description := firstNonEmpty(
 		firstNonEmpty(detail.RemittanceInfo.Unstructured...),
@@ -170,7 +172,10 @@ func rowFromCAMTDetail(entry camtEntry, detail camtTransactionDetails, date, amo
 
 	return banking.CSVTransactionRow{
 		Date:                date,
+		ValueDate:           normalizeCAMTDateOrEmpty(firstNonEmpty(entry.ValueDate.Date, entry.ValueDate.DateTime)),
 		Amount:              amount,
+		Currency:            strings.ToUpper(firstNonEmpty(entry.Amount.Currency, detail.AmountDetails.TransactionAmount.Amount.Currency, detail.AmountDetails.InstructedAmount.Amount.Currency, statement.Account.Currency)),
+		SourceAccount:       statement.Account.ID.IBAN,
 		Description:         description,
 		Reference:           detail.RemittanceInfo.Reference(),
 		CounterpartyName:    counterpartyName,
@@ -262,6 +267,14 @@ func normalizeCAMTDate(value string) (string, error) {
 	return normalizeDate(trimmed)
 }
 
+func normalizeCAMTDateOrEmpty(value string) string {
+	normalized, err := normalizeCAMTDate(value)
+	if err != nil {
+		return ""
+	}
+	return normalized
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {
@@ -280,7 +293,13 @@ type camtBankToCustomerStatement struct {
 }
 
 type camtStatement struct {
-	Entries []camtEntry `xml:"Ntry"`
+	Account camtStatementAccount `xml:"Acct"`
+	Entries []camtEntry          `xml:"Ntry"`
+}
+
+type camtStatementAccount struct {
+	ID       camtAccountID `xml:"Id"`
+	Currency string        `xml:"Ccy"`
 }
 
 type camtEntry struct {
@@ -298,9 +317,19 @@ type camtEntryDetails struct {
 }
 
 type camtTransactionDetails struct {
+	AmountDetails  camtAmountDetails  `xml:"AmtDtls"`
 	References     camtReferences     `xml:"Refs"`
 	RelatedParties camtRelatedParties `xml:"RltdPties"`
 	RemittanceInfo camtRemittanceInfo `xml:"RmtInf"`
+}
+
+type camtAmountDetails struct {
+	InstructedAmount  camtAmountWrapper `xml:"InstdAmt"`
+	TransactionAmount camtAmountWrapper `xml:"TxAmt"`
+}
+
+type camtAmountWrapper struct {
+	Amount camtAmount `xml:"Amt"`
 }
 
 type camtReferences struct {
@@ -357,5 +386,6 @@ type camtDateChoice struct {
 }
 
 type camtAmount struct {
-	Value string `xml:",chardata"`
+	Currency string `xml:"Ccy,attr"`
+	Value    string `xml:",chardata"`
 }

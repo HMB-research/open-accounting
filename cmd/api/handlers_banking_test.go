@@ -1282,6 +1282,17 @@ func TestImportBankTransactions(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
+			name: "raw LHV CSV content",
+			body: map[string]interface{}{
+				"file_name": "lhv.csv",
+				"format":    "lhv",
+				"csv_content": "Client account;Document number;Date;Beneficiary's/remitter's account;Beneficiary's/remitter's name;Debit/Credit (D/C);Amount;Reference number;Archival ID;Details;Currency;Personal identification code or registry code;Beneficiary's/remitter's bank's BIC;Payment initiator's name;Entry reference;Account service provider's reference\n" +
+					"EE457700771000676899;123;2026-03-15;EE867700771000681884;Test Client;C;12,50;100513845;202603150001;EUR payment;EUR;12345678;LHVBEE22;;ENTRY-1;LHV-UNIQUE-1\n",
+				"skip_duplicates": true,
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
 			name:       "invalid JSON",
 			body:       nil,
 			wantStatus: http.StatusBadRequest,
@@ -1299,9 +1310,10 @@ func TestImportBankTransactions(t *testing.T) {
 			}
 
 			repo.accounts["acc-1"] = &banking.BankAccount{
-				ID:       "acc-1",
-				TenantID: "tenant-1",
-				Currency: "EUR",
+				ID:            "acc-1",
+				TenantID:      "tenant-1",
+				AccountNumber: "EE457700771000676899",
+				Currency:      "EUR",
 			}
 
 			var body []byte

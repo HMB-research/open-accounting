@@ -1,6 +1,7 @@
 package lhv
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -21,6 +22,8 @@ func TestParseTransactions(t *testing.T) {
 	assert.Equal(t, "Test Client", rows[0].CounterpartyName)
 	assert.Equal(t, "EE867700771000681884", rows[0].CounterpartyAccount)
 	assert.Equal(t, "LHV-UNIQUE-1", rows[0].ExternalID)
+	assert.Equal(t, "EUR", rows[0].Currency)
+	assert.Equal(t, "EE457700771000676899", rows[0].SourceAccount)
 }
 
 func TestDetectTransactionsRecognizesEstonianHeaders(t *testing.T) {
@@ -203,4 +206,32 @@ func TestParseCAMTTransactionsFromOfficialLHVSamples(t *testing.T) {
 	assert.Equal(t, "John Smith", rows[0].CounterpartyName)
 	assert.Equal(t, "ES0000000000000000000000", rows[0].CounterpartyAccount)
 	assert.Equal(t, "F56A3D416EF4EB11911400155D41A83F", rows[0].ExternalID)
+}
+
+func TestParseCAMTTransactionsFromCurrentLHVDocsStatementDataSample(t *testing.T) {
+	// Fixture mirrors the LHV Connect Account Statement "Statement data" sample:
+	// https://docs.lhv.com/home/connect/services/account-reports/account-statement
+	content, err := os.ReadFile("testdata/account_statement_camt053_official.xml")
+	require.NoError(t, err)
+
+	assert.True(t, DetectCAMTTransactions(string(content)))
+	rows, err := ParseCAMTTransactions(string(content))
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+
+	assert.Equal(t, "2025-06-05", rows[0].Date)
+	assert.Equal(t, "2025-06-05", rows[0].ValueDate)
+	assert.Equal(t, "-1", rows[0].Amount)
+	assert.Equal(t, "GBP", rows[0].Currency)
+	assert.Equal(t, "GB12LHVB04031312345678", rows[0].SourceAccount)
+	assert.Equal(t, "GBP payment", rows[0].Description)
+	assert.Equal(t, "C0924B9E44C044D39A828B7E34F4D145", rows[0].ExternalID)
+
+	assert.Equal(t, "2025-06-05", rows[1].Date)
+	assert.Equal(t, "2025-06-05", rows[1].ValueDate)
+	assert.Equal(t, "-1", rows[1].Amount)
+	assert.Equal(t, "EUR", rows[1].Currency)
+	assert.Equal(t, "GB12LHVB04031312345679", rows[1].SourceAccount)
+	assert.Equal(t, "EUR payment", rows[1].Description)
+	assert.Equal(t, "7CAC8F3C708940C1AF9F0B3E4EB64478", rows[1].ExternalID)
 }

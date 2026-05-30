@@ -109,7 +109,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 | Feature                | Description                                      |
 | ---------------------- | ------------------------------------------------ |
 | **Bank Accounts**      | Track multiple bank accounts per company         |
-| **Transaction Import** | CSV import for bank statements                   |
+| **Transaction Import** | Generic and LHV CSV/camt.053 bank statement import with account and currency checks |
 | **Auto-Matching**      | Intelligent matching of transactions to payments |
 | **Reconciliation**     | Full bank reconciliation workflow                |
 
