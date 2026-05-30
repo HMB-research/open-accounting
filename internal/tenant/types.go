@@ -87,6 +87,7 @@ const (
 	AuditActionTenantUpdated       = "tenant_updated"
 	AuditActionUserSessionRevoked  = "user_session_revoked"
 	AuditActionUserSessionsRevoked = "user_sessions_revoked"
+	AuditActionUserAPITokenRevoked = "user_api_token_revoked" // #nosec G101 -- audit action label, not a credential.
 	AuditActionUserStatusUpdated   = "user_status_updated"
 
 	AuditTargetUser       = "user"

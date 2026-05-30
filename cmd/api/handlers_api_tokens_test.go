@@ -70,6 +70,17 @@ func setupAPITokenHandlers() (*Handlers, *mockAPITokenRepository) {
 	}, repo
 }
 
+func setupTenantUserAPITokenHandlers() (*Handlers, *mockTenantRepository, *mockAPITokenRepository) {
+	tenantRepo := newMockTenantRepository()
+	apiTokenRepo := newMockAPITokenRepository()
+
+	return &Handlers{
+		tenantService:        tenant.NewServiceWithRepository(tenantRepo),
+		apiTokenService:      apitoken.NewServiceWithRepository(apiTokenRepo),
+		securityAuditService: &mockSecurityAuditService{},
+	}, tenantRepo, apiTokenRepo
+}
+
 func TestCreateAPIToken(t *testing.T) {
 	h, _ := setupAPITokenHandlers()
 	claims := &auth.Claims{
@@ -151,4 +162,79 @@ func TestRevokeAPIToken(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
 	require.NotNil(t, repo.tokens["token-1"].RevokedAt)
+}
+
+func TestListTenantUserAPITokens(t *testing.T) {
+	h, tenantRepo, apiTokenRepo := setupTenantUserAPITokenHandlers()
+	tenantRepo.addTestTenant("tenant-1", "Tenant One", "tenant-one")
+	tenantRepo.addTestUser("user-2", "target@example.com", "Target", "password", true)
+	tenantRepo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+		{TenantID: "tenant-1", UserID: "admin-1", Role: tenant.RoleAdmin, IsActive: true, CreatedAt: time.Now()},
+		{TenantID: "tenant-1", UserID: "user-2", Role: tenant.RoleViewer, IsActive: true, CreatedAt: time.Now()},
+	}
+	apiTokenRepo.tokens["token-1"] = &apitoken.APIToken{
+		ID:          "token-1",
+		UserID:      "user-2",
+		TenantID:    "tenant-1",
+		Name:        "CLI token",
+		TokenPrefix: "oa_123456",
+		CreatedAt:   time.Now(),
+	}
+	apiTokenRepo.tokens["other-token"] = &apitoken.APIToken{
+		ID:          "other-token",
+		UserID:      "admin-1",
+		TenantID:    "tenant-1",
+		Name:        "Admin token",
+		TokenPrefix: "oa_admin",
+		CreatedAt:   time.Now(),
+	}
+	claims := &auth.Claims{UserID: "admin-1", Email: "admin@example.com", TenantID: "tenant-1", Role: tenant.RoleAdmin}
+	req := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/users/user-2/api-tokens", nil, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "userID": "user-2"})
+	w := httptest.NewRecorder()
+
+	h.ListTenantUserAPITokens(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	var resp []apitoken.APIToken
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	require.Len(t, resp, 1)
+	assert.Equal(t, "token-1", resp[0].ID)
+}
+
+func TestRevokeTenantUserAPITokenAuditsAction(t *testing.T) {
+	h, tenantRepo, apiTokenRepo := setupTenantUserAPITokenHandlers()
+	tenantRepo.addTestTenant("tenant-1", "Tenant One", "tenant-one")
+	tenantRepo.addTestUser("user-2", "target@example.com", "Target", "password", true)
+	tenantRepo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+		{TenantID: "tenant-1", UserID: "admin-1", Role: tenant.RoleAdmin, IsActive: true, CreatedAt: time.Now()},
+		{TenantID: "tenant-1", UserID: "user-2", Role: tenant.RoleViewer, IsActive: true, CreatedAt: time.Now()},
+	}
+	apiTokenRepo.tokens["token-1"] = &apitoken.APIToken{
+		ID:          "token-1",
+		UserID:      "user-2",
+		TenantID:    "tenant-1",
+		Name:        "CLI token",
+		TokenPrefix: "oa_123456",
+		CreatedAt:   time.Now(),
+	}
+	claims := &auth.Claims{UserID: "admin-1", Email: "admin@example.com", TenantID: "tenant-1", Role: tenant.RoleAdmin}
+	req := makeAuthenticatedRequest(http.MethodDelete, "/tenants/tenant-1/users/user-2/api-tokens/token-1", nil, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "userID": "user-2", "tokenID": "token-1"})
+	w := httptest.NewRecorder()
+
+	h.RevokeTenantUserAPIToken(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	require.NotNil(t, apiTokenRepo.tokens["token-1"].RevokedAt)
+
+	securityEvents := h.securityAuditService.(*mockSecurityAuditService).events
+	require.NotEmpty(t, securityEvents)
+	assert.Equal(t, auth.SecurityAuditActionAPITokenRevoked, securityEvents[0].Action)
+	assert.Equal(t, "target@example.com", securityEvents[0].TargetEmail)
+	assert.Equal(t, "token-1", securityEvents[0].Metadata["token_id"])
+
+	require.NotEmpty(t, tenantRepo.auditEvents["tenant-1"])
+	assert.Equal(t, tenant.AuditActionUserAPITokenRevoked, tenantRepo.auditEvents["tenant-1"][0].Action)
+	assert.Equal(t, "token-1", tenantRepo.auditEvents["tenant-1"][0].Metadata["token_id"])
 }

@@ -359,7 +359,7 @@ open-accounting/
 ### Still missing for reliable production use
 - [ ] Remaining external migration imports beyond payroll, tax history, quote/order/recurring-template, cost-center/product-category/warehouse/product/stock, and fixed assets
 - [ ] Automated document policy enforcement in remaining workflow blockers
-- [ ] Remaining auth administration hardening beyond tenant-scoped session/status controls
+- [ ] Remaining auth administration hardening beyond tenant-scoped session/status/API-token controls
 - [ ] E-invoice, direct bank feeds, SEPA initiation, and automatic e-MTA submission
 
 ---

@@ -377,6 +377,18 @@ func (c *apiClient) listTenantUserAuthSessions(ctx context.Context, tenantID, us
 	return resp, nil
 }
 
+func (c *apiClient) listTenantUserAPITokens(ctx context.Context, tenantID, userID string) ([]apitoken.APIToken, error) {
+	var resp []apitoken.APIToken
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "users", userID, "api-tokens"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) revokeTenantUserAPIToken(ctx context.Context, tenantID, userID, tokenID string) error {
+	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "users", userID, "api-tokens", tokenID), nil, c.apiToken, nil)
+}
+
 func (c *apiClient) revokeTenantUserAuthSession(ctx context.Context, tenantID, userID, sessionID string) error {
 	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "users", userID, "sessions", sessionID), nil, c.apiToken, nil)
 }

@@ -799,6 +799,8 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/users/{userID}/sessions", h.ListTenantUserAuthSessions)
 				r.Delete("/users/{userID}/sessions", h.RevokeTenantUserAuthSessions)
 				r.Delete("/users/{userID}/sessions/{sessionID}", h.RevokeTenantUserAuthSession)
+				r.Get("/users/{userID}/api-tokens", h.ListTenantUserAPITokens)
+				r.Delete("/users/{userID}/api-tokens/{tokenID}", h.RevokeTenantUserAPIToken)
 				r.Get("/users/{userID}/security-events", h.ListTenantUserSecurityAuditEvents)
 				r.Get("/audit-events", h.ListTenantAuditEvents)
 

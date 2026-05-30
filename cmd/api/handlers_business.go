@@ -2687,13 +2687,13 @@ func (h *Handlers) authorizeTenantUserAdmin(w http.ResponseWriter, r *http.Reque
 		return nil, "", false
 	}
 
-	role, err := h.tenantService.GetUserRole(r.Context(), tenantID, userID)
+	membership, err := h.tenantService.GetTenantUser(r.Context(), tenantID, userID)
 	if err != nil {
 		respondError(w, http.StatusNotFound, "User not found in tenant")
 		return nil, "", false
 	}
 
-	return claims, role, true
+	return claims, membership.Role, true
 }
 
 // ListTenantAuditEvents returns tenant administration audit events
