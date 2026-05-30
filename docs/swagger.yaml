@@ -5388,6 +5388,125 @@ definitions:
       tenant_name:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_webhooks.CreateEndpointRequest:
+    properties:
+      events:
+        items:
+          type: string
+        type: array
+      is_active:
+        type: boolean
+      name:
+        type: string
+      secret:
+        type: string
+      url:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_webhooks.Delivery:
+    properties:
+      attempt_number:
+        type: integer
+      created_at:
+        type: string
+      delivered_at:
+        type: string
+      endpoint_id:
+        type: string
+      error:
+        type: string
+      event_id:
+        type: string
+      event_type:
+        type: string
+      id:
+        type: string
+      request_body:
+        items:
+          type: integer
+        type: array
+      response_body:
+        type: string
+      status:
+        type: string
+      status_code:
+        type: integer
+      tenant_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_webhooks.DeliveryResult:
+    properties:
+      deliveries:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.Delivery'
+        type: array
+      event:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.Event'
+    type: object
+  github_com_HMB-research_open-accounting_internal_webhooks.Endpoint:
+    properties:
+      created_at:
+        type: string
+      events:
+        items:
+          type: string
+        type: array
+      id:
+        type: string
+      is_active:
+        type: boolean
+      last_delivery_at:
+        type: string
+      name:
+        type: string
+      secret_set:
+        type: boolean
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      url:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_webhooks.Event:
+    properties:
+      created_at:
+        type: string
+      data:
+        items:
+          type: integer
+        type: array
+      id:
+        type: string
+      tenant_id:
+        type: string
+      type:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_webhooks.TestDeliveryRequest:
+    properties:
+      event_type:
+        type: string
+      payload:
+        items:
+          type: integer
+        type: array
+    type: object
+  github_com_HMB-research_open-accounting_internal_webhooks.UpdateEndpointRequest:
+    properties:
+      events:
+        items:
+          type: string
+        type: array
+      is_active:
+        type: boolean
+      name:
+        type: string
+      secret:
+        type: string
+      url:
+        type: string
+    type: object
 info:
   contact: {}
 paths:
@@ -14654,6 +14773,284 @@ paths:
       summary: Import warehouses
       tags:
       - Inventory
+  /tenants/{tenantID}/webhooks:
+    get:
+      description: List outbound webhook endpoints configured for a tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Filter to active endpoints
+        in: query
+        name: active_only
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.Endpoint'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List webhook endpoints
+      tags:
+      - Webhooks
+    post:
+      consumes:
+      - application/json
+      description: Create an outbound webhook endpoint with event subscriptions and
+        optional HMAC secret
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Webhook endpoint details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.CreateEndpointRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.Endpoint'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create webhook endpoint
+      tags:
+      - Webhooks
+  /tenants/{tenantID}/webhooks/{webhookID}:
+    delete:
+      description: Delete an outbound webhook endpoint and its delivery history
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Webhook endpoint ID
+        in: path
+        name: webhookID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete webhook endpoint
+      tags:
+      - Webhooks
+    get:
+      description: Get an outbound webhook endpoint by ID
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Webhook endpoint ID
+        in: path
+        name: webhookID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.Endpoint'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get webhook endpoint
+      tags:
+      - Webhooks
+    put:
+      consumes:
+      - application/json
+      description: Update outbound webhook endpoint settings
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Webhook endpoint ID
+        in: path
+        name: webhookID
+        required: true
+        type: string
+      - description: Webhook endpoint updates
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.UpdateEndpointRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.Endpoint'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update webhook endpoint
+      tags:
+      - Webhooks
+  /tenants/{tenantID}/webhooks/{webhookID}/deliveries:
+    get:
+      description: List recent outbound webhook delivery attempts for one endpoint
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Webhook endpoint ID
+        in: path
+        name: webhookID
+        required: true
+        type: string
+      - default: 50
+        description: Maximum deliveries to return
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.Delivery'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List webhook deliveries
+      tags:
+      - Webhooks
+  /tenants/{tenantID}/webhooks/{webhookID}/test:
+    post:
+      consumes:
+      - application/json
+      description: Send a deterministic test event to one endpoint and record the
+        delivery result
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Webhook endpoint ID
+        in: path
+        name: webhookID
+        required: true
+        type: string
+      - description: Optional test payload
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.TestDeliveryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.DeliveryResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Test webhook endpoint
+      tags:
+      - Webhooks
+  /tenants/{tenantID}/webhooks/events:
+    get:
+      description: List event types that outbound webhook endpoints can subscribe
+        to
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+      security:
+      - BearerAuth: []
+      summary: List webhook events
+      tags:
+      - Webhooks
   /tenants/{tenantID}/year-end-carry-forward:
     post:
       consumes:

@@ -220,7 +220,7 @@ settings:
 
 Backend event hooks are currently manifest-level only. The manifest parser and permission checks validate hook declarations, but the application does not yet load or execute plugin backend code. Enabling a plugin that declares backend hooks or routes fails explicitly so operators do not mistake a no-op plugin for a running integration.
 
-Future backend runtimes are expected to support subscriptions to these system events:
+Tenant outbound webhooks are the supported runtime notification path today. Use `webhooks create`, `webhooks test`, and `webhooks deliveries` in the CLI, or the `/tenants/{tenantId}/webhooks` API, to subscribe external systems to these events with signed HTTP delivery.
 
 ### Available Events
 
@@ -266,6 +266,9 @@ Future backend runtimes are expected to support subscriptions to these system ev
 #### Email Events
 - `email.sent` - Email sent successfully
 - `email.failed` - Email delivery failed
+
+#### Webhook Events
+- `webhook.test` - Manual webhook endpoint test delivery
 
 ### Event Payload Structure
 

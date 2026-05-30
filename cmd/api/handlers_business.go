@@ -24,6 +24,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
+	"github.com/HMB-research/open-accounting/internal/plugin"
 	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 
@@ -359,6 +360,7 @@ func (h *Handlers) CreateContact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.emitWebhookEvent(plugin.EventContactCreated, tenantID, contact)
 	respondJSON(w, http.StatusCreated, contact)
 }
 
@@ -457,6 +459,7 @@ func (h *Handlers) UpdateContact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.emitWebhookEvent(plugin.EventContactUpdated, tenantID, contact)
 	respondJSON(w, http.StatusOK, contact)
 }
 
@@ -481,6 +484,7 @@ func (h *Handlers) DeleteContact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.emitWebhookEvent(plugin.EventContactDeleted, tenantID, map[string]string{"contact_id": contactID})
 	respondJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
@@ -590,6 +594,7 @@ func (h *Handlers) CreateInvoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.emitWebhookEvent(plugin.EventInvoiceCreated, tenantID, invoice)
 	respondJSON(w, http.StatusCreated, invoice)
 }
 
@@ -689,6 +694,7 @@ func (h *Handlers) SendInvoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.emitWebhookEvent(plugin.EventInvoiceSent, tenantID, map[string]string{"invoice_id": invoiceID})
 	respondJSON(w, http.StatusOK, map[string]string{"status": "sent"})
 }
 
@@ -723,6 +729,7 @@ func (h *Handlers) VoidInvoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.emitWebhookEvent(plugin.EventInvoiceVoided, tenantID, map[string]string{"invoice_id": invoiceID})
 	respondJSON(w, http.StatusOK, map[string]string{"status": "voided"})
 }
 
@@ -874,6 +881,7 @@ func (h *Handlers) CreatePayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.emitWebhookEvent(plugin.EventPaymentReceived, tenantID, payment)
 	respondJSON(w, http.StatusCreated, payment)
 }
 
@@ -1016,6 +1024,11 @@ func (h *Handlers) AllocatePayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.emitWebhookEvent(plugin.EventPaymentAllocated, tenantID, map[string]string{
+		"payment_id": paymentID,
+		"invoice_id": req.InvoiceID,
+		"amount":     req.Amount.String(),
+	})
 	respondJSON(w, http.StatusOK, map[string]string{"status": "allocated"})
 }
 
@@ -1422,6 +1435,7 @@ func (h *Handlers) EmailPaymentReceipt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.emitWebhookEvent(plugin.EventBankTransactionImported, tenantID, result)
 	respondJSON(w, http.StatusOK, result)
 }
 
@@ -1950,6 +1964,10 @@ func (h *Handlers) MatchBankTransaction(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	h.emitWebhookEvent(plugin.EventBankTransactionMatched, tenantID, map[string]string{
+		"transaction_id": transactionID,
+		"payment_id":     req.PaymentID,
+	})
 	respondJSON(w, http.StatusOK, map[string]string{"status": "matched"})
 }
 
@@ -2167,6 +2185,7 @@ func (h *Handlers) CompleteReconciliation(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	h.emitWebhookEvent(plugin.EventReconciliationCompleted, tenantID, map[string]string{"reconciliation_id": reconciliationID})
 	respondJSON(w, http.StatusOK, map[string]string{"status": "completed"})
 }
 
@@ -2701,6 +2720,7 @@ func (h *Handlers) CreateEmployee(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.emitWebhookEvent(plugin.EventEmployeeCreated, tenantID, employee)
 	respondJSON(w, http.StatusCreated, employee)
 }
 
@@ -2986,6 +3006,7 @@ func (h *Handlers) CalculatePayroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.emitWebhookEvent(plugin.EventPayrollCalculated, tenantID, run)
 	respondJSON(w, http.StatusOK, run)
 }
 
@@ -3047,6 +3068,7 @@ func (h *Handlers) ApprovePayroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.emitWebhookEvent(plugin.EventPayrollApproved, tenantID, map[string]string{"payroll_run_id": runID})
 	respondJSON(w, http.StatusOK, map[string]string{"status": "approved"})
 }
 

@@ -36,6 +36,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
+	"github.com/HMB-research/open-accounting/internal/webhooks"
 )
 
 type cliApp struct {
@@ -78,6 +79,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runInvitations(ctx, args[1:])
 	case "plugins":
 		return a.runPlugins(ctx, args[1:])
+	case "webhooks":
+		return a.runWebhooks(ctx, args[1:])
 	case "admin":
 		return a.runAdmin(ctx, args[1:])
 	case "tokens":
@@ -177,6 +180,14 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  plugins disable           Disable a tenant plugin")
 	_, _ = fmt.Fprintln(a.stdout, "  plugins settings get      Show tenant plugin settings")
 	_, _ = fmt.Fprintln(a.stdout, "  plugins settings update   Update tenant plugin settings")
+	_, _ = fmt.Fprintln(a.stdout, "  webhooks events           List webhook event types")
+	_, _ = fmt.Fprintln(a.stdout, "  webhooks list             List webhook endpoints")
+	_, _ = fmt.Fprintln(a.stdout, "  webhooks create           Create a webhook endpoint")
+	_, _ = fmt.Fprintln(a.stdout, "  webhooks get              Show one webhook endpoint")
+	_, _ = fmt.Fprintln(a.stdout, "  webhooks update           Update a webhook endpoint")
+	_, _ = fmt.Fprintln(a.stdout, "  webhooks delete           Delete a webhook endpoint")
+	_, _ = fmt.Fprintln(a.stdout, "  webhooks deliveries       List webhook deliveries")
+	_, _ = fmt.Fprintln(a.stdout, "  webhooks test             Send a test webhook delivery")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins list        List installed plugins")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins search      Search plugin repositories")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins get         Show an installed plugin")
@@ -1439,6 +1450,236 @@ func (a *cliApp) runPlugins(ctx context.Context, args []string) error {
 
 	default:
 		return fmt.Errorf("unknown plugins subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runWebhooks(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("webhooks subcommand required")
+	}
+	cfg, client, err := a.loadAuthenticatedClient()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "events":
+		fs := flag.NewFlagSet("webhooks events", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		events, err := client.listWebhookEventTypes(ctx, cfg.TenantID)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, events)
+		}
+		for _, event := range events {
+			_, _ = fmt.Fprintln(a.stdout, event)
+		}
+		return nil
+
+	case "list":
+		fs := flag.NewFlagSet("webhooks list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		activeOnly := fs.Bool("active-only", false, "List only active endpoints")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		endpoints, err := client.listWebhookEndpoints(ctx, cfg.TenantID, *activeOnly)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, endpoints)
+		}
+		printWebhookEndpointsTable(a.stdout, endpoints)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("webhooks create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		name := fs.String("name", "", "Webhook endpoint name")
+		urlValue := fs.String("url", "", "Webhook endpoint URL")
+		events := fs.String("events", "", "Comma-separated event types")
+		secret := fs.String("secret", "", "Optional HMAC signing secret")
+		inactive := fs.Bool("inactive", false, "Create endpoint inactive")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*name) == "" {
+			return errors.New("name is required")
+		}
+		if strings.TrimSpace(*urlValue) == "" {
+			return errors.New("url is required")
+		}
+		active := !*inactive
+		endpoint, err := client.createWebhookEndpoint(ctx, cfg.TenantID, &webhooks.CreateEndpointRequest{
+			Name:     strings.TrimSpace(*name),
+			URL:      strings.TrimSpace(*urlValue),
+			Events:   splitCSVFlag(*events),
+			Secret:   strings.TrimSpace(*secret),
+			IsActive: &active,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, endpoint)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created webhook endpoint %s (%s)\n", endpoint.Name, endpoint.ID)
+		return nil
+
+	case "get":
+		fs := flag.NewFlagSet("webhooks get", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		endpointID := fs.String("id", "", "Webhook endpoint id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*endpointID) == "" {
+			return errors.New("id is required")
+		}
+		endpoint, err := client.getWebhookEndpoint(ctx, cfg.TenantID, strings.TrimSpace(*endpointID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, endpoint)
+		}
+		printWebhookEndpoint(a.stdout, endpoint)
+		return nil
+
+	case "update":
+		fs := flag.NewFlagSet("webhooks update", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		endpointID := fs.String("id", "", "Webhook endpoint id")
+		name := fs.String("name", "", "Webhook endpoint name")
+		urlValue := fs.String("url", "", "Webhook endpoint URL")
+		events := fs.String("events", "", "Comma-separated event types")
+		secret := fs.String("secret", "", "HMAC signing secret; empty clears when --secret is passed")
+		activeFlag := fs.String("active", "", "Endpoint active state: true or false")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*endpointID) == "" {
+			return errors.New("id is required")
+		}
+		req := &webhooks.UpdateEndpointRequest{}
+		if strings.TrimSpace(*name) != "" {
+			value := strings.TrimSpace(*name)
+			req.Name = &value
+		}
+		if strings.TrimSpace(*urlValue) != "" {
+			value := strings.TrimSpace(*urlValue)
+			req.URL = &value
+		}
+		if strings.TrimSpace(*events) != "" {
+			req.Events = splitCSVFlag(*events)
+		}
+		if fs.Lookup("secret") != nil && flagWasPassed(fs, "secret") {
+			value := strings.TrimSpace(*secret)
+			req.Secret = &value
+		}
+		if strings.TrimSpace(*activeFlag) != "" {
+			parsed, err := strconv.ParseBool(strings.TrimSpace(*activeFlag))
+			if err != nil {
+				return fmt.Errorf("parse active: %w", err)
+			}
+			req.IsActive = &parsed
+		}
+		endpoint, err := client.updateWebhookEndpoint(ctx, cfg.TenantID, strings.TrimSpace(*endpointID), req)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, endpoint)
+		}
+		printWebhookEndpoint(a.stdout, endpoint)
+		return nil
+
+	case "delete":
+		fs := flag.NewFlagSet("webhooks delete", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		endpointID := fs.String("id", "", "Webhook endpoint id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*endpointID) == "" {
+			return errors.New("id is required")
+		}
+		if err := client.deleteWebhookEndpoint(ctx, cfg.TenantID, strings.TrimSpace(*endpointID)); err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, map[string]string{"status": "deleted"})
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Deleted webhook endpoint %s\n", strings.TrimSpace(*endpointID))
+		return nil
+
+	case "deliveries":
+		fs := flag.NewFlagSet("webhooks deliveries", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		endpointID := fs.String("id", "", "Webhook endpoint id")
+		limit := fs.Int("limit", 50, "Maximum deliveries")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*endpointID) == "" {
+			return errors.New("id is required")
+		}
+		deliveries, err := client.listWebhookDeliveries(ctx, cfg.TenantID, strings.TrimSpace(*endpointID), *limit)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, deliveries)
+		}
+		printWebhookDeliveriesTable(a.stdout, deliveries)
+		return nil
+
+	case "test":
+		fs := flag.NewFlagSet("webhooks test", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		endpointID := fs.String("id", "", "Webhook endpoint id")
+		eventType := fs.String("event", "", "Event type to send; defaults to webhook.test")
+		payloadJSON := fs.String("payload-json", "", "JSON payload")
+		payloadFile := fs.String("payload-file", "", "Path to JSON payload file")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*endpointID) == "" {
+			return errors.New("id is required")
+		}
+		payload, err := parseRawJSONInput(*payloadJSON, *payloadFile, "{}")
+		if err != nil {
+			return err
+		}
+		result, err := client.testWebhookEndpoint(ctx, cfg.TenantID, strings.TrimSpace(*endpointID), &webhooks.TestDeliveryRequest{
+			EventType: strings.TrimSpace(*eventType),
+			Payload:   payload,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		printWebhookDeliveryResult(a.stdout, result)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown webhooks subcommand %q", args[0])
 	}
 }
 
@@ -11667,6 +11908,16 @@ func splitCSVFlag(value string) []string {
 		}
 	}
 	return result
+}
+
+func flagWasPassed(fs *flag.FlagSet, name string) bool {
+	wasPassed := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			wasPassed = true
+		}
+	})
+	return wasPassed
 }
 
 func readFileInput(filePath string, stdinFileName string) (content []byte, fileName string, err error) {

@@ -806,6 +806,139 @@ func TestCLIPluginCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Disabled tenant plugin")
 }
 
+func TestCLIWebhookCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	const webhookID = "11111111-1111-1111-1111-111111111111"
+	endpointPayload := func(active bool) map[string]any {
+		return map[string]any{
+			"id":               webhookID,
+			"tenant_id":        "tenant-1",
+			"name":             "CRM",
+			"url":              "https://crm.example.com/hooks",
+			"events":           []string{"invoice.created", "payment.received"},
+			"secret_set":       true,
+			"is_active":        active,
+			"last_delivery_at": "2026-03-12T00:00:00Z",
+			"created_at":       "2026-03-12T00:00:00Z",
+			"updated_at":       "2026-03-12T00:00:00Z",
+		}
+	}
+	deliveryPayload := map[string]any{
+		"id":             "delivery-1",
+		"tenant_id":      "tenant-1",
+		"endpoint_id":    webhookID,
+		"event_id":       "22222222-2222-2222-2222-222222222222",
+		"event_type":     "webhook.test",
+		"status":         "SUCCEEDED",
+		"status_code":    202,
+		"attempt_number": 1,
+		"response_body":  "accepted",
+		"delivered_at":   "2026-03-12T00:00:00Z",
+		"created_at":     "2026-03-12T00:00:00Z",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks/events":
+			_ = json.NewEncoder(w).Encode([]string{"invoice.created", "payment.received", "webhook.test"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks":
+			assert.Equal(t, "true", r.URL.Query().Get("active_only"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{endpointPayload(true)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks":
+			var req map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "CRM", req["name"])
+			assert.Equal(t, "https://crm.example.com/hooks", req["url"])
+			assert.Equal(t, []any{"invoice.created", "payment.received"}, req["events"])
+			_ = json.NewEncoder(w).Encode(endpointPayload(true))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks/"+webhookID:
+			_ = json.NewEncoder(w).Encode(endpointPayload(true))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks/"+webhookID:
+			var req map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, false, req["is_active"])
+			assert.Equal(t, []any{"webhook.test"}, req["events"])
+			_ = json.NewEncoder(w).Encode(endpointPayload(false))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks/"+webhookID+"/deliveries":
+			assert.Equal(t, "5", r.URL.Query().Get("limit"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{deliveryPayload})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks/"+webhookID+"/test":
+			var req map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "webhook.test", req["event_type"])
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"event": map[string]any{
+					"id":         "22222222-2222-2222-2222-222222222222",
+					"type":       "webhook.test",
+					"tenant_id":  "tenant-1",
+					"data":       map[string]any{"source": "cli"},
+					"created_at": "2026-03-12T00:00:00Z",
+				},
+				"deliveries": []map[string]any{deliveryPayload},
+			})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks/"+webhookID:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"webhooks", "events"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "invoice.created")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"webhooks", "list", "--active-only"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "CRM")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"webhooks", "create", "--name", "CRM", "--url", "https://crm.example.com/hooks", "--events", "invoice.created,payment.received", "--secret", "secret"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Created webhook endpoint CRM")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"webhooks", "get", "--id", webhookID})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Webhook endpoint CRM")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"webhooks", "update", "--id", webhookID, "--events", "webhook.test", "--active", "false"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Active: false")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"webhooks", "deliveries", "--id", webhookID, "--limit", "5"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "SUCCEEDED")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"webhooks", "test", "--id", webhookID, "--event", "webhook.test", "--payload-json", `{"source":"cli"}`})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Webhook event webhook.test")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"webhooks", "delete", "--id", webhookID})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Deleted webhook endpoint")
+}
+
 func TestCLIAdminPluginCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{

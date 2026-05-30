@@ -126,6 +126,8 @@ func TestSetupRouterRegistersCoreRoutes(t *testing.T) {
 	assert.Contains(t, routes, "POST /api/v1/tenants/{tenantID}/documents/{documentID}/mark-reviewed")
 	assert.Contains(t, routes, "DELETE /api/v1/tenants/{tenantID}/documents/{documentID}")
 	assert.Contains(t, routes, "POST /api/v1/tenants/{tenantID}/bank-transactions/{transactionID}/review")
+	assert.Contains(t, routes, "GET /api/v1/tenants/{tenantID}/webhooks/events")
+	assert.Contains(t, routes, "POST /api/v1/tenants/{tenantID}/webhooks/{webhookID}/test")
 	assert.Contains(t, routes, "GET /api/v1/admin/plugins")
 	assert.Contains(t, routes, "GET /swagger/*")
 }

@@ -28,6 +28,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
+	"github.com/HMB-research/open-accounting/internal/webhooks"
 )
 
 func TestPrintJSON(t *testing.T) {
@@ -129,6 +130,43 @@ func TestPrintTables(t *testing.T) {
 	assert.Contains(t, auditEventsBuf.String(), tenant.AuditActionUserRoleUpdated)
 	assert.Contains(t, auditEventsBuf.String(), "user:user-2")
 	assert.Contains(t, auditEventsBuf.String(), "new_role=accountant")
+
+	var webhooksBuf bytes.Buffer
+	lastDelivery := now
+	printWebhookEndpointsTable(&webhooksBuf, []webhooks.Endpoint{{
+		ID:             "hook-1",
+		Name:           "CRM",
+		URL:            "https://crm.example.com/hooks",
+		Events:         []string{"invoice.created", "payment.received"},
+		SecretSet:      true,
+		IsActive:       true,
+		LastDeliveryAt: &lastDelivery,
+	}})
+	assert.Contains(t, webhooksBuf.String(), "invoice.created,payment.received")
+
+	var webhookBuf bytes.Buffer
+	printWebhookEndpoint(&webhookBuf, &webhooks.Endpoint{
+		ID:        "hook-1",
+		Name:      "CRM",
+		URL:       "https://crm.example.com/hooks",
+		Events:    []string{"invoice.created"},
+		SecretSet: true,
+		IsActive:  true,
+	})
+	assert.Contains(t, webhookBuf.String(), "Secret set: true")
+
+	var deliveriesBuf bytes.Buffer
+	printWebhookDeliveryResult(&deliveriesBuf, &webhooks.DeliveryResult{
+		Event: webhooks.Event{ID: "evt-1", Type: "webhook.test"},
+		Deliveries: []webhooks.Delivery{{
+			EventType:   "webhook.test",
+			Status:      webhooks.DeliveryStatusSucceeded,
+			StatusCode:  202,
+			DeliveredAt: now,
+		}},
+	})
+	assert.Contains(t, deliveriesBuf.String(), "Webhook event webhook.test")
+	assert.Contains(t, deliveriesBuf.String(), "SUCCEEDED")
 
 	var membershipBuf bytes.Buffer
 	printTenantMembership(&membershipBuf, &tenant.TenantMembership{

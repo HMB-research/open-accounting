@@ -14478,6 +14478,438 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/webhooks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List outbound webhook endpoints configured for a tenant",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "List webhook endpoints",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Filter to active endpoints",
+                        "name": "active_only",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.Endpoint"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create an outbound webhook endpoint with event subscriptions and optional HMAC secret",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Create webhook endpoint",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Webhook endpoint details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.CreateEndpointRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.Endpoint"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/webhooks/events": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List event types that outbound webhook endpoints can subscribe to",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "List webhook events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/webhooks/{webhookID}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get an outbound webhook endpoint by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Get webhook endpoint",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Webhook endpoint ID",
+                        "name": "webhookID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.Endpoint"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update outbound webhook endpoint settings",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Update webhook endpoint",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Webhook endpoint ID",
+                        "name": "webhookID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Webhook endpoint updates",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.UpdateEndpointRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.Endpoint"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Delete an outbound webhook endpoint and its delivery history",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Delete webhook endpoint",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Webhook endpoint ID",
+                        "name": "webhookID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/webhooks/{webhookID}/deliveries": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List recent outbound webhook delivery attempts for one endpoint",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "List webhook deliveries",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Webhook endpoint ID",
+                        "name": "webhookID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Maximum deliveries to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.Delivery"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/webhooks/{webhookID}/test": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Send a deterministic test event to one endpoint and record the delivery result",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Test webhook endpoint",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Webhook endpoint ID",
+                        "name": "webhookID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Optional test payload",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.TestDeliveryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.DeliveryResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/year-end-carry-forward": {
             "post": {
                 "security": [
@@ -23084,6 +23516,188 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "tenant_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_webhooks.CreateEndpointRequest": {
+            "type": "object",
+            "properties": {
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "secret": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_webhooks.Delivery": {
+            "type": "object",
+            "properties": {
+                "attempt_number": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "delivered_at": {
+                    "type": "string"
+                },
+                "endpoint_id": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "event_id": {
+                    "type": "string"
+                },
+                "event_type": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "request_body": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "response_body": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "status_code": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_webhooks.DeliveryResult": {
+            "type": "object",
+            "properties": {
+                "deliveries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.Delivery"
+                    }
+                },
+                "event": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_webhooks.Event"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_webhooks.Endpoint": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "last_delivery_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "secret_set": {
+                    "type": "boolean"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_webhooks.Event": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_webhooks.TestDeliveryRequest": {
+            "type": "object",
+            "properties": {
+                "event_type": {
+                    "type": "string"
+                },
+                "payload": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_webhooks.UpdateEndpointRequest": {
+            "type": "object",
+            "properties": {
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "secret": {
+                    "type": "string"
+                },
+                "url": {
                     "type": "string"
                 }
             }

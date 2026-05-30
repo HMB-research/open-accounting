@@ -36,6 +36,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
+	"github.com/HMB-research/open-accounting/internal/webhooks"
 )
 
 type apiClient struct {
@@ -415,6 +416,74 @@ func (c *apiClient) listTenantPlugins(ctx context.Context, tenantID string) ([]p
 		return nil, err
 	}
 	return resp, nil
+}
+
+func (c *apiClient) listWebhookEventTypes(ctx context.Context, tenantID string) ([]string, error) {
+	var resp []string
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "webhooks", "events"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) listWebhookEndpoints(ctx context.Context, tenantID string, activeOnly bool) ([]webhooks.Endpoint, error) {
+	values := url.Values{}
+	if activeOnly {
+		values.Set("active_only", "true")
+	}
+	var resp []webhooks.Endpoint
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "webhooks"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createWebhookEndpoint(ctx context.Context, tenantID string, req *webhooks.CreateEndpointRequest) (*webhooks.Endpoint, error) {
+	var resp webhooks.Endpoint
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "webhooks"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getWebhookEndpoint(ctx context.Context, tenantID, endpointID string) (*webhooks.Endpoint, error) {
+	var resp webhooks.Endpoint
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "webhooks", endpointID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) updateWebhookEndpoint(ctx context.Context, tenantID, endpointID string, req *webhooks.UpdateEndpointRequest) (*webhooks.Endpoint, error) {
+	var resp webhooks.Endpoint
+	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "webhooks", endpointID), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) deleteWebhookEndpoint(ctx context.Context, tenantID, endpointID string) error {
+	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "webhooks", endpointID), nil, c.apiToken, nil)
+}
+
+func (c *apiClient) listWebhookDeliveries(ctx context.Context, tenantID, endpointID string, limit int) ([]webhooks.Delivery, error) {
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	var resp []webhooks.Delivery
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "webhooks", endpointID, "deliveries"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) testWebhookEndpoint(ctx context.Context, tenantID, endpointID string, req *webhooks.TestDeliveryRequest) (*webhooks.DeliveryResult, error) {
+	var resp webhooks.DeliveryResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "webhooks", endpointID, "test"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }
 
 func (c *apiClient) enableTenantPlugin(ctx context.Context, tenantID, pluginID string, settings json.RawMessage) error {
