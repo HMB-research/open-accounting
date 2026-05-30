@@ -19,11 +19,14 @@ Request → Auth Middleware (JWT → user_id, tenant_id, role)
 
 ### Persistence and Reuse Bias
 
-- Prefer repository methods and ORM-backed implementations for persistence work. Do not add raw SQL in handlers or services when an existing repository/ORM path can be extended.
+This repo treats ORM/repository-backed persistence and reusable application code as the default engineering standard, even when that turns a small change into a focused refactor.
+
+- Prefer repository methods and ORM-backed implementations for all persistence work. Do not add raw SQL in handlers or services.
 - If a feature needs persistence behavior that is not exposed yet, refactor the repository interface and its Postgres/GORM implementations rather than bypassing the layer.
-- Prefer shared parser, mapper, validation, and formatting helpers over command-specific or handler-specific copies. Create reusable package boundaries when multiple entry points need the same behavior.
-- Removing legacy direct-query or duplicated mapper code is in scope when adding related functionality, even if the change becomes a small refactor instead of a narrow patch.
-- Raw SQL belongs in repository implementations or migrations only, with schema qualification and focused integration coverage.
+- Use direct SQL only in migrations or repository implementations where the ORM cannot express the query clearly. Keep those exceptions schema-qualified, documented by tests, and isolated behind repository methods.
+- Prefer shared parser, mapper, validation, and formatting helpers over command-specific, handler-specific, or one-off copies. Create reusable package boundaries when multiple entry points need the same behavior.
+- Remove related legacy direct-query, duplicated mapper, or format-specific code while touching the area. Keeping legacy paths around for compatibility is not preferred unless there is an explicit product requirement and a removal plan.
+- CLI, API, service, and frontend entry points should call the same reusable service/mapper/repository behavior instead of maintaining parallel implementations.
 
 ### Layer Responsibilities
 
