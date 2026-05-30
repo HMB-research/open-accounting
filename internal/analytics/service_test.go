@@ -121,8 +121,8 @@ func TestNewService(t *testing.T) {
 	if service == nil {
 		t.Fatal("NewService(nil) returned nil")
 	}
-	if service.pool != nil {
-		t.Error("NewService(nil).pool should be nil")
+	if service.repo == nil {
+		t.Error("NewService(nil).repo should not be nil")
 	}
 }
 
