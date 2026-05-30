@@ -180,6 +180,9 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  tenant audit-events       List tenant administration audit events")
 	_, _ = fmt.Fprintln(a.stdout, "  users list                List tenant users")
 	_, _ = fmt.Fprintln(a.stdout, "  users update-role         Update a tenant user role")
+	_, _ = fmt.Fprintln(a.stdout, "  users sessions            List tenant user refresh sessions")
+	_, _ = fmt.Fprintln(a.stdout, "  users revoke-session      Revoke a tenant user refresh session")
+	_, _ = fmt.Fprintln(a.stdout, "  users revoke-all-sessions Revoke all tenant user refresh sessions")
 	_, _ = fmt.Fprintln(a.stdout, "  users remove              Remove a tenant user")
 	_, _ = fmt.Fprintln(a.stdout, "  invitations list          List pending tenant invitations")
 	_, _ = fmt.Fprintln(a.stdout, "  invitations create        Invite a user")
@@ -1329,6 +1332,64 @@ func (a *cliApp) runUsers(ctx context.Context, args []string) error {
 			return err
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Updated user %s role to %s\n", strings.TrimSpace(*userID), strings.TrimSpace(*role))
+		return nil
+
+	case "sessions":
+		fs := flag.NewFlagSet("users sessions", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		userID := fs.String("id", "", "User id")
+		includeInactive := fs.Bool("include-inactive", false, "Include revoked and expired sessions")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*userID) == "" {
+			return errors.New("id is required")
+		}
+
+		sessions, err := client.listTenantUserAuthSessions(ctx, cfg.TenantID, strings.TrimSpace(*userID), *includeInactive)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, sessions)
+		}
+		printRefreshSessions(a.stdout, sessions)
+		return nil
+
+	case "revoke-session":
+		fs := flag.NewFlagSet("users revoke-session", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		userID := fs.String("id", "", "User id")
+		sessionID := fs.String("session-id", "", "Refresh session id")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*userID) == "" || strings.TrimSpace(*sessionID) == "" {
+			return errors.New("id and session-id are required")
+		}
+
+		if err := client.revokeTenantUserAuthSession(ctx, cfg.TenantID, strings.TrimSpace(*userID), strings.TrimSpace(*sessionID)); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Revoked refresh session %s for user %s\n", strings.TrimSpace(*sessionID), strings.TrimSpace(*userID))
+		return nil
+
+	case "revoke-all-sessions":
+		fs := flag.NewFlagSet("users revoke-all-sessions", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		userID := fs.String("id", "", "User id")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*userID) == "" {
+			return errors.New("id is required")
+		}
+
+		if err := client.revokeTenantUserAuthSessions(ctx, cfg.TenantID, strings.TrimSpace(*userID)); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Revoked all refresh sessions for user %s\n", strings.TrimSpace(*userID))
 		return nil
 
 	case "remove":

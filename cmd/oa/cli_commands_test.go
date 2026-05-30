@@ -654,6 +654,20 @@ func TestCLIUsersCommands(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "accountant", req["role"])
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-2/sessions":
+			assert.Equal(t, "true", r.URL.Query().Get("include_inactive"))
+			_ = json.NewEncoder(w).Encode([]map[string]string{
+				{
+					"id":         "session-1",
+					"user_id":    "user-2",
+					"created_at": "2026-05-30T12:00:00Z",
+					"expires_at": "2026-06-06T12:00:00Z",
+				},
+			})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-2/sessions/session-1":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "revoked"})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-2/sessions":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "revoked"})
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-2":
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "removed"})
 		default:
@@ -680,6 +694,22 @@ func TestCLIUsersCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"users", "update-role", "--id", "user-2", "--role", "owner"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "role must be one of")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"users", "sessions", "--id", "user-2", "--include-inactive"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "session-1")
+	assert.Contains(t, stdout.String(), "active")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"users", "revoke-session", "--id", "user-2", "--session-id", "session-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Revoked refresh session session-1 for user user-2")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"users", "revoke-all-sessions", "--id", "user-2"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Revoked all refresh sessions for user user-2")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"users", "remove", "--id", "user-2"})

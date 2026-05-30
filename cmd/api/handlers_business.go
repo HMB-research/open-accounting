@@ -2354,6 +2354,194 @@ func (h *Handlers) ListTenantUsers(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, users)
 }
 
+// ListTenantUserAuthSessions returns refresh-token sessions for one tenant user.
+// @Summary List tenant user auth sessions
+// @Description List refresh-token sessions for a user who belongs to the tenant. Requires owner or admin role.
+// @Tags Users
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param userID path string true "User ID"
+// @Param include_inactive query bool false "Include revoked and expired sessions"
+// @Success 200 {array} auth.RefreshSession
+// @Failure 400 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/users/{userID}/sessions [get]
+func (h *Handlers) ListTenantUserAuthSessions(w http.ResponseWriter, r *http.Request) {
+	_, _, ok := h.authorizeTenantUserSessionAdmin(w, r)
+	if !ok {
+		return
+	}
+	if h.refreshSessionService == nil {
+		respondError(w, http.StatusInternalServerError, "Refresh session service unavailable")
+		return
+	}
+
+	userID := chi.URLParam(r, "userID")
+	includeInactive := strings.EqualFold(r.URL.Query().Get("include_inactive"), "true")
+	sessions, err := h.refreshSessionService.ListRefreshSessions(r.Context(), userID, includeInactive)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list refresh sessions")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, sessions)
+}
+
+// RevokeTenantUserAuthSession revokes one refresh-token session for a tenant user.
+// @Summary Revoke tenant user auth session
+// @Description Revoke one active refresh-token session for a user who belongs to the tenant. Requires owner or admin role.
+// @Tags Users
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param userID path string true "User ID"
+// @Param sessionID path string true "Refresh session ID"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/users/{userID}/sessions/{sessionID} [delete]
+func (h *Handlers) RevokeTenantUserAuthSession(w http.ResponseWriter, r *http.Request) {
+	claims, targetRole, ok := h.authorizeTenantUserSessionAdmin(w, r)
+	if !ok {
+		return
+	}
+	if h.refreshSessionService == nil {
+		respondError(w, http.StatusInternalServerError, "Refresh session service unavailable")
+		return
+	}
+
+	tenantID := chi.URLParam(r, "tenantID")
+	userID := chi.URLParam(r, "userID")
+	sessionID := strings.TrimSpace(chi.URLParam(r, "sessionID"))
+	if sessionID == "" {
+		respondError(w, http.StatusBadRequest, "Session id is required")
+		return
+	}
+
+	if err := h.refreshSessionService.RevokeRefreshSessionByID(r.Context(), userID, sessionID); err != nil {
+		if errors.Is(err, auth.ErrRefreshSessionInvalid) {
+			respondError(w, http.StatusNotFound, "Refresh session not found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to revoke refresh session")
+		return
+	}
+	targetEmail := h.userEmailForAudit(r.Context(), userID)
+	h.recordSecurityAuditEvent(r, &auth.SecurityAuditEvent{
+		ActorUserID:  claims.UserID,
+		ActorEmail:   claims.Email,
+		Action:       auth.SecurityAuditActionSessionRevoked,
+		TargetUserID: userID,
+		TargetEmail:  targetEmail,
+		Metadata: map[string]string{
+			"tenant_id":  tenantID,
+			"session_id": sessionID,
+		},
+	})
+	if !h.recordTenantAuditEvent(w, r, &tenant.TenantAuditEvent{
+		TenantID:    tenantID,
+		ActorUserID: claims.UserID,
+		Action:      tenant.AuditActionUserSessionRevoked,
+		TargetType:  tenant.AuditTargetUser,
+		TargetID:    userID,
+		TargetEmail: targetEmail,
+		Metadata: map[string]string{
+			"role":       targetRole,
+			"session_id": sessionID,
+		},
+	}) {
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
+}
+
+// RevokeTenantUserAuthSessions revokes all refresh-token sessions for a tenant user.
+// @Summary Revoke all tenant user auth sessions
+// @Description Revoke every active refresh-token session for a user who belongs to the tenant. Requires owner or admin role.
+// @Tags Users
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param userID path string true "User ID"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/users/{userID}/sessions [delete]
+func (h *Handlers) RevokeTenantUserAuthSessions(w http.ResponseWriter, r *http.Request) {
+	claims, targetRole, ok := h.authorizeTenantUserSessionAdmin(w, r)
+	if !ok {
+		return
+	}
+	if h.refreshSessionService == nil {
+		respondError(w, http.StatusInternalServerError, "Refresh session service unavailable")
+		return
+	}
+
+	tenantID := chi.URLParam(r, "tenantID")
+	userID := chi.URLParam(r, "userID")
+	if err := h.refreshSessionService.RevokeAllRefreshSessions(r.Context(), userID); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to revoke refresh sessions")
+		return
+	}
+	targetEmail := h.userEmailForAudit(r.Context(), userID)
+	h.recordSecurityAuditEvent(r, &auth.SecurityAuditEvent{
+		ActorUserID:  claims.UserID,
+		ActorEmail:   claims.Email,
+		Action:       auth.SecurityAuditActionAllSessionsRevoked,
+		TargetUserID: userID,
+		TargetEmail:  targetEmail,
+		Metadata: map[string]string{
+			"tenant_id": tenantID,
+		},
+	})
+	if !h.recordTenantAuditEvent(w, r, &tenant.TenantAuditEvent{
+		TenantID:    tenantID,
+		ActorUserID: claims.UserID,
+		Action:      tenant.AuditActionUserSessionsRevoked,
+		TargetType:  tenant.AuditTargetUser,
+		TargetID:    userID,
+		TargetEmail: targetEmail,
+		Metadata: map[string]string{
+			"role": targetRole,
+		},
+	}) {
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
+}
+
+func (h *Handlers) authorizeTenantUserSessionAdmin(w http.ResponseWriter, r *http.Request) (*auth.Claims, string, bool) {
+	claims, _ := auth.GetClaims(r.Context())
+	if !auth.CanManageUsers(claims.Role) {
+		respondError(w, http.StatusForbidden, "Permission denied")
+		return nil, "", false
+	}
+
+	tenantID := chi.URLParam(r, "tenantID")
+	userID := strings.TrimSpace(chi.URLParam(r, "userID"))
+	if userID == "" {
+		respondError(w, http.StatusBadRequest, "User id is required")
+		return nil, "", false
+	}
+
+	role, err := h.tenantService.GetUserRole(r.Context(), tenantID, userID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "User not found in tenant")
+		return nil, "", false
+	}
+
+	return claims, role, true
+}
+
 // ListTenantAuditEvents returns tenant administration audit events
 // @Summary List tenant audit events
 // @Description Get recent tenant administration audit events

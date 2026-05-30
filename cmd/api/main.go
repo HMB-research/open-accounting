@@ -795,6 +795,9 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/users", h.ListTenantUsers)
 				r.Delete("/users/{userID}", h.RemoveTenantUser)
 				r.Put("/users/{userID}/role", h.UpdateTenantUserRole)
+				r.Get("/users/{userID}/sessions", h.ListTenantUserAuthSessions)
+				r.Delete("/users/{userID}/sessions", h.RevokeTenantUserAuthSessions)
+				r.Delete("/users/{userID}/sessions/{sessionID}", h.RevokeTenantUserAuthSession)
 				r.Get("/audit-events", h.ListTenantAuditEvents)
 
 				// Webhooks
