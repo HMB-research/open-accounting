@@ -96,4 +96,42 @@ test.describe('Inventory View', () => {
 			await expect(page.getByRole('heading', { name: /inventory|warehouses/i })).toBeVisible();
 		}
 	});
+
+	test('records and displays stock lot metadata', async ({ page }, testInfo) => {
+		await navigateTo(page, '/inventory', testInfo);
+
+		const productRow = page.getByRole('row', { name: /PROD-001/ });
+		await expect(productRow).toBeVisible();
+
+		await productRow.getByRole('button', { name: 'Adjust Stock' }).click();
+
+		const adjustDialog = page.getByRole('dialog', { name: /Adjust Stock:/ });
+		await expect(adjustDialog).toBeVisible();
+		await expect(adjustDialog.getByLabel('Lot Number')).toBeVisible();
+		await expect(adjustDialog.getByLabel('Serial Number')).toBeVisible();
+		await expect(adjustDialog.getByLabel('Expiry Date')).toBeVisible();
+
+		await adjustDialog.getByLabel(/Quantity/).fill('1');
+		await adjustDialog.getByLabel('Unit Cost').fill('10');
+		await adjustDialog.getByLabel('Lot Number').fill('LOT-E2E');
+		await adjustDialog.getByLabel('Serial Number').fill('SN-E2E');
+		await adjustDialog.getByLabel('Expiry Date').fill('2027-05-30');
+		await adjustDialog.getByLabel('Reason').fill('E2E metadata check');
+		await adjustDialog.getByRole('button', { name: 'Adjust Stock' }).click();
+		await expect(adjustDialog).toBeHidden();
+
+		await productRow.getByRole('button', { name: 'Movements' }).click();
+
+		const movementsDialog = page.getByRole('dialog', { name: /Movements:/ });
+		await expect(movementsDialog).toBeVisible();
+		await expect(movementsDialog.getByRole('columnheader', { name: 'Lot Number' })).toBeVisible();
+		await expect(movementsDialog.getByRole('columnheader', { name: 'Serial Number' })).toBeVisible();
+		await expect(movementsDialog.getByRole('columnheader', { name: 'Expiry Date' })).toBeVisible();
+		await expect(movementsDialog.getByText('LOT-E2E')).toBeVisible();
+		await expect(movementsDialog.getByText('SN-E2E')).toBeVisible();
+		await expect(movementsDialog.getByText(/30\.0?5\.2027/)).toBeVisible();
+
+		await page.keyboard.press('Escape');
+		await expect(movementsDialog).toBeHidden();
+	});
 });

@@ -6057,7 +6057,7 @@ func (h *Handlers) ImportStockAdjustments(w http.ResponseWriter, r *http.Request
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
 
-	claims, ok := r.Context().Value("claims").(*auth.Claims)
+	claims, ok := auth.GetClaims(r.Context())
 	if !ok {
 		respondError(w, http.StatusUnauthorized, "Invalid or missing authentication")
 		return
@@ -6088,7 +6088,7 @@ func (h *Handlers) AdjustStock(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
 
-	claims, ok := r.Context().Value("claims").(*auth.Claims)
+	claims, ok := auth.GetClaims(r.Context())
 	if !ok {
 		respondError(w, http.StatusUnauthorized, "Invalid or missing authentication")
 		return
@@ -6115,7 +6115,7 @@ func (h *Handlers) TransferStock(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
 
-	claims, ok := r.Context().Value("claims").(*auth.Claims)
+	claims, ok := auth.GetClaims(r.Context())
 	if !ok {
 		respondError(w, http.StatusUnauthorized, "Invalid or missing authentication")
 		return
@@ -6141,7 +6141,7 @@ func (h *Handlers) ReserveStock(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
 
-	claims, ok := r.Context().Value("claims").(*auth.Claims)
+	claims, ok := auth.GetClaims(r.Context())
 	if !ok {
 		respondError(w, http.StatusUnauthorized, "Invalid or missing authentication")
 		return
@@ -6168,7 +6168,7 @@ func (h *Handlers) ReleaseStock(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
 
-	claims, ok := r.Context().Value("claims").(*auth.Claims)
+	claims, ok := auth.GetClaims(r.Context())
 	if !ok {
 		respondError(w, http.StatusUnauthorized, "Invalid or missing authentication")
 		return
