@@ -14,7 +14,6 @@ import (
 
 // Service provides bank reconciliation operations
 type Service struct {
-	db   *pgxpool.Pool
 	repo Repository
 }
 
@@ -28,7 +27,6 @@ func NewService(db *pgxpool.Pool) *Service {
 		panic(fmt.Errorf("create banking GORM repository: %w", err))
 	}
 	return &Service{
-		db:   db,
 		repo: NewGORMRepository(gormDB),
 	}
 }
@@ -45,107 +43,6 @@ func NewServiceWithRepository(repo Repository) *Service {
 	return &Service{
 		repo: repo,
 	}
-}
-
-// EnsureSchema creates the bank reconciliation tables if they don't exist
-func (s *Service) EnsureSchema(ctx context.Context, schemaName string) error {
-	if s.db == nil {
-		return fmt.Errorf("database connection not available")
-	}
-	query := fmt.Sprintf(`
-		-- Bank Reconciliations table
-		CREATE TABLE IF NOT EXISTS %s.bank_reconciliations (
-			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-			tenant_id UUID NOT NULL,
-			bank_account_id UUID NOT NULL REFERENCES %s.bank_accounts(id),
-			statement_date DATE NOT NULL,
-			opening_balance NUMERIC(28,8) NOT NULL,
-			closing_balance NUMERIC(28,8) NOT NULL,
-			status VARCHAR(20) NOT NULL DEFAULT 'IN_PROGRESS' CHECK (status IN ('IN_PROGRESS', 'COMPLETED')),
-			completed_at TIMESTAMPTZ,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			created_by UUID NOT NULL
-		);
-
-		-- Bank Statement Imports table
-		CREATE TABLE IF NOT EXISTS %s.bank_statement_imports (
-			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-			tenant_id UUID NOT NULL,
-			bank_account_id UUID NOT NULL REFERENCES %s.bank_accounts(id),
-			file_name VARCHAR(255) NOT NULL,
-			transactions_imported INTEGER NOT NULL DEFAULT 0,
-			transactions_matched INTEGER NOT NULL DEFAULT 0,
-			duplicates_skipped INTEGER NOT NULL DEFAULT 0,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		);
-
-		-- Add reconciliation_id to bank_transactions if not exists
-		DO $$
-		BEGIN
-			IF NOT EXISTS (
-				SELECT 1 FROM information_schema.columns
-				WHERE table_schema = '%s'
-				AND table_name = 'bank_transactions'
-				AND column_name = 'reconciliation_id'
-			) THEN
-				ALTER TABLE %s.bank_transactions
-				ADD COLUMN reconciliation_id UUID REFERENCES %s.bank_reconciliations(id);
-			END IF;
-		END $$;
-
-		ALTER TABLE %s.bank_transactions
-		ADD COLUMN IF NOT EXISTS follow_up_status VARCHAR(30) NOT NULL DEFAULT 'NONE';
-
-		ALTER TABLE %s.bank_transactions
-		ADD COLUMN IF NOT EXISTS review_note TEXT;
-
-		ALTER TABLE %s.bank_transactions
-		ADD COLUMN IF NOT EXISTS reviewed_by UUID;
-
-		ALTER TABLE %s.bank_transactions
-		ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
-
-		UPDATE %s.bank_transactions
-		SET follow_up_status = 'NONE'
-		WHERE follow_up_status IS NULL OR btrim(follow_up_status) = '';
-
-		ALTER TABLE %s.bank_transactions
-		DROP CONSTRAINT IF EXISTS bank_transactions_follow_up_status_check;
-
-		ALTER TABLE %s.bank_transactions
-		ADD CONSTRAINT bank_transactions_follow_up_status_check
-		CHECK (follow_up_status IN ('NONE', 'EVIDENCE_REQUIRED', 'READY_TO_MATCH'));
-
-		-- Create indexes if not exists
-		CREATE INDEX IF NOT EXISTS idx_bank_reconciliations_account ON %s.bank_reconciliations(bank_account_id);
-		CREATE INDEX IF NOT EXISTS idx_bank_reconciliations_status ON %s.bank_reconciliations(status);
-		CREATE INDEX IF NOT EXISTS idx_bank_imports_account ON %s.bank_statement_imports(bank_account_id);
-		CREATE INDEX IF NOT EXISTS idx_bank_transactions_follow_up_status ON %s.bank_transactions(follow_up_status);
-
-		CREATE TABLE IF NOT EXISTS %s.bank_match_rules (
-			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-			tenant_id UUID NOT NULL,
-			bank_account_id UUID REFERENCES %s.bank_accounts(id) ON DELETE CASCADE,
-			name VARCHAR(120) NOT NULL,
-			priority INTEGER NOT NULL DEFAULT 100,
-			match_field VARCHAR(30) NOT NULL,
-			pattern TEXT NOT NULL,
-			min_confidence DOUBLE PRECISION NOT NULL DEFAULT 0.7,
-			max_date_diff_days INTEGER NOT NULL DEFAULT 7,
-			require_exact_amount BOOLEAN NOT NULL DEFAULT false,
-			is_active BOOLEAN NOT NULL DEFAULT true,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			CONSTRAINT bank_match_rules_field_check CHECK (match_field IN ('DESCRIPTION', 'REFERENCE', 'COUNTERPARTY_NAME', 'COUNTERPARTY_ACCOUNT')),
-			CONSTRAINT bank_match_rules_confidence_check CHECK (min_confidence >= 0 AND min_confidence <= 1),
-			CONSTRAINT bank_match_rules_date_diff_check CHECK (max_date_diff_days >= 0 AND max_date_diff_days <= 90)
-		);
-		CREATE INDEX IF NOT EXISTS idx_bank_match_rules_tenant ON %s.bank_match_rules(tenant_id, is_active, priority);
-		CREATE INDEX IF NOT EXISTS idx_bank_match_rules_account ON %s.bank_match_rules(bank_account_id);
-	`, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName)
-
-	_, err := s.db.Exec(ctx, query)
-	return err
 }
 
 // =============================================================================

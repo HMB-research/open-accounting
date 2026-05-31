@@ -82,10 +82,6 @@ func (s *Service) GetMatchSuggestions(ctx context.Context, schemaName, tenantID,
 
 // AutoMatchTransactions attempts to auto-match unmatched transactions
 func (s *Service) AutoMatchTransactions(ctx context.Context, schemaName, tenantID, bankAccountID string, minConfidence float64) (int, error) {
-	if err := s.EnsureSchema(ctx, schemaName); err != nil {
-		return 0, fmt.Errorf("ensure schema: %w", err)
-	}
-
 	// Get unmatched transactions
 	filter := &TransactionFilter{
 		BankAccountID: bankAccountID,
