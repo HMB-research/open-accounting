@@ -60,6 +60,26 @@ func TestExpenseHandlersLifecycle(t *testing.T) {
 	assert.Equal(t, expenses.StatusDraft, created.Status)
 	assert.True(t, created.RequiresReceipt)
 
+	req = withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/expenses/"+created.ID, nil, claims), map[string]string{
+		"tenantID":  "tenant-1",
+		"expenseID": created.ID,
+	})
+	w = httptest.NewRecorder()
+	h.GetExpense(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var fetched expenses.Expense
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&fetched))
+	assert.Equal(t, created.ID, fetched.ID)
+	assert.Equal(t, "Office Store", fetched.Merchant)
+
+	req = withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/expenses/missing", nil, claims), map[string]string{
+		"tenantID":  "tenant-1",
+		"expenseID": "missing",
+	})
+	w = httptest.NewRecorder()
+	h.GetExpense(w, req)
+	require.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
+
 	req = withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/expenses?status=DRAFT", nil, claims), map[string]string{"tenantID": "tenant-1"})
 	w = httptest.NewRecorder()
 	h.ListExpenses(w, req)
