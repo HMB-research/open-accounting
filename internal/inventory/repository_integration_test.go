@@ -14,7 +14,7 @@ func TestRepository_CreateAndGetProduct(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	product := &Product{
@@ -62,7 +62,7 @@ func TestRepository_GetProductByID_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Use valid UUID format that doesn't exist
@@ -77,7 +77,7 @@ func TestRepository_ListProducts(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Create multiple products
@@ -114,7 +114,7 @@ func TestRepository_ListProducts_WithFilter(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Create goods product
@@ -172,7 +172,7 @@ func TestRepository_UpdateProduct(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	product := &Product{
@@ -218,7 +218,7 @@ func TestRepository_DeleteProduct(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	product := &Product{
@@ -253,7 +253,7 @@ func TestRepository_GenerateCode(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	code, err := repo.GenerateCode(ctx, tenant.SchemaName, tenant.ID)
@@ -298,7 +298,7 @@ func TestRepository_CreateAndGetCategory(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	category := &ProductCategory{
@@ -329,7 +329,7 @@ func TestRepository_GetCategoryByID_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Use valid UUID format that doesn't exist
@@ -344,7 +344,7 @@ func TestRepository_ListCategories(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Create categories
@@ -376,7 +376,7 @@ func TestRepository_DeleteCategory(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	category := &ProductCategory{
@@ -404,7 +404,7 @@ func TestRepository_CreateAndGetWarehouse(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	warehouse := &Warehouse{
@@ -441,7 +441,7 @@ func TestRepository_GetWarehouseByID_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Use valid UUID format that doesn't exist
@@ -456,7 +456,7 @@ func TestRepository_ListWarehouses(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Create warehouses
@@ -509,7 +509,7 @@ func TestRepository_UpdateWarehouse(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	warehouse := &Warehouse{
@@ -550,7 +550,7 @@ func TestRepository_DeleteWarehouse(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	warehouse := &Warehouse{
@@ -580,7 +580,7 @@ func TestRepository_StockLevelOperations(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Create product
@@ -663,7 +663,7 @@ func TestRepository_GetStockLevel_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Use valid UUID formats that don't exist
@@ -679,7 +679,7 @@ func TestRepository_GetStockLevelsByProduct(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Create product
@@ -744,7 +744,7 @@ func TestRepository_CreateAndListMovements(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Create product
@@ -837,7 +837,7 @@ func TestRepository_UpdateProductStock(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	product := &Product{
@@ -879,7 +879,7 @@ func TestRepository_ListProducts_LowStock(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Create product with low stock
@@ -938,7 +938,7 @@ func TestRepository_ListProducts_Search(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Create products

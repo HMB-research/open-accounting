@@ -5,22 +5,20 @@ import (
 	"testing"
 )
 
-func TestQualifyQueryBuildsQualifiedTableReference(t *testing.T) {
-	repo := &PostgresRepository{}
-
-	query, err := repo.qualifyQuery("tenant_demo", "products", `SELECT * FROM %s`)
+func TestQualifiedInventoryTableBuildsQualifiedTableReference(t *testing.T) {
+	table, err := qualifiedInventoryTable("tenant_demo", "products")
 	if err != nil {
-		t.Fatalf("qualifyQuery returned error: %v", err)
+		t.Fatalf("qualifiedInventoryTable returned error: %v", err)
 	}
 
-	expected := `SELECT * FROM "tenant_demo"."products"`
-	if query != expected {
-		t.Fatalf("expected %q, got %q", expected, query)
+	expected := `"tenant_demo"."products"`
+	if table != expected {
+		t.Fatalf("expected %q, got %q", expected, table)
 	}
 }
 
 func TestGenerateCodeRejectsInvalidSchemaName(t *testing.T) {
-	repo := &PostgresRepository{}
+	repo := &GORMRepository{}
 
 	_, err := repo.GenerateCode(context.Background(), "tenant-demo", "tenant-1")
 	if err == nil {
@@ -28,19 +26,11 @@ func TestGenerateCodeRejectsInvalidSchemaName(t *testing.T) {
 	}
 }
 
-func TestQueryHelpersRejectInvalidSchemaName(t *testing.T) {
-	repo := &PostgresRepository{}
+func TestTenantTableRejectsInvalidSchemaName(t *testing.T) {
+	repo := &GORMRepository{}
 	ctx := context.Background()
 
-	if err := repo.execInTable(ctx, "tenant-demo", "products", `SELECT * FROM %s`); err == nil {
-		t.Fatal("expected execInTable to reject invalid schema")
-	}
-
-	if _, err := repo.queryInTable(ctx, "tenant-demo", "products", `SELECT * FROM %s`); err == nil {
-		t.Fatal("expected queryInTable to reject invalid schema")
-	}
-
-	if _, err := repo.queryRowInTable(ctx, "tenant-demo", "products", `SELECT * FROM %s`); err == nil {
-		t.Fatal("expected queryRowInTable to reject invalid schema")
+	if _, err := repo.tenantTable(ctx, "tenant-demo", "products"); err == nil {
+		t.Fatal("expected tenantTable to reject invalid schema")
 	}
 }
