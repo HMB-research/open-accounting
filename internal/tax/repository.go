@@ -17,9 +17,6 @@ type VATAggregateRow struct {
 
 // Repository defines the contract for tax data access
 type Repository interface {
-	// EnsureSchema creates tax tables if they don't exist
-	EnsureSchema(ctx context.Context, schemaName string) error
-
 	// QueryVATData queries VAT data from journal entries for a period
 	QueryVATData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]VATAggregateRow, error)
 

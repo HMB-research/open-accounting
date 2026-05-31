@@ -83,11 +83,6 @@ func NewServiceWithRepository(repo Repository, mailer MailSender) *Service {
 	}
 }
 
-// EnsureSchema creates email tables if they don't exist
-func (s *Service) EnsureSchema(ctx context.Context, schemaName string) error {
-	return s.repo.EnsureSchema(ctx, schemaName)
-}
-
 // GetSMTPConfig retrieves SMTP configuration for a tenant
 func (s *Service) GetSMTPConfig(ctx context.Context, tenantID string) (*SMTPConfig, error) {
 	settingsJSON, err := s.repo.GetTenantSettings(ctx, tenantID)
@@ -169,11 +164,6 @@ func (s *Service) GetTemplate(ctx context.Context, schemaName string, tenantID s
 
 // ListTemplates lists all email templates for a tenant
 func (s *Service) ListTemplates(ctx context.Context, schemaName string, tenantID string) ([]EmailTemplate, error) {
-	// First ensure schema exists
-	if err := s.EnsureSchema(ctx, schemaName); err != nil {
-		return nil, err
-	}
-
 	templates, err := s.repo.ListTemplates(ctx, schemaName, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list templates: %w", err)
@@ -198,11 +188,6 @@ func (s *Service) ListTemplates(ctx context.Context, schemaName string, tenantID
 
 // UpdateTemplate updates an email template
 func (s *Service) UpdateTemplate(ctx context.Context, schemaName string, tenantID string, templateType TemplateType, req *UpdateTemplateRequest) (*EmailTemplate, error) {
-	// Ensure schema exists
-	if err := s.EnsureSchema(ctx, schemaName); err != nil {
-		return nil, err
-	}
-
 	tmpl := &EmailTemplate{
 		ID:           uuid.New().String(),
 		TenantID:     tenantID,
@@ -230,11 +215,6 @@ func (s *Service) SendEmail(ctx context.Context, schemaName string, tenantID str
 
 	if !config.IsConfigured() {
 		return nil, fmt.Errorf("SMTP is not configured for this organization")
-	}
-
-	// Ensure schema exists
-	if err := s.EnsureSchema(ctx, schemaName); err != nil {
-		return nil, err
 	}
 
 	// Create email log entry

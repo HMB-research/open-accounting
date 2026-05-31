@@ -17,7 +17,7 @@ func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
 
-// setupEmailTest creates a tenant and ensures email schema
+// setupEmailTest creates a tenant with email tables provisioned by tenant bootstrap.
 func setupEmailTest(t *testing.T) (*testutil.TestTenant, *GORMRepository, context.Context) {
 	t.Helper()
 	pool := testutil.SetupTestDB(t)
@@ -25,54 +25,32 @@ func setupEmailTest(t *testing.T) (*testutil.TestTenant, *GORMRepository, contex
 	repo := newEmailGORMRepository(t, pool)
 	ctx := context.Background()
 
-	if err := repo.EnsureSchema(ctx, tenant.SchemaName); err != nil {
-		t.Fatalf("EnsureSchema failed: %v", err)
-	}
-
 	return tenant, repo, ctx
 }
 
-func TestGORMRepository_EnsureSchema(t *testing.T) {
+func TestGORMRepository_TenantBootstrapCreatesEmailTables(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := newEmailGORMRepository(t, pool)
 	ctx := context.Background()
 
-	// EnsureSchema should create email tables
-	err := repo.EnsureSchema(ctx, tenant.SchemaName)
+	templatesTable, err := database.QualifiedTable(tenant.SchemaName, "email_templates")
 	if err != nil {
-		t.Fatalf("EnsureSchema failed: %v", err)
+		t.Fatalf("qualified email_templates table: %v", err)
+	}
+	logTable, err := database.QualifiedTable(tenant.SchemaName, "email_log")
+	if err != nil {
+		t.Fatalf("qualified email_log table: %v", err)
 	}
 
-	// Verify tables exist by querying them
 	var count int
-	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM "+tenant.SchemaName+".email_templates").Scan(&count)
+	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM "+templatesTable).Scan(&count)
 	if err != nil {
-		t.Fatalf("email_templates table not created: %v", err)
+		t.Fatalf("email_templates table not created by tenant bootstrap: %v", err)
 	}
 
-	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM "+tenant.SchemaName+".email_log").Scan(&count)
+	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM "+logTable).Scan(&count)
 	if err != nil {
-		t.Fatalf("email_log table not created: %v", err)
-	}
-
-	// EnsureSchema should be idempotent
-	err = repo.EnsureSchema(ctx, tenant.SchemaName)
-	if err != nil {
-		t.Fatalf("EnsureSchema second call failed: %v", err)
-	}
-}
-
-func TestGORMRepository_EnsureSchema_InvalidSchema(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
-	repo := newEmailGORMRepository(t, pool)
-	ctx := context.Background()
-
-	// Test with an invalid schema name that doesn't exist
-	// This tests the error path for schema creation
-	err := repo.EnsureSchema(ctx, "nonexistent_schema_12345")
-	if err == nil {
-		t.Error("expected error for nonexistent schema, got nil")
+		t.Fatalf("email_log table not created by tenant bootstrap: %v", err)
 	}
 }
 

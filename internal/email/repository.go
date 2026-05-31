@@ -9,9 +9,6 @@ import (
 
 // Repository defines the contract for email data access
 type Repository interface {
-	// Schema management
-	EnsureSchema(ctx context.Context, schemaName string) error
-
 	// SMTP Config operations
 	GetTenantSettings(ctx context.Context, tenantID string) ([]byte, error)
 	UpdateTenantSettings(ctx context.Context, tenantID string, settingsJSON []byte) error

@@ -79,17 +79,8 @@ func NewServiceWithRepository(repo Repository) *Service {
 	return &Service{repo: repo}
 }
 
-// EnsureSchema creates tax tables if they don't exist
-func (s *Service) EnsureSchema(ctx context.Context, schemaName string) error {
-	return s.repo.EnsureSchema(ctx, schemaName)
-}
-
 // GenerateKMD generates a KMD declaration for a given period
 func (s *Service) GenerateKMD(ctx context.Context, tenantID, schemaName string, req *CreateKMDRequest) (*KMDDeclaration, error) {
-	if err := s.repo.EnsureSchema(ctx, schemaName); err != nil {
-		return nil, fmt.Errorf("ensure schema: %w", err)
-	}
-
 	// Calculate period boundaries
 	startDate := time.Date(req.Year, time.Month(req.Month), 1, 0, 0, 0, 0, time.UTC)
 	endDate := startDate.AddDate(0, 1, 0).Add(-time.Second)

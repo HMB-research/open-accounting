@@ -12,17 +12,39 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+func TestRepository_TenantBootstrapCreatesKMDTables(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	ctx := context.Background()
+
+	for _, tableName := range []string{"kmd_declarations", "kmd_rows"} {
+		table, err := database.QualifiedTable(tenant.SchemaName, tableName)
+		if err != nil {
+			t.Fatalf("qualified %s table: %v", tableName, err)
+		}
+
+		var count int
+		if err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM "+table).Scan(&count); err != nil {
+			t.Fatalf("%s table not created by tenant bootstrap: %v", tableName, err)
+		}
+	}
+
+	uniqueIndex := "idx_kmd_declarations_tenant"
+	var exists bool
+	err := pool.QueryRow(ctx, "SELECT to_regclass($1) IS NOT NULL", tenant.SchemaName+"."+uniqueIndex).Scan(&exists)
+	if err != nil {
+		t.Fatalf("query KMD declaration tenant index: %v", err)
+	}
+	if !exists {
+		t.Fatalf("KMD declaration tenant index %s missing", uniqueIndex)
+	}
+}
+
 func TestRepository_SaveDeclaration(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	repo := newTaxGORMRepository(t, pool)
 	ctx := context.Background()
-
-	// Ensure schema exists
-	err := repo.EnsureSchema(ctx, tenant.SchemaName)
-	if err != nil {
-		t.Fatalf("EnsureSchema failed: %v", err)
-	}
 
 	// Create KMD declaration
 	now := time.Now()
@@ -38,7 +60,7 @@ func TestRepository_SaveDeclaration(t *testing.T) {
 		UpdatedAt:      now,
 	}
 
-	err = repo.SaveDeclaration(ctx, tenant.SchemaName, decl)
+	err := repo.SaveDeclaration(ctx, tenant.SchemaName, decl)
 	if err != nil {
 		t.Fatalf("SaveDeclaration failed: %v", err)
 	}
@@ -67,12 +89,6 @@ func TestRepository_ListDeclarations(t *testing.T) {
 	repo := newTaxGORMRepository(t, pool)
 	ctx := context.Background()
 
-	// Ensure schema exists
-	err := repo.EnsureSchema(ctx, tenant.SchemaName)
-	if err != nil {
-		t.Fatalf("EnsureSchema failed: %v", err)
-	}
-
 	// Create multiple KMD declarations
 	now := time.Now()
 	for i := 1; i <= 3; i++ {
@@ -88,7 +104,7 @@ func TestRepository_ListDeclarations(t *testing.T) {
 			UpdatedAt:      now,
 		}
 
-		err = repo.SaveDeclaration(ctx, tenant.SchemaName, decl)
+		err := repo.SaveDeclaration(ctx, tenant.SchemaName, decl)
 		if err != nil {
 			t.Fatalf("SaveDeclaration for month %d failed: %v", i, err)
 		}
@@ -343,12 +359,6 @@ func TestRepository_GetDeclaration_NotFound(t *testing.T) {
 	repo := newTaxGORMRepository(t, pool)
 	ctx := context.Background()
 
-	// Ensure schema exists
-	err := repo.EnsureSchema(ctx, tenant.SchemaName)
-	if err != nil {
-		t.Fatalf("EnsureSchema failed: %v", err)
-	}
-
 	// Try to get non-existent KMD
 	decl, err := repo.GetDeclaration(ctx, tenant.SchemaName, tenant.ID, 2099, 12)
 	if err != nil {
@@ -365,12 +375,6 @@ func TestRepository_SaveDeclarationWithRows(t *testing.T) {
 	tenant := testutil.CreateTestTenant(t, pool)
 	repo := newTaxGORMRepository(t, pool)
 	ctx := context.Background()
-
-	// Ensure schema exists
-	err := repo.EnsureSchema(ctx, tenant.SchemaName)
-	if err != nil {
-		t.Fatalf("EnsureSchema failed: %v", err)
-	}
 
 	// Create KMD declaration with rows
 	now := time.Now()
@@ -390,7 +394,7 @@ func TestRepository_SaveDeclarationWithRows(t *testing.T) {
 		UpdatedAt: now,
 	}
 
-	err = repo.SaveDeclaration(ctx, tenant.SchemaName, decl)
+	err := repo.SaveDeclaration(ctx, tenant.SchemaName, decl)
 	if err != nil {
 		t.Fatalf("SaveDeclaration with rows failed: %v", err)
 	}
@@ -427,16 +431,10 @@ func TestRepository_QueryVATData(t *testing.T) {
 	repo := newTaxGORMRepository(t, pool)
 	ctx := context.Background()
 
-	// Ensure schema exists
-	err := repo.EnsureSchema(ctx, tenant.SchemaName)
-	if err != nil {
-		t.Fatalf("EnsureSchema failed: %v", err)
-	}
-
 	// Create revenue account (for output VAT) with unique code
 	revenueAccountID := uuid.New().String()
 	uniqueCode1 := "4" + uuid.New().String()[:3]
-	_, err = pool.Exec(ctx, `
+	_, err := pool.Exec(ctx, `
 		INSERT INTO `+tenant.SchemaName+`.accounts
 		(id, tenant_id, code, name, account_type, is_active, created_at)
 		VALUES ($1, $2, $3, 'Sales Revenue', 'REVENUE', true, NOW())
@@ -535,12 +533,6 @@ func TestRepository_QueryVATData_Empty(t *testing.T) {
 	repo := newTaxGORMRepository(t, pool)
 	ctx := context.Background()
 
-	// Ensure schema exists
-	err := repo.EnsureSchema(ctx, tenant.SchemaName)
-	if err != nil {
-		t.Fatalf("EnsureSchema failed: %v", err)
-	}
-
 	// Query VAT data for period with no entries
 	startDate := time.Now().AddDate(-1, 0, 0)
 	endDate := time.Now().AddDate(-1, 1, 0)
@@ -561,12 +553,6 @@ func TestRepository_SaveDeclaration_Update(t *testing.T) {
 	repo := newTaxGORMRepository(t, pool)
 	ctx := context.Background()
 
-	// Ensure schema exists
-	err := repo.EnsureSchema(ctx, tenant.SchemaName)
-	if err != nil {
-		t.Fatalf("EnsureSchema failed: %v", err)
-	}
-
 	now := time.Now()
 
 	// Create initial declaration
@@ -582,7 +568,7 @@ func TestRepository_SaveDeclaration_Update(t *testing.T) {
 		UpdatedAt:      now,
 	}
 
-	err = repo.SaveDeclaration(ctx, tenant.SchemaName, decl)
+	err := repo.SaveDeclaration(ctx, tenant.SchemaName, decl)
 	if err != nil {
 		t.Fatalf("SaveDeclaration (initial) failed: %v", err)
 	}
@@ -618,11 +604,6 @@ func TestRepository_SaveDeclaration_UpdateWithDifferentIDReplacesRows(t *testing
 	repo := newTaxGORMRepository(t, pool)
 	ctx := context.Background()
 
-	err := repo.EnsureSchema(ctx, tenant.SchemaName)
-	if err != nil {
-		t.Fatalf("EnsureSchema failed: %v", err)
-	}
-
 	now := time.Now().UTC()
 	originalID := uuid.New().String()
 	decl := &KMDDeclaration{
@@ -643,7 +624,7 @@ func TestRepository_SaveDeclaration_UpdateWithDifferentIDReplacesRows(t *testing
 		UpdatedAt: now,
 	}
 
-	err = repo.SaveDeclaration(ctx, tenant.SchemaName, decl)
+	err := repo.SaveDeclaration(ctx, tenant.SchemaName, decl)
 	if err != nil {
 		t.Fatalf("SaveDeclaration (initial) failed: %v", err)
 	}
@@ -699,12 +680,6 @@ func TestRepository_ListDeclarations_Empty(t *testing.T) {
 	tenant := testutil.CreateTestTenant(t, pool)
 	repo := newTaxGORMRepository(t, pool)
 	ctx := context.Background()
-
-	// Ensure schema exists
-	err := repo.EnsureSchema(ctx, tenant.SchemaName)
-	if err != nil {
-		t.Fatalf("EnsureSchema failed: %v", err)
-	}
 
 	// List declarations for tenant with no declarations
 	declarations, err := repo.ListDeclarations(ctx, tenant.SchemaName, tenant.ID)

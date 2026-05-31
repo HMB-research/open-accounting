@@ -92,10 +92,6 @@ func (s *Service) ImportKMDHistoryCSV(
 		return nil, fmt.Errorf("csv_content is required")
 	}
 
-	if err := s.repo.EnsureSchema(ctx, schemaName); err != nil {
-		return nil, fmt.Errorf("ensure schema: %w", err)
-	}
-
 	rows, err := parseKMDHistoryImportRows(req.CSVContent)
 	if err != nil {
 		return nil, err
