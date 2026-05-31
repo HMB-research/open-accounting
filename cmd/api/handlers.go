@@ -81,6 +81,7 @@ type Handlers struct {
 	interestService          *invoicing.InterestService
 	webhookService           *webhooks.Service
 	expensesService          *expenses.Service
+	demoStatusReader         demoStatusReader
 }
 
 type refreshSessionManager interface {

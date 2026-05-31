@@ -5,9 +5,14 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Keep this aligned with the test schema lifecycle lock so demo reset DDL does
@@ -179,18 +184,20 @@ func (h *Handlers) DemoStatus(w http.ResponseWriter, r *http.Request) {
 
 	demoUser, _ := demoUserByNumber(userNum)
 	ctx := r.Context()
-	response := DemoStatusResponse{User: userNum}
 
-	response.Accounts = h.getEntityStatus(ctx, demoUser.schema, "accounts", "name")
-	response.Contacts = h.getEntityStatus(ctx, demoUser.schema, "contacts", "name")
-	response.Invoices = h.getEntityStatus(ctx, demoUser.schema, "invoices", "invoice_number")
-	response.Employees = h.getEntityStatusConcat(ctx, demoUser.schema, "employees", "first_name", "last_name")
-	response.Payments = h.getEntityStatus(ctx, demoUser.schema, "payments", "payment_number")
-	response.JournalEntries = h.getEntityStatus(ctx, demoUser.schema, "journal_entries", "entry_number")
-	response.BankAccounts = h.getEntityStatus(ctx, demoUser.schema, "bank_accounts", "name")
-	response.RecurringInvoices = h.getEntityStatus(ctx, demoUser.schema, "recurring_invoices", "name")
-	response.PayrollRuns = h.getEntityStatusPeriod(ctx, demoUser.schema, "payroll_runs")
-	response.TsdDeclarations = h.getEntityStatusPeriod(ctx, demoUser.schema, "tsd_declarations")
+	statusReader, err := h.getDemoStatusReader()
+	if err != nil {
+		log.Error().Err(err).Msg("Demo status failed: status reader unavailable")
+		respondError(w, http.StatusInternalServerError, "Failed to read demo status")
+		return
+	}
+
+	response, err := statusReader.ReadDemoStatus(ctx, demoUser.schema, userNum)
+	if err != nil {
+		log.Error().Err(err).Str("schema", demoUser.schema).Msg("Demo status failed")
+		respondError(w, http.StatusInternalServerError, "Failed to read demo status")
+		return
+	}
 
 	respondJSON(w, http.StatusOK, response)
 }
@@ -223,65 +230,166 @@ func validateDemoRequest(w http.ResponseWriter, r *http.Request, allowQuerySecre
 	return secret, true
 }
 
-func (h *Handlers) getEntityStatus(ctx context.Context, schema, table, keyColumn string) EntityStatus {
-	var count int
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", schema, table)
-	_ = h.pool.QueryRow(ctx, query).Scan(&count)
-
-	var keys []string
-	keysQuery := fmt.Sprintf("SELECT %s FROM %s.%s ORDER BY %s LIMIT 10", keyColumn, schema, table, keyColumn)
-	rows, _ := h.pool.Query(ctx, keysQuery)
-	if rows != nil {
-		defer rows.Close()
-		for rows.Next() {
-			var key string
-			if rows.Scan(&key) == nil {
-				keys = append(keys, key)
-			}
-		}
+func (h *Handlers) getDemoStatusReader() (demoStatusReader, error) {
+	if h.demoStatusReader != nil {
+		return h.demoStatusReader, nil
 	}
-
-	return EntityStatus{Count: count, Keys: keys}
+	if h.pool == nil {
+		return nil, fmt.Errorf("database pool is not configured")
+	}
+	statusReader, err := newDemoStatusReader(h.pool)
+	if err != nil {
+		return nil, err
+	}
+	h.demoStatusReader = statusReader
+	return statusReader, nil
 }
 
-func (h *Handlers) getEntityStatusConcat(ctx context.Context, schema, table, col1, col2 string) EntityStatus {
-	var count int
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", schema, table)
-	_ = h.pool.QueryRow(ctx, query).Scan(&count)
-
-	var keys []string
-	keysQuery := fmt.Sprintf("SELECT %s || ' ' || %s FROM %s.%s ORDER BY %s LIMIT 10", col1, col2, schema, table, col1)
-	rows, _ := h.pool.Query(ctx, keysQuery)
-	if rows != nil {
-		defer rows.Close()
-		for rows.Next() {
-			var key string
-			if rows.Scan(&key) == nil {
-				keys = append(keys, key)
-			}
-		}
-	}
-
-	return EntityStatus{Count: count, Keys: keys}
+type demoStatusReader interface {
+	ReadDemoStatus(ctx context.Context, schema string, userNum int) (DemoStatusResponse, error)
 }
 
-func (h *Handlers) getEntityStatusPeriod(ctx context.Context, schema, table string) EntityStatus {
-	var count int
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", schema, table)
-	_ = h.pool.QueryRow(ctx, query).Scan(&count)
+type gormDemoStatusReader struct {
+	db *gorm.DB
+}
 
-	var keys []string
-	keysQuery := fmt.Sprintf("SELECT period_year || '-' || LPAD(period_month::text, 2, '0') FROM %s.%s ORDER BY period_year, period_month LIMIT 10", schema, table)
-	rows, _ := h.pool.Query(ctx, keysQuery)
-	if rows != nil {
-		defer rows.Close()
-		for rows.Next() {
-			var key string
-			if rows.Scan(&key) == nil {
-				keys = append(keys, key)
-			}
-		}
+func newDemoStatusReader(pool *pgxpool.Pool) (*gormDemoStatusReader, error) {
+	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	if err != nil {
+		return nil, fmt.Errorf("create demo status GORM reader: %w", err)
+	}
+	return &gormDemoStatusReader{db: gormDB}, nil
+}
+
+func (r *gormDemoStatusReader) ReadDemoStatus(ctx context.Context, schema string, userNum int) (DemoStatusResponse, error) {
+	response := DemoStatusResponse{User: userNum}
+	var err error
+
+	if response.Accounts, err = r.entityStatus(ctx, schema, "accounts", "name"); err != nil {
+		return response, fmt.Errorf("read accounts status: %w", err)
+	}
+	if response.Contacts, err = r.entityStatus(ctx, schema, "contacts", "name"); err != nil {
+		return response, fmt.Errorf("read contacts status: %w", err)
+	}
+	if response.Invoices, err = r.entityStatus(ctx, schema, "invoices", "invoice_number"); err != nil {
+		return response, fmt.Errorf("read invoices status: %w", err)
+	}
+	if response.Employees, err = r.employeeStatus(ctx, schema); err != nil {
+		return response, fmt.Errorf("read employees status: %w", err)
+	}
+	if response.Payments, err = r.entityStatus(ctx, schema, "payments", "payment_number"); err != nil {
+		return response, fmt.Errorf("read payments status: %w", err)
+	}
+	if response.JournalEntries, err = r.entityStatus(ctx, schema, "journal_entries", "entry_number"); err != nil {
+		return response, fmt.Errorf("read journal entries status: %w", err)
+	}
+	if response.BankAccounts, err = r.entityStatus(ctx, schema, "bank_accounts", "name"); err != nil {
+		return response, fmt.Errorf("read bank accounts status: %w", err)
+	}
+	if response.RecurringInvoices, err = r.entityStatus(ctx, schema, "recurring_invoices", "name"); err != nil {
+		return response, fmt.Errorf("read recurring invoices status: %w", err)
+	}
+	if response.PayrollRuns, err = r.periodStatus(ctx, schema, "payroll_runs"); err != nil {
+		return response, fmt.Errorf("read payroll runs status: %w", err)
+	}
+	if response.TsdDeclarations, err = r.periodStatus(ctx, schema, "tsd_declarations"); err != nil {
+		return response, fmt.Errorf("read TSD declarations status: %w", err)
 	}
 
-	return EntityStatus{Count: count, Keys: keys}
+	return response, nil
+}
+
+func (r *gormDemoStatusReader) entityStatus(ctx context.Context, schema, table, keyColumn string) (EntityStatus, error) {
+	db, err := r.tenantTable(ctx, schema, table)
+	if err != nil {
+		return EntityStatus{}, err
+	}
+
+	var count int64
+	if err := db.Count(&count).Error; err != nil {
+		return EntityStatus{}, nil
+	}
+
+	var keys []string
+	if err := db.Session(&gorm.Session{}).
+		Order(clause.OrderByColumn{Column: clause.Column{Name: keyColumn}}).
+		Limit(10).
+		Pluck(keyColumn, &keys).Error; err != nil {
+		return EntityStatus{Count: int(count)}, nil
+	}
+
+	return EntityStatus{Count: int(count), Keys: keys}, nil
+}
+
+func (r *gormDemoStatusReader) employeeStatus(ctx context.Context, schema string) (EntityStatus, error) {
+	db, err := r.tenantTable(ctx, schema, "employees")
+	if err != nil {
+		return EntityStatus{}, err
+	}
+
+	var count int64
+	if err := db.Count(&count).Error; err != nil {
+		return EntityStatus{}, nil
+	}
+
+	var rows []demoEmployeeStatusRow
+	if err := db.Session(&gorm.Session{}).
+		Order(clause.OrderByColumn{Column: clause.Column{Name: "first_name"}}).
+		Limit(10).
+		Find(&rows).Error; err != nil {
+		return EntityStatus{Count: int(count)}, nil
+	}
+
+	keys := make([]string, 0, len(rows))
+	for _, row := range rows {
+		keys = append(keys, strings.TrimSpace(row.FirstName+" "+row.LastName))
+	}
+
+	return EntityStatus{Count: int(count), Keys: keys}, nil
+}
+
+func (r *gormDemoStatusReader) periodStatus(ctx context.Context, schema, table string) (EntityStatus, error) {
+	db, err := r.tenantTable(ctx, schema, table)
+	if err != nil {
+		return EntityStatus{}, err
+	}
+
+	var count int64
+	if err := db.Count(&count).Error; err != nil {
+		return EntityStatus{}, nil
+	}
+
+	var rows []demoPeriodStatusRow
+	if err := db.Session(&gorm.Session{}).
+		Order(clause.OrderByColumn{Column: clause.Column{Name: "period_year"}}).
+		Order(clause.OrderByColumn{Column: clause.Column{Name: "period_month"}}).
+		Limit(10).
+		Find(&rows).Error; err != nil {
+		return EntityStatus{Count: int(count)}, nil
+	}
+
+	keys := make([]string, 0, len(rows))
+	for _, row := range rows {
+		keys = append(keys, fmt.Sprintf("%d-%02d", row.PeriodYear, row.PeriodMonth))
+	}
+
+	return EntityStatus{Count: int(count), Keys: keys}, nil
+}
+
+func (r *gormDemoStatusReader) tenantTable(ctx context.Context, schema, table string) (*gorm.DB, error) {
+	qualifiedTable, err := database.QualifiedTable(schema, table)
+	if err != nil {
+		return nil, err
+	}
+	return r.db.WithContext(ctx).Table(qualifiedTable), nil
+}
+
+type demoEmployeeStatusRow struct {
+	FirstName string `gorm:"column:first_name"`
+	LastName  string `gorm:"column:last_name"`
+}
+
+type demoPeriodStatusRow struct {
+	PeriodYear  int `gorm:"column:period_year"`
+	PeriodMonth int `gorm:"column:period_month"`
 }
