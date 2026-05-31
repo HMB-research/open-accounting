@@ -43,8 +43,7 @@ func (r *GORMRepository) CreateEmployee(ctx context.Context, schemaName string, 
 		return err
 	}
 
-	empModel := employeeToModel(emp)
-	if err := db.Create(empModel).Error; err != nil {
+	if err := db.Create(employeeCreateValues(emp)).Error; err != nil {
 		return fmt.Errorf("create employee: %w", err)
 	}
 	return nil
@@ -147,8 +146,7 @@ func (r *GORMRepository) CreateSalaryComponent(ctx context.Context, schemaName s
 		return err
 	}
 
-	compModel := salaryComponentToModel(comp)
-	if err := db.Create(compModel).Error; err != nil {
+	if err := db.Create(salaryComponentCreateValues(comp)).Error; err != nil {
 		return fmt.Errorf("create salary component: %w", err)
 	}
 	return nil
@@ -209,8 +207,7 @@ func (r *GORMRepository) CreatePayrollRun(ctx context.Context, schemaName string
 		return err
 	}
 
-	runModel := payrollRunToModel(run)
-	if err := db.Create(runModel).Error; err != nil {
+	if err := db.Create(payrollRunCreateValues(run)).Error; err != nil {
 		return fmt.Errorf("create payroll run: %w", err)
 	}
 	return nil
@@ -318,8 +315,7 @@ func (r *GORMRepository) CreatePayslip(ctx context.Context, schemaName string, p
 		return err
 	}
 
-	payslipModel := payslipToModel(payslip)
-	if err := db.Create(payslipModel).Error; err != nil {
+	if err := db.Create(payslipCreateValues(payslip)).Error; err != nil {
 		return fmt.Errorf("create payslip: %w", err)
 	}
 	return nil
@@ -392,7 +388,7 @@ func (r *GORMRepository) CreateTSDDeclaration(ctx context.Context, schemaName st
 	if err != nil {
 		return err
 	}
-	if err := db.Create(tsdDeclarationToModel(declaration)).Error; err != nil {
+	if err := db.Create(tsdDeclarationCreateValues(declaration)).Error; err != nil {
 		return fmt.Errorf("create TSD declaration: %w", err)
 	}
 	return nil
@@ -407,11 +403,11 @@ func (r *GORMRepository) CreateTSDRows(ctx context.Context, schemaName string, r
 	if err != nil {
 		return err
 	}
-	rowModels := make([]models.TSDRow, len(rows))
+	rowValues := make([]map[string]interface{}, len(rows))
 	for i := range rows {
-		rowModels[i] = *tsdRowToModel(&rows[i])
+		rowValues[i] = tsdRowCreateValues(&rows[i])
 	}
-	if err := db.Create(&rowModels).Error; err != nil {
+	if err := db.Create(rowValues).Error; err != nil {
 		return fmt.Errorf("create TSD rows: %w", err)
 	}
 	return nil
@@ -577,6 +573,34 @@ func employeeToModel(e *Employee) *models.Employee {
 	}
 }
 
+func employeeCreateValues(e *Employee) map[string]interface{} {
+	m := employeeToModel(e)
+	return map[string]interface{}{
+		"id":                     m.ID,
+		"tenant_id":              m.TenantID,
+		"employee_number":        m.EmployeeNumber,
+		"first_name":             m.FirstName,
+		"last_name":              m.LastName,
+		"personal_code":          m.PersonalCode,
+		"email":                  m.Email,
+		"phone":                  m.Phone,
+		"address":                m.Address,
+		"bank_account":           m.BankAccount,
+		"start_date":             m.StartDate,
+		"end_date":               m.EndDate,
+		"position":               m.Position,
+		"department":             m.Department,
+		"employment_type":        m.EmploymentType,
+		"tax_residency":          m.TaxResidency,
+		"apply_basic_exemption":  m.ApplyBasicExemption,
+		"basic_exemption_amount": m.BasicExemptionAmount,
+		"funded_pension_rate":    m.FundedPensionRate,
+		"is_active":              m.IsActive,
+		"created_at":             m.CreatedAt,
+		"updated_at":             m.UpdatedAt,
+	}
+}
+
 func salaryComponentToModel(s *SalaryComponent) *models.SalaryComponent {
 	return &models.SalaryComponent{
 		ID:            s.ID,
@@ -590,6 +614,23 @@ func salaryComponentToModel(s *SalaryComponent) *models.SalaryComponent {
 		EffectiveFrom: s.EffectiveFrom,
 		EffectiveTo:   s.EffectiveTo,
 		CreatedAt:     s.CreatedAt,
+	}
+}
+
+func salaryComponentCreateValues(s *SalaryComponent) map[string]interface{} {
+	m := salaryComponentToModel(s)
+	return map[string]interface{}{
+		"id":             m.ID,
+		"tenant_id":      m.TenantID,
+		"employee_id":    m.EmployeeID,
+		"component_type": m.ComponentType,
+		"name":           m.Name,
+		"amount":         m.Amount,
+		"is_taxable":     m.IsTaxable,
+		"is_recurring":   m.IsRecurring,
+		"effective_from": m.EffectiveFrom,
+		"effective_to":   m.EffectiveTo,
+		"created_at":     m.CreatedAt,
 	}
 }
 
@@ -649,6 +690,27 @@ func payrollRunToModel(r *PayrollRun) *models.PayrollRun {
 	}
 }
 
+func payrollRunCreateValues(r *PayrollRun) map[string]interface{} {
+	m := payrollRunToModel(r)
+	return map[string]interface{}{
+		"id":                  m.ID,
+		"tenant_id":           m.TenantID,
+		"period_year":         m.PeriodYear,
+		"period_month":        m.PeriodMonth,
+		"status":              m.Status,
+		"payment_date":        m.PaymentDate,
+		"total_gross":         m.TotalGross,
+		"total_net":           m.TotalNet,
+		"total_employer_cost": m.TotalEmployerCost,
+		"notes":               m.Notes,
+		"created_by":          m.CreatedBy,
+		"approved_by":         m.ApprovedBy,
+		"approved_at":         m.ApprovedAt,
+		"created_at":          m.CreatedAt,
+		"updated_at":          m.UpdatedAt,
+	}
+}
+
 func payslipToModel(p *Payslip) *models.Payslip {
 	return &models.Payslip{
 		ID:                      p.ID,
@@ -669,6 +731,30 @@ func payslipToModel(p *Payslip) *models.Payslip {
 		PaymentStatus:           p.PaymentStatus,
 		PaidAt:                  p.PaidAt,
 		CreatedAt:               p.CreatedAt,
+	}
+}
+
+func payslipCreateValues(p *Payslip) map[string]interface{} {
+	m := payslipToModel(p)
+	return map[string]interface{}{
+		"id":                              m.ID,
+		"tenant_id":                       m.TenantID,
+		"payroll_run_id":                  m.PayrollRunID,
+		"employee_id":                     m.EmployeeID,
+		"gross_salary":                    m.GrossSalary,
+		"taxable_income":                  m.TaxableIncome,
+		"income_tax":                      m.IncomeTax,
+		"unemployment_insurance_employee": m.UnemploymentInsuranceEE,
+		"funded_pension":                  m.FundedPension,
+		"other_deductions":                m.OtherDeductions,
+		"net_salary":                      m.NetSalary,
+		"social_tax":                      m.SocialTax,
+		"unemployment_insurance_employer": m.UnemploymentInsuranceER,
+		"total_employer_cost":             m.TotalEmployerCost,
+		"basic_exemption_applied":         m.BasicExemptionApplied,
+		"payment_status":                  m.PaymentStatus,
+		"paid_at":                         m.PaidAt,
+		"created_at":                      m.CreatedAt,
 	}
 }
 
@@ -737,6 +823,28 @@ func modelToTSDDeclaration(m *models.TSDDeclaration) *TSDDeclaration {
 	}
 }
 
+func tsdDeclarationCreateValues(t *TSDDeclaration) map[string]interface{} {
+	m := tsdDeclarationToModel(t)
+	return map[string]interface{}{
+		"id":                          m.ID,
+		"tenant_id":                   m.TenantID,
+		"period_year":                 m.PeriodYear,
+		"period_month":                m.PeriodMonth,
+		"payroll_run_id":              m.PayrollRunID,
+		"total_payments":              m.TotalPayments,
+		"total_income_tax":            m.TotalIncomeTax,
+		"total_social_tax":            m.TotalSocialTax,
+		"total_unemployment_employer": m.TotalUnemploymentER,
+		"total_unemployment_employee": m.TotalUnemploymentEE,
+		"total_funded_pension":        m.TotalFundedPension,
+		"status":                      m.Status,
+		"submitted_at":                m.SubmittedAt,
+		"emta_reference":              m.EMTAReference,
+		"created_at":                  m.CreatedAt,
+		"updated_at":                  m.UpdatedAt,
+	}
+}
+
 func stringPtrIfNotBlank(value string) *string {
 	if value == "" {
 		return nil
@@ -770,6 +878,29 @@ func tsdRowToModel(t *TSDRow) *models.TSDRow {
 		UnemploymentEE: models.Decimal{Decimal: t.UnemploymentEE},
 		FundedPension:  models.Decimal{Decimal: t.FundedPension},
 		CreatedAt:      t.CreatedAt,
+	}
+}
+
+func tsdRowCreateValues(t *TSDRow) map[string]interface{} {
+	m := tsdRowToModel(t)
+	return map[string]interface{}{
+		"id":                              m.ID,
+		"tenant_id":                       m.TenantID,
+		"declaration_id":                  m.DeclarationID,
+		"employee_id":                     m.EmployeeID,
+		"personal_code":                   m.PersonalCode,
+		"first_name":                      m.FirstName,
+		"last_name":                       m.LastName,
+		"payment_type":                    m.PaymentType,
+		"gross_payment":                   m.GrossPayment,
+		"basic_exemption":                 m.BasicExemption,
+		"taxable_amount":                  m.TaxableAmount,
+		"income_tax":                      m.IncomeTax,
+		"social_tax":                      m.SocialTax,
+		"unemployment_insurance_employer": m.UnemploymentER,
+		"unemployment_insurance_employee": m.UnemploymentEE,
+		"funded_pension":                  m.FundedPension,
+		"created_at":                      m.CreatedAt,
 	}
 }
 

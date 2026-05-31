@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -79,34 +77,6 @@ type MockTx struct {
 	RollbackCalled bool
 	CommitErr      error
 }
-
-func (t *MockTx) Commit(ctx context.Context) error {
-	t.CommitCalled = true
-	return t.CommitErr
-}
-
-func (t *MockTx) Rollback(ctx context.Context) error {
-	t.RollbackCalled = true
-	return nil
-}
-
-func (t *MockTx) Begin(ctx context.Context) (pgx.Tx, error) { return nil, nil }
-func (t *MockTx) CopyFrom(ctx context.Context, tableName pgx.Identifier, columnNames []string, rowSrc pgx.CopyFromSource) (int64, error) {
-	return 0, nil
-}
-func (t *MockTx) SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults { return nil }
-func (t *MockTx) LargeObjects() pgx.LargeObjects                               { return pgx.LargeObjects{} }
-func (t *MockTx) Prepare(ctx context.Context, name, sql string) (*pgconn.StatementDescription, error) {
-	return nil, nil
-}
-func (t *MockTx) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
-	return pgconn.CommandTag{}, nil
-}
-func (t *MockTx) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-	return nil, nil
-}
-func (t *MockTx) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row { return nil }
-func (t *MockTx) Conn() *pgx.Conn                                               { return nil }
 
 func NewMockRepository() *MockRepository {
 	return &MockRepository{
@@ -416,17 +386,6 @@ func (m *MockRepository) UpdateTSDStatus(ctx context.Context, schemaName, tenant
 	declaration.Status = status
 	declaration.UpdatedAt = updatedAt
 	return nil
-}
-
-func (m *MockRepository) BeginTx(ctx context.Context) (pgx.Tx, error) {
-	if m.BeginTxErr != nil {
-		return nil, m.BeginTxErr
-	}
-	return m.mockTx, nil
-}
-
-func (m *MockRepository) WithTx(tx pgx.Tx) Repository {
-	return m // Return the same mock for simplicity in tests
 }
 
 func (m *MockRepository) WithTransaction(ctx context.Context, fn func(txRepo Repository) error) error {
