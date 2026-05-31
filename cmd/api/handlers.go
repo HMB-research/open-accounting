@@ -83,7 +83,7 @@ type Handlers struct {
 	webhookService           *webhooks.Service
 	expensesService          *expenses.Service
 	demoResetService         demoResetter
-	demoStatusReader         demoStatusReader
+	demoStatusReader         demo.StatusReader
 }
 
 type refreshSessionManager interface {
