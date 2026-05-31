@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/HMB-research/open-accounting/internal/demo"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 	"github.com/HMB-research/open-accounting/internal/testutil"
@@ -492,7 +493,7 @@ func TestDemoHandlersResetAndStatus(t *testing.T) {
 	assert.Equal(t, 0, missingStatus.PayrollRuns.Count)
 	assert.Empty(t, missingStatus.PayrollRuns.Keys)
 
-	sql := getDemoSeedSQLForUsers([]int{1, 3})
+	sql := demo.SeedSQLForUsers([]int{1, 3})
 	assert.Contains(t, sql, "demo1@example.com")
 	assert.Contains(t, sql, "demo3@example.com")
 	assert.Contains(t, sql, "tenant_demo1")

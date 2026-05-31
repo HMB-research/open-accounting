@@ -112,35 +112,35 @@ check_e2e_test() {
 
 check_demo_data() {
     local route=$1
-    local handlers_file="$PROJECT_ROOT/cmd/api/handlers.go"
+    local seed_file="$PROJECT_ROOT/internal/demo/seed_template.sql"
 
     # Map routes to required table inserts
     case "$route" in
         "/dashboard") return 0 ;;  # Uses aggregate data from other tables
-        "/accounts") grep -q "INSERT INTO tenant_acme.accounts" "$handlers_file" && return 0 ;;
-        "/journal") grep -q "INSERT INTO tenant_acme.journal_entries" "$handlers_file" && return 0 ;;
-        "/contacts") grep -q "INSERT INTO tenant_acme.contacts" "$handlers_file" && return 0 ;;
-        "/invoices") grep -q "INSERT INTO tenant_acme.invoices" "$handlers_file" && return 0 ;;
-        "/invoices/reminders") grep -q "INSERT INTO tenant_acme.invoices" "$handlers_file" && return 0 ;;
-        "/quotes") grep -q "INSERT INTO tenant_acme.quotes" "$handlers_file" && return 0 ;;
-        "/orders") grep -q "INSERT INTO tenant_acme.orders" "$handlers_file" && return 0 ;;
-        "/payments") grep -q "INSERT INTO tenant_acme.payments" "$handlers_file" && return 0 ;;
-        "/payments/cash") grep -q "INSERT INTO tenant_acme.payments" "$handlers_file" && return 0 ;;
-        "/recurring") grep -q "INSERT INTO tenant_acme.recurring_invoices" "$handlers_file" && return 0 ;;
-        "/employees") grep -q "INSERT INTO tenant_acme.employees" "$handlers_file" && return 0 ;;
-        "/employees/absences") grep -q "INSERT INTO tenant_acme.leave_records" "$handlers_file" && return 0 ;;
-        "/payroll") grep -q "INSERT INTO tenant_acme.payroll_runs" "$handlers_file" && return 0 ;;
+        "/accounts") grep -q "INSERT INTO tenant_acme.accounts" "$seed_file" && return 0 ;;
+        "/journal") grep -q "INSERT INTO tenant_acme.journal_entries" "$seed_file" && return 0 ;;
+        "/contacts") grep -q "INSERT INTO tenant_acme.contacts" "$seed_file" && return 0 ;;
+        "/invoices") grep -q "INSERT INTO tenant_acme.invoices" "$seed_file" && return 0 ;;
+        "/invoices/reminders") grep -q "INSERT INTO tenant_acme.invoices" "$seed_file" && return 0 ;;
+        "/quotes") grep -q "INSERT INTO tenant_acme.quotes" "$seed_file" && return 0 ;;
+        "/orders") grep -q "INSERT INTO tenant_acme.orders" "$seed_file" && return 0 ;;
+        "/payments") grep -q "INSERT INTO tenant_acme.payments" "$seed_file" && return 0 ;;
+        "/payments/cash") grep -q "INSERT INTO tenant_acme.payments" "$seed_file" && return 0 ;;
+        "/recurring") grep -q "INSERT INTO tenant_acme.recurring_invoices" "$seed_file" && return 0 ;;
+        "/employees") grep -q "INSERT INTO tenant_acme.employees" "$seed_file" && return 0 ;;
+        "/employees/absences") grep -q "INSERT INTO tenant_acme.leave_records" "$seed_file" && return 0 ;;
+        "/payroll") grep -q "INSERT INTO tenant_acme.payroll_runs" "$seed_file" && return 0 ;;
         "/payroll/calculator") return 0 ;;  # Calculator doesn't need seeded data
-        "/banking") grep -q "INSERT INTO tenant_acme.bank_accounts" "$handlers_file" && return 0 ;;
-        "/banking/import") grep -q "INSERT INTO tenant_acme.bank_accounts" "$handlers_file" && return 0 ;;
-        "/assets") grep -q "INSERT INTO tenant_acme.fixed_assets" "$handlers_file" && return 0 ;;
-        "/inventory") grep -q "INSERT INTO tenant_acme.inventory_items" "$handlers_file" && return 0 ;;
+        "/banking") grep -q "INSERT INTO tenant_acme.bank_accounts" "$seed_file" && return 0 ;;
+        "/banking/import") grep -q "INSERT INTO tenant_acme.bank_accounts" "$seed_file" && return 0 ;;
+        "/assets") grep -q "INSERT INTO tenant_acme.fixed_assets" "$seed_file" && return 0 ;;
+        "/inventory") grep -q "INSERT INTO tenant_acme.products" "$seed_file" && return 0 ;;
         "/reports") return 0 ;;  # Reports use aggregate data
         "/reports/balance-confirmations") return 0 ;;
         "/reports/cash-flow") return 0 ;;
         "/tax") return 0 ;;  # Tax overview uses aggregate data
         "/vat-returns") return 0 ;;  # Uses invoice VAT data
-        "/tsd") grep -q "INSERT INTO tenant_acme.tsd_declarations" "$handlers_file" && return 0 ;;
+        "/tsd") grep -q "INSERT INTO tenant_acme.tsd_declarations" "$seed_file" && return 0 ;;
         "/settings") return 0 ;;  # Settings don't need demo data
         "/settings/company") return 0 ;;
         "/settings/email") return 0 ;;

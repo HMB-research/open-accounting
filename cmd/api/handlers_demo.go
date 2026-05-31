@@ -99,7 +99,7 @@ func (h *Handlers) getDemoResetService(ctx context.Context) (demoResetter, error
 	if h.demoResetService != nil {
 		return h.demoResetService, nil
 	}
-	resetService, err := demo.NewResetService(ctx, h.pool, getDemoSeedSQLForUsers)
+	resetService, err := demo.NewResetService(ctx, h.pool, demo.SeedSQLForUsers)
 	if err != nil {
 		return nil, err
 	}
