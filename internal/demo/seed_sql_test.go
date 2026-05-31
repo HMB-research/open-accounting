@@ -133,3 +133,14 @@ func TestSeedTemplate(t *testing.T) {
 	require.Contains(t, template, "INSERT INTO tenants", "template should contain tenant insert")
 	require.Contains(t, template, "create_tenant_schema", "template should contain schema creation function")
 }
+
+func TestSeedSQLForUsers(t *testing.T) {
+	sql := SeedSQLForUsers([]int{1, 2})
+
+	require.Contains(t, sql, "demo1@example.com")
+	require.Contains(t, sql, "demo2@example.com")
+	require.Contains(t, sql, "tenant_demo1")
+	require.Contains(t, sql, "tenant_demo2")
+	require.NotContains(t, sql, "demo@example.com")
+	require.NotContains(t, sql, "tenant_acme")
+}
