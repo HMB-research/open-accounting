@@ -239,10 +239,92 @@ func TestMigrateDownDefaultsToSingleRollback(t *testing.T) {
 	}
 }
 
+func TestTenantFeatureMigrationsHandlePartialSchemas(t *testing.T) {
+	pool := setupMigrationTestDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	if err := ensureMigrationsTable(ctx, pool); err != nil {
+		t.Fatalf("ensureMigrationsTable failed: %v", err)
+	}
+
+	execSQL(t, ctx, pool, `
+		CREATE EXTENSION IF NOT EXISTS pgcrypto;
+		CREATE TABLE tenants (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			schema_name TEXT NOT NULL UNIQUE,
+			is_active BOOLEAN NOT NULL DEFAULT true
+		);
+		CREATE SCHEMA tenant_partial;
+		CREATE SCHEMA tenant_complete;
+		INSERT INTO tenants (schema_name, is_active)
+		VALUES ('tenant_partial', true), ('tenant_complete', true);
+
+		CREATE TABLE tenant_complete.email_templates (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			tenant_id UUID NOT NULL,
+			template_type VARCHAR(50) NOT NULL,
+			subject TEXT,
+			body_html TEXT,
+			body_text TEXT,
+			UNIQUE (tenant_id, template_type)
+		);
+		CREATE TABLE tenant_complete.orders (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
+		CREATE TABLE tenant_complete.products (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
+		CREATE TABLE tenant_complete.warehouses (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
+	`)
+
+	dir := t.TempDir()
+	copyRepositoryMigration(t, dir, "021_reminder_rules.up.sql")
+	copyRepositoryMigration(t, dir, "021_reminder_rules.down.sql")
+	copyRepositoryMigration(t, dir, "033_order_stock_reservations.up.sql")
+	copyRepositoryMigration(t, dir, "033_order_stock_reservations.down.sql")
+
+	if err := migrateUp(ctx, pool, dir, 0); err != nil {
+		t.Fatalf("migrateUp with partial tenant schemas failed: %v", err)
+	}
+
+	if !schemaTableExists(t, ctx, pool, "tenant_partial", "reminder_rules") {
+		t.Fatalf("expected reminder_rules to be created for partial schema")
+	}
+	if schemaTableExists(t, ctx, pool, "tenant_partial", "order_stock_reservations") {
+		t.Fatalf("expected order_stock_reservations to be skipped for schema missing order inventory tables")
+	}
+	if !schemaTableExists(t, ctx, pool, "tenant_complete", "order_stock_reservations") {
+		t.Fatalf("expected order_stock_reservations to be created for complete schema")
+	}
+
+	if err := migrateDown(ctx, pool, dir, 2); err != nil {
+		t.Fatalf("migrateDown with partial tenant schemas failed: %v", err)
+	}
+	if schemaTableExists(t, ctx, pool, "tenant_partial", "reminder_rules") {
+		t.Fatalf("expected reminder_rules to be removed after rollback")
+	}
+	if schemaTableExists(t, ctx, pool, "tenant_complete", "order_stock_reservations") {
+		t.Fatalf("expected order_stock_reservations to be removed after rollback")
+	}
+}
+
 func writeMigration(t *testing.T, dir, name, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
 		t.Fatalf("failed to write migration %s: %v", name, err)
+	}
+}
+
+func copyRepositoryMigration(t *testing.T, dir, name string) {
+	t.Helper()
+	content, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
+	if err != nil {
+		t.Fatalf("failed to read repository migration %s: %v", name, err)
+	}
+	writeMigration(t, dir, name, string(content))
+}
+
+func execSQL(t *testing.T, ctx context.Context, pool *pgxpool.Pool, sql string) {
+	t.Helper()
+	if _, err := pool.Exec(ctx, sql); err != nil {
+		t.Fatalf("failed to execute test sql: %v", err)
 	}
 }
 
@@ -259,6 +341,19 @@ func tableExists(t *testing.T, ctx context.Context, pool *pgxpool.Pool, tableNam
 	return exists
 }
 
+func schemaTableExists(t *testing.T, ctx context.Context, pool *pgxpool.Pool, schemaName, tableName string) bool {
+	t.Helper()
+	var exists bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1
+		FROM information_schema.tables
+		WHERE table_schema = $1 AND table_name = $2
+	)`, schemaName, tableName).Scan(&exists); err != nil {
+		t.Fatalf("failed to check schema table existence: %v", err)
+	}
+	return exists
+}
+
 func connStringFromPool(pool *pgxpool.Pool) string {
 	cfg := pool.Config().ConnConfig
 	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable", cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.Database)
@@ -269,7 +364,7 @@ func setupMigrationTestDB(t *testing.T) *pgxpool.Pool {
 
 	baseURL := os.Getenv("DATABASE_URL")
 	if baseURL == "" {
-		return testutil.SetupTestDB(t)
+		baseURL = connStringFromPool(testutil.SetupTestDB(t))
 	}
 
 	adminURL, err := url.Parse(baseURL)
