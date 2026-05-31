@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/models"
@@ -136,26 +138,33 @@ func (r *GORMRepository) GetAllocations(ctx context.Context, schemaName, tenantI
 
 // GetNextPaymentNumber returns the next payment number sequence
 func (r *GORMRepository) GetNextPaymentNumber(ctx context.Context, schemaName, tenantID string, paymentType PaymentType) (int, error) {
-	paymentsTable, err := database.QualifiedTable(schemaName, "payments")
-	if err != nil {
-		return 0, err
-	}
-
 	prefix := "PMT"
 	if paymentType == PaymentTypeMade {
 		prefix = "OUT"
 	}
 
-	var seq int
-	err = r.db.WithContext(ctx).Raw(fmt.Sprintf(`
-		SELECT COALESCE(MAX(CAST(SUBSTRING(payment_number FROM '%s-([0-9]+)') AS INTEGER)), 0) + 1
-		FROM %s WHERE tenant_id = ? AND payment_type = ?
-	`, prefix, paymentsTable), tenantID, paymentType).Scan(&seq).Error
+	db, err := r.tenantTable(ctx, schemaName, "payments")
 	if err != nil {
+		return 0, err
+	}
+
+	var paymentNumbers []string
+	if err := db.
+		Where("tenant_id = ? AND payment_type = ?", tenantID, paymentType).
+		Where("payment_number LIKE ?", prefix+"-%").
+		Pluck("payment_number", &paymentNumbers).Error; err != nil {
 		return 0, fmt.Errorf("get next payment number: %w", err)
 	}
 
-	return seq, nil
+	maxSeq := 0
+	for _, paymentNumber := range paymentNumbers {
+		seq, ok := paymentNumberSequence(paymentNumber, prefix)
+		if ok && seq > maxSeq {
+			maxSeq = seq
+		}
+	}
+
+	return maxSeq + 1, nil
 }
 
 // GetUnallocatedPayments returns payments with unallocated amounts
@@ -170,17 +179,18 @@ func (r *GORMRepository) GetUnallocatedPayments(ctx context.Context, schemaName,
 	}
 
 	var paymentModels []models.Payment
-	err = r.db.WithContext(ctx).Raw(fmt.Sprintf(`
-		SELECT p.id, p.tenant_id, p.payment_number, p.payment_type, p.contact_id, p.payment_date,
-		       p.amount, p.currency, p.exchange_rate, p.base_amount, p.payment_method, p.bank_account,
-		       p.reference, p.notes, p.journal_entry_id, p.created_at, p.created_by
-		FROM %s p
-		WHERE p.tenant_id = ? AND p.payment_type = ?
-		  AND p.amount > COALESCE((
-		      SELECT SUM(pa.amount) FROM %s pa WHERE pa.payment_id = p.id
-		  ), 0)
-		ORDER BY p.payment_date
-	`, paymentsTable, allocationsTable), tenantID, paymentType).Scan(&paymentModels).Error
+	allocatedAmount := r.db.WithContext(ctx).
+		Table(allocationsTable + " AS pa").
+		Select("SUM(pa.amount)").
+		Where("pa.payment_id = p.id")
+
+	err = r.db.WithContext(ctx).
+		Table(paymentsTable+" AS p").
+		Select("p.*").
+		Where("p.tenant_id = ? AND p.payment_type = ?", tenantID, paymentType).
+		Where("p.amount > COALESCE((?), 0)", allocatedAmount).
+		Order("p.payment_date").
+		Scan(&paymentModels).Error
 	if err != nil {
 		return nil, fmt.Errorf("get unallocated payments: %w", err)
 	}
@@ -194,6 +204,27 @@ func (r *GORMRepository) GetUnallocatedPayments(ctx context.Context, schemaName,
 }
 
 // Conversion helpers between domain types and GORM models
+
+func paymentNumberSequence(paymentNumber, prefix string) (int, bool) {
+	sequenceText, ok := strings.CutPrefix(strings.TrimSpace(paymentNumber), prefix+"-")
+	if !ok || sequenceText == "" {
+		return 0, false
+	}
+	for i, char := range sequenceText {
+		if char < '0' || char > '9' {
+			sequenceText = sequenceText[:i]
+			break
+		}
+	}
+	if sequenceText == "" {
+		return 0, false
+	}
+	sequence, err := strconv.Atoi(sequenceText)
+	if err != nil {
+		return 0, false
+	}
+	return sequence, true
+}
 
 func modelToPayment(m *models.Payment) *Payment {
 	return &Payment{

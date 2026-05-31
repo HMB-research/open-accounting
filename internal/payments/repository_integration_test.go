@@ -253,6 +253,34 @@ func TestGORMRepository_GetNextPaymentNumber(t *testing.T) {
 	}
 }
 
+func TestPaymentNumberSequence(t *testing.T) {
+	tests := []struct {
+		name          string
+		paymentNumber string
+		prefix        string
+		want          int
+		wantOK        bool
+	}{
+		{name: "generated payment number", paymentNumber: "PMT-00042", prefix: "PMT", want: 42, wantOK: true},
+		{name: "generated outgoing number", paymentNumber: "OUT-00007", prefix: "OUT", want: 7, wantOK: true},
+		{name: "ignores non-matching prefix", paymentNumber: "OUT-00007", prefix: "PMT", wantOK: false},
+		{name: "preserves legacy leading digit extraction", paymentNumber: "PMT-00008-adjusted", prefix: "PMT", want: 8, wantOK: true},
+		{name: "rejects missing digits", paymentNumber: "PMT-adjusted", prefix: "PMT", wantOK: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := paymentNumberSequence(tt.paymentNumber, tt.prefix)
+			if ok != tt.wantOK {
+				t.Fatalf("expected ok=%v, got %v", tt.wantOK, ok)
+			}
+			if got != tt.want {
+				t.Fatalf("expected sequence %d, got %d", tt.want, got)
+			}
+		})
+	}
+}
+
 func TestGORMRepository_GetUnallocatedPayments(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
