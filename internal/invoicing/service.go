@@ -15,7 +15,6 @@ import (
 
 // Service provides invoicing operations
 type Service struct {
-	db         *pgxpool.Pool
 	repo       Repository
 	accounting *accounting.Service
 }
@@ -30,7 +29,6 @@ func NewService(db *pgxpool.Pool, accountingService *accounting.Service) *Servic
 		panic(fmt.Errorf("create invoicing GORM repository: %w", err))
 	}
 	return &Service{
-		db:         db,
 		repo:       NewGORMRepository(gormDB),
 		accounting: accountingService,
 	}

@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 )
@@ -31,22 +29,19 @@ var (
 
 // Service provides accounting operations
 type Service struct {
-	db   *pgxpool.Pool
 	repo RepositoryInterface
 }
 
 // NewService creates a new accounting service
 func NewService(db *pgxpool.Pool) *Service {
 	return &Service{
-		db:   db,
 		repo: NewRepository(db),
 	}
 }
 
 // NewServiceWithRepo creates a new accounting service with a custom repository (for testing)
-func NewServiceWithRepo(db *pgxpool.Pool, repo RepositoryInterface) *Service {
+func NewServiceWithRepo(_ *pgxpool.Pool, repo RepositoryInterface) *Service {
 	return &Service{
-		db:   db,
 		repo: repo,
 	}
 }
@@ -775,11 +770,4 @@ func (s *Service) GetIncomeStatement(ctx context.Context, schemaName, tenantID s
 	is.NetIncome = is.TotalRevenue.Sub(is.TotalExpenses)
 
 	return is, nil
-}
-
-// Tx interface for transaction support
-type Tx interface {
-	Exec(ctx context.Context, sql string, arguments ...interface{}) (pgconn.CommandTag, error)
-	Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
 }

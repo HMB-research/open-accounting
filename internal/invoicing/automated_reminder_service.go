@@ -14,7 +14,6 @@ import (
 
 // AutomatedReminderService handles scheduled reminder processing
 type AutomatedReminderService struct {
-	db           *pgxpool.Pool
 	ruleRepo     ReminderRuleRepository
 	emailService *email.Service
 }
@@ -22,7 +21,6 @@ type AutomatedReminderService struct {
 // NewAutomatedReminderService creates a new automated reminder service
 func NewAutomatedReminderService(db *pgxpool.Pool, emailService *email.Service) *AutomatedReminderService {
 	return &AutomatedReminderService{
-		db:           db,
 		ruleRepo:     NewReminderRuleRepository(db),
 		emailService: emailService,
 	}
