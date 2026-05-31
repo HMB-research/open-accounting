@@ -27,6 +27,10 @@ type MockRepository struct {
 	UpdateStatErr     error
 	DeleteErr         error
 	ConvertErr        error
+	StockListErr      error
+	StockGetErr       error
+	StockUpsertErr    error
+	StockReleaseErr   error
 }
 
 func NewMockRepository() *MockRepository {
@@ -120,6 +124,9 @@ func (m *MockRepository) SetConvertedToInvoice(ctx context.Context, schemaName, 
 }
 
 func (m *MockRepository) ListStockReservations(ctx context.Context, schemaName, tenantID, orderID string) ([]OrderStockReservation, error) {
+	if m.StockListErr != nil {
+		return nil, m.StockListErr
+	}
 	var reservations []OrderStockReservation
 	for _, reservation := range m.StockReservations {
 		if reservation.TenantID == tenantID && reservation.OrderID == orderID {
@@ -130,6 +137,9 @@ func (m *MockRepository) ListStockReservations(ctx context.Context, schemaName, 
 }
 
 func (m *MockRepository) GetStockReservation(ctx context.Context, schemaName, tenantID, orderID, productID, warehouseID string) (*OrderStockReservation, error) {
+	if m.StockGetErr != nil {
+		return nil, m.StockGetErr
+	}
 	key := orderStockReservationKey(orderID, productID, warehouseID)
 	reservation, ok := m.StockReservations[key]
 	if !ok || reservation.TenantID != tenantID {
@@ -139,6 +149,9 @@ func (m *MockRepository) GetStockReservation(ctx context.Context, schemaName, te
 }
 
 func (m *MockRepository) UpsertStockReservation(ctx context.Context, schemaName string, reservation *OrderStockReservation) error {
+	if m.StockUpsertErr != nil {
+		return m.StockUpsertErr
+	}
 	key := orderStockReservationKey(reservation.OrderID, reservation.ProductID, reservation.WarehouseID)
 	existing, ok := m.StockReservations[key]
 	if !ok {
@@ -154,6 +167,9 @@ func (m *MockRepository) UpsertStockReservation(ctx context.Context, schemaName 
 }
 
 func (m *MockRepository) ReleaseStockReservation(ctx context.Context, schemaName, tenantID, orderID, productID, warehouseID string, quantity decimal.Decimal, reason, releasedBy string) (*OrderStockReservation, error) {
+	if m.StockReleaseErr != nil {
+		return nil, m.StockReleaseErr
+	}
 	reservation, err := m.GetStockReservation(ctx, schemaName, tenantID, orderID, productID, warehouseID)
 	if err != nil {
 		return nil, err
@@ -174,6 +190,13 @@ func (m *MockRepository) ReleaseStockReservation(ctx context.Context, schemaName
 
 func orderStockReservationKey(orderID, productID, warehouseID string) string {
 	return orderID + "|" + productID + "|" + warehouseID
+}
+
+func TestNewService(t *testing.T) {
+	svc := NewService(nil)
+
+	assert.NotNil(t, svc)
+	assert.NotNil(t, svc.repo)
 }
 
 func TestNewServiceWithRepository(t *testing.T) {
@@ -710,5 +733,166 @@ func TestService_ConvertToInvoice(t *testing.T) {
 		err := svc.ConvertToInvoice(context.Background(), "tenant-1", "test_schema", "order-1", "invoice-1")
 
 		require.Error(t, err)
+	})
+}
+
+func TestService_StockReservations(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("lists reservations", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.StockReservations[orderStockReservationKey("order-1", "product-1", "warehouse-1")] = &OrderStockReservation{
+			ID:          "reservation-1",
+			TenantID:    "tenant-1",
+			OrderID:     "order-1",
+			ProductID:   "product-1",
+			WarehouseID: "warehouse-1",
+			Quantity:    decimal.NewFromInt(3),
+			Status:      OrderStockReservationStatusReserved,
+		}
+		svc := NewServiceWithRepository(repo)
+
+		reservations, err := svc.ListStockReservations(ctx, "tenant-1", "test_schema", "order-1")
+
+		require.NoError(t, err)
+		require.Len(t, reservations, 1)
+		assert.Equal(t, "reservation-1", reservations[0].ID)
+	})
+
+	t.Run("wraps list errors", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.StockListErr = errors.New("list failed")
+		svc := NewServiceWithRepository(repo)
+
+		_, err := svc.ListStockReservations(ctx, "tenant-1", "test_schema", "order-1")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "list order stock reservations")
+	})
+
+	t.Run("gets reservation", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.StockReservations[orderStockReservationKey("order-1", "product-1", "warehouse-1")] = &OrderStockReservation{
+			ID:          "reservation-1",
+			TenantID:    "tenant-1",
+			OrderID:     "order-1",
+			ProductID:   "product-1",
+			WarehouseID: "warehouse-1",
+			Quantity:    decimal.NewFromInt(2),
+			Status:      OrderStockReservationStatusReserved,
+		}
+		svc := NewServiceWithRepository(repo)
+
+		reservation, err := svc.GetStockReservation(ctx, "tenant-1", "test_schema", "order-1", "product-1", "warehouse-1")
+
+		require.NoError(t, err)
+		assert.Equal(t, "reservation-1", reservation.ID)
+		assert.True(t, reservation.Quantity.Equal(decimal.NewFromInt(2)))
+	})
+
+	t.Run("wraps get errors", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.StockGetErr = errors.New("get failed")
+		svc := NewServiceWithRepository(repo)
+
+		_, err := svc.GetStockReservation(ctx, "tenant-1", "test_schema", "order-1", "product-1", "warehouse-1")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "get order stock reservation")
+	})
+
+	t.Run("upserts with defaults", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+		reservation := &OrderStockReservation{
+			OrderID:     "order-1",
+			ProductID:   "product-1",
+			WarehouseID: "warehouse-1",
+			Quantity:    decimal.NewFromInt(4),
+			Reason:      "sales order",
+		}
+
+		err := svc.UpsertStockReservation(ctx, "tenant-1", "test_schema", reservation)
+
+		require.NoError(t, err)
+		assert.NotEmpty(t, reservation.ID)
+		assert.Equal(t, "tenant-1", reservation.TenantID)
+		assert.Equal(t, OrderStockReservationStatusReserved, reservation.Status)
+		stored := repo.StockReservations[orderStockReservationKey("order-1", "product-1", "warehouse-1")]
+		require.NotNil(t, stored)
+		assert.True(t, stored.Quantity.Equal(decimal.NewFromInt(4)))
+	})
+
+	t.Run("rejects nonpositive upsert quantity", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+
+		err := svc.UpsertStockReservation(ctx, "tenant-1", "test_schema", &OrderStockReservation{
+			OrderID:     "order-1",
+			ProductID:   "product-1",
+			WarehouseID: "warehouse-1",
+			Quantity:    decimal.Zero,
+		})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "reservation quantity must be positive")
+	})
+
+	t.Run("wraps upsert errors", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.StockUpsertErr = errors.New("upsert failed")
+		svc := NewServiceWithRepository(repo)
+
+		err := svc.UpsertStockReservation(ctx, "tenant-1", "test_schema", &OrderStockReservation{
+			OrderID:     "order-1",
+			ProductID:   "product-1",
+			WarehouseID: "warehouse-1",
+			Quantity:    decimal.NewFromInt(1),
+		})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "upsert order stock reservation")
+	})
+
+	t.Run("releases reservation", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.StockReservations[orderStockReservationKey("order-1", "product-1", "warehouse-1")] = &OrderStockReservation{
+			ID:          "reservation-1",
+			TenantID:    "tenant-1",
+			OrderID:     "order-1",
+			ProductID:   "product-1",
+			WarehouseID: "warehouse-1",
+			Quantity:    decimal.NewFromInt(5),
+			Status:      OrderStockReservationStatusReserved,
+		}
+		svc := NewServiceWithRepository(repo)
+
+		reservation, err := svc.ReleaseStockReservation(ctx, "tenant-1", "test_schema", "order-1", "product-1", "warehouse-1", decimal.NewFromInt(2), "picked", "user-1")
+
+		require.NoError(t, err)
+		assert.True(t, reservation.Quantity.Equal(decimal.NewFromInt(3)))
+		assert.Equal(t, OrderStockReservationStatusReserved, reservation.Status)
+		assert.Equal(t, "picked", reservation.Reason)
+	})
+
+	t.Run("rejects nonpositive release quantity", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+
+		_, err := svc.ReleaseStockReservation(ctx, "tenant-1", "test_schema", "order-1", "product-1", "warehouse-1", decimal.Zero, "", "")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "reservation quantity must be positive")
+	})
+
+	t.Run("wraps release errors", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.StockReleaseErr = errors.New("release failed")
+		svc := NewServiceWithRepository(repo)
+
+		_, err := svc.ReleaseStockReservation(ctx, "tenant-1", "test_schema", "order-1", "product-1", "warehouse-1", decimal.NewFromInt(1), "", "")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "release order stock reservation")
 	})
 }

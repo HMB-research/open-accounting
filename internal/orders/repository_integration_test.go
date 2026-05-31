@@ -495,6 +495,171 @@ func TestRepository_SetConvertedToInvoice(t *testing.T) {
 	}
 }
 
+func TestRepository_OrderStockReservations(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	repo := NewRepository(pool)
+	ctx := context.Background()
+
+	contactID := uuid.New().String()
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.contacts (id, tenant_id, name, contact_type, is_active, created_at, updated_at)
+		VALUES ($1, $2, 'Reservation Customer', 'CUSTOMER', true, NOW(), NOW())
+	`, contactID, tenant.ID)
+	if err != nil {
+		t.Fatalf("Failed to create contact: %v", err)
+	}
+
+	productID := uuid.New().String()
+	_, err = pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.products
+		(id, tenant_id, code, name, product_type, unit, vat_rate, track_inventory, is_active, created_at, updated_at)
+		VALUES ($1, $2, 'RES-PROD', 'Reservable product', 'GOODS', 'pcs', 22, true, true, NOW(), NOW())
+	`, productID, tenant.ID)
+	if err != nil {
+		t.Fatalf("Failed to create product: %v", err)
+	}
+
+	warehouseID := uuid.New().String()
+	_, err = pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.warehouses
+		(id, tenant_id, code, name, is_default, is_active, created_at, updated_at)
+		VALUES ($1, $2, 'MAIN', 'Main warehouse', true, true, NOW(), NOW())
+	`, warehouseID, tenant.ID)
+	if err != nil {
+		t.Fatalf("Failed to create warehouse: %v", err)
+	}
+
+	now := time.Now()
+	createdBy := uuid.New().String()
+	order := &Order{
+		ID:           uuid.New().String(),
+		TenantID:     tenant.ID,
+		OrderNumber:  "ORD-STOCK-RES",
+		ContactID:    contactID,
+		OrderDate:    now,
+		Status:       OrderStatusConfirmed,
+		Currency:     "EUR",
+		ExchangeRate: decimal.NewFromInt(1),
+		Subtotal:     decimal.NewFromFloat(100.00),
+		VATAmount:    decimal.NewFromFloat(22.00),
+		Total:        decimal.NewFromFloat(122.00),
+		CreatedAt:    now,
+		CreatedBy:    createdBy,
+		UpdatedAt:    now,
+	}
+	if err := repo.Create(ctx, tenant.SchemaName, order); err != nil {
+		t.Fatalf("Create order failed: %v", err)
+	}
+
+	reservation := &OrderStockReservation{
+		ID:          uuid.New().String(),
+		TenantID:    tenant.ID,
+		OrderID:     order.ID,
+		ProductID:   productID,
+		WarehouseID: warehouseID,
+		Quantity:    decimal.NewFromInt(5),
+		Status:      OrderStockReservationStatusReserved,
+		Reason:      "initial reserve",
+		CreatedAt:   now,
+		CreatedBy:   createdBy,
+		UpdatedAt:   now,
+	}
+	if err := repo.UpsertStockReservation(ctx, tenant.SchemaName, reservation); err != nil {
+		t.Fatalf("UpsertStockReservation create failed: %v", err)
+	}
+
+	got, err := repo.GetStockReservation(ctx, tenant.SchemaName, tenant.ID, order.ID, productID, warehouseID)
+	if err != nil {
+		t.Fatalf("GetStockReservation failed: %v", err)
+	}
+	if got.ID != reservation.ID {
+		t.Errorf("expected reservation ID %s, got %s", reservation.ID, got.ID)
+	}
+	if !got.Quantity.Equal(decimal.NewFromInt(5)) {
+		t.Errorf("expected quantity 5, got %s", got.Quantity)
+	}
+	if got.Reason != "initial reserve" {
+		t.Errorf("expected reason initial reserve, got %q", got.Reason)
+	}
+	if got.CreatedBy != createdBy {
+		t.Errorf("expected created_by %s, got %s", createdBy, got.CreatedBy)
+	}
+
+	reservations, err := repo.ListStockReservations(ctx, tenant.SchemaName, tenant.ID, order.ID)
+	if err != nil {
+		t.Fatalf("ListStockReservations failed: %v", err)
+	}
+	if len(reservations) != 1 {
+		t.Fatalf("expected one stock reservation, got %d", len(reservations))
+	}
+
+	if err := repo.UpsertStockReservation(ctx, tenant.SchemaName, &OrderStockReservation{
+		ID:          uuid.New().String(),
+		TenantID:    tenant.ID,
+		OrderID:     order.ID,
+		ProductID:   productID,
+		WarehouseID: warehouseID,
+		Quantity:    decimal.NewFromInt(2),
+		Status:      OrderStockReservationStatusReserved,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("UpsertStockReservation increment failed: %v", err)
+	}
+
+	got, err = repo.GetStockReservation(ctx, tenant.SchemaName, tenant.ID, order.ID, productID, warehouseID)
+	if err != nil {
+		t.Fatalf("GetStockReservation after increment failed: %v", err)
+	}
+	if !got.Quantity.Equal(decimal.NewFromInt(7)) {
+		t.Errorf("expected quantity 7 after increment, got %s", got.Quantity)
+	}
+	if got.Reason != "initial reserve" {
+		t.Errorf("expected empty upsert reason to preserve previous reason, got %q", got.Reason)
+	}
+
+	partiallyReleased, err := repo.ReleaseStockReservation(ctx, tenant.SchemaName, tenant.ID, order.ID, productID, warehouseID, decimal.NewFromInt(4), "partial pick", createdBy)
+	if err != nil {
+		t.Fatalf("ReleaseStockReservation partial release failed: %v", err)
+	}
+	if !partiallyReleased.Quantity.Equal(decimal.NewFromInt(3)) {
+		t.Errorf("expected quantity 3 after partial release, got %s", partiallyReleased.Quantity)
+	}
+	if partiallyReleased.Status != OrderStockReservationStatusReserved {
+		t.Errorf("expected status RESERVED after partial release, got %s", partiallyReleased.Status)
+	}
+	if partiallyReleased.ReleasedAt != nil {
+		t.Errorf("expected released_at to remain nil after partial release, got %v", partiallyReleased.ReleasedAt)
+	}
+	if partiallyReleased.ReleasedBy != "" {
+		t.Errorf("expected released_by to remain empty after partial release, got %q", partiallyReleased.ReleasedBy)
+	}
+
+	fullyReleased, err := repo.ReleaseStockReservation(ctx, tenant.SchemaName, tenant.ID, order.ID, productID, warehouseID, decimal.NewFromInt(3), "packed", createdBy)
+	if err != nil {
+		t.Fatalf("ReleaseStockReservation full release failed: %v", err)
+	}
+	if !fullyReleased.Quantity.IsZero() {
+		t.Errorf("expected zero quantity after full release, got %s", fullyReleased.Quantity)
+	}
+	if fullyReleased.Status != OrderStockReservationStatusReleased {
+		t.Errorf("expected status RELEASED after full release, got %s", fullyReleased.Status)
+	}
+	if fullyReleased.ReleasedAt == nil {
+		t.Error("expected released_at after full release")
+	}
+	if fullyReleased.ReleasedBy != createdBy {
+		t.Errorf("expected released_by %s, got %s", createdBy, fullyReleased.ReleasedBy)
+	}
+
+	_, err = repo.ReleaseStockReservation(ctx, tenant.SchemaName, tenant.ID, order.ID, productID, warehouseID, decimal.NewFromInt(1), "over-release", createdBy)
+	if err != ErrOrderStockReservationNotFound {
+		t.Errorf("expected ErrOrderStockReservationNotFound on over-release, got %v", err)
+	}
+}
+
 func TestRepository_ListOrders_WithContactFilter(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
