@@ -3,7 +3,6 @@ package email
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -48,48 +47,6 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 
 func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
 	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
-}
-
-// EnsureSchema creates email tables if they don't exist.
-func (r *GORMRepository) EnsureSchema(ctx context.Context, schemaName string) error {
-	quotedSchema, err := database.QuoteIdentifier(schemaName)
-	if err != nil {
-		return err
-	}
-
-	query := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS %s.email_templates (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			tenant_id UUID NOT NULL,
-			template_type VARCHAR(50) NOT NULL,
-			subject TEXT NOT NULL,
-			body_html TEXT NOT NULL,
-			body_text TEXT,
-			is_active BOOLEAN DEFAULT true,
-			created_at TIMESTAMPTZ DEFAULT NOW(),
-			updated_at TIMESTAMPTZ DEFAULT NOW(),
-			UNIQUE (tenant_id, template_type)
-		);
-
-		CREATE TABLE IF NOT EXISTS %s.email_log (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			tenant_id UUID NOT NULL,
-			email_type VARCHAR(50) NOT NULL,
-			recipient_email VARCHAR(255) NOT NULL,
-			recipient_name VARCHAR(255),
-			subject TEXT NOT NULL,
-			status VARCHAR(20) DEFAULT 'PENDING',
-			sent_at TIMESTAMPTZ,
-			error_message TEXT,
-			related_id UUID,
-			created_at TIMESTAMPTZ DEFAULT NOW()
-		);
-
-		CREATE INDEX IF NOT EXISTS idx_email_log_tenant ON %s.email_log(tenant_id);
-		CREATE INDEX IF NOT EXISTS idx_email_log_status ON %s.email_log(status);
-	`, quotedSchema, quotedSchema, quotedSchema, quotedSchema)
-
-	return r.db.WithContext(ctx).Exec(query).Error
 }
 
 // GetTenantSettings retrieves tenant settings JSON from public schema

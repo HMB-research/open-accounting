@@ -21,7 +21,6 @@ import (
 )
 
 type mockTaxRepository struct {
-	ensureSchemaErr        error
 	queryVATDataResult     []tax.VATAggregateRow
 	queryVATDataErr        error
 	queryKMDINFDataResult  []tax.KMDINFReportRow
@@ -35,10 +34,6 @@ type mockTaxRepository struct {
 	listDeclarationsResult []tax.KMDDeclaration
 	listDeclarationsErr    error
 	savedDeclarations      []*tax.KMDDeclaration
-}
-
-func (m *mockTaxRepository) EnsureSchema(ctx context.Context, schemaName string) error {
-	return m.ensureSchemaErr
 }
 
 func (m *mockTaxRepository) QueryVATData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]tax.VATAggregateRow, error) {
@@ -262,14 +257,14 @@ func TestKMDHandlersValidationAndErrorPaths(t *testing.T) {
 	h.HandleGenerateKMD(rr, req)
 	require.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
 
-	taxRepo.ensureSchemaErr = errors.New("schema unavailable")
+	taxRepo.queryVATDataErr = errors.New("vat data unavailable")
 	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/tax/kmd", map[string]int{"year": 2025, "month": 2}, nil)
 	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.HandleGenerateKMD(rr, req)
 	require.Equal(t, http.StatusInternalServerError, rr.Code, rr.Body.String())
-	assert.Contains(t, rr.Body.String(), "schema unavailable")
-	taxRepo.ensureSchemaErr = nil
+	assert.Contains(t, rr.Body.String(), "vat data unavailable")
+	taxRepo.queryVATDataErr = nil
 
 	taxRepo.listDeclarationsErr = errors.New("list failed")
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/tax/kmd", nil), map[string]string{"tenantID": "tenant-1"})

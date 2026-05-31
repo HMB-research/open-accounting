@@ -14,7 +14,6 @@ import (
 // MockRepository implements Repository for testing
 type MockRepository struct {
 	// Function fields for mocking behavior
-	EnsureSchemaFn         func(ctx context.Context, schemaName string) error
 	GetTenantSettingsFn    func(ctx context.Context, tenantID string) ([]byte, error)
 	UpdateTenantSettingsFn func(ctx context.Context, tenantID string, settingsJSON []byte) error
 	GetTemplateFn          func(ctx context.Context, schemaName, tenantID string, templateType TemplateType) (*EmailTemplate, error)
@@ -25,7 +24,6 @@ type MockRepository struct {
 	GetEmailLogFn          func(ctx context.Context, schemaName, tenantID string, limit int) ([]EmailLog, error)
 
 	// Track calls for assertions
-	EnsureSchemaCalled         bool
 	GetTenantSettingsCalled    bool
 	UpdateTenantSettingsCalled bool
 	GetTemplateCalled          bool
@@ -34,14 +32,6 @@ type MockRepository struct {
 	CreateEmailLogCalled       bool
 	UpdateEmailLogStatusCalled bool
 	GetEmailLogCalled          bool
-}
-
-func (m *MockRepository) EnsureSchema(ctx context.Context, schemaName string) error {
-	m.EnsureSchemaCalled = true
-	if m.EnsureSchemaFn != nil {
-		return m.EnsureSchemaFn(ctx, schemaName)
-	}
-	return nil
 }
 
 func (m *MockRepository) GetTenantSettings(ctx context.Context, tenantID string) ([]byte, error) {
@@ -144,37 +134,6 @@ func emptySMTPSettingsJSON() []byte {
 	settings := map[string]interface{}{}
 	data, _ := json.Marshal(settings)
 	return data
-}
-
-func TestService_EnsureSchema(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		repo := &MockRepository{}
-		svc := NewServiceWithRepository(repo, &MockMailSender{})
-
-		err := svc.EnsureSchema(context.Background(), "tenant_test")
-
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-		if !repo.EnsureSchemaCalled {
-			t.Error("expected EnsureSchema to be called")
-		}
-	})
-
-	t.Run("repository error", func(t *testing.T) {
-		repo := &MockRepository{
-			EnsureSchemaFn: func(ctx context.Context, schemaName string) error {
-				return errors.New("db error")
-			},
-		}
-		svc := NewServiceWithRepository(repo, &MockMailSender{})
-
-		err := svc.EnsureSchema(context.Background(), "tenant_test")
-
-		if err == nil {
-			t.Error("expected error, got nil")
-		}
-	})
 }
 
 func TestService_GetSMTPConfig(t *testing.T) {
@@ -492,9 +451,6 @@ func TestService_ListTemplates(t *testing.T) {
 		if len(templates) != 3 { // 1 custom + 2 defaults (payment, overdue)
 			t.Errorf("len(templates) = %d, want 3", len(templates))
 		}
-		if !repo.EnsureSchemaCalled {
-			t.Error("expected EnsureSchema to be called")
-		}
 	})
 
 	t.Run("no existing templates returns all defaults", func(t *testing.T) {
@@ -512,21 +468,6 @@ func TestService_ListTemplates(t *testing.T) {
 		}
 		if len(templates) != 3 { // All defaults
 			t.Errorf("len(templates) = %d, want 3", len(templates))
-		}
-	})
-
-	t.Run("ensure schema error", func(t *testing.T) {
-		repo := &MockRepository{
-			EnsureSchemaFn: func(ctx context.Context, schemaName string) error {
-				return errors.New("schema error")
-			},
-		}
-		svc := NewServiceWithRepository(repo, &MockMailSender{})
-
-		_, err := svc.ListTemplates(context.Background(), "tenant_test", "tenant-1")
-
-		if err == nil {
-			t.Error("expected error, got nil")
 		}
 	})
 
@@ -573,26 +514,8 @@ func TestService_UpdateTemplate(t *testing.T) {
 		if tmpl.Subject != "New Subject" {
 			t.Errorf("Subject = %q, want %q", tmpl.Subject, "New Subject")
 		}
-		if !repo.EnsureSchemaCalled {
-			t.Error("expected EnsureSchema to be called")
-		}
 		if !repo.UpsertTemplateCalled {
 			t.Error("expected UpsertTemplate to be called")
-		}
-	})
-
-	t.Run("ensure schema error", func(t *testing.T) {
-		repo := &MockRepository{
-			EnsureSchemaFn: func(ctx context.Context, schemaName string) error {
-				return errors.New("schema error")
-			},
-		}
-		svc := NewServiceWithRepository(repo, &MockMailSender{})
-
-		_, err := svc.UpdateTemplate(context.Background(), "tenant_test", "tenant-1", TemplateInvoiceSend, &UpdateTemplateRequest{})
-
-		if err == nil {
-			t.Error("expected error, got nil")
 		}
 	})
 
@@ -852,36 +775,6 @@ func TestService_SendEmail(t *testing.T) {
 
 		if err == nil {
 			t.Error("expected error when create log fails, got nil")
-		}
-	})
-
-	t.Run("ensure schema error", func(t *testing.T) {
-		repo := &MockRepository{
-			GetTenantSettingsFn: func(ctx context.Context, tenantID string) ([]byte, error) {
-				return validSMTPSettingsJSON(), nil
-			},
-			EnsureSchemaFn: func(ctx context.Context, schemaName string) error {
-				return errors.New("schema error")
-			},
-		}
-		svc := NewServiceWithRepository(repo, &MockMailSender{})
-
-		_, err := svc.SendEmail(
-			context.Background(),
-			"tenant_test",
-			"tenant-1",
-			"INVOICE_SEND",
-			"customer@example.com",
-			"",
-			"Subject",
-			"<p>Body</p>",
-			"",
-			nil,
-			"",
-		)
-
-		if err == nil {
-			t.Error("expected error when ensure schema fails, got nil")
 		}
 	})
 

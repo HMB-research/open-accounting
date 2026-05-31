@@ -44,45 +44,6 @@ func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName 
 	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
 }
 
-// EnsureSchema creates tax tables if they don't exist.
-// Dynamic tenant schemas are provisioned with DDL behind the repository boundary.
-func (r *GORMRepository) EnsureSchema(ctx context.Context, schemaName string) error {
-	quotedSchema, err := database.QuoteIdentifier(schemaName)
-	if err != nil {
-		return err
-	}
-
-	query := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS %s.kmd_declarations (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			tenant_id UUID NOT NULL,
-			year INTEGER NOT NULL,
-			month INTEGER NOT NULL,
-			status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
-			total_output_vat NUMERIC(28,8) NOT NULL DEFAULT 0,
-			total_input_vat NUMERIC(28,8) NOT NULL DEFAULT 0,
-			submitted_at TIMESTAMPTZ,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			UNIQUE (tenant_id, year, month)
-		);
-
-		CREATE TABLE IF NOT EXISTS %s.kmd_rows (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			declaration_id UUID NOT NULL REFERENCES %s.kmd_declarations(id) ON DELETE CASCADE,
-			code VARCHAR(10) NOT NULL,
-			description TEXT NOT NULL,
-			tax_base NUMERIC(28,8) NOT NULL DEFAULT 0,
-			tax_amount NUMERIC(28,8) NOT NULL DEFAULT 0
-		);
-
-		CREATE INDEX IF NOT EXISTS idx_kmd_declarations_tenant ON %s.kmd_declarations(tenant_id);
-		CREATE INDEX IF NOT EXISTS idx_kmd_rows_declaration ON %s.kmd_rows(declaration_id);
-	`, quotedSchema, quotedSchema, quotedSchema, quotedSchema, quotedSchema)
-
-	return r.db.WithContext(ctx).Exec(query).Error
-}
-
 // QueryVATData queries VAT data from journal entries for a period
 func (r *GORMRepository) QueryVATData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]VATAggregateRow, error) {
 	entriesTable, err := database.QualifiedTable(schemaName, "journal_entries")

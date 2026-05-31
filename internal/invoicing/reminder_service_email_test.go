@@ -18,10 +18,6 @@ type reminderEmailRepo struct {
 	updateEmailLogCalls int
 }
 
-func (m *reminderEmailRepo) EnsureSchema(ctx context.Context, schemaName string) error {
-	return nil
-}
-
 func (m *reminderEmailRepo) GetTenantSettings(ctx context.Context, tenantID string) ([]byte, error) {
 	settings := map[string]interface{}{
 		"smtp_host":       "smtp.example.com",

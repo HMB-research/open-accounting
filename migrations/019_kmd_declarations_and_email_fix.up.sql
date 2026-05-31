@@ -2,7 +2,7 @@
 -- This migration creates the KMD (VAT return) tables and fixes the email_log related_id column
 
 -- Create function to add email tables without default templates
--- This matches internal/email/repository.go EnsureSchema
+-- This defines the email tables that tenant bootstrap provisions.
 CREATE OR REPLACE FUNCTION create_email_tables_only(schema_name TEXT)
 RETURNS void AS $$
 BEGIN
@@ -46,7 +46,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Create function to add KMD tables to a tenant schema
--- Note: Schema must match internal/tax/repository.go EnsureSchema
+-- Note: schema must match the tax repository models.
 CREATE OR REPLACE FUNCTION add_kmd_tables_to_schema(schema_name TEXT)
 RETURNS void AS $$
 BEGIN
@@ -140,7 +140,7 @@ BEGIN
     PERFORM add_payroll_tables(schema_name);
 
     -- Create email tables without default templates
-    -- (matches internal/email/repository.go EnsureSchema behavior)
+    -- (matches tenant bootstrap email table behavior)
     PERFORM create_email_tables_only(schema_name);
 
     -- Create KMD (VAT return) tables

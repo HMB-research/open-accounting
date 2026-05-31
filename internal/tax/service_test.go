@@ -14,7 +14,6 @@ import (
 
 // MockRepository implements Repository for testing
 type MockRepository struct {
-	ensureSchemaErr        error
 	queryVATDataResult     []VATAggregateRow
 	queryVATDataErr        error
 	queryKMDINFDataResult  []KMDINFReportRow
@@ -28,10 +27,6 @@ type MockRepository struct {
 	listDeclarationsResult []KMDDeclaration
 	listDeclarationsErr    error
 	savedDeclarations      []*KMDDeclaration
-}
-
-func (m *MockRepository) EnsureSchema(ctx context.Context, schemaName string) error {
-	return m.ensureSchemaErr
 }
 
 func (m *MockRepository) QueryVATData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]VATAggregateRow, error) {
@@ -288,19 +283,6 @@ func TestService_GenerateKMD_Success(t *testing.T) {
 	assert.Equal(t, "110", decl.TotalInputVAT.String())
 	assert.Len(t, decl.Rows, 2)
 	assert.Len(t, repo.savedDeclarations, 1)
-}
-
-func TestService_GenerateKMD_EnsureSchemaError(t *testing.T) {
-	repo := &MockRepository{
-		ensureSchemaErr: errors.New("schema error"),
-	}
-	svc := NewServiceWithRepository(repo)
-
-	req := &CreateKMDRequest{Year: 2024, Month: 1}
-	_, err := svc.GenerateKMD(context.Background(), "tenant-1", "test_schema", req)
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "ensure schema")
 }
 
 func TestService_GenerateKMD_QueryVATDataError(t *testing.T) {
@@ -600,26 +582,6 @@ func TestService_ListKMD_Error(t *testing.T) {
 	svc := NewServiceWithRepository(repo)
 
 	_, err := svc.ListKMD(context.Background(), "tenant-1", "test_schema")
-
-	require.Error(t, err)
-}
-
-func TestService_EnsureSchema_Success(t *testing.T) {
-	repo := &MockRepository{}
-	svc := NewServiceWithRepository(repo)
-
-	err := svc.EnsureSchema(context.Background(), "test_schema")
-
-	require.NoError(t, err)
-}
-
-func TestService_EnsureSchema_Error(t *testing.T) {
-	repo := &MockRepository{
-		ensureSchemaErr: errors.New("schema error"),
-	}
-	svc := NewServiceWithRepository(repo)
-
-	err := svc.EnsureSchema(context.Background(), "test_schema")
 
 	require.Error(t, err)
 }
