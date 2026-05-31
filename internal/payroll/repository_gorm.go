@@ -188,10 +188,11 @@ func (r *GORMRepository) GetCurrentSalary(ctx context.Context, schemaName, tenan
 	var result struct {
 		Total models.Decimal
 	}
+	asOf := time.Now()
 	err = db.Select("COALESCE(SUM(amount), 0) as total").
 		Where("tenant_id = ? AND employee_id = ? AND is_recurring = ?", tenantID, employeeID, true).
-		Where("effective_from <= CURRENT_DATE").
-		Where("effective_to IS NULL OR effective_to >= CURRENT_DATE").
+		Where("effective_from <= ?", asOf).
+		Where("effective_to IS NULL OR effective_to >= ?", asOf).
 		Scan(&result).Error
 	if err != nil {
 		return decimal.Zero, fmt.Errorf("get current salary: %w", err)
