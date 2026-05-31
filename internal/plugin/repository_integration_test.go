@@ -194,6 +194,14 @@ func TestRepository_TenantPluginOperations(t *testing.T) {
 		t.Errorf("expected 1 row affected, got %d", affected)
 	}
 
+	enabled, err = repo.IsPluginEnabledForTenant(ctx, tenantUUID, plugin.ID)
+	if err != nil {
+		t.Fatalf("IsPluginEnabledForTenant after disable failed: %v", err)
+	}
+	if enabled {
+		t.Error("expected disabled tenant plugin to report not enabled")
+	}
+
 	// Cleanup
 	_, _ = repo.DeletePlugin(ctx, plugin.ID)
 }

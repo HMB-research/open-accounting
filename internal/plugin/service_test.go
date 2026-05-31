@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -38,6 +39,8 @@ type MockRepository struct {
 	deleteTenantPluginErr      error
 	isEnabledForTenantErr      error
 	listEnabledPluginsErr      error
+	countEnabledTenantsErr     error
+	disableAllTenantsErr       error
 }
 
 func NewMockRepository() *MockRepository {
@@ -306,8 +309,8 @@ func (m *MockRepository) IsPluginEnabledForTenant(ctx context.Context, tenantID,
 		return false, m.isEnabledForTenantErr
 	}
 	key := fmt.Sprintf("%s:%s", tenantID.String(), pluginID.String())
-	_, ok := m.tenantPlugins[key]
-	return ok, nil
+	tp, ok := m.tenantPlugins[key]
+	return ok && tp.IsEnabled, nil
 }
 
 func (m *MockRepository) ListEnabledPlugins(ctx context.Context) ([]Plugin, error) {
@@ -348,6 +351,9 @@ func (m *MockRepository) InsertPluginReturning(ctx context.Context, manifest *Ma
 }
 
 func (m *MockRepository) CountEnabledTenantsForPlugin(ctx context.Context, pluginID uuid.UUID) (int, error) {
+	if m.countEnabledTenantsErr != nil {
+		return 0, m.countEnabledTenantsErr
+	}
 	count := 0
 	for _, tp := range m.tenantPlugins {
 		if tp.PluginID == pluginID && tp.IsEnabled {
@@ -370,6 +376,9 @@ func (m *MockRepository) UpdatePluginState(ctx context.Context, pluginID uuid.UU
 }
 
 func (m *MockRepository) DisableAllTenantsForPlugin(ctx context.Context, pluginID uuid.UUID) error {
+	if m.disableAllTenantsErr != nil {
+		return m.disableAllTenantsErr
+	}
 	for _, tp := range m.tenantPlugins {
 		if tp.PluginID == pluginID {
 			tp.IsEnabled = false
@@ -1458,6 +1467,26 @@ func TestService_IsPluginEnabledForTenant(t *testing.T) {
 			expectErr:     false,
 		},
 		{
+			name: "disabled_row",
+			setupRepo: func() *MockRepository {
+				repo := NewMockRepository()
+				key := fmt.Sprintf("%s:%s", tenantID.String(), pluginID.String())
+				now := time.Now()
+				repo.tenantPlugins[key] = &TenantPlugin{
+					ID:        uuid.New(),
+					TenantID:  tenantID,
+					PluginID:  pluginID,
+					IsEnabled: false,
+					EnabledAt: &now,
+				}
+				return repo
+			},
+			tenantID:      tenantID,
+			pluginID:      pluginID,
+			expectEnabled: false,
+			expectErr:     false,
+		},
+		{
 			name: "repository_error",
 			setupRepo: func() *MockRepository {
 				repo := NewMockRepository()
@@ -1617,6 +1646,74 @@ func TestService_UninstallPlugin_HasTenants(t *testing.T) {
 	}
 }
 
+func TestService_UninstallPlugin_CountTenantsError(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:    pluginID,
+		Name:  "test-plugin",
+		State: StateInstalled,
+	}
+	repo.countEnabledTenantsErr = fmt.Errorf("count failed")
+	service := NewServiceWithRepository(repo, nil, t.TempDir())
+
+	err := service.UninstallPlugin(ctx, pluginID)
+	if err == nil {
+		t.Fatal("expected tenant usage count error")
+	}
+	if !strings.Contains(err.Error(), "failed to check tenant usage") {
+		t.Fatalf("expected tenant usage error, got %v", err)
+	}
+}
+
+func TestService_UninstallPlugin_DeleteError(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:    pluginID,
+		Name:  "test-plugin",
+		State: StateInstalled,
+	}
+	repo.deletePluginErr = fmt.Errorf("delete failed")
+	service := NewServiceWithRepository(repo, nil, t.TempDir())
+
+	err := service.UninstallPlugin(ctx, pluginID)
+	if err == nil {
+		t.Fatal("expected delete error")
+	}
+	if !strings.Contains(err.Error(), "failed to delete plugin") {
+		t.Fatalf("expected delete plugin error, got %v", err)
+	}
+}
+
+func TestService_UninstallPlugin_Success(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:    pluginID,
+		Name:  "test-plugin",
+		State: StateInstalled,
+	}
+	service := NewServiceWithRepository(repo, nil, t.TempDir())
+	if err := service.loadPlugin(repo.plugins[pluginID], &Manifest{Name: "test-plugin", Version: "1.0.0"}); err != nil {
+		t.Fatalf("load plugin: %v", err)
+	}
+
+	err := service.UninstallPlugin(ctx, pluginID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, exists := repo.plugins[pluginID]; exists {
+		t.Error("expected plugin to be deleted from repository")
+	}
+	if _, exists := service.GetLoadedPlugin("test-plugin"); exists {
+		t.Error("expected plugin to be unloaded")
+	}
+}
+
 func TestService_EnablePlugin_NotFound(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
@@ -1687,6 +1784,27 @@ func TestService_EnablePlugin_MissingRequiredPermission(t *testing.T) {
 	err := service.EnablePlugin(ctx, pluginID, []string{"invoices:read"})
 	if err == nil {
 		t.Error("expected error for missing required permission")
+	}
+}
+
+func TestService_EnablePlugin_InvalidManifest(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:       pluginID,
+		Name:     "test-plugin",
+		State:    StateInstalled,
+		Manifest: json.RawMessage(`{invalid json`),
+	}
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+
+	err := service.EnablePlugin(ctx, pluginID, []string{})
+	if err == nil {
+		t.Fatal("expected manifest parsing error")
+	}
+	if !strings.Contains(err.Error(), "failed to parse manifest") {
+		t.Fatalf("expected parse manifest error, got %v", err)
 	}
 }
 
@@ -2007,6 +2125,27 @@ func TestService_DisablePlugin_UpdateStateError(t *testing.T) {
 	}
 }
 
+func TestService_DisablePlugin_DisableAllTenantsError(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:    pluginID,
+		Name:  "test-plugin",
+		State: StateEnabled,
+	}
+	repo.disableAllTenantsErr = fmt.Errorf("disable tenants failed")
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+
+	err := service.DisablePlugin(ctx, pluginID)
+	if err == nil {
+		t.Fatal("expected tenant disable error")
+	}
+	if !strings.Contains(err.Error(), "failed to disable for tenants") {
+		t.Fatalf("expected disable tenants error, got %v", err)
+	}
+}
+
 func TestService_EnableForTenant_GetPluginError(t *testing.T) {
 	ctx := context.Background()
 	tenantID := uuid.New()
@@ -2053,19 +2192,53 @@ func TestService_LoadPlugin_WithRoutes(t *testing.T) {
 	}
 }
 
-func TestService_NewService(t *testing.T) {
-	// Test NewService with nil pool (will panic in real usage, but covers the code path)
-	defer func() {
-		if r := recover(); r != nil {
-			// Expected panic when pool is nil
-		}
-	}()
+func TestService_LoadPlugin_WithHooksAndRoutes(t *testing.T) {
+	repo := NewMockRepository()
+	hooks := NewHookRegistry()
+	service := NewServiceWithRepository(repo, hooks, "/tmp/plugins")
 
-	// This tests that NewService creates a proper service
-	// In real usage, we'd need a proper pool, but for coverage we test the code path
-	service := NewServiceWithRepository(nil, nil, "/tmp/plugins")
+	plugin := &Plugin{
+		ID:   uuid.New(),
+		Name: "backend-plugin",
+	}
+
+	manifest := &Manifest{
+		Name:    "backend-plugin",
+		Version: "1.0.0",
+		Backend: &BackendConfig{
+			Package: "internal/plugin",
+			Entry:   "main.go",
+			Hooks: []HookConfig{
+				{Event: "invoice.created", Handler: "onInvoice"},
+			},
+			Routes: []RouteConfig{
+				{Method: "GET", Path: "/api/test", Handler: "handleTest"},
+			},
+		},
+	}
+
+	err := service.loadPlugin(plugin, manifest)
+	if err == nil {
+		t.Fatal("expected unsupported backend runtime error")
+	}
+	if !strings.Contains(err.Error(), "backend hooks and routes") {
+		t.Fatalf("expected hooks and routes runtime error, got %v", err)
+	}
+}
+
+func TestService_NewService(t *testing.T) {
+	service := NewService(nil, "/tmp/plugins")
 	if service == nil {
 		t.Error("expected service to be created")
+	}
+	if service.hooks == nil {
+		t.Error("expected hook registry to be initialized")
+	}
+	if service.plugins == nil {
+		t.Error("expected loaded plugin cache to be initialized")
+	}
+	if service.pluginDir != "/tmp/plugins" {
+		t.Errorf("expected plugin dir /tmp/plugins, got %s", service.pluginDir)
 	}
 }
 
