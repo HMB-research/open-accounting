@@ -76,6 +76,44 @@ func TestWebhookHandlers(t *testing.T) {
 		assert.True(t, endpoint.SecretSet)
 		assert.Empty(t, endpoint.Secret)
 
+		req = withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/webhooks/"+endpoint.ID, nil, nil), map[string]string{
+			"tenantID":  "tenant-1",
+			"webhookID": endpoint.ID,
+		})
+		w = httptest.NewRecorder()
+		h.GetWebhookEndpoint(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		var fetched webhooks.Endpoint
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&fetched))
+		assert.Equal(t, endpoint.ID, fetched.ID)
+		assert.True(t, fetched.SecretSet)
+		assert.Empty(t, fetched.Secret)
+
+		updatedName := "Billing Bot"
+		updatedSecret := "rotated"
+		inactive := false
+		req = withURLParams(makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1/webhooks/"+endpoint.ID, webhooks.UpdateEndpointRequest{
+			Name:     &updatedName,
+			Events:   []string{"invoice.created"},
+			Secret:   &updatedSecret,
+			IsActive: &inactive,
+		}, nil), map[string]string{
+			"tenantID":  "tenant-1",
+			"webhookID": endpoint.ID,
+		})
+		w = httptest.NewRecorder()
+		h.UpdateWebhookEndpoint(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		var updated webhooks.Endpoint
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&updated))
+		assert.Equal(t, "Billing Bot", updated.Name)
+		assert.Equal(t, []string{"invoice.created"}, updated.Events)
+		assert.False(t, updated.IsActive)
+		assert.True(t, updated.SecretSet)
+		assert.Empty(t, updated.Secret)
+
 		req = withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/webhooks", nil, nil), map[string]string{"tenantID": "tenant-1"})
 		w = httptest.NewRecorder()
 		h.ListWebhookEndpoints(w, req)
