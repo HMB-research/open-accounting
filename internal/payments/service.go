@@ -100,11 +100,7 @@ func (s *Service) Create(ctx context.Context, tenantID, schemaName string, req *
 		return nil, fmt.Errorf("generate payment number: %w", err)
 	}
 
-	prefix := "PMT"
-	if payment.PaymentType == PaymentTypeMade {
-		prefix = "OUT"
-	}
-	payment.PaymentNumber = fmt.Sprintf("%s-%05d", prefix, seq)
+	payment.PaymentNumber = FormatPaymentNumber(payment.PaymentType, seq)
 
 	// Insert payment
 	if err := s.repo.Create(ctx, schemaName, payment); err != nil {

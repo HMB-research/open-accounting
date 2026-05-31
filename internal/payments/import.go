@@ -127,17 +127,12 @@ func (s *Service) ImportPaymentsCSV(ctx context.Context, tenantID, schemaName st
 }
 
 func (s *Service) assignImportedPaymentNumber(ctx context.Context, schemaName, tenantID string, payment *Payment, usedNumbers map[string]string) error {
-	prefix := "PMT"
-	if payment.PaymentType == PaymentTypeMade {
-		prefix = "OUT"
-	}
-
 	for attempt := 0; attempt < 100; attempt++ {
 		seq, err := s.repo.GetNextPaymentNumber(ctx, schemaName, tenantID, payment.PaymentType)
 		if err != nil {
 			return fmt.Errorf("generate payment number: %w", err)
 		}
-		candidate := fmt.Sprintf("%s-%05d", prefix, seq)
+		candidate := FormatPaymentNumber(payment.PaymentType, seq)
 		if _, exists := usedNumbers[normalizedPaymentImportKey(candidate)]; exists {
 			continue
 		}

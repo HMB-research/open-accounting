@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
 
 	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/models"
@@ -138,10 +136,7 @@ func (r *GORMRepository) GetAllocations(ctx context.Context, schemaName, tenantI
 
 // GetNextPaymentNumber returns the next payment number sequence
 func (r *GORMRepository) GetNextPaymentNumber(ctx context.Context, schemaName, tenantID string, paymentType PaymentType) (int, error) {
-	prefix := "PMT"
-	if paymentType == PaymentTypeMade {
-		prefix = "OUT"
-	}
+	prefix := PaymentNumberPrefix(paymentType)
 
 	db, err := r.tenantTable(ctx, schemaName, "payments")
 	if err != nil {
@@ -156,15 +151,7 @@ func (r *GORMRepository) GetNextPaymentNumber(ctx context.Context, schemaName, t
 		return 0, fmt.Errorf("get next payment number: %w", err)
 	}
 
-	maxSeq := 0
-	for _, paymentNumber := range paymentNumbers {
-		seq, ok := paymentNumberSequence(paymentNumber, prefix)
-		if ok && seq > maxSeq {
-			maxSeq = seq
-		}
-	}
-
-	return maxSeq + 1, nil
+	return NextPaymentNumberSequence(paymentNumbers, paymentType), nil
 }
 
 // GetUnallocatedPayments returns payments with unallocated amounts
@@ -204,27 +191,6 @@ func (r *GORMRepository) GetUnallocatedPayments(ctx context.Context, schemaName,
 }
 
 // Conversion helpers between domain types and GORM models
-
-func paymentNumberSequence(paymentNumber, prefix string) (int, bool) {
-	sequenceText, ok := strings.CutPrefix(strings.TrimSpace(paymentNumber), prefix+"-")
-	if !ok || sequenceText == "" {
-		return 0, false
-	}
-	for i, char := range sequenceText {
-		if char < '0' || char > '9' {
-			sequenceText = sequenceText[:i]
-			break
-		}
-	}
-	if sequenceText == "" {
-		return 0, false
-	}
-	sequence, err := strconv.Atoi(sequenceText)
-	if err != nil {
-		return 0, false
-	}
-	return sequence, true
-}
 
 func modelToPayment(m *models.Payment) *Payment {
 	return &Payment{

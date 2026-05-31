@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/shopspring/decimal"
 )
 
@@ -27,10 +28,12 @@ type Repository interface {
 
 	ListTransactions(ctx context.Context, schemaName, tenantID string, filter *TransactionFilter) ([]BankTransaction, error)
 	GetTransaction(ctx context.Context, schemaName, tenantID, transactionID string) (*BankTransaction, error)
+	ListPaymentMatchCandidates(ctx context.Context, schemaName, tenantID string, paymentType payments.PaymentType, amount decimal.Decimal, limit int) ([]PaymentForMatching, error)
 	MatchTransaction(ctx context.Context, schemaName, tenantID, transactionID, paymentID string) error
 	UnmatchTransaction(ctx context.Context, schemaName, tenantID, transactionID string) error
 	UpdateTransactionReview(ctx context.Context, schemaName, tenantID, transactionID string, update TransactionReviewUpdate) (*BankTransaction, error)
 	CreateTransaction(ctx context.Context, schemaName string, t *BankTransaction) error
+	CreatePaymentFromTransaction(ctx context.Context, schemaName, tenantID, userID string, transaction *BankTransaction) (string, error)
 	IsTransactionDuplicate(ctx context.Context, schemaName, tenantID, bankAccountID string, date time.Time, amount decimal.Decimal, externalID string) (bool, error)
 
 	CreateReconciliation(ctx context.Context, schemaName string, r *BankReconciliation) error

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/shopspring/decimal"
 )
 
@@ -34,9 +35,11 @@ type MockRepository struct {
 	DeleteBankMatchRuleFn            func(ctx context.Context, schemaName, tenantID, ruleID string) error
 	ListTransactionsFn               func(ctx context.Context, schemaName, tenantID string, filter *TransactionFilter) ([]BankTransaction, error)
 	GetTransactionFn                 func(ctx context.Context, schemaName, tenantID, transactionID string) (*BankTransaction, error)
+	ListPaymentMatchCandidatesFn     func(ctx context.Context, schemaName, tenantID string, paymentType payments.PaymentType, amount decimal.Decimal, limit int) ([]PaymentForMatching, error)
 	MatchTransactionFn               func(ctx context.Context, schemaName, tenantID, transactionID, paymentID string) error
 	UnmatchTransactionFn             func(ctx context.Context, schemaName, tenantID, transactionID string) error
 	UpdateTransactionReviewFn        func(ctx context.Context, schemaName, tenantID, transactionID string, update TransactionReviewUpdate) (*BankTransaction, error)
+	CreatePaymentFromTransactionFn   func(ctx context.Context, schemaName, tenantID, userID string, transaction *BankTransaction) (string, error)
 	CreateReconciliationFn           func(ctx context.Context, schemaName string, r *BankReconciliation) error
 	GetReconciliationFn              func(ctx context.Context, schemaName, tenantID, reconciliationID string) (*BankReconciliation, error)
 	ListReconciliationsFn            func(ctx context.Context, schemaName, tenantID, bankAccountID string) ([]BankReconciliation, error)
@@ -255,6 +258,13 @@ func (m *MockRepository) GetTransaction(ctx context.Context, schemaName, tenantI
 	return t, nil
 }
 
+func (m *MockRepository) ListPaymentMatchCandidates(ctx context.Context, schemaName, tenantID string, paymentType payments.PaymentType, amount decimal.Decimal, limit int) ([]PaymentForMatching, error) {
+	if m.ListPaymentMatchCandidatesFn != nil {
+		return m.ListPaymentMatchCandidatesFn(ctx, schemaName, tenantID, paymentType, amount, limit)
+	}
+	return nil, nil
+}
+
 func (m *MockRepository) MatchTransaction(ctx context.Context, schemaName, tenantID, transactionID, paymentID string) error {
 	if m.MatchTransactionFn != nil {
 		return m.MatchTransactionFn(ctx, schemaName, tenantID, transactionID, paymentID)
@@ -304,6 +314,26 @@ func (m *MockRepository) UpdateTransactionReview(ctx context.Context, schemaName
 func (m *MockRepository) CreateTransaction(ctx context.Context, schemaName string, t *BankTransaction) error {
 	m.transactions[t.ID] = t
 	return nil
+}
+
+func (m *MockRepository) CreatePaymentFromTransaction(ctx context.Context, schemaName, tenantID, userID string, transaction *BankTransaction) (string, error) {
+	if m.CreatePaymentFromTransactionFn != nil {
+		return m.CreatePaymentFromTransactionFn(ctx, schemaName, tenantID, userID, transaction)
+	}
+	if transaction == nil || transaction.TenantID != tenantID {
+		return "", ErrTransactionNotFound
+	}
+	if transaction.Status != StatusUnmatched {
+		return "", ErrTransactionAlreadyMatched
+	}
+	paymentID := "payment-" + transaction.ID
+	transaction.MatchedPaymentID = &paymentID
+	transaction.Status = StatusMatched
+	if stored, ok := m.transactions[transaction.ID]; ok {
+		stored.MatchedPaymentID = &paymentID
+		stored.Status = StatusMatched
+	}
+	return paymentID, nil
 }
 
 func (m *MockRepository) IsTransactionDuplicate(ctx context.Context, schemaName, tenantID, bankAccountID string, date time.Time, amount decimal.Decimal, externalID string) (bool, error) {

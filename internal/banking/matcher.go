@@ -217,37 +217,7 @@ func filterPaymentsForBankMatchRule(payments []PaymentForMatching, transaction *
 }
 
 func (s *Service) getUnallocatedPayments(ctx context.Context, schemaName, tenantID string, amount decimal.Decimal) ([]PaymentForMatching, error) {
-	// Query payments that haven't been fully allocated
-	// Look for payments where amount matches (or close to) and have remaining unallocated amount
-	rows, err := s.db.Query(ctx, fmt.Sprintf(`
-		SELECT p.id, p.payment_number, p.payment_date, p.amount, COALESCE(c.name, '') as contact_name, COALESCE(p.reference, '') as reference
-		FROM %s.payments p
-		LEFT JOIN %s.contacts c ON p.contact_id = c.id
-		WHERE p.tenant_id = $1
-		AND p.amount - COALESCE((
-			SELECT SUM(pa.amount) FROM %s.payment_allocations pa WHERE pa.payment_id = p.id
-		), 0) > 0
-		AND NOT EXISTS (
-			SELECT 1 FROM %s.bank_transactions bt WHERE bt.matched_payment_id = p.id
-		)
-		ORDER BY ABS(p.amount - $2) ASC
-		LIMIT 20
-	`, schemaName, schemaName, schemaName, schemaName), tenantID, amount.Abs())
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var payments []PaymentForMatching
-	for rows.Next() {
-		var p PaymentForMatching
-		if err := rows.Scan(&p.ID, &p.PaymentNumber, &p.PaymentDate, &p.Amount, &p.ContactName, &p.Reference); err != nil {
-			return nil, err
-		}
-		payments = append(payments, p)
-	}
-
-	return payments, nil
+	return s.repo.ListPaymentMatchCandidates(ctx, schemaName, tenantID, paymentTypeForTransactionAmount(amount), amount, 20)
 }
 
 func matchPayments(transaction *BankTransaction, payments []PaymentForMatching, config MatcherConfig) []MatchSuggestion {
@@ -466,60 +436,9 @@ func (s *Service) CreatePaymentFromTransaction(ctx context.Context, schemaName, 
 		return "", fmt.Errorf("transaction is already matched")
 	}
 
-	// Determine payment type based on amount sign
-	paymentType := "RECEIVED"
-	if transaction.Amount.IsNegative() {
-		paymentType = "MADE"
-	}
-
-	tx, err := s.db.Begin(ctx)
+	paymentID, err := s.repo.CreatePaymentFromTransaction(ctx, schemaName, tenantID, userID, transaction)
 	if err != nil {
-		return "", fmt.Errorf("begin transaction: %w", err)
+		return "", fmt.Errorf("create payment from transaction: %w", err)
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	// Generate payment number
-	var paymentNumber string
-	prefix := "PMT"
-	if paymentType == "MADE" {
-		prefix = "PAY"
-	}
-	err = tx.QueryRow(ctx, fmt.Sprintf(`
-		SELECT COALESCE(MAX(CAST(SUBSTRING(payment_number FROM '%s-([0-9]+)') AS INTEGER)), 0) + 1
-		FROM %s.payments
-		WHERE tenant_id = $1 AND payment_number LIKE '%s-%%'
-	`, prefix, schemaName, prefix), tenantID).Scan(&paymentNumber)
-	if err != nil {
-		return "", fmt.Errorf("generate payment number: %w", err)
-	}
-	paymentNumber = fmt.Sprintf("%s-%06d", prefix, parseIntOrDefault(paymentNumber, 1))
-
-	// Create payment
-	paymentID := ""
-	err = tx.QueryRow(ctx, fmt.Sprintf(`
-		INSERT INTO %s.payments (tenant_id, payment_number, payment_type, payment_date, amount, currency, exchange_rate, base_amount, reference, notes, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, 1, $5, $7, $8, $9)
-		RETURNING id
-	`, schemaName), tenantID, paymentNumber, paymentType, transaction.TransactionDate,
-		transaction.Amount.Abs(), transaction.Currency, transaction.Reference,
-		fmt.Sprintf("Created from bank transaction: %s", transaction.Description), userID).Scan(&paymentID)
-	if err != nil {
-		return "", fmt.Errorf("create payment: %w", err)
-	}
-
-	// Link transaction to payment
-	_, err = tx.Exec(ctx, fmt.Sprintf(`
-		UPDATE %s.bank_transactions
-		SET matched_payment_id = $1, status = 'MATCHED'
-		WHERE id = $2 AND tenant_id = $3
-	`, schemaName), paymentID, transactionID, tenantID)
-	if err != nil {
-		return "", fmt.Errorf("link transaction: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return "", fmt.Errorf("commit: %w", err)
-	}
-
 	return paymentID, nil
 }
