@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // RefreshSession stores revocable refresh-token session metadata.
 type RefreshSession struct {
@@ -18,4 +21,23 @@ type RefreshSession struct {
 // TableName returns the table name for GORM.
 func (RefreshSession) TableName() string {
 	return "refresh_sessions"
+}
+
+// SecurityAuditEvent stores auth-sensitive account activity.
+type SecurityAuditEvent struct {
+	ID           string          `gorm:"type:uuid;primaryKey" json:"id"`
+	ActorUserID  *string         `gorm:"column:actor_user_id;type:uuid;index" json:"actor_user_id,omitempty"`
+	ActorEmail   *string         `gorm:"column:actor_email;size:255" json:"actor_email,omitempty"`
+	Action       string          `gorm:"size:64;not null;index" json:"action"`
+	TargetUserID *string         `gorm:"column:target_user_id;type:uuid;index" json:"target_user_id,omitempty"`
+	TargetEmail  *string         `gorm:"column:target_email;size:255" json:"target_email,omitempty"`
+	RequestIP    *string         `gorm:"column:request_ip;type:text" json:"request_ip,omitempty"`
+	UserAgent    *string         `gorm:"column:user_agent;type:text" json:"user_agent,omitempty"`
+	Metadata     json.RawMessage `gorm:"type:jsonb;not null;default:'{}'" json:"metadata,omitempty"`
+	CreatedAt    time.Time       `gorm:"not null;default:now();index" json:"created_at"`
+}
+
+// TableName returns the table name for GORM.
+func (SecurityAuditEvent) TableName() string {
+	return "security_audit_events"
 }

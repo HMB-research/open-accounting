@@ -2,14 +2,16 @@ package auth
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
+	"github.com/HMB-research/open-accounting/internal/models"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"gorm.io/gorm"
 )
 
 const (
@@ -42,15 +44,19 @@ type SecurityAuditEvent struct {
 
 // SecurityAuditService stores and lists auth security audit events.
 type SecurityAuditService struct {
-	pool *pgxpool.Pool
-	now  func() time.Time
+	db  *gorm.DB
+	now func() time.Time
 }
 
 // NewSecurityAuditService creates a PostgreSQL-backed security audit service.
 func NewSecurityAuditService(pool *pgxpool.Pool) *SecurityAuditService {
+	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	if err != nil {
+		panic(fmt.Errorf("create security audit GORM repository: %w", err))
+	}
 	return &SecurityAuditService{
-		pool: pool,
-		now:  time.Now,
+		db:  gormDB,
+		now: time.Now,
 	}
 }
 
@@ -77,16 +83,7 @@ func (s *SecurityAuditService) RecordEvent(ctx context.Context, event *SecurityA
 		return fmt.Errorf("marshal security audit metadata: %w", err)
 	}
 
-	_, err = s.pool.Exec(ctx, `
-		INSERT INTO security_audit_events (
-			id, actor_user_id, actor_email, action, target_user_id, target_email,
-			request_ip, user_agent, metadata, created_at
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-	`, event.ID, nullableString(event.ActorUserID), nullableString(event.ActorEmail), event.Action,
-		nullableString(event.TargetUserID), nullableString(event.TargetEmail), nullableString(event.RequestIP),
-		nullableString(event.UserAgent), metadataJSON, event.CreatedAt)
-	if err != nil {
+	if err := s.db.WithContext(ctx).Create(securityAuditEventToModel(event, metadataJSON)).Error; err != nil {
 		return fmt.Errorf("record security audit event: %w", err)
 	}
 	return nil
@@ -105,44 +102,21 @@ func (s *SecurityAuditService) ListUserEvents(ctx context.Context, userID string
 		limit = 200
 	}
 
-	rows, err := s.pool.Query(ctx, `
-		SELECT id::text, actor_user_id::text, COALESCE(actor_email, ''), action,
-			target_user_id::text, COALESCE(target_email, ''), COALESCE(request_ip, ''),
-			COALESCE(user_agent, ''), metadata, created_at
-		FROM security_audit_events
-		WHERE actor_user_id = $1 OR target_user_id = $1
-		ORDER BY created_at DESC
-		LIMIT $2
-	`, userID, limit)
+	var eventModels []models.SecurityAuditEvent
+	err := s.db.WithContext(ctx).
+		Where("actor_user_id = ? OR target_user_id = ?", userID, userID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&eventModels).Error
 	if err != nil {
 		return nil, fmt.Errorf("list security audit events: %w", err)
 	}
-	defer rows.Close()
 
-	events := make([]SecurityAuditEvent, 0, limit)
-	for rows.Next() {
-		var event SecurityAuditEvent
-		var actorUserID sql.NullString
-		var targetUserID sql.NullString
-		var metadataJSON []byte
-		if err := rows.Scan(
-			&event.ID,
-			&actorUserID,
-			&event.ActorEmail,
-			&event.Action,
-			&targetUserID,
-			&event.TargetEmail,
-			&event.RequestIP,
-			&event.UserAgent,
-			&metadataJSON,
-			&event.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan security audit event: %w", err)
-		}
-		event.ActorUserID = nullStringValue(actorUserID)
-		event.TargetUserID = nullStringValue(targetUserID)
-		if len(metadataJSON) > 0 {
-			if err := json.Unmarshal(metadataJSON, &event.Metadata); err != nil {
+	events := make([]SecurityAuditEvent, 0, len(eventModels))
+	for _, eventModel := range eventModels {
+		event := modelToSecurityAuditEvent(&eventModel)
+		if len(eventModel.Metadata) > 0 {
+			if err := json.Unmarshal(eventModel.Metadata, &event.Metadata); err != nil {
 				return nil, fmt.Errorf("unmarshal security audit metadata: %w", err)
 			}
 		}
@@ -151,20 +125,49 @@ func (s *SecurityAuditService) ListUserEvents(ctx context.Context, userID string
 		}
 		events = append(events, event)
 	}
-	return events, rows.Err()
+	return events, nil
 }
 
-func nullableString(value string) any {
-	value = strings.TrimSpace(value)
-	if value == "" {
+func securityAuditEventToModel(event *SecurityAuditEvent, metadata json.RawMessage) *models.SecurityAuditEvent {
+	return &models.SecurityAuditEvent{
+		ID:           event.ID,
+		ActorUserID:  auditOptionalString(event.ActorUserID),
+		ActorEmail:   auditOptionalString(event.ActorEmail),
+		Action:       event.Action,
+		TargetUserID: auditOptionalString(event.TargetUserID),
+		TargetEmail:  auditOptionalString(event.TargetEmail),
+		RequestIP:    auditOptionalString(event.RequestIP),
+		UserAgent:    auditOptionalString(event.UserAgent),
+		Metadata:     metadata,
+		CreatedAt:    event.CreatedAt,
+	}
+}
+
+func modelToSecurityAuditEvent(event *models.SecurityAuditEvent) SecurityAuditEvent {
+	return SecurityAuditEvent{
+		ID:           event.ID,
+		ActorUserID:  auditStringValue(event.ActorUserID),
+		ActorEmail:   auditStringValue(event.ActorEmail),
+		Action:       event.Action,
+		TargetUserID: auditStringValue(event.TargetUserID),
+		TargetEmail:  auditStringValue(event.TargetEmail),
+		RequestIP:    auditStringValue(event.RequestIP),
+		UserAgent:    auditStringValue(event.UserAgent),
+		CreatedAt:    event.CreatedAt,
+	}
+}
+
+func auditOptionalString(value string) *string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
 		return nil
 	}
-	return value
+	return &trimmed
 }
 
-func nullStringValue(value sql.NullString) string {
-	if !value.Valid {
+func auditStringValue(value *string) string {
+	if value == nil {
 		return ""
 	}
-	return value.String
+	return *value
 }
