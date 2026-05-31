@@ -323,6 +323,52 @@ func TestJournalEntryLine_TableName(t *testing.T) {
 	}
 }
 
+func TestAdditionalModelTableNames(t *testing.T) {
+	tests := []struct {
+		name  string
+		model interface{ TableName() string }
+		want  string
+	}{
+		{name: "absence type", model: AbsenceType{}, want: "absence_types"},
+		{name: "leave balance", model: LeaveBalance{}, want: "leave_balances"},
+		{name: "leave record", model: LeaveRecord{}, want: "leave_records"},
+		{name: "journal entry template", model: JournalEntryTemplate{}, want: "journal_entry_templates"},
+		{name: "journal entry template line", model: JournalEntryTemplateLine{}, want: "journal_entry_template_lines"},
+		{name: "api token", model: APIToken{}, want: "api_tokens"},
+		{name: "asset category", model: AssetCategory{}, want: "asset_categories"},
+		{name: "fixed asset", model: FixedAsset{}, want: "fixed_assets"},
+		{name: "depreciation entry", model: DepreciationEntry{}, want: "depreciation_entries"},
+		{name: "refresh session", model: RefreshSession{}, want: "refresh_sessions"},
+		{name: "password reset token", model: PasswordResetToken{}, want: "password_reset_tokens"},
+		{name: "security audit event", model: SecurityAuditEvent{}, want: "security_audit_events"},
+		{name: "cost center", model: CostCenter{}, want: "cost_centers"},
+		{name: "cost allocation", model: CostAllocation{}, want: "cost_allocations"},
+		{name: "document", model: Document{}, want: "documents"},
+		{name: "expense", model: Expense{}, want: "expenses"},
+		{name: "invoice interest", model: InvoiceInterest{}, want: "invoice_interest"},
+		{name: "order", model: Order{}, want: "orders"},
+		{name: "order line", model: OrderLine{}, want: "order_lines"},
+		{name: "order stock reservation", model: OrderStockReservation{}, want: "order_stock_reservations"},
+		{name: "tsd declaration", model: TSDDeclaration{}, want: "tsd_declarations"},
+		{name: "tsd row", model: TSDRow{}, want: "tsd_rows"},
+		{name: "quote", model: Quote{}, want: "quotes"},
+		{name: "quote line", model: QuoteLine{}, want: "quote_lines"},
+		{name: "reminder rule", model: ReminderRule{}, want: "reminder_rules"},
+		{name: "payment reminder", model: PaymentReminder{}, want: "payment_reminders"},
+		{name: "tenant audit event", model: TenantAuditEvent{}, want: "tenant_audit_events"},
+		{name: "webhook endpoint", model: WebhookEndpoint{}, want: "webhook_endpoints"},
+		{name: "webhook delivery", model: WebhookDelivery{}, want: "webhook_deliveries"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.model.TableName(); got != tt.want {
+				t.Fatalf("TableName() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // Test banking.go types
 func TestTransactionStatus_Constants(t *testing.T) {
 	tests := []struct {
