@@ -2285,6 +2285,22 @@ func TestRepository_CreateImportRecord(t *testing.T) {
 	if dupsSkipped != importRecord.DuplicatesSkipped {
 		t.Errorf("expected duplicates skipped %d, got %d", importRecord.DuplicatesSkipped, dupsSkipped)
 	}
+
+	if err := repo.IncrementLatestImportMatchedCount(ctx, tenant.SchemaName, tenant.ID, bankAccountID, 3); err != nil {
+		t.Fatalf("IncrementLatestImportMatchedCount failed: %v", err)
+	}
+
+	err = pool.QueryRow(ctx, `
+		SELECT transactions_matched
+		FROM `+tenant.SchemaName+`.bank_statement_imports
+		WHERE id = $1
+	`, importID).Scan(&txMatched)
+	if err != nil {
+		t.Fatalf("Failed to query incremented import record: %v", err)
+	}
+	if txMatched != importRecord.TransactionsMatched+3 {
+		t.Errorf("expected incremented transactions matched %d, got %d", importRecord.TransactionsMatched+3, txMatched)
+	}
 }
 
 func TestRepository_GetImportHistory(t *testing.T) {

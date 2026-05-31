@@ -40,6 +40,7 @@ type Repository interface {
 	AddTransactionToReconciliation(ctx context.Context, schemaName, tenantID, transactionID, reconciliationID string) error
 
 	CreateImportRecord(ctx context.Context, schemaName string, imp *BankStatementImport) error
+	IncrementLatestImportMatchedCount(ctx context.Context, schemaName, tenantID, bankAccountID string, matchedCount int) error
 	GetImportHistory(ctx context.Context, schemaName, tenantID, bankAccountID string) ([]BankStatementImport, error)
 }
 

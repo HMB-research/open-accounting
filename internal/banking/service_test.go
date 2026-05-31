@@ -42,6 +42,7 @@ type MockRepository struct {
 	ListReconciliationsFn            func(ctx context.Context, schemaName, tenantID, bankAccountID string) ([]BankReconciliation, error)
 	CompleteReconciliationFn         func(ctx context.Context, schemaName, tenantID, reconciliationID string) error
 	AddTransactionToReconciliationFn func(ctx context.Context, schemaName, tenantID, transactionID, reconciliationID string) error
+	IncrementLatestImportMatchedFn   func(ctx context.Context, schemaName, tenantID, bankAccountID string, matchedCount int) error
 	GetImportHistoryFn               func(ctx context.Context, schemaName, tenantID, bankAccountID string) ([]BankStatementImport, error)
 }
 
@@ -377,6 +378,25 @@ func (m *MockRepository) AddTransactionToReconciliation(ctx context.Context, sch
 
 func (m *MockRepository) CreateImportRecord(ctx context.Context, schemaName string, imp *BankStatementImport) error {
 	m.imports[imp.ID] = imp
+	return nil
+}
+
+func (m *MockRepository) IncrementLatestImportMatchedCount(ctx context.Context, schemaName, tenantID, bankAccountID string, matchedCount int) error {
+	if m.IncrementLatestImportMatchedFn != nil {
+		return m.IncrementLatestImportMatchedFn(ctx, schemaName, tenantID, bankAccountID, matchedCount)
+	}
+	var latest *BankStatementImport
+	for _, imp := range m.imports {
+		if imp.TenantID != tenantID || imp.BankAccountID != bankAccountID {
+			continue
+		}
+		if latest == nil || imp.CreatedAt.After(latest.CreatedAt) {
+			latest = imp
+		}
+	}
+	if latest != nil {
+		latest.TransactionsMatched += matchedCount
+	}
 	return nil
 }
 
