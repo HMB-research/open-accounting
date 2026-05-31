@@ -22,12 +22,13 @@ import (
 
 // mockBankingRepository implements banking.Repository for testing
 type mockBankingRepository struct {
-	accounts        map[string]*banking.BankAccount
-	matchRules      map[string]*banking.BankMatchRule
-	transactions    map[string]*banking.BankTransaction
-	reconciliations map[string]*banking.BankReconciliation
-	imports         map[string][]banking.BankStatementImport
-	txCount         map[string]int // accountID -> transaction count
+	accounts          map[string]*banking.BankAccount
+	matchRules        map[string]*banking.BankMatchRule
+	transactions      map[string]*banking.BankTransaction
+	reconciliations   map[string]*banking.BankReconciliation
+	imports           map[string][]banking.BankStatementImport
+	paymentCandidates []banking.PaymentForMatching
+	txCount           map[string]int // accountID -> transaction count
 
 	createAccErr     error
 	getAccErr        error
@@ -250,7 +251,11 @@ func (m *mockBankingRepository) GetTransaction(ctx context.Context, schemaName, 
 }
 
 func (m *mockBankingRepository) ListPaymentMatchCandidates(ctx context.Context, schemaName, tenantID string, paymentType payments.PaymentType, amount decimal.Decimal, limit int) ([]banking.PaymentForMatching, error) {
-	return nil, nil
+	candidates := append([]banking.PaymentForMatching(nil), m.paymentCandidates...)
+	if limit > 0 && len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+	return candidates, nil
 }
 
 func (m *mockBankingRepository) MatchTransaction(ctx context.Context, schemaName, tenantID, transactionID, paymentID string) error {
@@ -1297,6 +1302,119 @@ func TestReviewBankTransaction(t *testing.T) {
 			require.NotNil(t, result.ReviewedAt)
 		})
 	}
+}
+
+func TestBankTransactionMatchingWorkflows(t *testing.T) {
+	h, repo, tenantRepo := setupBankingTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	transactionDate := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+	repo.transactions["tx-suggest"] = &banking.BankTransaction{
+		ID:               "tx-suggest",
+		TenantID:         "tenant-1",
+		BankAccountID:    "bank-1",
+		TransactionDate:  transactionDate,
+		Amount:           decimal.RequireFromString("120.50"),
+		Currency:         "EUR",
+		Description:      "Invoice INV-100 payment PAY-100",
+		Reference:        "INV-100",
+		CounterpartyName: "Acme OÜ",
+		Status:           banking.StatusUnmatched,
+	}
+	repo.transactions["tx-payment"] = &banking.BankTransaction{
+		ID:              "tx-payment",
+		TenantID:        "tenant-1",
+		BankAccountID:   "bank-1",
+		TransactionDate: transactionDate,
+		Amount:          decimal.RequireFromString("-45.00"),
+		Currency:        "EUR",
+		Description:     "Supplier payout",
+		Status:          banking.StatusUnmatched,
+	}
+	repo.transactions["tx-auto"] = &banking.BankTransaction{
+		ID:              "tx-auto",
+		TenantID:        "tenant-1",
+		BankAccountID:   "bank-1",
+		TransactionDate: transactionDate,
+		Amount:          decimal.RequireFromString("42.00"),
+		Currency:        "EUR",
+		Description:     "Stripe settlement PAY-200",
+		Reference:       "PAY-200",
+		Status:          banking.StatusUnmatched,
+	}
+	repo.paymentCandidates = []banking.PaymentForMatching{
+		{
+			ID:            "pay-1",
+			PaymentNumber: "PAY-100",
+			PaymentDate:   transactionDate,
+			Amount:        decimal.RequireFromString("120.50"),
+			ContactName:   "Acme",
+			Reference:     "INV-100",
+		},
+		{
+			ID:            "pay-2",
+			PaymentNumber: "PAY-200",
+			PaymentDate:   transactionDate,
+			Amount:        decimal.RequireFromString("42.00"),
+			ContactName:   "Stripe",
+			Reference:     "PAY-200",
+		},
+	}
+	repo.imports["bank-1"] = []banking.BankStatementImport{
+		{
+			ID:                   "import-1",
+			TenantID:             "tenant-1",
+			BankAccountID:        "bank-1",
+			FileName:             "statement.csv",
+			TransactionsImported: 1,
+			CreatedAt:            transactionDate,
+		},
+	}
+	claims := createTestClaims("user-1", "test@example.com", "tenant-1", "owner")
+
+	suggestionsReq := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/bank-transactions/tx-suggest/suggestions", nil)
+	suggestionsReq = withURLParams(suggestionsReq, map[string]string{"tenantID": "tenant-1", "transactionID": "tx-suggest"})
+	suggestionsReq = suggestionsReq.WithContext(contextWithClaims(suggestionsReq.Context(), claims))
+	suggestionsRR := httptest.NewRecorder()
+	h.GetMatchSuggestions(suggestionsRR, suggestionsReq)
+
+	require.Equal(t, http.StatusOK, suggestionsRR.Code, suggestionsRR.Body.String())
+	var suggestions []banking.MatchSuggestion
+	require.NoError(t, json.Unmarshal(suggestionsRR.Body.Bytes(), &suggestions))
+	require.NotEmpty(t, suggestions)
+	assert.Equal(t, "pay-1", suggestions[0].PaymentID)
+	assert.GreaterOrEqual(t, suggestions[0].Confidence, 0.8)
+	assert.Contains(t, suggestions[0].MatchReason, "exact amount")
+
+	createPaymentReq := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/bank-transactions/tx-payment/create-payment", nil)
+	createPaymentReq = withURLParams(createPaymentReq, map[string]string{"tenantID": "tenant-1", "transactionID": "tx-payment"})
+	createPaymentReq = createPaymentReq.WithContext(contextWithClaims(createPaymentReq.Context(), claims))
+	createPaymentRR := httptest.NewRecorder()
+	h.CreatePaymentFromTransaction(createPaymentRR, createPaymentReq)
+
+	require.Equal(t, http.StatusOK, createPaymentRR.Code, createPaymentRR.Body.String())
+	var paymentResult map[string]string
+	require.NoError(t, json.Unmarshal(createPaymentRR.Body.Bytes(), &paymentResult))
+	assert.Equal(t, "payment-tx-payment", paymentResult["payment_id"])
+	assert.Equal(t, banking.StatusMatched, repo.transactions["tx-payment"].Status)
+
+	autoMatchReq := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/bank-accounts/bank-1/auto-match?min_confidence=0.7", nil)
+	autoMatchReq = withURLParams(autoMatchReq, map[string]string{"tenantID": "tenant-1", "accountID": "bank-1"})
+	autoMatchReq = autoMatchReq.WithContext(contextWithClaims(autoMatchReq.Context(), claims))
+	autoMatchRR := httptest.NewRecorder()
+	h.AutoMatchTransactions(autoMatchRR, autoMatchReq)
+
+	require.Equal(t, http.StatusOK, autoMatchRR.Code, autoMatchRR.Body.String())
+	var autoMatchResult map[string]int
+	require.NoError(t, json.Unmarshal(autoMatchRR.Body.Bytes(), &autoMatchResult))
+	assert.Equal(t, 2, autoMatchResult["matched"])
+	assert.Equal(t, banking.StatusMatched, repo.transactions["tx-suggest"].Status)
+	assert.Equal(t, banking.StatusMatched, repo.transactions["tx-auto"].Status)
+	assert.Equal(t, 2, repo.imports["bank-1"][0].TransactionsMatched)
 }
 
 func TestImportBankTransactions(t *testing.T) {
