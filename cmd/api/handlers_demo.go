@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/HMB-research/open-accounting/internal/database"
+	"github.com/HMB-research/open-accounting/internal/demo"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
@@ -17,7 +17,7 @@ import (
 
 // Keep this aligned with the test schema lifecycle lock so demo reset DDL does
 // not deadlock against concurrent test processes using the same database.
-const demoResetAdvisoryLockKey = 12345678
+const demoResetAdvisoryLockKey = demo.ResetAdvisoryLockKey
 
 // DemoStatusResponse represents the demo data status
 type DemoStatusResponse struct {
@@ -75,73 +75,16 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 		log.Info().Int("user", userNums[0]).Msg("Demo reset: resetting single user")
 	}
 
-	if h.pool == nil {
-		log.Error().Msg("Demo reset failed: database pool is not configured")
-		respondError(w, http.StatusInternalServerError, "Failed to acquire database connection")
-		return
-	}
-
-	conn, err := h.pool.Acquire(ctx)
-	if err != nil {
-		log.Error().Err(err).Msg("Demo reset failed: acquire connection")
-		respondError(w, http.StatusInternalServerError, "Failed to acquire database connection")
-		return
-	}
-	defer conn.Release()
-
-	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock($1)", demoResetAdvisoryLockKey); err != nil {
-		log.Error().Err(err).Msg("Demo reset failed: acquire advisory lock")
-		respondError(w, http.StatusInternalServerError, "Failed to acquire demo reset lock")
-		return
-	}
-	defer func() {
-		unlockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_, _ = conn.Exec(unlockCtx, "SELECT pg_advisory_unlock($1)", demoResetAdvisoryLockKey)
-	}()
-
-	for _, demoUser := range selectedUsers {
-		log.Info().Str("schema", demoUser.schema).Msg("Demo reset: dropping tenant schema")
-		_, err := conn.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", demoUser.schema))
-		if err != nil {
-			log.Error().Err(err).Str("schema", demoUser.schema).Msg("Demo reset failed: drop schema")
-			respondError(w, http.StatusInternalServerError, "Failed to drop tenant schema: "+err.Error())
-			return
-		}
-	}
-
-	for _, demoUser := range selectedUsers {
-		log.Info().Str("slug", demoUser.slug).Msg("Demo reset: cleaning tenant_users by slug")
-		_, err := conn.Exec(ctx, "DELETE FROM tenant_users WHERE tenant_id IN (SELECT id FROM tenants WHERE slug = $1)", demoUser.slug)
-		if err != nil {
-			log.Error().Err(err).Msg("Demo reset failed: clean tenant_users")
-			respondError(w, http.StatusInternalServerError, "Failed to clean tenant_users: "+err.Error())
-			return
-		}
-
-		log.Info().Str("slug", demoUser.slug).Msg("Demo reset: cleaning tenants by slug")
-		_, err = conn.Exec(ctx, "DELETE FROM tenants WHERE slug = $1", demoUser.slug)
-		if err != nil {
-			log.Error().Err(err).Msg("Demo reset failed: clean tenants")
-			respondError(w, http.StatusInternalServerError, "Failed to clean tenants: "+err.Error())
-			return
-		}
-
-		log.Info().Str("email", demoUser.email).Msg("Demo reset: cleaning users by email")
-		_, err = conn.Exec(ctx, "DELETE FROM users WHERE email = $1", demoUser.email)
-		if err != nil {
-			log.Error().Err(err).Msg("Demo reset failed: clean users")
-			respondError(w, http.StatusInternalServerError, "Failed to clean users: "+err.Error())
-			return
-		}
-	}
-
 	log.Info().Ints("users", userNums).Msg("Demo reset: seeding demo data")
-	seedSQL := getDemoSeedSQLForUsers(userNums)
-	_, err = conn.Exec(ctx, seedSQL)
+	resetService, err := h.getDemoResetService(ctx)
 	if err != nil {
-		log.Error().Err(err).Str("sql_preview", seedSQL[:500]).Msg("Demo reset failed: seed data")
-		respondError(w, http.StatusInternalServerError, "Failed to seed demo data: "+err.Error())
+		log.Error().Err(err).Msg("Demo reset failed: reset service unavailable")
+		respondError(w, http.StatusInternalServerError, "Failed to initialize demo reset")
+		return
+	}
+	if err := resetService.Reset(ctx, demoResetUsers(selectedUsers), userNums); err != nil {
+		log.Error().Err(err).Msg("Demo reset failed")
+		respondError(w, http.StatusInternalServerError, "Failed to reset demo data: "+err.Error())
 		return
 	}
 
@@ -150,6 +93,31 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 		"status":  "success",
 		"message": "Demo database reset successfully",
 	})
+}
+
+func (h *Handlers) getDemoResetService(ctx context.Context) (demoResetter, error) {
+	if h.demoResetService != nil {
+		return h.demoResetService, nil
+	}
+	resetService, err := demo.NewResetService(ctx, h.pool, getDemoSeedSQLForUsers)
+	if err != nil {
+		return nil, err
+	}
+	h.demoResetService = resetService
+	return resetService, nil
+}
+
+func demoResetUsers(users []demoUserDefinition) []demo.ResetUser {
+	resetUsers := make([]demo.ResetUser, len(users))
+	for i, user := range users {
+		resetUsers[i] = demo.ResetUser{
+			Number: user.number,
+			Email:  user.email,
+			Slug:   user.slug,
+			Schema: user.schema,
+		}
+	}
+	return resetUsers
 }
 
 // DemoStatus returns counts and key identifiers for demo data verification
