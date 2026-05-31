@@ -304,6 +304,22 @@ func setupInventoryTestHandlers() (*Handlers, *mockInventoryRepository, *mockTen
 	return h, inventoryRepo, tenantRepo
 }
 
+func newInventoryJSONRequest(t *testing.T, method, path string, body interface{}, params map[string]string) *http.Request {
+	t.Helper()
+
+	var bodyBytes []byte
+	if body != nil {
+		var err error
+		bodyBytes, err = json.Marshal(body)
+		require.NoError(t, err)
+	}
+
+	req := httptest.NewRequest(method, path, bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req = withURLParams(req, params)
+	return req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+}
+
 func TestListProducts(t *testing.T) {
 	h, repo, tenantRepo := setupInventoryTestHandlers()
 
@@ -534,6 +550,101 @@ func TestGetProduct(t *testing.T) {
 	}
 }
 
+func TestUpdateDeleteProductAndStockViews(t *testing.T) {
+	h, repo, tenantRepo := setupInventoryTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	repo.products["prod-1"] = &inventory.Product{
+		ID:             "prod-1",
+		TenantID:       "tenant-1",
+		Code:           "PROD-001",
+		Name:           "Old product",
+		ProductType:    inventory.ProductTypeGoods,
+		SalesPrice:     decimal.RequireFromString("10.00"),
+		TrackInventory: true,
+		IsActive:       true,
+	}
+	repo.stockLevels["prod-1-wh-1"] = &inventory.StockLevel{
+		ID:           "stock-1",
+		TenantID:     "tenant-1",
+		ProductID:    "prod-1",
+		WarehouseID:  "wh-1",
+		Quantity:     decimal.RequireFromString("7.00"),
+		ReservedQty:  decimal.RequireFromString("2.00"),
+		AvailableQty: decimal.RequireFromString("5.00"),
+	}
+	repo.movements["prod-1"] = []inventory.InventoryMovement{
+		{
+			ID:           "mov-1",
+			TenantID:     "tenant-1",
+			ProductID:    "prod-1",
+			WarehouseID:  "wh-1",
+			MovementType: inventory.MovementTypeAdjustment,
+			Quantity:     decimal.RequireFromString("7.00"),
+		},
+	}
+
+	updateReq := newInventoryJSONRequest(t, http.MethodPut, "/tenants/tenant-1/products/prod-1", map[string]interface{}{
+		"name":            "Updated product",
+		"description":     "Updated description",
+		"unit":            "pcs",
+		"sales_price":     "12.50",
+		"purchase_price":  "8.25",
+		"track_inventory": true,
+		"is_active":       true,
+	}, map[string]string{"tenantID": "tenant-1", "productID": "prod-1"})
+	updateRR := httptest.NewRecorder()
+	h.UpdateProduct(updateRR, updateReq)
+
+	require.Equal(t, http.StatusOK, updateRR.Code)
+	var updated inventory.Product
+	require.NoError(t, json.Unmarshal(updateRR.Body.Bytes(), &updated))
+	assert.Equal(t, "Updated product", updated.Name)
+	assert.Equal(t, "pcs", updated.Unit)
+	assert.True(t, updated.SalesPrice.Equal(decimal.RequireFromString("12.50")))
+
+	stockReq := newInventoryJSONRequest(t, http.MethodGet, "/tenants/tenant-1/products/prod-1/stock-levels", nil, map[string]string{
+		"tenantID":  "tenant-1",
+		"productID": "prod-1",
+	})
+	stockRR := httptest.NewRecorder()
+	h.GetStockLevels(stockRR, stockReq)
+
+	require.Equal(t, http.StatusOK, stockRR.Code)
+	var levels []inventory.StockLevel
+	require.NoError(t, json.Unmarshal(stockRR.Body.Bytes(), &levels))
+	require.Len(t, levels, 1)
+	assert.Equal(t, "wh-1", levels[0].WarehouseID)
+
+	movementsReq := newInventoryJSONRequest(t, http.MethodGet, "/tenants/tenant-1/products/prod-1/movements", nil, map[string]string{
+		"tenantID":  "tenant-1",
+		"productID": "prod-1",
+	})
+	movementsRR := httptest.NewRecorder()
+	h.GetInventoryMovements(movementsRR, movementsReq)
+
+	require.Equal(t, http.StatusOK, movementsRR.Code)
+	var movements []inventory.InventoryMovement
+	require.NoError(t, json.Unmarshal(movementsRR.Body.Bytes(), &movements))
+	require.Len(t, movements, 1)
+	assert.Equal(t, inventory.MovementTypeAdjustment, movements[0].MovementType)
+
+	deleteReq := newInventoryJSONRequest(t, http.MethodDelete, "/tenants/tenant-1/products/prod-1", nil, map[string]string{
+		"tenantID":  "tenant-1",
+		"productID": "prod-1",
+	})
+	deleteRR := httptest.NewRecorder()
+	h.DeleteProduct(deleteRR, deleteReq)
+
+	require.Equal(t, http.StatusOK, deleteRR.Code)
+	assert.NotContains(t, repo.products, "prod-1")
+	assert.Contains(t, deleteRR.Body.String(), "deleted")
+}
+
 func TestListWarehouses(t *testing.T) {
 	h, repo, tenantRepo := setupInventoryTestHandlers()
 
@@ -599,6 +710,64 @@ func TestCreateWarehouse(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, result.ID)
 	assert.Equal(t, "Test Warehouse", result.Name)
+}
+
+func TestGetUpdateDeleteWarehouse(t *testing.T) {
+	h, repo, tenantRepo := setupInventoryTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	repo.warehouses["wh-1"] = &inventory.Warehouse{
+		ID:        "wh-1",
+		TenantID:  "tenant-1",
+		Code:      "MAIN",
+		Name:      "Main Warehouse",
+		Address:   "Old address",
+		IsDefault: true,
+		IsActive:  true,
+	}
+
+	getReq := newInventoryJSONRequest(t, http.MethodGet, "/tenants/tenant-1/warehouses/wh-1", nil, map[string]string{
+		"tenantID":    "tenant-1",
+		"warehouseID": "wh-1",
+	})
+	getRR := httptest.NewRecorder()
+	h.GetWarehouse(getRR, getReq)
+
+	require.Equal(t, http.StatusOK, getRR.Code)
+	var got inventory.Warehouse
+	require.NoError(t, json.Unmarshal(getRR.Body.Bytes(), &got))
+	assert.Equal(t, "MAIN", got.Code)
+
+	updateReq := newInventoryJSONRequest(t, http.MethodPut, "/tenants/tenant-1/warehouses/wh-1", map[string]interface{}{
+		"name":       "Back room",
+		"address":    "New address",
+		"is_default": false,
+		"is_active":  true,
+	}, map[string]string{"tenantID": "tenant-1", "warehouseID": "wh-1"})
+	updateRR := httptest.NewRecorder()
+	h.UpdateWarehouse(updateRR, updateReq)
+
+	require.Equal(t, http.StatusOK, updateRR.Code)
+	var updated inventory.Warehouse
+	require.NoError(t, json.Unmarshal(updateRR.Body.Bytes(), &updated))
+	assert.Equal(t, "Back room", updated.Name)
+	assert.Equal(t, "New address", updated.Address)
+	assert.False(t, updated.IsDefault)
+
+	deleteReq := newInventoryJSONRequest(t, http.MethodDelete, "/tenants/tenant-1/warehouses/wh-1", nil, map[string]string{
+		"tenantID":    "tenant-1",
+		"warehouseID": "wh-1",
+	})
+	deleteRR := httptest.NewRecorder()
+	h.DeleteWarehouse(deleteRR, deleteReq)
+
+	require.Equal(t, http.StatusOK, deleteRR.Code)
+	assert.NotContains(t, repo.warehouses, "wh-1")
+	assert.Contains(t, deleteRR.Body.String(), "deleted")
 }
 
 func TestImportWarehouses(t *testing.T) {
@@ -876,6 +1045,64 @@ func TestReleaseStockRejectsOverRelease(t *testing.T) {
 	assert.Contains(t, rr.Body.String(), "cannot release more than reserved stock")
 }
 
+func TestTransferStock(t *testing.T) {
+	h, repo, tenantRepo := setupInventoryTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	repo.products["prod-1"] = &inventory.Product{
+		ID:          "prod-1",
+		TenantID:    "tenant-1",
+		Name:        "Product A",
+		ProductType: inventory.ProductTypeGoods,
+	}
+	repo.warehouses["wh-1"] = &inventory.Warehouse{ID: "wh-1", TenantID: "tenant-1", Name: "Main"}
+	repo.warehouses["wh-2"] = &inventory.Warehouse{ID: "wh-2", TenantID: "tenant-1", Name: "Overflow"}
+	repo.stockLevels["prod-1-wh-1"] = &inventory.StockLevel{
+		ID:           "stock-1",
+		TenantID:     "tenant-1",
+		ProductID:    "prod-1",
+		WarehouseID:  "wh-1",
+		Quantity:     decimal.NewFromInt(9),
+		ReservedQty:  decimal.NewFromInt(1),
+		AvailableQty: decimal.NewFromInt(8),
+	}
+	repo.stockLevels["prod-1-wh-2"] = &inventory.StockLevel{
+		ID:           "stock-2",
+		TenantID:     "tenant-1",
+		ProductID:    "prod-1",
+		WarehouseID:  "wh-2",
+		Quantity:     decimal.Zero,
+		ReservedQty:  decimal.Zero,
+		AvailableQty: decimal.Zero,
+	}
+
+	body := map[string]interface{}{
+		"product_id":        "prod-1",
+		"from_warehouse_id": "wh-1",
+		"to_warehouse_id":   "wh-2",
+		"quantity":          "4",
+		"notes":             "rebalance stock",
+	}
+	req := newInventoryJSONRequest(t, http.MethodPost, "/tenants/tenant-1/inventory/transfer", body, map[string]string{"tenantID": "tenant-1"})
+
+	rr := httptest.NewRecorder()
+	h.TransferStock(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "transferred")
+	assert.True(t, repo.stockLevels["prod-1-wh-1"].Quantity.Equal(decimal.NewFromInt(5)))
+	assert.True(t, repo.stockLevels["prod-1-wh-1"].AvailableQty.Equal(decimal.NewFromInt(4)))
+	assert.True(t, repo.stockLevels["prod-1-wh-2"].Quantity.Equal(decimal.NewFromInt(4)))
+	assert.True(t, repo.stockLevels["prod-1-wh-2"].AvailableQty.Equal(decimal.NewFromInt(4)))
+	require.Len(t, repo.movements["prod-1"], 2)
+	assert.Equal(t, inventory.MovementTypeOut, repo.movements["prod-1"][0].MovementType)
+	assert.Equal(t, inventory.MovementTypeIn, repo.movements["prod-1"][1].MovementType)
+}
+
 func TestGetInventoryValuation(t *testing.T) {
 	h, repo, tenantRepo := setupInventoryTestHandlers()
 
@@ -988,6 +1215,51 @@ func TestListProductCategories(t *testing.T) {
 	err := json.Unmarshal(rr.Body.Bytes(), &result)
 	require.NoError(t, err)
 	assert.Len(t, result, 1)
+}
+
+func TestProductCategoryCRUD(t *testing.T) {
+	h, repo, tenantRepo := setupInventoryTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	createReq := newInventoryJSONRequest(t, http.MethodPost, "/tenants/tenant-1/product-categories", map[string]interface{}{
+		"name":        "Spare parts",
+		"description": "Replacement inventory",
+	}, map[string]string{"tenantID": "tenant-1"})
+	createRR := httptest.NewRecorder()
+	h.CreateProductCategory(createRR, createReq)
+
+	require.Equal(t, http.StatusCreated, createRR.Code)
+	var created inventory.ProductCategory
+	require.NoError(t, json.Unmarshal(createRR.Body.Bytes(), &created))
+	assert.NotEmpty(t, created.ID)
+	assert.Equal(t, "Spare parts", created.Name)
+
+	getReq := newInventoryJSONRequest(t, http.MethodGet, "/tenants/tenant-1/product-categories/"+created.ID, nil, map[string]string{
+		"tenantID":   "tenant-1",
+		"categoryID": created.ID,
+	})
+	getRR := httptest.NewRecorder()
+	h.GetProductCategory(getRR, getReq)
+
+	require.Equal(t, http.StatusOK, getRR.Code)
+	var got inventory.ProductCategory
+	require.NoError(t, json.Unmarshal(getRR.Body.Bytes(), &got))
+	assert.Equal(t, created.ID, got.ID)
+
+	deleteReq := newInventoryJSONRequest(t, http.MethodDelete, "/tenants/tenant-1/product-categories/"+created.ID, nil, map[string]string{
+		"tenantID":   "tenant-1",
+		"categoryID": created.ID,
+	})
+	deleteRR := httptest.NewRecorder()
+	h.DeleteProductCategory(deleteRR, deleteReq)
+
+	require.Equal(t, http.StatusOK, deleteRR.Code)
+	assert.NotContains(t, repo.categories, created.ID)
+	assert.Contains(t, deleteRR.Body.String(), "deleted")
 }
 
 func TestImportProductCategories(t *testing.T) {
