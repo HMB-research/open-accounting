@@ -234,16 +234,16 @@ func (m *MockRepository) VoidJournalEntry(ctx context.Context, schemaName, tenan
 	return nil
 }
 
-func TestNewServiceWithRepo(t *testing.T) {
-	// NewServiceWithRepo allows injecting a mock repository for testing
-	svc := NewServiceWithRepo(nil, NewMockRepository())
+func TestNewServiceWithRepository(t *testing.T) {
+	// NewServiceWithRepository allows injecting a mock repository for testing
+	svc := NewServiceWithRepository(NewMockRepository())
 	assert.NotNil(t, svc)
 }
 
 func TestService_GetAccount(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 	schemaName := "tenant_test"
 
 	account := &Account{
@@ -284,7 +284,7 @@ func TestService_GetAccount(t *testing.T) {
 func TestService_ListAccounts(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 	schemaName := "tenant_test"
 
 	repo.accounts["acc-1"] = &Account{ID: "acc-1", TenantID: "tenant-1", IsActive: true}
@@ -314,7 +314,7 @@ func TestService_ListAccounts(t *testing.T) {
 func TestService_GetAccountHierarchy(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 	schemaName := "tenant_test"
 
 	parentID := "acc-1000"
@@ -357,7 +357,7 @@ func TestService_GetAccountHierarchy(t *testing.T) {
 func TestService_CreateAccount(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 	schemaName := "tenant_test"
 
 	t.Run("creates account with generated ID", func(t *testing.T) {
@@ -410,7 +410,7 @@ func TestService_CreateAccount(t *testing.T) {
 func TestService_GetJournalEntry(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 	schemaName := "tenant_test"
 
 	entry := &JournalEntry{
@@ -436,7 +436,7 @@ func TestService_GetJournalEntry(t *testing.T) {
 func TestService_CreateJournalEntry(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 	schemaName := "tenant_test"
 
 	t.Run("creates balanced journal entry", func(t *testing.T) {
@@ -624,7 +624,7 @@ func TestService_CreateJournalEntry(t *testing.T) {
 func TestService_JournalEntryTemplates(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 	schemaName := "tenant_test"
 
 	template, err := svc.CreateJournalEntryTemplate(ctx, schemaName, "tenant-1", &CreateJournalEntryTemplateRequest{
@@ -667,7 +667,7 @@ func TestService_JournalEntryTemplates(t *testing.T) {
 func TestService_JournalEntryTemplateValidation(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 	schemaName := "tenant_test"
 
 	_, err := svc.CreateJournalEntryTemplate(ctx, schemaName, "tenant-1", &CreateJournalEntryTemplateRequest{
@@ -717,7 +717,7 @@ func TestService_JournalEntryTemplateValidation(t *testing.T) {
 func TestService_RecurringJournalEntryTemplateGeneration(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 	schemaName := "tenant_test"
 	startDate := time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC)
 
@@ -758,7 +758,7 @@ func TestService_RecurringJournalEntryTemplateGeneration(t *testing.T) {
 func TestService_PostJournalEntry(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 	schemaName := "tenant_test"
 
 	t.Run("posts draft entry", func(t *testing.T) {
@@ -839,7 +839,7 @@ func TestService_PostJournalEntry(t *testing.T) {
 func TestService_VoidJournalEntry(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 	schemaName := "tenant_test"
 
 	t.Run("voids posted entry and creates reversal", func(t *testing.T) {
@@ -909,7 +909,7 @@ func TestService_VoidJournalEntry(t *testing.T) {
 func TestService_GetAccountBalance(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 	schemaName := "tenant_test"
 
 	t.Run("returns balance", func(t *testing.T) {
@@ -929,7 +929,7 @@ func TestService_GetAccountBalance(t *testing.T) {
 func TestService_GetTrialBalance(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 	schemaName := "tenant_test"
 
 	repo.balances = []AccountBalance{
@@ -959,7 +959,7 @@ func TestService_GetTrialBalance(t *testing.T) {
 func TestService_GetBalanceSheet(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 	schemaName := "tenant_test"
 
 	t.Run("generates balanced balance sheet", func(t *testing.T) {
@@ -997,7 +997,7 @@ func TestService_GetBalanceSheet(t *testing.T) {
 func TestService_GetIncomeStatement(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 	schemaName := "tenant_test"
 
 	t.Run("generates income statement", func(t *testing.T) {
@@ -1071,7 +1071,7 @@ func TestCreateAccountRequest(t *testing.T) {
 func TestService_GetYearEndCloseStatus(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 
 	repo.accounts["retained"] = &Account{
 		ID:          "retained",
@@ -1125,7 +1125,7 @@ func TestService_GetYearEndCloseStatus(t *testing.T) {
 func TestService_GetYearEndCloseStatusDetectsExistingCarryForward(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 
 	fiscalYearEndDate, err := time.Parse(yearEndDateLayout, "2025-12-31")
 	require.NoError(t, err)
@@ -1174,7 +1174,7 @@ func TestService_GetYearEndCloseStatusDetectsExistingCarryForward(t *testing.T) 
 func TestService_GetYearEndClosePack(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 
 	repo.accounts["retained"] = &Account{
 		ID:          "retained",
@@ -1237,7 +1237,7 @@ func TestService_GetYearEndClosePack(t *testing.T) {
 func TestService_CreateYearEndCarryForward(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 
 	repo.accounts["retained"] = &Account{
 		ID:          "retained",
@@ -1290,7 +1290,7 @@ func TestService_CreateYearEndCarryForward(t *testing.T) {
 func TestService_CreateYearEndCarryForwardRequiresClosedYear(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 
 	repo.accounts["retained"] = &Account{
 		ID:          "retained",
@@ -1323,7 +1323,7 @@ func TestService_CreateYearEndCarryForwardRequiresClosedYear(t *testing.T) {
 func TestService_CreateYearEndCarryForwardRejectsNonYearEndDate(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 
 	repo.periodBalances = []AccountBalance{
 		{
@@ -1348,7 +1348,7 @@ func TestService_CreateYearEndCarryForwardRejectsNonYearEndDate(t *testing.T) {
 func TestService_ReverseYearEndCarryForward(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 
 	fiscalYearEndDate, err := time.Parse(yearEndDateLayout, "2025-12-31")
 	require.NoError(t, err)
@@ -1424,7 +1424,7 @@ func TestService_ReverseYearEndCarryForward(t *testing.T) {
 func TestService_ReverseYearEndCarryForwardRequiresExistingCarryForward(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 
 	repo.periodBalances = []AccountBalance{
 		{
@@ -1450,7 +1450,7 @@ func TestService_ReverseYearEndCarryForwardRequiresExistingCarryForward(t *testi
 func TestService_ReverseYearEndCarryForwardRequiresReason(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
-	svc := NewServiceWithRepo(nil, repo)
+	svc := NewServiceWithRepository(repo)
 
 	_, err := svc.ReverseYearEndCarryForward(ctx, "tenant_test", "tenant-1", 1, stringPtr("2025-12-31"), &ReverseYearEndCarryForwardRequest{
 		PeriodEndDate: "2025-12-31",

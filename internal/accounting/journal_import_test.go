@@ -33,7 +33,7 @@ func TestService_ImportJournalEntriesCSV(t *testing.T) {
 			AccountType: AccountTypeRevenue,
 			IsActive:    true,
 		}
-		svc := NewServiceWithRepo(nil, repo)
+		svc := NewServiceWithRepository(repo)
 
 		result, err := svc.ImportJournalEntriesCSV(ctx, schemaName, tenantID, &ImportJournalEntriesRequest{
 			FileName:    "journals.csv",
@@ -62,7 +62,7 @@ func TestService_ImportJournalEntriesCSV(t *testing.T) {
 		repo := NewMockRepository()
 		repo.accounts["acc-1000"] = &Account{ID: "acc-1000", TenantID: tenantID, Code: "1000", Name: "Cash", AccountType: AccountTypeAsset, IsActive: true}
 		repo.accounts["acc-4000"] = &Account{ID: "acc-4000", TenantID: tenantID, Code: "4000", Name: "Revenue", AccountType: AccountTypeRevenue, IsActive: true}
-		svc := NewServiceWithRepo(nil, repo)
+		svc := NewServiceWithRepository(repo)
 
 		lockDate := time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC)
 		result, err := svc.ImportJournalEntriesCSV(ctx, schemaName, tenantID, &ImportJournalEntriesRequest{
@@ -91,7 +91,7 @@ func TestService_ImportJournalEntriesCSV(t *testing.T) {
 
 	t.Run("rejects missing required headers", func(t *testing.T) {
 		repo := NewMockRepository()
-		svc := NewServiceWithRepo(nil, repo)
+		svc := NewServiceWithRepository(repo)
 
 		_, err := svc.ImportJournalEntriesCSV(ctx, schemaName, tenantID, &ImportJournalEntriesRequest{
 			UserID:     "user-1",

@@ -39,8 +39,8 @@ func NewService(db *pgxpool.Pool) *Service {
 	}
 }
 
-// NewServiceWithRepo creates a new accounting service with a custom repository (for testing)
-func NewServiceWithRepo(_ *pgxpool.Pool, repo RepositoryInterface) *Service {
+// NewServiceWithRepository creates a new accounting service with a custom repository.
+func NewServiceWithRepository(repo RepositoryInterface) *Service {
 	return &Service{
 		repo: repo,
 	}
