@@ -2,11 +2,64 @@ package demo
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/HMB-research/open-accounting/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
+
+func TestResetService_ResetUsesRepositoryBoundary(t *testing.T) {
+	ctx := context.Background()
+	user := ResetUser{
+		Number: 1,
+		Email:  "demo@example.com",
+		Slug:   "demo",
+		Schema: "tenant_demo",
+	}
+	repository := &fakeResetRepository{}
+	var receivedNums []int
+	service := NewResetServiceWithRepository(repository, func(userNums []int) string {
+		receivedNums = append(receivedNums, userNums...)
+		return "seed sql"
+	})
+
+	require.NoError(t, service.Reset(ctx, []ResetUser{user}, []int{user.Number}))
+	require.Equal(t, []int{user.Number}, receivedNums)
+	require.Equal(t, 1, repository.calls)
+	require.Equal(t, []ResetUser{user}, repository.users)
+	require.Equal(t, "seed sql", repository.seedSQL)
+}
+
+func TestResetService_ResetPropagatesRepositoryError(t *testing.T) {
+	expectedErr := errors.New("repository failed")
+	service := NewResetServiceWithRepository(&fakeResetRepository{err: expectedErr}, func(userNums []int) string {
+		return "seed sql"
+	})
+
+	err := service.Reset(context.Background(), []ResetUser{{Number: 1}}, []int{1})
+	require.ErrorIs(t, err, expectedErr)
+}
+
+func TestResetService_ResetRejectsMissingRepository(t *testing.T) {
+	service := NewResetServiceWithRepository(nil, func(userNums []int) string {
+		return "seed sql"
+	})
+
+	err := service.Reset(context.Background(), []ResetUser{{Number: 1}}, []int{1})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "demo reset service is not configured")
+}
+
+func TestResetService_ResetRejectsEmptySeedScript(t *testing.T) {
+	service := NewResetServiceWithRepository(&fakeResetRepository{}, func(userNums []int) string {
+		return ""
+	})
+
+	err := service.Reset(context.Background(), []ResetUser{{Number: 1}}, []int{1})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "demo seed script is empty")
+}
 
 func TestResetService_ResetCleansAndSeedsDemoUser(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
@@ -106,4 +159,18 @@ func TestResetService_ResetRejectsInvalidSchema(t *testing.T) {
 	}}, []int{1})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "quote tenant schema")
+}
+
+type fakeResetRepository struct {
+	calls   int
+	users   []ResetUser
+	seedSQL string
+	err     error
+}
+
+func (r *fakeResetRepository) ResetDemoData(_ context.Context, users []ResetUser, seedSQL string) error {
+	r.calls++
+	r.users = append([]ResetUser(nil), users...)
+	r.seedSQL = seedSQL
+	return r.err
 }
