@@ -1030,7 +1030,22 @@ func (h *Handlers) GetTenant(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, t)
 }
 
-// UpdateTenant updates a tenant's name and/or settings
+// UpdateTenant updates a tenant's name and/or settings.
+// @Summary Update tenant
+// @Description Update tenant name or settings. Requires permission to manage tenant settings.
+// @Tags Tenants
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body tenant.UpdateTenantRequest true "Tenant update"
+// @Success 200 {object} tenant.Tenant
+// @Failure 400 {object} object{error=string}
+// @Failure 401 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID} [put]
 func (h *Handlers) UpdateTenant(w http.ResponseWriter, r *http.Request) {
 	claims, ok := auth.GetClaims(r.Context())
 	if !ok {
@@ -3170,7 +3185,17 @@ func init() {
 
 // Cost Center Handlers
 
-// ListCostCenters handles GET /tenants/{tenantID}/cost-centers
+// ListCostCenters handles GET /tenants/{tenantID}/cost-centers.
+// @Summary List cost centers
+// @Description List cost centers for a tenant, optionally filtering to active centers
+// @Tags Cost Centers
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param active_only query bool false "Only include active cost centers"
+// @Success 200 {array} accounting.CostCenter
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/cost-centers [get]
 func (h *Handlers) ListCostCenters(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
@@ -3187,7 +3212,18 @@ func (h *Handlers) ListCostCenters(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, costCenters)
 }
 
-// GetCostCenter handles GET /tenants/{tenantID}/cost-centers/{costCenterID}
+// GetCostCenter handles GET /tenants/{tenantID}/cost-centers/{costCenterID}.
+// @Summary Get cost center
+// @Description Get one cost center by ID
+// @Tags Cost Centers
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param costCenterID path string true "Cost center ID"
+// @Success 200 {object} accounting.CostCenter
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/cost-centers/{costCenterID} [get]
 func (h *Handlers) GetCostCenter(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	costCenterID := chi.URLParam(r, "costCenterID")
@@ -3206,7 +3242,19 @@ func (h *Handlers) GetCostCenter(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, cc)
 }
 
-// CreateCostCenter handles POST /tenants/{tenantID}/cost-centers
+// CreateCostCenter handles POST /tenants/{tenantID}/cost-centers.
+// @Summary Create cost center
+// @Description Create a tenant cost center for expense tracking and budgeting
+// @Tags Cost Centers
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body accounting.CreateCostCenterRequest true "Cost center"
+// @Success 201 {object} accounting.CostCenter
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/cost-centers [post]
 func (h *Handlers) CreateCostCenter(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
@@ -3265,7 +3313,21 @@ func (h *Handlers) ImportCostCenters(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, result)
 }
 
-// UpdateCostCenter handles PUT /tenants/{tenantID}/cost-centers/{costCenterID}
+// UpdateCostCenter handles PUT /tenants/{tenantID}/cost-centers/{costCenterID}.
+// @Summary Update cost center
+// @Description Update cost center details, hierarchy, activity, and budget settings
+// @Tags Cost Centers
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param costCenterID path string true "Cost center ID"
+// @Param request body accounting.UpdateCostCenterRequest true "Cost center update"
+// @Success 200 {object} accounting.CostCenter
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/cost-centers/{costCenterID} [put]
 func (h *Handlers) UpdateCostCenter(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	costCenterID := chi.URLParam(r, "costCenterID")
@@ -3290,7 +3352,19 @@ func (h *Handlers) UpdateCostCenter(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, cc)
 }
 
-// DeleteCostCenter handles DELETE /tenants/{tenantID}/cost-centers/{costCenterID}
+// DeleteCostCenter handles DELETE /tenants/{tenantID}/cost-centers/{costCenterID}.
+// @Summary Delete cost center
+// @Description Delete a cost center that has no blocking usage
+// @Tags Cost Centers
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param costCenterID path string true "Cost center ID"
+// @Success 204 "No Content"
+// @Failure 404 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/cost-centers/{costCenterID} [delete]
 func (h *Handlers) DeleteCostCenter(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	costCenterID := chi.URLParam(r, "costCenterID")

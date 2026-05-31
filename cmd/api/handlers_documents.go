@@ -14,6 +14,20 @@ import (
 	"github.com/HMB-research/open-accounting/internal/documents"
 )
 
+// ListDocuments lists documents attached to one entity.
+// @Summary List documents
+// @Description List documents attached to an entity by entity type and entity ID
+// @Tags Documents
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param entity_type query string true "Entity type"
+// @Param entity_id query string true "Entity ID"
+// @Success 200 {array} documents.Document
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/documents [get]
 func (h *Handlers) ListDocuments(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
@@ -34,6 +48,19 @@ func (h *Handlers) ListDocuments(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, result)
 }
 
+// ListDocumentReviewSummaries returns review summary rows for multiple entities.
+// @Summary List document review summaries
+// @Description Return document review counts and missing evidence flags for multiple entity IDs
+// @Tags Documents
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body object true "Review summary request"
+// @Success 200 {array} documents.ReviewSummary
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/documents/review-summary [post]
 func (h *Handlers) ListDocumentReviewSummaries(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
@@ -107,6 +134,19 @@ func (h *Handlers) GetDocumentReviewQueue(w http.ResponseWriter, r *http.Request
 	respondJSON(w, http.StatusOK, result)
 }
 
+// EvaluateDocumentEvidencePolicy evaluates evidence requirements for entities.
+// @Summary Evaluate document evidence policy
+// @Description Evaluate configured document evidence rules for multiple entity IDs
+// @Tags Documents
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body documents.EvidencePolicyRequest true "Evidence policy request"
+// @Success 200 {array} documents.EvidencePolicyResult
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/documents/evidence-policy [post]
 func (h *Handlers) EvaluateDocumentEvidencePolicy(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
@@ -126,6 +166,20 @@ func (h *Handlers) EvaluateDocumentEvidencePolicy(w http.ResponseWriter, r *http
 	respondJSON(w, http.StatusOK, result)
 }
 
+// GetDocumentRetentionReview returns documents due for retention review.
+// @Summary Get document retention review
+// @Description List documents with expired, due soon, or missing retention metadata
+// @Tags Documents
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param as_of query string false "Review date (YYYY-MM-DD)"
+// @Param horizon_days query int false "Days ahead for due soon documents"
+// @Param include_missing query bool false "Include documents missing retention metadata"
+// @Success 200 {object} documents.RetentionReview
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/documents/retention [get]
 func (h *Handlers) GetDocumentRetentionReview(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
@@ -159,6 +213,21 @@ func (h *Handlers) GetDocumentRetentionReview(w http.ResponseWriter, r *http.Req
 	respondJSON(w, http.StatusOK, result)
 }
 
+// UpdateDocumentRetention updates document retention metadata.
+// @Summary Update document retention
+// @Description Set or clear the retention date for a document
+// @Tags Documents
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param documentID path string true "Document ID"
+// @Param request body object true "Retention update"
+// @Success 200 {object} documents.Document
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/documents/{documentID}/retention [patch]
 func (h *Handlers) UpdateDocumentRetention(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	documentID := chi.URLParam(r, "documentID")
@@ -206,6 +275,25 @@ func (h *Handlers) UpdateDocumentRetention(w http.ResponseWriter, r *http.Reques
 	respondJSON(w, http.StatusOK, doc)
 }
 
+// UploadDocument uploads a document attachment.
+// @Summary Upload document
+// @Description Upload a multipart document and attach it to an entity
+// @Tags Documents
+// @Accept multipart/form-data
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param entity_type formData string true "Entity type"
+// @Param entity_id formData string true "Entity ID"
+// @Param document_type formData string true "Document type"
+// @Param notes formData string false "Notes"
+// @Param retention_until formData string false "Retention date (YYYY-MM-DD)"
+// @Param retention_years formData int false "Retention years"
+// @Param file formData file true "Document file"
+// @Success 201 {object} documents.Document
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/documents [post]
 func (h *Handlers) UploadDocument(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetClaims(r.Context())
 	tenantID := chi.URLParam(r, "tenantID")
@@ -281,6 +369,19 @@ func (h *Handlers) UploadDocument(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, doc)
 }
 
+// MarkDocumentReviewed marks a document as reviewed.
+// @Summary Mark document reviewed
+// @Description Mark a document reviewed by the current user
+// @Tags Documents
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param documentID path string true "Document ID"
+// @Success 200 {object} documents.Document
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/documents/{documentID}/mark-reviewed [post]
 func (h *Handlers) MarkDocumentReviewed(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetClaims(r.Context())
 	tenantID := chi.URLParam(r, "tenantID")
@@ -296,6 +397,21 @@ func (h *Handlers) MarkDocumentReviewed(w http.ResponseWriter, r *http.Request) 
 	respondJSON(w, http.StatusOK, doc)
 }
 
+// ReviewDocument records an explicit document review decision.
+// @Summary Review document
+// @Description Set a document review status and optional review note
+// @Tags Documents
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param documentID path string true "Document ID"
+// @Param request body documents.ReviewDocumentRequest true "Review decision"
+// @Success 200 {object} documents.Document
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/documents/{documentID}/review [post]
 func (h *Handlers) ReviewDocument(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetClaims(r.Context())
 	tenantID := chi.URLParam(r, "tenantID")
@@ -317,6 +433,18 @@ func (h *Handlers) ReviewDocument(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, doc)
 }
 
+// DownloadDocument downloads the stored document file.
+// @Summary Download document
+// @Description Stream a stored document file by document ID
+// @Tags Documents
+// @Produce application/octet-stream
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param documentID path string true "Document ID"
+// @Success 200 {file} file
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/documents/{documentID}/download [get]
 func (h *Handlers) DownloadDocument(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	documentID := chi.URLParam(r, "documentID")
@@ -343,6 +471,19 @@ func (h *Handlers) DownloadDocument(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// DeleteDocument deletes a stored document.
+// @Summary Delete document
+// @Description Delete a document and its stored file
+// @Tags Documents
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param documentID path string true "Document ID"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/documents/{documentID} [delete]
 func (h *Handlers) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	documentID := chi.URLParam(r, "documentID")

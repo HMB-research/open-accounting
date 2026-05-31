@@ -19,6 +19,18 @@ type periodCloseResponse struct {
 	Event  *tenant.PeriodCloseEvent `json:"event"`
 }
 
+// ListPeriodCloseEvents lists recent period close and reopen events.
+// @Summary List period close events
+// @Description List recent period close and reopen events for a tenant
+// @Tags Period Close
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param limit query int false "Maximum events to return, from 1 to 100"
+// @Success 200 {array} tenant.PeriodCloseEvent
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/period-close-events [get]
 func (h *Handlers) ListPeriodCloseEvents(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	limit := 20
@@ -41,6 +53,23 @@ func (h *Handlers) ListPeriodCloseEvents(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, http.StatusOK, events)
 }
 
+// ClosePeriod closes a month-end or year-end period.
+// @Summary Close period
+// @Description Close a tenant accounting period after validating permissions and required review evidence
+// @Tags Period Close
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body tenant.ClosePeriodRequest true "Period close request"
+// @Success 200 {object} periodCloseResponse
+// @Failure 400 {object} object{error=string}
+// @Failure 401 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/period-close [post]
 func (h *Handlers) ClosePeriod(w http.ResponseWriter, r *http.Request) {
 	tenantID, userID, ok := h.authorizePeriodCloseMutation(w, r)
 	if !ok {
@@ -76,6 +105,23 @@ func (h *Handlers) ClosePeriod(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ReopenPeriod reopens a previously closed period.
+// @Summary Reopen period
+// @Description Reopen a tenant accounting period when no blocking carry-forward exists
+// @Tags Period Close
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body tenant.ReopenPeriodRequest true "Period reopen request"
+// @Success 200 {object} periodCloseResponse
+// @Failure 400 {object} object{error=string}
+// @Failure 401 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/period-reopen [post]
 func (h *Handlers) ReopenPeriod(w http.ResponseWriter, r *http.Request) {
 	tenantID, userID, ok := h.authorizePeriodCloseMutation(w, r)
 	if !ok {

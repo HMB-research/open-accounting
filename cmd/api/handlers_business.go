@@ -5849,7 +5849,16 @@ func (h *Handlers) GetDepreciationHistory(w http.ResponseWriter, r *http.Request
 // Inventory Handlers
 // ============================================================================
 
-// ListProductCategories lists all product categories
+// ListProductCategories lists all product categories.
+// @Summary List product categories
+// @Description List product categories for a tenant
+// @Tags Inventory
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Success 200 {array} inventory.ProductCategory
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/product-categories [get]
 func (h *Handlers) ListProductCategories(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
@@ -5863,7 +5872,19 @@ func (h *Handlers) ListProductCategories(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, http.StatusOK, categories)
 }
 
-// CreateProductCategory creates a new product category
+// CreateProductCategory creates a new product category.
+// @Summary Create product category
+// @Description Create a product category, optionally under a parent category
+// @Tags Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body inventory.CreateCategoryRequest true "Product category"
+// @Success 201 {object} inventory.ProductCategory
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/product-categories [post]
 func (h *Handlers) CreateProductCategory(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
@@ -5918,7 +5939,17 @@ func (h *Handlers) ImportProductCategories(w http.ResponseWriter, r *http.Reques
 	respondJSON(w, http.StatusOK, result)
 }
 
-// GetProductCategory gets a product category by ID
+// GetProductCategory gets a product category by ID.
+// @Summary Get product category
+// @Description Get one product category by ID
+// @Tags Inventory
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param categoryID path string true "Product category ID"
+// @Success 200 {object} inventory.ProductCategory
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/product-categories/{categoryID} [get]
 func (h *Handlers) GetProductCategory(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	categoryID := chi.URLParam(r, "categoryID")
@@ -5933,7 +5964,17 @@ func (h *Handlers) GetProductCategory(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, category)
 }
 
-// DeleteProductCategory deletes a product category
+// DeleteProductCategory deletes a product category.
+// @Summary Delete product category
+// @Description Delete a product category
+// @Tags Inventory
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param categoryID path string true "Product category ID"
+// @Success 200 {object} object{status=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/product-categories/{categoryID} [delete]
 func (h *Handlers) DeleteProductCategory(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	categoryID := chi.URLParam(r, "categoryID")
@@ -5947,7 +5988,21 @@ func (h *Handlers) DeleteProductCategory(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
-// ListProducts lists all products
+// ListProducts lists all products.
+// @Summary List products
+// @Description List products and services with optional type, status, category, search, and low stock filters
+// @Tags Inventory
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param product_type query string false "Product type: GOODS or SERVICE"
+// @Param status query string false "Product status: ACTIVE or INACTIVE"
+// @Param category_id query string false "Category ID"
+// @Param search query string false "Search text"
+// @Param low_stock query bool false "Only include low stock products"
+// @Success 200 {array} inventory.Product
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/products [get]
 func (h *Handlers) ListProducts(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
@@ -5969,7 +6024,19 @@ func (h *Handlers) ListProducts(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, products)
 }
 
-// CreateProduct creates a new product
+// CreateProduct creates a new product.
+// @Summary Create product
+// @Description Create a product or service with pricing, account, and inventory settings
+// @Tags Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body inventory.CreateProductRequest true "Product"
+// @Success 201 {object} inventory.Product
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/products [post]
 func (h *Handlers) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
@@ -6024,7 +6091,17 @@ func (h *Handlers) ImportProducts(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, result)
 }
 
-// GetProduct gets a product by ID
+// GetProduct gets a product by ID.
+// @Summary Get product
+// @Description Get one product or service by ID
+// @Tags Inventory
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param productID path string true "Product ID"
+// @Success 200 {object} inventory.Product
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/products/{productID} [get]
 func (h *Handlers) GetProduct(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	productID := chi.URLParam(r, "productID")
@@ -6039,7 +6116,20 @@ func (h *Handlers) GetProduct(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, product)
 }
 
-// UpdateProduct updates a product
+// UpdateProduct updates a product.
+// @Summary Update product
+// @Description Update product or service details, pricing, accounts, and inventory settings
+// @Tags Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param productID path string true "Product ID"
+// @Param request body inventory.UpdateProductRequest true "Product update"
+// @Success 200 {object} inventory.Product
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/products/{productID} [put]
 func (h *Handlers) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	productID := chi.URLParam(r, "productID")
@@ -6060,7 +6150,17 @@ func (h *Handlers) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, product)
 }
 
-// DeleteProduct deletes a product
+// DeleteProduct deletes a product.
+// @Summary Delete product
+// @Description Delete a product or service
+// @Tags Inventory
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param productID path string true "Product ID"
+// @Success 200 {object} object{status=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/products/{productID} [delete]
 func (h *Handlers) DeleteProduct(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	productID := chi.URLParam(r, "productID")
@@ -6156,7 +6256,17 @@ func (h *Handlers) GetInventoryValuation(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, http.StatusOK, report)
 }
 
-// ListWarehouses lists all warehouses
+// ListWarehouses lists all warehouses.
+// @Summary List warehouses
+// @Description List tenant warehouses, optionally filtering to active warehouses
+// @Tags Inventory
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param active_only query bool false "Only include active warehouses"
+// @Success 200 {array} inventory.Warehouse
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/warehouses [get]
 func (h *Handlers) ListWarehouses(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
@@ -6172,7 +6282,19 @@ func (h *Handlers) ListWarehouses(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, warehouses)
 }
 
-// CreateWarehouse creates a new warehouse
+// CreateWarehouse creates a new warehouse.
+// @Summary Create warehouse
+// @Description Create a warehouse or storage location
+// @Tags Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body inventory.CreateWarehouseRequest true "Warehouse"
+// @Success 201 {object} inventory.Warehouse
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/warehouses [post]
 func (h *Handlers) CreateWarehouse(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
@@ -6227,7 +6349,17 @@ func (h *Handlers) ImportWarehouses(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, result)
 }
 
-// GetWarehouse gets a warehouse by ID
+// GetWarehouse gets a warehouse by ID.
+// @Summary Get warehouse
+// @Description Get one warehouse by ID
+// @Tags Inventory
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param warehouseID path string true "Warehouse ID"
+// @Success 200 {object} inventory.Warehouse
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/warehouses/{warehouseID} [get]
 func (h *Handlers) GetWarehouse(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	warehouseID := chi.URLParam(r, "warehouseID")
@@ -6242,7 +6374,20 @@ func (h *Handlers) GetWarehouse(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, warehouse)
 }
 
-// UpdateWarehouse updates a warehouse
+// UpdateWarehouse updates a warehouse.
+// @Summary Update warehouse
+// @Description Update warehouse details, default status, and active status
+// @Tags Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param warehouseID path string true "Warehouse ID"
+// @Param request body inventory.UpdateWarehouseRequest true "Warehouse update"
+// @Success 200 {object} inventory.Warehouse
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/warehouses/{warehouseID} [put]
 func (h *Handlers) UpdateWarehouse(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	warehouseID := chi.URLParam(r, "warehouseID")
@@ -6263,7 +6408,17 @@ func (h *Handlers) UpdateWarehouse(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, warehouse)
 }
 
-// DeleteWarehouse deletes a warehouse
+// DeleteWarehouse deletes a warehouse.
+// @Summary Delete warehouse
+// @Description Delete a warehouse or storage location
+// @Tags Inventory
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param warehouseID path string true "Warehouse ID"
+// @Success 200 {object} object{status=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/warehouses/{warehouseID} [delete]
 func (h *Handlers) DeleteWarehouse(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	warehouseID := chi.URLParam(r, "warehouseID")
