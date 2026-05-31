@@ -143,6 +143,40 @@ func TestMainRunsMigrateUp(t *testing.T) {
 	}
 }
 
+func TestMainRunsMigrateDownWithDatabaseURLEnv(t *testing.T) {
+	pool := setupMigrationTestDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := ensureMigrationsTable(ctx, pool); err != nil {
+		t.Fatalf("ensureMigrationsTable failed: %v", err)
+	}
+
+	dir := t.TempDir()
+	version := fmt.Sprintf("999998_%d_main_down", time.Now().UnixNano())
+	tableName := fmt.Sprintf("migration_main_down_%d", time.Now().UnixNano())
+	writeMigration(t, dir, version+".up.sql", fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (id INT PRIMARY KEY);`, tableName))
+	writeMigration(t, dir, version+".down.sql", fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, tableName))
+
+	if err := migrateUp(ctx, pool, dir, 1); err != nil {
+		t.Fatalf("migrateUp setup failed: %v", err)
+	}
+	if !tableExists(t, ctx, pool, tableName) {
+		t.Fatalf("expected table %s to exist before main helper rollback", tableName)
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestMainHelperProcess", "--", "-path", dir, "-direction", "down", "-steps", "1")
+	cmd.Env = append(os.Environ(), "GO_WANT_MIGRATE_HELPER=1", "DATABASE_URL="+connStringFromPool(pool))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("main helper down failed: %v\n%s", err, string(out))
+	}
+
+	if tableExists(t, ctx, pool, tableName) {
+		t.Fatalf("expected table %s to be removed after main helper rollback", tableName)
+	}
+}
+
 func TestMainRejectsInvalidDirection(t *testing.T) {
 	pool := setupMigrationTestDB(t)
 	cmd := exec.Command(os.Args[0], "-test.run=TestMainHelperProcess", "--", "-db", connStringFromPool(pool), "-direction", "sideways")
@@ -236,6 +270,107 @@ func TestMigrateDownDefaultsToSingleRollback(t *testing.T) {
 
 	if tableExists(t, ctx, pool, table1) == tableExists(t, ctx, pool, table2) {
 		t.Fatalf("expected only one migration to be rolled back by default")
+	}
+}
+
+func TestMigrateUpRollsBackFailedMigration(t *testing.T) {
+	pool := setupMigrationTestDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := ensureMigrationsTable(ctx, pool); err != nil {
+		t.Fatalf("ensureMigrationsTable failed: %v", err)
+	}
+
+	dir := t.TempDir()
+	version := fmt.Sprintf("999993_%d_failed_up", time.Now().UnixNano())
+	tableName := fmt.Sprintf("migration_failed_up_%d", time.Now().UnixNano())
+	writeMigration(t, dir, version+".up.sql", fmt.Sprintf(`
+		CREATE TABLE %s (id INT PRIMARY KEY);
+		SELECT open_accounting_missing_function();
+	`, tableName))
+
+	err := migrateUp(ctx, pool, dir, 0)
+	if err == nil {
+		t.Fatal("expected failed migration error")
+	}
+	if !strings.Contains(err.Error(), "execute migration") {
+		t.Fatalf("expected execute migration error, got: %v", err)
+	}
+	if tableExists(t, ctx, pool, tableName) {
+		t.Fatalf("expected failed migration table %s to be rolled back", tableName)
+	}
+
+	applied, err := getAppliedMigrations(ctx, pool)
+	if err != nil {
+		t.Fatalf("getAppliedMigrations failed: %v", err)
+	}
+	if applied[version] {
+		t.Fatalf("expected failed migration %s not to be recorded", version)
+	}
+}
+
+func TestMigrateDownRollsBackFailedRollback(t *testing.T) {
+	pool := setupMigrationTestDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := ensureMigrationsTable(ctx, pool); err != nil {
+		t.Fatalf("ensureMigrationsTable failed: %v", err)
+	}
+
+	dir := t.TempDir()
+	version := fmt.Sprintf("999992_%d_failed_down", time.Now().UnixNano())
+	tableName := fmt.Sprintf("migration_failed_down_%d", time.Now().UnixNano())
+	writeMigration(t, dir, version+".up.sql", fmt.Sprintf(`CREATE TABLE %s (id INT PRIMARY KEY);`, tableName))
+	writeMigration(t, dir, version+".down.sql", fmt.Sprintf(`
+		DROP TABLE %s;
+		SELECT open_accounting_missing_function();
+	`, tableName))
+
+	if err := migrateUp(ctx, pool, dir, 1); err != nil {
+		t.Fatalf("migrateUp setup failed: %v", err)
+	}
+	if !tableExists(t, ctx, pool, tableName) {
+		t.Fatalf("expected table %s to exist before failed rollback", tableName)
+	}
+
+	err := migrateDown(ctx, pool, dir, 1)
+	if err == nil {
+		t.Fatal("expected failed rollback error")
+	}
+	if !strings.Contains(err.Error(), "execute rollback") {
+		t.Fatalf("expected execute rollback error, got: %v", err)
+	}
+	if !tableExists(t, ctx, pool, tableName) {
+		t.Fatalf("expected failed rollback table %s to remain", tableName)
+	}
+
+	applied, err := getAppliedMigrations(ctx, pool)
+	if err != nil {
+		t.Fatalf("getAppliedMigrations failed: %v", err)
+	}
+	if !applied[version] {
+		t.Fatalf("expected failed rollback migration %s to remain recorded", version)
+	}
+}
+
+func TestMigrateDownSkipsUnappliedMigration(t *testing.T) {
+	pool := setupMigrationTestDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := ensureMigrationsTable(ctx, pool); err != nil {
+		t.Fatalf("ensureMigrationsTable failed: %v", err)
+	}
+
+	dir := t.TempDir()
+	version := fmt.Sprintf("999991_%d_unapplied_down", time.Now().UnixNano())
+	tableName := fmt.Sprintf("migration_unapplied_down_%d", time.Now().UnixNano())
+	writeMigration(t, dir, version+".down.sql", fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, tableName))
+
+	if err := migrateDown(ctx, pool, dir, 1); err != nil {
+		t.Fatalf("migrateDown should skip unapplied migration: %v", err)
 	}
 }
 
