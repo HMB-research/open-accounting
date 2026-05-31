@@ -142,6 +142,10 @@ func main() {
 	webhookService := webhooks.NewService(pool)
 	webhookService.RegisterPluginHooks(pluginService.GetHookRegistry())
 	expensesService := expenses.NewService(pool, documentsService)
+	demoStatusReader, err := newDemoStatusReader(pool)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize demo status reader")
+	}
 
 	// Load enabled plugins on startup
 	if err := pluginService.LoadEnabledPlugins(ctx); err != nil {
@@ -203,6 +207,7 @@ func main() {
 		interestService:          interestService,
 		webhookService:           webhookService,
 		expensesService:          expensesService,
+		demoStatusReader:         demoStatusReader,
 	}
 
 	// Setup router

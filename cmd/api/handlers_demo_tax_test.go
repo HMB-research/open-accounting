@@ -486,17 +486,16 @@ func TestDemoHandlersResetAndStatus(t *testing.T) {
 	assert.GreaterOrEqual(t, status.Accounts.Count, 10)
 	assert.GreaterOrEqual(t, status.Contacts.Count, 3)
 
-	missingStatus := h.getEntityStatus(ctx, "tenant_missing", "accounts", "name")
-	assert.Equal(t, 0, missingStatus.Count)
-	assert.Empty(t, missingStatus.Keys)
-
-	missingConcat := h.getEntityStatusConcat(ctx, "tenant_missing", "employees", "first_name", "last_name")
-	assert.Equal(t, 0, missingConcat.Count)
-	assert.Empty(t, missingConcat.Keys)
-
-	missingPeriod := h.getEntityStatusPeriod(ctx, "tenant_missing", "payroll_runs")
-	assert.Equal(t, 0, missingPeriod.Count)
-	assert.Empty(t, missingPeriod.Keys)
+	statusReader, err := h.getDemoStatusReader()
+	require.NoError(t, err)
+	missingStatus, err := statusReader.ReadDemoStatus(ctx, "tenant_missing", 99)
+	require.NoError(t, err)
+	assert.Equal(t, 0, missingStatus.Accounts.Count)
+	assert.Empty(t, missingStatus.Accounts.Keys)
+	assert.Equal(t, 0, missingStatus.Employees.Count)
+	assert.Empty(t, missingStatus.Employees.Keys)
+	assert.Equal(t, 0, missingStatus.PayrollRuns.Count)
+	assert.Empty(t, missingStatus.PayrollRuns.Keys)
 
 	sql := getDemoSeedSQLForUsers([]int{1, 3})
 	assert.Contains(t, sql, "demo1@example.com")
