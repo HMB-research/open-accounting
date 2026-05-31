@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -128,10 +127,6 @@ func (m *mockAccountingRepository) CreateJournalEntry(ctx context.Context, schem
 	je.EntryNumber = "JE-00001"
 	m.journalEntries[je.ID] = je
 	return nil
-}
-
-func (m *mockAccountingRepository) CreateJournalEntryTx(ctx context.Context, schemaName string, tx pgx.Tx, je *accounting.JournalEntry) error {
-	return m.CreateJournalEntry(ctx, schemaName, je)
 }
 
 func (m *mockAccountingRepository) CreateJournalEntryTemplate(ctx context.Context, schemaName string, template *accounting.JournalEntryTemplate) error {

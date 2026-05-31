@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -111,10 +110,6 @@ func (m *mockYearEndAccountingRepository) CreateJournalEntry(ctx context.Context
 	je.EntryNumber = "JE-00100"
 	m.journalEntries[je.ID] = je
 	return nil
-}
-
-func (m *mockYearEndAccountingRepository) CreateJournalEntryTx(ctx context.Context, schemaName string, tx pgx.Tx, je *accounting.JournalEntry) error {
-	return m.CreateJournalEntry(ctx, schemaName, je)
 }
 
 func (m *mockYearEndAccountingRepository) UpdateJournalEntryStatus(ctx context.Context, schemaName, tenantID, entryID string, status accounting.JournalEntryStatus, userID string) error {
