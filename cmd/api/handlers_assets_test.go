@@ -384,6 +384,52 @@ func TestGetAssetCategory(t *testing.T) {
 	}
 }
 
+func TestDeleteAssetCategory(t *testing.T) {
+	h, repo, tenantRepo := setupAssetsTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	repo.categories["cat-1"] = &assets.AssetCategory{
+		ID:       "cat-1",
+		TenantID: "tenant-1",
+		Name:     "Computers",
+	}
+
+	tests := []struct {
+		name       string
+		categoryID string
+		wantStatus int
+	}{
+		{
+			name:       "delete existing category",
+			categoryID: "cat-1",
+			wantStatus: http.StatusNoContent,
+		},
+		{
+			name:       "delete missing category",
+			categoryID: "cat-999",
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodDelete, "/tenants/tenant-1/assets/categories/"+tt.categoryID, nil)
+			req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "categoryID": tt.categoryID})
+			req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+			rr := httptest.NewRecorder()
+			h.DeleteAssetCategory(rr, req)
+
+			assert.Equal(t, tt.wantStatus, rr.Code)
+		})
+	}
+	assert.NotContains(t, repo.categories, "cat-1")
+}
+
 func TestListAssets(t *testing.T) {
 	h, repo, tenantRepo := setupAssetsTestHandlers()
 
