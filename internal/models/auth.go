@@ -23,6 +23,26 @@ func (RefreshSession) TableName() string {
 	return "refresh_sessions"
 }
 
+// PasswordResetToken stores a one-time account recovery token.
+type PasswordResetToken struct {
+	ID             string     `gorm:"type:uuid;primaryKey" json:"id"`
+	UserID         string     `gorm:"column:user_id;type:uuid;not null;index" json:"user_id"`
+	TokenHash      string     `gorm:"column:token_hash;type:char(64);not null;uniqueIndex" json:"-"`
+	RequestedEmail string     `gorm:"column:requested_email;size:255;not null;index" json:"requested_email"`
+	RequestIP      string     `gorm:"column:request_ip;type:text" json:"request_ip,omitempty"`
+	UserAgent      string     `gorm:"column:user_agent;type:text" json:"user_agent,omitempty"`
+	CreatedAt      time.Time  `gorm:"not null;default:now();index" json:"created_at"`
+	ExpiresAt      time.Time  `gorm:"column:expires_at;not null;index" json:"expires_at"`
+	UsedAt         *time.Time `gorm:"column:used_at;index" json:"used_at,omitempty"`
+
+	User *User `gorm:"foreignKey:UserID" json:"user,omitempty"`
+}
+
+// TableName returns the table name for GORM.
+func (PasswordResetToken) TableName() string {
+	return "password_reset_tokens"
+}
+
 // SecurityAuditEvent stores auth-sensitive account activity.
 type SecurityAuditEvent struct {
 	ID           string          `gorm:"type:uuid;primaryKey" json:"id"`
