@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/HMB-research/open-accounting/internal/demo"
 	"github.com/HMB-research/open-accounting/internal/testutil"
 )
 
@@ -11,7 +12,7 @@ func TestDemoSeedSQL_ValidSchema(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	ctx := context.Background()
 
-	// Test with demo user 1 (the UUIDs get modified by generateDemoSeedForUser)
+	// Test with demo user 1 (the UUIDs get modified by demo.GenerateSeedForUser)
 	// The replacement changes "a0000000-0000-0000-0000-" to "a0000000-0000-0000-0001-" for user 1
 	// So original "a0000000-0000-0000-0000-000000000001" becomes "a0000000-0000-0000-0001-000000000001"
 	demoUserID := "a0000000-0000-0000-0001-000000000001"
@@ -30,7 +31,7 @@ func TestDemoSeedSQL_ValidSchema(t *testing.T) {
 	_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id = $1", demoUserID)
 
 	// Execute the seed SQL for user 1
-	seedSQL := generateDemoSeedForUser(getDemoSeedTemplate(), 1)
+	seedSQL := demo.GenerateSeedForUser(demo.SeedTemplate(), 1)
 	_, err = pool.Exec(ctx, seedSQL)
 	if err != nil {
 		t.Fatalf("Demo seed SQL failed: %v", err)

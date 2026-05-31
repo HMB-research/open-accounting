@@ -201,27 +201,28 @@ check_e2e_test() {
 
 check_demo_data() {
     local route=$1
+    local seed_file="internal/demo/seed_template.sql"
 
     # Map routes to table names
     case "$route" in
         "/dashboard") return 0 ;;  # Dashboard uses aggregate data
-        "/accounts") grep -q "INSERT INTO tenant_acme.accounts" cmd/api/handlers.go && return 0 ;;
-        "/journal") grep -q "INSERT INTO tenant_acme.journal_entries" cmd/api/handlers.go && return 0 ;;
-        "/contacts") grep -q "INSERT INTO tenant_acme.contacts" cmd/api/handlers.go && return 0 ;;
-        "/invoices"*) grep -q "INSERT INTO tenant_acme.invoices" cmd/api/handlers.go && return 0 ;;
-        "/quotes") grep -q "INSERT INTO tenant_acme.quotes" cmd/api/handlers.go && return 0 ;;
-        "/orders") grep -q "INSERT INTO tenant_acme.orders" cmd/api/handlers.go && return 0 ;;
-        "/payments"*) grep -q "INSERT INTO tenant_acme.payments" cmd/api/handlers.go && return 0 ;;
-        "/recurring") grep -q "INSERT INTO tenant_acme.recurring_invoices" cmd/api/handlers.go && return 0 ;;
-        "/employees"*) grep -q "INSERT INTO tenant_acme.employees" cmd/api/handlers.go && return 0 ;;
-        "/payroll"*) grep -q "INSERT INTO tenant_acme.payroll_runs" cmd/api/handlers.go && return 0 ;;
-        "/banking"*) grep -q "INSERT INTO tenant_acme.bank_accounts" cmd/api/handlers.go && return 0 ;;
-        "/assets") grep -q "INSERT INTO tenant_acme.fixed_assets" cmd/api/handlers.go && return 0 ;;
-        "/inventory") grep -q "INSERT INTO tenant_acme.inventory" cmd/api/handlers.go && return 0 ;;
+        "/accounts") grep -q "INSERT INTO tenant_acme.accounts" "$seed_file" && return 0 ;;
+        "/journal") grep -q "INSERT INTO tenant_acme.journal_entries" "$seed_file" && return 0 ;;
+        "/contacts") grep -q "INSERT INTO tenant_acme.contacts" "$seed_file" && return 0 ;;
+        "/invoices"*) grep -q "INSERT INTO tenant_acme.invoices" "$seed_file" && return 0 ;;
+        "/quotes") grep -q "INSERT INTO tenant_acme.quotes" "$seed_file" && return 0 ;;
+        "/orders") grep -q "INSERT INTO tenant_acme.orders" "$seed_file" && return 0 ;;
+        "/payments"*) grep -q "INSERT INTO tenant_acme.payments" "$seed_file" && return 0 ;;
+        "/recurring") grep -q "INSERT INTO tenant_acme.recurring_invoices" "$seed_file" && return 0 ;;
+        "/employees"*) grep -q "INSERT INTO tenant_acme.employees" "$seed_file" && return 0 ;;
+        "/payroll"*) grep -q "INSERT INTO tenant_acme.payroll_runs" "$seed_file" && return 0 ;;
+        "/banking"*) grep -q "INSERT INTO tenant_acme.bank_accounts" "$seed_file" && return 0 ;;
+        "/assets") grep -q "INSERT INTO tenant_acme.fixed_assets" "$seed_file" && return 0 ;;
+        "/inventory") grep -q "INSERT INTO tenant_acme.products" "$seed_file" && return 0 ;;
         "/reports"*) return 0 ;;  # Reports use aggregate data
         "/tax") return 0 ;;  # Tax uses aggregate data
         "/vat-returns") return 0 ;;  # Uses invoice data
-        "/tsd") grep -q "INSERT INTO tenant_acme.tsd_declarations" cmd/api/handlers.go && return 0 ;;
+        "/tsd") grep -q "INSERT INTO tenant_acme.tsd_declarations" "$seed_file" && return 0 ;;
         "/settings"*) return 0 ;;  # Settings are tenant config
         "/login") return 0 ;;  # No demo data needed
         *) return 1 ;;
