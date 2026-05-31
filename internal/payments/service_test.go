@@ -191,33 +191,6 @@ func PreparePayment(tenantID string, req *CreatePaymentRequest) *Payment {
 	return payment
 }
 
-// GeneratePaymentNumber generates the payment number
-func GeneratePaymentNumber(paymentType PaymentType, seq int) string {
-	prefix := "PMT"
-	if paymentType == PaymentTypeMade {
-		prefix = "OUT"
-	}
-	return prefix + "-" + padNumber(seq, 5)
-}
-
-func padNumber(n, width int) string {
-	s := ""
-	for i := 0; i < width; i++ {
-		s = "0" + s
-	}
-	numStr := ""
-	if n == 0 {
-		numStr = "0"
-	} else {
-		for n > 0 {
-			numStr = string(rune('0'+n%10)) + numStr
-			n /= 10
-		}
-	}
-	result := s + numStr
-	return result[len(result)-width:]
-}
-
 func TestValidatePaymentRequest(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -367,7 +340,7 @@ func TestPreparePayment(t *testing.T) {
 	})
 }
 
-func TestGeneratePaymentNumber(t *testing.T) {
+func TestFormatPaymentNumber(t *testing.T) {
 	tests := []struct {
 		paymentType PaymentType
 		seq         int
@@ -382,7 +355,7 @@ func TestGeneratePaymentNumber(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.expected, func(t *testing.T) {
-			result := GeneratePaymentNumber(tt.paymentType, tt.seq)
+			result := FormatPaymentNumber(tt.paymentType, tt.seq)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -514,25 +487,6 @@ func TestPayment_FullyAllocated(t *testing.T) {
 	}
 
 	assert.True(t, payment.UnallocatedAmount().IsZero())
-}
-
-func TestPadNumber(t *testing.T) {
-	tests := []struct {
-		n        int
-		width    int
-		expected string
-	}{
-		{0, 5, "00000"},
-		{1, 5, "00001"},
-		{42, 5, "00042"},
-		{12345, 5, "12345"},
-		{123456, 5, "23456"}, // Truncates from left
-	}
-
-	for _, tt := range tests {
-		result := padNumber(tt.n, tt.width)
-		assert.Equal(t, tt.expected, result)
-	}
 }
 
 func TestPaymentTypeConstants(t *testing.T) {

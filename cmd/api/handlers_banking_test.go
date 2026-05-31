@@ -16,6 +16,7 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -248,6 +249,10 @@ func (m *mockBankingRepository) GetTransaction(ctx context.Context, schemaName, 
 	return nil, banking.ErrTransactionNotFound
 }
 
+func (m *mockBankingRepository) ListPaymentMatchCandidates(ctx context.Context, schemaName, tenantID string, paymentType payments.PaymentType, amount decimal.Decimal, limit int) ([]banking.PaymentForMatching, error) {
+	return nil, nil
+}
+
 func (m *mockBankingRepository) MatchTransaction(ctx context.Context, schemaName, tenantID, transactionID, paymentID string) error {
 	if m.matchErr != nil {
 		return m.matchErr
@@ -301,6 +306,23 @@ func (m *mockBankingRepository) CreateTransaction(ctx context.Context, schemaNam
 	m.transactions[t.ID] = t
 	m.txCount[t.BankAccountID]++
 	return nil
+}
+
+func (m *mockBankingRepository) CreatePaymentFromTransaction(ctx context.Context, schemaName, tenantID, userID string, transaction *banking.BankTransaction) (string, error) {
+	if transaction == nil || transaction.TenantID != tenantID {
+		return "", banking.ErrTransactionNotFound
+	}
+	if transaction.Status != banking.StatusUnmatched {
+		return "", banking.ErrTransactionAlreadyMatched
+	}
+	paymentID := "payment-" + transaction.ID
+	transaction.MatchedPaymentID = &paymentID
+	transaction.Status = banking.StatusMatched
+	if stored, ok := m.transactions[transaction.ID]; ok {
+		stored.MatchedPaymentID = &paymentID
+		stored.Status = banking.StatusMatched
+	}
+	return paymentID, nil
 }
 
 func (m *mockBankingRepository) IsTransactionDuplicate(ctx context.Context, schemaName, tenantID, bankAccountID string, date time.Time, amount decimal.Decimal, externalID string) (bool, error) {

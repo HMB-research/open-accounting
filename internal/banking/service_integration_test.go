@@ -542,6 +542,38 @@ func TestService_CreatePaymentFromTransaction(t *testing.T) {
 	if tx.MatchedPaymentID == nil || *tx.MatchedPaymentID != paymentID {
 		t.Error("expected transaction to be matched to created payment")
 	}
+
+	var paymentNumber, paymentType, paymentAmountText, currency, reference, notes string
+	err = pool.QueryRow(ctx, `
+		SELECT payment_number, payment_type, amount::text, currency, reference, notes
+		FROM `+tenant.SchemaName+`.payments
+		WHERE id = $1 AND tenant_id = $2
+	`, paymentID, tenant.ID).Scan(&paymentNumber, &paymentType, &paymentAmountText, &currency, &reference, &notes)
+	if err != nil {
+		t.Fatalf("Failed to query created payment: %v", err)
+	}
+	paymentAmount, err := decimal.NewFromString(paymentAmountText)
+	if err != nil {
+		t.Fatalf("Failed to parse created payment amount %q: %v", paymentAmountText, err)
+	}
+	if paymentNumber != "PMT-00001" {
+		t.Errorf("expected generated payment number PMT-00001, got %s", paymentNumber)
+	}
+	if paymentType != "RECEIVED" {
+		t.Errorf("expected payment type RECEIVED, got %s", paymentType)
+	}
+	if !paymentAmount.Equal(amount) {
+		t.Errorf("expected payment amount %s, got %s", amount, paymentAmount)
+	}
+	if currency != "EUR" {
+		t.Errorf("expected currency EUR, got %s", currency)
+	}
+	if reference != "REF002" {
+		t.Errorf("expected reference REF002, got %s", reference)
+	}
+	if notes != "Created from bank transaction: Payment from customer" {
+		t.Errorf("expected bank transaction note, got %s", notes)
+	}
 }
 
 func TestService_ParseDateFormats(t *testing.T) {
