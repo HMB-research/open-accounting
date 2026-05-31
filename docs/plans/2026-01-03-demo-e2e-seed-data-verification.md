@@ -4,13 +4,13 @@
 
 **Goal:** Create comprehensive Playwright E2E tests that verify seeded demo data is visible in each view of the Open Accounting demo environment.
 
-**Architecture:** Update existing test files to verify specific seed data (contacts, invoices, employees, etc.) instead of just checking "page structure". Each test will assert on actual seeded values from `scripts/demo-seed.sql`.
+**Architecture:** Update existing test files to verify specific seed data (contacts, invoices, employees, etc.) instead of just checking "page structure". Each test will assert on actual seeded values from `internal/demo/seed_template.sql`.
 
 **Tech Stack:** Playwright, TypeScript, existing test utilities (`loginAsDemo`, `navigateTo`, `ensureAcmeTenant`)
 
 ---
 
-## Seed Data Summary (from demo-seed.sql)
+## Seed Data Summary (from seed_template.sql)
 
 | Entity | Count | Key Data Points |
 |--------|-------|-----------------|

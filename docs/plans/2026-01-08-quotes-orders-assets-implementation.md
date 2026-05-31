@@ -4,9 +4,9 @@
 
 **Status:** ✅ COMPLETED (2026-01-08)
 
-**Goal:** Fix the embedded demo seed SQL to include quotes, orders, and fixed assets data so these views display properly in the demo environment.
+**Goal:** Fix the demo seed SQL to include quotes, orders, and fixed assets data so these views display properly in the demo environment.
 
-**Architecture:** The demo reset endpoint (`POST /api/demo/reset`) uses embedded SQL in `cmd/api/handlers.go` to seed demo data. The embedded SQL is missing the table creation functions and INSERT statements for quotes, orders, and fixed assets. We need to add the missing schema functions and data.
+**Architecture:** The demo reset endpoint (`POST /api/demo/reset`) uses the reusable seed template in `internal/demo/seed_template.sql` to seed demo data. At the time this plan was executed, that SQL lived in `cmd/api/handlers.go`; the active seed asset has since moved to the demo package.
 
 **Tech Stack:** Go (backend handlers), PostgreSQL (migrations), Playwright (E2E testing)
 
@@ -36,14 +36,13 @@
 
 **Problem:** The Quotes (`/quotes`), Orders (`/orders`), and Fixed Assets (`/assets`) views show empty states instead of demo data.
 
-**Root Cause:** The embedded demo seed SQL in `cmd/api/handlers.go:1700-2100` is missing:
+**Root Cause:** The demo seed SQL was missing:
 1. Schema creation functions: `add_quotes_and_orders_tables()` and `add_fixed_assets_tables()`
 2. INSERT statements for demo data in `tenant_acme.quotes`, `tenant_acme.orders`, `tenant_acme.fixed_assets` tables
 
 **Evidence:**
-- `scripts/demo-seed.sql` includes these (lines 72-73, 367-460) ✅
-- `cmd/api/handlers.go` embedded SQL does NOT include these ❌
-- The `/api/demo/reset` endpoint uses the embedded SQL, not the file
+- `internal/demo/seed_template.sql` includes these schema functions and INSERT statements.
+- The `/api/demo/reset` endpoint uses the internal demo seed template.
 
 ---
 
@@ -52,7 +51,7 @@
 **Files:**
 - Modify: `cmd/api/handlers.go:1751` (after `add_leave_management_tables`)
 
-**Step 1: Read the current embedded SQL structure**
+**Step 1: Read the current demo seed SQL structure**
 
 Check the area around line 1751 where we need to add the function calls.
 
@@ -78,7 +77,7 @@ git add cmd/api/handlers.go
 git commit -m "$(cat <<'EOF'
 fix: add quotes/orders/assets schema functions to demo seed
 
-The embedded demo seed SQL was missing the schema creation functions
+The demo seed SQL was missing the schema creation functions
 for quotes, orders, and fixed assets tables. This caused these views
 to show empty states in the demo environment.
 
@@ -100,7 +99,7 @@ Look for the end of the leave_records INSERT (around line 2095) and before the f
 
 **Step 2: Add quotes and quote_lines INSERT statements**
 
-Copy from `scripts/demo-seed.sql` lines 367-395 (quotes and quote_lines INSERT statements):
+Copy from `internal/demo/seed_template.sql` lines 367-395 (quotes and quote_lines INSERT statements):
 
 ```sql
 -- QUOTES
@@ -155,7 +154,7 @@ EOF
 
 **Step 1: Add orders and order_lines INSERT statements**
 
-Copy from `scripts/demo-seed.sql` lines 397-419:
+Copy from `internal/demo/seed_template.sql` lines 397-419:
 
 ```sql
 -- ORDERS
@@ -210,7 +209,7 @@ EOF
 
 **Step 1: Add asset_categories, fixed_assets, and depreciation_entries INSERT statements**
 
-Copy from `scripts/demo-seed.sql` lines 441-475:
+Copy from `internal/demo/seed_template.sql` lines 441-475:
 
 ```sql
 -- ASSET CATEGORIES
