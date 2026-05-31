@@ -25,6 +25,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/demo"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/expenses"
@@ -81,6 +82,7 @@ type Handlers struct {
 	interestService          *invoicing.InterestService
 	webhookService           *webhooks.Service
 	expensesService          *expenses.Service
+	demoResetService         demoResetter
 	demoStatusReader         demoStatusReader
 }
 
@@ -101,6 +103,10 @@ type passwordResetManager interface {
 type securityAuditManager interface {
 	RecordEvent(ctx context.Context, event *auth.SecurityAuditEvent) error
 	ListUserEvents(ctx context.Context, userID string, limit int) ([]auth.SecurityAuditEvent, error)
+}
+
+type demoResetter interface {
+	Reset(ctx context.Context, users []demo.ResetUser, userNums []int) error
 }
 
 // getSchemaName returns the schema name for a tenant
