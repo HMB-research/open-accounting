@@ -140,13 +140,9 @@ func (s *Service) AutoMatchTransactions(ctx context.Context, schemaName, tenantI
 
 	// Update import stats with matched count
 	if matched > 0 {
-		_, _ = s.db.Exec(ctx, fmt.Sprintf(`
-			UPDATE %s.bank_statement_imports
-			SET transactions_matched = transactions_matched + $1
-			WHERE bank_account_id = $2
-			ORDER BY created_at DESC
-			LIMIT 1
-		`, schemaName), matched, bankAccountID)
+		if err := s.repo.IncrementLatestImportMatchedCount(ctx, schemaName, tenantID, bankAccountID, matched); err != nil {
+			return matched, fmt.Errorf("update import matched count: %w", err)
+		}
 	}
 
 	return matched, nil

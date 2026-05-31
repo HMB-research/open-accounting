@@ -610,6 +610,40 @@ func (r *GORMRepository) CreateImportRecord(ctx context.Context, schemaName stri
 	return nil
 }
 
+// IncrementLatestImportMatchedCount increments the latest import's matched transaction count.
+func (r *GORMRepository) IncrementLatestImportMatchedCount(ctx context.Context, schemaName, tenantID, bankAccountID string, matchedCount int) error {
+	if matchedCount <= 0 {
+		return nil
+	}
+
+	db, err := r.tenantTable(ctx, schemaName, "bank_statement_imports")
+	if err != nil {
+		return err
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		var latestImport models.BankStatementImport
+		err := tx.
+			Where("tenant_id = ? AND bank_account_id = ?", tenantID, bankAccountID).
+			Order("created_at DESC").
+			First(&latestImport).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("find latest import record: %w", err)
+		}
+
+		err = tx.Model(&models.BankStatementImport{}).
+			Where("id = ? AND tenant_id = ?", latestImport.ID, tenantID).
+			UpdateColumn("transactions_matched", gorm.Expr("transactions_matched + ?", matchedCount)).Error
+		if err != nil {
+			return fmt.Errorf("increment matched import count: %w", err)
+		}
+		return nil
+	})
+}
+
 // GetImportHistory retrieves import history for a bank account
 func (r *GORMRepository) GetImportHistory(ctx context.Context, schemaName, tenantID, bankAccountID string) ([]BankStatementImport, error) {
 	db, err := r.tenantTable(ctx, schemaName, "bank_statement_imports")

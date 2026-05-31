@@ -379,6 +379,27 @@ func (m *mockBankingRepository) CreateImportRecord(ctx context.Context, schemaNa
 	return nil
 }
 
+func (m *mockBankingRepository) IncrementLatestImportMatchedCount(ctx context.Context, schemaName, tenantID, bankAccountID string, matchedCount int) error {
+	if matchedCount <= 0 {
+		return nil
+	}
+	imports := m.imports[bankAccountID]
+	latestIndex := -1
+	for i := range imports {
+		if imports[i].TenantID != tenantID {
+			continue
+		}
+		if latestIndex == -1 || imports[i].CreatedAt.After(imports[latestIndex].CreatedAt) {
+			latestIndex = i
+		}
+	}
+	if latestIndex != -1 {
+		imports[latestIndex].TransactionsMatched += matchedCount
+		m.imports[bankAccountID] = imports
+	}
+	return nil
+}
+
 func (m *mockBankingRepository) GetImportHistory(ctx context.Context, schemaName, tenantID, bankAccountID string) ([]banking.BankStatementImport, error) {
 	if m.importHistoryErr != nil {
 		return nil, m.importHistoryErr
