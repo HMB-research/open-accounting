@@ -19,7 +19,7 @@ type Contact struct {
 	TenantID         string      `gorm:"type:uuid;not null;index" json:"tenant_id"`
 	Code             string      `gorm:"size:50" json:"code,omitempty"`
 	Name             string      `gorm:"size:255;not null" json:"name"`
-	ContactType      ContactType `gorm:"column:type;size:20;not null" json:"contact_type"`
+	ContactType      ContactType `gorm:"column:contact_type;size:20;not null" json:"contact_type"`
 	RegCode          string      `gorm:"size:50" json:"reg_code,omitempty"`
 	VATNumber        string      `gorm:"size:50" json:"vat_number,omitempty"`
 	Email            string      `gorm:"size:255" json:"email,omitempty"`
