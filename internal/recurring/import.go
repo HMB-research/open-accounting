@@ -151,7 +151,7 @@ func (s *Service) ImportCSV(
 	if req == nil || strings.TrimSpace(req.CSVContent) == "" {
 		return nil, fmt.Errorf("csv_content is required")
 	}
-	if err := s.EnsureSchema(ctx, schemaName); err != nil {
+	if err := s.requireRepository(); err != nil {
 		return nil, err
 	}
 

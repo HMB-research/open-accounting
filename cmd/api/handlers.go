@@ -3463,10 +3463,10 @@ INSERT INTO tenant_acme.recurring_invoices (id, tenant_id, name, contact_id, inv
 ('75000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, 'Annual License - GreenTech', 'd0000000-0000-0000-0001-000000000004'::uuid, 'SALES', 'YEARLY', DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '6 months', NULL, DATE_TRUNC('year', CURRENT_DATE) + INTERVAL '6 months', 30, 'EUR', 'Annual software license', true, DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '6 months', 1, 'a0000000-0000-0000-0000-000000000001'::uuid)
 ON CONFLICT DO NOTHING;
 
-INSERT INTO tenant_acme.recurring_invoice_lines (id, tenant_id, recurring_invoice_id, line_number, description, quantity, unit_price, vat_rate, account_id) VALUES
-('76000000-0000-0000-0001-000000000001'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '75000000-0000-0000-0001-000000000001'::uuid, 1, 'IT Support Package - Standard', 1, 1200.00, 22.00, 'c0000000-0000-0000-0004-000000000002'::uuid),
-('76000000-0000-0000-0001-000000000002'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '75000000-0000-0000-0001-000000000002'::uuid, 1, 'Consulting Retainer - Q4', 1, 7500.00, 22.00, 'c0000000-0000-0000-0004-000000000002'::uuid),
-('76000000-0000-0000-0001-000000000003'::uuid, 'b0000000-0000-0000-0000-000000000001'::uuid, '75000000-0000-0000-0001-000000000003'::uuid, 1, 'Enterprise Software License', 1, 12000.00, 22.00, 'c0000000-0000-0000-0004-000000000001'::uuid)
+INSERT INTO tenant_acme.recurring_invoice_lines (id, recurring_invoice_id, line_number, description, quantity, unit_price, vat_rate, account_id) VALUES
+('76000000-0000-0000-0001-000000000001'::uuid, '75000000-0000-0000-0001-000000000001'::uuid, 1, 'IT Support Package - Standard', 1, 1200.00, 22.00, 'c0000000-0000-0000-0004-000000000002'::uuid),
+('76000000-0000-0000-0001-000000000002'::uuid, '75000000-0000-0000-0001-000000000002'::uuid, 1, 'Consulting Retainer - Q4', 1, 7500.00, 22.00, 'c0000000-0000-0000-0004-000000000002'::uuid),
+('76000000-0000-0000-0001-000000000003'::uuid, '75000000-0000-0000-0001-000000000003'::uuid, 1, 'Enterprise Software License', 1, 12000.00, 22.00, 'c0000000-0000-0000-0004-000000000001'::uuid)
 ON CONFLICT DO NOTHING;
 
 -- Journal Entries (4 static + 12 dynamic = 16 total)

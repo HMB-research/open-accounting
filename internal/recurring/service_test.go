@@ -23,7 +23,6 @@ import (
 type MockRepository struct {
 	recurring                   map[string]*RecurringInvoice
 	lines                       map[string][]RecurringInvoiceLine
-	ensureSchemaErr             error
 	createErr                   error
 	createLineErr               error
 	getByIDErr                  error
@@ -43,10 +42,6 @@ func NewMockRepository() *MockRepository {
 		recurring: make(map[string]*RecurringInvoice),
 		lines:     make(map[string][]RecurringInvoiceLine),
 	}
-}
-
-func (m *MockRepository) EnsureSchema(ctx context.Context, schemaName string) error {
-	return m.ensureSchemaErr
 }
 
 func (m *MockRepository) Create(ctx context.Context, schemaName string, ri *RecurringInvoice) error {
@@ -383,44 +378,9 @@ func TestNewServiceWithDependencies(t *testing.T) {
 	}
 }
 
-func TestService_EnsureSchema(t *testing.T) {
-	tests := []struct {
-		name      string
-		repoErr   error
-		expectErr bool
-	}{
-		{
-			name:      "success",
-			repoErr:   nil,
-			expectErr: false,
-		},
-		{
-			name:      "repository error",
-			repoErr:   fmt.Errorf("db error"),
-			expectErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			repo := NewMockRepository()
-			repo.ensureSchemaErr = tt.repoErr
-			service := NewServiceWithDependencies(repo, nil, nil, nil, nil, nil)
-
-			err := service.EnsureSchema(context.Background(), "test_schema")
-			if tt.expectErr && err == nil {
-				t.Error("expected error but got nil")
-			}
-			if !tt.expectErr && err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-		})
-	}
-}
-
-func TestService_EnsureSchema_NilRepo(t *testing.T) {
+func TestService_RequireRepository_NilRepo(t *testing.T) {
 	service := &Service{}
-	err := service.EnsureSchema(context.Background(), "test")
+	err := service.requireRepository()
 	if err == nil {
 		t.Error("expected error for nil repo")
 	}
@@ -1415,30 +1375,6 @@ func TestService_Create(t *testing.T) {
 			},
 			expectErr: false,
 		},
-		{
-			name: "ensure schema error",
-			setupRepo: func() *MockRepository {
-				repo := NewMockRepository()
-				repo.ensureSchemaErr = fmt.Errorf("schema error")
-				return repo
-			},
-			request: &CreateRecurringInvoiceRequest{
-				Name:      "Monthly Subscription",
-				ContactID: "contact-1",
-				Frequency: FrequencyMonthly,
-				StartDate: time.Now(),
-				Lines: []CreateRecurringInvoiceLineRequest{
-					{
-						Description: "Service Fee",
-						Quantity:    decimal.NewFromInt(1),
-						UnitPrice:   decimal.NewFromFloat(100.00),
-						VATRate:     decimal.NewFromFloat(20.00),
-					},
-				},
-			},
-			expectErr:   true,
-			errContains: "schema",
-		},
 	}
 
 	for _, tt := range tests {
@@ -1712,18 +1648,6 @@ func TestService_GetByID(t *testing.T) {
 			expectErr:   true,
 			errContains: "get recurring invoice lines",
 		},
-		{
-			name: "ensure schema error",
-			setupRepo: func() *MockRepository {
-				repo := NewMockRepository()
-				repo.ensureSchemaErr = fmt.Errorf("schema error")
-				return repo
-			},
-			tenantID:    "tenant-1",
-			id:          "ri-1",
-			expectErr:   true,
-			errContains: "schema",
-		},
 	}
 
 	for _, tt := range tests {
@@ -1803,16 +1727,6 @@ func TestService_List(t *testing.T) {
 			setupRepo: func() *MockRepository {
 				repo := NewMockRepository()
 				repo.listErr = fmt.Errorf("db error")
-				return repo
-			},
-			activeOnly: false,
-			expectErr:  true,
-		},
-		{
-			name: "ensure schema error",
-			setupRepo: func() *MockRepository {
-				repo := NewMockRepository()
-				repo.ensureSchemaErr = fmt.Errorf("schema error")
 				return repo
 			},
 			activeOnly: false,
@@ -2142,15 +2056,6 @@ func TestService_Delete(t *testing.T) {
 			expectErr:   true,
 			errContains: "delete recurring invoice",
 		},
-		{
-			name: "ensure schema error",
-			setupRepo: func() *MockRepository {
-				repo := NewMockRepository()
-				repo.ensureSchemaErr = fmt.Errorf("schema error")
-				return repo
-			},
-			expectErr: true,
-		},
 	}
 
 	for _, tt := range tests {
@@ -2421,16 +2326,6 @@ func TestService_GenerateDueInvoices(t *testing.T) {
 		}
 	})
 
-	t.Run("ensure schema error", func(t *testing.T) {
-		repo := NewMockRepository()
-		repo.ensureSchemaErr = fmt.Errorf("schema error")
-		service := NewServiceWithDependencies(repo, nil, nil, nil, nil, nil)
-
-		_, err := service.GenerateDueInvoices(ctx, "tenant-1", "test_schema", "user-1")
-		if err == nil {
-			t.Error("expected error")
-		}
-	})
 }
 
 func TestService_GenerateInvoice(t *testing.T) {
