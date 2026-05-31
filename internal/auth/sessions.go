@@ -2,11 +2,14 @@ package auth
 
 import (
 	"context"
-	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
+	"github.com/HMB-research/open-accounting/internal/models"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"gorm.io/gorm"
 )
 
 // ErrRefreshSessionInvalid is returned when a refresh token session is missing, expired, or revoked.
@@ -14,8 +17,8 @@ var ErrRefreshSessionInvalid = errors.New("refresh session invalid")
 
 // RefreshSessionService stores and revokes refresh-token sessions.
 type RefreshSessionService struct {
-	pool *pgxpool.Pool
-	now  func() time.Time
+	db  *gorm.DB
+	now func() time.Time
 }
 
 // RefreshSession describes a stored refresh-token session without exposing token material.
@@ -30,75 +33,71 @@ type RefreshSession struct {
 
 // NewRefreshSessionService creates a refresh session service backed by PostgreSQL.
 func NewRefreshSessionService(pool *pgxpool.Pool) *RefreshSessionService {
+	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	if err != nil {
+		panic(fmt.Errorf("create refresh session GORM repository: %w", err))
+	}
 	return &RefreshSessionService{
-		pool: pool,
-		now:  time.Now,
+		db:  gormDB,
+		now: time.Now,
 	}
 }
 
 // CreateRefreshSession stores a newly issued refresh token session.
 func (s *RefreshSessionService) CreateRefreshSession(ctx context.Context, userID, tokenID, tokenHash string, expiresAt time.Time) error {
 	now := s.now().UTC()
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO refresh_sessions (id, user_id, token_hash, created_at, expires_at)
-		VALUES ($1, $2, $3, $4, $5)
-	`, tokenID, userID, tokenHash, now, expiresAt.UTC())
-	return err
+	return s.db.WithContext(ctx).Create(&models.RefreshSession{
+		ID:        tokenID,
+		UserID:    userID,
+		TokenHash: tokenHash,
+		CreatedAt: now,
+		ExpiresAt: expiresAt.UTC(),
+	}).Error
 }
 
 // RotateRefreshSession revokes an active refresh session and stores its replacement.
 func (s *RefreshSessionService) RotateRefreshSession(ctx context.Context, userID, oldTokenID, oldTokenHash, newTokenID, newTokenHash string, newExpiresAt time.Time) error {
 	now := s.now().UTC()
 
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck // Commit path owns the successful transaction.
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&models.RefreshSession{}).
+			Where("id = ? AND user_id = ? AND token_hash = ?", oldTokenID, userID, oldTokenHash).
+			Where("revoked_at IS NULL AND expires_at > ?", now).
+			Updates(map[string]interface{}{
+				"revoked_at":   now,
+				"last_used_at": now,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrRefreshSessionInvalid
+		}
 
-	tag, err := tx.Exec(ctx, `
-		UPDATE refresh_sessions
-		SET revoked_at = $4, last_used_at = $4
-		WHERE id = $1
-			AND user_id = $2
-			AND token_hash = $3
-			AND revoked_at IS NULL
-			AND expires_at > $4
-	`, oldTokenID, userID, oldTokenHash, now)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() != 1 {
-		return ErrRefreshSessionInvalid
-	}
-
-	_, err = tx.Exec(ctx, `
-		INSERT INTO refresh_sessions (id, user_id, token_hash, created_at, expires_at)
-		VALUES ($1, $2, $3, $4, $5)
-	`, newTokenID, userID, newTokenHash, now, newExpiresAt.UTC())
-	if err != nil {
-		return err
-	}
-
-	return tx.Commit(ctx)
+		return tx.Create(&models.RefreshSession{
+			ID:        newTokenID,
+			UserID:    userID,
+			TokenHash: newTokenHash,
+			CreatedAt: now,
+			ExpiresAt: newExpiresAt.UTC(),
+		}).Error
+	})
 }
 
 // RevokeRefreshSession revokes a single active refresh session.
 func (s *RefreshSessionService) RevokeRefreshSession(ctx context.Context, userID, tokenID, tokenHash string) error {
 	now := s.now().UTC()
-	tag, err := s.pool.Exec(ctx, `
-		UPDATE refresh_sessions
-		SET revoked_at = $4, last_used_at = $4
-		WHERE id = $1
-			AND user_id = $2
-			AND token_hash = $3
-			AND revoked_at IS NULL
-			AND expires_at > $4
-	`, tokenID, userID, tokenHash, now)
-	if err != nil {
-		return err
+	result := s.db.WithContext(ctx).Model(&models.RefreshSession{}).
+		Where("id = ? AND user_id = ? AND token_hash = ?", tokenID, userID, tokenHash).
+		Where("revoked_at IS NULL AND expires_at > ?", now).
+		Updates(map[string]interface{}{
+			"revoked_at":   now,
+			"last_used_at": now,
+		})
+	if result.Error != nil {
+		return result.Error
 	}
-	if tag.RowsAffected() != 1 {
+	if result.RowsAffected != 1 {
 		return ErrRefreshSessionInvalid
 	}
 	return nil
@@ -107,48 +106,35 @@ func (s *RefreshSessionService) RevokeRefreshSession(ctx context.Context, userID
 // ListRefreshSessions returns refresh sessions for a user.
 func (s *RefreshSessionService) ListRefreshSessions(ctx context.Context, userID string, includeInactive bool) ([]RefreshSession, error) {
 	now := s.now().UTC()
-	rows, err := s.pool.Query(ctx, `
-		SELECT id::text, user_id::text, created_at, last_used_at, expires_at, revoked_at
-		FROM refresh_sessions
-		WHERE user_id = $1
-			AND ($2 OR (revoked_at IS NULL AND expires_at > $3))
-		ORDER BY created_at DESC
-	`, userID, includeInactive, now)
-	if err != nil {
+
+	query := s.db.WithContext(ctx).Where("user_id = ?", userID)
+	if !includeInactive {
+		query = query.Where("revoked_at IS NULL AND expires_at > ?", now)
+	}
+
+	var sessionModels []models.RefreshSession
+	if err := query.Order("created_at DESC").Find(&sessionModels).Error; err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	var sessions []RefreshSession
-	for rows.Next() {
-		var session RefreshSession
-		var lastUsedAt sql.NullTime
-		var revokedAt sql.NullTime
-		if err := rows.Scan(&session.ID, &session.UserID, &session.CreatedAt, &lastUsedAt, &session.ExpiresAt, &revokedAt); err != nil {
-			return nil, err
-		}
-		session.LastUsedAt = nullTimePtr(lastUsedAt)
-		session.RevokedAt = nullTimePtr(revokedAt)
-		sessions = append(sessions, session)
+	sessions := make([]RefreshSession, len(sessionModels))
+	for i, sessionModel := range sessionModels {
+		sessions[i] = modelToRefreshSession(&sessionModel)
 	}
-	return sessions, rows.Err()
+	return sessions, nil
 }
 
 // RevokeRefreshSessionByID revokes an active refresh session by id for a user.
 func (s *RefreshSessionService) RevokeRefreshSessionByID(ctx context.Context, userID, tokenID string) error {
 	now := s.now().UTC()
-	tag, err := s.pool.Exec(ctx, `
-		UPDATE refresh_sessions
-		SET revoked_at = $3
-		WHERE id = $1
-			AND user_id = $2
-			AND revoked_at IS NULL
-			AND expires_at > $3
-	`, tokenID, userID, now)
-	if err != nil {
-		return err
+	result := s.db.WithContext(ctx).Model(&models.RefreshSession{}).
+		Where("id = ? AND user_id = ?", tokenID, userID).
+		Where("revoked_at IS NULL AND expires_at > ?", now).
+		Update("revoked_at", now)
+	if result.Error != nil {
+		return result.Error
 	}
-	if tag.RowsAffected() != 1 {
+	if result.RowsAffected != 1 {
 		return ErrRefreshSessionInvalid
 	}
 	return nil
@@ -157,20 +143,19 @@ func (s *RefreshSessionService) RevokeRefreshSessionByID(ctx context.Context, us
 // RevokeAllRefreshSessions revokes all active refresh sessions for a user.
 func (s *RefreshSessionService) RevokeAllRefreshSessions(ctx context.Context, userID string) error {
 	now := s.now().UTC()
-	_, err := s.pool.Exec(ctx, `
-		UPDATE refresh_sessions
-		SET revoked_at = $2
-		WHERE user_id = $1
-			AND revoked_at IS NULL
-			AND expires_at > $2
-	`, userID, now)
-	return err
+	return s.db.WithContext(ctx).Model(&models.RefreshSession{}).
+		Where("user_id = ?", userID).
+		Where("revoked_at IS NULL AND expires_at > ?", now).
+		Update("revoked_at", now).Error
 }
 
-func nullTimePtr(value sql.NullTime) *time.Time {
-	if !value.Valid {
-		return nil
+func modelToRefreshSession(session *models.RefreshSession) RefreshSession {
+	return RefreshSession{
+		ID:         session.ID,
+		UserID:     session.UserID,
+		CreatedAt:  session.CreatedAt,
+		LastUsedAt: session.LastUsedAt,
+		ExpiresAt:  session.ExpiresAt,
+		RevokedAt:  session.RevokedAt,
 	}
-	t := value.Time
-	return &t
 }
