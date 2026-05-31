@@ -15,7 +15,7 @@
 | Package | Current | Service Layer | Repository Layer | Gap |
 |---------|---------|---------------|------------------|-----|
 | banking | 35.3% | 100% | 0% | Repository |
-| database | 34.2% | N/A | 0% | sqlc queries |
+| database | 34.2% | N/A | 0% | shared database helpers |
 | inventory | 47.1% | 100% | 0% | Repository |
 | accounting | 47.5% | 100% | 0% | Repository |
 | payments | 47.6% | 100% | 0% | Repository |

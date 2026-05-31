@@ -392,7 +392,7 @@ type GORMRepository struct {
 
 - ORM-backed repositories are the preferred runtime path for tenant-domain persistence.
 - Direct `pgx`/SQL paths should stay isolated to migrations or repository methods where the ORM cannot express the query clearly.
-- `sqlc` is used for shared/public schema tables where generation is straightforward.
+- Shared/public schema persistence uses the same ORM-backed repository direction as tenant-domain persistence.
 - Tenant-scoped adapters use explicit schema-qualified tables instead of relying on connection-level `search_path`.
 
 ### Multi-Tenant Schema Qualification
