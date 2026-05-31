@@ -15900,6 +15900,47 @@ paths:
       summary: Get TSD declaration
       tags:
       - Payroll
+  /tenants/{tenantID}/tsd/{year}/{month}/accept:
+    post:
+      description: Mark a TSD declaration as accepted by e-MTA
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Year
+        in: path
+        name: year
+        required: true
+        type: integer
+      - description: Month
+        in: path
+        name: month
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Mark TSD as accepted
+      tags:
+      - Payroll
   /tenants/{tenantID}/tsd/{year}/{month}/csv:
     get:
       description: Export a TSD declaration to CSV format
@@ -15943,6 +15984,47 @@ paths:
       security:
       - BearerAuth: []
       summary: Export TSD to CSV
+      tags:
+      - Payroll
+  /tenants/{tenantID}/tsd/{year}/{month}/reject:
+    post:
+      description: Mark a TSD declaration as rejected by e-MTA
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Year
+        in: path
+        name: year
+        required: true
+        type: integer
+      - description: Month
+        in: path
+        name: month
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Mark TSD as rejected
       tags:
       - Payroll
   /tenants/{tenantID}/tsd/{year}/{month}/submit:

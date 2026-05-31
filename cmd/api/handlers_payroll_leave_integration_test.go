@@ -232,6 +232,20 @@ func TestPayrollHandlersIntegration(t *testing.T) {
 	}, withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tenant.ID+"/tsd/2025/2/submit", map[string]string{
 		"emta_reference": "EMTA-REF-001",
 	}, claims), map[string]string{"tenantID": tenant.ID, "year": "2025", "month": "2"}))
+
+	accepted := invokeJSON[map[string]string](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
+		h.MarkTSDAccepted(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tenant.ID+"/tsd/2025/2/accept", nil, claims), map[string]string{"tenantID": tenant.ID, "year": "2025", "month": "2"}))
+	if accepted["status"] != "accepted" {
+		t.Fatalf("expected accepted status response, got %q", accepted["status"])
+	}
+
+	rejected := invokeJSON[map[string]string](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
+		h.MarkTSDRejected(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tenant.ID+"/tsd/2025/2/reject", nil, claims), map[string]string{"tenantID": tenant.ID, "year": "2025", "month": "2"}))
+	if rejected["status"] != "rejected" {
+		t.Fatalf("expected rejected status response, got %q", rejected["status"])
+	}
 }
 
 func TestLeaveHandlersIntegration(t *testing.T) {

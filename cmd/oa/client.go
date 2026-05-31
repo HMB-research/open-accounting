@@ -2645,6 +2645,22 @@ func (c *apiClient) markTSDSubmitted(ctx context.Context, tenantID string, year,
 	return resp, nil
 }
 
+func (c *apiClient) markTSDAccepted(ctx context.Context, tenantID string, year, month int) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "tsd", strconv.Itoa(year), strconv.Itoa(month), "accept"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) markTSDRejected(ctx context.Context, tenantID string, year, month int) (map[string]string, error) {
+	var resp map[string]string
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "tsd", strconv.Itoa(year), strconv.Itoa(month), "reject"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
 func (c *apiClient) listKMD(ctx context.Context, tenantID string) ([]tax.KMDDeclaration, error) {
 	var resp []tax.KMDDeclaration
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "tax", "kmd"), nil, c.apiToken, &resp); err != nil {

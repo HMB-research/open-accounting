@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -36,9 +37,19 @@ type Repository interface {
 	DeletePayslipsByRunID(ctx context.Context, schemaName, runID string) error
 	CreatePayslip(ctx context.Context, schemaName string, payslip *Payslip) error
 
+	// TSD operations
+	GetPayslipsWithEmployees(ctx context.Context, schemaName, tenantID, payrollRunID string) ([]Payslip, error)
+	DeleteTSDByPeriod(ctx context.Context, schemaName, tenantID string, year, month int) error
+	CreateTSDDeclaration(ctx context.Context, schemaName string, declaration *TSDDeclaration) error
+	CreateTSDRows(ctx context.Context, schemaName string, rows []TSDRow) error
+	GetTSD(ctx context.Context, schemaName, tenantID string, year, month int) (*TSDDeclaration, error)
+	GetTSDRows(ctx context.Context, schemaName, tenantID, declarationID string) ([]TSDRow, error)
+	ListTSD(ctx context.Context, schemaName, tenantID string) ([]TSDDeclaration, error)
+	MarkTSDSubmitted(ctx context.Context, schemaName, tenantID, declarationID, emtaReference string, submittedAt time.Time) error
+	UpdateTSDStatus(ctx context.Context, schemaName, tenantID, declarationID string, status TSDStatus, updatedAt time.Time) error
+
 	// Transaction support
-	BeginTx(ctx context.Context) (pgx.Tx, error)
-	WithTx(tx pgx.Tx) Repository
+	WithTransaction(ctx context.Context, fn func(txRepo Repository) error) error
 }
 
 // PostgresRepository implements Repository using PostgreSQL
@@ -60,6 +71,26 @@ func (r *PostgresRepository) BeginTx(ctx context.Context) (pgx.Tx, error) {
 // WithTx returns a new repository that uses the given transaction
 func (r *PostgresRepository) WithTx(tx pgx.Tx) Repository {
 	return &PostgresRepository{pool: r.pool, tx: tx}
+}
+
+// WithTransaction runs fn inside a repository-backed transaction.
+func (r *PostgresRepository) WithTransaction(ctx context.Context, fn func(txRepo Repository) error) error {
+	if r.tx != nil {
+		return fn(r)
+	}
+	tx, err := r.BeginTx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	if err := fn(r.WithTx(tx)); err != nil {
+		_ = tx.Rollback(ctx)
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		_ = tx.Rollback(ctx)
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+	return nil
 }
 
 func (r *PostgresRepository) exec(ctx context.Context, query string, args ...interface{}) error {
@@ -433,10 +464,286 @@ func (r *PostgresRepository) CreatePayslip(ctx context.Context, schemaName strin
 	)
 }
 
+func payrollTable(schemaName, tableName string) (string, error) {
+	return database.QualifiedTable(schemaName, tableName)
+}
+
+// GetPayslipsWithEmployees retrieves payslips with employee data.
+func (r *PostgresRepository) GetPayslipsWithEmployees(ctx context.Context, schemaName, tenantID, payrollRunID string) ([]Payslip, error) {
+	payslipsTable, err := payrollTable(schemaName, "payslips")
+	if err != nil {
+		return nil, err
+	}
+	employeesTable, err := payrollTable(schemaName, "employees")
+	if err != nil {
+		return nil, err
+	}
+	query := fmt.Sprintf(`
+		SELECT p.id, p.tenant_id, p.payroll_run_id, p.employee_id,
+			p.gross_salary, p.taxable_income, p.income_tax, p.unemployment_insurance_employee,
+			p.funded_pension, p.other_deductions, p.net_salary, p.social_tax,
+			p.unemployment_insurance_employer, p.total_employer_cost, p.basic_exemption_applied,
+			p.payment_status, p.paid_at, p.created_at,
+			e.id, e.first_name, e.last_name, e.personal_code, e.email
+		FROM %s p
+		JOIN %s e ON e.id = p.employee_id
+		WHERE p.tenant_id = $1 AND p.payroll_run_id = $2
+		ORDER BY e.last_name, e.first_name
+	`, payslipsTable, employeesTable)
+
+	rows, err := r.query(ctx, query, tenantID, payrollRunID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	payslips := []Payslip{}
+	for rows.Next() {
+		var payslip Payslip
+		var employee Employee
+		if err := rows.Scan(
+			&payslip.ID, &payslip.TenantID, &payslip.PayrollRunID, &payslip.EmployeeID,
+			&payslip.GrossSalary, &payslip.TaxableIncome, &payslip.IncomeTax, &payslip.UnemploymentInsuranceEE,
+			&payslip.FundedPension, &payslip.OtherDeductions, &payslip.NetSalary, &payslip.SocialTax,
+			&payslip.UnemploymentInsuranceER, &payslip.TotalEmployerCost, &payslip.BasicExemptionApplied,
+			&payslip.PaymentStatus, &payslip.PaidAt, &payslip.CreatedAt,
+			&employee.ID, &employee.FirstName, &employee.LastName, &employee.PersonalCode, &employee.Email,
+		); err != nil {
+			return nil, err
+		}
+		payslip.Employee = &employee
+		payslips = append(payslips, payslip)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return payslips, nil
+}
+
+// DeleteTSDByPeriod removes an existing TSD declaration and cascaded rows for a period.
+func (r *PostgresRepository) DeleteTSDByPeriod(ctx context.Context, schemaName, tenantID string, year, month int) error {
+	declarationsTable, err := payrollTable(schemaName, "tsd_declarations")
+	if err != nil {
+		return err
+	}
+	query := fmt.Sprintf(`
+		DELETE FROM %s
+		WHERE tenant_id = $1 AND period_year = $2 AND period_month = $3
+	`, declarationsTable)
+	return r.exec(ctx, query, tenantID, year, month)
+}
+
+// CreateTSDDeclaration inserts a TSD declaration.
+func (r *PostgresRepository) CreateTSDDeclaration(ctx context.Context, schemaName string, declaration *TSDDeclaration) error {
+	declarationsTable, err := payrollTable(schemaName, "tsd_declarations")
+	if err != nil {
+		return err
+	}
+	query := fmt.Sprintf(`
+		INSERT INTO %s (
+			id, tenant_id, period_year, period_month, payroll_run_id,
+			total_payments, total_income_tax, total_social_tax,
+			total_unemployment_employer, total_unemployment_employee, total_funded_pension,
+			status, submitted_at, emta_reference, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+	`, declarationsTable)
+
+	return r.exec(ctx, query,
+		declaration.ID, declaration.TenantID, declaration.PeriodYear, declaration.PeriodMonth,
+		nullIfBlank(declaration.PayrollRunID), declaration.TotalPayments, declaration.TotalIncomeTax,
+		declaration.TotalSocialTax, declaration.TotalUnemploymentER, declaration.TotalUnemploymentEE,
+		declaration.TotalFundedPension, declaration.Status, declaration.SubmittedAt,
+		nullIfBlank(declaration.EMTAReference), declaration.CreatedAt, declaration.UpdatedAt,
+	)
+}
+
+// CreateTSDRows inserts TSD declaration rows.
+func (r *PostgresRepository) CreateTSDRows(ctx context.Context, schemaName string, rows []TSDRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	rowsTable, err := payrollTable(schemaName, "tsd_rows")
+	if err != nil {
+		return err
+	}
+	query := fmt.Sprintf(`
+		INSERT INTO %s (
+			id, tenant_id, declaration_id, employee_id, personal_code, first_name, last_name,
+			payment_type, gross_payment, basic_exemption, taxable_amount,
+			income_tax, social_tax, unemployment_insurance_employer, unemployment_insurance_employee,
+			funded_pension, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+	`, rowsTable)
+
+	for i := range rows {
+		row := rows[i]
+		if err := r.exec(ctx, query,
+			row.ID, row.TenantID, row.DeclarationID, row.EmployeeID,
+			row.PersonalCode, row.FirstName, row.LastName, row.PaymentType,
+			row.GrossPayment, row.BasicExemption, row.TaxableAmount,
+			row.IncomeTax, row.SocialTax, row.UnemploymentER, row.UnemploymentEE,
+			row.FundedPension, row.CreatedAt,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// GetTSD retrieves a TSD declaration by period.
+func (r *PostgresRepository) GetTSD(ctx context.Context, schemaName, tenantID string, year, month int) (*TSDDeclaration, error) {
+	declarationsTable, err := payrollTable(schemaName, "tsd_declarations")
+	if err != nil {
+		return nil, err
+	}
+	query := fmt.Sprintf(`
+		SELECT id, tenant_id, period_year, period_month, COALESCE(payroll_run_id::text, ''),
+			total_payments, total_income_tax, total_social_tax,
+			total_unemployment_employer, total_unemployment_employee, total_funded_pension,
+			status, submitted_at, COALESCE(emta_reference, ''), created_at, updated_at
+		FROM %s
+		WHERE tenant_id = $1 AND period_year = $2 AND period_month = $3
+	`, declarationsTable)
+
+	var declaration TSDDeclaration
+	err = r.queryRow(ctx, query, tenantID, year, month).Scan(
+		&declaration.ID, &declaration.TenantID, &declaration.PeriodYear, &declaration.PeriodMonth,
+		&declaration.PayrollRunID, &declaration.TotalPayments, &declaration.TotalIncomeTax,
+		&declaration.TotalSocialTax, &declaration.TotalUnemploymentER, &declaration.TotalUnemploymentEE,
+		&declaration.TotalFundedPension, &declaration.Status, &declaration.SubmittedAt,
+		&declaration.EMTAReference, &declaration.CreatedAt, &declaration.UpdatedAt,
+	)
+	if err == pgx.ErrNoRows {
+		return nil, ErrTSDDeclarationNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	declaration.Rows, err = r.GetTSDRows(ctx, schemaName, tenantID, declaration.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &declaration, nil
+}
+
+// GetTSDRows retrieves all rows for a TSD declaration.
+func (r *PostgresRepository) GetTSDRows(ctx context.Context, schemaName, tenantID, declarationID string) ([]TSDRow, error) {
+	rowsTable, err := payrollTable(schemaName, "tsd_rows")
+	if err != nil {
+		return nil, err
+	}
+	query := fmt.Sprintf(`
+		SELECT id, tenant_id, declaration_id, employee_id, personal_code, first_name, last_name,
+			payment_type, gross_payment, basic_exemption, taxable_amount,
+			income_tax, social_tax, unemployment_insurance_employer, unemployment_insurance_employee,
+			funded_pension, created_at
+		FROM %s
+		WHERE tenant_id = $1 AND declaration_id = $2
+		ORDER BY last_name, first_name
+	`, rowsTable)
+
+	rows, err := r.query(ctx, query, tenantID, declarationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	tsdRows := []TSDRow{}
+	for rows.Next() {
+		var row TSDRow
+		if err := rows.Scan(
+			&row.ID, &row.TenantID, &row.DeclarationID, &row.EmployeeID,
+			&row.PersonalCode, &row.FirstName, &row.LastName, &row.PaymentType,
+			&row.GrossPayment, &row.BasicExemption, &row.TaxableAmount,
+			&row.IncomeTax, &row.SocialTax, &row.UnemploymentER, &row.UnemploymentEE,
+			&row.FundedPension, &row.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		tsdRows = append(tsdRows, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return tsdRows, nil
+}
+
+// ListTSD lists all TSD declarations for a tenant.
+func (r *PostgresRepository) ListTSD(ctx context.Context, schemaName, tenantID string) ([]TSDDeclaration, error) {
+	declarationsTable, err := payrollTable(schemaName, "tsd_declarations")
+	if err != nil {
+		return nil, err
+	}
+	query := fmt.Sprintf(`
+		SELECT id, tenant_id, period_year, period_month, COALESCE(payroll_run_id::text, ''),
+			total_payments, total_income_tax, total_social_tax,
+			total_unemployment_employer, total_unemployment_employee, total_funded_pension,
+			status, submitted_at, COALESCE(emta_reference, ''), created_at, updated_at
+		FROM %s
+		WHERE tenant_id = $1
+		ORDER BY period_year DESC, period_month DESC
+	`, declarationsTable)
+
+	rows, err := r.query(ctx, query, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	declarations := []TSDDeclaration{}
+	for rows.Next() {
+		var declaration TSDDeclaration
+		if err := rows.Scan(
+			&declaration.ID, &declaration.TenantID, &declaration.PeriodYear, &declaration.PeriodMonth,
+			&declaration.PayrollRunID, &declaration.TotalPayments, &declaration.TotalIncomeTax,
+			&declaration.TotalSocialTax, &declaration.TotalUnemploymentER, &declaration.TotalUnemploymentEE,
+			&declaration.TotalFundedPension, &declaration.Status, &declaration.SubmittedAt,
+			&declaration.EMTAReference, &declaration.CreatedAt, &declaration.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		declarations = append(declarations, declaration)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return declarations, nil
+}
+
+// MarkTSDSubmitted marks a TSD declaration as submitted to e-MTA.
+func (r *PostgresRepository) MarkTSDSubmitted(ctx context.Context, schemaName, tenantID, declarationID, emtaReference string, submittedAt time.Time) error {
+	declarationsTable, err := payrollTable(schemaName, "tsd_declarations")
+	if err != nil {
+		return err
+	}
+	query := fmt.Sprintf(`
+		UPDATE %s
+		SET status = $1, submitted_at = $2, emta_reference = $3, updated_at = $4
+		WHERE tenant_id = $5 AND id = $6
+	`, declarationsTable)
+	return r.exec(ctx, query, TSDSubmitted, submittedAt, emtaReference, submittedAt, tenantID, declarationID)
+}
+
+// UpdateTSDStatus updates a TSD declaration status.
+func (r *PostgresRepository) UpdateTSDStatus(ctx context.Context, schemaName, tenantID, declarationID string, status TSDStatus, updatedAt time.Time) error {
+	declarationsTable, err := payrollTable(schemaName, "tsd_declarations")
+	if err != nil {
+		return err
+	}
+	query := fmt.Sprintf(`
+		UPDATE %s
+		SET status = $1, updated_at = $2
+		WHERE tenant_id = $3 AND id = $4
+	`, declarationsTable)
+	return r.exec(ctx, query, status, updatedAt, tenantID, declarationID)
+}
+
 // Error definitions
 var (
-	ErrEmployeeNotFound   = fmt.Errorf("employee not found")
-	ErrPayrollRunNotFound = fmt.Errorf("payroll run not found")
+	ErrEmployeeNotFound       = fmt.Errorf("employee not found")
+	ErrPayrollRunNotFound     = fmt.Errorf("payroll run not found")
+	ErrTSDDeclarationNotFound = fmt.Errorf("TSD declaration not found")
 )
 
 // UUIDGenerator interface for generating UUIDs (for testing)

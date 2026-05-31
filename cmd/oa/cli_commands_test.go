@@ -7413,6 +7413,12 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "EMTA-123", req["emta_reference"])
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "submitted"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/accept":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/reject":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "rejected"})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode([]map[string]any{{
@@ -7579,6 +7585,16 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"tsd", "mark-submitted", "--year", "2026", "--month", "3", "--emta-reference", "EMTA-123"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Marked TSD 2026-03 as submitted")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tsd", "mark-accepted", "--year", "2026", "--month", "3"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Marked TSD 2026-03 as accepted")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tsd", "mark-rejected", "--year", "2026", "--month", "3", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "rejected"`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"tax", "kmd", "list"})

@@ -273,6 +273,8 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  tsd export-xml            Export TSD XML")
 	_, _ = fmt.Fprintln(a.stdout, "  tsd export-csv            Export TSD CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  tsd mark-submitted        Mark a TSD declaration submitted")
+	_, _ = fmt.Fprintln(a.stdout, "  tsd mark-accepted         Mark a TSD declaration accepted")
+	_, _ = fmt.Fprintln(a.stdout, "  tsd mark-rejected         Mark a TSD declaration rejected")
 	_, _ = fmt.Fprintln(a.stdout, "  tax kmd list              List KMD declarations")
 	_, _ = fmt.Fprintln(a.stdout, "  tax kmd generate          Generate KMD declaration")
 	_, _ = fmt.Fprintln(a.stdout, "  tax kmd inf               Generate KMD INF appendix report")
@@ -9961,6 +9963,54 @@ func (a *cliApp) runTSD(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, result)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Marked TSD %04d-%02d as submitted\n", year, month)
+		return nil
+
+	case "mark-accepted":
+		fs := flag.NewFlagSet("tsd mark-accepted", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		yearFlag := fs.String("year", "", "Declaration year")
+		monthFlag := fs.String("month", "", "Declaration month")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		year, month, err := parseYearMonthFlags(*yearFlag, *monthFlag)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.markTSDAccepted(ctx, cfg.TenantID, year, month)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Marked TSD %04d-%02d as accepted\n", year, month)
+		return nil
+
+	case "mark-rejected":
+		fs := flag.NewFlagSet("tsd mark-rejected", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		yearFlag := fs.String("year", "", "Declaration year")
+		monthFlag := fs.String("month", "", "Declaration month")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		year, month, err := parseYearMonthFlags(*yearFlag, *monthFlag)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.markTSDRejected(ctx, cfg.TenantID, year, month)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Marked TSD %04d-%02d as rejected\n", year, month)
 		return nil
 
 	default:

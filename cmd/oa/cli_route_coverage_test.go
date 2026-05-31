@@ -1140,6 +1140,10 @@ func tenantCLICommand(method, path string) (string, bool) {
 		return commandForMethod(method, map[string]string{"GET": "tsd export-csv"})
 	case "/tsd/{year}/{month}/submit":
 		return commandForMethod(method, map[string]string{"POST": "tsd mark-submitted"})
+	case "/tsd/{year}/{month}/accept":
+		return commandForMethod(method, map[string]string{"POST": "tsd mark-accepted"})
+	case "/tsd/{year}/{month}/reject":
+		return commandForMethod(method, map[string]string{"POST": "tsd mark-rejected"})
 	case "/users":
 		return commandForMethod(method, map[string]string{"GET": "users list"})
 	case "/users/{userID}":

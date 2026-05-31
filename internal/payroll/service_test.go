@@ -3,6 +3,7 @@ package payroll
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -54,9 +55,23 @@ type MockRepository struct {
 	DeletePayslipsErr error
 	CreatePayslipErr  error
 
+	// TSD data
+	TSDDeclarations     map[string]*TSDDeclaration
+	TSDRows             map[string][]TSDRow
+	GetPayslipsErr      error
+	DeleteTSDErr        error
+	CreateTSDErr        error
+	CreateTSDRowsErr    error
+	GetTSDErr           error
+	GetTSDRowsErr       error
+	ListTSDErr          error
+	MarkTSDSubmittedErr error
+	UpdateTSDStatusErr  error
+
 	// Transaction handling
-	BeginTxErr error
-	mockTx     *MockTx
+	BeginTxErr         error
+	WithTransactionErr error
+	mockTx             *MockTx
 }
 
 type MockTx struct {
@@ -99,6 +114,8 @@ func NewMockRepository() *MockRepository {
 		PayrollRuns:      make(map[string]*PayrollRun),
 		Salaries:         make(map[string]decimal.Decimal),
 		SalaryComponents: make(map[string][]SalaryComponent),
+		TSDDeclarations:  make(map[string]*TSDDeclaration),
+		TSDRows:          make(map[string][]TSDRow),
 		mockTx:           &MockTx{},
 	}
 }
@@ -288,6 +305,119 @@ func (m *MockRepository) CreatePayslip(ctx context.Context, schemaName string, p
 	return nil
 }
 
+func (m *MockRepository) GetPayslipsWithEmployees(ctx context.Context, schemaName, tenantID, payrollRunID string) ([]Payslip, error) {
+	if m.GetPayslipsErr != nil {
+		return nil, m.GetPayslipsErr
+	}
+	payslips := []Payslip{}
+	for _, payslip := range m.Payslips {
+		if payslip.TenantID == tenantID && payslip.PayrollRunID == payrollRunID {
+			if payslip.Employee == nil {
+				if employee, ok := m.Employees[payslip.EmployeeID]; ok {
+					payslip.Employee = employee
+				}
+			}
+			payslips = append(payslips, payslip)
+		}
+	}
+	return payslips, nil
+}
+
+func (m *MockRepository) DeleteTSDByPeriod(ctx context.Context, schemaName, tenantID string, year, month int) error {
+	if m.DeleteTSDErr != nil {
+		return m.DeleteTSDErr
+	}
+	for id, declaration := range m.TSDDeclarations {
+		if declaration.TenantID == tenantID && declaration.PeriodYear == year && declaration.PeriodMonth == month {
+			delete(m.TSDDeclarations, id)
+			delete(m.TSDRows, id)
+		}
+	}
+	return nil
+}
+
+func (m *MockRepository) CreateTSDDeclaration(ctx context.Context, schemaName string, declaration *TSDDeclaration) error {
+	if m.CreateTSDErr != nil {
+		return m.CreateTSDErr
+	}
+	copy := *declaration
+	m.TSDDeclarations[declaration.ID] = &copy
+	return nil
+}
+
+func (m *MockRepository) CreateTSDRows(ctx context.Context, schemaName string, rows []TSDRow) error {
+	if m.CreateTSDRowsErr != nil {
+		return m.CreateTSDRowsErr
+	}
+	for _, row := range rows {
+		m.TSDRows[row.DeclarationID] = append(m.TSDRows[row.DeclarationID], row)
+	}
+	return nil
+}
+
+func (m *MockRepository) GetTSD(ctx context.Context, schemaName, tenantID string, year, month int) (*TSDDeclaration, error) {
+	if m.GetTSDErr != nil {
+		return nil, m.GetTSDErr
+	}
+	for _, declaration := range m.TSDDeclarations {
+		if declaration.TenantID == tenantID && declaration.PeriodYear == year && declaration.PeriodMonth == month {
+			copy := *declaration
+			copy.Rows = append([]TSDRow(nil), m.TSDRows[declaration.ID]...)
+			return &copy, nil
+		}
+	}
+	return nil, ErrTSDDeclarationNotFound
+}
+
+func (m *MockRepository) GetTSDRows(ctx context.Context, schemaName, tenantID, declarationID string) ([]TSDRow, error) {
+	if m.GetTSDRowsErr != nil {
+		return nil, m.GetTSDRowsErr
+	}
+	return append([]TSDRow(nil), m.TSDRows[declarationID]...), nil
+}
+
+func (m *MockRepository) ListTSD(ctx context.Context, schemaName, tenantID string) ([]TSDDeclaration, error) {
+	if m.ListTSDErr != nil {
+		return nil, m.ListTSDErr
+	}
+	declarations := []TSDDeclaration{}
+	for _, declaration := range m.TSDDeclarations {
+		if declaration.TenantID == tenantID {
+			copy := *declaration
+			declarations = append(declarations, copy)
+		}
+	}
+	return declarations, nil
+}
+
+func (m *MockRepository) MarkTSDSubmitted(ctx context.Context, schemaName, tenantID, declarationID, emtaReference string, submittedAt time.Time) error {
+	if m.MarkTSDSubmittedErr != nil {
+		return m.MarkTSDSubmittedErr
+	}
+	declaration, ok := m.TSDDeclarations[declarationID]
+	if !ok || declaration.TenantID != tenantID {
+		return ErrTSDDeclarationNotFound
+	}
+	declaration.Status = TSDSubmitted
+	declaration.SubmittedAt = &submittedAt
+	declaration.EMTAReference = emtaReference
+	declaration.UpdatedAt = submittedAt
+	return nil
+}
+
+func (m *MockRepository) UpdateTSDStatus(ctx context.Context, schemaName, tenantID, declarationID string, status TSDStatus, updatedAt time.Time) error {
+	if m.UpdateTSDStatusErr != nil {
+		return m.UpdateTSDStatusErr
+	}
+	declaration, ok := m.TSDDeclarations[declarationID]
+	if !ok || declaration.TenantID != tenantID {
+		return ErrTSDDeclarationNotFound
+	}
+	declaration.Status = status
+	declaration.UpdatedAt = updatedAt
+	return nil
+}
+
 func (m *MockRepository) BeginTx(ctx context.Context) (pgx.Tx, error) {
 	if m.BeginTxErr != nil {
 		return nil, m.BeginTxErr
@@ -297,6 +427,25 @@ func (m *MockRepository) BeginTx(ctx context.Context) (pgx.Tx, error) {
 
 func (m *MockRepository) WithTx(tx pgx.Tx) Repository {
 	return m // Return the same mock for simplicity in tests
+}
+
+func (m *MockRepository) WithTransaction(ctx context.Context, fn func(txRepo Repository) error) error {
+	if m.WithTransactionErr != nil {
+		return m.WithTransactionErr
+	}
+	if m.BeginTxErr != nil {
+		return fmt.Errorf("begin transaction: %w", m.BeginTxErr)
+	}
+	if err := fn(m); err != nil {
+		m.mockTx.RollbackCalled = true
+		return err
+	}
+	if m.mockTx.CommitErr != nil {
+		m.mockTx.RollbackCalled = true
+		return fmt.Errorf("commit transaction: %w", m.mockTx.CommitErr)
+	}
+	m.mockTx.CommitCalled = true
+	return nil
 }
 
 // ============================================================================

@@ -6,22 +6,30 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 )
 
 // Service provides payroll operations
 type Service struct {
-	db   *pgxpool.Pool
 	repo Repository
 	uuid UUIDGenerator
 }
 
 // NewService creates a new payroll service
 func NewService(db *pgxpool.Pool) *Service {
+	if db == nil {
+		return &Service{
+			uuid: &DefaultUUIDGenerator{},
+		}
+	}
+	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	if err != nil {
+		panic(fmt.Errorf("create payroll GORM repository: %w", err))
+	}
 	return &Service{
-		db:   db,
-		repo: NewPostgresRepository(db),
+		repo: NewGORMRepository(gormDB),
 		uuid: &DefaultUUIDGenerator{},
 	}
 }
@@ -365,76 +373,69 @@ func (s *Service) CalculatePayroll(ctx context.Context, schemaName, tenantID, pa
 		return nil, err
 	}
 
-	tx, err := s.repo.BeginTx(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	txRepo := s.repo.WithTx(tx)
-
-	// Delete any existing payslips for this run
-	_ = txRepo.DeletePayslipsByRunID(ctx, schemaName, payrollRunID)
-
 	var totalGross, totalNet, totalEmployerCost decimal.Decimal
 	payslips := make([]Payslip, 0, len(employees))
 
-	for _, emp := range employees {
-		// Get current salary
-		salary, err := s.GetCurrentSalary(ctx, schemaName, tenantID, emp.ID)
-		if err != nil || salary.IsZero() {
-			continue // Skip employees without salary
+	if err := s.repo.WithTransaction(ctx, func(txRepo Repository) error {
+		// Delete any existing payslips for this run
+		_ = txRepo.DeletePayslipsByRunID(ctx, schemaName, payrollRunID)
+
+		for _, emp := range employees {
+			// Get current salary
+			salary, err := txRepo.GetCurrentSalary(ctx, schemaName, tenantID, emp.ID)
+			if err != nil || salary.IsZero() {
+				continue // Skip employees without salary
+			}
+
+			// Calculate taxes
+			basicExemption := decimal.Zero
+			if emp.ApplyBasicExemption {
+				basicExemption = emp.BasicExemptionAmount
+			}
+			calc := CalculateEstonianTaxes(salary, basicExemption, emp.FundedPensionRate)
+
+			// Create payslip
+			payslip := Payslip{
+				ID:                      s.uuid.New(),
+				TenantID:                tenantID,
+				PayrollRunID:            payrollRunID,
+				EmployeeID:              emp.ID,
+				GrossSalary:             calc.GrossSalary,
+				TaxableIncome:           calc.TaxableIncome,
+				IncomeTax:               calc.IncomeTax,
+				UnemploymentInsuranceEE: calc.UnemploymentEE,
+				FundedPension:           calc.FundedPension,
+				NetSalary:               calc.NetSalary,
+				SocialTax:               calc.SocialTax,
+				UnemploymentInsuranceER: calc.UnemploymentER,
+				TotalEmployerCost:       calc.TotalEmployerCost,
+				BasicExemptionApplied:   basicExemption,
+				PaymentStatus:           "PENDING",
+				CreatedAt:               time.Now(),
+			}
+
+			if err := txRepo.CreatePayslip(ctx, schemaName, &payslip); err != nil {
+				return fmt.Errorf("insert payslip: %w", err)
+			}
+
+			totalGross = totalGross.Add(calc.GrossSalary)
+			totalNet = totalNet.Add(calc.NetSalary)
+			totalEmployerCost = totalEmployerCost.Add(calc.TotalEmployerCost)
+			payslips = append(payslips, payslip)
 		}
 
-		// Calculate taxes
-		basicExemption := decimal.Zero
-		if emp.ApplyBasicExemption {
-			basicExemption = emp.BasicExemptionAmount
+		// Update payroll run totals and status
+		run.Status = PayrollCalculated
+		run.TotalGross = totalGross
+		run.TotalNet = totalNet
+		run.TotalEmployerCost = totalEmployerCost
+
+		if err := txRepo.UpdatePayrollRun(ctx, schemaName, run); err != nil {
+			return fmt.Errorf("update payroll run: %w", err)
 		}
-		calc := CalculateEstonianTaxes(salary, basicExemption, emp.FundedPensionRate)
-
-		// Create payslip
-		payslip := Payslip{
-			ID:                      s.uuid.New(),
-			TenantID:                tenantID,
-			PayrollRunID:            payrollRunID,
-			EmployeeID:              emp.ID,
-			GrossSalary:             calc.GrossSalary,
-			TaxableIncome:           calc.TaxableIncome,
-			IncomeTax:               calc.IncomeTax,
-			UnemploymentInsuranceEE: calc.UnemploymentEE,
-			FundedPension:           calc.FundedPension,
-			NetSalary:               calc.NetSalary,
-			SocialTax:               calc.SocialTax,
-			UnemploymentInsuranceER: calc.UnemploymentER,
-			TotalEmployerCost:       calc.TotalEmployerCost,
-			BasicExemptionApplied:   basicExemption,
-			PaymentStatus:           "PENDING",
-			CreatedAt:               time.Now(),
-		}
-
-		if err := txRepo.CreatePayslip(ctx, schemaName, &payslip); err != nil {
-			return nil, fmt.Errorf("insert payslip: %w", err)
-		}
-
-		totalGross = totalGross.Add(calc.GrossSalary)
-		totalNet = totalNet.Add(calc.NetSalary)
-		totalEmployerCost = totalEmployerCost.Add(calc.TotalEmployerCost)
-		payslips = append(payslips, payslip)
-	}
-
-	// Update payroll run totals and status
-	run.Status = PayrollCalculated
-	run.TotalGross = totalGross
-	run.TotalNet = totalNet
-	run.TotalEmployerCost = totalEmployerCost
-
-	if err := txRepo.UpdatePayrollRun(ctx, schemaName, run); err != nil {
-		return nil, fmt.Errorf("update payroll run: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit: %w", err)
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	run.Payslips = payslips

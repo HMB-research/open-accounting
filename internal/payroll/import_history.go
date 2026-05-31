@@ -242,70 +242,45 @@ func (s *Service) ImportPayrollHistoryCSV(
 			totalEmployerCost = totalEmployerCost.Add(record.payslip.TotalEmployerCost)
 		}
 
-		tx, err := s.repo.BeginTx(ctx)
-		if err != nil {
+		err := s.repo.WithTransaction(ctx, func(txRepo Repository) error {
+			approvedAt := payrollHistoryApprovedAt(group.status, group.paymentDate)
+			run := &PayrollRun{
+				ID:                s.uuid.New(),
+				TenantID:          tenantID,
+				PeriodYear:        group.periodYear,
+				PeriodMonth:       group.periodMonth,
+				Status:            group.status,
+				PaymentDate:       group.paymentDate,
+				TotalGross:        totalGross,
+				TotalNet:          totalNet,
+				TotalEmployerCost: totalEmployerCost,
+				Notes:             group.notes,
+				CreatedBy:         userID,
+				ApprovedBy:        payrollHistoryApprovedBy(group.status, userID),
+				ApprovedAt:        approvedAt,
+				CreatedAt:         time.Now(),
+				UpdatedAt:         time.Now(),
+			}
+
+			if err := txRepo.CreatePayrollRun(ctx, schemaName, run); err != nil {
+				return fmt.Errorf("create payroll run: %w", err)
+			}
+
 			for _, record := range group.records {
-				result.RowsSkipped++
-				result.Errors = append(result.Errors, ImportPayrollHistoryRowError{
-					Row:            record.rowNumber,
-					PeriodYear:     record.periodYear,
-					PeriodMonth:    record.periodMonth,
-					EmployeeName:   record.employeeName,
-					EmployeeNumber: record.employeeNumber,
-					Message:        fmt.Sprintf("begin transaction: %v", err),
-				})
+				payslip := record.payslip
+				payslip.ID = s.uuid.New()
+				payslip.TenantID = tenantID
+				payslip.PayrollRunID = run.ID
+				payslip.EmployeeID = record.employeeID
+
+				if err := txRepo.CreatePayslip(ctx, schemaName, &payslip); err != nil {
+					return fmt.Errorf("create payslip: %w", err)
+				}
 			}
-			continue
-		}
-
-		txRepo := s.repo.WithTx(tx)
-		approvedAt := payrollHistoryApprovedAt(group.status, group.paymentDate)
-		run := &PayrollRun{
-			ID:                s.uuid.New(),
-			TenantID:          tenantID,
-			PeriodYear:        group.periodYear,
-			PeriodMonth:       group.periodMonth,
-			Status:            group.status,
-			PaymentDate:       group.paymentDate,
-			TotalGross:        totalGross,
-			TotalNet:          totalNet,
-			TotalEmployerCost: totalEmployerCost,
-			Notes:             group.notes,
-			CreatedBy:         userID,
-			ApprovedBy:        payrollHistoryApprovedBy(group.status, userID),
-			ApprovedAt:        approvedAt,
-			CreatedAt:         time.Now(),
-			UpdatedAt:         time.Now(),
-		}
-
-		if err := txRepo.CreatePayrollRun(ctx, schemaName, run); err != nil {
-			_ = tx.Rollback(ctx)
-			appendPayrollHistoryGroupError(result, group, fmt.Sprintf("create payroll run: %v", err))
-			continue
-		}
-
-		groupFailed := false
-		for _, record := range group.records {
-			payslip := record.payslip
-			payslip.ID = s.uuid.New()
-			payslip.TenantID = tenantID
-			payslip.PayrollRunID = run.ID
-			payslip.EmployeeID = record.employeeID
-
-			if err := txRepo.CreatePayslip(ctx, schemaName, &payslip); err != nil {
-				_ = tx.Rollback(ctx)
-				appendPayrollHistoryGroupError(result, group, fmt.Sprintf("create payslip: %v", err))
-				groupFailed = true
-				break
-			}
-		}
-		if groupFailed {
-			continue
-		}
-
-		if err := tx.Commit(ctx); err != nil {
-			_ = tx.Rollback(ctx)
-			appendPayrollHistoryGroupError(result, group, fmt.Sprintf("commit transaction: %v", err))
+			return nil
+		})
+		if err != nil {
+			appendPayrollHistoryGroupError(result, group, err.Error())
 			continue
 		}
 

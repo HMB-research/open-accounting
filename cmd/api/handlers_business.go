@@ -3924,6 +3924,77 @@ func (h *Handlers) MarkTSDSubmitted(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"status": "submitted"})
 }
 
+// MarkTSDAccepted marks a TSD declaration as accepted
+// @Summary Mark TSD as accepted
+// @Description Mark a TSD declaration as accepted by e-MTA
+// @Tags Payroll
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param year path int true "Year"
+// @Param month path int true "Month"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/tsd/{year}/{month}/accept [post]
+func (h *Handlers) MarkTSDAccepted(w http.ResponseWriter, r *http.Request) {
+	h.markTSDStatusByPeriod(w, r, payroll.TSDAccepted, "accepted")
+}
+
+// MarkTSDRejected marks a TSD declaration as rejected
+// @Summary Mark TSD as rejected
+// @Description Mark a TSD declaration as rejected by e-MTA
+// @Tags Payroll
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param year path int true "Year"
+// @Param month path int true "Month"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/tsd/{year}/{month}/reject [post]
+func (h *Handlers) MarkTSDRejected(w http.ResponseWriter, r *http.Request) {
+	h.markTSDStatusByPeriod(w, r, payroll.TSDRejected, "rejected")
+}
+
+func (h *Handlers) markTSDStatusByPeriod(w http.ResponseWriter, r *http.Request, status payroll.TSDStatus, responseStatus string) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	year, err := strconv.Atoi(chi.URLParam(r, "year"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid year")
+		return
+	}
+
+	month, err := strconv.Atoi(chi.URLParam(r, "month"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid month")
+		return
+	}
+
+	tsd, err := h.payrollService.GetTSD(r.Context(), schemaName, tenantID, year, month)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "TSD declaration not found")
+		return
+	}
+
+	switch status {
+	case payroll.TSDAccepted:
+		err = h.payrollService.MarkTSDAccepted(r.Context(), schemaName, tenantID, tsd.ID)
+	case payroll.TSDRejected:
+		err = h.payrollService.MarkTSDRejected(r.Context(), schemaName, tenantID, tsd.ID)
+	default:
+		respondError(w, http.StatusBadRequest, "Unsupported TSD status")
+		return
+	}
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": responseStatus})
+}
+
 // =============================================================================
 // QUOTES HANDLERS
 // =============================================================================
