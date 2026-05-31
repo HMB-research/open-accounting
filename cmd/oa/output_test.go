@@ -2100,3 +2100,103 @@ func TestFormatHelpers(t *testing.T) {
 	assert.Equal(t, "Sick leave", leaveAbsenceTypeLabel("absence-1", &payroll.AbsenceType{Name: " Sick leave "}))
 	assert.Equal(t, "absence-1", leaveAbsenceTypeLabel("absence-1", &payroll.AbsenceType{}))
 }
+
+func TestOutputFallbackBranches(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	expiredAt := now.Add(-time.Hour)
+	futureAt := now.Add(time.Hour)
+	revokedAt := now.Add(-30 * time.Minute)
+	lastUsedAt := now.Add(-10 * time.Minute)
+
+	var rawBuf bytes.Buffer
+	require.NoError(t, printRawJSON(&rawBuf, []byte(`{"unterminated"`)))
+	assert.Equal(t, "{\"unterminated\"\n", rawBuf.String())
+
+	var emptySessionsBuf bytes.Buffer
+	printRefreshSessions(&emptySessionsBuf, nil)
+	assert.Contains(t, emptySessionsBuf.String(), "No refresh sessions found")
+
+	var sessionsBuf bytes.Buffer
+	printRefreshSessions(&sessionsBuf, []refreshSession{
+		{ID: "active-session", CreatedAt: now, LastUsedAt: &lastUsedAt, ExpiresAt: futureAt},
+		{ID: "revoked-session", CreatedAt: now, ExpiresAt: futureAt, RevokedAt: &revokedAt},
+		{ID: "expired-session", CreatedAt: now, ExpiresAt: expiredAt},
+	})
+	assert.Contains(t, sessionsBuf.String(), "active-session")
+	assert.Contains(t, sessionsBuf.String(), "active")
+	assert.Contains(t, sessionsBuf.String(), "revoked-session")
+	assert.Contains(t, sessionsBuf.String(), "revoked")
+	assert.Contains(t, sessionsBuf.String(), "expired-session")
+	assert.Contains(t, sessionsBuf.String(), "expired")
+
+	var nilReviewQueueBuf bytes.Buffer
+	printDocumentReviewQueue(&nilReviewQueueBuf, nil)
+	assert.Empty(t, nilReviewQueueBuf.String())
+
+	var emptyReviewQueueBuf bytes.Buffer
+	printDocumentReviewQueue(&emptyReviewQueueBuf, &documents.ReviewQueue{
+		ReviewStatus: "PENDING",
+		Limit:        25,
+	})
+	assert.Contains(t, emptyReviewQueueBuf.String(), "entity all")
+	assert.Contains(t, emptyReviewQueueBuf.String(), "document type all")
+
+	var reviewQueueBuf bytes.Buffer
+	printDocumentReviewQueue(&reviewQueueBuf, &documents.ReviewQueue{
+		EntityType:   "expense",
+		DocumentType: "receipt",
+		ReviewStatus: "APPROVED",
+		Limit:        10,
+		Documents: []documents.Document{{
+			ID:           "doc-1",
+			EntityType:   "expense",
+			EntityID:     "exp-1",
+			DocumentType: "receipt",
+			FileName:     "receipt.pdf",
+			FileSize:     1024,
+			ReviewStatus: "APPROVED",
+			CreatedAt:    now,
+		}},
+	})
+	assert.Contains(t, reviewQueueBuf.String(), "entity expense")
+	assert.Contains(t, reviewQueueBuf.String(), "receipt.pdf")
+
+	assert.Equal(t, string(invoicing.VATTreatmentStandard), invoiceLineVATTreatmentLabel(""))
+	assert.Equal(t, string(invoicing.VATTreatmentReverseCharge), invoiceLineVATTreatmentLabel(invoicing.VATTreatmentReverseCharge))
+	var sepaLines *sepaLineFlags
+	assert.Equal(t, "", sepaLines.String())
+	var stringList *stringListFlags
+	assert.Equal(t, "", stringList.String())
+	assert.Equal(t, "SKU-1 Product", orderStockReservationProductLabel(orders.OrderStockReservationLine{
+		ProductCode: " SKU-1 ",
+		ProductName: " Product ",
+		ProductID:   "prod-1",
+	}))
+	assert.Equal(t, "prod-1", orderStockReservationProductLabel(orders.OrderStockReservationLine{ProductID: "prod-1"}))
+	assert.Equal(t, "A sales", kmdINFPartLabel(tax.KMDINFPartSales))
+	assert.Equal(t, "B purchases", kmdINFPartLabel(tax.KMDINFPartPurchases))
+	assert.Equal(t, "custom", kmdINFPartLabel(tax.KMDINFPart("custom")))
+
+	assert.Equal(t, "Acme", invoiceContactLabel(invoicing.Invoice{
+		ContactID: "contact-1",
+		Contact:   &contacts.Contact{Name: " Acme "},
+	}))
+	assert.Equal(t, "contact-1", invoiceContactLabel(invoicing.Invoice{ContactID: "contact-1"}))
+	assert.Equal(t, "Acme", quoteContactLabel(quotes.Quote{
+		ContactID: "contact-1",
+		Contact:   &contacts.Contact{Name: " Acme "},
+	}))
+	assert.Equal(t, "contact-1", quoteContactLabel(quotes.Quote{ContactID: "contact-1"}))
+	assert.Equal(t, "Acme", orderContactLabel(orders.Order{
+		ContactID: "contact-1",
+		Contact:   &contacts.Contact{Name: " Acme "},
+	}))
+	assert.Equal(t, "contact-1", orderContactLabel(orders.Order{ContactID: "contact-1"}))
+	assert.Equal(t, "Acme", recurringContactLabel(recurring.RecurringInvoice{
+		ContactID:   "contact-1",
+		ContactName: " Acme ",
+	}))
+	assert.Equal(t, "contact-1", recurringContactLabel(recurring.RecurringInvoice{ContactID: "contact-1"}))
+}
