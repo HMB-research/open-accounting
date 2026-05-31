@@ -293,15 +293,8 @@ func (s *Service) GetTSDSummary(ctx context.Context, schemaName, tenantID string
 
 // MarkTSDSubmitted marks a TSD declaration as submitted to e-MTA
 func (s *Service) MarkTSDSubmitted(ctx context.Context, schemaName, tenantID, declarationID, emtaReference string) error {
-	query := fmt.Sprintf(`
-		UPDATE %s.tsd_declarations
-		SET status = $1, submitted_at = $2, emta_reference = $3, updated_at = $4
-		WHERE tenant_id = $5 AND id = $6
-	`, schemaName)
-
 	now := time.Now()
-	_, err := s.db.Exec(ctx, query, TSDSubmitted, now, emtaReference, now, tenantID, declarationID)
-	if err != nil {
+	if err := s.repo.MarkTSDSubmitted(ctx, schemaName, tenantID, declarationID, emtaReference, now); err != nil {
 		return fmt.Errorf("mark TSD submitted: %w", err)
 	}
 
@@ -310,14 +303,7 @@ func (s *Service) MarkTSDSubmitted(ctx context.Context, schemaName, tenantID, de
 
 // MarkTSDAccepted marks a TSD declaration as accepted by e-MTA
 func (s *Service) MarkTSDAccepted(ctx context.Context, schemaName, tenantID, declarationID string) error {
-	query := fmt.Sprintf(`
-		UPDATE %s.tsd_declarations
-		SET status = $1, updated_at = $2
-		WHERE tenant_id = $3 AND id = $4
-	`, schemaName)
-
-	_, err := s.db.Exec(ctx, query, TSDAccepted, time.Now(), tenantID, declarationID)
-	if err != nil {
+	if err := s.repo.UpdateTSDStatus(ctx, schemaName, tenantID, declarationID, TSDAccepted, time.Now()); err != nil {
 		return fmt.Errorf("mark TSD accepted: %w", err)
 	}
 
@@ -326,14 +312,7 @@ func (s *Service) MarkTSDAccepted(ctx context.Context, schemaName, tenantID, dec
 
 // MarkTSDRejected marks a TSD declaration as rejected by e-MTA
 func (s *Service) MarkTSDRejected(ctx context.Context, schemaName, tenantID, declarationID string) error {
-	query := fmt.Sprintf(`
-		UPDATE %s.tsd_declarations
-		SET status = $1, updated_at = $2
-		WHERE tenant_id = $3 AND id = $4
-	`, schemaName)
-
-	_, err := s.db.Exec(ctx, query, TSDRejected, time.Now(), tenantID, declarationID)
-	if err != nil {
+	if err := s.repo.UpdateTSDStatus(ctx, schemaName, tenantID, declarationID, TSDRejected, time.Now()); err != nil {
 		return fmt.Errorf("mark TSD rejected: %w", err)
 	}
 

@@ -3459,6 +3459,20 @@ Content-Type: application/json
 }
 ```
 
+### Mark TSD Accepted
+
+```http
+POST /tenants/{tenantId}/tsd/{year}/{month}/accept
+Authorization: Bearer <token>
+```
+
+### Mark TSD Rejected
+
+```http
+POST /tenants/{tenantId}/tsd/{year}/{month}/reject
+Authorization: Bearer <token>
+```
+
 ---
 
 ## Webhooks

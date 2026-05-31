@@ -158,84 +158,48 @@ func (s *Service) ImportEmployeesCSV(ctx context.Context, schemaName, tenantID s
 			continue
 		}
 
-		tx, err := s.repo.BeginTx(ctx)
-		if err != nil {
-			result.RowsSkipped++
-			result.Errors = append(result.Errors, ImportEmployeesRowError{
-				Row:            row.rowNumber,
-				EmployeeName:   record.employeeName,
-				EmployeeNumber: record.employeeNumber,
-				Message:        fmt.Sprintf("begin transaction: %v", err),
-			})
-			continue
-		}
+		salaryCreated := false
+		err = s.repo.WithTransaction(ctx, func(txRepo Repository) error {
+			txService := &Service{
+				repo: txRepo,
+				uuid: s.uuid,
+			}
 
-		txRepo := s.repo.WithTx(tx)
-		txService := &Service{
-			repo: txRepo,
-			uuid: s.uuid,
-		}
+			employee, err := txService.CreateEmployee(ctx, schemaName, tenantID, &record.createRequest)
+			if err != nil {
+				return err
+			}
 
-		employee, err := txService.CreateEmployee(ctx, schemaName, tenantID, &record.createRequest)
+			if record.endDate != nil || record.isActive != nil {
+				updateReq := &UpdateEmployeeRequest{
+					EndDate:  record.endDate,
+					IsActive: record.isActive,
+				}
+				if _, err := txService.UpdateEmployee(ctx, schemaName, tenantID, employee.ID, updateReq); err != nil {
+					return err
+				}
+			}
+
+			if record.baseSalary != nil {
+				effectiveFrom := record.createRequest.StartDate
+				if record.salaryEffectiveFrom != nil {
+					effectiveFrom = *record.salaryEffectiveFrom
+				}
+
+				if err := txService.SetBaseSalary(ctx, schemaName, tenantID, employee.ID, *record.baseSalary, effectiveFrom); err != nil {
+					return err
+				}
+				salaryCreated = true
+			}
+			return nil
+		})
 		if err != nil {
-			_ = tx.Rollback(ctx)
 			result.RowsSkipped++
 			result.Errors = append(result.Errors, ImportEmployeesRowError{
 				Row:            row.rowNumber,
 				EmployeeName:   record.employeeName,
 				EmployeeNumber: record.employeeNumber,
 				Message:        err.Error(),
-			})
-			continue
-		}
-
-		if record.endDate != nil || record.isActive != nil {
-			updateReq := &UpdateEmployeeRequest{
-				EndDate:  record.endDate,
-				IsActive: record.isActive,
-			}
-			if _, err := txService.UpdateEmployee(ctx, schemaName, tenantID, employee.ID, updateReq); err != nil {
-				_ = tx.Rollback(ctx)
-				result.RowsSkipped++
-				result.Errors = append(result.Errors, ImportEmployeesRowError{
-					Row:            row.rowNumber,
-					EmployeeName:   record.employeeName,
-					EmployeeNumber: record.employeeNumber,
-					Message:        err.Error(),
-				})
-				continue
-			}
-		}
-
-		salaryCreated := false
-		if record.baseSalary != nil {
-			effectiveFrom := record.createRequest.StartDate
-			if record.salaryEffectiveFrom != nil {
-				effectiveFrom = *record.salaryEffectiveFrom
-			}
-
-			if err := txService.SetBaseSalary(ctx, schemaName, tenantID, employee.ID, *record.baseSalary, effectiveFrom); err != nil {
-				_ = tx.Rollback(ctx)
-				result.RowsSkipped++
-				result.Errors = append(result.Errors, ImportEmployeesRowError{
-					Row:            row.rowNumber,
-					EmployeeName:   record.employeeName,
-					EmployeeNumber: record.employeeNumber,
-					Message:        err.Error(),
-				})
-				continue
-			}
-			salaryCreated = true
-		}
-
-		if err := tx.Commit(ctx); err != nil {
-			_ = tx.Rollback(ctx)
-			result.RowsSkipped++
-			result.Errors = append(result.Errors, ImportEmployeesRowError{
-				Row:            row.rowNumber,
-				EmployeeName:   record.employeeName,
-				EmployeeNumber: record.employeeNumber,
-				Message:        fmt.Sprintf("commit transaction: %v", err),
 			})
 			continue
 		}

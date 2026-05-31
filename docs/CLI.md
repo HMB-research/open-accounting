@@ -409,9 +409,11 @@ go run ./cmd/oa tsd generate --run-id <payroll-run-id>
 go run ./cmd/oa tsd export-xml --year 2026 --month 3 --output ./tsd-2026-03.xml
 go run ./cmd/oa tsd export-csv --year 2026 --month 3 --output ./tsd-2026-03.csv
 go run ./cmd/oa tsd mark-submitted --year 2026 --month 3 --emta-reference EMTA-123
+go run ./cmd/oa tsd mark-accepted --year 2026 --month 3
+go run ./cmd/oa tsd mark-rejected --year 2026 --month 3
 ```
 
-Omit `--output` on export commands to write the raw XML or CSV to stdout. Use `--json` on list/get/generate/mark-submitted for automation.
+Omit `--output` on export commands to write the raw XML or CSV to stdout. Use `--json` on list/get/generate/mark-submitted/mark-accepted/mark-rejected for automation.
 
 ## KMD declarations
 

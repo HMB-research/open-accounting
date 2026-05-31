@@ -1,5 +1,3 @@
-//go:build gorm
-
 package payroll
 
 import (
@@ -10,7 +8,6 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/models"
-	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
@@ -29,15 +26,14 @@ func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName 
 	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
 }
 
-// BeginTx is not supported in GORM implementation
-// Use GORM's Transaction method instead
-func (r *GORMRepository) BeginTx(ctx context.Context) (pgx.Tx, error) {
-	return nil, fmt.Errorf("BeginTx is not supported in GORM implementation; use internal transactions")
-}
-
-// WithTx is not supported in GORM implementation
-func (r *GORMRepository) WithTx(tx pgx.Tx) Repository {
-	return r // Return self - transactions are handled internally
+// WithTransaction runs fn inside a GORM-backed transaction.
+func (r *GORMRepository) WithTransaction(ctx context.Context, fn func(txRepo Repository) error) error {
+	if r.db == nil {
+		return fmt.Errorf("database connection not available")
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return fn(&GORMRepository{db: tx})
+	})
 }
 
 // CreateEmployee inserts a new employee
@@ -329,6 +325,202 @@ func (r *GORMRepository) CreatePayslip(ctx context.Context, schemaName string, p
 	return nil
 }
 
+// GetPayslipsWithEmployees retrieves payslips with employee data.
+func (r *GORMRepository) GetPayslipsWithEmployees(ctx context.Context, schemaName, tenantID, payrollRunID string) ([]Payslip, error) {
+	payslipsTable, err := database.QualifiedTable(schemaName, "payslips")
+	if err != nil {
+		return nil, err
+	}
+	employeesTable, err := database.QualifiedTable(schemaName, "employees")
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []struct {
+		models.Payslip
+		EmployeeFirstName    string
+		EmployeeLastName     string
+		EmployeePersonalCode string
+		EmployeeEmail        string
+	}
+	if err := r.db.WithContext(ctx).Table(payslipsTable+" AS p").
+		Select(`
+			p.*,
+			e.first_name AS employee_first_name,
+			e.last_name AS employee_last_name,
+			e.personal_code AS employee_personal_code,
+			e.email AS employee_email
+		`).
+		Joins("JOIN "+employeesTable+" AS e ON e.id = p.employee_id").
+		Where("p.tenant_id = ? AND p.payroll_run_id = ?", tenantID, payrollRunID).
+		Order("e.last_name, e.first_name").
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("get payslips: %w", err)
+	}
+
+	payslips := make([]Payslip, len(rows))
+	for i := range rows {
+		payslip := *modelToPayslip(&rows[i].Payslip)
+		payslip.Employee = &Employee{
+			ID:           payslip.EmployeeID,
+			FirstName:    rows[i].EmployeeFirstName,
+			LastName:     rows[i].EmployeeLastName,
+			PersonalCode: rows[i].EmployeePersonalCode,
+			Email:        rows[i].EmployeeEmail,
+		}
+		payslips[i] = payslip
+	}
+	return payslips, nil
+}
+
+// DeleteTSDByPeriod removes an existing TSD declaration and cascaded rows for a period.
+func (r *GORMRepository) DeleteTSDByPeriod(ctx context.Context, schemaName, tenantID string, year, month int) error {
+	db, err := r.tenantTable(ctx, schemaName, "tsd_declarations")
+	if err != nil {
+		return err
+	}
+	if err := db.Where("tenant_id = ? AND period_year = ? AND period_month = ?", tenantID, year, month).
+		Delete(&models.TSDDeclaration{}).Error; err != nil {
+		return fmt.Errorf("delete TSD declaration: %w", err)
+	}
+	return nil
+}
+
+// CreateTSDDeclaration inserts a TSD declaration.
+func (r *GORMRepository) CreateTSDDeclaration(ctx context.Context, schemaName string, declaration *TSDDeclaration) error {
+	db, err := r.tenantTable(ctx, schemaName, "tsd_declarations")
+	if err != nil {
+		return err
+	}
+	if err := db.Create(tsdDeclarationToModel(declaration)).Error; err != nil {
+		return fmt.Errorf("create TSD declaration: %w", err)
+	}
+	return nil
+}
+
+// CreateTSDRows inserts TSD declaration rows.
+func (r *GORMRepository) CreateTSDRows(ctx context.Context, schemaName string, rows []TSDRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	db, err := r.tenantTable(ctx, schemaName, "tsd_rows")
+	if err != nil {
+		return err
+	}
+	rowModels := make([]models.TSDRow, len(rows))
+	for i := range rows {
+		rowModels[i] = *tsdRowToModel(&rows[i])
+	}
+	if err := db.Create(&rowModels).Error; err != nil {
+		return fmt.Errorf("create TSD rows: %w", err)
+	}
+	return nil
+}
+
+// GetTSD retrieves a TSD declaration by period.
+func (r *GORMRepository) GetTSD(ctx context.Context, schemaName, tenantID string, year, month int) (*TSDDeclaration, error) {
+	db, err := r.tenantTable(ctx, schemaName, "tsd_declarations")
+	if err != nil {
+		return nil, err
+	}
+	var declarationModel models.TSDDeclaration
+	err = db.Where("tenant_id = ? AND period_year = ? AND period_month = ?", tenantID, year, month).
+		First(&declarationModel).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrTSDDeclarationNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get TSD: %w", err)
+	}
+
+	declaration := modelToTSDDeclaration(&declarationModel)
+	declaration.Rows, err = r.GetTSDRows(ctx, schemaName, tenantID, declaration.ID)
+	if err != nil {
+		return nil, err
+	}
+	return declaration, nil
+}
+
+// GetTSDRows retrieves all rows for a TSD declaration.
+func (r *GORMRepository) GetTSDRows(ctx context.Context, schemaName, tenantID, declarationID string) ([]TSDRow, error) {
+	db, err := r.tenantTable(ctx, schemaName, "tsd_rows")
+	if err != nil {
+		return nil, err
+	}
+	var rowModels []models.TSDRow
+	if err := db.Where("tenant_id = ? AND declaration_id = ?", tenantID, declarationID).
+		Order("last_name, first_name").
+		Find(&rowModels).Error; err != nil {
+		return nil, fmt.Errorf("get TSD rows: %w", err)
+	}
+	rows := make([]TSDRow, len(rowModels))
+	for i := range rowModels {
+		rows[i] = *modelToTSDRow(&rowModels[i])
+	}
+	return rows, nil
+}
+
+// ListTSD lists all TSD declarations for a tenant.
+func (r *GORMRepository) ListTSD(ctx context.Context, schemaName, tenantID string) ([]TSDDeclaration, error) {
+	db, err := r.tenantTable(ctx, schemaName, "tsd_declarations")
+	if err != nil {
+		return nil, err
+	}
+	var declarationModels []models.TSDDeclaration
+	if err := db.Where("tenant_id = ?", tenantID).
+		Order("period_year DESC, period_month DESC").
+		Find(&declarationModels).Error; err != nil {
+		return nil, fmt.Errorf("list TSD: %w", err)
+	}
+	declarations := make([]TSDDeclaration, len(declarationModels))
+	for i := range declarationModels {
+		declarations[i] = *modelToTSDDeclaration(&declarationModels[i])
+	}
+	return declarations, nil
+}
+
+// MarkTSDSubmitted marks a TSD declaration as submitted to e-MTA.
+func (r *GORMRepository) MarkTSDSubmitted(ctx context.Context, schemaName, tenantID, declarationID, emtaReference string, submittedAt time.Time) error {
+	db, err := r.tenantTable(ctx, schemaName, "tsd_declarations")
+	if err != nil {
+		return err
+	}
+	result := db.Where("tenant_id = ? AND id = ?", tenantID, declarationID).
+		Updates(map[string]interface{}{
+			"status":         TSDSubmitted,
+			"submitted_at":   submittedAt,
+			"emta_reference": emtaReference,
+			"updated_at":     submittedAt,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("mark TSD submitted: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrTSDDeclarationNotFound
+	}
+	return nil
+}
+
+// UpdateTSDStatus updates a TSD declaration status.
+func (r *GORMRepository) UpdateTSDStatus(ctx context.Context, schemaName, tenantID, declarationID string, status TSDStatus, updatedAt time.Time) error {
+	db, err := r.tenantTable(ctx, schemaName, "tsd_declarations")
+	if err != nil {
+		return err
+	}
+	result := db.Where("tenant_id = ? AND id = ?", tenantID, declarationID).
+		Updates(map[string]interface{}{
+			"status":     status,
+			"updated_at": updatedAt,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("update TSD status: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrTSDDeclarationNotFound
+	}
+	return nil
+}
+
 // Conversion helpers
 
 func modelToEmployee(m *models.Employee) *Employee {
@@ -429,8 +621,8 @@ func modelToPayrollRun(m *models.PayrollRun) *PayrollRun {
 		TotalNet:          m.TotalNet.Decimal,
 		TotalEmployerCost: m.TotalEmployerCost.Decimal,
 		Notes:             m.Notes,
-		CreatedBy:         m.CreatedBy,
-		ApprovedBy:        m.ApprovedBy,
+		CreatedBy:         stringValue(m.CreatedBy),
+		ApprovedBy:        stringValue(m.ApprovedBy),
 		ApprovedAt:        m.ApprovedAt,
 		CreatedAt:         m.CreatedAt,
 		UpdatedAt:         m.UpdatedAt,
@@ -449,8 +641,8 @@ func payrollRunToModel(r *PayrollRun) *models.PayrollRun {
 		TotalNet:          models.Decimal{Decimal: r.TotalNet},
 		TotalEmployerCost: models.Decimal{Decimal: r.TotalEmployerCost},
 		Notes:             r.Notes,
-		CreatedBy:         r.CreatedBy,
-		ApprovedBy:        r.ApprovedBy,
+		CreatedBy:         stringPtrIfNotBlank(r.CreatedBy),
+		ApprovedBy:        stringPtrIfNotBlank(r.ApprovedBy),
 		ApprovedAt:        r.ApprovedAt,
 		CreatedAt:         r.CreatedAt,
 		UpdatedAt:         r.UpdatedAt,
@@ -477,5 +669,128 @@ func payslipToModel(p *Payslip) *models.Payslip {
 		PaymentStatus:           p.PaymentStatus,
 		PaidAt:                  p.PaidAt,
 		CreatedAt:               p.CreatedAt,
+	}
+}
+
+func modelToPayslip(m *models.Payslip) *Payslip {
+	return &Payslip{
+		ID:                      m.ID,
+		TenantID:                m.TenantID,
+		PayrollRunID:            m.PayrollRunID,
+		EmployeeID:              m.EmployeeID,
+		GrossSalary:             m.GrossSalary.Decimal,
+		TaxableIncome:           m.TaxableIncome.Decimal,
+		IncomeTax:               m.IncomeTax.Decimal,
+		UnemploymentInsuranceEE: m.UnemploymentInsuranceEE.Decimal,
+		FundedPension:           m.FundedPension.Decimal,
+		OtherDeductions:         m.OtherDeductions.Decimal,
+		NetSalary:               m.NetSalary.Decimal,
+		SocialTax:               m.SocialTax.Decimal,
+		UnemploymentInsuranceER: m.UnemploymentInsuranceER.Decimal,
+		TotalEmployerCost:       m.TotalEmployerCost.Decimal,
+		BasicExemptionApplied:   m.BasicExemptionApplied.Decimal,
+		PaymentStatus:           m.PaymentStatus,
+		PaidAt:                  m.PaidAt,
+		CreatedAt:               m.CreatedAt,
+	}
+}
+
+func tsdDeclarationToModel(t *TSDDeclaration) *models.TSDDeclaration {
+	return &models.TSDDeclaration{
+		ID:                  t.ID,
+		TenantID:            t.TenantID,
+		PeriodYear:          t.PeriodYear,
+		PeriodMonth:         t.PeriodMonth,
+		PayrollRunID:        stringPtrIfNotBlank(t.PayrollRunID),
+		TotalPayments:       models.Decimal{Decimal: t.TotalPayments},
+		TotalIncomeTax:      models.Decimal{Decimal: t.TotalIncomeTax},
+		TotalSocialTax:      models.Decimal{Decimal: t.TotalSocialTax},
+		TotalUnemploymentER: models.Decimal{Decimal: t.TotalUnemploymentER},
+		TotalUnemploymentEE: models.Decimal{Decimal: t.TotalUnemploymentEE},
+		TotalFundedPension:  models.Decimal{Decimal: t.TotalFundedPension},
+		Status:              string(t.Status),
+		SubmittedAt:         t.SubmittedAt,
+		EMTAReference:       t.EMTAReference,
+		CreatedAt:           t.CreatedAt,
+		UpdatedAt:           t.UpdatedAt,
+	}
+}
+
+func modelToTSDDeclaration(m *models.TSDDeclaration) *TSDDeclaration {
+	return &TSDDeclaration{
+		ID:                  m.ID,
+		TenantID:            m.TenantID,
+		PeriodYear:          m.PeriodYear,
+		PeriodMonth:         m.PeriodMonth,
+		PayrollRunID:        stringValue(m.PayrollRunID),
+		TotalPayments:       m.TotalPayments.Decimal,
+		TotalIncomeTax:      m.TotalIncomeTax.Decimal,
+		TotalSocialTax:      m.TotalSocialTax.Decimal,
+		TotalUnemploymentER: m.TotalUnemploymentER.Decimal,
+		TotalUnemploymentEE: m.TotalUnemploymentEE.Decimal,
+		TotalFundedPension:  m.TotalFundedPension.Decimal,
+		Status:              TSDStatus(m.Status),
+		SubmittedAt:         m.SubmittedAt,
+		EMTAReference:       m.EMTAReference,
+		CreatedAt:           m.CreatedAt,
+		UpdatedAt:           m.UpdatedAt,
+	}
+}
+
+func stringPtrIfNotBlank(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func tsdRowToModel(t *TSDRow) *models.TSDRow {
+	return &models.TSDRow{
+		ID:             t.ID,
+		TenantID:       t.TenantID,
+		DeclarationID:  t.DeclarationID,
+		EmployeeID:     t.EmployeeID,
+		PersonalCode:   t.PersonalCode,
+		FirstName:      t.FirstName,
+		LastName:       t.LastName,
+		PaymentType:    t.PaymentType,
+		GrossPayment:   models.Decimal{Decimal: t.GrossPayment},
+		BasicExemption: models.Decimal{Decimal: t.BasicExemption},
+		TaxableAmount:  models.Decimal{Decimal: t.TaxableAmount},
+		IncomeTax:      models.Decimal{Decimal: t.IncomeTax},
+		SocialTax:      models.Decimal{Decimal: t.SocialTax},
+		UnemploymentER: models.Decimal{Decimal: t.UnemploymentER},
+		UnemploymentEE: models.Decimal{Decimal: t.UnemploymentEE},
+		FundedPension:  models.Decimal{Decimal: t.FundedPension},
+		CreatedAt:      t.CreatedAt,
+	}
+}
+
+func modelToTSDRow(m *models.TSDRow) *TSDRow {
+	return &TSDRow{
+		ID:             m.ID,
+		TenantID:       m.TenantID,
+		DeclarationID:  m.DeclarationID,
+		EmployeeID:     m.EmployeeID,
+		PersonalCode:   m.PersonalCode,
+		FirstName:      m.FirstName,
+		LastName:       m.LastName,
+		PaymentType:    m.PaymentType,
+		GrossPayment:   m.GrossPayment.Decimal,
+		BasicExemption: m.BasicExemption.Decimal,
+		TaxableAmount:  m.TaxableAmount.Decimal,
+		IncomeTax:      m.IncomeTax.Decimal,
+		SocialTax:      m.SocialTax.Decimal,
+		UnemploymentER: m.UnemploymentER.Decimal,
+		UnemploymentEE: m.UnemploymentEE.Decimal,
+		FundedPension:  m.FundedPension.Decimal,
+		CreatedAt:      m.CreatedAt,
 	}
 }

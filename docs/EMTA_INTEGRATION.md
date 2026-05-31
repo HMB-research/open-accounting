@@ -23,6 +23,8 @@ The Estonian Tax and Customs Board (Maksu- ja Tolliamet, MTA) provides electroni
   - `GET /api/v1/tenants/{tenantID}/tsd/{year}/{month}/xml` - Export XML
   - `GET /api/v1/tenants/{tenantID}/tsd/{year}/{month}/csv` - Export CSV
   - `POST /api/v1/tenants/{tenantID}/tsd/{year}/{month}/submit` - Mark as submitted
+  - `POST /api/v1/tenants/{tenantID}/tsd/{year}/{month}/accept` - Mark as accepted
+  - `POST /api/v1/tenants/{tenantID}/tsd/{year}/{month}/reject` - Mark as rejected
 
 ### Manual Workflow (Currently Supported)
 
