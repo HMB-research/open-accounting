@@ -8,9 +8,6 @@ import (
 
 // Repository defines the contract for recurring invoice data access
 type Repository interface {
-	// Schema management
-	EnsureSchema(ctx context.Context, schemaName string) error
-
 	// Recurring Invoice CRUD
 	Create(ctx context.Context, schemaName string, ri *RecurringInvoice) error
 	CreateLine(ctx context.Context, schemaName string, line *RecurringInvoiceLine) error

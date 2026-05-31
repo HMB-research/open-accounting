@@ -25,69 +25,6 @@ func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName 
 	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
 }
 
-// EnsureSchema creates the recurring invoice tables if they don't exist.
-// Dynamic tenant schemas are provisioned with DDL behind the repository boundary.
-func (r *GORMRepository) EnsureSchema(ctx context.Context, schemaName string) error {
-	quotedSchema, err := database.QuoteIdentifier(schemaName)
-	if err != nil {
-		return err
-	}
-
-	query := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS %s.recurring_invoices (
-			id UUID PRIMARY KEY,
-			tenant_id UUID NOT NULL,
-			name VARCHAR(100) NOT NULL,
-			contact_id UUID NOT NULL,
-			invoice_type VARCHAR(20) NOT NULL DEFAULT 'SALES',
-			currency VARCHAR(3) NOT NULL DEFAULT 'EUR',
-			frequency VARCHAR(20) NOT NULL,
-			start_date DATE NOT NULL,
-			end_date DATE,
-			next_generation_date DATE NOT NULL,
-			payment_terms_days INTEGER NOT NULL DEFAULT 14,
-			reference TEXT,
-			notes TEXT,
-			is_active BOOLEAN NOT NULL DEFAULT true,
-			last_generated_at TIMESTAMPTZ,
-			generated_count INTEGER NOT NULL DEFAULT 0,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			created_by UUID NOT NULL,
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			send_email_on_generation BOOLEAN DEFAULT false,
-			email_template_type VARCHAR(50) DEFAULT 'INVOICE_SEND',
-			recipient_email_override TEXT,
-			attach_pdf_to_email BOOLEAN DEFAULT true,
-			email_subject_override TEXT,
-			email_message TEXT
-		);
-
-		CREATE TABLE IF NOT EXISTS %s.recurring_invoice_lines (
-			id UUID PRIMARY KEY,
-			recurring_invoice_id UUID NOT NULL REFERENCES %s.recurring_invoices(id) ON DELETE CASCADE,
-			line_number INTEGER NOT NULL,
-			description TEXT NOT NULL,
-			quantity NUMERIC(18,6) NOT NULL DEFAULT 1,
-			unit VARCHAR(20),
-			unit_price NUMERIC(28,8) NOT NULL,
-			discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
-			vat_rate NUMERIC(5,2) NOT NULL DEFAULT 0,
-			account_id UUID,
-			product_id UUID
-		);
-
-		CREATE INDEX IF NOT EXISTS idx_recurring_invoices_tenant ON %s.recurring_invoices(tenant_id);
-		CREATE INDEX IF NOT EXISTS idx_recurring_invoices_next_gen ON %s.recurring_invoices(next_generation_date) WHERE is_active = true;
-		CREATE INDEX IF NOT EXISTS idx_recurring_invoice_lines_recurring ON %s.recurring_invoice_lines(recurring_invoice_id);
-		ALTER TABLE %s.invoices
-			ADD COLUMN IF NOT EXISTS last_email_sent_at TIMESTAMPTZ,
-			ADD COLUMN IF NOT EXISTS last_email_status VARCHAR(20),
-			ADD COLUMN IF NOT EXISTS last_email_log_id UUID;
-	`, quotedSchema, quotedSchema, quotedSchema, quotedSchema, quotedSchema, quotedSchema, quotedSchema)
-
-	return r.db.WithContext(ctx).Exec(query).Error
-}
-
 // Create inserts a new recurring invoice
 func (r *GORMRepository) Create(ctx context.Context, schemaName string, ri *RecurringInvoice) error {
 	db, err := r.tenantTable(ctx, schemaName, "recurring_invoices")

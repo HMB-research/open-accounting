@@ -15,16 +15,55 @@ import (
 // Note: These integration tests focus on the ORM-backed repository implementation
 // which is the primary database layer for the application.
 
-func TestRepository_EnsureSchema(t *testing.T) {
+func TestCreateTenantSchemaIncludesRecurringTables(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-
-	repo := newRecurringGORMRepository(t, pool)
 	ctx := context.Background()
 
-	err := repo.EnsureSchema(ctx, tenant.SchemaName)
-	if err != nil {
-		t.Fatalf("EnsureSchema failed: %v", err)
+	for _, tableName := range []string{"recurring_invoices", "recurring_invoice_lines"} {
+		var exists bool
+		if err := pool.QueryRow(ctx, "SELECT to_regclass($1) IS NOT NULL", tenant.SchemaName+"."+tableName).Scan(&exists); err != nil {
+			t.Fatalf("failed to inspect %s: %v", tableName, err)
+		}
+		if !exists {
+			t.Fatalf("expected %s.%s to exist after tenant bootstrap", tenant.SchemaName, tableName)
+		}
+	}
+
+	for _, columnName := range []string{"invoice_type", "currency", "reference", "generated_count", "send_email_on_generation", "email_template_type", "recipient_email_override", "attach_pdf_to_email", "email_subject_override", "email_message"} {
+		var exists bool
+		if err := pool.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM information_schema.columns
+				WHERE table_schema = $1
+				  AND table_name = 'recurring_invoices'
+				  AND column_name = $2
+			)
+		`, tenant.SchemaName, columnName).Scan(&exists); err != nil {
+			t.Fatalf("failed to inspect recurring_invoices.%s: %v", columnName, err)
+		}
+		if !exists {
+			t.Fatalf("expected %s.recurring_invoices.%s to exist after tenant bootstrap", tenant.SchemaName, columnName)
+		}
+	}
+
+	for _, columnName := range []string{"unit", "discount_percent", "product_id"} {
+		var exists bool
+		if err := pool.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM information_schema.columns
+				WHERE table_schema = $1
+				  AND table_name = 'recurring_invoice_lines'
+				  AND column_name = $2
+			)
+		`, tenant.SchemaName, columnName).Scan(&exists); err != nil {
+			t.Fatalf("failed to inspect recurring_invoice_lines.%s: %v", columnName, err)
+		}
+		if !exists {
+			t.Fatalf("expected %s.recurring_invoice_lines.%s to exist after tenant bootstrap", tenant.SchemaName, columnName)
+		}
 	}
 }
 
@@ -33,10 +72,6 @@ func TestRepository_CreateAndGetByID(t *testing.T) {
 	tenant := testutil.CreateTestTenant(t, pool)
 
 	repo := newRecurringGORMRepository(t, pool)
-	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
-		t.Fatalf("Failed to ensure schema: %v", err)
-	}
-
 	// Create a test contact first
 	contactID := uuid.New().String()
 	_, err := pool.Exec(context.Background(), `
@@ -92,10 +127,6 @@ func TestRepository_CreateLineAndGetLines(t *testing.T) {
 	tenant := testutil.CreateTestTenant(t, pool)
 
 	repo := newRecurringGORMRepository(t, pool)
-	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
-		t.Fatalf("Failed to ensure schema: %v", err)
-	}
-
 	contactID := uuid.New().String()
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO `+tenant.SchemaName+`.contacts
@@ -163,10 +194,6 @@ func TestRepository_List(t *testing.T) {
 	tenant := testutil.CreateTestTenant(t, pool)
 
 	repo := newRecurringGORMRepository(t, pool)
-	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
-		t.Fatalf("Failed to ensure schema: %v", err)
-	}
-
 	contactID := uuid.New().String()
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO `+tenant.SchemaName+`.contacts
@@ -247,10 +274,6 @@ func TestRepository_Update(t *testing.T) {
 	tenant := testutil.CreateTestTenant(t, pool)
 
 	repo := newRecurringGORMRepository(t, pool)
-	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
-		t.Fatalf("Failed to ensure schema: %v", err)
-	}
-
 	contactID := uuid.New().String()
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO `+tenant.SchemaName+`.contacts
@@ -311,10 +334,6 @@ func TestRepository_SetActive(t *testing.T) {
 	tenant := testutil.CreateTestTenant(t, pool)
 
 	repo := newRecurringGORMRepository(t, pool)
-	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
-		t.Fatalf("Failed to ensure schema: %v", err)
-	}
-
 	contactID := uuid.New().String()
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO `+tenant.SchemaName+`.contacts
@@ -375,10 +394,6 @@ func TestRepository_Delete(t *testing.T) {
 	tenant := testutil.CreateTestTenant(t, pool)
 
 	repo := newRecurringGORMRepository(t, pool)
-	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
-		t.Fatalf("Failed to ensure schema: %v", err)
-	}
-
 	contactID := uuid.New().String()
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO `+tenant.SchemaName+`.contacts
@@ -428,10 +443,6 @@ func TestRepository_GetByID_NotFound(t *testing.T) {
 	tenant := testutil.CreateTestTenant(t, pool)
 
 	repo := newRecurringGORMRepository(t, pool)
-	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
-		t.Fatalf("Failed to ensure schema: %v", err)
-	}
-
 	ctx := context.Background()
 
 	_, err := repo.GetByID(ctx, tenant.SchemaName, tenant.ID, uuid.New().String())
@@ -445,10 +456,6 @@ func TestRepository_DeleteLines(t *testing.T) {
 	tenant := testutil.CreateTestTenant(t, pool)
 
 	repo := newRecurringGORMRepository(t, pool)
-	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
-		t.Fatalf("Failed to ensure schema: %v", err)
-	}
-
 	contactID := uuid.New().String()
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO `+tenant.SchemaName+`.contacts
@@ -523,10 +530,6 @@ func TestRepository_GetDueRecurringInvoiceIDs(t *testing.T) {
 	tenant := testutil.CreateTestTenant(t, pool)
 
 	repo := newRecurringGORMRepository(t, pool)
-	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
-		t.Fatalf("Failed to ensure schema: %v", err)
-	}
-
 	contactID := uuid.New().String()
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO `+tenant.SchemaName+`.contacts
@@ -609,10 +612,6 @@ func TestRepository_UpdateAfterGeneration(t *testing.T) {
 	tenant := testutil.CreateTestTenant(t, pool)
 
 	repo := newRecurringGORMRepository(t, pool)
-	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
-		t.Fatalf("Failed to ensure schema: %v", err)
-	}
-
 	contactID := uuid.New().String()
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO `+tenant.SchemaName+`.contacts
@@ -673,10 +672,6 @@ func TestRepository_UpdateInvoiceEmailStatus(t *testing.T) {
 	tenant := testutil.CreateTestTenant(t, pool)
 
 	repo := newRecurringGORMRepository(t, pool)
-	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
-		t.Fatalf("Failed to ensure schema: %v", err)
-	}
-
 	ctx := context.Background()
 	contactID := uuid.New().String()
 	_, err := pool.Exec(ctx, `
@@ -732,10 +727,6 @@ func TestRepository_SetActive_NotFound(t *testing.T) {
 	tenant := testutil.CreateTestTenant(t, pool)
 
 	repo := newRecurringGORMRepository(t, pool)
-	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
-		t.Fatalf("Failed to ensure schema: %v", err)
-	}
-
 	ctx := context.Background()
 
 	// Try to set active on non-existent invoice
@@ -750,10 +741,6 @@ func TestRepository_Delete_NotFound(t *testing.T) {
 	tenant := testutil.CreateTestTenant(t, pool)
 
 	repo := newRecurringGORMRepository(t, pool)
-	if err := repo.EnsureSchema(context.Background(), tenant.SchemaName); err != nil {
-		t.Fatalf("Failed to ensure schema: %v", err)
-	}
-
 	ctx := context.Background()
 
 	// Try to delete non-existent invoice
