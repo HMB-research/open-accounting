@@ -17,6 +17,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
+	"github.com/HMB-research/open-accounting/internal/expenses"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
@@ -427,6 +428,52 @@ func TestPrintPaymentOutputs(t *testing.T) {
 	assert.Contains(t, paymentBuf.String(), "Payment PMT-00001")
 	assert.Contains(t, paymentBuf.String(), "Unallocated: 40")
 	assert.Contains(t, paymentBuf.String(), "inv-1")
+}
+
+func TestPrintExpenseOutputs(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	journalID := "je-1"
+	expense := expenses.Expense{
+		ID:               "exp-1",
+		TenantID:         "tenant-1",
+		ExpenseNumber:    "EXP-00001",
+		ExpenseDate:      now,
+		Merchant:         "Office Store",
+		Description:      "Printer toner",
+		ExpenseAccountID: "acc-expense",
+		PaymentAccountID: "acc-cash",
+		Amount:           decimal.RequireFromString("120.50"),
+		Currency:         "EUR",
+		ExchangeRate:     decimal.NewFromInt(1),
+		BaseAmount:       decimal.RequireFromString("120.50"),
+		RequiresReceipt:  true,
+		Status:           expenses.StatusPosted,
+		JournalEntryID:   &journalID,
+		CreatedAt:        now,
+		CreatedBy:        "user-1",
+		UpdatedAt:        now,
+	}
+	receiptlessExpense := expense
+	receiptlessExpense.ID = "exp-2"
+	receiptlessExpense.ExpenseNumber = "EXP-00002"
+	receiptlessExpense.RequiresReceipt = false
+	receiptlessExpense.JournalEntryID = nil
+
+	var tableBuf bytes.Buffer
+	printExpensesTable(&tableBuf, []expenses.Expense{expense, receiptlessExpense})
+	assert.Contains(t, tableBuf.String(), "EXP-00001")
+	assert.Contains(t, tableBuf.String(), "yes")
+	assert.Contains(t, tableBuf.String(), "je-1")
+	assert.Contains(t, tableBuf.String(), "EXP-00002")
+	assert.Contains(t, tableBuf.String(), "no")
+
+	var detailBuf bytes.Buffer
+	printExpense(&detailBuf, &expense)
+	assert.Contains(t, detailBuf.String(), "Expense EXP-00001 Office Store")
+	assert.Contains(t, detailBuf.String(), "Requires receipt: true")
+	assert.Contains(t, detailBuf.String(), "Journal entry: je-1")
 }
 
 func TestPrintReminderOutputs(t *testing.T) {
@@ -1372,6 +1419,13 @@ func TestPrintInventoryOutputs(t *testing.T) {
 	assert.Contains(t, valuationBuf.String(), "PRD-001 Widget")
 	assert.Contains(t, valuationBuf.String(), "MAIN Main warehouse")
 	assert.Contains(t, valuationBuf.String(), "126")
+
+	assert.Equal(t, "CODE", inventoryValuationProductLabel(inventory.InventoryValuationLine{ProductCode: "CODE", ProductID: "prod-2"}))
+	assert.Equal(t, "Product name", inventoryValuationProductLabel(inventory.InventoryValuationLine{ProductName: "Product name", ProductID: "prod-3"}))
+	assert.Equal(t, "prod-4", inventoryValuationProductLabel(inventory.InventoryValuationLine{ProductID: "prod-4"}))
+	assert.Equal(t, "WH", inventoryValuationWarehouseLabel(inventory.InventoryValuationLine{WarehouseCode: "WH", WarehouseID: "wh-2"}))
+	assert.Equal(t, "Warehouse name", inventoryValuationWarehouseLabel(inventory.InventoryValuationLine{WarehouseName: "Warehouse name", WarehouseID: "wh-3"}))
+	assert.Equal(t, "wh-4", inventoryValuationWarehouseLabel(inventory.InventoryValuationLine{WarehouseID: "wh-4"}))
 }
 
 func TestPrintCostCenterOutputs(t *testing.T) {
@@ -1863,6 +1917,21 @@ func TestPrintJournalEntries(t *testing.T) {
 	assert.Contains(t, entryBuf.String(), "Requires evidence: true")
 	assert.Contains(t, entryBuf.String(), "Balanced: true")
 	assert.Contains(t, entryBuf.String(), "6000 Expenses")
+
+	template := accounting.JournalEntryTemplate{
+		ID:               "template-1",
+		Name:             "Monthly accrual",
+		Description:      "Accrue costs",
+		Reference:        "TPL-1",
+		IsActive:         true,
+		RequiresEvidence: true,
+		LineCount:        2,
+	}
+	var templatesBuf bytes.Buffer
+	printJournalEntryTemplatesTable(&templatesBuf, []accounting.JournalEntryTemplate{template})
+	assert.Contains(t, templatesBuf.String(), "Monthly accrual")
+	assert.Contains(t, templatesBuf.String(), "TPL-1")
+	assert.Contains(t, templatesBuf.String(), "true")
 }
 
 func TestPrintTaxReports(t *testing.T) {
@@ -2009,11 +2078,25 @@ func TestFormatHelpers(t *testing.T) {
 
 	now := time.Date(2026, 3, 12, 10, 0, 0, 0, time.UTC)
 	assert.Equal(t, now.Format(time.RFC3339), formatTimePtr(&now))
+	assert.Equal(t, "-", formatTime(time.Time{}))
 	assert.Equal(t, "2026-03-12", formatDate(now))
 	assert.Equal(t, "-", formatDate(time.Time{}))
+	assert.Equal(t, "-", formatOptionalString("  "))
+	assert.Equal(t, "-", formatDecimalPtr(nil))
+	assert.Equal(t, "-", decimalAt([]decimal.Decimal{decimal.NewFromInt(1)}, -1))
+	assert.Equal(t, "-", decimalAt([]decimal.Decimal{decimal.NewFromInt(1)}, 2))
 	assert.Equal(t, "Receivables", titleLabel("receivables"))
 
 	assert.Equal(t, "oa_token_12345...", tokenPreview("oa_token_1234567890"))
 	assert.Equal(t, "short-token", tokenPreview("short-token"))
 	assert.Equal(t, "tenant-slug", normalizeSelector("  Tenant-Slug "))
+
+	assert.Equal(t, "prod-1", orderStockProductLabel(orders.OrderStockCheckLine{ProductID: "prod-1", Description: "Fallback"}))
+	assert.Equal(t, "Fallback", orderStockProductLabel(orders.OrderStockCheckLine{Description: "Fallback"}))
+	assert.Equal(t, "prod-1", orderPickListProductLabel(orders.OrderPickListLine{ProductID: "prod-1", Description: "Fallback"}))
+	assert.Equal(t, "Fallback", orderPickListProductLabel(orders.OrderPickListLine{Description: "Fallback"}))
+	assert.Equal(t, "emp-1", leaveEmployeeLabel("emp-1", &payroll.Employee{}))
+	assert.Equal(t, "SICK", leaveAbsenceTypeLabel("absence-1", &payroll.AbsenceType{Code: " SICK "}))
+	assert.Equal(t, "Sick leave", leaveAbsenceTypeLabel("absence-1", &payroll.AbsenceType{Name: " Sick leave "}))
+	assert.Equal(t, "absence-1", leaveAbsenceTypeLabel("absence-1", &payroll.AbsenceType{}))
 }
