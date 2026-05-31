@@ -147,6 +147,10 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize demo status reader")
 	}
+	demoResetService, err := demo.NewResetService(ctx, pool, demo.SeedSQLForUsers)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize demo reset service")
+	}
 
 	// Load enabled plugins on startup
 	if err := pluginService.LoadEnabledPlugins(ctx); err != nil {
@@ -172,7 +176,6 @@ func main() {
 
 	// Create handlers
 	handlers := &Handlers{
-		pool:                     pool,
 		tokenService:             tokenService,
 		refreshSessionService:    refreshSessionService,
 		passwordResetService:     passwordResetService,
@@ -208,6 +211,7 @@ func main() {
 		interestService:          interestService,
 		webhookService:           webhookService,
 		expensesService:          expensesService,
+		demoResetService:         demoResetService,
 		demoStatusReader:         demoStatusReader,
 	}
 

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 	"github.com/shopspring/decimal"
 	"github.com/wneessen/go-mail"
@@ -46,7 +45,6 @@ import (
 
 // Handlers contains all HTTP handlers
 type Handlers struct {
-	pool                     *pgxpool.Pool
 	tokenService             *auth.TokenService
 	refreshSessionService    refreshSessionManager
 	passwordResetService     passwordResetManager

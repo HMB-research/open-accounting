@@ -1,7 +1,7 @@
 package main
 
 import (
-	"context"
+	"errors"
 	"net/http"
 	"os"
 
@@ -70,7 +70,7 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Info().Ints("users", userNums).Msg("Demo reset: seeding demo data")
-	resetService, err := h.getDemoResetService(ctx)
+	resetService, err := h.getDemoResetService()
 	if err != nil {
 		log.Error().Err(err).Msg("Demo reset failed: reset service unavailable")
 		respondError(w, http.StatusInternalServerError, "Failed to initialize demo reset")
@@ -89,16 +89,11 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *Handlers) getDemoResetService(ctx context.Context) (demoResetter, error) {
+func (h *Handlers) getDemoResetService() (demoResetter, error) {
 	if h.demoResetService != nil {
 		return h.demoResetService, nil
 	}
-	resetService, err := demo.NewResetService(ctx, h.pool, demo.SeedSQLForUsers)
-	if err != nil {
-		return nil, err
-	}
-	h.demoResetService = resetService
-	return resetService, nil
+	return nil, errors.New("demo reset service not configured")
 }
 
 func demoResetUsers(users []demoUserDefinition) []demo.ResetUser {
@@ -196,12 +191,7 @@ func (h *Handlers) getDemoStatusReader() (demo.StatusReader, error) {
 	if h.demoStatusReader != nil {
 		return h.demoStatusReader, nil
 	}
-	statusReader, err := demo.NewStatusReader(h.pool)
-	if err != nil {
-		return nil, err
-	}
-	h.demoStatusReader = statusReader
-	return statusReader, nil
+	return nil, errors.New("demo status reader not configured")
 }
 
 func demoStatusResponseFrom(status demo.StatusResponse) DemoStatusResponse {
