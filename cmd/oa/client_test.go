@@ -85,6 +85,59 @@ func TestAPIClientRequestReturnsDecodedAPIError(t *testing.T) {
 	assert.Contains(t, err.Error(), "bad request payload")
 }
 
+func TestAPIClientReportExportsBuildQueryParameters(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer token-123", r.Header.Get("Authorization"))
+		assert.Equal(t, "*/*", r.Header.Get("Accept"))
+
+		switch r.URL.Path {
+		case "/api/v1/tenants/tenant-1/reports/balance-sheet":
+			assert.Equal(t, "2026-03-31", r.URL.Query().Get("as_of"))
+			switch r.URL.Query().Get("format") {
+			case "csv":
+				_, _ = w.Write([]byte("balance,csv"))
+			case "xlsx":
+				_, _ = w.Write([]byte("balance-xlsx"))
+			default:
+				t.Fatalf("unexpected balance sheet format: %s", r.URL.RawQuery)
+			}
+		case "/api/v1/tenants/tenant-1/reports/income-statement":
+			assert.Equal(t, "2026-01-01", r.URL.Query().Get("start"))
+			assert.Equal(t, "2026-03-31", r.URL.Query().Get("end"))
+			switch r.URL.Query().Get("format") {
+			case "csv":
+				_, _ = w.Write([]byte("income,csv"))
+			case "xlsx":
+				_, _ = w.Write([]byte("income-xlsx"))
+			default:
+				t.Fatalf("unexpected income statement format: %s", r.URL.RawQuery)
+			}
+		default:
+			t.Fatalf("unexpected export request: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := newAPIClient(server.URL, "token-123")
+	balanceCSV, err := client.exportBalanceSheetCSV(context.Background(), "tenant-1", " 2026-03-31 ")
+	require.NoError(t, err)
+	assert.Equal(t, []byte("balance,csv"), balanceCSV)
+
+	balanceXLSX, err := client.exportBalanceSheetXLSX(context.Background(), "tenant-1", "2026-03-31")
+	require.NoError(t, err)
+	assert.Equal(t, []byte("balance-xlsx"), balanceXLSX)
+
+	incomeCSV, err := client.exportIncomeStatementCSV(context.Background(), "tenant-1", " 2026-01-01 ", " 2026-03-31 ")
+	require.NoError(t, err)
+	assert.Equal(t, []byte("income,csv"), incomeCSV)
+
+	incomeXLSX, err := client.exportIncomeStatementXLSX(context.Background(), "tenant-1", "2026-01-01", "2026-03-31")
+	require.NoError(t, err)
+	assert.Equal(t, []byte("income-xlsx"), incomeXLSX)
+}
+
 func TestParseDaysToExpiry(t *testing.T) {
 	t.Parallel()
 
