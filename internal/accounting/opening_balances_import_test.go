@@ -33,7 +33,7 @@ func TestService_ImportOpeningBalancesCSV(t *testing.T) {
 			IsActive:    true,
 		}
 
-		svc := NewServiceWithRepo(nil, repo)
+		svc := NewServiceWithRepository(repo)
 
 		result, err := svc.ImportOpeningBalancesCSV(ctx, schemaName, tenantID, &ImportOpeningBalancesRequest{
 			FileName:    "opening-balances.csv",
@@ -76,7 +76,7 @@ func TestService_ImportOpeningBalancesCSV(t *testing.T) {
 			IsActive:    true,
 		}
 
-		svc := NewServiceWithRepo(nil, repo)
+		svc := NewServiceWithRepository(repo)
 
 		_, err := svc.ImportOpeningBalancesCSV(ctx, schemaName, tenantID, &ImportOpeningBalancesRequest{
 			EntryDate:  "2026-01-01",
@@ -98,7 +98,7 @@ func TestService_ImportOpeningBalancesCSV(t *testing.T) {
 			IsActive:    true,
 		}
 
-		svc := NewServiceWithRepo(nil, repo)
+		svc := NewServiceWithRepository(repo)
 
 		_, err := svc.ImportOpeningBalancesCSV(ctx, schemaName, tenantID, &ImportOpeningBalancesRequest{
 			EntryDate:  "2026-01-01",

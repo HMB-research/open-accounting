@@ -254,7 +254,7 @@ func setupAccountingTestHandlers() (*Handlers, *mockTenantRepository, *mockAccou
 	accountingRepo := newMockAccountingRepository()
 
 	tenantSvc := tenant.NewServiceWithRepository(tenantRepo)
-	accountingSvc := accounting.NewServiceWithRepo(nil, accountingRepo)
+	accountingSvc := accounting.NewServiceWithRepository(accountingRepo)
 	tokenSvc := auth.NewTokenService("test-secret-key-for-testing-only", 15*time.Minute, 7*24*time.Hour)
 
 	h := &Handlers{

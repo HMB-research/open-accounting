@@ -15,7 +15,7 @@ func TestService_ImportAccountsCSV(t *testing.T) {
 
 	t.Run("imports accounts with parent codes and aliases", func(t *testing.T) {
 		repo := NewMockRepository()
-		svc := NewServiceWithRepo(nil, repo)
+		svc := NewServiceWithRepository(repo)
 
 		req := &ImportAccountsRequest{
 			FileName: "accounts.csv",
@@ -56,7 +56,7 @@ func TestService_ImportAccountsCSV(t *testing.T) {
 			AccountType: AccountTypeAsset,
 			IsActive:    true,
 		}
-		svc := NewServiceWithRepo(nil, repo)
+		svc := NewServiceWithRepository(repo)
 
 		req := &ImportAccountsRequest{
 			CSVContent: "code,name,account_type,parent_code\n" +
@@ -79,7 +79,7 @@ func TestService_ImportAccountsCSV(t *testing.T) {
 
 	t.Run("rejects csv without required columns", func(t *testing.T) {
 		repo := NewMockRepository()
-		svc := NewServiceWithRepo(nil, repo)
+		svc := NewServiceWithRepository(repo)
 
 		_, err := svc.ImportAccountsCSV(ctx, schemaName, tenantID, &ImportAccountsRequest{
 			CSVContent: "name,description\nCash,Missing columns\n",

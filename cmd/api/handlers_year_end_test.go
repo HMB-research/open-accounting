@@ -162,7 +162,7 @@ func (m *mockYearEndAccountingRepository) VoidJournalEntry(ctx context.Context, 
 func setupTenantAccountingHandlers() (*Handlers, *mockTenantRepository, *mockYearEndAccountingRepository) {
 	h, repo := setupTenantTestHandlers()
 	accountingRepo := newMockYearEndAccountingRepository()
-	h.accountingService = accounting.NewServiceWithRepo(nil, accountingRepo)
+	h.accountingService = accounting.NewServiceWithRepository(accountingRepo)
 	return h, repo, accountingRepo
 }
 
