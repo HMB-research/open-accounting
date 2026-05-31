@@ -8,15 +8,20 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/testutil"
 )
 
-func TestAbsencePostgresRepository_Integration(t *testing.T) {
+func TestAbsenceGORMRepository_Integration(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	baseRepo := NewPostgresRepository(pool)
-	repo := NewAbsencePostgresRepository(baseRepo)
 	ctx := context.Background()
+	gormDB, err := database.NewGormDBFromPool(ctx, pool)
+	if err != nil {
+		t.Fatalf("failed to create GORM DB: %v", err)
+	}
+	baseRepo := NewGORMRepository(gormDB)
+	repo := NewAbsenceGORMRepository(gormDB)
 
 	if _, err := pool.Exec(ctx, "SELECT add_payroll_tables($1)", tenant.SchemaName); err != nil {
 		t.Fatalf("failed to add payroll tables: %v", err)
@@ -43,16 +48,11 @@ func TestAbsencePostgresRepository_Integration(t *testing.T) {
 		CreatedAt:          time.Now(),
 		UpdatedAt:          time.Now(),
 	}
-	if _, err := pool.Exec(ctx, `
-		INSERT INTO `+tenant.SchemaName+`.absence_types
-			(id, tenant_id, code, name, name_et, description, is_paid, affects_salary, requires_document,
-			 document_type, default_days_per_year, max_carryover_days, tsd_code, emta_code, is_system, is_active, sort_order, created_at, updated_at)
-		VALUES
-			($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-	`, absenceType.ID, absenceType.TenantID, absenceType.Code, absenceType.Name, absenceType.NameET, absenceType.Description,
-		absenceType.IsPaid, absenceType.AffectsSalary, absenceType.RequiresDocument, absenceType.DocumentType,
-		absenceType.DefaultDaysPerYear, absenceType.MaxCarryoverDays, absenceType.TSDCode, absenceType.EMTACode,
-		absenceType.IsSystem, absenceType.IsActive, absenceType.SortOrder, absenceType.CreatedAt, absenceType.UpdatedAt); err != nil {
+	absenceTypesTable, err := database.TenantTable(gormDB.WithContext(ctx), tenant.SchemaName, "absence_types")
+	if err != nil {
+		t.Fatalf("failed to qualify absence types table: %v", err)
+	}
+	if err := absenceTypesTable.Create(absenceTypeToModel(absenceType)).Error; err != nil {
 		t.Fatalf("failed to create absence type: %v", err)
 	}
 

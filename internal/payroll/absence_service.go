@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
@@ -35,15 +36,24 @@ func NewAbsenceServiceWithEvidence(repo AbsenceRepository, uuid UUIDGenerator, e
 	}
 }
 
-// NewAbsenceServiceWithPool creates a new absence service using a PostgreSQL connection pool
+// NewAbsenceServiceWithPool creates a new absence service using a database connection pool.
 func NewAbsenceServiceWithPool(pool *pgxpool.Pool) *AbsenceService {
 	return NewAbsenceServiceWithPoolAndEvidence(pool, nil)
 }
 
-// NewAbsenceServiceWithPoolAndEvidence creates a PostgreSQL-backed absence service with document evidence enforcement.
+// NewAbsenceServiceWithPoolAndEvidence creates an ORM-backed absence service with document evidence enforcement.
 func NewAbsenceServiceWithPoolAndEvidence(pool *pgxpool.Pool, evidence leaveEvidenceEvaluator) *AbsenceService {
-	pgRepo := NewPostgresRepository(pool)
-	absenceRepo := NewAbsencePostgresRepository(pgRepo)
+	if pool == nil {
+		return &AbsenceService{
+			uuid:     &DefaultUUIDGenerator{},
+			evidence: evidence,
+		}
+	}
+	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	if err != nil {
+		panic(fmt.Errorf("create absence GORM repository: %w", err))
+	}
+	absenceRepo := NewAbsenceGORMRepository(gormDB)
 	return NewAbsenceServiceWithEvidence(absenceRepo, &DefaultUUIDGenerator{}, evidence)
 }
 
