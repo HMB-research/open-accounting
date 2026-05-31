@@ -16,9 +16,9 @@ type Service struct {
 	repo Repository
 }
 
-// NewService creates a new reports service with a PostgreSQL repository
+// NewService creates a new reports service with an ORM-backed repository.
 func NewService(db *pgxpool.Pool) *Service {
-	return &Service{repo: NewPostgresRepository(db)}
+	return &Service{repo: NewGORMRepository(db)}
 }
 
 // NewServiceWithRepository creates a new reports service with an injected repository
