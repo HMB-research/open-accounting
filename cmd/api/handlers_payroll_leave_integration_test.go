@@ -34,7 +34,6 @@ func setupPayrollIntegrationHandlers(t *testing.T) (*Handlers, *testutil.TestTen
 	}
 
 	h := &Handlers{
-		pool:           pool,
 		tenantService:  tenantpkg.NewService(pool),
 		payrollService: payroll.NewService(pool),
 		absenceService: payroll.NewAbsenceServiceWithPool(pool),

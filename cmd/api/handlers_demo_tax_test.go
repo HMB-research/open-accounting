@@ -409,8 +409,15 @@ func TestDemoHandlersValidation(t *testing.T) {
 
 func TestDemoHandlersResetAndStatus(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	h := &Handlers{pool: pool}
 	ctx := context.Background()
+	resetService, err := demo.NewResetService(ctx, pool, demo.SeedSQLForUsers)
+	require.NoError(t, err)
+	statusReader, err := demo.NewStatusReader(pool)
+	require.NoError(t, err)
+	h := &Handlers{
+		demoResetService: resetService,
+		demoStatusReader: statusReader,
+	}
 
 	t.Setenv("DEMO_MODE", "true")
 	t.Setenv("DEMO_RESET_SECRET", "demo-secret")
@@ -482,7 +489,7 @@ func TestDemoHandlersResetAndStatus(t *testing.T) {
 	assert.GreaterOrEqual(t, status.Accounts.Count, 10)
 	assert.GreaterOrEqual(t, status.Contacts.Count, 3)
 
-	statusReader, err := h.getDemoStatusReader()
+	statusReader, err = h.getDemoStatusReader()
 	require.NoError(t, err)
 	missingStatus, err := statusReader.ReadDemoStatus(ctx, "tenant_missing", 99)
 	require.NoError(t, err)
