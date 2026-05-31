@@ -2,7 +2,11 @@ package plugin
 
 import (
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -709,6 +713,155 @@ func TestParseManifestYAML(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestService_FetchRegistryIndex_HTTPResponses(t *testing.T) {
+	ctx := t.Context()
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+
+	t.Run("fetches GitHub raw index", func(t *testing.T) {
+		var requestedURL string
+		withPluginHTTPTransport(t, func(req *http.Request) (*http.Response, error) {
+			requestedURL = req.URL.String()
+			return pluginHTTPResponse(http.StatusOK, `version: 1
+plugins:
+  - name: invoice-helper
+    display_name: Invoice Helper
+    description: Helps with invoices
+    repository: https://github.com/acme/invoice-helper
+    version: 1.0.0
+    author: Acme
+    license: MIT
+    tags: [invoice]
+`), nil
+		})
+
+		index, err := service.FetchRegistryIndex(ctx, "https://github.com/acme/registry")
+
+		require.NoError(t, err)
+		assert.Equal(t, "https://raw.githubusercontent.com/acme/registry/main/plugins.yaml", requestedURL)
+		require.Len(t, index.Plugins, 1)
+		assert.Equal(t, "invoice-helper", index.Plugins[0].Name)
+	})
+
+	t.Run("fetches GitLab raw index", func(t *testing.T) {
+		var requestedURL string
+		withPluginHTTPTransport(t, func(req *http.Request) (*http.Response, error) {
+			requestedURL = req.URL.String()
+			return pluginHTTPResponse(http.StatusOK, "version: 1\nplugins: []\n"), nil
+		})
+
+		index, err := service.FetchRegistryIndex(ctx, "https://gitlab.com/acme/registry")
+
+		require.NoError(t, err)
+		assert.Equal(t, "https://gitlab.com/acme/registry/-/raw/main/plugins.yaml", requestedURL)
+		assert.Empty(t, index.Plugins)
+	})
+
+	t.Run("returns HTTP status errors", func(t *testing.T) {
+		withPluginHTTPTransport(t, func(req *http.Request) (*http.Response, error) {
+			return pluginHTTPResponse(http.StatusServiceUnavailable, "unavailable"), nil
+		})
+
+		_, err := service.FetchRegistryIndex(ctx, "https://github.com/acme/registry")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "HTTP 503")
+	})
+
+	t.Run("returns transport errors", func(t *testing.T) {
+		withPluginHTTPTransport(t, func(req *http.Request) (*http.Response, error) {
+			return nil, fmt.Errorf("network unavailable")
+		})
+
+		_, err := service.FetchRegistryIndex(ctx, "https://github.com/acme/registry")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to fetch registry index")
+	})
+
+	t.Run("returns YAML parse errors", func(t *testing.T) {
+		withPluginHTTPTransport(t, func(req *http.Request) (*http.Response, error) {
+			return pluginHTTPResponse(http.StatusOK, "plugins: ["), nil
+		})
+
+		_, err := service.FetchRegistryIndex(ctx, "https://github.com/acme/registry")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to parse registry index")
+	})
+}
+
+func TestService_SyncRegistryAndSearchPlugins_WithHTTPIndex(t *testing.T) {
+	ctx := t.Context()
+	registryID := uuid.New()
+	repo := NewMockRepository()
+	repo.registries[registryID] = &Registry{
+		ID:       registryID,
+		Name:     "Acme Registry",
+		URL:      "https://github.com/acme/registry",
+		IsActive: true,
+	}
+	repo.registries[uuid.New()] = &Registry{
+		ID:       uuid.New(),
+		Name:     "Inactive Registry",
+		URL:      "https://github.com/acme/inactive",
+		IsActive: false,
+	}
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+	withPluginHTTPTransport(t, func(req *http.Request) (*http.Response, error) {
+		return pluginHTTPResponse(http.StatusOK, `version: 1
+plugins:
+  - name: invoice-helper
+    display_name: Invoice Helper
+    description: Helps with invoices
+    repository: https://github.com/acme/invoice-helper
+    version: 1.0.0
+    author: Acme
+    license: MIT
+    tags: [invoice]
+  - name: payroll-tool
+    display_name: Payroll Tool
+    description: Handles payroll
+    repository: https://github.com/acme/payroll-tool
+    version: 1.0.0
+    author: Acme
+    license: MIT
+    tags: [payroll]
+`), nil
+	})
+
+	err := service.SyncRegistry(ctx, registryID)
+	require.NoError(t, err)
+	require.NotNil(t, repo.registries[registryID].LastSyncedAt)
+
+	results, err := service.SearchPlugins(ctx, "invoice")
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, "invoice-helper", results[0].Plugin.Name)
+	assert.Equal(t, "Acme Registry", results[0].Registry)
+}
+
+func TestService_SyncRegistry_IgnoresLastSyncedUpdateFailure(t *testing.T) {
+	ctx := t.Context()
+	registryID := uuid.New()
+	repo := NewMockRepository()
+	repo.registries[registryID] = &Registry{
+		ID:       registryID,
+		Name:     "Acme Registry",
+		URL:      "https://github.com/acme/registry",
+		IsActive: true,
+	}
+	repo.updateRegistryErr = fmt.Errorf("update failed")
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+	withPluginHTTPTransport(t, func(req *http.Request) (*http.Response, error) {
+		return pluginHTTPResponse(http.StatusOK, "version: 1\nplugins: []\n"), nil
+	})
+
+	err := service.SyncRegistry(ctx, registryID)
+
+	require.NoError(t, err)
+}
+
 // TestService_FetchRegistryIndex_InvalidURL tests FetchRegistryIndex with invalid URL
 func TestService_FetchRegistryIndex_InvalidURL(t *testing.T) {
 	ctx := t.Context()
@@ -797,6 +950,46 @@ func TestService_CloneRepository_InvalidURL(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestService_CloneRepository_WithFakeGit(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    string
+		wantErr string
+	}{
+		{name: "success"},
+		{name: "git failure", mode: "fail", wantErr: "git clone failed"},
+		{name: "missing manifest", mode: "missing_manifest", wantErr: "plugin.yaml"},
+		{name: "missing license", mode: "missing_license", wantErr: "LICENSE"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			installFakePluginGit(t)
+			t.Setenv("FAKE_GIT_MODE", tt.mode)
+			pluginDir := t.TempDir()
+			staleDir := filepath.Join(pluginDir, "owner-repo")
+			require.NoError(t, os.MkdirAll(staleDir, 0750))
+			require.NoError(t, os.WriteFile(filepath.Join(staleDir, "stale.txt"), []byte("stale"), 0600))
+			service := NewServiceWithRepository(NewMockRepository(), nil, pluginDir)
+
+			path, err := service.cloneRepository(ctx, "https://github.com/owner/repo")
+
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, staleDir, path)
+			assert.FileExists(t, filepath.Join(path, "plugin.yaml"))
+			assert.FileExists(t, filepath.Join(path, "LICENSE"))
+			assert.NoFileExists(t, filepath.Join(path, "stale.txt"))
+		})
+	}
+}
+
 // TestService_CloneRepository_CreateDirError tests cloneRepository when mkdir fails
 func TestService_CloneRepository_CreateDirError(t *testing.T) {
 	ctx := t.Context()
@@ -813,6 +1006,39 @@ func TestService_CloneRepository_CreateDirError(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to create plugins directory")
 }
 
+func TestService_UpdateRepository_WithFakeGit(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    string
+		wantErr string
+	}{
+		{name: "success"},
+		{name: "pull failure", mode: "pull_fail", wantErr: "git pull failed"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			installFakePluginGit(t)
+			t.Setenv("FAKE_GIT_MODE", tt.mode)
+			pluginDir := t.TempDir()
+			pluginPath := filepath.Join(pluginDir, "owner-test-plugin")
+			require.NoError(t, os.MkdirAll(pluginPath, 0750))
+			require.NoError(t, os.WriteFile(filepath.Join(pluginPath, "plugin.yaml"), []byte("name: test-plugin\ndisplay_name: Test Plugin\nversion: 1.0.0\n"), 0600))
+			service := NewServiceWithRepository(NewMockRepository(), nil, pluginDir)
+
+			err := service.updateRepository(ctx, "test-plugin")
+
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
 // TestService_UpdateRepository_PluginNotFound tests updateRepository when plugin not found
 func TestService_UpdateRepository_PluginNotFound(t *testing.T) {
 	ctx := t.Context()
@@ -823,4 +1049,66 @@ func TestService_UpdateRepository_PluginNotFound(t *testing.T) {
 	err := service.updateRepository(ctx, "nonexistent-plugin")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "plugin not found in filesystem")
+}
+
+type pluginRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f pluginRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func withPluginHTTPTransport(t *testing.T, fn pluginRoundTripFunc) {
+	t.Helper()
+
+	oldTransport := http.DefaultClient.Transport
+	http.DefaultClient.Transport = fn
+	t.Cleanup(func() {
+		http.DefaultClient.Transport = oldTransport
+	})
+}
+
+func pluginHTTPResponse(status int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     make(http.Header),
+	}
+}
+
+func installFakePluginGit(t *testing.T) {
+	t.Helper()
+
+	binDir := t.TempDir()
+	gitPath := filepath.Join(binDir, "git")
+	script := `#!/bin/sh
+if [ "$1" = "clone" ]; then
+  target="$5"
+  if [ "$FAKE_GIT_MODE" = "fail" ]; then
+    echo "clone failed" >&2
+    exit 42
+  fi
+  mkdir -p "$target"
+  if [ "$FAKE_GIT_MODE" != "missing_manifest" ]; then
+    cat > "$target/plugin.yaml" <<'YAML'
+name: cloned-plugin
+display_name: Cloned Plugin
+version: 1.0.0
+YAML
+  fi
+  if [ "$FAKE_GIT_MODE" != "missing_license" ] && [ "$FAKE_GIT_MODE" != "missing_manifest" ]; then
+    echo "MIT" > "$target/LICENSE"
+  fi
+  exit 0
+fi
+if [ "$1" = "-C" ]; then
+  if [ "$FAKE_GIT_MODE" = "pull_fail" ]; then
+    echo "pull failed" >&2
+    exit 43
+  fi
+  exit 0
+fi
+exit 1
+`
+	require.NoError(t, os.WriteFile(gitPath, []byte(script), 0700))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }

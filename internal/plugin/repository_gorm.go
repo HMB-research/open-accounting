@@ -324,7 +324,7 @@ func (r *GORMRepository) DeleteTenantPlugin(ctx context.Context, tenantID, plugi
 func (r *GORMRepository) IsPluginEnabledForTenant(ctx context.Context, tenantID, pluginID uuid.UUID) (bool, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&models.TenantPlugin{}).
-		Where("tenant_id = ? AND plugin_id = ?", tenantID, pluginID).
+		Where("tenant_id = ? AND plugin_id = ? AND is_enabled = ?", tenantID, pluginID, true).
 		Count(&count).Error; err != nil {
 		return false, fmt.Errorf("check tenant plugin: %w", err)
 	}
