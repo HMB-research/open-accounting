@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/models"
 	"github.com/HMB-research/open-accounting/internal/testutil"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -587,6 +588,119 @@ func TestGORMRepository_GetMonthlyCashFlow_WithData(t *testing.T) {
 	}
 }
 
+func TestGORMRepository_GetRecentActivity_WithData(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	userID := testutil.CreateTestUser(t, pool, "analytics-activity-test@example.com")
+	repo := NewRepository(pool)
+	ctx := context.Background()
+
+	customerID := uuid.New().String()
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.contacts
+		(id, tenant_id, code, name, contact_type, country_code, payment_terms_days, credit_limit, is_active, created_at, updated_at)
+		VALUES ($1, $2, 'ACT-C001', 'Activity Customer', 'CUSTOMER', 'EE', 14, 0, true, '2026-03-01 08:00:00+00', '2026-03-01 08:00:00+00')
+	`, customerID, tenant.ID)
+	if err != nil {
+		t.Fatalf("failed to create activity customer: %v", err)
+	}
+
+	supplierID := uuid.New().String()
+	_, err = pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.contacts
+		(id, tenant_id, code, name, contact_type, country_code, payment_terms_days, credit_limit, is_active, created_at, updated_at)
+		VALUES ($1, $2, 'ACT-S001', 'Activity Supplier', 'SUPPLIER', 'EE', 14, 0, true, '2026-03-02 08:00:00+00', '2026-03-02 08:00:00+00')
+	`, supplierID, tenant.ID)
+	if err != nil {
+		t.Fatalf("failed to create activity supplier: %v", err)
+	}
+
+	invoiceID := uuid.New().String()
+	_, err = pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.invoices
+		(id, tenant_id, invoice_number, invoice_type, contact_id, issue_date, due_date, currency, subtotal, vat_amount, total, amount_paid, status, created_by, created_at, updated_at)
+		VALUES ($1, $2, 'INV-ACT-001', 'SALES', $3, '2026-03-03', '2026-03-17', 'EUR', 100, 20, 120, 0, 'SENT', $4, '2026-03-05 08:00:00+00', '2026-03-05 08:00:00+00')
+	`, invoiceID, tenant.ID, customerID, userID)
+	if err != nil {
+		t.Fatalf("failed to create activity invoice: %v", err)
+	}
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.payments
+		(id, tenant_id, payment_number, payment_type, contact_id, amount, currency, exchange_rate, base_amount, payment_date, created_by, created_at)
+		VALUES ($1, $2, 'PAY-ACT-001', 'RECEIVED', $3, 120, 'EUR', 1, 120, '2026-03-06', $4, '2026-03-06 08:00:00+00')
+	`, uuid.New().String(), tenant.ID, customerID, userID)
+	if err != nil {
+		t.Fatalf("failed to create activity payment: %v", err)
+	}
+
+	var cashAccountID string
+	err = pool.QueryRow(ctx, `
+		SELECT id FROM `+tenant.SchemaName+`.accounts WHERE code = '1000' LIMIT 1
+	`).Scan(&cashAccountID)
+	if err != nil {
+		t.Fatalf("expected default cash account (1000): %v", err)
+	}
+
+	entryID := uuid.New().String()
+	_, err = pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.journal_entries
+		(id, tenant_id, entry_number, entry_date, description, reference, status, created_by, created_at)
+		VALUES ($1, $2, 'JE-ACT-001', '2026-03-04', 'Activity journal entry', 'ACT-REF', 'POSTED', $3, '2026-03-04 08:00:00+00')
+	`, entryID, tenant.ID, userID)
+	if err != nil {
+		t.Fatalf("failed to create activity journal entry: %v", err)
+	}
+	_, err = pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.journal_entry_lines
+		(id, tenant_id, journal_entry_id, account_id, debit_amount, credit_amount, currency, exchange_rate, base_debit, base_credit)
+		VALUES ($1, $2, $3, $4, 50, 0, 'EUR', 1, 50, 0)
+	`, uuid.New().String(), tenant.ID, entryID, cashAccountID)
+	if err != nil {
+		t.Fatalf("failed to create activity journal line: %v", err)
+	}
+
+	items, err := repo.GetRecentActivity(ctx, tenant.SchemaName, 4)
+	if err != nil {
+		t.Fatalf("GetRecentActivity failed: %v", err)
+	}
+	if len(items) != 4 {
+		t.Fatalf("expected 4 recent activity items, got %d: %#v", len(items), items)
+	}
+
+	expected := []struct {
+		itemType    string
+		action      string
+		description string
+		amount      *decimal.Decimal
+	}{
+		{itemType: "PAYMENT", action: "received", description: "Payment received from Activity Customer", amount: ptrDecimal(decimal.NewFromInt(120))},
+		{itemType: "INVOICE", action: "sent", description: "Invoice INV-ACT-001 to Activity Customer", amount: ptrDecimal(decimal.NewFromInt(120))},
+		{itemType: "ENTRY", action: "posted", description: "Journal entry: Activity journal entry", amount: ptrDecimal(decimal.NewFromInt(50))},
+		{itemType: "CONTACT", action: "created", description: "New contact: Activity Supplier", amount: nil},
+	}
+	for i, want := range expected {
+		if items[i].Type != want.itemType {
+			t.Errorf("item %d type: got %s, want %s", i, items[i].Type, want.itemType)
+		}
+		if items[i].Action != want.action {
+			t.Errorf("item %d action: got %s, want %s", i, items[i].Action, want.action)
+		}
+		if items[i].Description != want.description {
+			t.Errorf("item %d description: got %q, want %q", i, items[i].Description, want.description)
+		}
+		if want.amount == nil {
+			if items[i].Amount != nil {
+				t.Errorf("item %d amount: got %s, want nil", i, items[i].Amount)
+			}
+			continue
+		}
+		if items[i].Amount == nil || !items[i].Amount.Equal(*want.amount) {
+			t.Errorf("item %d amount: got %v, want %s", i, items[i].Amount, want.amount)
+		}
+	}
+}
+
 func TestNewRepository(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 
@@ -778,6 +892,31 @@ func TestGORMRepository_GetRevenueExpenses_DraftNotIncluded(t *testing.T) {
 	if !expenses.Equal(decimal.Zero) {
 		t.Errorf("expected expenses 0 for draft entries, got %s", expenses)
 	}
+}
+
+func TestInvoiceActivityAction(t *testing.T) {
+	tests := []struct {
+		status models.InvoiceStatus
+		want   string
+	}{
+		{status: models.InvoiceStatusDraft, want: "created"},
+		{status: models.InvoiceStatusSent, want: "sent"},
+		{status: models.InvoiceStatusPaid, want: "paid"},
+		{status: models.InvoiceStatusVoided, want: "voided"},
+		{status: models.InvoiceStatusPartiallyPaid, want: "updated"},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.status), func(t *testing.T) {
+			if got := invoiceActivityAction(tt.status); got != tt.want {
+				t.Fatalf("invoiceActivityAction(%q) = %q, want %q", tt.status, got, tt.want)
+			}
+		})
+	}
+}
+
+func ptrDecimal(value decimal.Decimal) *decimal.Decimal {
+	return &value
 }
 
 func TestGORMRepository_GetReceivablesSummary_WithOverdue(t *testing.T) {
