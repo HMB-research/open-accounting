@@ -27,6 +27,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/demo"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/expenses"
@@ -142,7 +143,7 @@ func main() {
 	webhookService := webhooks.NewService(pool)
 	webhookService.RegisterPluginHooks(pluginService.GetHookRegistry())
 	expensesService := expenses.NewService(pool, documentsService)
-	demoStatusReader, err := newDemoStatusReader(pool)
+	demoStatusReader, err := demo.NewStatusReader(pool)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize demo status reader")
 	}
