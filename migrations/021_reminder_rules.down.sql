@@ -5,7 +5,9 @@ RETURNS void AS $$
 BEGIN
     EXECUTE format('DROP TABLE IF EXISTS %I.payment_reminders CASCADE', schema_name);
     EXECUTE format('DROP TABLE IF EXISTS %I.reminder_rules CASCADE', schema_name);
-    EXECUTE format('DELETE FROM %I.email_templates WHERE template_type IN (''PAYMENT_DUE_SOON'', ''PAYMENT_DUE_TODAY'')', schema_name);
+    IF to_regclass(format('%I.email_templates', schema_name)) IS NOT NULL THEN
+        EXECUTE format('DELETE FROM %I.email_templates WHERE template_type IN (''PAYMENT_DUE_SOON'', ''PAYMENT_DUE_TODAY'')', schema_name);
+    END IF;
 END;
 $$ LANGUAGE plpgsql;
 

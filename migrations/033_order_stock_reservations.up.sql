@@ -2,6 +2,12 @@
 
 CREATE OR REPLACE FUNCTION add_order_stock_reservations(schema_name TEXT) RETURNS VOID AS $$
 BEGIN
+    IF to_regclass(format('%I.orders', schema_name)) IS NULL
+        OR to_regclass(format('%I.products', schema_name)) IS NULL
+        OR to_regclass(format('%I.warehouses', schema_name)) IS NULL THEN
+        RETURN;
+    END IF;
+
     EXECUTE format('
         CREATE TABLE IF NOT EXISTS %I.order_stock_reservations (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
