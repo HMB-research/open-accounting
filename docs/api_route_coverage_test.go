@@ -1,6 +1,7 @@
 package docs
 
 import (
+	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -48,6 +49,30 @@ func TestAPIReferenceDocumentsAllSourceRoutes(t *testing.T) {
 	sort.Strings(missing)
 	if len(missing) > 0 {
 		t.Fatalf("docs/API.md is missing API route references:\n%s", strings.Join(missing, "\n"))
+	}
+}
+
+func TestSwaggerDocumentsAllSourceRoutes(t *testing.T) {
+	routes := collectSourceRoutes(t)
+	if len(routes) < 100 {
+		t.Fatalf("route source parser should see the API route table, got %d routes", len(routes))
+	}
+
+	swaggerRoutes := collectSwaggerRoutes(t)
+	var missing []string
+	for _, route := range routes {
+		expected, ok := apiReferenceRoute(route)
+		if !ok {
+			continue
+		}
+		if !swaggerRoutes[expected] {
+			missing = append(missing, expected.String())
+		}
+	}
+
+	sort.Strings(missing)
+	if len(missing) > 0 {
+		t.Fatalf("generated Swagger is missing API route references:\n%s", strings.Join(missing, "\n"))
 	}
 }
 
@@ -123,6 +148,40 @@ func collectSourceRoutes(t *testing.T) []documentedRoute {
 	sort.Slice(routes, func(i, j int) bool {
 		return routes[i].String() < routes[j].String()
 	})
+	return routes
+}
+
+func collectSwaggerRoutes(t *testing.T) map[documentedRoute]bool {
+	t.Helper()
+
+	var spec struct {
+		Paths map[string]map[string]any `json:"paths"`
+	}
+	if err := json.Unmarshal([]byte(SwaggerInfo.ReadDoc()), &spec); err != nil {
+		t.Fatalf("decode generated swagger doc: %v", err)
+	}
+
+	routes := make(map[documentedRoute]bool)
+	for path, methods := range spec.Paths {
+		if strings.TrimSpace(path) == "" {
+			continue
+		}
+		normalizedPath := path
+		if trimmed, ok := strings.CutPrefix(normalizedPath, "/api/v1"); ok {
+			normalizedPath = trimmed
+		}
+		normalizedPath = normalizeRoutePlaceholders(normalizedPath)
+		for method := range methods {
+			method = strings.ToUpper(method)
+			if !isHTTPMethod(method) {
+				continue
+			}
+			routes[documentedRoute{
+				Method: method,
+				Path:   normalizedPath,
+			}] = true
+		}
+	}
 	return routes
 }
 

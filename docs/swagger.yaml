@@ -33,6 +33,13 @@ definitions:
           type: string
         type: array
     type: object
+  cmd_api.periodCloseResponse:
+    properties:
+      event:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tenant.PeriodCloseEvent'
+      tenant:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tenant.Tenant'
+    type: object
   github_com_HMB-research_open-accounting_internal_accounting.Account:
     properties:
       account_type:
@@ -259,6 +266,23 @@ definitions:
         type: string
       description:
         type: string
+      name:
+        type: string
+      parent_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.CreateCostCenterRequest:
+    properties:
+      budget_amount:
+        type: number
+      budget_period:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.BudgetPeriod'
+      code:
+        type: string
+      description:
+        type: string
+      is_active:
+        type: boolean
       name:
         type: string
       parent_id:
@@ -718,6 +742,23 @@ definitions:
       total_debits:
         type: number
     type: object
+  github_com_HMB-research_open-accounting_internal_accounting.UpdateCostCenterRequest:
+    properties:
+      budget_amount:
+        type: number
+      budget_period:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.BudgetPeriod'
+      code:
+        type: string
+      description:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      parent_id:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_accounting.YearEndCarryForwardResult:
     properties:
       journal_entry:
@@ -955,6 +996,20 @@ definitions:
       token_prefix:
         type: string
       user_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_apitoken.CreateRequest:
+    properties:
+      expires_at:
+        type: string
+      name:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_apitoken.CreateResult:
+    properties:
+      api_token:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_apitoken.APIToken'
+      token:
         type: string
     type: object
   github_com_HMB-research_open-accounting_internal_assets.AssetCategory:
@@ -2013,6 +2068,19 @@ definitions:
       uploaded_by:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyRequest:
+    properties:
+      entity_ids:
+        items:
+          type: string
+        type: array
+      entity_type:
+        type: string
+      rules:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyRule'
+        type: array
+    type: object
   github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyResult:
     properties:
       approved_count:
@@ -2050,6 +2118,17 @@ definitions:
           $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyRuleResult'
         type: array
     type: object
+  github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyRule:
+    properties:
+      document_types:
+        items:
+          type: string
+        type: array
+      min_count:
+        type: integer
+      require_approved:
+        type: boolean
+    type: object
   github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyRuleResult:
     properties:
       accepted_count:
@@ -2073,6 +2152,36 @@ definitions:
       rule_index:
         type: integer
     type: object
+  github_com_HMB-research_open-accounting_internal_documents.RetentionReview:
+    properties:
+      as_of_date:
+        type: string
+      cutoff_date:
+        type: string
+      documents:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.Document'
+        type: array
+      due_soon_count:
+        type: integer
+      expired_count:
+        type: integer
+      missing_retention_count:
+        type: integer
+      pending_review_count:
+        type: integer
+      rejected_count:
+        type: integer
+      total_count:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_documents.ReviewDocumentRequest:
+    properties:
+      review_note:
+        type: string
+      review_status:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_documents.ReviewQueue:
     properties:
       approved_count:
@@ -2093,6 +2202,29 @@ definitions:
         type: integer
       review_status:
         type: string
+      reviewed_count:
+        type: integer
+      total_count:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_documents.ReviewSummary:
+    properties:
+      approved_count:
+        type: integer
+      entity_id:
+        type: string
+      entity_type:
+        type: string
+      has_pending_review:
+        type: boolean
+      has_rejected:
+        type: boolean
+      missing_evidence:
+        type: boolean
+      pending_review_count:
+        type: integer
+      rejected_count:
+        type: integer
       reviewed_count:
         type: integer
       total_count:
@@ -2414,6 +2546,65 @@ definitions:
       warehouse_id:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_inventory.CreateCategoryRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      parent_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_inventory.CreateProductRequest:
+    properties:
+      barcode:
+        type: string
+      category_id:
+        type: string
+      code:
+        type: string
+      description:
+        type: string
+      inventory_account_id:
+        type: string
+      lead_time_days:
+        type: integer
+      min_stock_level:
+        type: string
+      name:
+        type: string
+      product_type:
+        type: string
+      purchase_account_id:
+        type: string
+      purchase_price:
+        type: string
+      reorder_point:
+        type: string
+      sale_account_id:
+        type: string
+      sales_price:
+        type: string
+      supplier_id:
+        type: string
+      track_inventory:
+        type: boolean
+      unit:
+        type: string
+      vat_rate:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_inventory.CreateWarehouseRequest:
+    properties:
+      address:
+        type: string
+      code:
+        type: string
+      is_default:
+        type: boolean
+      name:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_inventory.ImportProductCategoriesRequest:
     properties:
       csv_content:
@@ -2647,6 +2838,82 @@ definitions:
     - MovementTypeOut
     - MovementTypeAdjustment
     - MovementTypeTransfer
+  github_com_HMB-research_open-accounting_internal_inventory.Product:
+    properties:
+      barcode:
+        type: string
+      category_id:
+        type: string
+      code:
+        type: string
+      created_at:
+        type: string
+      current_stock:
+        type: number
+      description:
+        type: string
+      id:
+        type: string
+      inventory_account_id:
+        type: string
+      is_active:
+        type: boolean
+      lead_time_days:
+        type: integer
+      min_stock_level:
+        type: number
+      name:
+        type: string
+      product_type:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.ProductType'
+      purchase_account_id:
+        type: string
+      purchase_price:
+        type: number
+      reorder_point:
+        type: number
+      sale_account_id:
+        type: string
+      sales_price:
+        type: number
+      supplier_id:
+        type: string
+      tenant_id:
+        type: string
+      track_inventory:
+        type: boolean
+      unit:
+        type: string
+      updated_at:
+        type: string
+      vat_rate:
+        type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_inventory.ProductCategory:
+    properties:
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      parent_id:
+        type: string
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_inventory.ProductType:
+    enum:
+    - GOODS
+    - SERVICE
+    type: string
+    x-enum-varnames:
+    - ProductTypeGoods
+    - ProductTypeService
   github_com_HMB-research_open-accounting_internal_inventory.StockLevel:
     properties:
       available_qty:
@@ -2688,6 +2955,75 @@ definitions:
       quantity:
         type: string
       to_warehouse_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_inventory.UpdateProductRequest:
+    properties:
+      barcode:
+        type: string
+      category_id:
+        type: string
+      description:
+        type: string
+      inventory_account_id:
+        type: string
+      is_active:
+        type: boolean
+      lead_time_days:
+        type: integer
+      min_stock_level:
+        type: string
+      name:
+        type: string
+      purchase_account_id:
+        type: string
+      purchase_price:
+        type: string
+      reorder_point:
+        type: string
+      sale_account_id:
+        type: string
+      sales_price:
+        type: string
+      supplier_id:
+        type: string
+      track_inventory:
+        type: boolean
+      unit:
+        type: string
+      vat_rate:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_inventory.UpdateWarehouseRequest:
+    properties:
+      address:
+        type: string
+      is_active:
+        type: boolean
+      is_default:
+        type: boolean
+      name:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_inventory.Warehouse:
+    properties:
+      address:
+        type: string
+      code:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      is_default:
+        type: boolean
+      name:
+        type: string
+      tenant_id:
+        type: string
+      updated_at:
         type: string
     type: object
   github_com_HMB-research_open-accounting_internal_invoicing.AutomatedReminderResult:
@@ -5751,11 +6087,52 @@ definitions:
           type: string
         type: array
     type: object
+  github_com_HMB-research_open-accounting_internal_tenant.ClosePeriodRequest:
+    properties:
+      note:
+        type: string
+      period_end_date:
+        type: string
+      reviewer_sign_off:
+        type: boolean
+    type: object
   github_com_HMB-research_open-accounting_internal_tenant.CreateInvitationRequest:
     properties:
       email:
         type: string
       role:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_tenant.PeriodCloseEvent:
+    properties:
+      action:
+        type: string
+      close_kind:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      lock_date_after:
+        type: string
+      lock_date_before:
+        type: string
+      note:
+        type: string
+      performed_by:
+        type: string
+      period_end_date:
+        type: string
+      reviewer_sign_off:
+        type: boolean
+      tenant_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_tenant.ReopenPeriodRequest:
+    properties:
+      note:
+        type: string
+      period_end_date:
         type: string
     type: object
   github_com_HMB-research_open-accounting_internal_tenant.Tenant:
@@ -5875,6 +6252,13 @@ definitions:
         type: string
       user_id:
         type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_tenant.UpdateTenantRequest:
+    properties:
+      name:
+        type: string
+      settings:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tenant.TenantSettings'
     type: object
   github_com_HMB-research_open-accounting_internal_tenant.UserInvitation:
     properties:
@@ -7097,6 +7481,19 @@ paths:
       summary: Revoke auth session
       tags:
       - Auth
+  /health:
+    get:
+      description: Return OK when the API process is accepting requests
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      summary: Health check
+      tags:
+      - System
   /invitations/{token}:
     get:
       description: Get invitation details for the invitation acceptance page
@@ -7292,6 +7689,70 @@ paths:
       security:
       - BearerAuth: []
       summary: Get tenant
+      tags:
+      - Tenants
+    put:
+      consumes:
+      - application/json
+      description: Update tenant name or settings. Requires permission to manage tenant
+        settings.
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Tenant update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tenant.UpdateTenantRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tenant.Tenant'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update tenant
       tags:
       - Tenants
   /tenants/{tenantID}/absence-types:
@@ -7644,6 +8105,129 @@ paths:
       summary: Get revenue/expense chart data
       tags:
       - Analytics
+  /tenants/{tenantID}/api-tokens:
+    get:
+      description: List active API tokens owned by the current user in a tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_apitoken.APIToken'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List API tokens
+      tags:
+      - API Tokens
+    post:
+      consumes:
+      - application/json
+      description: Create a tenant-scoped API token for the current user. The raw
+        token is returned only once.
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: API token request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_apitoken.CreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_apitoken.CreateResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create API token
+      tags:
+      - API Tokens
+  /tenants/{tenantID}/api-tokens/{tokenID}:
+    delete:
+      description: Revoke one API token owned by the current user in a tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: API token ID
+        in: path
+        name: tokenID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Revoke API token
+      tags:
+      - API Tokens
   /tenants/{tenantID}/asset-categories:
     get:
       description: Get all asset categories for a tenant
@@ -9341,6 +9925,221 @@ paths:
       summary: Import contacts
       tags:
       - Contacts
+  /tenants/{tenantID}/cost-centers:
+    get:
+      description: List cost centers for a tenant, optionally filtering to active
+        centers
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Only include active cost centers
+        in: query
+        name: active_only
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CostCenter'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List cost centers
+      tags:
+      - Cost Centers
+    post:
+      consumes:
+      - application/json
+      description: Create a tenant cost center for expense tracking and budgeting
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Cost center
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CreateCostCenterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CostCenter'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create cost center
+      tags:
+      - Cost Centers
+  /tenants/{tenantID}/cost-centers/{costCenterID}:
+    delete:
+      description: Delete a cost center that has no blocking usage
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Cost center ID
+        in: path
+        name: costCenterID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete cost center
+      tags:
+      - Cost Centers
+    get:
+      description: Get one cost center by ID
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Cost center ID
+        in: path
+        name: costCenterID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CostCenter'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get cost center
+      tags:
+      - Cost Centers
+    put:
+      consumes:
+      - application/json
+      description: Update cost center details, hierarchy, activity, and budget settings
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Cost center ID
+        in: path
+        name: costCenterID
+        required: true
+        type: string
+      - description: Cost center update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.UpdateCostCenterRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CostCenter'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update cost center
+      tags:
+      - Cost Centers
   /tenants/{tenantID}/cost-centers/import:
     post:
       consumes:
@@ -9429,6 +10228,469 @@ paths:
       summary: Get cost center budget report
       tags:
       - Cost Centers
+  /tenants/{tenantID}/documents:
+    get:
+      description: List documents attached to an entity by entity type and entity
+        ID
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Entity type
+        in: query
+        name: entity_type
+        required: true
+        type: string
+      - description: Entity ID
+        in: query
+        name: entity_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.Document'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List documents
+      tags:
+      - Documents
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload a multipart document and attach it to an entity
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Entity type
+        in: formData
+        name: entity_type
+        required: true
+        type: string
+      - description: Entity ID
+        in: formData
+        name: entity_id
+        required: true
+        type: string
+      - description: Document type
+        in: formData
+        name: document_type
+        required: true
+        type: string
+      - description: Notes
+        in: formData
+        name: notes
+        type: string
+      - description: Retention date (YYYY-MM-DD)
+        in: formData
+        name: retention_until
+        type: string
+      - description: Retention years
+        in: formData
+        name: retention_years
+        type: integer
+      - description: Document file
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.Document'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Upload document
+      tags:
+      - Documents
+  /tenants/{tenantID}/documents/{documentID}:
+    delete:
+      description: Delete a document and its stored file
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Document ID
+        in: path
+        name: documentID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete document
+      tags:
+      - Documents
+  /tenants/{tenantID}/documents/{documentID}/download:
+    get:
+      description: Stream a stored document file by document ID
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Document ID
+        in: path
+        name: documentID
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Download document
+      tags:
+      - Documents
+  /tenants/{tenantID}/documents/{documentID}/mark-reviewed:
+    post:
+      description: Mark a document reviewed by the current user
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Document ID
+        in: path
+        name: documentID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.Document'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Mark document reviewed
+      tags:
+      - Documents
+  /tenants/{tenantID}/documents/{documentID}/retention:
+    patch:
+      consumes:
+      - application/json
+      description: Set or clear the retention date for a document
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Document ID
+        in: path
+        name: documentID
+        required: true
+        type: string
+      - description: Retention update
+        in: body
+        name: request
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.Document'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update document retention
+      tags:
+      - Documents
+  /tenants/{tenantID}/documents/{documentID}/review:
+    post:
+      consumes:
+      - application/json
+      description: Set a document review status and optional review note
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Document ID
+        in: path
+        name: documentID
+        required: true
+        type: string
+      - description: Review decision
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.ReviewDocumentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.Document'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Review document
+      tags:
+      - Documents
+  /tenants/{tenantID}/documents/evidence-policy:
+    post:
+      consumes:
+      - application/json
+      description: Evaluate configured document evidence rules for multiple entity
+        IDs
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Evidence policy request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyResult'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Evaluate document evidence policy
+      tags:
+      - Documents
+  /tenants/{tenantID}/documents/retention:
+    get:
+      description: List documents with expired, due soon, or missing retention metadata
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Review date (YYYY-MM-DD)
+        in: query
+        name: as_of
+        type: string
+      - description: Days ahead for due soon documents
+        in: query
+        name: horizon_days
+        type: integer
+      - description: Include documents missing retention metadata
+        in: query
+        name: include_missing
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.RetentionReview'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get document retention review
+      tags:
+      - Documents
   /tenants/{tenantID}/documents/review-queue:
     get:
       description: List documents by review status with optional entity and document
@@ -9479,6 +10741,52 @@ paths:
       security:
       - BearerAuth: []
       summary: Get document review queue
+      tags:
+      - Documents
+  /tenants/{tenantID}/documents/review-summary:
+    post:
+      consumes:
+      - application/json
+      description: Return document review counts and missing evidence flags for multiple
+        entity IDs
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Review summary request
+        in: body
+        name: request
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.ReviewSummary'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List document review summaries
       tags:
       - Documents
   /tenants/{tenantID}/email-log:
@@ -13383,6 +14691,191 @@ paths:
       summary: Calculate tax preview
       tags:
       - Payroll
+  /tenants/{tenantID}/period-close:
+    post:
+      consumes:
+      - application/json
+      description: Close a tenant accounting period after validating permissions and
+        required review evidence
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Period close request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tenant.ClosePeriodRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/cmd_api.periodCloseResponse'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Close period
+      tags:
+      - Period Close
+  /tenants/{tenantID}/period-close-events:
+    get:
+      description: List recent period close and reopen events for a tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Maximum events to return, from 1 to 100
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tenant.PeriodCloseEvent'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List period close events
+      tags:
+      - Period Close
+  /tenants/{tenantID}/period-reopen:
+    post:
+      consumes:
+      - application/json
+      description: Reopen a tenant accounting period when no blocking carry-forward
+        exists
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Period reopen request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_tenant.ReopenPeriodRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/cmd_api.periodCloseResponse'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Reopen period
+      tags:
+      - Period Close
   /tenants/{tenantID}/plugins:
     get:
       description: Get all plugins available for a tenant with their enablement status
@@ -13568,6 +15061,146 @@ paths:
       summary: Update tenant plugin settings
       tags:
       - Plugins
+  /tenants/{tenantID}/product-categories:
+    get:
+      description: List product categories for a tenant
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.ProductCategory'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List product categories
+      tags:
+      - Inventory
+    post:
+      consumes:
+      - application/json
+      description: Create a product category, optionally under a parent category
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Product category
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.CreateCategoryRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.ProductCategory'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create product category
+      tags:
+      - Inventory
+  /tenants/{tenantID}/product-categories/{categoryID}:
+    delete:
+      description: Delete a product category
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Product category ID
+        in: path
+        name: categoryID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete product category
+      tags:
+      - Inventory
+    get:
+      description: Get one product category by ID
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Product category ID
+        in: path
+        name: categoryID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.ProductCategory'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get product category
+      tags:
+      - Inventory
   /tenants/{tenantID}/product-categories/import:
     post:
       consumes:
@@ -13603,6 +15236,216 @@ paths:
       security:
       - BearerAuth: []
       summary: Import product categories
+      tags:
+      - Inventory
+  /tenants/{tenantID}/products:
+    get:
+      description: List products and services with optional type, status, category,
+        search, and low stock filters
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: 'Product type: GOODS or SERVICE'
+        in: query
+        name: product_type
+        type: string
+      - description: 'Product status: ACTIVE or INACTIVE'
+        in: query
+        name: status
+        type: string
+      - description: Category ID
+        in: query
+        name: category_id
+        type: string
+      - description: Search text
+        in: query
+        name: search
+        type: string
+      - description: Only include low stock products
+        in: query
+        name: low_stock
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.Product'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List products
+      tags:
+      - Inventory
+    post:
+      consumes:
+      - application/json
+      description: Create a product or service with pricing, account, and inventory
+        settings
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Product
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.CreateProductRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.Product'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create product
+      tags:
+      - Inventory
+  /tenants/{tenantID}/products/{productID}:
+    delete:
+      description: Delete a product or service
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Product ID
+        in: path
+        name: productID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete product
+      tags:
+      - Inventory
+    get:
+      description: Get one product or service by ID
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Product ID
+        in: path
+        name: productID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.Product'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get product
+      tags:
+      - Inventory
+    put:
+      consumes:
+      - application/json
+      description: Update product or service details, pricing, accounts, and inventory
+        settings
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Product ID
+        in: path
+        name: productID
+        required: true
+        type: string
+      - description: Product update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.UpdateProductRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.Product'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update product
       tags:
       - Inventory
   /tenants/{tenantID}/products/{productID}/movements:
@@ -16693,6 +18536,197 @@ paths:
       summary: Update tenant user status
       tags:
       - Users
+  /tenants/{tenantID}/warehouses:
+    get:
+      description: List tenant warehouses, optionally filtering to active warehouses
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Only include active warehouses
+        in: query
+        name: active_only
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.Warehouse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List warehouses
+      tags:
+      - Inventory
+    post:
+      consumes:
+      - application/json
+      description: Create a warehouse or storage location
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Warehouse
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.CreateWarehouseRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.Warehouse'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create warehouse
+      tags:
+      - Inventory
+  /tenants/{tenantID}/warehouses/{warehouseID}:
+    delete:
+      description: Delete a warehouse or storage location
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Warehouse ID
+        in: path
+        name: warehouseID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete warehouse
+      tags:
+      - Inventory
+    get:
+      description: Get one warehouse by ID
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Warehouse ID
+        in: path
+        name: warehouseID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.Warehouse'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get warehouse
+      tags:
+      - Inventory
+    put:
+      consumes:
+      - application/json
+      description: Update warehouse details, default status, and active status
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Warehouse ID
+        in: path
+        name: warehouseID
+        required: true
+        type: string
+      - description: Warehouse update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.UpdateWarehouseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.Warehouse'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update warehouse
+      tags:
+      - Inventory
   /tenants/{tenantID}/warehouses/import:
     post:
       consumes:

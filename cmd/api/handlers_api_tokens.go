@@ -13,6 +13,16 @@ import (
 )
 
 // ListAPITokens returns API tokens for the current user in a tenant.
+// @Summary List API tokens
+// @Description List active API tokens owned by the current user in a tenant
+// @Tags API Tokens
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Success 200 {array} apitoken.APIToken
+// @Failure 401 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/api-tokens [get]
 func (h *Handlers) ListAPITokens(w http.ResponseWriter, r *http.Request) {
 	claims, ok := auth.GetClaims(r.Context())
 	if !ok {
@@ -31,6 +41,18 @@ func (h *Handlers) ListAPITokens(w http.ResponseWriter, r *http.Request) {
 }
 
 // CreateAPIToken creates a new API token for the current user in a tenant.
+// @Summary Create API token
+// @Description Create a tenant-scoped API token for the current user. The raw token is returned only once.
+// @Tags API Tokens
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body apitoken.CreateRequest true "API token request"
+// @Success 201 {object} apitoken.CreateResult
+// @Failure 400 {object} object{error=string}
+// @Failure 401 {object} object{error=string}
+// @Router /tenants/{tenantID}/api-tokens [post]
 func (h *Handlers) CreateAPIToken(w http.ResponseWriter, r *http.Request) {
 	claims, ok := auth.GetClaims(r.Context())
 	if !ok {
@@ -81,6 +103,17 @@ func (h *Handlers) CreateAPIToken(w http.ResponseWriter, r *http.Request) {
 }
 
 // RevokeAPIToken revokes an API token owned by the current user in a tenant.
+// @Summary Revoke API token
+// @Description Revoke one API token owned by the current user in a tenant
+// @Tags API Tokens
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param tokenID path string true "API token ID"
+// @Success 200 {object} object{status=string}
+// @Failure 400 {object} object{error=string}
+// @Failure 401 {object} object{error=string}
+// @Router /tenants/{tenantID}/api-tokens/{tokenID} [delete]
 func (h *Handlers) RevokeAPIToken(w http.ResponseWriter, r *http.Request) {
 	claims, ok := auth.GetClaims(r.Context())
 	if !ok {

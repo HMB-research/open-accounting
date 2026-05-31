@@ -71,6 +71,17 @@ var defaultDevelopmentOrigins = []string{"http://localhost:5173", "http://localh
 
 const developmentJWTSecret = "development-only-insecure-jwt-secret" //nolint:gosec // Explicitly development-only fallback rejected in production mode.
 
+// healthCheck returns the API health status.
+// @Summary Health check
+// @Description Return OK when the API process is accepting requests
+// @Tags System
+// @Produce plain
+// @Success 200 {string} string "OK"
+// @Router /health [get]
+func healthCheck(w http.ResponseWriter, _ *http.Request) {
+	_, _ = w.Write([]byte("OK"))
+}
+
 func main() {
 	// Configure logging
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
@@ -412,9 +423,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 	}
 
 	// Health check
-	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte("OK"))
-	})
+	r.Get("/health", healthCheck)
 
 	// Demo endpoints (protected by secret key)
 	r.Post("/api/demo/reset", h.DemoReset)
