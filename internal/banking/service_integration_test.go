@@ -327,15 +327,9 @@ func TestService_GetMatchSuggestions(t *testing.T) {
 	service := NewService(pool)
 	ctx := context.Background()
 
-	// Setup schema
-	_, err := pool.Exec(ctx, "SELECT add_reconciliation_tables_to_schema($1)", tenant.SchemaName)
-	if err != nil {
-		t.Fatalf("Failed to add reconciliation tables: %v", err)
-	}
-
 	// Create GL account
 	glAccountID := uuid.New().String()
-	_, err = pool.Exec(ctx, `
+	_, err := pool.Exec(ctx, `
 		INSERT INTO `+tenant.SchemaName+`.accounts
 		(id, tenant_id, code, name, account_type, is_active, created_at)
 		VALUES ($1, $2, '1120', 'Bank Match GL', 'ASSET', true, NOW())
@@ -468,6 +462,40 @@ func TestService_AutoMatchTransactions(t *testing.T) {
 
 	// Verify the function executed without error
 	// The actual matching depends on having suitable payments
+}
+
+func TestCreateTenantSchemaIncludesBankingReconciliationTables(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	ctx := context.Background()
+
+	for _, tableName := range []string{"bank_reconciliations", "bank_statement_imports", "bank_match_rules"} {
+		var exists bool
+		if err := pool.QueryRow(ctx, "SELECT to_regclass($1) IS NOT NULL", tenant.SchemaName+"."+tableName).Scan(&exists); err != nil {
+			t.Fatalf("failed to inspect %s: %v", tableName, err)
+		}
+		if !exists {
+			t.Fatalf("expected %s.%s to exist after tenant bootstrap", tenant.SchemaName, tableName)
+		}
+	}
+
+	for _, columnName := range []string{"reconciliation_id", "import_id", "follow_up_status", "review_note", "reviewed_by", "reviewed_at"} {
+		var exists bool
+		if err := pool.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM information_schema.columns
+				WHERE table_schema = $1
+				  AND table_name = 'bank_transactions'
+				  AND column_name = $2
+			)
+		`, tenant.SchemaName, columnName).Scan(&exists); err != nil {
+			t.Fatalf("failed to inspect bank_transactions.%s: %v", columnName, err)
+		}
+		if !exists {
+			t.Fatalf("expected %s.bank_transactions.%s to exist after tenant bootstrap", tenant.SchemaName, columnName)
+		}
+	}
 }
 
 func TestService_CreatePaymentFromTransaction(t *testing.T) {
