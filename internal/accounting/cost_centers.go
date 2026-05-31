@@ -2,13 +2,16 @@ package accounting
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
+	"github.com/HMB-research/open-accounting/internal/models"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 )
 
 // BudgetPeriod represents the budget period for a cost center
@@ -132,139 +135,78 @@ type CostCenterRepository interface {
 	GetExpensesByPeriod(ctx context.Context, schemaName, tenantID, costCenterID string, start, end time.Time) (decimal.Decimal, error)
 }
 
-// CostCenterPostgresRepository implements CostCenterRepository for PostgreSQL
-type CostCenterPostgresRepository struct {
-	db *pgxpool.Pool
+// CostCenterGORMRepository implements CostCenterRepository with the shared ORM layer.
+type CostCenterGORMRepository struct {
+	db *gorm.DB
 }
 
-// NewCostCenterRepository creates a new cost center repository
-func NewCostCenterRepository(db *pgxpool.Pool) *CostCenterPostgresRepository {
-	return &CostCenterPostgresRepository{db: db}
+// NewCostCenterRepository creates a new ORM-backed cost center repository.
+func NewCostCenterRepository(db *pgxpool.Pool) *CostCenterGORMRepository {
+	if db == nil {
+		return &CostCenterGORMRepository{}
+	}
+	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	if err != nil {
+		panic(fmt.Errorf("create cost center GORM repository: %w", err))
+	}
+	return NewCostCenterGORMRepository(gormDB)
 }
 
-// ensureCostCenterTables creates tables if they don't exist in the tenant schema
-func (r *CostCenterPostgresRepository) ensureCostCenterTables(ctx context.Context, schemaName string) error {
-	// Create cost_centers table
-	_, err := r.db.Exec(ctx, fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS %s.cost_centers (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			tenant_id UUID NOT NULL,
-			code VARCHAR(20) NOT NULL,
-			name VARCHAR(200) NOT NULL,
-			description TEXT,
-			parent_id UUID,
-			is_active BOOLEAN NOT NULL DEFAULT true,
-			budget_amount DECIMAL(15,2),
-			budget_period VARCHAR(20) DEFAULT 'ANNUAL',
-			created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-			UNIQUE(tenant_id, code)
-		)
-	`, schemaName))
-	if err != nil {
-		return fmt.Errorf("create cost_centers table: %w", err)
+func NewCostCenterGORMRepository(db *gorm.DB) *CostCenterGORMRepository {
+	return &CostCenterGORMRepository{db: db}
+}
+
+func (r *CostCenterGORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
+	if r.db == nil {
+		return nil, fmt.Errorf("cost center repository database is not configured")
 	}
-
-	// Create cost_allocations table
-	_, err = r.db.Exec(ctx, fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS %s.cost_allocations (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			tenant_id UUID NOT NULL,
-			cost_center_id UUID NOT NULL,
-			journal_entry_line_id UUID NOT NULL,
-			amount DECIMAL(15,2) NOT NULL,
-			allocation_percentage DECIMAL(5,2),
-			allocation_date DATE NOT NULL,
-			notes TEXT,
-			created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-		)
-	`, schemaName))
-	if err != nil {
-		return fmt.Errorf("create cost_allocations table: %w", err)
-	}
-
-	// Create indexes
-	_, _ = r.db.Exec(ctx, fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_cost_centers_tenant ON %s.cost_centers(tenant_id)`, schemaName))
-	_, _ = r.db.Exec(ctx, fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_cost_centers_active ON %s.cost_centers(tenant_id, is_active)`, schemaName))
-	_, _ = r.db.Exec(ctx, fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_cost_allocations_center ON %s.cost_allocations(cost_center_id)`, schemaName))
-	_, _ = r.db.Exec(ctx, fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_cost_allocations_date ON %s.cost_allocations(allocation_date)`, schemaName))
-
-	return nil
+	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
 }
 
 // GetByID retrieves a cost center by ID
-func (r *CostCenterPostgresRepository) GetByID(ctx context.Context, schemaName, tenantID, costCenterID string) (*CostCenter, error) {
-	if err := r.ensureCostCenterTables(ctx, schemaName); err != nil {
-		return nil, err
+func (r *CostCenterGORMRepository) GetByID(ctx context.Context, schemaName, tenantID, costCenterID string) (*CostCenter, error) {
+	db, err := r.tenantTable(ctx, schemaName, "cost_centers")
+	if err != nil {
+		return nil, fmt.Errorf("qualify cost centers table: %w", err)
 	}
 
-	var cc CostCenter
-	var budgetAmount *decimal.Decimal
-	err := r.db.QueryRow(ctx, fmt.Sprintf(`
-		SELECT id, tenant_id, code, name, COALESCE(description, ''), parent_id, is_active,
-		       budget_amount, COALESCE(budget_period, 'ANNUAL'), created_at, updated_at
-		FROM %s.cost_centers
-		WHERE id = $1 AND tenant_id = $2
-	`, schemaName), costCenterID, tenantID).Scan(
-		&cc.ID, &cc.TenantID, &cc.Code, &cc.Name, &cc.Description, &cc.ParentID,
-		&cc.IsActive, &budgetAmount, &cc.BudgetPeriod, &cc.CreatedAt, &cc.UpdatedAt,
-	)
-	if err == pgx.ErrNoRows {
+	var ccModel models.CostCenter
+	err = db.Where("id = ? AND tenant_id = ?", costCenterID, tenantID).First(&ccModel).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("cost center not found: %s", costCenterID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get cost center: %w", err)
 	}
-	cc.BudgetAmount = budgetAmount
-	return &cc, nil
+	return costCenterFromModel(&ccModel), nil
 }
 
 // List retrieves all cost centers for a tenant
-func (r *CostCenterPostgresRepository) List(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]CostCenter, error) {
-	if err := r.ensureCostCenterTables(ctx, schemaName); err != nil {
-		return nil, err
-	}
-
-	query := fmt.Sprintf(`
-		SELECT id, tenant_id, code, name, COALESCE(description, ''), parent_id, is_active,
-		       budget_amount, COALESCE(budget_period, 'ANNUAL'), created_at, updated_at
-		FROM %s.cost_centers
-		WHERE tenant_id = $1
-	`, schemaName)
-	if activeOnly {
-		query += " AND is_active = true"
-	}
-	query += " ORDER BY code"
-
-	rows, err := r.db.Query(ctx, query, tenantID)
+func (r *CostCenterGORMRepository) List(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]CostCenter, error) {
+	db, err := r.tenantTable(ctx, schemaName, "cost_centers")
 	if err != nil {
+		return nil, fmt.Errorf("qualify cost centers table: %w", err)
+	}
+
+	query := db.Where("tenant_id = ?", tenantID)
+	if activeOnly {
+		query = query.Where("is_active = ?", true)
+	}
+
+	var ccModels []models.CostCenter
+	if err := query.Order("code ASC").Find(&ccModels).Error; err != nil {
 		return nil, fmt.Errorf("list cost centers: %w", err)
 	}
-	defer rows.Close()
 
-	// Initialize as empty slice to ensure JSON marshals to [] not null
-	costCenters := []CostCenter{}
-	for rows.Next() {
-		var cc CostCenter
-		var budgetAmount *decimal.Decimal
-		if err := rows.Scan(
-			&cc.ID, &cc.TenantID, &cc.Code, &cc.Name, &cc.Description, &cc.ParentID,
-			&cc.IsActive, &budgetAmount, &cc.BudgetPeriod, &cc.CreatedAt, &cc.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan cost center: %w", err)
-		}
-		cc.BudgetAmount = budgetAmount
-		costCenters = append(costCenters, cc)
+	costCenters := make([]CostCenter, len(ccModels))
+	for i := range ccModels {
+		costCenters[i] = *costCenterFromModel(&ccModels[i])
 	}
 	return costCenters, nil
 }
 
 // Create creates a new cost center
-func (r *CostCenterPostgresRepository) Create(ctx context.Context, schemaName string, cc *CostCenter) error {
-	if err := r.ensureCostCenterTables(ctx, schemaName); err != nil {
-		return err
-	}
-
+func (r *CostCenterGORMRepository) Create(ctx context.Context, schemaName string, cc *CostCenter) error {
 	if cc.ID == "" {
 		cc.ID = uuid.New().String()
 	}
@@ -276,104 +218,168 @@ func (r *CostCenterPostgresRepository) Create(ctx context.Context, schemaName st
 		cc.BudgetPeriod = BudgetPeriodAnnual
 	}
 
-	_, err := r.db.Exec(ctx, fmt.Sprintf(`
-		INSERT INTO %s.cost_centers (id, tenant_id, code, name, description, parent_id, is_active, budget_amount, budget_period, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-	`, schemaName),
-		cc.ID, cc.TenantID, cc.Code, cc.Name, cc.Description, cc.ParentID,
-		cc.IsActive, cc.BudgetAmount, cc.BudgetPeriod, cc.CreatedAt, cc.UpdatedAt,
-	)
+	db, err := r.tenantTable(ctx, schemaName, "cost_centers")
 	if err != nil {
+		return fmt.Errorf("qualify cost centers table: %w", err)
+	}
+	if err := db.Create(costCenterToModel(cc)).Error; err != nil {
 		return fmt.Errorf("create cost center: %w", err)
 	}
 	return nil
 }
 
 // Update updates an existing cost center
-func (r *CostCenterPostgresRepository) Update(ctx context.Context, schemaName string, cc *CostCenter) error {
+func (r *CostCenterGORMRepository) Update(ctx context.Context, schemaName string, cc *CostCenter) error {
 	cc.UpdatedAt = time.Now()
 
-	result, err := r.db.Exec(ctx, fmt.Sprintf(`
-		UPDATE %s.cost_centers
-		SET code = $1, name = $2, description = $3, parent_id = $4, is_active = $5,
-		    budget_amount = $6, budget_period = $7, updated_at = $8
-		WHERE id = $9 AND tenant_id = $10
-	`, schemaName),
-		cc.Code, cc.Name, cc.Description, cc.ParentID, cc.IsActive,
-		cc.BudgetAmount, cc.BudgetPeriod, cc.UpdatedAt, cc.ID, cc.TenantID,
-	)
+	db, err := r.tenantTable(ctx, schemaName, "cost_centers")
 	if err != nil {
-		return fmt.Errorf("update cost center: %w", err)
+		return fmt.Errorf("qualify cost centers table: %w", err)
 	}
-	if result.RowsAffected() == 0 {
+	result := db.Where("id = ? AND tenant_id = ?", cc.ID, cc.TenantID).
+		Updates(map[string]interface{}{
+			"code":          cc.Code,
+			"name":          cc.Name,
+			"description":   cc.Description,
+			"parent_id":     cc.ParentID,
+			"is_active":     cc.IsActive,
+			"budget_amount": costCenterBudgetAmountToModel(cc.BudgetAmount),
+			"budget_period": string(cc.BudgetPeriod),
+			"updated_at":    cc.UpdatedAt,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("update cost center: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
 		return fmt.Errorf("cost center not found: %s", cc.ID)
 	}
 	return nil
 }
 
 // Delete deletes a cost center
-func (r *CostCenterPostgresRepository) Delete(ctx context.Context, schemaName, tenantID, costCenterID string) error {
-	// First check if there are any child cost centers
-	var childCount int
-	err := r.db.QueryRow(ctx, fmt.Sprintf(`
-		SELECT COUNT(*) FROM %s.cost_centers WHERE parent_id = $1 AND tenant_id = $2
-	`, schemaName), costCenterID, tenantID).Scan(&childCount)
+func (r *CostCenterGORMRepository) Delete(ctx context.Context, schemaName, tenantID, costCenterID string) error {
+	childrenTable, err := r.tenantTable(ctx, schemaName, "cost_centers")
 	if err != nil {
+		return fmt.Errorf("qualify cost centers table: %w", err)
+	}
+
+	// First check if there are any child cost centers
+	var childCount int64
+	if err := childrenTable.Model(&models.CostCenter{}).
+		Where("parent_id = ? AND tenant_id = ?", costCenterID, tenantID).
+		Count(&childCount).Error; err != nil {
 		return fmt.Errorf("check children: %w", err)
 	}
 	if childCount > 0 {
 		return fmt.Errorf("cannot delete cost center with %d children", childCount)
 	}
 
-	// Check for allocations
-	var allocationCount int
-	err = r.db.QueryRow(ctx, fmt.Sprintf(`
-		SELECT COUNT(*) FROM %s.cost_allocations WHERE cost_center_id = $1 AND tenant_id = $2
-	`, schemaName), costCenterID, tenantID).Scan(&allocationCount)
+	allocationsTable, err := r.tenantTable(ctx, schemaName, "cost_allocations")
 	if err != nil {
+		return fmt.Errorf("qualify cost allocations table: %w", err)
+	}
+
+	// Check for allocations
+	var allocationCount int64
+	if err := allocationsTable.Model(&models.CostAllocation{}).
+		Where("cost_center_id = ? AND tenant_id = ?", costCenterID, tenantID).
+		Count(&allocationCount).Error; err != nil {
 		return fmt.Errorf("check allocations: %w", err)
 	}
 	if allocationCount > 0 {
 		return fmt.Errorf("cannot delete cost center with %d allocations", allocationCount)
 	}
 
-	result, err := r.db.Exec(ctx, fmt.Sprintf(`
-		DELETE FROM %s.cost_centers WHERE id = $1 AND tenant_id = $2
-	`, schemaName), costCenterID, tenantID)
+	costCentersTable, err := r.tenantTable(ctx, schemaName, "cost_centers")
 	if err != nil {
-		return fmt.Errorf("delete cost center: %w", err)
+		return fmt.Errorf("qualify cost centers table: %w", err)
 	}
-	if result.RowsAffected() == 0 {
+	result := costCentersTable.Where("id = ? AND tenant_id = ?", costCenterID, tenantID).Delete(&models.CostCenter{})
+	if result.Error != nil {
+		return fmt.Errorf("delete cost center: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
 		return fmt.Errorf("cost center not found: %s", costCenterID)
 	}
 	return nil
 }
 
 // GetExpensesByPeriod gets total expenses for a cost center in a period
-func (r *CostCenterPostgresRepository) GetExpensesByPeriod(ctx context.Context, schemaName, tenantID, costCenterID string, start, end time.Time) (decimal.Decimal, error) {
-	var total decimal.Decimal
-	err := r.db.QueryRow(ctx, fmt.Sprintf(`
-		SELECT COALESCE(SUM(amount), 0)
-		FROM %s.cost_allocations
-		WHERE cost_center_id = $1 AND tenant_id = $2
-		  AND allocation_date >= $3 AND allocation_date <= $4
-	`, schemaName), costCenterID, tenantID, start, end).Scan(&total)
+func (r *CostCenterGORMRepository) GetExpensesByPeriod(ctx context.Context, schemaName, tenantID, costCenterID string, start, end time.Time) (decimal.Decimal, error) {
+	db, err := r.tenantTable(ctx, schemaName, "cost_allocations")
 	if err != nil {
+		return decimal.Zero, fmt.Errorf("qualify cost allocations table: %w", err)
+	}
+
+	var row struct {
+		Total models.Decimal
+	}
+	if err := db.
+		Select("COALESCE(SUM(amount), 0) AS total").
+		Where("cost_center_id = ? AND tenant_id = ?", costCenterID, tenantID).
+		Where("allocation_date >= ? AND allocation_date <= ?", start, end).
+		Scan(&row).Error; err != nil {
 		return decimal.Zero, fmt.Errorf("get expenses: %w", err)
 	}
-	return total, nil
+	return row.Total.Decimal, nil
+}
+
+func costCenterToModel(cc *CostCenter) *models.CostCenter {
+	return &models.CostCenter{
+		ID:           cc.ID,
+		TenantID:     cc.TenantID,
+		Code:         cc.Code,
+		Name:         cc.Name,
+		Description:  cc.Description,
+		ParentID:     cc.ParentID,
+		IsActive:     cc.IsActive,
+		BudgetAmount: costCenterBudgetAmountToModel(cc.BudgetAmount),
+		BudgetPeriod: string(cc.BudgetPeriod),
+		CreatedAt:    cc.CreatedAt,
+		UpdatedAt:    cc.UpdatedAt,
+	}
+}
+
+func costCenterFromModel(cc *models.CostCenter) *CostCenter {
+	return &CostCenter{
+		ID:           cc.ID,
+		TenantID:     cc.TenantID,
+		Code:         cc.Code,
+		Name:         cc.Name,
+		Description:  cc.Description,
+		ParentID:     cc.ParentID,
+		IsActive:     cc.IsActive,
+		BudgetAmount: costCenterBudgetAmountFromModel(cc.BudgetAmount),
+		BudgetPeriod: BudgetPeriod(cc.BudgetPeriod),
+		CreatedAt:    cc.CreatedAt,
+		UpdatedAt:    cc.UpdatedAt,
+	}
+}
+
+func costCenterBudgetAmountToModel(amount *decimal.Decimal) *models.Decimal {
+	if amount == nil {
+		return nil
+	}
+	value := models.Decimal{Decimal: *amount}
+	return &value
+}
+
+func costCenterBudgetAmountFromModel(amount *models.Decimal) *decimal.Decimal {
+	if amount == nil {
+		return nil
+	}
+	value := amount.Decimal
+	return &value
 }
 
 // CostCenterService provides business logic for cost centers
 type CostCenterService struct {
-	db   *pgxpool.Pool
 	repo CostCenterRepository
 }
 
-// NewCostCenterService creates a new cost center service
+// NewCostCenterService creates a new cost center service with an ORM-backed repository.
 func NewCostCenterService(db *pgxpool.Pool) *CostCenterService {
 	return &CostCenterService{
-		db:   db,
 		repo: NewCostCenterRepository(db),
 	}
 }
