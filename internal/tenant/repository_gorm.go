@@ -2,7 +2,6 @@ package tenant
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // GORMRepository implements Repository using GORM
@@ -151,11 +151,8 @@ func (r *GORMRepository) CreateTenantAuditEvent(ctx context.Context, event *Tena
 		return fmt.Errorf("marshal audit metadata: %w", err)
 	}
 
-	if err := r.db.WithContext(ctx).Exec(`
-		INSERT INTO tenant_audit_events (
-			id, tenant_id, actor_user_id, action, target_type, target_id, target_email, metadata, created_at
-		) VALUES (?, ?, NULLIF(?, '')::uuid, ?, ?, ?, NULLIF(?, ''), ?::jsonb, ?)
-	`, event.ID, event.TenantID, event.ActorUserID, event.Action, event.TargetType, event.TargetID, event.TargetEmail, string(metadataJSON), event.CreatedAt).Error; err != nil {
+	eventModel := tenantAuditEventToModel(event, metadataJSON)
+	if err := r.db.WithContext(ctx).Create(eventModel).Error; err != nil {
 		return fmt.Errorf("create tenant audit event: %w", err)
 	}
 	return nil
@@ -170,45 +167,20 @@ func (r *GORMRepository) ListTenantAuditEvents(ctx context.Context, tenantID str
 		limit = 200
 	}
 
-	var rows []struct {
-		ID          string
-		TenantID    string
-		ActorUserID sql.NullString
-		Action      string
-		TargetType  string
-		TargetID    string
-		TargetEmail sql.NullString
-		Metadata    json.RawMessage
-		CreatedAt   time.Time
-	}
-	if err := r.db.WithContext(ctx).Raw(`
-		SELECT id, tenant_id, actor_user_id, action, target_type, target_id, target_email, metadata, created_at
-		FROM tenant_audit_events
-		WHERE tenant_id = ?
-		ORDER BY created_at DESC
-		LIMIT ?
-	`, tenantID, limit).Scan(&rows).Error; err != nil {
+	var eventModels []models.TenantAuditEvent
+	if err := r.db.WithContext(ctx).
+		Where("tenant_id = ?", tenantID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&eventModels).Error; err != nil {
 		return nil, fmt.Errorf("list tenant audit events: %w", err)
 	}
 
-	events := make([]TenantAuditEvent, 0, len(rows))
-	for _, row := range rows {
-		event := TenantAuditEvent{
-			ID:         row.ID,
-			TenantID:   row.TenantID,
-			Action:     row.Action,
-			TargetType: row.TargetType,
-			TargetID:   row.TargetID,
-			CreatedAt:  row.CreatedAt,
-		}
-		if row.ActorUserID.Valid {
-			event.ActorUserID = row.ActorUserID.String
-		}
-		if row.TargetEmail.Valid {
-			event.TargetEmail = row.TargetEmail.String
-		}
-		if len(row.Metadata) > 0 {
-			if err := json.Unmarshal(row.Metadata, &event.Metadata); err != nil {
+	events := make([]TenantAuditEvent, 0, len(eventModels))
+	for _, eventModel := range eventModels {
+		event := modelToTenantAuditEvent(&eventModel)
+		if len(eventModel.Metadata) > 0 {
+			if err := json.Unmarshal(eventModel.Metadata, &event.Metadata); err != nil {
 				return nil, fmt.Errorf("parse audit metadata: %w", err)
 			}
 		}
@@ -219,13 +191,15 @@ func (r *GORMRepository) ListTenantAuditEvents(ctx context.Context, tenantID str
 
 // AddUserToTenant adds a user to a tenant with a specified role
 func (r *GORMRepository) AddUserToTenant(ctx context.Context, tenantID, userID, role string) error {
-	// Use raw SQL for ON CONFLICT upsert
-	err := r.db.WithContext(ctx).Exec(`
-		INSERT INTO tenant_users (tenant_id, user_id, role, is_default, is_active, created_at)
-		VALUES (?, ?, ?, false, true, NOW())
-		ON CONFLICT (tenant_id, user_id) DO UPDATE SET role = EXCLUDED.role, is_active = true
-	`, tenantID, userID, role).Error
-	if err != nil {
+	membership := &models.TenantUserModel{
+		TenantID:  tenantID,
+		UserID:    userID,
+		Role:      role,
+		IsDefault: false,
+		IsActive:  true,
+		CreatedAt: time.Now(),
+	}
+	if err := r.upsertTenantUser(ctx, r.db, membership); err != nil {
 		return fmt.Errorf("add user to tenant: %w", err)
 	}
 	return nil
@@ -291,13 +265,13 @@ func (r *GORMRepository) ListUserTenants(ctx context.Context, userID string) ([]
 		IsDefault bool
 	}
 
-	err := r.db.WithContext(ctx).Raw(`
-		SELECT t.*, tu.role, tu.is_default
-		FROM tenants t
-		JOIN tenant_users tu ON tu.tenant_id = t.id
-		WHERE tu.user_id = ? AND t.is_active = true AND COALESCE(tu.is_active, true) = true
-		ORDER BY tu.is_default DESC, t.name
-	`, userID).Scan(&results).Error
+	err := r.db.WithContext(ctx).
+		Model(&models.Tenant{}).
+		Select("tenants.*, tu.role, tu.is_default").
+		Joins("JOIN tenant_users tu ON tu.tenant_id = tenants.id").
+		Where("tu.user_id = ? AND tenants.is_active = ? AND tu.is_active = ?", userID, true, true).
+		Order("tu.is_default DESC, tenants.name").
+		Scan(&results).Error
 	if err != nil {
 		return nil, fmt.Errorf("list user tenants: %w", err)
 	}
@@ -442,18 +416,19 @@ func (r *GORMRepository) UpdateUserPassword(ctx context.Context, userID, passwor
 
 // CreateInvitation creates a new user invitation
 func (r *GORMRepository) CreateInvitation(ctx context.Context, inv *UserInvitation) error {
-	// Use raw SQL for ON CONFLICT upsert
-	err := r.db.WithContext(ctx).Exec(`
-		INSERT INTO user_invitations (id, tenant_id, email, role, invited_by, token, expires_at, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT (tenant_id, email) DO UPDATE SET
-			role = EXCLUDED.role,
-			invited_by = EXCLUDED.invited_by,
-			token = EXCLUDED.token,
-			expires_at = EXCLUDED.expires_at,
-			accepted_at = NULL
-	`, inv.ID, inv.TenantID, inv.Email, inv.Role, inv.InvitedBy, inv.Token, inv.ExpiresAt, inv.CreatedAt).Error
-	if err != nil {
+	invModel := userInvitationToModel(inv)
+	if err := r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "tenant_id"}, {Name: "email"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"role":        inv.Role,
+				"invited_by":  inv.InvitedBy,
+				"token":       inv.Token,
+				"expires_at":  inv.ExpiresAt,
+				"accepted_at": nil,
+			}),
+		}).
+		Create(invModel).Error; err != nil {
 		return fmt.Errorf("create invitation: %w", err)
 	}
 	return nil
@@ -461,26 +436,22 @@ func (r *GORMRepository) CreateInvitation(ctx context.Context, inv *UserInvitati
 
 // GetInvitationByToken retrieves an invitation by its token
 func (r *GORMRepository) GetInvitationByToken(ctx context.Context, token string) (*UserInvitation, error) {
-	var result struct {
-		models.UserInvitation
-		TenantName string
+	var invModel models.UserInvitation
+	err := r.db.WithContext(ctx).
+		Preload("Tenant").
+		Where("token = ?", token).
+		First(&invModel).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, ErrInvitationNotFound
 	}
-
-	err := r.db.WithContext(ctx).Raw(`
-		SELECT i.*, t.name as tenant_name
-		FROM user_invitations i
-		JOIN tenants t ON t.id = i.tenant_id
-		WHERE i.token = ?
-	`, token).Scan(&result).Error
 	if err != nil {
 		return nil, fmt.Errorf("get invitation: %w", err)
 	}
-	if result.ID == "" {
-		return nil, ErrInvitationNotFound
-	}
 
-	inv := modelToUserInvitation(&result.UserInvitation)
-	inv.TenantName = result.TenantName
+	inv := modelToUserInvitation(&invModel)
+	if invModel.Tenant != nil {
+		inv.TenantName = invModel.Tenant.Name
+	}
 	return inv, nil
 }
 
@@ -502,13 +473,18 @@ func (r *GORMRepository) AcceptInvitation(ctx context.Context, inv *UserInvitati
 			}
 		}
 
-		// Add user to tenant using raw SQL for ON CONFLICT
-		err := tx.Exec(`
-			INSERT INTO tenant_users (tenant_id, user_id, role, is_default, is_active, invited_by, invited_at, created_at)
-			VALUES (?, ?, ?, false, true, ?, NOW(), NOW())
-			ON CONFLICT (tenant_id, user_id) DO UPDATE SET role = EXCLUDED.role, is_active = true
-		`, inv.TenantID, userID, inv.Role, inv.InvitedBy).Error
-		if err != nil {
+		now := time.Now()
+		membership := &models.TenantUserModel{
+			TenantID:  inv.TenantID,
+			UserID:    userID,
+			Role:      inv.Role,
+			IsDefault: false,
+			IsActive:  true,
+			InvitedBy: &inv.InvitedBy,
+			InvitedAt: &now,
+			CreatedAt: now,
+		}
+		if err := r.upsertTenantUser(ctx, tx, membership); err != nil {
 			return fmt.Errorf("add user to tenant: %w", err)
 		}
 
@@ -558,15 +534,35 @@ func (r *GORMRepository) RevokeInvitation(ctx context.Context, tenantID, invitat
 // CheckUserIsMember checks if a user is already a member of a tenant
 func (r *GORMRepository) CheckUserIsMember(ctx context.Context, tenantID, email string) (bool, error) {
 	var count int64
-	err := r.db.WithContext(ctx).Raw(`
-		SELECT COUNT(*) FROM tenant_users tu
-		JOIN users u ON u.id = tu.user_id
-		WHERE tu.tenant_id = ? AND LOWER(u.email) = ?
-	`, tenantID, strings.ToLower(email)).Scan(&count).Error
+	err := r.db.WithContext(ctx).
+		Model(&models.TenantUserModel{}).
+		Joins("JOIN users u ON u.id = tenant_users.user_id").
+		Where("tenant_users.tenant_id = ? AND LOWER(u.email) = ?", tenantID, strings.ToLower(email)).
+		Count(&count).Error
 	if err != nil {
 		return false, fmt.Errorf("check existing member: %w", err)
 	}
 	return count > 0, nil
+}
+
+func (r *GORMRepository) upsertTenantUser(ctx context.Context, db *gorm.DB, membership *models.TenantUserModel) error {
+	assignments := map[string]interface{}{
+		"role":      membership.Role,
+		"is_active": true,
+	}
+	if membership.InvitedBy != nil {
+		assignments["invited_by"] = membership.InvitedBy
+	}
+	if membership.InvitedAt != nil {
+		assignments["invited_at"] = membership.InvitedAt
+	}
+
+	return db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "user_id"}},
+			DoUpdates: clause.Assignments(assignments),
+		}).
+		Create(membership).Error
 }
 
 // Conversion helpers
@@ -614,6 +610,62 @@ func modelToUserInvitation(m *models.UserInvitation) *UserInvitation {
 		AcceptedAt: m.AcceptedAt,
 		CreatedAt:  m.CreatedAt,
 	}
+}
+
+func userInvitationToModel(inv *UserInvitation) *models.UserInvitation {
+	return &models.UserInvitation{
+		ID:         inv.ID,
+		TenantID:   inv.TenantID,
+		Email:      inv.Email,
+		Role:       inv.Role,
+		InvitedBy:  inv.InvitedBy,
+		Token:      inv.Token,
+		ExpiresAt:  inv.ExpiresAt,
+		AcceptedAt: inv.AcceptedAt,
+		CreatedAt:  inv.CreatedAt,
+	}
+}
+
+func tenantAuditEventToModel(event *TenantAuditEvent, metadata json.RawMessage) *models.TenantAuditEvent {
+	if len(metadata) == 0 || string(metadata) == "null" {
+		metadata = json.RawMessage(`{}`)
+	}
+	return &models.TenantAuditEvent{
+		ID:          event.ID,
+		TenantID:    event.TenantID,
+		ActorUserID: optionalString(event.ActorUserID),
+		Action:      event.Action,
+		TargetType:  event.TargetType,
+		TargetID:    event.TargetID,
+		TargetEmail: optionalString(event.TargetEmail),
+		Metadata:    metadata,
+		CreatedAt:   event.CreatedAt,
+	}
+}
+
+func modelToTenantAuditEvent(m *models.TenantAuditEvent) TenantAuditEvent {
+	event := TenantAuditEvent{
+		ID:         m.ID,
+		TenantID:   m.TenantID,
+		Action:     m.Action,
+		TargetType: m.TargetType,
+		TargetID:   m.TargetID,
+		CreatedAt:  m.CreatedAt,
+	}
+	if m.ActorUserID != nil {
+		event.ActorUserID = *m.ActorUserID
+	}
+	if m.TargetEmail != nil {
+		event.TargetEmail = *m.TargetEmail
+	}
+	return event
+}
+
+func optionalString(value string) *string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return &value
 }
 
 // Ensure GORMRepository implements Repository interface
