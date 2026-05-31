@@ -190,7 +190,6 @@ type testCostCenterService struct {
 func newTestCostCenterService() *testCostCenterService {
 	repo := NewMockCostCenterRepository()
 	svc := &CostCenterService{
-		db:   nil,
 		repo: repo,
 	}
 	return &testCostCenterService{repo: repo, svc: svc}
