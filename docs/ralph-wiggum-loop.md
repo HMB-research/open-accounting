@@ -324,13 +324,13 @@ while [[ $ITERATION -lt $MAX_ITERATIONS && ${#NEEDS_WORK[@]} -gt 0 ]]; do
 Make the **$name** view ($route) fully functional with demo data.
 
 ## Requirements
-1. **Demo Data**: Add seed data to \`cmd/api/handlers.go\` in the demo reset SQL
+1. **Demo Data**: Add seed data to \`internal/demo/seed_template.sql\`
 2. **E2E Test**: Create \`frontend/e2e/demo/${name// /-}.spec.ts\` following existing patterns
 3. **Verify**: Run the E2E test and ensure it passes
 
 ## Existing Patterns
 - See \`frontend/e2e/demo/quotes.spec.ts\` for E2E test structure
-- See \`cmd/api/handlers.go\` around line 1750+ for demo seed SQL
+- See \`internal/demo/seed_template.sql\` for demo seed SQL
 - Use existing contact/account IDs from demo data
 
 ## Completion Criteria

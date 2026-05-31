@@ -43,7 +43,7 @@ railway run ./migrate -db $DATABASE_URL
 
 Demo mode provides sample data for testing and demonstrations. It includes:
 
-- **Demo User**: `demo@openaccounting.io` / `demo123`
+- **Demo User**: `demo@example.com` / `demo123`
 - **Demo Organization**: Acme Corporation
 - Sample chart of accounts (Estonian standard)
 - Sample customers & suppliers
@@ -60,9 +60,13 @@ DEMO_MODE=true
 
 ### Seeding Demo Data
 
+Demo data is seeded through the application reset endpoint so reset behavior
+uses the same demo service boundary as production code. Start the API with
+`DEMO_MODE=true` and `DEMO_RESET_SECRET` configured, then call:
+
 ```bash
-# After running migrations
-psql $DATABASE_URL -f scripts/demo-seed.sql
+curl -X POST http://localhost:8080/api/demo/reset \
+  -H "X-Demo-Secret: $DEMO_RESET_SECRET"
 ```
 
 ### Automatic Hourly Reset
@@ -90,12 +94,17 @@ For public demos, enable automatic hourly resets using the API endpoint:
 
 #### Option 2: Shell Script (for Docker/self-hosted)
 
-1. Set environment variable:
+1. Set environment variables:
    ```bash
    DEMO_MODE=true
+   DEMO_RESET_SECRET=your-secret-key-here
+   API_BASE_URL=https://your-api.up.railway.app
    ```
 
-2. Set up cron job (in Dockerfile or Railway cron):
+   `DEMO_RESET_URL` can be used instead of `API_BASE_URL` when the reset
+   endpoint is not at `/api/demo/reset`.
+
+2. Set up cron job:
    ```bash
    0 * * * * /app/scripts/demo-reset.sh >> /var/log/demo-reset.log 2>&1
    ```
@@ -108,13 +117,12 @@ Create a separate Railway service for the cron job:
 2. Use this Dockerfile:
 
 ```dockerfile
-FROM postgres:16-alpine
+FROM alpine:3.20
 
-# Install cron
-RUN apk add --no-cache dcron
+# Install cron and curl
+RUN apk add --no-cache dcron curl
 
 # Copy scripts
-COPY scripts/demo-seed.sql /app/scripts/
 COPY scripts/demo-reset.sh /app/scripts/
 RUN chmod +x /app/scripts/demo-reset.sh
 
@@ -127,8 +135,9 @@ CMD ["crond", "-f", "-l", "2"]
 
 3. Set environment variables:
    ```
-   DATABASE_URL=${{Postgres.DATABASE_URL}}
    DEMO_MODE=true
+   DEMO_RESET_SECRET=your-secret-key-here
+   API_BASE_URL=https://your-api.up.railway.app
    ```
 
 ### Demo Credentials
@@ -158,8 +167,8 @@ CMD ["crond", "-f", "-l", "2"]
 
 1. **Database**: Ensure PostgreSQL is running and healthy
 2. **Migrations**: Run `./migrate -db $DATABASE_URL`
-3. **Seed (optional)**: Run `psql $DATABASE_URL -f scripts/demo-seed.sql`
-4. **API Server**: Start `./api`
+3. **API Server**: Start `./api`
+4. **Seed demo data (optional)**: Call `POST /api/demo/reset` with `X-Demo-Secret`
 
 ### Health Check
 
@@ -244,11 +253,13 @@ Migrations haven't run. Execute:
 
 ### Demo user can't login
 
-Re-run the seed script:
+Re-run the demo reset endpoint:
 ```bash
-psql $DATABASE_URL -f scripts/demo-seed.sql
+curl -X POST http://localhost:8080/api/demo/reset \
+  -H "X-Demo-Secret: $DEMO_RESET_SECRET"
 ```
 
 ### Schema already exists
 
-The seed is idempotent - it uses `ON CONFLICT DO NOTHING`. Safe to re-run.
+The reset endpoint drops the selected demo tenant schema under an advisory lock,
+cleans its public rows, and seeds fresh demo data. It is safe to re-run.

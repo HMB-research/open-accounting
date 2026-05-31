@@ -12,7 +12,7 @@
 
 ## Reference: Seeded Demo Data
 
-From `scripts/demo-seed.sql`:
+From `internal/demo/seed_template.sql`:
 - **Organization:** Acme Corporation
 - **Contacts (7):** TechStart OÜ, Nordic Solutions AS, Baltic Commerce, GreenTech Industries (customers), Office Supplies Ltd, CloudHost Services, Marketing Agency OÜ (suppliers)
 - **Invoices (9):** INV-2024-001 to INV-2024-007, INV-2025-001, INV-2025-002
