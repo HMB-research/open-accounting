@@ -599,6 +599,70 @@ func TestService_GetTopCustomers(t *testing.T) {
 	})
 }
 
+func TestService_GetRecentActivity(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("success with activity", func(t *testing.T) {
+		createdAt := time.Date(2026, 3, 15, 10, 0, 0, 0, time.UTC)
+		amount := decimal.NewFromInt(120)
+		repo := &MockRepository{
+			RecentActivityData: []ActivityItem{
+				{
+					ID:          "activity-1",
+					Type:        "INVOICE",
+					Action:      "sent",
+					Description: "Invoice INV-001 to Customer",
+					CreatedAt:   createdAt,
+					Amount:      &amount,
+				},
+			},
+		}
+		svc := NewServiceWithRepository(repo)
+
+		items, err := svc.GetRecentActivity(ctx, "tenant-1", "test_schema", 5)
+
+		require.NoError(t, err)
+		require.Len(t, items, 1)
+		assert.Equal(t, "test_schema", repo.LastSchemaName)
+		assert.Equal(t, 5, repo.LastLimit)
+		assert.Equal(t, "Invoice INV-001 to Customer", items[0].Description)
+		require.NotNil(t, items[0].Amount)
+		assert.True(t, items[0].Amount.Equal(amount))
+	})
+
+	t.Run("defaults to 10 when 0 provided", func(t *testing.T) {
+		repo := &MockRepository{}
+		svc := NewServiceWithRepository(repo)
+
+		_, err := svc.GetRecentActivity(ctx, "tenant-1", "test_schema", 0)
+
+		require.NoError(t, err)
+		assert.Equal(t, 10, repo.LastLimit)
+	})
+
+	t.Run("defaults to 10 when negative", func(t *testing.T) {
+		repo := &MockRepository{}
+		svc := NewServiceWithRepository(repo)
+
+		_, err := svc.GetRecentActivity(ctx, "tenant-1", "test_schema", -5)
+
+		require.NoError(t, err)
+		assert.Equal(t, 10, repo.LastLimit)
+	})
+
+	t.Run("error from repository", func(t *testing.T) {
+		repo := &MockRepository{
+			RecentActivityError: errors.New("recent activity error"),
+		}
+		svc := NewServiceWithRepository(repo)
+
+		_, err := svc.GetRecentActivity(ctx, "tenant-1", "test_schema", 10)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "recent activity error")
+	})
+}
+
 func TestAgingReportBucketLabels(t *testing.T) {
 	ctx := context.Background()
 
