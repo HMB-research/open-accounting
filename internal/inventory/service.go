@@ -14,15 +14,13 @@ import (
 
 // Service provides inventory operations
 type Service struct {
-	db   *pgxpool.Pool
 	repo Repository
 }
 
-// NewService creates a new inventory service with a PostgreSQL repository
+// NewService creates a new inventory service with an ORM-backed repository.
 func NewService(db *pgxpool.Pool) *Service {
 	return &Service{
-		db:   db,
-		repo: NewPostgresRepository(db),
+		repo: NewGORMRepository(db),
 	}
 }
 
