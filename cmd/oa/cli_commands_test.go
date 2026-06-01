@@ -5556,6 +5556,129 @@ func TestCLIBankingCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Completed bank reconciliation rec-1")
 }
 
+func TestCLIBankMatchRulesJSONAndValidationBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	cfg := &cliConfig{TenantID: "tenant-1"}
+
+	for _, tt := range []struct {
+		name     string
+		args     []string
+		wantText string
+	}{
+		{name: "missing subcommand", args: nil, wantText: "banking match-rules subcommand required"},
+		{name: "create invalid confidence", args: []string{"create", "--min-confidence", "1.5"}, wantText: "min-confidence must be between 0 and 1"},
+		{name: "get missing id", args: []string{"get"}, wantText: "id is required"},
+		{name: "update missing id", args: []string{"update"}, wantText: "id is required"},
+		{name: "update conflicting scope", args: []string{"update", "--id", "rule-1", "--global", "--bank-account-id", "bank-1"}, wantText: "global and bank-account-id cannot both be set"},
+		{name: "update invalid priority", args: []string{"update", "--id", "rule-1", "--priority", "bad"}, wantText: "parse priority"},
+		{name: "update invalid max date diff", args: []string{"update", "--id", "rule-1", "--max-date-diff-days", "bad"}, wantText: "parse max-date-diff-days"},
+		{name: "update invalid exact amount flag", args: []string{"update", "--id", "rule-1", "--require-exact-amount", "bad"}, wantText: "parse require-exact-amount"},
+		{name: "update invalid active flag", args: []string{"update", "--id", "rule-1", "--active", "bad"}, wantText: "parse active"},
+		{name: "delete missing id", args: []string{"delete"}, wantText: "id is required"},
+		{name: "unknown subcommand", args: []string{"archive"}, wantText: `unknown banking match-rules subcommand "archive"`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := app.runBankMatchRules(context.Background(), cfg, nil, tt.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantText)
+		})
+	}
+
+	bankAccountID := "bank-1"
+	rulePayload := func(name string) banking.BankMatchRule {
+		return banking.BankMatchRule{
+			ID:                 "rule-1",
+			TenantID:           "tenant-1",
+			BankAccountID:      &bankAccountID,
+			Name:               name,
+			Priority:           20,
+			MatchField:         banking.BankMatchFieldCounterpartyName,
+			Pattern:            "acme",
+			MinConfidence:      0.9,
+			MaxDateDiffDays:    5,
+			RequireExactAmount: true,
+			IsActive:           false,
+			CreatedAt:          time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC),
+			UpdatedAt:          time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC),
+		}
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-match-rules/rule-1":
+			_ = json.NewEncoder(w).Encode(rulePayload("Stripe receipts"))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/bank-match-rules/rule-1":
+			var req banking.UpdateBankMatchRuleRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.NotNil(t, req.BankAccountID)
+			assert.Equal(t, "bank-1", *req.BankAccountID)
+			require.NotNil(t, req.Name)
+			assert.Equal(t, "Acme payments", *req.Name)
+			require.NotNil(t, req.Priority)
+			assert.Equal(t, 20, *req.Priority)
+			require.NotNil(t, req.MatchField)
+			assert.Equal(t, banking.BankMatchFieldCounterpartyName, *req.MatchField)
+			require.NotNil(t, req.Pattern)
+			assert.Equal(t, "acme", *req.Pattern)
+			require.NotNil(t, req.MinConfidence)
+			assert.Equal(t, 0.9, *req.MinConfidence)
+			require.NotNil(t, req.MaxDateDiffDays)
+			assert.Equal(t, 5, *req.MaxDateDiffDays)
+			require.NotNil(t, req.RequireExactAmount)
+			assert.True(t, *req.RequireExactAmount)
+			require.NotNil(t, req.IsActive)
+			assert.False(t, *req.IsActive)
+			_ = json.NewEncoder(w).Encode(rulePayload("Acme payments"))
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/bank-match-rules/rule-1":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	err := app.run(context.Background(), []string{"banking", "match-rules", "get", "--id", "rule-1", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Stripe receipts"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"banking", "match-rules", "update",
+		"--id", "rule-1",
+		"--name", "Acme payments",
+		"--bank-account-id", "bank-1",
+		"--priority", "20",
+		"--field", "counterparty_name",
+		"--pattern", "acme",
+		"--min-confidence", "0.9",
+		"--max-date-diff-days", "5",
+		"--require-exact-amount", "true",
+		"--active", "false",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Acme payments"`)
+	assert.Contains(t, stdout.String(), `"match_field": "COUNTERPARTY_NAME"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"banking", "match-rules", "delete", "--id", "rule-1", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "deleted"`)
+}
+
 func TestCLIAnalyticsCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
