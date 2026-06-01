@@ -135,7 +135,7 @@ jobs:
       - name: Run tests
         env:
           DATABASE_URL: postgres://test:test@localhost:5432/test?sslmode=disable
-        run: go test -v -race -coverprofile=coverage.out ./...
+        run: go test -p 1 -v -race -coverprofile=coverage.out ./...
 
       - name: Upload coverage to Codecov
         env:
@@ -206,7 +206,7 @@ jobs:
       - name: Run integration tests
         env:
           DATABASE_URL: postgres://test:test@localhost:5432/openaccounting_test?sslmode=disable
-        run: go test -v -race -tags=integration -coverprofile=coverage-integration.out $(go list ./... | grep -v /testutil)
+        run: go test -p 1 -v -race -tags=integration -coverprofile=coverage-integration.out $(go list ./... | grep -v /testutil)
 
       - name: Upload integration coverage to Codecov
         env:
