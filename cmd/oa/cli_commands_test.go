@@ -3883,9 +3883,18 @@ func TestCLICostCenterCommands(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/report":
 			require.Equal(t, "2026-03-01", r.URL.Query().Get("start_date"))
 			require.Equal(t, "2026-03-31", r.URL.Query().Get("end_date"))
-			if r.URL.Query().Get("format") == "csv" {
+			switch r.URL.Query().Get("format") {
+			case "csv":
 				w.Header().Set("Content-Type", "text/csv")
 				_, _ = w.Write([]byte("row_type,code,total_expenses\ncost_center,CC001,250.00\n"))
+				return
+			case "xlsx":
+				w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+				_, _ = w.Write([]byte("xlsx cost center report"))
+				return
+			case "pdf":
+				w.Header().Set("Content-Type", "application/pdf")
+				_, _ = w.Write([]byte("%PDF cost center report"))
 				return
 			}
 			_ = json.NewEncoder(w).Encode(reportPayload)
@@ -3906,6 +3915,11 @@ func TestCLICostCenterCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"code": "CC001"`)
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"cost-centers", "list", "--active-only"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "CC001")
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{
 		"cost-centers", "create",
 		"--code", "CC001",
@@ -3918,14 +3932,37 @@ func TestCLICostCenterCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Created cost center CC001 Sales (cc-1)")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"cost-centers", "create",
+		"--code", "CC001",
+		"--name", "Sales",
+		"--budget-amount", "1000.00",
+		"--budget-period", "monthly",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"code": "CC001"`)
+	assert.Contains(t, stdout.String(), `"budget_period": "MONTHLY"`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"cost-centers", "import", "--file", importFile})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 cost centers, skipped 0 rows")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"cost-centers", "import", "--file", importFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"cost_centers_created": 1`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"cost-centers", "get", "--id", "cc-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Cost center CC001 Sales")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"cost-centers", "get", "--id", "cc-1", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Sales"`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{
@@ -3940,10 +3977,29 @@ func TestCLICostCenterCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Cost center CC002 Sales updated")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"cost-centers", "update",
+		"--id", "cc-1",
+		"--code", "CC002",
+		"--name", "Sales updated",
+		"--budget-amount", "1200.00",
+		"--budget-period", "monthly",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"code": "CC002"`)
+	assert.Contains(t, stdout.String(), `"budget_amount": "1200"`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"cost-centers", "report", "--start", "2026-03-01", "--end", "2026-03-31"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Total expenses: 250")
 	assert.Contains(t, stdout.String(), "Sales")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"cost-centers", "report", "--start", "2026-03-01", "--end", "2026-03-31", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"total_expenses": "250"`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"cost-centers", "report", "--start", "2026-03-01", "--end", "2026-03-31", "--csv"})
@@ -3952,9 +4008,150 @@ func TestCLICostCenterCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "CC001")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"cost-centers", "report", "--start", "2026-03-01", "--end", "2026-03-31", "--xlsx"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "xlsx cost center report")
+
+	outputFile := filepath.Join(t.TempDir(), "cost-center-report.pdf")
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"cost-centers", "report", "--start", "2026-03-01", "--end", "2026-03-31", "--pdf", "--output", outputFile})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote cost center report PDF")
+	outputContent, err := os.ReadFile(outputFile)
+	require.NoError(t, err)
+	assert.Contains(t, string(outputContent), "%PDF cost center report")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"cost-centers", "delete", "--id", "cc-1", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "deleted"`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"cost-centers", "delete", "--id", "cc-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Deleted cost center cc-1")
+}
+
+func TestCLICostCenterValidationBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, _, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "missing subcommand",
+			args: nil,
+			want: "cost-centers subcommand required",
+		},
+		{
+			name: "unknown subcommand",
+			args: []string{"legacy"},
+			want: `unknown cost-centers subcommand "legacy"`,
+		},
+		{
+			name: "create missing code",
+			args: []string{"create", "--name", "Sales"},
+			want: "code is required",
+		},
+		{
+			name: "create missing name",
+			args: []string{"create", "--code", "CC001"},
+			want: "name is required",
+		},
+		{
+			name: "create invalid budget amount",
+			args: []string{"create", "--code", "CC001", "--name", "Sales", "--budget-amount=-1"},
+			want: "budget-amount must be non-negative",
+		},
+		{
+			name: "create invalid budget period",
+			args: []string{"create", "--code", "CC001", "--name", "Sales", "--budget-period", "weekly"},
+			want: `invalid budget period "weekly"`,
+		},
+		{
+			name: "import missing file",
+			args: []string{"import"},
+			want: "file is required",
+		},
+		{
+			name: "import unreadable file",
+			args: []string{"import", "--file", filepath.Join(t.TempDir(), "missing.csv")},
+			want: "no such file",
+		},
+		{
+			name: "get missing id",
+			args: []string{"get"},
+			want: "id is required",
+		},
+		{
+			name: "update missing id",
+			args: []string{"update", "--code", "CC001", "--name", "Sales"},
+			want: "id is required",
+		},
+		{
+			name: "update missing code",
+			args: []string{"update", "--id", "cc-1", "--name", "Sales"},
+			want: "code is required",
+		},
+		{
+			name: "update missing name",
+			args: []string{"update", "--id", "cc-1", "--code", "CC001"},
+			want: "name is required",
+		},
+		{
+			name: "update invalid budget amount",
+			args: []string{"update", "--id", "cc-1", "--code", "CC001", "--name", "Sales", "--budget-amount=-1"},
+			want: "budget-amount must be non-negative",
+		},
+		{
+			name: "update invalid budget period",
+			args: []string{"update", "--id", "cc-1", "--code", "CC001", "--name", "Sales", "--budget-period", "weekly"},
+			want: `invalid budget period "weekly"`,
+		},
+		{
+			name: "delete missing id",
+			args: []string{"delete"},
+			want: "id is required",
+		},
+		{
+			name: "report combines output formats",
+			args: []string{"report", "--json", "--csv"},
+			want: "json, csv, xlsx, and pdf cannot be combined",
+		},
+		{
+			name: "report output without export format",
+			args: []string{"report", "--output", filepath.Join(t.TempDir(), "report.csv")},
+			want: "output requires csv, xlsx, or pdf",
+		},
+		{
+			name: "report invalid start date",
+			args: []string{"report", "--start", "2026/03/01"},
+			want: "parse start",
+		},
+		{
+			name: "report invalid end date",
+			args: []string{"report", "--end", "2026/03/31"},
+			want: "parse end",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := app.runCostCenters(ctx, tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+		})
+	}
 }
 
 func TestCLIJournalEntryCommands(t *testing.T) {
