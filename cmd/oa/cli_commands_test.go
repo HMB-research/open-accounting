@@ -8230,6 +8230,69 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "EU VAT OSS 2026-Q1")
 	assert.Contains(t, stdout.String(), "DE Germany")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tax", "oss", "report", "--year", "2026", "--quarter", "1", "--include-b2b", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"country_code": "DE"`)
+	assert.Contains(t, stdout.String(), `"include_b2b": true`)
+}
+
+func TestCLITaxOSSValidationBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, _, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "missing subcommand",
+			args: nil,
+			want: "tax oss subcommand required",
+		},
+		{
+			name: "unknown subcommand",
+			args: []string{"legacy"},
+			want: `unknown tax oss subcommand "legacy"`,
+		},
+		{
+			name: "missing year",
+			args: []string{"report", "--quarter", "1"},
+			want: "year must be between 2020 and 2100",
+		},
+		{
+			name: "year before supported range",
+			args: []string{"report", "--year", "2019", "--quarter", "1"},
+			want: "year must be between 2020 and 2100",
+		},
+		{
+			name: "missing quarter",
+			args: []string{"report", "--year", "2026"},
+			want: "quarter must be between 1 and 4",
+		},
+		{
+			name: "quarter outside supported range",
+			args: []string{"report", "--year", "2026", "--quarter", "5"},
+			want: "quarter must be between 1 and 4",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := app.runTaxOSS(ctx, tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+		})
+	}
 }
 
 func TestCLIDocumentCommands(t *testing.T) {
