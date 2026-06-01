@@ -5290,14 +5290,29 @@ func TestCLIInterestCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"is_enabled": true`)
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"interest", "settings", "get"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Daily rate: 0.000500")
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"interest", "settings", "update", "--annual-rate", "0.1825"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Daily rate: 0.000500")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"interest", "settings", "update", "--rate", "0.0005", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"annual_rate": 0.1825`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"interest", "overdue", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"invoice_number": "INV-00001"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"interest", "overdue"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "INV-00001")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"interest", "invoice", "--invoice-id", "inv-1"})
@@ -5306,9 +5321,86 @@ func TestCLIInterestCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Total interest: 3.5")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"interest", "invoice", "--invoice-id", "inv-1", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"total_interest": "3.5"`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"interest", "history", "--invoice-id", "inv-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "interest-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"interest", "history", "--invoice-id", "inv-1", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "interest-1"`)
+}
+
+func TestCLIInterestValidationBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "missing subcommand",
+			args: nil,
+			want: "interest subcommand required",
+		},
+		{
+			name: "unknown subcommand",
+			args: []string{"legacy"},
+			want: `unknown interest subcommand "legacy"`,
+		},
+		{
+			name: "settings missing subcommand",
+			args: []string{"settings"},
+			want: "interest settings subcommand required",
+		},
+		{
+			name: "settings unknown subcommand",
+			args: []string{"settings", "legacy"},
+			want: `unknown interest settings subcommand "legacy"`,
+		},
+		{
+			name: "settings update missing rate",
+			args: []string{"settings", "update"},
+			want: "rate or annual-rate is required",
+		},
+		{
+			name: "settings update conflicting rates",
+			args: []string{"settings", "update", "--rate", "0.0005", "--annual-rate", "0.1825"},
+			want: "rate and annual-rate cannot both be set",
+		},
+		{
+			name: "invoice missing id",
+			args: []string{"invoice"},
+			want: "invoice-id is required",
+		},
+		{
+			name: "history missing id",
+			args: []string{"history"},
+			want: "invoice-id is required",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			app, _, _ := newTestCLIApp()
+			err := app.run(context.Background(), append([]string{"interest"}, tc.args...))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
 }
 
 func TestCLICloseCommands(t *testing.T) {
