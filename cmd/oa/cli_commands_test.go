@@ -6176,10 +6176,20 @@ func TestCLIAnalyticsCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Net income: 500")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"analytics", "dashboard", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"total_revenue"`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"analytics", "revenue-expense", "--months", "3"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "2026-03")
 	assert.Contains(t, stdout.String(), "500")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"analytics", "revenue-expense", "--months", "3", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"labels"`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"analytics", "cash-flow", "--months", "6"})
@@ -6188,9 +6198,76 @@ func TestCLIAnalyticsCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "700")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"analytics", "cash-flow", "--months", "6", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"inflows"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"analytics", "activity", "--limit", "5"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Invoice INV-1")
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"analytics", "activity", "--limit", "5", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"description": "Invoice INV-1"`)
+}
+
+func TestCLIAnalyticsValidationBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "missing subcommand",
+			args: nil,
+			want: "analytics subcommand required",
+		},
+		{
+			name: "unknown subcommand",
+			args: []string{"legacy"},
+			want: `unknown analytics subcommand "legacy"`,
+		},
+		{
+			name: "revenue months invalid",
+			args: []string{"revenue-expense", "--months", "bad"},
+			want: "parse months",
+		},
+		{
+			name: "revenue months not positive",
+			args: []string{"revenue-expense", "--months", "0"},
+			want: "months must be positive",
+		},
+		{
+			name: "cash flow months not positive",
+			args: []string{"cash-flow", "--months", "-1"},
+			want: "months must be positive",
+		},
+		{
+			name: "activity limit not positive",
+			args: []string{"activity", "--limit", "0"},
+			want: "limit must be positive",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			app, _, _ := newTestCLIApp()
+			err := app.run(context.Background(), append([]string{"analytics"}, tc.args...))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
 }
 
 func TestCLIReportsCommands(t *testing.T) {
