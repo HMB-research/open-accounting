@@ -6914,6 +6914,12 @@ func TestCLIReportsCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Investing accounts: CAPEX-1")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "cash-flow-mapping", "get", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"operating_account_codes":`)
+	assert.Contains(t, stdout.String(), `"PREPAY"`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{
 		"reports", "cash-flow-mapping", "update",
 		"--operating-accounts", "prepay",
@@ -6924,6 +6930,17 @@ func TestCLIReportsCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"operating_account_codes":`)
 	assert.Contains(t, stdout.String(), `"PREPAY"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"reports", "cash-flow-mapping", "update",
+		"--operating-accounts", "prepay",
+		"--investing-accounts", "capex-1",
+		"--financing-accounts", "founders",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Operating accounts: PREPAY")
+	assert.Contains(t, stdout.String(), "Financing accounts: FOUNDERS")
 
 	stdout.Reset()
 	cashFlowCSVPath := filepath.Join(t.TempDir(), "cash-flow.csv")
@@ -7173,6 +7190,44 @@ func TestCLIReportsCommands(t *testing.T) {
 	budgetVsActualPDF, err := os.ReadFile(budgetVsActualPDFPath)
 	require.NoError(t, err)
 	assert.Equal(t, []byte("%PDF budget vs actual"), budgetVsActualPDF)
+}
+
+func TestCLICashFlowMappingValidationBranches(t *testing.T) {
+	app, _, _ := newTestCLIApp()
+	ctx := context.Background()
+	cfg := &cliConfig{TenantID: "tenant-1"}
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "missing subcommand",
+			args: nil,
+			want: "reports cash-flow-mapping subcommand required",
+		},
+		{
+			name: "unknown subcommand",
+			args: []string{"legacy"},
+			want: `unknown reports cash-flow-mapping subcommand "legacy"`,
+		},
+		{
+			name: "conflicting account mapping",
+			args: []string{
+				"update",
+				"--operating-accounts", "prepay",
+				"--investing-accounts", "PREPAY",
+			},
+			want: "cannot be assigned to both",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := app.runCashFlowMapping(ctx, cfg, nil, tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+		})
+	}
 }
 
 func TestCLIEmployeesCommands(t *testing.T) {
