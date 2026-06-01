@@ -3470,9 +3470,19 @@ func TestCLIInventoryCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"name": "Parts"`)
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "categories", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Parts")
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"inventory", "categories", "create", "--name", "Parts", "--description", "Spare parts", "--parent-id", "parent-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created product category Parts (cat-1)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "categories", "create", "--name", "Parts", "--description", "Spare parts", "--parent-id", "parent-1", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"parent_id": "parent-1"`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"inventory", "categories", "import", "--file", categoryImportFile})
@@ -3480,14 +3490,29 @@ func TestCLIInventoryCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 product categories, skipped 0 rows")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "categories", "import", "--file", categoryImportFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"categories_created": 1`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"inventory", "categories", "get", "--id", "cat-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Product category Parts")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "categories", "get", "--id", "cat-1", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "cat-1"`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"inventory", "categories", "delete", "--id", "cat-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Deleted product category cat-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "categories", "delete", "--id", "cat-1", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "deleted"`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{
@@ -3759,6 +3784,54 @@ func TestCLIInventoryValidationBranches(t *testing.T) {
 	}
 
 	cfg := &cliConfig{TenantID: "tenant-1"}
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "missing categories command",
+			args: nil,
+			want: "inventory categories subcommand required",
+		},
+		{
+			name: "unknown categories command",
+			args: []string{"archive"},
+			want: `unknown inventory categories subcommand "archive"`,
+		},
+		{
+			name: "categories create missing name",
+			args: []string{"create"},
+			want: "name is required",
+		},
+		{
+			name: "categories import missing file",
+			args: []string{"import"},
+			want: "file is required",
+		},
+		{
+			name: "categories import unreadable file",
+			args: []string{"import", "--file", filepath.Join(t.TempDir(), "missing.csv")},
+			want: "no such file",
+		},
+		{
+			name: "categories get missing id",
+			args: []string{"get"},
+			want: "id is required",
+		},
+		{
+			name: "categories delete missing id",
+			args: []string{"delete"},
+			want: "id is required",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := app.runInventoryCategories(ctx, cfg, nil, tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+		})
+	}
+
 	for _, tc := range []struct {
 		name string
 		args []string
