@@ -3570,6 +3570,12 @@ func TestCLIInventoryCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "120")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "valuation", "--warehouse-id", "wh-1", "--method", "weighted-average", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"valuation_method": "WEIGHTED_AVERAGE"`)
+	assert.Contains(t, stdout.String(), `"total_value": "120"`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"inventory", "products", "delete", "--id", "prod-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Deleted product prod-1")
@@ -3610,9 +3616,20 @@ func TestCLIInventoryCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Adjusted stock for product prod-1 by -2 in warehouse wh-1")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "adjust", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "-2.00", "--unit-cost", "10.50", "--lot-number", "LOT-2026-01", "--serial-number", "SN-001", "--expiry-date", "2027-01-31", "--reason", "Cycle count", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"movement_type": "ADJUSTMENT"`)
+	assert.Contains(t, stdout.String(), `"notes": "Cycle count"`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"inventory", "stock", "import", "--file", stockImportFile})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Processed 1 rows, imported 1 stock adjustments, skipped 0 rows")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "stock", "import", "--file", stockImportFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"adjustments_imported": 1`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"inventory", "transfer", "--product-id", "prod-1", "--from-warehouse-id", "wh-1", "--to-warehouse-id", "wh-2", "--quantity", "3.00", "--notes", "Move to branch", "--json"})
@@ -3628,6 +3645,152 @@ func TestCLIInventoryCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"inventory", "release", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "2.00", "--reason", "Order canceled", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"reserved_qty": "3"`)
+}
+
+func TestCLIInventoryValidationBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, _, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "missing subcommand",
+			args: nil,
+			want: "inventory subcommand required",
+		},
+		{
+			name: "unknown subcommand",
+			args: []string{"legacy"},
+			want: `unknown inventory subcommand "legacy"`,
+		},
+		{
+			name: "missing stock subcommand",
+			args: []string{"stock"},
+			want: "inventory stock subcommand required",
+		},
+		{
+			name: "adjust missing product",
+			args: []string{"adjust", "--warehouse-id", "wh-1", "--quantity", "1"},
+			want: "product-id is required",
+		},
+		{
+			name: "adjust missing warehouse",
+			args: []string{"adjust", "--product-id", "prod-1", "--quantity", "1"},
+			want: "warehouse-id is required",
+		},
+		{
+			name: "adjust missing quantity",
+			args: []string{"adjust", "--product-id", "prod-1", "--warehouse-id", "wh-1"},
+			want: "quantity is required",
+		},
+		{
+			name: "adjust zero quantity",
+			args: []string{"adjust", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "0"},
+			want: "quantity must not be zero",
+		},
+		{
+			name: "adjust negative unit cost",
+			args: []string{"adjust", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "1", "--unit-cost=-1"},
+			want: "unit-cost must be non-negative",
+		},
+		{
+			name: "adjust invalid expiry date",
+			args: []string{"adjust", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "1", "--expiry-date", "2026/01/31"},
+			want: "parse expiry-date",
+		},
+		{
+			name: "transfer missing product",
+			args: []string{"transfer", "--from-warehouse-id", "wh-1", "--to-warehouse-id", "wh-2", "--quantity", "1"},
+			want: "product-id is required",
+		},
+		{
+			name: "transfer missing source warehouse",
+			args: []string{"transfer", "--product-id", "prod-1", "--to-warehouse-id", "wh-2", "--quantity", "1"},
+			want: "from-warehouse-id is required",
+		},
+		{
+			name: "transfer missing destination warehouse",
+			args: []string{"transfer", "--product-id", "prod-1", "--from-warehouse-id", "wh-1", "--quantity", "1"},
+			want: "to-warehouse-id is required",
+		},
+		{
+			name: "transfer missing quantity",
+			args: []string{"transfer", "--product-id", "prod-1", "--from-warehouse-id", "wh-1", "--to-warehouse-id", "wh-2"},
+			want: "quantity is required",
+		},
+		{
+			name: "reserve missing warehouse",
+			args: []string{"reserve", "--product-id", "prod-1", "--quantity", "1"},
+			want: "warehouse-id is required",
+		},
+		{
+			name: "reserve missing quantity",
+			args: []string{"reserve", "--product-id", "prod-1", "--warehouse-id", "wh-1"},
+			want: "quantity is required",
+		},
+		{
+			name: "release missing product",
+			args: []string{"release", "--warehouse-id", "wh-1", "--quantity", "1"},
+			want: "product-id is required",
+		},
+		{
+			name: "release non-positive quantity",
+			args: []string{"release", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "0"},
+			want: "quantity must be positive",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := app.runInventory(ctx, tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+		})
+	}
+
+	cfg := &cliConfig{TenantID: "tenant-1"}
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "missing stock command",
+			args: nil,
+			want: "inventory stock subcommand required",
+		},
+		{
+			name: "unknown stock command",
+			args: []string{"reset"},
+			want: `unknown inventory stock subcommand "reset"`,
+		},
+		{
+			name: "stock import missing file flag",
+			args: []string{"import"},
+			want: "file is required",
+		},
+		{
+			name: "stock import unreadable file",
+			args: []string{"import", "--file", filepath.Join(t.TempDir(), "missing.csv")},
+			want: "no such file",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := app.runInventoryStock(ctx, cfg, nil, tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+		})
+	}
 }
 
 func TestCLICostCenterCommands(t *testing.T) {
