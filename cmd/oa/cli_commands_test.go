@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
+	"github.com/HMB-research/open-accounting/internal/apitoken"
 	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
@@ -469,6 +470,7 @@ func TestCLITokenCommands(t *testing.T) {
 		APIToken:   "oa_saved_token",
 	}))
 
+	createCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
@@ -482,11 +484,22 @@ func TestCLITokenCommands(t *testing.T) {
 				"created_at":   "2026-03-12T00:00:00Z",
 			}})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/api-tokens":
+			createCount++
+			var req apitoken.CreateRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			if createCount == 1 {
+				assert.Equal(t, "Nightly", req.Name)
+				require.NotNil(t, req.ExpiresAt)
+				assert.True(t, req.ExpiresAt.After(time.Now().Add(364*24*time.Hour)))
+			} else {
+				assert.Equal(t, "Permanent", req.Name)
+				assert.Nil(t, req.ExpiresAt)
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"token": "oa_created_token",
 				"api_token": map[string]any{
 					"id":           "token-2",
-					"name":         "Nightly",
+					"name":         req.Name,
 					"token_prefix": "oa_created_to",
 					"created_at":   "2026-03-12T00:00:00Z",
 				},
@@ -508,14 +521,57 @@ func TestCLITokenCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"name": "CLI"`)
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"tokens", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "PREFIX")
+	assert.Contains(t, stdout.String(), "oa_token_123")
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"tokens", "create", "--name", "Nightly"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created token Nightly (token-2)")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"tokens", "create", "--name", "Permanent", "--expires-in-days", "0", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Permanent"`)
+	assert.Contains(t, stdout.String(), `"token": "oa_created_token"`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"tokens", "revoke", "--id", "token-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Revoked token token-1")
+}
+
+func TestCLITokenValidationBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown subcommand", args: []string{"rotate"}, want: `unknown tokens subcommand "rotate"`},
+		{name: "create missing name", args: []string{"create"}, want: "name is required"},
+		{name: "create invalid expires in days", args: []string{"create", "--name", "Nightly", "--expires-in-days", "never"}, want: "invalid value"},
+		{name: "revoke missing id", args: []string{"revoke"}, want: "id is required"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			app, _, _ := newTestCLIApp()
+			err := app.run(context.Background(), append([]string{"tokens"}, tc.args...))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
 }
 
 func TestCLITenantCommands(t *testing.T) {
