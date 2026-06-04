@@ -241,7 +241,7 @@ func TestCLIAuthInitStatusAndLogoutFlow(t *testing.T) {
 					"id":         "session-1",
 					"user_id":    "user-1",
 					"created_at": "2026-05-28T12:00:00Z",
-					"expires_at": "2026-06-04T12:00:00Z",
+					"expires_at": "2027-06-04T12:00:00Z",
 				},
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/auth/security-events":
@@ -5461,6 +5461,102 @@ func TestCLIEmailCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"email", "payment-receipt", "--payment-id", "pay-1", "--recipient-email", "billing@example.com", "--recipient-name", "Acme", "--subject", "Receipt", "--message", "Thanks", "--require-approved-evidence"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Email sent")
+}
+
+func TestCLIEmailTemplateBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	cfg := &cliConfig{TenantID: "tenant-1"}
+	htmlFile := writeTempCSV(t, "template.html", "<p>Receipt for {{payment_number}}</p>\n")
+
+	for _, tt := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing subcommand", args: nil, want: "email templates subcommand required"},
+		{name: "unknown subcommand", args: []string{"archive"}, want: `unknown email templates subcommand "archive"`},
+		{name: "update missing type", args: []string{"update"}, want: "type is required"},
+		{name: "update invalid type", args: []string{"update", "--type", "custom"}, want: `invalid email template type "custom"`},
+		{name: "update missing subject", args: []string{"update", "--type", "invoice_send"}, want: "subject is required"},
+		{name: "update conflicting body html inputs", args: []string{"update", "--type", "invoice_send", "--subject", "Invoice", "--body-html", "<p>Inline</p>", "--body-html-file", htmlFile}, want: "body-html and body-html-file cannot both be set"},
+		{name: "update missing body html", args: []string{"update", "--type", "invoice_send", "--subject", "Invoice"}, want: "body-html is required"},
+		{name: "update unreadable body html file", args: []string{"update", "--type", "invoice_send", "--subject", "Invoice", "--body-html-file", filepath.Join(t.TempDir(), "missing.html")}, want: "read file"},
+		{name: "update invalid active", args: []string{"update", "--type", "invoice_send", "--subject", "Invoice", "--body-html", "<p>Invoice</p>", "--active", "sometimes"}, want: "parse active"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := app.runEmailTemplates(context.Background(), cfg, &apiClient{}, tt.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tt.want)
+		})
+	}
+
+	now := "2026-03-15T12:00:00Z"
+	textFile := writeTempCSV(t, "template.txt", "Receipt for {{payment_number}}\n")
+	templatePayload := func(subject string, active bool) map[string]any {
+		return map[string]any{
+			"id":            "tmpl-payment",
+			"tenant_id":     "tenant-1",
+			"template_type": "PAYMENT_RECEIPT",
+			"subject":       subject,
+			"body_html":     "<p>Receipt for {{payment_number}}</p>\n",
+			"body_text":     "Receipt for {{payment_number}}\n",
+			"is_active":     active,
+			"created_at":    now,
+			"updated_at":    now,
+		}
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/email-templates":
+			_ = json.NewEncoder(w).Encode([]map[string]any{templatePayload("Payment receipt", true)})
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/email-templates/PAYMENT_RECEIPT":
+			var req email.UpdateTemplateRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Updated receipt", req.Subject)
+			assert.Equal(t, "<p>Receipt for {{payment_number}}</p>\n", req.BodyHTML)
+			assert.Equal(t, "Receipt for {{payment_number}}\n", req.BodyText)
+			assert.False(t, req.IsActive)
+			_ = json.NewEncoder(w).Encode(templatePayload("Updated receipt", false))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	err := app.run(context.Background(), []string{"email", "templates", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "PAYMENT_RECEIPT")
+	assert.Contains(t, stdout.String(), "Payment receipt")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"email", "templates", "update",
+		"--type", "payment_receipt",
+		"--subject", "Updated receipt",
+		"--body-html-file", htmlFile,
+		"--body-text-file", textFile,
+		"--active", "false",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"template_type": "PAYMENT_RECEIPT"`)
+	assert.Contains(t, stdout.String(), `"subject": "Updated receipt"`)
+	assert.Contains(t, stdout.String(), `"is_active": false`)
 }
 
 func TestCLIInterestCommands(t *testing.T) {
