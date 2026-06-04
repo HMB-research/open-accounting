@@ -867,6 +867,192 @@ func TestCLIUsersCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Removed user user-2")
 }
 
+func TestCLIUsersBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	validationCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing subcommand", args: []string{"users"}, want: "users subcommand required"},
+		{name: "unknown subcommand", args: []string{"users", "unknown"}, want: `unknown users subcommand "unknown"`},
+		{name: "list bad flag", args: []string{"users", "list", "--unknown"}, want: "flag provided but not defined"},
+		{name: "update role missing id", args: []string{"users", "update-role", "--role", "viewer"}, want: "id and role are required"},
+		{name: "update role missing role", args: []string{"users", "update-role", "--id", "user-branch"}, want: "id and role are required"},
+		{name: "update role invalid role", args: []string{"users", "update-role", "--id", "user-branch", "--role", "owner"}, want: "role must be one of"},
+		{name: "set status missing id", args: []string{"users", "set-status", "--active", "true"}, want: "id and active are required"},
+		{name: "set status missing active", args: []string{"users", "set-status", "--id", "user-branch"}, want: "id and active are required"},
+		{name: "set status invalid active", args: []string{"users", "set-status", "--id", "user-branch", "--active", "sometimes"}, want: "parse active"},
+		{name: "sessions missing id", args: []string{"users", "sessions", "--id", " "}, want: "id is required"},
+		{name: "security events missing id", args: []string{"users", "security-events", "--limit", "2"}, want: "id is required"},
+		{name: "security events invalid lower limit", args: []string{"users", "security-events", "--id", "user-branch", "--limit", "0"}, want: "limit must be between 1 and 200"},
+		{name: "security events invalid upper limit", args: []string{"users", "security-events", "--id", "user-branch", "--limit", "201"}, want: "limit must be between 1 and 200"},
+		{name: "api tokens missing id", args: []string{"users", "api-tokens", "--id", " "}, want: "id is required"},
+		{name: "revoke api token missing token", args: []string{"users", "revoke-api-token", "--id", "user-branch"}, want: "id and token-id are required"},
+		{name: "revoke session missing session", args: []string{"users", "revoke-session", "--id", "user-branch"}, want: "id and session-id are required"},
+		{name: "revoke all sessions missing id", args: []string{"users", "revoke-all-sessions", "--id", " "}, want: "id is required"},
+		{name: "remove missing id", args: []string{"users", "remove", "--id", " "}, want: "id is required"},
+	}
+	for _, tc := range validationCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	expiresAt := now.Add(24 * time.Hour)
+	lastUsedAt := now.Add(-time.Hour)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/users":
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"tenant_id":  "tenant-1",
+				"user_id":    "user-branch",
+				"role":       "admin",
+				"is_default": true,
+				"is_active":  false,
+				"created_at": "2026-06-01T12:00:00Z",
+			}})
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-branch/role":
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "viewer", req["role"])
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-branch/status":
+			var req map[string]bool
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.True(t, req["is_active"])
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "updated", "is_active": true})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-branch/sessions":
+			assert.Empty(t, r.URL.Query().Get("include_inactive"))
+			_ = json.NewEncoder(w).Encode([]refreshSession{{
+				ID:         "session-branch",
+				UserID:     "user-branch",
+				CreatedAt:  now,
+				LastUsedAt: &lastUsedAt,
+				ExpiresAt:  expiresAt,
+			}})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-branch/security-events":
+			switch r.URL.Query().Get("limit") {
+			case "2":
+				_ = json.NewEncoder(w).Encode([]auth.SecurityAuditEvent{{
+					ID:           "event-branch",
+					ActorUserID:  "user-branch",
+					ActorEmail:   "branch@example.com",
+					Action:       auth.SecurityAuditActionLogin,
+					TargetUserID: "user-branch",
+					RequestIP:    "203.0.113.10",
+					Metadata:     map[string]string{"source": "cli"},
+					CreatedAt:    now,
+				}})
+			case "4":
+				_ = json.NewEncoder(w).Encode([]auth.SecurityAuditEvent{})
+			default:
+				t.Fatalf("unexpected security-events limit: %s", r.URL.Query().Get("limit"))
+			}
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-branch/api-tokens":
+			_ = json.NewEncoder(w).Encode([]apitoken.APIToken{{
+				ID:          "token-branch",
+				TenantID:    "tenant-1",
+				UserID:      "user-branch",
+				Name:        "Branch token",
+				TokenPrefix: "oa_branch",
+				LastUsedAt:  &lastUsedAt,
+				ExpiresAt:   &expiresAt,
+				CreatedAt:   now,
+			}})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-branch/api-tokens/token-branch":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "revoked"})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-branch/sessions/session-branch":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "revoked"})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-branch/sessions":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "revoked"})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-branch":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "removed"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	stdout.Reset()
+	err := app.run(context.Background(), []string{"users", "list", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"user_id": "user-branch"`)
+	assert.Contains(t, stdout.String(), `"is_default": true`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"users", "update-role", "--id", " user-branch ", "--role", " viewer "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Updated user user-branch role to viewer")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"users", "set-status", "--id", " user-branch ", "--active", " true "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Updated user user-branch active status to true")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"users", "sessions", "--id", " user-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "session-branch"`)
+	assert.Contains(t, stdout.String(), `"last_used_at": "2026-06-01T11:00:00Z"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"users", "security-events", "--id", " user-branch ", "--limit", "2", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "event-branch"`)
+	assert.Contains(t, stdout.String(), `"request_ip": "203.0.113.10"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"users", "security-events", "--id", "user-branch", "--limit", "4"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "No security audit events found")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"users", "api-tokens", "--id", " user-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "token-branch"`)
+	assert.Contains(t, stdout.String(), `"token_prefix": "oa_branch"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"users", "revoke-api-token", "--id", " user-branch ", "--token-id", " token-branch "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Revoked API token token-branch for user user-branch")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"users", "revoke-session", "--id", " user-branch ", "--session-id", " session-branch "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Revoked refresh session session-branch for user user-branch")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"users", "revoke-all-sessions", "--id", " user-branch "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Revoked all refresh sessions for user user-branch")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"users", "remove", "--id", " user-branch "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Removed user user-branch")
+}
+
 func TestCLIInvitationCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
