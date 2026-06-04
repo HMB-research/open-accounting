@@ -6287,6 +6287,102 @@ func TestCLIBankingCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Completed bank reconciliation rec-1")
 }
 
+func TestCLIBankReconciliationBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	cfg := &cliConfig{TenantID: "tenant-1"}
+
+	for _, tt := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "list missing account", args: []string{"list"}, want: "account-id is required"},
+		{name: "create missing account", args: []string{"create"}, want: "account-id is required"},
+		{name: "create missing statement date", args: []string{"create", "--account-id", "bank-1"}, want: "statement-date is required"},
+		{name: "create invalid statement date", args: []string{"create", "--account-id", "bank-1", "--statement-date", "tomorrow"}, want: "parse statement-date"},
+		{name: "create missing opening balance", args: []string{"create", "--account-id", "bank-1", "--statement-date", "2026-03-31"}, want: "opening-balance is required"},
+		{name: "create invalid opening balance", args: []string{"create", "--account-id", "bank-1", "--statement-date", "2026-03-31", "--opening-balance", "many"}, want: "parse opening-balance"},
+		{name: "create missing closing balance", args: []string{"create", "--account-id", "bank-1", "--statement-date", "2026-03-31", "--opening-balance", "0.00"}, want: "closing-balance is required"},
+		{name: "get missing id", args: []string{"get"}, want: "id is required"},
+		{name: "complete missing id", args: []string{"complete"}, want: "id is required"},
+		{name: "unknown subcommand", args: []string{"reopen"}, want: `unknown banking reconciliations subcommand "reopen"`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := app.runBankReconciliations(context.Background(), cfg, &apiClient{}, tt.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
+
+	reconciliationPayload := map[string]any{
+		"id":              "rec-2",
+		"tenant_id":       "tenant-1",
+		"bank_account_id": "bank-1",
+		"statement_date":  "2026-04-30T00:00:00Z",
+		"opening_balance": "100.00",
+		"closing_balance": "250.50",
+		"status":          "IN_PROGRESS",
+		"created_at":      "2026-04-30T12:00:00Z",
+		"created_by":      "user-1",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-1/reconciliations":
+			_ = json.NewEncoder(w).Encode([]map[string]any{reconciliationPayload})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-1/reconciliation":
+			var req banking.CreateReconciliationRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-04-30", req.StatementDate)
+			assert.True(t, req.OpeningBalance.Equal(decimal.RequireFromString("100.00")))
+			assert.True(t, req.ClosingBalance.Equal(decimal.RequireFromString("250.50")))
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(reconciliationPayload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reconciliations/rec-2":
+			_ = json.NewEncoder(w).Encode(reconciliationPayload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/reconciliations/rec-2/complete":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "completed", "id": "rec-2"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	err := app.run(context.Background(), []string{"banking", "reconciliations", "list", "--account-id", "bank-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "rec-2")
+	assert.Contains(t, stdout.String(), "IN_PROGRESS")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"banking", "reconciliations", "create", "--account-id", "bank-1", "--statement-date", "2026-04-30", "--opening-balance", "100.00", "--closing-balance", "250.50", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "rec-2"`)
+	assert.Contains(t, stdout.String(), `"closing_balance": "250.5"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"banking", "reconciliations", "get", "--id", "rec-2", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"bank_account_id": "bank-1"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"banking", "reconciliations", "complete", "--id", "rec-2", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "completed"`)
+}
+
 func TestCLIBankMatchRulesJSONAndValidationBranches(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
