@@ -3058,6 +3058,129 @@ func TestCLIAssetCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Deleted asset asset-1")
 }
 
+func TestCLIAssetCategoryBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	cfg := &cliConfig{TenantID: "tenant-1"}
+
+	for _, tt := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing subcommand", args: nil, want: "assets categories subcommand required"},
+		{name: "unknown subcommand", args: []string{"archive"}, want: `unknown assets categories subcommand "archive"`},
+		{name: "create missing name", args: []string{"create"}, want: "name is required"},
+		{name: "create invalid depreciation method", args: []string{"create", "--name", "Vehicles", "--depreciation-method", "accelerated"}, want: `invalid depreciation method "accelerated"`},
+		{name: "create invalid useful life", args: []string{"create", "--name", "Vehicles", "--useful-life-months", "zero"}, want: "parse useful-life-months"},
+		{name: "create non-positive useful life", args: []string{"create", "--name", "Vehicles", "--useful-life-months", "0"}, want: "useful-life-months must be positive"},
+		{name: "create invalid residual percent", args: []string{"create", "--name", "Vehicles", "--residual-percent", "many"}, want: "parse residual-percent"},
+		{name: "create negative residual percent", args: []string{"create", "--name", "Vehicles", "--residual-percent", "-1"}, want: "residual-percent must be non-negative"},
+		{name: "get missing id", args: []string{"get"}, want: "id is required"},
+		{name: "delete missing id", args: []string{"delete"}, want: "id is required"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := app.runAssetCategories(context.Background(), cfg, &apiClient{}, tt.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tt.want)
+		})
+	}
+
+	assetAccountID := "asset-account"
+	depreciationExpenseAccountID := "depreciation-expense-account"
+	accumulatedDepreciationAccountID := "accumulated-depreciation-account"
+	categoryPayload := map[string]any{
+		"id":                                  "cat-branch",
+		"tenant_id":                           "tenant-1",
+		"name":                                "Vehicles",
+		"description":                         "Fleet assets",
+		"depreciation_method":                 "DECLINING_BALANCE",
+		"default_useful_life_months":          72,
+		"default_residual_value_percent":      "15.25",
+		"asset_account_id":                    assetAccountID,
+		"depreciation_expense_account_id":     depreciationExpenseAccountID,
+		"accumulated_depreciation_account_id": accumulatedDepreciationAccountID,
+		"created_at":                          "2026-03-15T12:00:00Z",
+		"updated_at":                          "2026-03-15T12:00:00Z",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/asset-categories":
+			_ = json.NewEncoder(w).Encode([]map[string]any{categoryPayload})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/asset-categories":
+			var req assets.CreateCategoryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Vehicles", req.Name)
+			assert.Equal(t, "Fleet assets", req.Description)
+			assert.Equal(t, assets.DepreciationDecliningBalance, req.DepreciationMethod)
+			assert.Equal(t, 72, req.DefaultUsefulLifeMonths)
+			assert.True(t, req.DefaultResidualValuePercent.Equal(decimal.RequireFromString("15.25")))
+			require.NotNil(t, req.AssetAccountID)
+			require.NotNil(t, req.DepreciationExpenseAccountID)
+			require.NotNil(t, req.AccumulatedDepreciationAcctID)
+			assert.Equal(t, assetAccountID, *req.AssetAccountID)
+			assert.Equal(t, depreciationExpenseAccountID, *req.DepreciationExpenseAccountID)
+			assert.Equal(t, accumulatedDepreciationAccountID, *req.AccumulatedDepreciationAcctID)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(categoryPayload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/asset-categories/cat-branch":
+			_ = json.NewEncoder(w).Encode(categoryPayload)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/asset-categories/cat-branch":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	err := app.run(context.Background(), []string{"assets", "categories", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Vehicles")
+	assert.Contains(t, stdout.String(), "DECLINING_BALANCE")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"assets", "categories", "create",
+		"--name", "Vehicles",
+		"--description", "Fleet assets",
+		"--depreciation-method", "declining_balance",
+		"--useful-life-months", "72",
+		"--residual-percent", "15.25",
+		"--asset-account-id", assetAccountID,
+		"--depreciation-expense-account-id", depreciationExpenseAccountID,
+		"--accumulated-depreciation-account-id", accumulatedDepreciationAccountID,
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "cat-branch"`)
+	assert.Contains(t, stdout.String(), `"default_useful_life_months": 72`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"assets", "categories", "get", "--id", "cat-branch", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Vehicles"`)
+	assert.Contains(t, stdout.String(), `"depreciation_method": "DECLINING_BALANCE"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"assets", "categories", "delete", "--id", "cat-branch", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "deleted"`)
+}
+
 func TestCLIExpenseCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
