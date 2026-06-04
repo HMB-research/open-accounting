@@ -64,6 +64,50 @@ func writeTempCSV(t *testing.T, name, content string) string {
 	return path
 }
 
+func journalEntryPayload(id, number string, status accounting.JournalEntryStatus) map[string]any {
+	return map[string]any{
+		"id":                id,
+		"tenant_id":         "tenant-1",
+		"entry_number":      number,
+		"entry_date":        "2026-03-31T00:00:00Z",
+		"description":       "Manual accrual",
+		"reference":         "ACC-1",
+		"source_type":       "MANUAL",
+		"requires_evidence": true,
+		"status":            status,
+		"created_at":        "2026-03-31T12:00:00Z",
+		"created_by":        "user-1",
+		"lines": []map[string]any{
+			{
+				"id":               "line-1",
+				"tenant_id":        "tenant-1",
+				"journal_entry_id": id,
+				"account_id":       "acc-1",
+				"description":      "Expense",
+				"debit_amount":     "100.00",
+				"credit_amount":    "0.00",
+				"currency":         "EUR",
+				"exchange_rate":    "1.00",
+				"base_debit":       "100.00",
+				"base_credit":      "0.00",
+			},
+			{
+				"id":               "line-2",
+				"tenant_id":        "tenant-1",
+				"journal_entry_id": id,
+				"account_id":       "acc-2",
+				"description":      "Accrual",
+				"debit_amount":     "0.00",
+				"credit_amount":    "100.00",
+				"currency":         "EUR",
+				"exchange_rate":    "1.00",
+				"base_debit":       "0.00",
+				"base_credit":      "100.00",
+			},
+		},
+	}
+}
+
 func writeTempOperatorScript(t *testing.T, dir, name string) {
 	t.Helper()
 
@@ -5581,49 +5625,6 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 		APIToken:   "oa_saved_token",
 	}))
 
-	journalPayload := func(id, number string, status accounting.JournalEntryStatus) map[string]any {
-		return map[string]any{
-			"id":                id,
-			"tenant_id":         "tenant-1",
-			"entry_number":      number,
-			"entry_date":        "2026-03-31T00:00:00Z",
-			"description":       "Manual accrual",
-			"reference":         "ACC-1",
-			"source_type":       "MANUAL",
-			"requires_evidence": true,
-			"status":            status,
-			"created_at":        "2026-03-31T12:00:00Z",
-			"created_by":        "user-1",
-			"lines": []map[string]any{
-				{
-					"id":               "line-1",
-					"tenant_id":        "tenant-1",
-					"journal_entry_id": id,
-					"account_id":       "acc-1",
-					"description":      "Expense",
-					"debit_amount":     "100.00",
-					"credit_amount":    "0.00",
-					"currency":         "EUR",
-					"exchange_rate":    "1.00",
-					"base_debit":       "100.00",
-					"base_credit":      "0.00",
-				},
-				{
-					"id":               "line-2",
-					"tenant_id":        "tenant-1",
-					"journal_entry_id": id,
-					"account_id":       "acc-2",
-					"description":      "Accrual",
-					"debit_amount":     "0.00",
-					"credit_amount":    "100.00",
-					"currency":         "EUR",
-					"exchange_rate":    "1.00",
-					"base_debit":       "0.00",
-					"base_credit":      "100.00",
-				},
-			},
-		}
-	}
 	templatePayload := func() map[string]any {
 		return map[string]any{
 			"id":                   "tpl-1",
@@ -5676,7 +5677,7 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries":
 			require.Equal(t, "25", r.URL.Query().Get("limit"))
-			_ = json.NewEncoder(w).Encode([]map[string]any{journalPayload("je-1", "JE-2026-001", accounting.StatusDraft)})
+			_ = json.NewEncoder(w).Encode([]map[string]any{journalEntryPayload("je-1", "JE-2026-001", accounting.StatusDraft)})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries":
 			var req accounting.CreateJournalEntryRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -5693,7 +5694,7 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 			assert.Equal(t, "USD", req.Lines[1].Currency)
 			assert.True(t, req.Lines[1].ExchangeRate.Equal(decimal.RequireFromString("0.92")))
 			w.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(w).Encode(journalPayload("je-1", "JE-2026-001", accounting.StatusDraft))
+			_ = json.NewEncoder(w).Encode(journalEntryPayload("je-1", "JE-2026-001", accounting.StatusDraft))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/import":
 			var req accounting.ImportJournalEntriesRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -5708,7 +5709,7 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 				"rows_skipped":    0,
 				"total_debit":     "100.00",
 				"total_credit":    "100.00",
-				"journal_entries": []map[string]any{journalPayload("je-import-1", "JE-2026-003", accounting.StatusPosted)},
+				"journal_entries": []map[string]any{journalEntryPayload("je-import-1", "JE-2026-003", accounting.StatusPosted)},
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entry-templates":
 			require.Equal(t, "true", r.URL.Query().Get("active_only"))
@@ -5764,7 +5765,7 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 			assert.Equal(t, "April rent accrual", req.Description)
 			assert.Equal(t, "RENT-APR", req.Reference)
 			assert.True(t, req.Post)
-			payload := journalPayload("je-template-1", "JE-2026-004", accounting.StatusPosted)
+			payload := journalEntryPayload("je-template-1", "JE-2026-004", accounting.StatusPosted)
 			payload["description"] = "April rent accrual"
 			payload["reference"] = "RENT-APR"
 			payload["source_type"] = accounting.SourceTypeJournalTemplate
@@ -5773,14 +5774,14 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(payload)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-1":
-			_ = json.NewEncoder(w).Encode(journalPayload("je-1", "JE-2026-001", accounting.StatusDraft))
+			_ = json.NewEncoder(w).Encode(journalEntryPayload("je-1", "JE-2026-001", accounting.StatusDraft))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-1/post":
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "posted"})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-1/void":
 			var req map[string]string
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "Duplicate entry", req["reason"])
-			payload := journalPayload("je-rev-1", "JE-2026-002", accounting.StatusPosted)
+			payload := journalEntryPayload("je-rev-1", "JE-2026-002", accounting.StatusPosted)
 			payload["void_reason"] = "Duplicate entry"
 			_ = json.NewEncoder(w).Encode(payload)
 		default:
@@ -5882,6 +5883,229 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"journal", "void", "--id", "je-1", "--reason", "Duplicate entry"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Voided journal entry je-1 with reversal JE-2026-002")
+}
+
+func TestCLIJournalBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	openingBalancesFile := writeTempCSV(t, "opening-balances.csv", "account_code,debit,credit\n1000,500,0\n2000,0,500\n")
+	journalImportFile := writeTempCSV(t, "journals-branch.csv", "entry_reference,entry_date,account_code,debit,credit\nBR-001,2026-04-01,1000,20,0\nBR-001,2026-04-01,4000,0,20\n")
+
+	app, stdout, _ := newTestCLIApp()
+	validationCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing subcommand", args: []string{"journal"}, want: "journal subcommand required"},
+		{name: "unknown subcommand", args: []string{"journal", "unknown"}, want: `unknown journal subcommand "unknown"`},
+		{name: "invalid list limit", args: []string{"journal", "list", "--limit", "many"}, want: "parse limit"},
+		{name: "oversized list limit", args: []string{"journal", "list", "--limit", "201"}, want: "limit must be between 1 and 200"},
+		{name: "missing get id", args: []string{"journal", "get", "--id", " "}, want: "id is required"},
+		{
+			name: "missing create date",
+			args: []string{
+				"journal", "create",
+				"--description", "Manual accrual",
+				"--line", "account_id=acc-1,debit=100",
+				"--line", "account_id=acc-2,credit=100",
+			},
+			want: "entry-date is required",
+		},
+		{
+			name: "missing create description",
+			args: []string{
+				"journal", "create",
+				"--entry-date", "2026-04-01",
+				"--line", "account_id=acc-1,debit=100",
+				"--line", "account_id=acc-2,credit=100",
+			},
+			want: "description is required",
+		},
+		{
+			name: "create needs two lines",
+			args: []string{
+				"journal", "create",
+				"--entry-date", "2026-04-01",
+				"--description", "Manual accrual",
+				"--line", "account_id=acc-1,debit=100",
+			},
+			want: "at least two lines are required",
+		},
+		{
+			name: "invalid create line",
+			args: []string{
+				"journal", "create",
+				"--entry-date", "2026-04-01",
+				"--description", "Manual accrual",
+				"--line", "debit=100",
+				"--line", "account_id=acc-2,credit=100",
+			},
+			want: "line account_id is required",
+		},
+		{name: "missing post id", args: []string{"journal", "post", "--id", " "}, want: "id is required"},
+		{name: "missing void id", args: []string{"journal", "void", "--id", " ", "--reason", "Duplicate"}, want: "id is required"},
+		{name: "missing void reason", args: []string{"journal", "void", "--id", "je-1", "--reason", " "}, want: "reason is required"},
+		{name: "opening balance missing file", args: []string{"journal", "import-opening-balances", "--entry-date", "2026-01-01"}, want: "file is required"},
+		{name: "opening balance missing date", args: []string{"journal", "import-opening-balances", "--file", openingBalancesFile}, want: "entry-date is required"},
+		{name: "journal import missing file", args: []string{"journal", "import"}, want: "file is required"},
+	}
+	for _, tc := range validationCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries":
+			require.Equal(t, "2", r.URL.Query().Get("limit"))
+			payload := journalEntryPayload("je-branch", "JE-2026-010", accounting.StatusDraft)
+			payload["description"] = "Branch accrual"
+			payload["reference"] = "BR-1"
+			_ = json.NewEncoder(w).Encode([]map[string]any{payload})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries":
+			var req accounting.CreateJournalEntryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-04-01", req.EntryDate.Format("2006-01-02"))
+			assert.Equal(t, "Branch accrual", req.Description)
+			assert.Equal(t, "BR-1", req.Reference)
+			assert.Equal(t, "MANUAL", req.SourceType)
+			require.NotNil(t, req.SourceID)
+			assert.Equal(t, "src-1", *req.SourceID)
+			require.Len(t, req.Lines, 2)
+			assert.Equal(t, "acc-1", req.Lines[0].AccountID)
+			assert.Equal(t, "Line one", req.Lines[0].Description)
+			assert.True(t, req.Lines[0].DebitAmount.Equal(decimal.RequireFromString("20.00")))
+			assert.Equal(t, "USD", req.Lines[0].Currency)
+			assert.True(t, req.Lines[0].ExchangeRate.Equal(decimal.RequireFromString("0.91")))
+			assert.True(t, req.Lines[1].CreditAmount.Equal(decimal.RequireFromString("20.00")))
+			w.WriteHeader(http.StatusCreated)
+			payload := journalEntryPayload("je-branch", "JE-2026-010", accounting.StatusDraft)
+			payload["description"] = req.Description
+			payload["reference"] = req.Reference
+			payload["source_id"] = *req.SourceID
+			_ = json.NewEncoder(w).Encode(payload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-branch":
+			_ = json.NewEncoder(w).Encode(journalEntryPayload("je-branch", "JE-2026-010", accounting.StatusDraft))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-branch/post":
+			_ = json.NewEncoder(w).Encode(map[string]string{"id": "je-branch", "status": "posted"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-branch/void":
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Reversal required", req["reason"])
+			payload := journalEntryPayload("je-reversal", "JE-2026-011", accounting.StatusPosted)
+			payload["void_reason"] = "Reversal required"
+			_ = json.NewEncoder(w).Encode(payload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/import-opening-balances":
+			var req accounting.ImportOpeningBalancesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "opening-balances.csv", req.FileName)
+			assert.Equal(t, "2026-01-01", req.EntryDate)
+			assert.Equal(t, "OB Branch", req.Description)
+			assert.Equal(t, "OB-2026", req.Reference)
+			assert.Contains(t, req.CSVContent, "1000,500,0")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"file_name":      "opening-balances.csv",
+				"rows_processed": 2,
+				"lines_imported": 2,
+				"total_debit":    "500.00",
+				"total_credit":   "500.00",
+				"journal_entry":  journalEntryPayload("je-opening", "JE-2026-012", accounting.StatusPosted),
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/import":
+			var req accounting.ImportJournalEntriesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "journals-branch.csv", req.FileName)
+			assert.Equal(t, "HISTORICAL", req.SourceType)
+			assert.False(t, req.PostEntries)
+			assert.Contains(t, req.CSVContent, "BR-001")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"file_name":       "journals-branch.csv",
+				"rows_processed":  2,
+				"entries_created": 1,
+				"lines_imported":  2,
+				"rows_skipped":    0,
+				"total_debit":     "20.00",
+				"total_credit":    "20.00",
+				"journal_entries": []map[string]any{journalEntryPayload("je-imported", "JE-2026-013", accounting.StatusDraft)},
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	stdout.Reset()
+	err := app.run(context.Background(), []string{"journal", "list", "--limit", "2"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "JE-2026-010")
+	assert.Contains(t, stdout.String(), "Branch accrual")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"journal", "create",
+		"--entry-date", "2026-04-01",
+		"--description", " Branch accrual ",
+		"--reference", " BR-1 ",
+		"--source-type", " MANUAL ",
+		"--source-id", " src-1 ",
+		"--line", "account_id=acc-1,description=Line one,debit=20.00,currency=usd,exchange_rate=0.91",
+		"--line", "account_id=acc-2,description=Line two,credit=20.00",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"entry_number": "JE-2026-010"`)
+	assert.Contains(t, stdout.String(), `"source_id": "src-1"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"journal", "get", "--id", " je-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "je-branch"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"journal", "post", "--id", " je-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "posted"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"journal", "void", "--id", " je-branch ", "--reason", " Reversal required ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"entry_number": "JE-2026-011"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"journal", "import-opening-balances",
+		"--file", openingBalancesFile,
+		"--entry-date", " 2026-01-01 ",
+		"--description", " OB Branch ",
+		"--reference", " OB-2026 ",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"lines_imported": 2`)
+	assert.Contains(t, stdout.String(), `"entry_number": "JE-2026-012"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"journal", "import", "--file", journalImportFile, "--source-type", " HISTORICAL ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"entries_created": 1`)
+	assert.Contains(t, stdout.String(), `"entry_number": "JE-2026-013"`)
 }
 
 func TestCLIContactsInvoicesAndJournalCommands(t *testing.T) {
