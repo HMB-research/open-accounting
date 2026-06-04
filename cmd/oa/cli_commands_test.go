@@ -8102,9 +8102,20 @@ func TestCLILeaveCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"code": "ANNUAL_LEAVE"`)
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "absence-types", "list", "--active-only"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "ANNUAL_LEAVE")
+	assert.Contains(t, stdout.String(), "Annual leave")
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"leave", "absence-types", "get", "--id", "type-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Absence type ANNUAL_LEAVE Annual leave")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "absence-types", "get", "--id", "type-1", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "type-1"`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"leave", "balances", "list", "--employee-id", "emp-1", "--year", "2026"})
@@ -8983,6 +8994,14 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	err = app.runLeaveAbsenceTypes(context.Background(), &cliConfig{}, &apiClient{}, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "leave absence-types subcommand required")
+
+	err = app.runLeaveAbsenceTypes(context.Background(), &cliConfig{}, &apiClient{}, []string{"archive"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unknown leave absence-types subcommand "archive"`)
+
+	err = app.runLeaveAbsenceTypes(context.Background(), &cliConfig{}, &apiClient{}, []string{"get"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "id is required")
 
 	err = app.runLeaveBalances(context.Background(), &cliConfig{}, &apiClient{}, nil)
 	require.Error(t, err)
