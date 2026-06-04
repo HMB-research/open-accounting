@@ -2493,6 +2493,276 @@ func TestCLIPurchaseInvoiceCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Created invoice BILL-00001 (bill-1)")
 }
 
+func TestCLIInvoiceBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	xmlFile := writeTempCSV(t, "incoming-einvoice.xml", "<E_Invoice><Invoice><InvoiceInformation><InvoiceNumber>XML-1</InvoiceNumber></InvoiceInformation></Invoice></E_Invoice>")
+	validationCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing subcommand", args: []string{"invoices"}, want: "invoices subcommand required"},
+		{name: "unknown subcommand", args: []string{"invoices", "archive"}, want: `unknown invoices subcommand "archive"`},
+		{name: "list invalid type", args: []string{"invoices", "list", "--type", "bad"}, want: `invalid invoice type "bad"`},
+		{name: "list invalid status", args: []string{"invoices", "list", "--status", "late"}, want: `invalid invoice status "late"`},
+		{name: "list invalid from date", args: []string{"invoices", "list", "--from", "yesterday"}, want: "parse from:"},
+		{name: "list invalid to date", args: []string{"invoices", "list", "--to", "tomorrow"}, want: "parse to:"},
+		{name: "create bad line flag", args: []string{"invoices", "create", "--line", "description-only"}, want: `line field "description-only" must be key=value`},
+		{name: "create missing type", args: []string{"invoices", "create"}, want: "type is required"},
+		{name: "create missing contact", args: []string{"invoices", "create", "--type", "sales"}, want: "contact-id is required"},
+		{name: "create missing issue date", args: []string{"invoices", "create", "--type", "sales", "--contact-id", "contact-1"}, want: "issue-date is required"},
+		{name: "create invalid due date", args: []string{"invoices", "create", "--type", "sales", "--contact-id", "contact-1", "--issue-date", "2026-04-01", "--due-date", "soon"}, want: "parse due-date:"},
+		{name: "create missing line", args: []string{"invoices", "create", "--type", "sales", "--contact-id", "contact-1", "--issue-date", "2026-04-01", "--due-date", "2026-04-15"}, want: "at least one line is required"},
+		{name: "create invalid exchange rate", args: []string{"invoices", "create", "--type", "sales", "--contact-id", "contact-1", "--issue-date", "2026-04-01", "--due-date", "2026-04-15", "--line", "description=Work,quantity=1,unit_price=100,vat_rate=22", "--exchange-rate", "0"}, want: "exchange-rate must be positive"},
+		{name: "get missing id", args: []string{"invoices", "get"}, want: "id is required"},
+		{name: "pdf missing id", args: []string{"invoices", "pdf"}, want: "id is required"},
+		{name: "send missing id", args: []string{"invoices", "send"}, want: "id is required"},
+		{name: "void missing id", args: []string{"invoices", "void"}, want: "id is required"},
+		{name: "import missing file", args: []string{"invoices", "import"}, want: "file is required"},
+		{name: "import einvoice missing file", args: []string{"invoices", "import-einvoice"}, want: "file is required"},
+		{name: "import einvoice invalid type", args: []string{"invoices", "import-einvoice", "--file", xmlFile, "--invoice-type", "memo"}, want: `invalid invoice type "memo"`},
+	}
+
+	app, stdout, _ := newTestCLIApp()
+	for _, tc := range validationCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+
+	invoicePayload := func(id, number string, invoiceType invoicing.InvoiceType, status invoicing.InvoiceStatus) map[string]any {
+		return map[string]any{
+			"id":             id,
+			"tenant_id":      "tenant-1",
+			"invoice_number": number,
+			"invoice_type":   invoiceType,
+			"contact_id":     "contact-branch",
+			"contact": map[string]any{
+				"id":           "contact-branch",
+				"name":         "Branch Customer",
+				"contact_type": "CUSTOMER",
+				"is_active":    true,
+			},
+			"issue_date":      "2026-04-01T00:00:00Z",
+			"due_date":        "2026-04-15T00:00:00Z",
+			"currency":        "EUR",
+			"exchange_rate":   "1.25",
+			"subtotal":        "228.00",
+			"vat_amount":      "50.16",
+			"total":           "278.16",
+			"base_subtotal":   "285.00",
+			"base_vat_amount": "62.70",
+			"base_total":      "347.70",
+			"amount_paid":     "0.00",
+			"status":          status,
+			"reference":       "Ref branch",
+			"notes":           "Notes branch",
+			"created_at":      "2026-04-01T12:00:00Z",
+			"created_by":      "user-1",
+			"updated_at":      "2026-04-01T12:00:00Z",
+			"lines": []map[string]any{{
+				"id":               "line-branch",
+				"tenant_id":        "tenant-1",
+				"invoice_id":       id,
+				"line_number":      1,
+				"description":      "Branch service",
+				"quantity":         "3.00",
+				"unit":             "hour",
+				"unit_price":       "80.00",
+				"discount_percent": "5.00",
+				"vat_rate":         "22.00",
+				"vat_treatment":    "STANDARD",
+				"line_subtotal":    "228.00",
+				"line_vat":         "50.16",
+				"line_total":       "278.16",
+				"account_id":       "acc-branch",
+				"product_id":       "prod-branch",
+			}},
+		}
+	}
+
+	requestCounts := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invoices":
+			requestCounts["list"]++
+			w.Header().Set("Content-Type", "application/json")
+			require.Equal(t, "CREDIT_NOTE", r.URL.Query().Get("type"))
+			require.Equal(t, "OVERDUE", r.URL.Query().Get("status"))
+			require.Equal(t, "contact-branch", r.URL.Query().Get("contact_id"))
+			require.Equal(t, "2026-04-01", r.URL.Query().Get("from_date"))
+			require.Equal(t, "2026-04-30", r.URL.Query().Get("to_date"))
+			require.Equal(t, "branch", r.URL.Query().Get("search"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{invoicePayload("inv-branch", "CN-00001", invoicing.InvoiceTypeCreditNote, invoicing.StatusOverdue)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices":
+			requestCounts["create"]++
+			w.Header().Set("Content-Type", "application/json")
+			var req invoicing.CreateInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, invoicing.InvoiceTypeCreditNote, req.InvoiceType)
+			assert.Equal(t, "contact-branch", req.ContactID)
+			assert.Equal(t, "2026-04-01", req.IssueDate.Format("2006-01-02"))
+			assert.Equal(t, "2026-04-15", req.DueDate.Format("2006-01-02"))
+			assert.Equal(t, "EUR", req.Currency)
+			assert.True(t, req.ExchangeRate.Equal(decimal.RequireFromString("1.25")))
+			assert.Equal(t, "Ref branch", req.Reference)
+			assert.Equal(t, "Notes branch", req.Notes)
+			require.Len(t, req.Lines, 1)
+			line := req.Lines[0]
+			assert.Equal(t, "Branch service", line.Description)
+			assert.Equal(t, "hour", line.Unit)
+			assert.True(t, line.Quantity.Equal(decimal.RequireFromString("3")))
+			assert.True(t, line.UnitPrice.Equal(decimal.RequireFromString("80")))
+			assert.True(t, line.DiscountPercent.Equal(decimal.RequireFromString("5")))
+			assert.True(t, line.VATRate.Equal(decimal.RequireFromString("22")))
+			assert.Equal(t, invoicing.VATTreatmentStandard, line.VATTreatment)
+			require.NotNil(t, line.AccountID)
+			require.NotNil(t, line.ProductID)
+			assert.Equal(t, "acc-branch", *line.AccountID)
+			assert.Equal(t, "prod-branch", *line.ProductID)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(invoicePayload("inv-branch", "CN-00001", invoicing.InvoiceTypeCreditNote, invoicing.StatusDraft))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/inv-branch":
+			requestCounts["get"]++
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(invoicePayload("inv-branch", "CN-00001", invoicing.InvoiceTypeCreditNote, invoicing.StatusDraft))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/inv-branch/pdf":
+			requestCounts["pdf"]++
+			w.Header().Set("Content-Type", "application/pdf")
+			_, _ = w.Write([]byte("%PDF-1.4 branch invoice"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/inv-branch/send":
+			requestCounts["send"]++
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "sent"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/inv-branch/void":
+			requestCounts["void"]++
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "voided"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/import":
+			requestCounts["import"]++
+			w.Header().Set("Content-Type", "application/json")
+			var req invoicing.ImportInvoicesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "invoices.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "INV-BRANCH")
+			_ = json.NewEncoder(w).Encode(invoicing.ImportInvoicesResult{
+				FileName:        req.FileName,
+				RowsProcessed:   1,
+				InvoicesCreated: 1,
+				LinesImported:   1,
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/import-einvoice":
+			requestCounts["import-einvoice"]++
+			w.Header().Set("Content-Type", "application/json")
+			var req invoicing.ImportEInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "incoming-einvoice.xml", req.FileName)
+			assert.Contains(t, req.XMLContent, "XML-1")
+			assert.Equal(t, invoicing.InvoiceTypePurchase, req.InvoiceType)
+			_ = json.NewEncoder(w).Encode(invoicing.ImportInvoicesResult{
+				FileName:        req.FileName,
+				RowsProcessed:   1,
+				InvoicesCreated: 1,
+				LinesImported:   2,
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+	importFile := writeTempCSV(t, "invoices.csv", "invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\nINV-BRANCH,CUST-1,2026-04-01,Work,1,100,22\n")
+
+	stdout.Reset()
+	err := app.run(context.Background(), []string{
+		"invoices", "list",
+		"--type", " credit_note ",
+		"--status", " overdue ",
+		"--contact-id", " contact-branch ",
+		"--from", "2026-04-01",
+		"--to", "2026-04-30",
+		"--search", " branch ",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "CN-00001")
+	assert.Contains(t, stdout.String(), "Branch Customer")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"invoices", "create",
+		"--type", " credit_note ",
+		"--contact-id", " contact-branch ",
+		"--issue-date", "2026-04-01",
+		"--due-date", "2026-04-15",
+		"--currency", " eur ",
+		"--exchange-rate", "1.25",
+		"--reference", " Ref branch ",
+		"--notes", " Notes branch ",
+		"--line", "description= Branch service ,quantity=3,unit=hour,unit_price=80,discount=5,vat=22,vat_type=standard,account= acc-branch ,product= prod-branch ",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"invoice_type": "CREDIT_NOTE"`)
+	assert.Contains(t, stdout.String(), `"invoice_number": "CN-00001"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"invoices", "get", "--id", " inv-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "inv-branch"`)
+	assert.Contains(t, stdout.String(), `"reference": "Ref branch"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"invoices", "pdf", "--id", " inv-branch "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "%PDF-1.4 branch invoice")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"invoices", "send", "--id", " inv-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "sent"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"invoices", "void", "--id", " inv-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "voided"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"invoices", "import", "--file", importFile})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 invoices, imported 1 lines, skipped 0 rows")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"invoices", "import-einvoice", "--file", xmlFile, "--invoice-type", " purchase ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"file_name": "incoming-einvoice.xml"`)
+	assert.Contains(t, stdout.String(), `"lines_imported": 2`)
+
+	assert.Equal(t, map[string]int{
+		"list":            1,
+		"create":          1,
+		"get":             1,
+		"pdf":             1,
+		"send":            1,
+		"void":            1,
+		"import":          1,
+		"import-einvoice": 1,
+	}, requestCounts)
+}
+
 func TestCLIQuoteCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
