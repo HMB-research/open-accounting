@@ -195,6 +195,34 @@ func recurringInvoicePayload(id, name string, active bool) map[string]any {
 	}
 }
 
+func tenantPluginPayload(tenantPluginID, tenantID, pluginID, name, displayName string, enabled bool, settings map[string]any) map[string]any {
+	if settings == nil {
+		settings = map[string]any{}
+	}
+	return map[string]any{
+		"id":         tenantPluginID,
+		"tenant_id":  tenantID,
+		"plugin_id":  pluginID,
+		"is_enabled": enabled,
+		"settings":   settings,
+		"created_at": "2026-03-12T00:00:00Z",
+		"updated_at": "2026-03-12T00:00:00Z",
+		"plugin": map[string]any{
+			"id":                  pluginID,
+			"name":                name,
+			"display_name":        displayName,
+			"version":             "1.0.0",
+			"repository_url":      "https://github.com/example/" + name,
+			"repository_type":     "github",
+			"state":               "enabled",
+			"granted_permissions": []string{"invoices:read"},
+			"manifest":            map[string]any{},
+			"installed_at":        "2026-03-12T00:00:00Z",
+			"updated_at":          "2026-03-12T00:00:00Z",
+		},
+	}
+}
+
 func recurringGenerationPayload(recurringID string) map[string]any {
 	return map[string]any{
 		"recurring_invoice_id":     recurringID,
@@ -1273,28 +1301,9 @@ func TestCLIPluginCommands(t *testing.T) {
 
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/plugins":
-			_ = json.NewEncoder(w).Encode([]map[string]any{{
-				"id":         tenantPluginID,
-				"tenant_id":  tenantUUID,
-				"plugin_id":  pluginID,
-				"is_enabled": true,
-				"settings":   map[string]any{"threshold": 5},
-				"created_at": "2026-03-12T00:00:00Z",
-				"updated_at": "2026-03-12T00:00:00Z",
-				"plugin": map[string]any{
-					"id":                  pluginID,
-					"name":                "vat-tools",
-					"display_name":        "VAT Tools",
-					"version":             "1.0.0",
-					"repository_url":      "https://github.com/example/vat-tools",
-					"repository_type":     "github",
-					"state":               "enabled",
-					"granted_permissions": []string{"invoices:read"},
-					"manifest":            map[string]any{},
-					"installed_at":        "2026-03-12T00:00:00Z",
-					"updated_at":          "2026-03-12T00:00:00Z",
-				},
-			}})
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				tenantPluginPayload(tenantPluginID, tenantUUID, pluginID, "vat-tools", "VAT Tools", true, map[string]any{"threshold": 5}),
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/enable":
 			var req plugin.TenantPluginSettingsRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -1342,6 +1351,82 @@ func TestCLIPluginCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"plugins", "disable", "--id", pluginID})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Disabled tenant plugin")
+}
+
+func TestCLIPluginBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	const pluginID = "11111111-1111-1111-1111-111111111111"
+	const tenantUUID = "22222222-2222-2222-2222-222222222222"
+	const tenantPluginID = "33333333-3333-3333-3333-333333333333"
+
+	app, stdout, _ := newTestCLIApp()
+	validationCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown subcommand", args: []string{"plugins", "archive"}, want: `unknown plugins subcommand "archive"`},
+		{name: "enable missing id", args: []string{"plugins", "enable"}, want: "id is required"},
+		{name: "enable invalid settings json", args: []string{"plugins", "enable", "--id", pluginID, "--settings-json", "{"}, want: "parse JSON"},
+		{name: "enable conflicting settings sources", args: []string{"plugins", "enable", "--id", pluginID, "--settings-json", `{}`, "--settings-file", "settings.json"}, want: "use either settings-json or settings-file"},
+		{name: "disable missing id", args: []string{"plugins", "disable", "--id", " "}, want: "id is required"},
+	}
+	for _, tc := range validationCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+
+	settingsFile := writeTempCSV(t, "tenant-plugin-settings.json", `{"threshold":9,"mode":"strict"}`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/plugins":
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				tenantPluginPayload(tenantPluginID, tenantUUID, pluginID, "branch-plugin", "Branch Plugin", false, map[string]any{"threshold": 7}),
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/enable":
+			var req plugin.TenantPluginSettingsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.JSONEq(t, `{"threshold":9,"mode":"strict"}`, string(req.Settings))
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "enabled"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/disable":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "disabled"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	stdout.Reset()
+	err := app.run(context.Background(), []string{"plugins", "list", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"display_name": "Branch Plugin"`)
+	assert.Contains(t, stdout.String(), `"is_enabled": false`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"plugins", "enable", "--id", " " + pluginID + " ", "--settings-file", settingsFile})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Enabled tenant plugin "+pluginID)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"plugins", "disable", "--id", " " + pluginID + " "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Disabled tenant plugin "+pluginID)
 }
 
 func TestCLIPluginSettingsBranches(t *testing.T) {

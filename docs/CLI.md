@@ -180,8 +180,9 @@ go run ./cmd/oa invitations accept \
 ## Plugins
 
 ```bash
-go run ./cmd/oa plugins list
+go run ./cmd/oa plugins list --json
 go run ./cmd/oa plugins enable --id <plugin-id> --settings-json '{"enabled":true}'
+go run ./cmd/oa plugins enable --id <plugin-id> --settings-file ./plugin-settings.json
 go run ./cmd/oa plugins settings get --id <plugin-id>
 go run ./cmd/oa plugins settings update --id <plugin-id> --settings-file ./plugin-settings.json
 go run ./cmd/oa plugins disable --id <plugin-id>
@@ -201,6 +202,7 @@ go run ./cmd/oa admin plugins disable --id <plugin-id>
 go run ./cmd/oa admin plugins uninstall --id <plugin-id>
 ```
 
+Tenant plugin `enable` and `settings update` accept exactly one settings source: `--settings-json` for inline JSON or `--settings-file` for a JSON object on disk.
 Use `--permission` repeatedly when enabling an instance-level plugin with multiple permissions.
 
 ## Webhooks
