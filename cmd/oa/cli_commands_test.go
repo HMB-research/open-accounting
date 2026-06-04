@@ -9897,6 +9897,182 @@ func TestCLILeaveBalancesValidationBranches(t *testing.T) {
 	}
 }
 
+func TestCLILeaveRecordsBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	absenceTypePayload := map[string]any{
+		"id":                    "type-1",
+		"tenant_id":             "tenant-1",
+		"code":                  "ANNUAL_LEAVE",
+		"name":                  "Annual leave",
+		"default_days_per_year": "28.00",
+		"is_paid":               true,
+		"affects_salary":        false,
+		"requires_document":     false,
+		"is_system":             true,
+		"is_active":             true,
+		"sort_order":            1,
+		"created_at":            "2026-01-01T00:00:00Z",
+		"updated_at":            "2026-01-01T00:00:00Z",
+	}
+	leaveRecordPayload := func(id, status string) map[string]any {
+		payload := map[string]any{
+			"id":               id,
+			"tenant_id":        "tenant-1",
+			"employee_id":      "emp-1",
+			"absence_type_id":  "type-1",
+			"start_date":       "2026-04-06T00:00:00Z",
+			"end_date":         "2026-04-08T00:00:00Z",
+			"total_days":       "3.00",
+			"working_days":     "2.00",
+			"status":           status,
+			"document_number":  "DOC-42",
+			"document_date":    "2026-04-01T00:00:00Z",
+			"requested_at":     "2026-03-20T12:00:00Z",
+			"requested_by":     "user-1",
+			"notes":            "Trimmed note",
+			"created_at":       "2026-03-20T12:00:00Z",
+			"updated_at":       "2026-03-20T12:00:00Z",
+			"absence_type":     absenceTypePayload,
+			"employee":         map[string]any{"id": "emp-1", "first_name": "Mari", "last_name": "Maasikas"},
+			"rejection_reason": "",
+		}
+		if status == string(payroll.LeaveRejected) {
+			payload["rejection_reason"] = "Not enough coverage"
+		}
+		return payload
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/leave-records":
+			assert.Equal(t, "", r.URL.Query().Get("employee_id"))
+			assert.Equal(t, "", r.URL.Query().Get("year"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{leaveRecordPayload("leave-1", string(payroll.LeavePending))})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/leave-records":
+			var req payroll.CreateLeaveRecordRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "emp-1", req.EmployeeID)
+			assert.Equal(t, "type-1", req.AbsenceTypeID)
+			assert.Equal(t, "2026-04-06", req.StartDate.Format("2006-01-02"))
+			assert.Equal(t, "2026-04-08", req.EndDate.Format("2006-01-02"))
+			assert.True(t, req.TotalDays.Equal(decimal.RequireFromString("3.00")))
+			assert.True(t, req.WorkingDays.Equal(decimal.RequireFromString("2.00")))
+			assert.Equal(t, "DOC-42", req.DocumentNumber)
+			require.NotNil(t, req.DocumentDate)
+			assert.Equal(t, "2026-04-01", req.DocumentDate.Format("2006-01-02"))
+			assert.Equal(t, "Trimmed note", req.Notes)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(leaveRecordPayload("leave-1", string(payroll.LeavePending)))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/leave-records/leave-1":
+			_ = json.NewEncoder(w).Encode(leaveRecordPayload("leave-1", string(payroll.LeavePending)))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/leave-records/leave-1/approve":
+			_ = json.NewEncoder(w).Encode(leaveRecordPayload("leave-1", string(payroll.LeaveApproved)))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/leave-records/leave-1/reject":
+			var req payroll.RejectLeaveRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Not enough coverage", req.Reason)
+			_ = json.NewEncoder(w).Encode(leaveRecordPayload("leave-1", string(payroll.LeaveRejected)))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/leave-records/leave-1/cancel":
+			_ = json.NewEncoder(w).Encode(leaveRecordPayload("leave-1", string(payroll.LeaveCanceled)))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+	app, stdout, _ := newTestCLIApp()
+
+	errorCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown subcommand", args: []string{"leave", "records", "archive"}, want: `unknown leave records subcommand "archive"`},
+		{name: "list invalid year", args: []string{"leave", "records", "list", "--year", "twenty"}, want: `parse integer "twenty"`},
+		{name: "create missing employee", args: []string{"leave", "records", "create", "--absence-type-id", "type-1", "--start-date", "2026-04-06", "--end-date", "2026-04-08", "--total-days", "3", "--working-days", "2"}, want: "employee-id is required"},
+		{name: "create missing absence type", args: []string{"leave", "records", "create", "--employee-id", "emp-1", "--start-date", "2026-04-06", "--end-date", "2026-04-08", "--total-days", "3", "--working-days", "2"}, want: "absence-type-id is required"},
+		{name: "create missing start date", args: []string{"leave", "records", "create", "--employee-id", "emp-1", "--absence-type-id", "type-1", "--end-date", "2026-04-08", "--total-days", "3", "--working-days", "2"}, want: "start-date is required"},
+		{name: "create invalid end date", args: []string{"leave", "records", "create", "--employee-id", "emp-1", "--absence-type-id", "type-1", "--start-date", "2026-04-06", "--end-date", "not-a-date", "--total-days", "3", "--working-days", "2"}, want: "parse end-date:"},
+		{name: "create missing total days", args: []string{"leave", "records", "create", "--employee-id", "emp-1", "--absence-type-id", "type-1", "--start-date", "2026-04-06", "--end-date", "2026-04-08", "--working-days", "2"}, want: "total-days is required"},
+		{name: "create invalid total days", args: []string{"leave", "records", "create", "--employee-id", "emp-1", "--absence-type-id", "type-1", "--start-date", "2026-04-06", "--end-date", "2026-04-08", "--total-days", "many", "--working-days", "2"}, want: "parse total-days:"},
+		{name: "create nonpositive working days", args: []string{"leave", "records", "create", "--employee-id", "emp-1", "--absence-type-id", "type-1", "--start-date", "2026-04-06", "--end-date", "2026-04-08", "--total-days", "3", "--working-days", "0"}, want: "working-days must be positive"},
+		{name: "create invalid document date", args: []string{"leave", "records", "create", "--employee-id", "emp-1", "--absence-type-id", "type-1", "--start-date", "2026-04-06", "--end-date", "2026-04-08", "--total-days", "3", "--working-days", "2", "--document-date", "tomorrow"}, want: "parse document-date:"},
+		{name: "get missing id", args: []string{"leave", "records", "get"}, want: "id is required"},
+		{name: "approve missing id", args: []string{"leave", "records", "approve"}, want: "id is required"},
+		{name: "reject missing id", args: []string{"leave", "records", "reject", "--reason", "No"}, want: "id is required"},
+		{name: "reject missing reason", args: []string{"leave", "records", "reject", "--id", "leave-1"}, want: "reason is required"},
+		{name: "cancel missing id", args: []string{"leave", "records", "cancel"}, want: "id is required"},
+	}
+
+	for _, tc := range errorCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	stdout.Reset()
+	err := app.run(context.Background(), []string{"leave", "records", "list", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "leave-1"`)
+	assert.Contains(t, stdout.String(), `"employee_id": "emp-1"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"leave", "records", "create",
+		"--employee-id", " emp-1 ",
+		"--absence-type-id", " type-1 ",
+		"--start-date", " 2026-04-06 ",
+		"--end-date", " 2026-04-08 ",
+		"--total-days", " 3.00 ",
+		"--working-days", " 2.00 ",
+		"--document-number", " DOC-42 ",
+		"--document-date", " 2026-04-01 ",
+		"--notes", " Trimmed note ",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"document_number": "DOC-42"`)
+	assert.Contains(t, stdout.String(), `"notes": "Trimmed note"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "records", "get", "--id", " leave-1 ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "PENDING"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "records", "approve", "--id", " leave-1 ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "APPROVED"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "records", "reject", "--id", " leave-1 ", "--reason", " Not enough coverage ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "REJECTED"`)
+	assert.Contains(t, stdout.String(), `"rejection_reason": "Not enough coverage"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "records", "cancel", "--id", " leave-1 "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Leave record leave-1")
+	assert.Contains(t, stdout.String(), "CANCELLED") //nolint:misspell // API status value uses existing database spelling.
+}
+
 func TestCLITaxAndTSDCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
