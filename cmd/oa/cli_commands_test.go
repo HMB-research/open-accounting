@@ -8209,9 +8209,19 @@ func TestCLILeaveCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "ANNUAL_LEAVE")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "balances", "list", "--employee-id", "emp-1", "--year", "2026", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"employee_id": "emp-1"`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"leave", "balances", "by-year", "--employee-id", "emp-1", "--year", "2026", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"remaining_days": "24"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "balances", "by-year", "--employee-id", "emp-1", "--year", "2026"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "REMAINING")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"leave", "balances", "update", "--employee-id", "emp-1", "--absence-type-id", "type-1", "--year", "2026", "--entitled-days", "30.00", "--carryover-days", "3.00", "--notes", "Manual correction"})
@@ -8219,14 +8229,29 @@ func TestCLILeaveCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "30")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "balances", "update", "--employee-id", "emp-1", "--absence-type-id", "type-1", "--year", "2026", "--entitled-days", "30.00", "--carryover-days", "3.00", "--notes", "Manual correction", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"entitled_days": "30"`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"leave", "balances", "initialize", "--employee-id", "emp-1", "--year", "2026"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "ANNUAL_LEAVE")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "balances", "initialize", "--employee-id", "emp-1", "--year", "2026", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"absence_type_id": "type-1"`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"leave", "balances", "import", "--file", leaveFile})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 leave balances")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"leave", "balances", "import", "--file", leaveFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"rows_processed": 1`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"leave", "records", "list", "--employee-id", "emp-1", "--year", "2026"})
@@ -8257,6 +8282,46 @@ func TestCLILeaveCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"leave", "records", "cancel", "--id", "leave-1", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"status": "CANCELLED"`) //nolint:misspell // API status value uses existing database spelling.
+}
+
+func TestCLILeaveBalancesValidationBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown subcommand", args: []string{"archive"}, want: `unknown leave balances subcommand "archive"`},
+		{name: "list missing employee", args: []string{"list", "--year", "2026"}, want: "employee-id is required"},
+		{name: "list invalid year", args: []string{"list", "--employee-id", "emp-1", "--year", "twenty"}, want: `parse integer "twenty"`},
+		{name: "by year missing employee", args: []string{"by-year", "--year", "2026"}, want: "employee-id is required"},
+		{name: "by year missing year", args: []string{"by-year", "--employee-id", "emp-1"}, want: "year is required"},
+		{name: "update missing employee", args: []string{"update", "--absence-type-id", "type-1", "--year", "2026", "--entitled-days", "28"}, want: "employee-id is required"},
+		{name: "update missing absence type", args: []string{"update", "--employee-id", "emp-1", "--year", "2026", "--entitled-days", "28"}, want: "absence-type-id is required"},
+		{name: "update missing year", args: []string{"update", "--employee-id", "emp-1", "--absence-type-id", "type-1", "--entitled-days", "28"}, want: "year is required"},
+		{name: "update invalid entitled days", args: []string{"update", "--employee-id", "emp-1", "--absence-type-id", "type-1", "--year", "2026", "--entitled-days", "-1"}, want: "entitled-days must be non-negative"},
+		{name: "update missing changes", args: []string{"update", "--employee-id", "emp-1", "--absence-type-id", "type-1", "--year", "2026"}, want: "entitled-days, carryover-days, or notes is required"},
+		{name: "initialize missing employee", args: []string{"initialize", "--year", "2026"}, want: "employee-id is required"},
+		{name: "initialize missing year", args: []string{"initialize", "--employee-id", "emp-1"}, want: "year is required"},
+		{name: "import missing file", args: []string{"import"}, want: "file is required"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			app, _, _ := newTestCLIApp()
+			err := app.run(context.Background(), append([]string{"leave", "balances"}, tc.args...))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
 }
 
 func TestCLITaxAndTSDCommands(t *testing.T) {
