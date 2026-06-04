@@ -1336,6 +1336,150 @@ func TestCLIWebhookCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Deleted webhook endpoint")
 }
 
+func TestCLIWebhookBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+	for _, tt := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing subcommand", args: []string{"webhooks"}, want: "webhooks subcommand required"},
+		{name: "unknown subcommand", args: []string{"webhooks", "archive"}, want: `unknown webhooks subcommand "archive"`},
+		{name: "create missing name", args: []string{"webhooks", "create", "--url", "https://hooks.example.com"}, want: "name is required"},
+		{name: "create missing url", args: []string{"webhooks", "create", "--name", "CRM"}, want: "url is required"},
+		{name: "get missing id", args: []string{"webhooks", "get"}, want: "id is required"},
+		{name: "update missing id", args: []string{"webhooks", "update"}, want: "id is required"},
+		{name: "update invalid active", args: []string{"webhooks", "update", "--id", "webhook-1", "--active", "maybe"}, want: "parse active"},
+		{name: "delete missing id", args: []string{"webhooks", "delete"}, want: "id is required"},
+		{name: "deliveries missing id", args: []string{"webhooks", "deliveries"}, want: "id is required"},
+		{name: "test missing id", args: []string{"webhooks", "test"}, want: "id is required"},
+		{name: "test invalid payload json", args: []string{"webhooks", "test", "--id", "webhook-1", "--payload-json", "{"}, want: "parse JSON"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := app.run(ctx, tt.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tt.want)
+		})
+	}
+
+	const webhookID = "11111111-1111-4111-8111-111111111111"
+	endpointPayload := func(active bool) map[string]any {
+		return map[string]any{
+			"id":               webhookID,
+			"tenant_id":        "tenant-1",
+			"name":             "Billing Relay",
+			"url":              "https://billing.example.com/hooks",
+			"events":           []string{"invoice.created", "payment.received"},
+			"secret_set":       true,
+			"is_active":        active,
+			"last_delivery_at": "2026-03-12T00:00:00Z",
+			"created_at":       "2026-03-12T00:00:00Z",
+			"updated_at":       "2026-03-12T00:00:00Z",
+		}
+	}
+	deliveryPayload := map[string]any{
+		"id":             "delivery-1",
+		"tenant_id":      "tenant-1",
+		"endpoint_id":    webhookID,
+		"event_id":       "22222222-2222-4222-8222-222222222222",
+		"event_type":     "payment.received",
+		"status":         "SUCCEEDED",
+		"status_code":    202,
+		"attempt_number": 1,
+		"response_body":  "accepted",
+		"delivered_at":   "2026-03-12T00:00:00Z",
+		"created_at":     "2026-03-12T00:00:00Z",
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks/events":
+			_ = json.NewEncoder(w).Encode([]string{"invoice.created", "payment.received"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks":
+			assert.Empty(t, r.URL.Query().Get("active_only"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{endpointPayload(true)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks":
+			var req map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Billing Relay", req["name"])
+			assert.Equal(t, "https://billing.example.com/hooks", req["url"])
+			assert.Equal(t, []any{"invoice.created", "payment.received"}, req["events"])
+			assert.Equal(t, "secret-token", req["secret"])
+			assert.Equal(t, false, req["is_active"])
+			_ = json.NewEncoder(w).Encode(endpointPayload(false))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks/"+webhookID:
+			_ = json.NewEncoder(w).Encode(endpointPayload(true))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks/"+webhookID:
+			var req map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Billing Relay", req["name"])
+			assert.Equal(t, "https://billing.example.com/hooks", req["url"])
+			assert.Equal(t, []any{"invoice.created", "payment.received"}, req["events"])
+			assert.Equal(t, "", req["secret"])
+			assert.Equal(t, true, req["is_active"])
+			_ = json.NewEncoder(w).Encode(endpointPayload(true))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks/"+webhookID+"/deliveries":
+			assert.Empty(t, r.URL.Query().Get("limit"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{deliveryPayload})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks/"+webhookID+"/test":
+			var req map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "payment.received", req["event_type"])
+			assert.Equal(t, map[string]any{"source": "file"}, req["payload"])
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"event": map[string]any{
+					"id":         "22222222-2222-4222-8222-222222222222",
+					"type":       "payment.received",
+					"tenant_id":  "tenant-1",
+					"data":       map[string]any{"source": "file"},
+					"created_at": "2026-03-12T00:00:00Z",
+				},
+				"deliveries": []map[string]any{deliveryPayload},
+			})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks/"+webhookID:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	payloadFile := writeTempCSV(t, "payload.json", `{"source":"file"}`)
+	for _, tt := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "events json", args: []string{"webhooks", "events", "--json"}, want: `"payment.received"`},
+		{name: "list json", args: []string{"webhooks", "list", "--json"}, want: `"secret_set": true`},
+		{name: "create inactive json", args: []string{"webhooks", "create", "--name", " Billing Relay ", "--url", " https://billing.example.com/hooks ", "--events", "invoice.created, payment.received, ", "--secret", " secret-token ", "--inactive", "--json"}, want: `"is_active": false`},
+		{name: "get json", args: []string{"webhooks", "get", "--id", " " + webhookID + " ", "--json"}, want: `"id": "` + webhookID + `"`},
+		{name: "update json", args: []string{"webhooks", "update", "--id", " " + webhookID + " ", "--name", " Billing Relay ", "--url", " https://billing.example.com/hooks ", "--events", "invoice.created,payment.received", "--secret", " ", "--active", "true", "--json"}, want: `"is_active": true`},
+		{name: "deliveries json omit nonpositive limit", args: []string{"webhooks", "deliveries", "--id", " " + webhookID + " ", "--limit", "0", "--json"}, want: `"status": "SUCCEEDED"`},
+		{name: "test json payload file", args: []string{"webhooks", "test", "--id", " " + webhookID + " ", "--event", " payment.received ", "--payload-file", payloadFile, "--json"}, want: `"type": "payment.received"`},
+		{name: "delete json", args: []string{"webhooks", "delete", "--id", " " + webhookID + " ", "--json"}, want: `"status": "deleted"`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout.Reset()
+			require.NoError(t, app.run(ctx, tt.args))
+			assert.Contains(t, stdout.String(), tt.want)
+		})
+	}
+}
+
 func TestCLIMigrationValidationCommand(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
