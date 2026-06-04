@@ -108,6 +108,50 @@ func journalEntryPayload(id, number string, status accounting.JournalEntryStatus
 	}
 }
 
+func journalTemplatePayload(id, name string, requiresEvidence bool) map[string]any {
+	return map[string]any{
+		"id":                   id,
+		"tenant_id":            "tenant-1",
+		"name":                 name,
+		"description":          name,
+		"reference":            "RENT",
+		"requires_evidence":    requiresEvidence,
+		"is_active":            true,
+		"frequency":            "MONTHLY",
+		"start_date":           "2026-04-30T00:00:00Z",
+		"next_generation_date": "2026-04-30T00:00:00Z",
+		"generated_count":      0,
+		"line_count":           2,
+		"created_at":           "2026-03-31T12:00:00Z",
+		"created_by":           "user-1",
+		"updated_at":           "2026-03-31T12:00:00Z",
+		"lines": []map[string]any{
+			{
+				"id":            id + "-line-1",
+				"template_id":   id,
+				"line_number":   1,
+				"account_id":    "acc-1",
+				"description":   "Rent expense",
+				"debit_amount":  "500.00",
+				"credit_amount": "0.00",
+				"currency":      "EUR",
+				"exchange_rate": "1.00",
+			},
+			{
+				"id":            id + "-line-2",
+				"template_id":   id,
+				"line_number":   2,
+				"account_id":    "acc-2",
+				"description":   "Accrued rent",
+				"debit_amount":  "0.00",
+				"credit_amount": "500.00",
+				"currency":      "EUR",
+				"exchange_rate": "1.00",
+			},
+		},
+	}
+}
+
 func recurringInvoicePayload(id, name string, active bool) map[string]any {
 	return map[string]any{
 		"id":                       id,
@@ -6092,47 +6136,7 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 	}))
 
 	templatePayload := func() map[string]any {
-		return map[string]any{
-			"id":                   "tpl-1",
-			"tenant_id":            "tenant-1",
-			"name":                 "Monthly rent accrual",
-			"description":          "Monthly rent accrual",
-			"reference":            "RENT",
-			"requires_evidence":    false,
-			"is_active":            true,
-			"frequency":            "MONTHLY",
-			"start_date":           "2026-04-30T00:00:00Z",
-			"next_generation_date": "2026-04-30T00:00:00Z",
-			"generated_count":      0,
-			"line_count":           2,
-			"created_at":           "2026-03-31T12:00:00Z",
-			"created_by":           "user-1",
-			"updated_at":           "2026-03-31T12:00:00Z",
-			"lines": []map[string]any{
-				{
-					"id":            "tpl-line-1",
-					"template_id":   "tpl-1",
-					"line_number":   1,
-					"account_id":    "acc-1",
-					"description":   "Rent expense",
-					"debit_amount":  "500.00",
-					"credit_amount": "0.00",
-					"currency":      "EUR",
-					"exchange_rate": "1.00",
-				},
-				{
-					"id":            "tpl-line-2",
-					"template_id":   "tpl-1",
-					"line_number":   2,
-					"account_id":    "acc-2",
-					"description":   "Accrued rent",
-					"debit_amount":  "0.00",
-					"credit_amount": "500.00",
-					"currency":      "EUR",
-					"exchange_rate": "1.00",
-				},
-			},
-		}
+		return journalTemplatePayload("tpl-1", "Monthly rent accrual", false)
 	}
 	journalImportFile := writeTempCSV(t, "journals.csv", "entry_reference,entry_date,account_code,debit,credit\nLEG-001,2026-03-31,1000,100.00,0\nLEG-001,2026-03-31,4000,0,100.00\n")
 
@@ -6572,6 +6576,192 @@ func TestCLIJournalBranches(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"entries_created": 1`)
 	assert.Contains(t, stdout.String(), `"entry_number": "JE-2026-013"`)
+}
+
+func TestCLIJournalTemplateBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	validationCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing subcommand", args: []string{"journal", "templates"}, want: "journal templates subcommand required"},
+		{name: "unknown subcommand", args: []string{"journal", "templates", "archive"}, want: `unknown journal templates subcommand "archive"`},
+		{name: "missing create name", args: []string{"journal", "templates", "create", "--description", "Template", "--line", "account_id=acc-1,debit=10", "--line", "account_id=acc-2,credit=10"}, want: "name is required"},
+		{name: "missing create description", args: []string{"journal", "templates", "create", "--name", "Template", "--line", "account_id=acc-1,debit=10", "--line", "account_id=acc-2,credit=10"}, want: "description is required"},
+		{name: "create needs two lines", args: []string{"journal", "templates", "create", "--name", "Template", "--description", "Template", "--line", "account_id=acc-1,debit=10"}, want: "at least two lines are required"},
+		{name: "invalid create frequency", args: []string{"journal", "templates", "create", "--name", "Template", "--description", "Template", "--frequency", "semiweekly", "--line", "account_id=acc-1,debit=10", "--line", "account_id=acc-2,credit=10"}, want: "invalid journal template frequency"},
+		{name: "invalid create start date", args: []string{"journal", "templates", "create", "--name", "Template", "--description", "Template", "--start-date", "2026/04/01", "--line", "account_id=acc-1,debit=10", "--line", "account_id=acc-2,credit=10"}, want: "parse start-date"},
+		{name: "invalid create end date", args: []string{"journal", "templates", "create", "--name", "Template", "--description", "Template", "--end-date", "2026/12/31", "--line", "account_id=acc-1,debit=10", "--line", "account_id=acc-2,credit=10"}, want: "parse end-date"},
+		{name: "invalid create next generation date", args: []string{"journal", "templates", "create", "--name", "Template", "--description", "Template", "--next-generation-date", "2026/05/01", "--line", "account_id=acc-1,debit=10", "--line", "account_id=acc-2,credit=10"}, want: "parse next-generation-date"},
+		{name: "missing get id", args: []string{"journal", "templates", "get", "--id", " "}, want: "id is required"},
+		{name: "missing generate id", args: []string{"journal", "templates", "generate", "--id", " "}, want: "id is required"},
+		{name: "invalid generate entry date", args: []string{"journal", "templates", "generate", "--id", "tpl-branch", "--entry-date", "2026/04/15"}, want: "parse entry-date"},
+		{name: "invalid generate due as of", args: []string{"journal", "templates", "generate-due", "--as-of", "2026/04/30"}, want: "parse as-of"},
+		{name: "missing apply id", args: []string{"journal", "templates", "apply", "--entry-date", "2026-04-30"}, want: "id is required"},
+		{name: "missing apply entry date", args: []string{"journal", "templates", "apply", "--id", "tpl-branch"}, want: "entry-date is required"},
+		{name: "invalid apply entry date", args: []string{"journal", "templates", "apply", "--id", "tpl-branch", "--entry-date", "2026/04/30"}, want: "parse entry-date"},
+	}
+	for _, tc := range validationCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entry-templates":
+			assert.Empty(t, r.URL.Query().Get("active_only"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{journalTemplatePayload("tpl-branch", "Branch rent accrual", true)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entry-templates":
+			var req accounting.CreateJournalEntryTemplateRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Branch rent accrual", req.Name)
+			assert.Equal(t, "Branch rent accrual", req.Description)
+			assert.Equal(t, "BR-RENT", req.Reference)
+			assert.True(t, req.RequiresEvidence)
+			assert.Equal(t, accounting.JournalEntryTemplateFrequencyQuarterly, req.Frequency)
+			require.NotNil(t, req.StartDate)
+			assert.Equal(t, "2026-04-01", req.StartDate.Format("2006-01-02"))
+			require.NotNil(t, req.EndDate)
+			assert.Equal(t, "2026-12-31", req.EndDate.Format("2006-01-02"))
+			require.NotNil(t, req.NextGenerationDate)
+			assert.Equal(t, "2026-07-01", req.NextGenerationDate.Format("2006-01-02"))
+			require.Len(t, req.Lines, 2)
+			assert.Equal(t, "acc-1", req.Lines[0].AccountID)
+			assert.Equal(t, "Rent expense", req.Lines[0].Description)
+			assert.Equal(t, "USD", req.Lines[0].Currency)
+			assert.True(t, req.Lines[0].ExchangeRate.Equal(decimal.RequireFromString("0.91")))
+			payload := journalTemplatePayload("tpl-branch", req.Name, req.RequiresEvidence)
+			payload["description"] = req.Description
+			payload["reference"] = req.Reference
+			payload["frequency"] = req.Frequency
+			payload["end_date"] = "2026-12-31T00:00:00Z"
+			payload["next_generation_date"] = "2026-07-01T00:00:00Z"
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(payload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entry-templates/tpl-branch":
+			_ = json.NewEncoder(w).Encode(journalTemplatePayload("tpl-branch", "Branch rent accrual", true))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entry-templates/tpl-branch/generate":
+			var req accounting.GenerateJournalEntryTemplateRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.NotNil(t, req.EntryDate)
+			assert.Equal(t, "2026-04-15", req.EntryDate.Format("2006-01-02"))
+			assert.False(t, req.Post)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"template_id":            "tpl-branch",
+				"template_name":          "Branch rent accrual",
+				"generated_entry_id":     "je-template-branch",
+				"generated_entry_number": "JE-2026-020",
+				"entry_date":             "2026-04-15T00:00:00Z",
+				"next_generation_date":   "2026-07-15T00:00:00Z",
+				"status":                 "generated",
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entry-templates/generate-due":
+			var req accounting.GenerateDueJournalEntryTemplatesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Nil(t, req.AsOfDate)
+			assert.True(t, req.Post)
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"template_id":            "tpl-branch",
+				"template_name":          "Branch rent accrual",
+				"generated_entry_id":     "je-template-due",
+				"generated_entry_number": "JE-2026-021",
+				"entry_date":             "2026-04-30T00:00:00Z",
+				"status":                 "generated",
+			}})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entry-templates/tpl-branch/apply":
+			var req accounting.ApplyJournalEntryTemplateRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-04-30", req.EntryDate.Format("2006-01-02"))
+			assert.Equal(t, "Branch applied", req.Description)
+			assert.Equal(t, "BR-APR", req.Reference)
+			assert.False(t, req.Post)
+			payload := journalEntryPayload("je-template-branch", "JE-2026-022", accounting.StatusDraft)
+			payload["description"] = req.Description
+			payload["reference"] = req.Reference
+			payload["source_type"] = accounting.SourceTypeJournalTemplate
+			payload["source_id"] = "tpl-branch"
+			payload["requires_evidence"] = false
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(payload)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	stdout.Reset()
+	err := app.run(context.Background(), []string{"journal", "templates", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Branch rent accrual")
+	assert.Contains(t, stdout.String(), "tpl-branch")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"journal", "templates", "create",
+		"--name", " Branch rent accrual ",
+		"--description", " Branch rent accrual ",
+		"--reference", " BR-RENT ",
+		"--requires-evidence",
+		"--frequency", " quarterly ",
+		"--start-date", " 2026-04-01 ",
+		"--end-date", " 2026-12-31 ",
+		"--next-generation-date", " 2026-07-01 ",
+		"--line", "account_id=acc-1,description=Rent expense,debit=250.00,currency=usd,exchange_rate=0.91",
+		"--line", "account_id=acc-2,description=Accrued rent,credit=250.00",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Branch rent accrual"`)
+	assert.Contains(t, stdout.String(), `"requires_evidence": true`)
+	assert.Contains(t, stdout.String(), `"frequency": "QUARTERLY"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"journal", "templates", "get", "--id", " tpl-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "tpl-branch"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"journal", "templates", "generate", "--id", " tpl-branch ", "--entry-date", " 2026-04-15 ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"generated_entry_number": "JE-2026-020"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"journal", "templates", "generate-due", "--post", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"generated_entry_number": "JE-2026-021"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"journal", "templates", "apply",
+		"--id", " tpl-branch ",
+		"--entry-date", " 2026-04-30 ",
+		"--description", " Branch applied ",
+		"--reference", " BR-APR ",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"entry_number": "JE-2026-022"`)
+	assert.Contains(t, stdout.String(), `"source_id": "tpl-branch"`)
 }
 
 func TestCLIContactsInvoicesAndJournalCommands(t *testing.T) {
