@@ -1626,6 +1626,128 @@ func TestCLIAdminPluginCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Uninstalled plugin")
 }
 
+func TestCLIAdminPluginBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		APIToken: "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+	for _, tt := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing subcommand", args: nil, want: "admin plugins subcommand required"},
+		{name: "unknown subcommand", args: []string{"archive"}, want: `unknown admin plugins subcommand "archive"`},
+		{name: "search missing query", args: []string{"search"}, want: "q is required"},
+		{name: "get missing id", args: []string{"get"}, want: "id is required"},
+		{name: "install missing repository", args: []string{"install"}, want: "repository-url is required"},
+		{name: "enable missing id", args: []string{"enable"}, want: "id is required"},
+		{name: "enable blank permission", args: []string{"enable", "--id", "plugin-1", "--permission", " "}, want: "value cannot be empty"},
+		{name: "disable missing id", args: []string{"disable"}, want: "id is required"},
+		{name: "uninstall missing id", args: []string{"uninstall"}, want: "id is required"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := app.runAdminPlugins(ctx, nil, tt.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tt.want)
+		})
+	}
+
+	const pluginID = "22222222-2222-4222-8222-222222222222"
+	pluginResponse := map[string]any{
+		"id":                  pluginID,
+		"name":                "json-tools",
+		"display_name":        "JSON Tools",
+		"description":         "JSON import helpers",
+		"version":             "2.0.0",
+		"repository_url":      "https://github.com/example/json-tools",
+		"repository_type":     "github",
+		"state":               "installed",
+		"granted_permissions": []string{"contacts:read", "invoices:write"},
+		"manifest":            map[string]any{"name": "json-tools"},
+		"installed_at":        "2026-03-12T00:00:00Z",
+		"updated_at":          "2026-03-12T00:00:00Z",
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/plugins":
+			_ = json.NewEncoder(w).Encode([]map[string]any{pluginResponse})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/plugins/search":
+			assert.Equal(t, "json tools", r.URL.Query().Get("q"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"plugin": map[string]any{
+					"name":         "json-tools",
+					"display_name": "JSON Tools",
+					"repository":   "https://github.com/example/json-tools",
+					"version":      "2.0.0",
+					"tags":         []string{"import", "json"},
+					"downloads":    42,
+					"stars":        7,
+				},
+				"registry": "Official",
+			}})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/plugins/permissions":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"contacts:read": map[string]any{
+					"name":        "contacts:read",
+					"category":    "data",
+					"risk":        "low",
+					"description": "Read contacts",
+				},
+				"invoices:write": map[string]any{
+					"name":        "invoices:write",
+					"category":    "data",
+					"risk":        "high",
+					"description": "Write invoices",
+				},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/plugins/install":
+			var req plugin.InstallPluginRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "https://github.com/example/json-tools", req.RepositoryURL)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(pluginResponse)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/plugins/"+pluginID:
+			_ = json.NewEncoder(w).Encode(pluginResponse)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/plugins/"+pluginID+"/enable":
+			var req plugin.EnablePluginRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, []string{"contacts:read", "invoices:write"}, req.GrantedPermissions)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "enabled"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	for _, tt := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "list json", args: []string{"admin", "plugins", "list", "--json"}, want: `"display_name": "JSON Tools"`},
+		{name: "search json", args: []string{"admin", "plugins", "search", "--q", " json tools ", "--json"}, want: `"registry": "Official"`},
+		{name: "permissions json", args: []string{"admin", "plugins", "permissions", "--json"}, want: `"invoices:write"`},
+		{name: "install json", args: []string{"admin", "plugins", "install", "--repository-url", " https://github.com/example/json-tools ", "--json"}, want: `"name": "json-tools"`},
+		{name: "get json", args: []string{"admin", "plugins", "get", "--id", " " + pluginID + " ", "--json"}, want: `"id": "` + pluginID + `"`},
+		{name: "enable repeated permissions", args: []string{"admin", "plugins", "enable", "--id", " " + pluginID + " ", "--permission", "contacts:read", "--permission", "invoices:write"}, want: "Enabled plugin " + pluginID},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout.Reset()
+			require.NoError(t, app.run(ctx, tt.args))
+			assert.Contains(t, stdout.String(), tt.want)
+		})
+	}
+}
+
 func TestCLIAccountsCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
