@@ -1079,6 +1079,130 @@ func TestCLIPluginSettingsBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Updated tenant plugin")
 }
 
+func TestCLIAdminPluginRegistryBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		APIToken: "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "missing registry command",
+			args: nil,
+			want: "admin registries subcommand required",
+		},
+		{
+			name: "unknown registry command",
+			args: []string{"archive"},
+			want: `unknown admin registries subcommand "archive"`,
+		},
+		{
+			name: "create missing name",
+			args: []string{"create", "--url", "https://plugins.example.com"},
+			want: "name and url are required",
+		},
+		{
+			name: "create missing url",
+			args: []string{"create", "--name", "Official"},
+			want: "name and url are required",
+		},
+		{
+			name: "delete missing id",
+			args: []string{"delete"},
+			want: "id is required",
+		},
+		{
+			name: "remove missing id alias",
+			args: []string{"remove"},
+			want: "id is required",
+		},
+		{
+			name: "sync missing id",
+			args: []string{"sync"},
+			want: "id is required",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := app.runAdminPluginRegistries(ctx, nil, tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+		})
+	}
+
+	const registryID = "44444444-4444-4444-4444-444444444444"
+	registryResponse := map[string]any{
+		"id":             registryID,
+		"name":           "Official",
+		"url":            "https://plugins.example.com",
+		"description":    "Official plugins",
+		"is_official":    false,
+		"is_active":      true,
+		"last_synced_at": "2026-03-12T13:00:00Z",
+		"created_at":     "2026-03-12T00:00:00Z",
+		"updated_at":     "2026-03-12T00:00:00Z",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/plugin-registries":
+			_ = json.NewEncoder(w).Encode([]map[string]any{registryResponse})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/plugin-registries":
+			var req plugin.CreateRegistryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Official", req.Name)
+			assert.Equal(t, "https://plugins.example.com", req.URL)
+			assert.Equal(t, "Official plugins", req.Description)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(registryResponse)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/plugin-registries/"+registryID+"/sync":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "synced"})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/admin/plugin-registries/"+registryID:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	err := app.run(context.Background(), []string{"admin", "plugin-registries", "list", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Official"`)
+	assert.Contains(t, stdout.String(), `"last_synced_at": "2026-03-12T13:00:00Z"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"admin", "registries", "create",
+		"--name", " Official ",
+		"--url", " https://plugins.example.com ",
+		"--description", " Official plugins ",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"description": "Official plugins"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"admin", "plugin-registries", "sync", "--id", " " + registryID + " "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Synced plugin registry "+registryID)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"admin", "plugin-registries", "remove", "--id", " " + registryID + " "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Removed plugin registry "+registryID)
+}
+
 func TestCLIWebhookCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
