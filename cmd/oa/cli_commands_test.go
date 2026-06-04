@@ -4045,6 +4045,183 @@ func TestCLIInventoryValidationBranches(t *testing.T) {
 	}
 }
 
+func TestCLIInventoryWarehouseBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+	cfg := &cliConfig{TenantID: "tenant-1"}
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "missing warehouses command",
+			args: nil,
+			want: "inventory warehouses subcommand required",
+		},
+		{
+			name: "unknown warehouses command",
+			args: []string{"archive"},
+			want: `unknown inventory warehouses subcommand "archive"`,
+		},
+		{
+			name: "create missing code",
+			args: []string{"create", "--name", "Branch warehouse"},
+			want: "code is required",
+		},
+		{
+			name: "create missing name",
+			args: []string{"create", "--code", "BRANCH"},
+			want: "name is required",
+		},
+		{
+			name: "import missing file",
+			args: []string{"import"},
+			want: "file is required",
+		},
+		{
+			name: "import unreadable file",
+			args: []string{"import", "--file", filepath.Join(t.TempDir(), "missing.csv")},
+			want: "no such file",
+		},
+		{
+			name: "get missing id",
+			args: []string{"get"},
+			want: "id is required",
+		},
+		{
+			name: "update missing id",
+			args: []string{"update", "--name", "Branch warehouse"},
+			want: "id is required",
+		},
+		{
+			name: "update missing name",
+			args: []string{"update", "--id", "wh-branch"},
+			want: "name is required",
+		},
+		{
+			name: "update invalid active flag",
+			args: []string{"update", "--id", "wh-branch", "--name", "Branch warehouse", "--active=maybe"},
+			want: "invalid boolean value",
+		},
+		{
+			name: "delete missing id",
+			args: []string{"delete"},
+			want: "id is required",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := app.runInventoryWarehouses(ctx, cfg, nil, tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+		})
+	}
+
+	warehousePayload := func(name string, isDefault, active bool) map[string]any {
+		return map[string]any{
+			"id":         "wh-branch",
+			"tenant_id":  "tenant-1",
+			"code":       "BRANCH",
+			"name":       name,
+			"address":    "Parnu",
+			"is_default": isDefault,
+			"is_active":  active,
+			"created_at": "2026-03-15T12:00:00Z",
+			"updated_at": "2026-03-15T12:00:00Z",
+		}
+	}
+	importFile := writeTempCSV(t, "warehouses.csv", "code,name,address,is_default\nBRANCH,Branch warehouse,Parnu,false\n")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses":
+			require.Empty(t, r.URL.Query().Get("active_only"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{warehousePayload("Branch warehouse", false, true)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses":
+			var req inventory.CreateWarehouseRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "BRANCH", req.Code)
+			assert.Equal(t, "Branch warehouse", req.Name)
+			assert.Equal(t, "Parnu", req.Address)
+			assert.True(t, req.IsDefault)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(warehousePayload("Branch warehouse", true, true))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses/import":
+			var req inventory.ImportWarehousesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "warehouses.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "BRANCH")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"file_name":          "warehouses.csv",
+				"rows_processed":     1,
+				"warehouses_created": 1,
+				"rows_skipped":       0,
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses/wh-branch":
+			_ = json.NewEncoder(w).Encode(warehousePayload("Branch warehouse", true, true))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses/wh-branch":
+			var req inventory.UpdateWarehouseRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Branch warehouse updated", req.Name)
+			assert.Equal(t, "Parnu", req.Address)
+			assert.True(t, req.IsDefault)
+			assert.False(t, req.IsActive)
+			_ = json.NewEncoder(w).Encode(warehousePayload("Branch warehouse updated", true, false))
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses/wh-branch":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	err := app.run(context.Background(), []string{"inventory", "warehouses", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "BRANCH")
+	assert.Contains(t, stdout.String(), "Branch warehouse")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "warehouses", "create", "--code", " BRANCH ", "--name", " Branch warehouse ", "--address", " Parnu ", "--default", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"code": "BRANCH"`)
+	assert.Contains(t, stdout.String(), `"is_default": true`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "warehouses", "import", "--file", importFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"warehouses_created": 1`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "warehouses", "get", "--id", "wh-branch", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "wh-branch"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "warehouses", "update", "--id", "wh-branch", "--name", " Branch warehouse updated ", "--address", " Parnu ", "--default", "--active=false", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Branch warehouse updated"`)
+	assert.Contains(t, stdout.String(), `"is_active": false`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "warehouses", "delete", "--id", "wh-branch", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "deleted"`)
+}
+
 func TestCLICostCenterCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
