@@ -8090,6 +8090,120 @@ func TestCLIPayrollImportLeaveBalancesCommand(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 leave balances, updated 0 leave balances, skipped 0 rows")
 }
 
+func TestCLIPayrollTopLevelBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing subcommand", args: []string{"payroll"}, want: "payroll subcommand required"},
+		{name: "unknown subcommand", args: []string{"payroll", "bonuses"}, want: `unknown payroll subcommand "bonuses"`},
+		{name: "tax preview missing gross salary", args: []string{"payroll", "tax-preview"}, want: "gross-salary must be a positive decimal"},
+		{name: "tax preview non positive gross salary", args: []string{"payroll", "tax-preview", "--gross-salary", "0"}, want: "gross-salary must be a positive decimal"},
+		{name: "tax preview invalid funded pension rate", args: []string{"payroll", "tax-preview", "--gross-salary", "3200.00", "--funded-pension-rate", "never"}, want: "parse funded-pension-rate"},
+		{name: "import history missing file", args: []string{"payroll", "import-history"}, want: "file is required"},
+		{name: "import leave balances missing file", args: []string{"payroll", "import-leave-balances"}, want: "file is required"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, _, _ := newTestCLIApp()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+
+	historyFile := writeTempCSV(t, "payroll-history.csv", "period_year,period_month,employee_number,gross_salary\n2025,12,EMP-100,3200.00\n")
+	leaveFile := writeTempCSV(t, "leave-balances.csv", "year,employee_number,absence_type_code,entitled_days\n2025,EMP-100,ANNUAL_LEAVE,28\n")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll/tax-preview":
+			var req struct {
+				GrossSalary         decimal.Decimal `json:"gross_salary"`
+				ApplyBasicExemption bool            `json:"apply_basic_exemption"`
+				FundedPensionRate   decimal.Decimal `json:"funded_pension_rate"`
+			}
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.True(t, req.GrossSalary.Equal(decimal.RequireFromString("3200.00")))
+			assert.False(t, req.ApplyBasicExemption)
+			assert.True(t, req.FundedPensionRate.Equal(decimal.RequireFromString("0.04")))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"gross_salary":          "3200.00",
+				"basic_exemption":       "0.00",
+				"taxable_income":        "3200.00",
+				"income_tax":            "704.00",
+				"unemployment_employee": "51.20",
+				"funded_pension":        "128.00",
+				"total_deductions":      "883.20",
+				"net_salary":            "2316.80",
+				"social_tax":            "1056.00",
+				"unemployment_employer": "25.60",
+				"total_employer_cost":   "4281.60",
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/import-history":
+			var req payroll.ImportPayrollHistoryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "payroll-history.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "EMP-100")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed":       2,
+				"payroll_runs_created": 1,
+				"payslips_created":     1,
+				"rows_skipped":         1,
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/leave-balances/import":
+			var req payroll.ImportLeaveBalancesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "leave-balances.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "ANNUAL_LEAVE")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed":         2,
+				"leave_balances_created": 1,
+				"leave_balances_updated": 1,
+				"rows_skipped":           0,
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{
+		"payroll", "tax-preview",
+		"--gross-salary", "3200.00",
+		"--apply-basic-exemption=false",
+		"--funded-pension-rate", "0.04",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"net_salary": "2316.8"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payroll", "import-history", "--file", historyFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"rows_skipped": 1`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payroll", "import-leave-balances", "--file", leaveFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"leave_balances_updated": 1`)
+}
+
 func TestCLILeaveCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
