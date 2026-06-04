@@ -6028,6 +6028,168 @@ func TestCLIReminderCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Seven days overdue")
 }
 
+func TestCLIReminderBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	now := "2026-03-15T12:00:00Z"
+	overduePayload := map[string]any{
+		"total_overdue":        "750.25",
+		"invoice_count":        1,
+		"contact_count":        1,
+		"average_days_overdue": 21,
+		"generated_at":         now,
+		"invoices": []map[string]any{{
+			"id":                 "inv-9",
+			"invoice_number":     "INV-00009",
+			"contact_id":         "contact-9",
+			"contact_name":       "Trimmed Customer",
+			"contact_email":      "ap@example.com",
+			"issue_date":         "2026-02-01",
+			"due_date":           "2026-02-23",
+			"total":              "900.25",
+			"amount_paid":        "150.00",
+			"outstanding_amount": "750.25",
+			"currency":           "EUR",
+			"days_overdue":       21,
+			"reminder_count":     2,
+			"last_reminder_at":   now,
+		}},
+	}
+	reminderResult := map[string]any{
+		"invoice_id":     "inv-9",
+		"invoice_number": "INV-00009",
+		"success":        true,
+		"message":        "Reminder sent",
+		"reminder_id":    "rem-9",
+	}
+	bulkResult := map[string]any{
+		"total_requested": 2,
+		"successful":      2,
+		"failed":          0,
+		"results": []map[string]any{
+			reminderResult,
+			{
+				"invoice_id":     "inv-10",
+				"invoice_number": "INV-00010",
+				"success":        true,
+				"message":        "Reminder sent",
+				"reminder_id":    "rem-10",
+			},
+		},
+	}
+	historyPayload := []map[string]any{{
+		"id":              "rem-9",
+		"tenant_id":       "tenant-1",
+		"invoice_id":      "inv-9",
+		"invoice_number":  "INV-00009",
+		"contact_id":      "contact-9",
+		"contact_name":    "Trimmed Customer",
+		"contact_email":   "ap@example.com",
+		"reminder_number": 2,
+		"status":          "SENT",
+		"sent_at":         now,
+		"created_at":      now,
+		"updated_at":      now,
+	}}
+	requestCounts := map[string]int{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/overdue":
+			requestCounts["overdue"]++
+			_ = json.NewEncoder(w).Encode(overduePayload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/reminders":
+			requestCounts["send"]++
+			var req invoicing.SendReminderRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "inv-9", req.InvoiceID)
+			assert.Equal(t, "Pay now", req.Message)
+			_ = json.NewEncoder(w).Encode(reminderResult)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/reminders/bulk":
+			requestCounts["send-bulk"]++
+			var req invoicing.SendBulkRemindersRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, []string{"inv-9", "inv-10"}, req.InvoiceIDs)
+			assert.Equal(t, "Bulk note", req.Message)
+			_ = json.NewEncoder(w).Encode(bulkResult)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/inv-9/reminders":
+			requestCounts["history"]++
+			_ = json.NewEncoder(w).Encode(historyPayload)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+	app, stdout, stderr := newTestCLIApp()
+
+	errorCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown subcommand", args: []string{"reminders", "archive"}, want: `unknown reminders subcommand "archive"`},
+		{name: "send missing invoice id", args: []string{"reminders", "send"}, want: "invoice-id is required"},
+		{name: "send bulk missing invoice ids", args: []string{"reminders", "send-bulk"}, want: "at least one invoice-id is required"},
+		{name: "send bulk blank invoice id", args: []string{"reminders", "send-bulk", "--invoice-id", "   "}, want: "value cannot be empty"},
+		{name: "history missing invoice id", args: []string{"reminders", "history"}, want: "invoice-id is required"},
+	}
+	for _, tc := range errorCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			stderr.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	err := app.run(context.Background(), []string{"reminders", "overdue"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Overdue invoices as of")
+	assert.Contains(t, stdout.String(), "Total overdue: 750.25")
+	assert.Contains(t, stdout.String(), "INV-00009")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reminders", "send", "--invoice-id", " inv-9 ", "--message", " Pay now ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"invoice_id": "inv-9"`)
+	assert.Contains(t, stdout.String(), `"reminder_id": "rem-9"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reminders", "send-bulk", "--invoice-id", " inv-9 ", "--invoice-id", " inv-10 ", "--message", " Bulk note ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"total_requested": 2`)
+	assert.Contains(t, stdout.String(), `"successful": 2`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reminders", "history", "--invoice-id", " inv-9 ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "rem-9"`)
+	assert.Contains(t, stdout.String(), `"invoice_number": "INV-00009"`)
+
+	assert.Equal(t, map[string]int{
+		"overdue":   1,
+		"send":      1,
+		"send-bulk": 1,
+		"history":   1,
+	}, requestCounts)
+}
+
 func TestCLIReminderRuleBranches(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
