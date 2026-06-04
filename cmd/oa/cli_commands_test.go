@@ -6681,6 +6681,120 @@ func TestCLIEmailCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Email sent")
 }
 
+func TestCLIEmailSMTPBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	requestCounts := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/settings/smtp":
+			requestCounts["get"]++
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"smtp_host":       "smtp.branch.example.com",
+				"smtp_port":       465,
+				"smtp_username":   "smtp-user",
+				"smtp_from_email": "branch@example.com",
+				"smtp_from_name":  "Branch Billing",
+				"smtp_use_tls":    true,
+			})
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/settings/smtp":
+			requestCounts["update"]++
+			var req email.UpdateSMTPConfigRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "smtp.trimmed.example.com", req.Host)
+			assert.Equal(t, 2526, req.Port)
+			assert.Equal(t, "smtp-user", req.Username)
+			assert.Equal(t, " secret ", req.Password)
+			assert.Equal(t, "branch@example.com", req.FromEmail)
+			assert.Equal(t, "Branch Billing", req.FromName)
+			assert.True(t, req.UseTLS)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/settings/smtp/test":
+			requestCounts["test"]++
+			var req email.TestSMTPRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "qa@example.com", req.RecipientEmail)
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "message": "Mailbox rejected test"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+	app, stdout, stderr := newTestCLIApp()
+
+	errorCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing subcommand", args: []string{"email", "smtp"}, want: "email smtp subcommand required"},
+		{name: "unknown subcommand", args: []string{"email", "smtp", "archive"}, want: `unknown email smtp subcommand "archive"`},
+		{name: "get invalid flag", args: []string{"email", "smtp", "get", "--bogus"}, want: "flag provided but not defined"},
+		{name: "update invalid flag", args: []string{"email", "smtp", "update", "--bogus"}, want: "flag provided but not defined"},
+		{name: "update missing host", args: []string{"email", "smtp", "update", "--from-email", "branch@example.com"}, want: "host is required"},
+		{name: "update missing from email", args: []string{"email", "smtp", "update", "--host", "smtp.example.com"}, want: "from-email is required"},
+		{name: "update invalid port", args: []string{"email", "smtp", "update", "--host", "smtp.example.com", "--from-email", "branch@example.com", "--port", "0"}, want: "port must be positive"},
+		{name: "test invalid flag", args: []string{"email", "smtp", "test", "--bogus"}, want: "flag provided but not defined"},
+		{name: "test missing recipient", args: []string{"email", "smtp", "test"}, want: "recipient-email is required"},
+	}
+	for _, tc := range errorCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			stderr.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	err := app.run(context.Background(), []string{"email", "smtp", "get"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "SMTP configuration")
+	assert.Contains(t, stdout.String(), "Host: smtp.branch.example.com")
+	assert.Contains(t, stdout.String(), "Configured: true")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"email", "smtp", "update",
+		"--host", " smtp.trimmed.example.com ",
+		"--port", " 2526 ",
+		"--username", " smtp-user ",
+		"--password", " secret ",
+		"--from-email", " branch@example.com ",
+		"--from-name", " Branch Billing ",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "updated"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"email", "smtp", "test", "--recipient-email", " qa@example.com ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"success": false`)
+	assert.Contains(t, stdout.String(), `"message": "Mailbox rejected test"`)
+
+	assert.Equal(t, map[string]int{
+		"get":    1,
+		"update": 1,
+		"test":   1,
+	}, requestCounts)
+}
+
 func TestCLIEmailTemplateBranches(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
