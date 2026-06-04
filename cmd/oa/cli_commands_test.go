@@ -5699,6 +5699,12 @@ func TestCLICloseCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"action": "close"`)
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"close", "events", "--limit", "10"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "ACTION")
+	assert.Contains(t, stdout.String(), "March close")
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"close", "period", "--period-end", "2026-03-31", "--note", "March close", "--reviewer-sign-off"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Closed period")
@@ -5706,9 +5712,20 @@ func TestCLICloseCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Reviewer sign-off: true")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"close", "period", "--period-end", "2026-03-31", "--note", "March close", "--reviewer-sign-off", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"event": {`)
+	assert.Contains(t, stdout.String(), `"reviewer_sign_off": true`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"close", "reopen", "--period-end", "2026-03-31", "--note", "Adjustments"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Reopened period")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"close", "reopen", "--period-end", "2026-03-31", "--note", "Adjustments", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"action": "reopen"`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"close", "year-end-status", "--period-end", "2025-12-31"})
@@ -5717,16 +5734,31 @@ func TestCLICloseCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Close-pack evidence compliant: true")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"close", "year-end-status", "--period-end", "2025-12-31", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"fiscal_year_label": "2025"`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"close", "year-end-pack", "--period-end", "2025-12-31"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Trial balance: debits 1000")
 	assert.Contains(t, stdout.String(), "Income statement: revenue 2000")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"close", "year-end-pack", "--period-end", "2025-12-31", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"trial_balance": {`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"close", "year-end-audit", "--period-end", "2025-12-31"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Close-pack audit evidence generated")
 	assert.Contains(t, stdout.String(), "close-pack.pdf")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"close", "year-end-audit", "--period-end", "2025-12-31", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"documents": [`)
 
 	stdout.Reset()
 	archivePath := filepath.Join(t.TempDir(), "year-end-audit.zip")
@@ -5738,14 +5770,68 @@ func TestCLICloseCommands(t *testing.T) {
 	assert.Equal(t, "zip-bytes", string(archiveBytes))
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"close", "year-end-archive", "--period-end", "2025-12-31", "--output", "-"})
+	require.NoError(t, err)
+	assert.Equal(t, "zip-bytes", stdout.String())
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"close", "carry-forward", "--period-end", "2025-12-31"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created year-end carry-forward JE-2026-001")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"close", "carry-forward", "--period-end", "2025-12-31", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"journal_entry": {`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"close", "reverse-carry-forward", "--period-end", "2025-12-31", "--reason", "Late supplier accrual"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Reversed year-end carry-forward JE-2026-002")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"close", "reverse-carry-forward", "--period-end", "2025-12-31", "--reason", "Late supplier accrual", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"reversal_journal_entry": {`)
+}
+
+func TestCLICloseCommandValidation(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown subcommand", args: []string{"legacy"}, want: `unknown close subcommand "legacy"`},
+		{name: "events invalid limit", args: []string{"events", "--limit", "101"}, want: "limit must be between 1 and 100"},
+		{name: "period missing period end", args: []string{"period"}, want: "period-end is required"},
+		{name: "reopen missing period end", args: []string{"reopen", "--note", "Adjustments"}, want: "period-end is required"},
+		{name: "reopen missing note", args: []string{"reopen", "--period-end", "2026-03-31"}, want: "note is required"},
+		{name: "year end status missing period end", args: []string{"year-end-status"}, want: "period-end is required"},
+		{name: "year end pack missing period end", args: []string{"year-end-pack"}, want: "period-end is required"},
+		{name: "year end audit missing period end", args: []string{"year-end-audit"}, want: "period-end is required"},
+		{name: "year end archive missing period end", args: []string{"year-end-archive"}, want: "period-end is required"},
+		{name: "carry forward missing period end", args: []string{"carry-forward"}, want: "period-end is required"},
+		{name: "reverse carry forward missing period end", args: []string{"reverse-carry-forward", "--reason", "Late supplier accrual"}, want: "period-end is required"},
+		{name: "reverse carry forward missing reason", args: []string{"reverse-carry-forward", "--period-end", "2025-12-31"}, want: "reason is required"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			app, _, _ := newTestCLIApp()
+			err := app.run(context.Background(), append([]string{"close"}, tc.args...))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
 }
 
 func TestCLIBankingCommands(t *testing.T) {
