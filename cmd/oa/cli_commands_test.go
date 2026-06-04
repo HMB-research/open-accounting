@@ -9845,6 +9845,22 @@ func TestCLITaxOSSValidationBranches(t *testing.T) {
 	}
 }
 
+func cliDocumentPayload(id, reviewStatus string) map[string]any {
+	return map[string]any{
+		"id":            id,
+		"tenant_id":     "tenant-1",
+		"entity_type":   documents.EntityTypeExpense,
+		"entity_id":     "exp-json",
+		"document_type": documents.DocumentTypeReceipt,
+		"file_name":     "receipt-json.pdf",
+		"content_type":  "application/pdf",
+		"file_size":     2048,
+		"review_status": reviewStatus,
+		"uploaded_by":   "user-json",
+		"created_at":    "2026-03-13T00:00:00Z",
+	}
+}
+
 func TestCLIDocumentCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
@@ -10229,6 +10245,222 @@ func TestCLIDocumentCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Deleted document doc-2")
 	assert.Equal(t, 2, retentionPatchCount)
+}
+
+func TestCLIDocumentBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	ctx := context.Background()
+	app, stdout, _ := newTestCLIApp()
+	for _, tt := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown subcommand", args: []string{"archive"}, want: `unknown documents subcommand "archive"`},
+		{name: "list missing entity", args: []string{"list", "--entity-type", "payment"}, want: "entity-type and entity-id are required"},
+		{name: "review summary missing entity type", args: []string{"review-summary", "--entity-id", "pay-1"}, want: "entity-type is required"},
+		{name: "review summary missing entity ids", args: []string{"review-summary", "--entity-type", "payment"}, want: "at least one entity-id is required"},
+		{name: "review queue invalid limit", args: []string{"review-queue", "--limit", "-1"}, want: "limit must be zero or greater"},
+		{name: "evidence policy missing entity type", args: []string{"evidence-policy", "--entity-id", "pay-1"}, want: "entity-type is required"},
+		{name: "evidence policy missing entity ids", args: []string{"evidence-policy", "--entity-type", "payment"}, want: "at least one entity-id is required"},
+		{name: "evidence policy invalid min count", args: []string{"evidence-policy", "--entity-type", "payment", "--entity-id", "pay-1", "--min-count", "0"}, want: "min-count must be one or greater"},
+		{name: "retention invalid horizon", args: []string{"retention", "--horizon-days", "-1"}, want: "horizon-days must be zero or greater"},
+		{name: "retention set missing id", args: []string{"retention-set", "--retention-until", "2028-03-31"}, want: "id is required"},
+		{name: "retention set conflicting clear and date", args: []string{"retention-set", "--id", "doc-1", "--retention-until", "2028-03-31", "--clear"}, want: "retention-until cannot be combined with clear"},
+		{name: "retention set missing date", args: []string{"retention-set", "--id", "doc-1"}, want: "retention-until is required unless clear is set"},
+		{name: "retention set invalid date", args: []string{"retention-set", "--id", "doc-1", "--retention-until", "bad-date"}, want: "parse retention-until"},
+		{name: "upload missing required fields", args: []string{"upload", "--entity-type", "expense", "--entity-id", "exp-1"}, want: "entity-type, entity-id, and file are required"},
+		{name: "upload invalid retention date", args: []string{"upload", "--entity-type", "expense", "--entity-id", "exp-1", "--file", "missing.txt", "--retention-until", "bad-date"}, want: "parse retention-until"},
+		{name: "upload negative retention years", args: []string{"upload", "--entity-type", "expense", "--entity-id", "exp-1", "--file", "missing.txt", "--retention-years", "-1"}, want: "retention-years must be zero or greater"},
+		{name: "upload excessive retention years", args: []string{"upload", "--entity-type", "expense", "--entity-id", "exp-1", "--file", "missing.txt", "--retention-years", "101"}, want: "retention-years cannot exceed 100"},
+		{name: "upload missing file", args: []string{"upload", "--entity-type", "expense", "--entity-id", "exp-1", "--file", "missing.txt"}, want: "read file missing.txt"},
+		{name: "download missing id", args: []string{"download"}, want: "id is required"},
+		{name: "mark reviewed missing id", args: []string{"mark-reviewed"}, want: "id is required"},
+		{name: "review missing status", args: []string{"review", "--id", "doc-1"}, want: "id and status are required"},
+		{name: "delete missing id", args: []string{"delete"}, want: "id is required"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := app.runDocuments(ctx, tt.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tt.want)
+		})
+	}
+
+	uploadPath := writeTempCSV(t, "receipt-json.pdf", "pdf-ish")
+	retentionPatchCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/documents":
+			assert.Equal(t, documents.EntityTypeExpense, r.URL.Query().Get("entity_type"))
+			assert.Equal(t, "exp-json", r.URL.Query().Get("entity_id"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				cliDocumentPayload("doc-json-list", documents.ReviewStatusPending),
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents/review-summary":
+			var req documentReviewSummaryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, documents.EntityTypeExpense, req.EntityType)
+			assert.Equal(t, []string{"exp-json"}, req.EntityIDs)
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"entity_type":          documents.EntityTypeExpense,
+				"entity_id":            "exp-json",
+				"total_count":          1,
+				"pending_review_count": 0,
+				"reviewed_count":       1,
+				"approved_count":       1,
+				"rejected_count":       0,
+				"missing_evidence":     false,
+				"has_pending_review":   false,
+				"has_rejected":         false,
+			}})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/documents/review-queue":
+			assert.Equal(t, documents.ReviewStatusPending, r.URL.Query().Get("review_status"))
+			assert.Equal(t, "50", r.URL.Query().Get("limit"))
+			assert.Empty(t, r.URL.Query().Get("entity_type"))
+			assert.Empty(t, r.URL.Query().Get("document_type"))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"review_status":        documents.ReviewStatusPending,
+				"limit":                50,
+				"total_count":          1,
+				"pending_review_count": 1,
+				"reviewed_count":       0,
+				"approved_count":       0,
+				"rejected_count":       0,
+				"documents": []map[string]any{
+					cliDocumentPayload("doc-json-queue", documents.ReviewStatusPending),
+				},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents/evidence-policy":
+			var req documents.EvidencePolicyRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, documents.EntityTypeExpense, req.EntityType)
+			assert.Equal(t, []string{"exp-json"}, req.EntityIDs)
+			require.Len(t, req.Rules, 1)
+			assert.Equal(t, []string{documents.DocumentTypeReceipt}, req.Rules[0].DocumentTypes)
+			assert.Equal(t, 2, req.Rules[0].MinCount)
+			assert.False(t, req.Rules[0].RequireApproved)
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"entity_type":                   documents.EntityTypeExpense,
+				"entity_id":                     "exp-json",
+				"compliant":                     true,
+				"total_count":                   2,
+				"pending_review_count":          0,
+				"reviewed_count":                1,
+				"approved_count":                1,
+				"rejected_count":                0,
+				"missing_evidence":              false,
+				"document_type_counts":          map[string]int{documents.DocumentTypeReceipt: 2},
+				"approved_document_type_counts": map[string]int{documents.DocumentTypeReceipt: 1},
+				"rule_results": []map[string]any{{
+					"rule_index":              1,
+					"document_types":          []string{documents.DocumentTypeReceipt},
+					"required_count":          2,
+					"matching_count":          2,
+					"approved_matching_count": 1,
+					"accepted_count":          2,
+					"require_approved":        false,
+					"compliant":               true,
+				}},
+				"violations": []map[string]any{},
+			}})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/documents/retention":
+			assert.Empty(t, r.URL.Query().Get("as_of"))
+			assert.Equal(t, "30", r.URL.Query().Get("horizon_days"))
+			assert.Empty(t, r.URL.Query().Get("include_missing"))
+			doc := cliDocumentPayload("doc-json-retention", documents.ReviewStatusPending)
+			doc["retention_until"] = "2027-03-31T00:00:00Z"
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"as_of_date":              "2027-03-01",
+				"cutoff_date":             "2027-03-31",
+				"total_count":             1,
+				"expired_count":           0,
+				"due_soon_count":          1,
+				"missing_retention_count": 0,
+				"pending_review_count":    1,
+				"rejected_count":          0,
+				"documents":               []map[string]any{doc},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents":
+			require.NoError(t, r.ParseMultipartForm(2<<20))
+			assert.Equal(t, documents.EntityTypeExpense, r.FormValue("entity_type"))
+			assert.Equal(t, "exp-json", r.FormValue("entity_id"))
+			assert.Equal(t, documents.DocumentTypeReceipt, r.FormValue("document_type"))
+			assert.Equal(t, "JSON receipt", r.FormValue("notes"))
+			assert.Equal(t, "2027-03-31", r.FormValue("retention_until"))
+			assert.Empty(t, r.FormValue("retention_years"))
+			file, header, err := r.FormFile("file")
+			require.NoError(t, err)
+			defer func() { _ = file.Close() }()
+			payload, err := io.ReadAll(file)
+			require.NoError(t, err)
+			assert.Equal(t, "receipt-json.pdf", header.Filename)
+			assert.Equal(t, "pdf-ish", string(payload))
+			doc := cliDocumentPayload("doc-json-upload", documents.ReviewStatusPending)
+			doc["notes"] = "JSON receipt"
+			doc["retention_until"] = "2027-03-31T00:00:00Z"
+			_ = json.NewEncoder(w).Encode(doc)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-json/download":
+			w.Header().Set("Content-Type", "text/plain")
+			w.Header().Set("Content-Disposition", `attachment; filename="receipt-json.txt"`)
+			_, _ = w.Write([]byte("download body"))
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-json/retention":
+			retentionPatchCount++
+			var req documentRetentionUpdateRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Empty(t, req.RetentionUntil)
+			assert.True(t, req.ClearRetention)
+			_ = json.NewEncoder(w).Encode(cliDocumentPayload("doc-json", documents.ReviewStatusPending))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-json/mark-reviewed":
+			_ = json.NewEncoder(w).Encode(cliDocumentPayload("doc-json", documents.ReviewStatusReviewed))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-json/review":
+			var req documents.ReviewDocumentRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, documents.ReviewStatusRejected, req.ReviewStatus)
+			assert.Equal(t, "Wrong receipt", req.ReviewNote)
+			doc := cliDocumentPayload("doc-json", documents.ReviewStatusRejected)
+			doc["review_note"] = "Wrong receipt"
+			_ = json.NewEncoder(w).Encode(doc)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	for _, tt := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "list json", args: []string{"documents", "list", "--entity-type", "expense", "--entity-id", "exp-json", "--json"}, want: `"id": "doc-json-list"`},
+		{name: "review summary json", args: []string{"documents", "review-summary", "--entity-type", "expense", "--entity-id", "exp-json", "--json"}, want: `"entity_id": "exp-json"`},
+		{name: "review queue json", args: []string{"documents", "review-queue", "--json"}, want: `"id": "doc-json-queue"`},
+		{name: "evidence policy json", args: []string{"documents", "evidence-policy", "--entity-type", "expense", "--entity-id", "exp-json", "--required-document-type", "receipt", "--min-count", "2", "--json"}, want: `"required_count": 2`},
+		{name: "retention json", args: []string{"documents", "retention", "--json"}, want: `"cutoff_date": "2027-03-31"`},
+		{name: "upload json", args: []string{"documents", "upload", "--entity-type", "expense", "--entity-id", "exp-json", "--file", uploadPath, "--document-type", "receipt", "--notes", "JSON receipt", "--retention-until", "2027-03-31", "--json"}, want: `"id": "doc-json-upload"`},
+		{name: "retention set json clear", args: []string{"documents", "retention-set", "--id", "doc-json", "--clear", "--json"}, want: `"id": "doc-json"`},
+		{name: "mark reviewed json", args: []string{"documents", "mark-reviewed", "--id", "doc-json", "--json"}, want: `"review_status": "REVIEWED"`},
+		{name: "review json", args: []string{"documents", "review", "--id", "doc-json", "--status", "rejected", "--note", "Wrong receipt", "--json"}, want: `"review_status": "REJECTED"`},
+		{name: "download stdout", args: []string{"documents", "download", "--id", "doc-json", "--output", "-"}, want: "download body"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout.Reset()
+			require.NoError(t, app.run(ctx, tt.args))
+			assert.Contains(t, stdout.String(), tt.want)
+		})
+	}
+	assert.Equal(t, 1, retentionPatchCount)
 }
 
 func TestCLIHelperFunctionsAndErrors(t *testing.T) {
