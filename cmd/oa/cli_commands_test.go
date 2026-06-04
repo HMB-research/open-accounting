@@ -10427,6 +10427,47 @@ func TestCLICashFlowMappingValidationBranches(t *testing.T) {
 	}
 }
 
+func cliEmployeePayload(firstName, lastName string, active bool) map[string]any {
+	return map[string]any{
+		"id":                     "emp-1",
+		"tenant_id":              "tenant-1",
+		"employee_number":        "EMP-001",
+		"first_name":             firstName,
+		"last_name":              lastName,
+		"personal_code":          "49001010001",
+		"email":                  "mari@example.com",
+		"phone":                  "+372 555 1234",
+		"address":                "Tallinn",
+		"bank_account":           "EE471000001020145685",
+		"start_date":             "2026-01-15T00:00:00Z",
+		"position":               "Accountant",
+		"department":             "Finance",
+		"employment_type":        "FULL_TIME",
+		"tax_residency":          "EE",
+		"apply_basic_exemption":  true,
+		"basic_exemption_amount": "700.00",
+		"funded_pension_rate":    "0.02",
+		"is_active":              active,
+		"created_at":             "2026-01-15T00:00:00Z",
+		"updated_at":             "2026-01-15T00:00:00Z",
+	}
+}
+
+func cliSalaryComponentPayload(name string, taxable, recurring bool) map[string]any {
+	return map[string]any{
+		"id":             "comp-1",
+		"tenant_id":      "tenant-1",
+		"employee_id":    "emp-1",
+		"component_type": "SECONDARY_EMPLOYMENT",
+		"name":           name,
+		"amount":         "600.00",
+		"is_taxable":     taxable,
+		"is_recurring":   recurring,
+		"effective_from": "2026-03-01T00:00:00Z",
+		"created_at":     "2026-03-01T00:00:00Z",
+	}
+}
+
 func TestCLIEmployeesCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
@@ -10438,43 +10479,7 @@ func TestCLIEmployeesCommands(t *testing.T) {
 	}))
 
 	employeesFile := writeTempCSV(t, "employees.csv", "employee_number,first_name,last_name,start_date,base_salary\nEMP-001,Mari,Maasikas,2026-01-15,3200\n")
-	employeePayload := func(firstName, lastName string, active bool) map[string]any {
-		return map[string]any{
-			"id":                     "emp-1",
-			"tenant_id":              "tenant-1",
-			"employee_number":        "EMP-001",
-			"first_name":             firstName,
-			"last_name":              lastName,
-			"personal_code":          "49001010001",
-			"email":                  "mari@example.com",
-			"phone":                  "+372 555 1234",
-			"address":                "Tallinn",
-			"bank_account":           "EE471000001020145685",
-			"start_date":             "2026-01-15T00:00:00Z",
-			"position":               "Accountant",
-			"department":             "Finance",
-			"employment_type":        "FULL_TIME",
-			"tax_residency":          "EE",
-			"apply_basic_exemption":  true,
-			"basic_exemption_amount": "700.00",
-			"funded_pension_rate":    "0.02",
-			"is_active":              active,
-			"created_at":             "2026-01-15T00:00:00Z",
-			"updated_at":             "2026-01-15T00:00:00Z",
-		}
-	}
-	salaryComponentPayload := map[string]any{
-		"id":             "comp-1",
-		"tenant_id":      "tenant-1",
-		"employee_id":    "emp-1",
-		"component_type": "SECONDARY_EMPLOYMENT",
-		"name":           "Evening contract",
-		"amount":         "600.00",
-		"is_taxable":     true,
-		"is_recurring":   true,
-		"effective_from": "2026-03-01T00:00:00Z",
-		"created_at":     "2026-03-01T00:00:00Z",
-	}
+	salaryComponentPayload := cliSalaryComponentPayload("Evening contract", true, true)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -10483,16 +10488,16 @@ func TestCLIEmployeesCommands(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/employees":
 			require.Equal(t, "true", r.URL.Query().Get("active_only"))
-			_ = json.NewEncoder(w).Encode([]map[string]any{employeePayload("Mari", "Maasikas", true)})
+			_ = json.NewEncoder(w).Encode([]map[string]any{cliEmployeePayload("Mari", "Maasikas", true)})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/employees":
 			var req payroll.CreateEmployeeRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "Mari", req.FirstName)
 			assert.Equal(t, "Maasikas", req.LastName)
 			assert.Equal(t, payroll.EmploymentFullTime, req.EmploymentType)
-			_ = json.NewEncoder(w).Encode(employeePayload(req.FirstName, req.LastName, true))
+			_ = json.NewEncoder(w).Encode(cliEmployeePayload(req.FirstName, req.LastName, true))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-1":
-			_ = json.NewEncoder(w).Encode(employeePayload("Mari", "Maasikas", true))
+			_ = json.NewEncoder(w).Encode(cliEmployeePayload("Mari", "Maasikas", true))
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-1":
 			var req payroll.UpdateEmployeeRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -10502,7 +10507,7 @@ func TestCLIEmployeesCommands(t *testing.T) {
 			assert.False(t, *req.ApplyBasicExemption)
 			require.NotNil(t, req.IsActive)
 			assert.True(t, *req.IsActive)
-			_ = json.NewEncoder(w).Encode(employeePayload("Maria", "Maasikas", true))
+			_ = json.NewEncoder(w).Encode(cliEmployeePayload("Maria", "Maasikas", true))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-1/salary":
 			var req map[string]any
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -10606,6 +10611,232 @@ func TestCLIEmployeesCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"employees", "import", "--file", employeesFile})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 employees, set 1 salaries, skipped 0 rows")
+}
+
+func TestCLIEmployeesBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing subcommand", args: nil, want: "employees subcommand required"},
+		{name: "unknown subcommand", args: []string{"legacy"}, want: `unknown employees subcommand "legacy"`},
+		{name: "list bad flag", args: []string{"list", "--bogus"}, want: "flag provided but not defined"},
+		{name: "create missing required", args: []string{"create", "--first-name", "Mari"}, want: "first-name, last-name, and start-date are required"},
+		{name: "create invalid start date", args: []string{"create", "--first-name", "Mari", "--last-name", "Maasikas", "--start-date", "soon"}, want: "parse start-date:"},
+		{name: "create invalid basic exemption amount", args: []string{"create", "--first-name", "Mari", "--last-name", "Maasikas", "--start-date", "2026-01-15", "--basic-exemption-amount", "seven"}, want: "parse basic-exemption-amount:"},
+		{name: "create invalid funded pension rate", args: []string{"create", "--first-name", "Mari", "--last-name", "Maasikas", "--start-date", "2026-01-15", "--funded-pension-rate", "two"}, want: "parse funded-pension-rate:"},
+		{name: "get missing id", args: []string{"get"}, want: "id is required"},
+		{name: "update missing id", args: []string{"update", "--first-name", "Mari"}, want: "id is required"},
+		{name: "update invalid end date", args: []string{"update", "--id", "emp-1", "--end-date", "later"}, want: "parse end-date:"},
+		{name: "update invalid basic exemption bool", args: []string{"update", "--id", "emp-1", "--apply-basic-exemption", "maybe"}, want: "parse apply-basic-exemption:"},
+		{name: "update invalid basic exemption amount", args: []string{"update", "--id", "emp-1", "--basic-exemption-amount", "many"}, want: "parse basic-exemption-amount:"},
+		{name: "update invalid funded pension rate", args: []string{"update", "--id", "emp-1", "--funded-pension-rate", "two"}, want: "parse funded-pension-rate:"},
+		{name: "update invalid active bool", args: []string{"update", "--id", "emp-1", "--active", "sometimes"}, want: "parse active:"},
+		{name: "set salary missing id", args: []string{"set-salary", "--amount", "3200", "--effective-from", "2026-03-01"}, want: "id is required"},
+		{name: "set salary missing amount", args: []string{"set-salary", "--id", "emp-1", "--effective-from", "2026-03-01"}, want: "amount is required"},
+		{name: "set salary invalid date", args: []string{"set-salary", "--id", "emp-1", "--amount", "3200", "--effective-from", "march"}, want: "parse effective-from:"},
+		{name: "salary components missing id", args: []string{"salary-components"}, want: "id is required"},
+		{name: "salary components invalid active on", args: []string{"salary-components", "--id", "emp-1", "--active-on", "today"}, want: "parse active-on:"},
+		{name: "add salary component missing id", args: []string{"add-salary-component", "--amount", "600", "--effective-from", "2026-03-01"}, want: "id is required"},
+		{name: "add salary component invalid amount", args: []string{"add-salary-component", "--id", "emp-1", "--amount", "bonus", "--effective-from", "2026-03-01"}, want: "parse amount:"},
+		{name: "add salary component missing effective from", args: []string{"add-salary-component", "--id", "emp-1", "--amount", "600"}, want: "effective-from is required"},
+		{name: "add salary component invalid effective to", args: []string{"add-salary-component", "--id", "emp-1", "--amount", "600", "--effective-from", "2026-03-01", "--effective-to", "forever"}, want: "parse effective-to:"},
+		{name: "import missing file", args: []string{"import"}, want: "file is required"},
+		{name: "import unreadable file", args: []string{"import", "--file", filepath.Join(t.TempDir(), "missing.csv")}, want: "read file"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), append([]string{"employees"}, tc.args...))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+
+	importFile := writeTempCSV(t, "employees-branch.csv", "employee_number,first_name,last_name,start_date,base_salary\nEMP-002,Jaan,Tamm,2026-02-01,2800\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/employees":
+			require.Equal(t, "", r.URL.Query().Get("active_only"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{cliEmployeePayload("Jaan", "Tamm", false)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/employees":
+			var req payroll.CreateEmployeeRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "EMP-002", req.EmployeeNumber)
+			assert.Equal(t, "Jaan", req.FirstName)
+			assert.Equal(t, "Tamm", req.LastName)
+			assert.Equal(t, "2026-02-01", req.StartDate.Format("2006-01-02"))
+			assert.Equal(t, payroll.EmploymentType("PART_TIME"), req.EmploymentType)
+			assert.False(t, req.ApplyBasicExemption)
+			assert.True(t, req.BasicExemptionAmount.Equal(decimal.Zero))
+			assert.True(t, req.FundedPensionRate.Equal(decimal.RequireFromString("0.03")))
+			payload := cliEmployeePayload(req.FirstName, req.LastName, true)
+			payload["employee_number"] = req.EmployeeNumber
+			_ = json.NewEncoder(w).Encode(payload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-2":
+			_ = json.NewEncoder(w).Encode(cliEmployeePayload("Jaan", "Tamm", true))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-2":
+			var req payroll.UpdateEmployeeRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "EMP-003", req.EmployeeNumber)
+			assert.Equal(t, "Jaan", req.FirstName)
+			assert.Equal(t, "Kask", req.LastName)
+			assert.Equal(t, "Developer", req.Position)
+			assert.Equal(t, "Engineering", req.Department)
+			assert.Equal(t, payroll.EmploymentType("CONTRACT"), req.EmploymentType)
+			require.NotNil(t, req.EndDate)
+			assert.Equal(t, "2026-12-31", req.EndDate.Format("2006-01-02"))
+			require.NotNil(t, req.ApplyBasicExemption)
+			assert.True(t, *req.ApplyBasicExemption)
+			require.NotNil(t, req.BasicExemptionAmount)
+			assert.True(t, req.BasicExemptionAmount.Equal(decimal.RequireFromString("500.00")))
+			require.NotNil(t, req.FundedPensionRate)
+			assert.True(t, req.FundedPensionRate.Equal(decimal.RequireFromString("0.04")))
+			require.NotNil(t, req.IsActive)
+			assert.False(t, *req.IsActive)
+			payload := cliEmployeePayload(req.FirstName, req.LastName, false)
+			payload["employee_number"] = req.EmployeeNumber
+			_ = json.NewEncoder(w).Encode(payload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-2/salary":
+			var req map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2800", req["amount"])
+			assert.Contains(t, req["effective_from"], "2026-02-01")
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "salary updated"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-2/salary-components":
+			require.Equal(t, "", r.URL.Query().Get("active_on"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{cliSalaryComponentPayload("Branch bonus", false, false)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-2/salary-components":
+			var req payroll.CreateSalaryComponentRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, payroll.SalaryComponentBonus, req.ComponentType)
+			assert.Equal(t, "Branch bonus", req.Name)
+			assert.True(t, req.Amount.Equal(decimal.NewFromInt(500)))
+			require.NotNil(t, req.IsTaxable)
+			assert.False(t, *req.IsTaxable)
+			require.NotNil(t, req.IsRecurring)
+			assert.False(t, *req.IsRecurring)
+			require.NotNil(t, req.EffectiveTo)
+			assert.Equal(t, "2026-12-31", req.EffectiveTo.Format("2006-01-02"))
+			payload := cliSalaryComponentPayload(req.Name, false, false)
+			payload["effective_to"] = "2026-12-31T00:00:00Z"
+			_ = json.NewEncoder(w).Encode(payload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/employees/import":
+			var req payroll.ImportEmployeesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "employees-branch.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "EMP-002")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"file_name":         req.FileName,
+				"rows_processed":    2,
+				"employees_created": 1,
+				"salaries_created":  0,
+				"rows_skipped":      1,
+				"errors": []map[string]any{
+					{"row": 2, "employee_number": "EMP-404", "message": "missing first name"},
+				},
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	stdout.Reset()
+	err := app.run(context.Background(), []string{"employees", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Jaan Tamm")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"employees", "create",
+		"--employee-number", " EMP-002 ",
+		"--first-name", " Jaan ",
+		"--last-name", " Tamm ",
+		"--start-date", "2026-02-01",
+		"--employment-type", "part_time",
+		"--apply-basic-exemption=false",
+		"--funded-pension-rate", "0.03",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"employee_number": "EMP-002"`)
+	assert.Contains(t, stdout.String(), `"first_name": "Jaan"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"employees", "get", "--id", " emp-2 ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"first_name": "Jaan"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"employees", "update",
+		"--id", " emp-2 ",
+		"--employee-number", " EMP-003 ",
+		"--first-name", " Jaan ",
+		"--last-name", " Kask ",
+		"--position", " Developer ",
+		"--department", " Engineering ",
+		"--employment-type", "contract",
+		"--end-date", "2026-12-31",
+		"--apply-basic-exemption", "true",
+		"--basic-exemption-amount", "500.00",
+		"--funded-pension-rate", "0.04",
+		"--active", "false",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"last_name": "Kask"`)
+	assert.Contains(t, stdout.String(), `"is_active": false`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"employees", "set-salary", "--id", " emp-2 ", "--amount", "2800", "--effective-from", "2026-02-01", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "salary updated"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"employees", "salary-components", "--id", " emp-2 ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Branch bonus"`)
+	assert.Contains(t, stdout.String(), `"is_taxable": false`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"employees", "add-salary-component",
+		"--id", " emp-2 ",
+		"--type", "bonus",
+		"--name", " Branch bonus ",
+		"--amount", "500",
+		"--effective-from", "2026-02-01",
+		"--effective-to", "2026-12-31",
+		"--taxable=false",
+		"--recurring=false",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Branch bonus"`)
+	assert.Contains(t, stdout.String(), `"effective_to": "2026-12-31T00:00:00Z"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"employees", "import", "--file", importFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"rows_skipped": 1`)
+	assert.Contains(t, stdout.String(), `"message": "missing first name"`)
 }
 
 func TestCLIPayrollRunCommands(t *testing.T) {
