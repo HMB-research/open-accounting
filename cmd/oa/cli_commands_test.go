@@ -6028,6 +6028,167 @@ func TestCLIReminderCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Seven days overdue")
 }
 
+func TestCLIReminderRuleBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	now := "2026-03-15T12:00:00Z"
+	rulePayload := func(id, name string, active bool) map[string]any {
+		return map[string]any{
+			"id":                  id,
+			"tenant_id":           "tenant-1",
+			"name":                name,
+			"trigger_type":        "BEFORE_DUE",
+			"days_offset":         3,
+			"email_template_type": "CUSTOM_TEMPLATE",
+			"is_active":           active,
+			"created_at":          now,
+			"updated_at":          now,
+		}
+	}
+	triggerPayload := []map[string]any{{
+		"tenant_id":      "tenant-1",
+		"rule_id":        "rule-1",
+		"rule_name":      "Trimmed rule",
+		"invoices_found": 3,
+		"reminders_sent": 2,
+		"skipped":        1,
+		"failed":         0,
+		"run_at":         now,
+	}}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reminder-rules":
+			_ = json.NewEncoder(w).Encode([]map[string]any{rulePayload("rule-1", "Trimmed rule", false)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/reminder-rules":
+			var req invoicing.CreateReminderRuleRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Trimmed rule", req.Name)
+			assert.Equal(t, invoicing.TriggerBeforeDue, req.TriggerType)
+			assert.Equal(t, 3, req.DaysOffset)
+			assert.Equal(t, "CUSTOM_TEMPLATE", req.EmailTemplateType)
+			assert.False(t, req.IsActive)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(rulePayload("rule-1", "Trimmed rule", false))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reminder-rules/rule-1":
+			_ = json.NewEncoder(w).Encode(rulePayload("rule-1", "Trimmed rule", false))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/reminder-rules/rule-1":
+			var req invoicing.UpdateReminderRuleRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.NotNil(t, req.Name)
+			assert.Equal(t, "Updated JSON rule", *req.Name)
+			require.NotNil(t, req.EmailTemplateType)
+			assert.Equal(t, "FOLLOW_UP", *req.EmailTemplateType)
+			require.NotNil(t, req.IsActive)
+			assert.True(t, *req.IsActive)
+			_ = json.NewEncoder(w).Encode(rulePayload("rule-1", "Updated JSON rule", true))
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/reminder-rules/rule-1":
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/reminder-rules/trigger":
+			_ = json.NewEncoder(w).Encode(triggerPayload)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+	app, stdout, _ := newTestCLIApp()
+
+	errorCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown subcommand", args: []string{"reminders", "rules", "archive"}, want: `unknown reminders rules subcommand "archive"`},
+		{name: "create missing name", args: []string{"reminders", "rules", "create", "--trigger-type", "after_due", "--days-offset", "3"}, want: "name is required"},
+		{name: "create missing trigger", args: []string{"reminders", "rules", "create", "--name", "Rule", "--days-offset", "3"}, want: "trigger-type is required"},
+		{name: "create invalid trigger", args: []string{"reminders", "rules", "create", "--name", "Rule", "--trigger-type", "weekly", "--days-offset", "3"}, want: `invalid reminder trigger type "weekly"`},
+		{name: "create missing days offset", args: []string{"reminders", "rules", "create", "--name", "Rule", "--trigger-type", "after_due"}, want: "days-offset is required"},
+		{name: "create invalid days offset", args: []string{"reminders", "rules", "create", "--name", "Rule", "--trigger-type", "after_due", "--days-offset", "soon"}, want: "parse days-offset:"},
+		{name: "create negative days offset", args: []string{"reminders", "rules", "create", "--name", "Rule", "--trigger-type", "after_due", "--days-offset=-1"}, want: "days-offset must be non-negative"},
+		{name: "create invalid active", args: []string{"reminders", "rules", "create", "--name", "Rule", "--trigger-type", "after_due", "--days-offset", "3", "--active", "maybe"}, want: "parse active:"},
+		{name: "get missing id", args: []string{"reminders", "rules", "get"}, want: "id is required"},
+		{name: "update missing id", args: []string{"reminders", "rules", "update", "--name", "Rule"}, want: "id is required"},
+		{name: "update missing fields", args: []string{"reminders", "rules", "update", "--id", "rule-1"}, want: "name, template-type, or active is required"},
+		{name: "update invalid active", args: []string{"reminders", "rules", "update", "--id", "rule-1", "--active", "maybe"}, want: "parse active:"},
+		{name: "delete missing id", args: []string{"reminders", "rules", "delete"}, want: "id is required"},
+	}
+	for _, tc := range errorCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	stdout.Reset()
+	err := app.run(context.Background(), []string{"reminders", "rules", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Trimmed rule")
+	assert.Contains(t, stdout.String(), "BEFORE_DUE")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reminders", "rules", "list", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "rule-1"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"reminders", "rules", "create",
+		"--name", " Trimmed rule ",
+		"--trigger-type", " before_due ",
+		"--days-offset", " 3 ",
+		"--template-type", " CUSTOM_TEMPLATE ",
+		"--active", " false ",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Trimmed rule"`)
+	assert.Contains(t, stdout.String(), `"is_active": false`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reminders", "rules", "get", "--id", " rule-1 ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Trimmed rule"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"reminders", "rules", "update",
+		"--id", " rule-1 ",
+		"--name", " Updated JSON rule ",
+		"--template-type", " FOLLOW_UP ",
+		"--active", " true ",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Updated JSON rule"`)
+	assert.Contains(t, stdout.String(), `"is_active": true`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reminders", "rules", "delete", "--id", " rule-1 ", "--json"})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"status":"deleted"}`, stdout.String())
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reminders", "rules", "trigger", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"rule_name": "Trimmed rule"`)
+	assert.Contains(t, stdout.String(), `"reminders_sent": 2`)
+}
+
 func TestCLIEmailCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
