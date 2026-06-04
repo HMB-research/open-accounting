@@ -6564,6 +6564,29 @@ func TestCLICloseCommandValidation(t *testing.T) {
 	}
 }
 
+func cliBankTransactionPayload(followUp string) map[string]any {
+	return map[string]any{
+		"id":                   "tx-1",
+		"tenant_id":            "tenant-1",
+		"bank_account_id":      "bank-1",
+		"transaction_date":     "2026-03-15T00:00:00Z",
+		"value_date":           "2026-03-16T00:00:00Z",
+		"amount":               "100.00",
+		"currency":             "EUR",
+		"description":          "Client payment",
+		"reference":            "REF-1",
+		"counterparty_name":    "Acme",
+		"counterparty_account": "EE111",
+		"status":               "UNMATCHED",
+		"follow_up_status":     followUp,
+		"review_note":          "Need receipt",
+		"matched_payment_id":   "pay-1",
+		"reconciliation_id":    "rec-1",
+		"imported_at":          "2026-03-15T12:00:00Z",
+		"external_id":          "ext-1",
+	}
+}
+
 func TestCLIBankingCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
@@ -6577,8 +6600,6 @@ func TestCLIBankingCommands(t *testing.T) {
 	bankAccountsFile := writeTempCSV(t, "bank-accounts.csv", "name,account_number,bank_name,swift_code,currency,gl_account_id,is_default,is_active\nReserve bank,EE999,LHV,LHVBEE22,EUR,acc-bank,false,true\n")
 	importFile := writeTempCSV(t, "lhv-bank.csv", "Client account;Document number;Date;Beneficiary's/remitter's account;Beneficiary's/remitter's name;Debit/Credit (D/C);Amount;Reference number;Archival ID;Details;Currency;Personal identification code or registry code;Beneficiary's/remitter's bank's BIC;Payment initiator's name;Entry reference;Account service provider's reference\nEE457700771000676899;123;2026-03-15;EE111;Acme;C;100,00;REF-1;202603150001;Client payment;EUR;12345678;LHVBEE22;;ENTRY-1;ext-1\n")
 	glAccountID := "acc-bank"
-	paymentID := "pay-1"
-	reconciliationID := "rec-1"
 	accountPayload := func(active bool) map[string]any {
 		return map[string]any{
 			"id":             "bank-1",
@@ -6593,28 +6614,6 @@ func TestCLIBankingCommands(t *testing.T) {
 			"is_active":      active,
 			"created_at":     "2026-03-15T12:00:00Z",
 			"balance":        "100.00",
-		}
-	}
-	transactionPayload := func(followUp string) map[string]any {
-		return map[string]any{
-			"id":                   "tx-1",
-			"tenant_id":            "tenant-1",
-			"bank_account_id":      "bank-1",
-			"transaction_date":     "2026-03-15T00:00:00Z",
-			"value_date":           "2026-03-16T00:00:00Z",
-			"amount":               "100.00",
-			"currency":             "EUR",
-			"description":          "Client payment",
-			"reference":            "REF-1",
-			"counterparty_name":    "Acme",
-			"counterparty_account": "EE111",
-			"status":               "UNMATCHED",
-			"follow_up_status":     followUp,
-			"review_note":          "Need receipt",
-			"matched_payment_id":   paymentID,
-			"reconciliation_id":    reconciliationID,
-			"imported_at":          "2026-03-15T12:00:00Z",
-			"external_id":          "ext-1",
 		}
 	}
 	matchRulePayload := func(active bool) map[string]any {
@@ -6766,7 +6765,7 @@ func TestCLIBankingCommands(t *testing.T) {
 			require.Equal(t, "UNMATCHED", r.URL.Query().Get("status"))
 			require.Equal(t, "2026-03-01", r.URL.Query().Get("from_date"))
 			require.Equal(t, "2026-03-31", r.URL.Query().Get("to_date"))
-			_ = json.NewEncoder(w).Encode([]map[string]any{transactionPayload("EVIDENCE_REQUIRED")})
+			_ = json.NewEncoder(w).Encode([]map[string]any{cliBankTransactionPayload("EVIDENCE_REQUIRED")})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-1/import":
 			var req banking.ImportCSVRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -6784,7 +6783,7 @@ func TestCLIBankingCommands(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-1/import-history":
 			_ = json.NewEncoder(w).Encode([]map[string]any{importHistoryPayload})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-transactions/tx-1":
-			_ = json.NewEncoder(w).Encode(transactionPayload("EVIDENCE_REQUIRED"))
+			_ = json.NewEncoder(w).Encode(cliBankTransactionPayload("EVIDENCE_REQUIRED"))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-transactions/tx-1/suggestions":
 			_ = json.NewEncoder(w).Encode([]map[string]any{suggestionPayload})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-transactions/tx-1/match":
@@ -6801,7 +6800,7 @@ func TestCLIBankingCommands(t *testing.T) {
 			assert.Equal(t, banking.FollowUpReadyToMatch, *req.FollowUpStatus)
 			require.NotNil(t, req.ReviewNote)
 			assert.Equal(t, "Ready after receipt", *req.ReviewNote)
-			_ = json.NewEncoder(w).Encode(transactionPayload("READY_TO_MATCH"))
+			_ = json.NewEncoder(w).Encode(cliBankTransactionPayload("READY_TO_MATCH"))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-transactions/tx-1/create-payment":
 			_ = json.NewEncoder(w).Encode(map[string]string{"payment_id": "pay-created"})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-1/auto-match":
@@ -6959,6 +6958,213 @@ func TestCLIBankingCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"banking", "reconciliations", "complete", "--id", "rec-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Completed bank reconciliation rec-1")
+}
+
+func TestCLIBankTransactionBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	cfg := &cliConfig{TenantID: "tenant-1"}
+	ctx := context.Background()
+	invalidFormatFile := writeTempCSV(t, "bank-invalid.csv", "date,amount,description\n2026-03-15,10,Payment\n")
+
+	for _, tt := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing subcommand", args: nil, want: "banking transactions subcommand required"},
+		{name: "unknown subcommand", args: []string{"archive"}, want: `unknown banking transactions subcommand "archive"`},
+		{name: "list missing account", args: []string{"list"}, want: "account-id is required"},
+		{name: "list invalid status", args: []string{"list", "--account-id", "bank-1", "--status", "waiting"}, want: `invalid bank transaction status "waiting"`},
+		{name: "list invalid from date", args: []string{"list", "--account-id", "bank-1", "--from", "2026/03/01"}, want: "parse from"},
+		{name: "list invalid to date", args: []string{"list", "--account-id", "bank-1", "--to", "2026/03/31"}, want: "parse to"},
+		{name: "import missing account", args: []string{"import"}, want: "account-id is required"},
+		{name: "import missing file", args: []string{"import", "--account-id", "bank-1"}, want: "read file"},
+		{name: "import unreadable file", args: []string{"import", "--account-id", "bank-1", "--file", filepath.Join(t.TempDir(), "missing.csv")}, want: "no such file"},
+		{name: "import invalid format", args: []string{"import", "--account-id", "bank-1", "--file", invalidFormatFile, "--format", "legacy"}, want: "unsupported bank transaction import format"},
+		{name: "get missing id", args: []string{"get"}, want: "id is required"},
+		{name: "suggestions missing id", args: []string{"suggestions"}, want: "id is required"},
+		{name: "match missing id", args: []string{"match", "--payment-id", "pay-1"}, want: "id is required"},
+		{name: "match missing payment", args: []string{"match", "--id", "tx-1"}, want: "payment-id is required"},
+		{name: "unmatch missing id", args: []string{"unmatch"}, want: "id is required"},
+		{name: "review missing id", args: []string{"review", "--review-note", "Ready"}, want: "id is required"},
+		{name: "review invalid follow-up", args: []string{"review", "--id", "tx-1", "--follow-up-status", "later"}, want: `invalid bank follow-up status "later"`},
+		{name: "review missing update", args: []string{"review", "--id", "tx-1"}, want: "follow-up-status or review-note is required"},
+		{name: "create payment missing id", args: []string{"create-payment"}, want: "id is required"},
+		{name: "auto match missing account", args: []string{"auto-match"}, want: "account-id is required"},
+		{name: "auto match invalid confidence", args: []string{"auto-match", "--account-id", "bank-1", "--min-confidence", "many"}, want: "parse min-confidence"},
+		{name: "auto match confidence below range", args: []string{"auto-match", "--account-id", "bank-1", "--min-confidence", "-0.1"}, want: "min-confidence must be between 0 and 1"},
+		{name: "auto match confidence above range", args: []string{"auto-match", "--account-id", "bank-1", "--min-confidence", "1.1"}, want: "min-confidence must be between 0 and 1"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := app.runBankTransactions(ctx, cfg, &apiClient{}, tt.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tt.want)
+		})
+	}
+
+	genericImportFile := writeTempCSV(t, "bank-transactions-generic.csv", "date,value_date,amount,currency,source_account,description,reference,counterparty_name,counterparty_account,external_id\n2026-03-17,2026-03-18,-45.60,EUR,EE222,Card fee,REF-2,Vendor,EE333,ext-2\n")
+	importHistoryPayload := map[string]any{
+		"id":                    "import-branch",
+		"tenant_id":             "tenant-1",
+		"bank_account_id":       "bank-branch",
+		"file_name":             "bank-transactions-generic.csv",
+		"transactions_imported": 2,
+		"transactions_matched":  1,
+		"duplicates_skipped":    1,
+		"created_at":            "2026-03-17T12:00:00Z",
+	}
+	suggestionPayload := map[string]any{
+		"payment_id":     "pay-branch",
+		"payment_number": "PMT-00042",
+		"payment_date":   "2026-03-17T00:00:00Z",
+		"amount":         "45.60",
+		"contact_name":   "Vendor",
+		"reference":      "REF-2",
+		"confidence":     0.9,
+		"match_reason":   "Reference and amount match",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-branch/transactions":
+			require.Empty(t, r.URL.Query().Get("status"))
+			require.Empty(t, r.URL.Query().Get("from_date"))
+			require.Empty(t, r.URL.Query().Get("to_date"))
+			payload := cliBankTransactionPayload("NONE")
+			payload["id"] = "tx-branch"
+			payload["bank_account_id"] = "bank-branch"
+			payload["amount"] = "-45.60"
+			payload["description"] = "Card fee"
+			payload["reference"] = "REF-2"
+			payload["counterparty_name"] = "Vendor"
+			payload["counterparty_account"] = "EE333"
+			payload["matched_payment_id"] = ""
+			payload["reconciliation_id"] = ""
+			_ = json.NewEncoder(w).Encode([]map[string]any{payload})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-branch/import":
+			var req banking.ImportCSVRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "bank-transactions-generic.csv", req.FileName)
+			assert.False(t, req.SkipDuplicates)
+			require.Len(t, req.Transactions, 1)
+			assert.Equal(t, "2026-03-17", req.Transactions[0].Date)
+			assert.Equal(t, "-45.60", req.Transactions[0].Amount)
+			assert.Equal(t, "Card fee", req.Transactions[0].Description)
+			assert.Equal(t, "Vendor", req.Transactions[0].CounterpartyName)
+			assert.Equal(t, "EE333", req.Transactions[0].CounterpartyAccount)
+			assert.Equal(t, "ext-2", req.Transactions[0].ExternalID)
+			_ = json.NewEncoder(w).Encode(banking.ImportResult{
+				ImportID:             "import-branch",
+				TransactionsImported: 2,
+				TransactionsMatched:  1,
+				DuplicatesSkipped:    1,
+				Errors:               []string{"row 3 duplicate"},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-branch/import-history":
+			_ = json.NewEncoder(w).Encode([]map[string]any{importHistoryPayload})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-transactions/tx-branch":
+			payload := cliBankTransactionPayload("EVIDENCE_REQUIRED")
+			payload["id"] = "tx-branch"
+			payload["bank_account_id"] = "bank-branch"
+			payload["description"] = "Card fee"
+			_ = json.NewEncoder(w).Encode(payload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-transactions/tx-branch/suggestions":
+			_ = json.NewEncoder(w).Encode([]map[string]any{suggestionPayload})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-transactions/tx-branch/match":
+			var req banking.MatchTransactionRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "pay-branch", req.PaymentID)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "matched", "payment_id": "pay-branch"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-transactions/tx-branch/unmatch":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "unmatched"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-transactions/tx-branch/review":
+			var req banking.UpdateTransactionReviewRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Nil(t, req.FollowUpStatus)
+			require.NotNil(t, req.ReviewNote)
+			assert.Equal(t, "Ready after receipt", *req.ReviewNote)
+			payload := cliBankTransactionPayload("EVIDENCE_REQUIRED")
+			payload["id"] = "tx-branch"
+			payload["review_note"] = "Ready after receipt"
+			_ = json.NewEncoder(w).Encode(payload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-transactions/tx-branch/create-payment":
+			_ = json.NewEncoder(w).Encode(map[string]string{"payment_id": "pay-created-branch"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-branch/auto-match":
+			require.Equal(t, "1", r.URL.Query().Get("min_confidence"))
+			_ = json.NewEncoder(w).Encode(map[string]int{"matched": 2})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	err := app.run(ctx, []string{"banking", "transactions", "list", "--account-id", " bank-branch "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "tx-branch")
+	assert.Contains(t, stdout.String(), "Card fee")
+	assert.Contains(t, stdout.String(), "NONE")
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"banking", "transactions", "import", "--account-id", " bank-branch ", "--file", genericImportFile, "--format", "generic", "--skip-duplicates=false", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"import_id": "import-branch"`)
+	assert.Contains(t, stdout.String(), `"duplicates_skipped": 1`)
+	assert.Contains(t, stdout.String(), `"row 3 duplicate"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"banking", "transactions", "import-history", "--account-id", " bank-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"file_name": "bank-transactions-generic.csv"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"banking", "transactions", "get", "--id", " tx-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "tx-branch"`)
+	assert.Contains(t, stdout.String(), `"description": "Card fee"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"banking", "transactions", "suggestions", "--id", " tx-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"payment_number": "PMT-00042"`)
+	assert.Contains(t, stdout.String(), `"confidence": 0.9`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"banking", "transactions", "match", "--id", " tx-branch ", "--payment-id", " pay-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"payment_id": "pay-branch"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"banking", "transactions", "unmatch", "--id", " tx-branch "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Unmatched bank transaction tx-branch")
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"banking", "transactions", "review", "--id", " tx-branch ", "--review-note", " Ready after receipt ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"review_note": "Ready after receipt"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"banking", "transactions", "create-payment", "--id", " tx-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"payment_id": "pay-created-branch"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"banking", "transactions", "auto-match", "--account-id", " bank-branch ", "--min-confidence", "1", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"matched": 2`)
 }
 
 func TestCLIBankReconciliationBranches(t *testing.T) {
