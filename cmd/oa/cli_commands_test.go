@@ -2024,6 +2024,180 @@ func TestCLIAccountsCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 accounts, skipped 0 rows")
 }
 
+func TestCLIAccountsBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	importFile := writeTempCSV(t, "accounts-branch.csv", "code,name,type\n6100,Office Supplies,EXPENSE\n")
+	requestCounts := map[string]int{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/accounts":
+			requestCounts["list"]++
+			assert.Empty(t, r.URL.Query().Get("active_only"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"id":           "acc-branch",
+				"tenant_id":    "tenant-1",
+				"code":         "6100",
+				"name":         "Office Supplies",
+				"account_type": "EXPENSE",
+				"is_active":    false,
+			}})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/accounts/hierarchy":
+			requestCounts["hierarchy"]++
+			assert.Empty(t, r.URL.Query().Get("active_only"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"id":           "acc-branch",
+				"tenant_id":    "tenant-1",
+				"code":         "6100",
+				"name":         "Office Supplies",
+				"account_type": "EXPENSE",
+				"parent_code":  "6000",
+				"parent_name":  "Expenses",
+				"is_active":    false,
+				"path":         "6000/6100",
+				"depth":        1,
+				"has_children": false,
+			}})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/accounts":
+			requestCounts["create"]++
+			var req accounting.CreateAccountRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "6100", req.Code)
+			assert.Equal(t, "Office Supplies", req.Name)
+			assert.Equal(t, accounting.AccountTypeExpense, req.AccountType)
+			require.NotNil(t, req.ParentID)
+			assert.Equal(t, "parent-1", *req.ParentID)
+			assert.Equal(t, "Monthly office costs", req.Description)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":           "acc-branch",
+				"tenant_id":    "tenant-1",
+				"code":         req.Code,
+				"name":         req.Name,
+				"account_type": req.AccountType,
+				"parent_id":    req.ParentID,
+				"is_active":    true,
+				"description":  req.Description,
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/accounts/acc-branch":
+			requestCounts["get"]++
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":           "acc-branch",
+				"tenant_id":    "tenant-1",
+				"code":         "6100",
+				"name":         "Office Supplies",
+				"account_type": "EXPENSE",
+				"is_active":    true,
+				"is_system":    false,
+				"description":  "Monthly office costs",
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/accounts/import":
+			requestCounts["import"]++
+			var req accounting.ImportAccountsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "accounts-branch.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "Office Supplies")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed":   1,
+				"accounts_created": 1,
+				"rows_skipped":     0,
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+	app, stdout, stderr := newTestCLIApp()
+
+	errorCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown subcommand", args: []string{"accounts", "archive"}, want: `unknown accounts subcommand "archive"`},
+		{name: "list invalid flag", args: []string{"accounts", "list", "--bogus"}, want: "flag provided but not defined"},
+		{name: "hierarchy invalid flag", args: []string{"accounts", "hierarchy", "--bogus"}, want: "flag provided but not defined"},
+		{name: "create invalid flag", args: []string{"accounts", "create", "--bogus"}, want: "flag provided but not defined"},
+		{name: "get invalid flag", args: []string{"accounts", "get", "--bogus"}, want: "flag provided but not defined"},
+		{name: "import invalid flag", args: []string{"accounts", "import", "--bogus"}, want: "flag provided but not defined"},
+		{name: "create missing required", args: []string{"accounts", "create", "--code", "6100", "--type", "expense"}, want: "code, name, and type are required"},
+		{name: "create invalid type", args: []string{"accounts", "create", "--code", "6100", "--name", "Office Supplies", "--type", "cash"}, want: `invalid account type "cash"`},
+		{name: "get missing id", args: []string{"accounts", "get"}, want: "id is required"},
+		{name: "import missing file", args: []string{"accounts", "import"}, want: "file is required"},
+		{name: "import unreadable file", args: []string{"accounts", "import", "--file", filepath.Join(t.TempDir(), "missing.csv")}, want: "read file"},
+	}
+	for _, tc := range errorCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			stderr.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	err := app.run(context.Background(), []string{"accounts", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "6100")
+	assert.Contains(t, stdout.String(), "Office Supplies")
+	assert.Contains(t, stdout.String(), "false")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"accounts", "hierarchy", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"path": "6000/6100"`)
+	assert.Contains(t, stdout.String(), `"parent_code": "6000"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"accounts", "create",
+		"--code", " 6100 ",
+		"--name", " Office Supplies ",
+		"--type", " expense ",
+		"--parent-id", " parent-1 ",
+		"--description", " Monthly office costs ",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"code": "6100"`)
+	assert.Contains(t, stdout.String(), `"parent_id": "parent-1"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"accounts", "get", "--id", " acc-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "acc-branch"`)
+	assert.Contains(t, stdout.String(), `"description": "Monthly office costs"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"accounts", "import", "--file", importFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"rows_processed": 1`)
+	assert.Contains(t, stdout.String(), `"accounts_created": 1`)
+
+	assert.Equal(t, map[string]int{
+		"list":      1,
+		"hierarchy": 1,
+		"create":    1,
+		"get":       1,
+		"import":    1,
+	}, requestCounts)
+}
+
 func TestCLIInvoiceLifecycleCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
