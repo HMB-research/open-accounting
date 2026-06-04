@@ -3305,6 +3305,37 @@ func TestCLIAssetCategoryBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"status": "deleted"`)
 }
 
+func cliExpensePayload(status string) map[string]any {
+	payload := map[string]any{
+		"id":                 "expense-1",
+		"tenant_id":          "tenant-1",
+		"expense_number":     "EXP-00001",
+		"expense_date":       "2026-05-30T00:00:00Z",
+		"merchant":           "Office Store",
+		"description":        "Printer toner",
+		"employee_id":        "employee-1",
+		"contact_id":         "supplier-1",
+		"expense_account_id": "expense-account",
+		"payment_account_id": "cash-account",
+		"amount":             "120.50",
+		"currency":           "EUR",
+		"exchange_rate":      "1",
+		"base_amount":        "120.50",
+		"requires_receipt":   false,
+		"status":             status,
+		"created_at":         "2026-05-30T12:00:00Z",
+		"created_by":         "user-1",
+		"updated_at":         "2026-05-30T12:00:00Z",
+	}
+	if status == "POSTED" {
+		payload["journal_entry_id"] = "je-1"
+	}
+	if status == "REJECTED" {
+		payload["rejection_reason"] = "Need project code"
+	}
+	return payload
+}
+
 func TestCLIExpenseCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
@@ -3315,36 +3346,6 @@ func TestCLIExpenseCommands(t *testing.T) {
 		APIToken:   "oa_saved_token",
 	}))
 
-	expensePayload := func(status string) map[string]any {
-		payload := map[string]any{
-			"id":                 "expense-1",
-			"tenant_id":          "tenant-1",
-			"expense_number":     "EXP-00001",
-			"expense_date":       "2026-05-30T00:00:00Z",
-			"merchant":           "Office Store",
-			"description":        "Printer toner",
-			"employee_id":        "employee-1",
-			"contact_id":         "supplier-1",
-			"expense_account_id": "expense-account",
-			"payment_account_id": "cash-account",
-			"amount":             "120.50",
-			"currency":           "EUR",
-			"exchange_rate":      "1",
-			"base_amount":        "120.50",
-			"requires_receipt":   false,
-			"status":             status,
-			"created_at":         "2026-05-30T12:00:00Z",
-			"created_by":         "user-1",
-			"updated_at":         "2026-05-30T12:00:00Z",
-		}
-		if status == "POSTED" {
-			payload["journal_entry_id"] = "je-1"
-		}
-		if status == "REJECTED" {
-			payload["rejection_reason"] = "Need project code"
-		}
-		return payload
-	}
 	importFile := writeTempCSV(t, "expenses.csv", "expense_number,expense_date,merchant,expense_account_id,payment_account_id,amount,status\nEXP-IMP-1,2026-05-30,Office Store,expense-account,cash-account,120.50,DRAFT\n")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -3355,7 +3356,7 @@ func TestCLIExpenseCommands(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/expenses":
 			require.Equal(t, "DRAFT", r.URL.Query().Get("status"))
 			require.Equal(t, "25", r.URL.Query().Get("limit"))
-			_ = json.NewEncoder(w).Encode([]map[string]any{expensePayload("DRAFT")})
+			_ = json.NewEncoder(w).Encode([]map[string]any{cliExpensePayload("DRAFT")})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses":
 			var req expenses.CreateExpenseRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -3369,7 +3370,7 @@ func TestCLIExpenseCommands(t *testing.T) {
 			require.NotNil(t, req.RequiresReceipt)
 			assert.False(t, *req.RequiresReceipt)
 			w.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(w).Encode(expensePayload("DRAFT"))
+			_ = json.NewEncoder(w).Encode(cliExpensePayload("DRAFT"))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/import":
 			var req expenses.ImportExpensesRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -3381,18 +3382,18 @@ func TestCLIExpenseCommands(t *testing.T) {
 				ExpensesCreated: 1,
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/expense-1":
-			_ = json.NewEncoder(w).Encode(expensePayload("SUBMITTED"))
+			_ = json.NewEncoder(w).Encode(cliExpensePayload("SUBMITTED"))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/expense-1/submit":
-			_ = json.NewEncoder(w).Encode(expensePayload("SUBMITTED"))
+			_ = json.NewEncoder(w).Encode(cliExpensePayload("SUBMITTED"))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/expense-1/approve":
-			_ = json.NewEncoder(w).Encode(expensePayload("APPROVED"))
+			_ = json.NewEncoder(w).Encode(cliExpensePayload("APPROVED"))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/expense-1/post":
-			_ = json.NewEncoder(w).Encode(expensePayload("POSTED"))
+			_ = json.NewEncoder(w).Encode(cliExpensePayload("POSTED"))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/expense-1/reject":
 			var req expenses.RejectExpenseRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "Need project code", req.Reason)
-			_ = json.NewEncoder(w).Encode(expensePayload("REJECTED"))
+			_ = json.NewEncoder(w).Encode(cliExpensePayload("REJECTED"))
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -3451,6 +3452,159 @@ func TestCLIExpenseCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"expenses", "reject", "--id", "expense-1", "--reason", "Need project code"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Rejected expense expense-1")
+}
+
+func TestCLIExpenseBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing subcommand", args: nil, want: "expenses subcommand required"},
+		{name: "unknown subcommand", args: []string{"archive"}, want: `unknown expenses subcommand "archive"`},
+		{name: "list invalid status", args: []string{"list", "--status", "waiting"}, want: `invalid expense status "waiting"`},
+		{name: "create missing merchant", args: []string{"create"}, want: "merchant is required"},
+		{name: "create missing expense account", args: []string{"create", "--merchant", "Office Store"}, want: "expense-account-id is required"},
+		{name: "create missing payment account", args: []string{"create", "--merchant", "Office Store", "--expense-account-id", "expense-account"}, want: "payment-account-id is required"},
+		{name: "create missing date", args: []string{"create", "--merchant", "Office Store", "--expense-account-id", "expense-account", "--payment-account-id", "cash-account"}, want: "expense-date is required"},
+		{name: "create invalid date", args: []string{"create", "--merchant", "Office Store", "--expense-account-id", "expense-account", "--payment-account-id", "cash-account", "--expense-date", "2026/05/30"}, want: "parse expense-date"},
+		{name: "create missing amount", args: []string{"create", "--merchant", "Office Store", "--expense-account-id", "expense-account", "--payment-account-id", "cash-account", "--expense-date", "2026-05-30"}, want: "amount is required"},
+		{name: "create non-positive amount", args: []string{"create", "--merchant", "Office Store", "--expense-account-id", "expense-account", "--payment-account-id", "cash-account", "--expense-date", "2026-05-30", "--amount", "0"}, want: "amount must be positive"},
+		{name: "create invalid exchange rate", args: []string{"create", "--merchant", "Office Store", "--expense-account-id", "expense-account", "--payment-account-id", "cash-account", "--expense-date", "2026-05-30", "--amount", "10", "--exchange-rate", "many"}, want: "parse exchange-rate"},
+		{name: "create non-positive exchange rate", args: []string{"create", "--merchant", "Office Store", "--expense-account-id", "expense-account", "--payment-account-id", "cash-account", "--expense-date", "2026-05-30", "--amount", "10", "--exchange-rate", "0"}, want: "exchange-rate must be positive"},
+		{name: "import missing file", args: []string{"import"}, want: "file is required"},
+		{name: "import unreadable file", args: []string{"import", "--file", filepath.Join(t.TempDir(), "missing.csv")}, want: "no such file"},
+		{name: "get missing id", args: []string{"get"}, want: "id is required"},
+		{name: "submit missing id", args: []string{"submit"}, want: "id is required"},
+		{name: "approve missing id", args: []string{"approve"}, want: "id is required"},
+		{name: "post missing id", args: []string{"post"}, want: "id is required"},
+		{name: "reject missing id", args: []string{"reject"}, want: "id is required"},
+		{name: "reject missing reason", args: []string{"reject", "--id", "expense-1"}, want: "reason is required"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := app.runExpenses(ctx, tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+		})
+	}
+
+	importFile := writeTempCSV(t, "expenses-json.csv", "expense_number,expense_date,merchant,expense_account_id,payment_account_id,amount,status\nEXP-IMP-2,2026-05-31,Hotel,expense-account,cash-account,99.50,SUBMITTED\n")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/expenses":
+			require.Empty(t, r.URL.Query().Get("status"))
+			require.Equal(t, "100", r.URL.Query().Get("limit"))
+			postedPayload := cliExpensePayload("POSTED")
+			postedPayload["journal_entry_id"] = "je-branch"
+			postedPayload["requires_receipt"] = true
+			_ = json.NewEncoder(w).Encode([]map[string]any{postedPayload})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses":
+			var req expenses.CreateExpenseRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Office Store", req.Merchant)
+			assert.Equal(t, "Trimmed description", req.Description)
+			assert.Nil(t, req.EmployeeID)
+			assert.Nil(t, req.ContactID)
+			assert.Equal(t, "expense-account", req.ExpenseAccountID)
+			assert.Equal(t, "cash-account", req.PaymentAccountID)
+			assert.Equal(t, "USD", req.Currency)
+			assert.True(t, req.ExchangeRate.Equal(decimal.RequireFromString("1.25")))
+			require.NotNil(t, req.RequiresReceipt)
+			assert.True(t, *req.RequiresReceipt)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(cliExpensePayload("DRAFT"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/import":
+			var req expenses.ImportExpensesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "expenses-json.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "EXP-IMP-2")
+			_ = json.NewEncoder(w).Encode(expenses.ImportExpensesResult{
+				FileName:        "expenses-json.csv",
+				RowsProcessed:   2,
+				ExpensesCreated: 1,
+				RowsSkipped:     1,
+				Errors: []expenses.ImportExpensesRowError{
+					{Row: 2, ExpenseNumber: "EXP-IMP-ERR", Merchant: "Hotel", Message: "duplicate expense number"},
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/expense-1":
+			_ = json.NewEncoder(w).Encode(cliExpensePayload("APPROVED"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/expense-1/submit":
+			_ = json.NewEncoder(w).Encode(cliExpensePayload("SUBMITTED"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/expense-1/reject":
+			var req expenses.RejectExpenseRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Need project code", req.Reason)
+			_ = json.NewEncoder(w).Encode(cliExpensePayload("REJECTED"))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	err := app.run(ctx, []string{"expenses", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "EXP-00001")
+	assert.Contains(t, stdout.String(), "POSTED")
+	assert.Contains(t, stdout.String(), "je-branch")
+
+	stdout.Reset()
+	err = app.run(ctx, []string{
+		"expenses", "create",
+		"--merchant", " Office Store ",
+		"--description", " Trimmed description ",
+		"--expense-date", "2026-05-30",
+		"--expense-account-id", " expense-account ",
+		"--payment-account-id", " cash-account ",
+		"--amount", "120.50",
+		"--currency", " usd ",
+		"--exchange-rate", "1.25",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"expense_number": "EXP-00001"`)
+	assert.Contains(t, stdout.String(), `"status": "DRAFT"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"expenses", "import", "--file", importFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"file_name": "expenses-json.csv"`)
+	assert.Contains(t, stdout.String(), `"rows_skipped": 1`)
+	assert.Contains(t, stdout.String(), `"message": "duplicate expense number"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"expenses", "get", "--id", " expense-1 ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "APPROVED"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"expenses", "submit", "--id", " expense-1 ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "SUBMITTED"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"expenses", "reject", "--id", " expense-1 ", "--reason", " Need project code ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "REJECTED"`)
+	assert.Contains(t, stdout.String(), `"rejection_reason": "Need project code"`)
 }
 
 func TestCLIInventoryCommands(t *testing.T) {
