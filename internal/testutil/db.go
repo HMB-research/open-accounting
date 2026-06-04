@@ -98,7 +98,7 @@ func CreateTestTenant(t *testing.T, pool *pgxpool.Pool) *TestTenant {
 		testName = testName[:30]
 	}
 
-	slug := fmt.Sprintf("test_%s_%d", testName, time.Now().UnixNano()%100000)
+	slug := fmt.Sprintf("test_%s_%s", testName, strings.ReplaceAll(tenantID[:8], "-", ""))
 	schemaName := fmt.Sprintf("tenant_%s", strings.ReplaceAll(slug, "-", "_"))
 	name := fmt.Sprintf("Test Tenant %s", testName)
 
