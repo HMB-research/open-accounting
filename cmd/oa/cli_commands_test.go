@@ -108,6 +108,61 @@ func journalEntryPayload(id, number string, status accounting.JournalEntryStatus
 	}
 }
 
+func recurringInvoicePayload(id, name string, active bool) map[string]any {
+	return map[string]any{
+		"id":                       id,
+		"tenant_id":                "tenant-1",
+		"name":                     name,
+		"contact_id":               "contact-1",
+		"contact_name":             "Acme",
+		"invoice_type":             "SALES",
+		"currency":                 "EUR",
+		"frequency":                "MONTHLY",
+		"start_date":               "2026-03-15T00:00:00Z",
+		"end_date":                 "2026-12-31T00:00:00Z",
+		"next_generation_date":     "2026-04-15T00:00:00Z",
+		"payment_terms_days":       21,
+		"reference":                "RET-1",
+		"notes":                    "Monthly services",
+		"is_active":                active,
+		"generated_count":          2,
+		"created_at":               "2026-03-15T12:00:00Z",
+		"created_by":               "user-1",
+		"updated_at":               "2026-03-15T12:00:00Z",
+		"send_email_on_generation": true,
+		"email_template_type":      "INVOICE_SEND",
+		"recipient_email_override": "billing@example.com",
+		"attach_pdf_to_email":      true,
+		"email_subject_override":   "Monthly invoice",
+		"email_message":            "Please see attached invoice.",
+		"lines": []map[string]any{{
+			"id":                   "line-1",
+			"recurring_invoice_id": id,
+			"line_number":          1,
+			"description":          "Consulting",
+			"quantity":             "2.00",
+			"unit":                 "hour",
+			"unit_price":           "100.00",
+			"discount_percent":     "10.00",
+			"vat_rate":             "22.00",
+			"account_id":           "acc-1",
+			"product_id":           "prod-1",
+		}},
+	}
+}
+
+func recurringGenerationPayload(recurringID string) map[string]any {
+	return map[string]any{
+		"recurring_invoice_id":     recurringID,
+		"generated_invoice_id":     "inv-1",
+		"generated_invoice_number": "INV-00001",
+		"email_sent":               true,
+		"email_status":             "SENT",
+		"email_log_id":             "email-1",
+		"email_error":              "",
+	}
+}
+
 func writeTempOperatorScript(t *testing.T, dir, name string) {
 	t.Helper()
 
@@ -3602,57 +3657,7 @@ func TestCLIRecurringInvoiceCommands(t *testing.T) {
 		APIToken:   "oa_saved_token",
 	}))
 
-	recurringPayload := func(id, name string, active bool) map[string]any {
-		return map[string]any{
-			"id":                       id,
-			"tenant_id":                "tenant-1",
-			"name":                     name,
-			"contact_id":               "contact-1",
-			"contact_name":             "Acme",
-			"invoice_type":             "SALES",
-			"currency":                 "EUR",
-			"frequency":                "MONTHLY",
-			"start_date":               "2026-03-15T00:00:00Z",
-			"end_date":                 "2026-12-31T00:00:00Z",
-			"next_generation_date":     "2026-04-15T00:00:00Z",
-			"payment_terms_days":       21,
-			"reference":                "RET-1",
-			"notes":                    "Monthly services",
-			"is_active":                active,
-			"generated_count":          2,
-			"created_at":               "2026-03-15T12:00:00Z",
-			"created_by":               "user-1",
-			"updated_at":               "2026-03-15T12:00:00Z",
-			"send_email_on_generation": true,
-			"email_template_type":      "INVOICE_SEND",
-			"recipient_email_override": "billing@example.com",
-			"attach_pdf_to_email":      true,
-			"email_subject_override":   "Monthly invoice",
-			"email_message":            "Please see attached invoice.",
-			"lines": []map[string]any{{
-				"id":                   "line-1",
-				"recurring_invoice_id": id,
-				"line_number":          1,
-				"description":          "Consulting",
-				"quantity":             "2.00",
-				"unit":                 "hour",
-				"unit_price":           "100.00",
-				"discount_percent":     "10.00",
-				"vat_rate":             "22.00",
-				"account_id":           "acc-1",
-				"product_id":           "prod-1",
-			}},
-		}
-	}
-	generationPayload := map[string]any{
-		"recurring_invoice_id":     "rec-1",
-		"generated_invoice_id":     "inv-1",
-		"generated_invoice_number": "INV-00001",
-		"email_sent":               true,
-		"email_status":             "SENT",
-		"email_log_id":             "email-1",
-		"email_error":              "",
-	}
+	generationPayload := recurringGenerationPayload("rec-1")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -3661,7 +3666,7 @@ func TestCLIRecurringInvoiceCommands(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices":
 			require.Equal(t, "true", r.URL.Query().Get("active_only"))
-			_ = json.NewEncoder(w).Encode([]map[string]any{recurringPayload("rec-1", "Monthly retainer", true)})
+			_ = json.NewEncoder(w).Encode([]map[string]any{recurringInvoicePayload("rec-1", "Monthly retainer", true)})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices":
 			var req recurring.CreateRecurringInvoiceRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -3685,7 +3690,7 @@ func TestCLIRecurringInvoiceCommands(t *testing.T) {
 			require.NotNil(t, req.Lines[0].AccountID)
 			require.NotNil(t, req.Lines[0].ProductID)
 			w.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(w).Encode(recurringPayload("rec-1", "Monthly retainer", true))
+			_ = json.NewEncoder(w).Encode(recurringInvoicePayload("rec-1", "Monthly retainer", true))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/import":
 			var req recurring.ImportRecurringInvoicesRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -3706,9 +3711,9 @@ func TestCLIRecurringInvoiceCommands(t *testing.T) {
 			assert.Equal(t, "2026-04-01", req.StartDate.Format("2006-01-02"))
 			assert.Equal(t, 14, req.PaymentTermsDays)
 			w.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(w).Encode(recurringPayload("rec-2", "From invoice", true))
+			_ = json.NewEncoder(w).Encode(recurringInvoicePayload("rec-2", "From invoice", true))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/rec-1":
-			_ = json.NewEncoder(w).Encode(recurringPayload("rec-1", "Monthly retainer", true))
+			_ = json.NewEncoder(w).Encode(recurringInvoicePayload("rec-1", "Monthly retainer", true))
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/rec-1":
 			var req recurring.UpdateRecurringInvoiceRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -3724,7 +3729,7 @@ func TestCLIRecurringInvoiceCommands(t *testing.T) {
 			assert.False(t, *req.AttachPDFToEmail)
 			require.Len(t, req.Lines, 1)
 			assert.Equal(t, "Updated consulting", req.Lines[0].Description)
-			payload := recurringPayload("rec-1", "Quarterly retainer", true)
+			payload := recurringInvoicePayload("rec-1", "Quarterly retainer", true)
 			payload["frequency"] = "QUARTERLY"
 			payload["payment_terms_days"] = 30
 			payload["send_email_on_generation"] = false
@@ -3849,6 +3854,281 @@ func TestCLIRecurringInvoiceCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"recurring-invoices", "delete", "--id", "rec-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Deleted recurring invoice rec-1")
+}
+
+func TestCLIRecurringInvoiceBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	validationCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing subcommand", args: []string{"recurring-invoices"}, want: "recurring-invoices subcommand required"},
+		{name: "unknown subcommand", args: []string{"recurring-invoices", "unknown"}, want: `unknown recurring-invoices subcommand "unknown"`},
+		{name: "list bad flag", args: []string{"recurring-invoices", "list", "--unknown"}, want: "flag provided but not defined"},
+		{name: "create missing name", args: []string{"recurring-invoices", "create", "--contact-id", "contact-branch", "--frequency", "monthly", "--start-date", "2026-05-01", "--line", "description=Work,quantity=1,unit_price=100,vat_rate=22"}, want: "name is required"},
+		{name: "create missing contact", args: []string{"recurring-invoices", "create", "--name", "Branch", "--frequency", "monthly", "--start-date", "2026-05-01", "--line", "description=Work,quantity=1,unit_price=100,vat_rate=22"}, want: "contact-id is required"},
+		{name: "create invalid type", args: []string{"recurring-invoices", "create", "--name", "Branch", "--contact-id", "contact-branch", "--type", "memo", "--frequency", "monthly", "--start-date", "2026-05-01", "--line", "description=Work,quantity=1,unit_price=100,vat_rate=22"}, want: "invalid invoice type"},
+		{name: "create missing frequency", args: []string{"recurring-invoices", "create", "--name", "Branch", "--contact-id", "contact-branch", "--start-date", "2026-05-01", "--line", "description=Work,quantity=1,unit_price=100,vat_rate=22"}, want: "frequency is required"},
+		{name: "create bad start date", args: []string{"recurring-invoices", "create", "--name", "Branch", "--contact-id", "contact-branch", "--frequency", "monthly", "--start-date", "bad", "--line", "description=Work,quantity=1,unit_price=100,vat_rate=22"}, want: "parse start-date"},
+		{name: "create bad end date", args: []string{"recurring-invoices", "create", "--name", "Branch", "--contact-id", "contact-branch", "--frequency", "monthly", "--start-date", "2026-05-01", "--end-date", "bad", "--line", "description=Work,quantity=1,unit_price=100,vat_rate=22"}, want: "parse end-date"},
+		{name: "create bad payment terms", args: []string{"recurring-invoices", "create", "--name", "Branch", "--contact-id", "contact-branch", "--frequency", "monthly", "--start-date", "2026-05-01", "--payment-terms-days", "-1", "--line", "description=Work,quantity=1,unit_price=100,vat_rate=22"}, want: "payment-terms-days must be non-negative"},
+		{name: "create missing line", args: []string{"recurring-invoices", "create", "--name", "Branch", "--contact-id", "contact-branch", "--frequency", "monthly", "--start-date", "2026-05-01"}, want: "at least one line is required"},
+		{name: "create bad line", args: []string{"recurring-invoices", "create", "--name", "Branch", "--contact-id", "contact-branch", "--frequency", "monthly", "--start-date", "2026-05-01", "--line", "description=Work,quantity=0,unit_price=100,vat_rate=22"}, want: "line quantity"},
+		{name: "import missing file", args: []string{"recurring-invoices", "import"}, want: "file is required"},
+		{name: "import unreadable file", args: []string{"recurring-invoices", "import", "--file", filepath.Join(t.TempDir(), "missing.csv")}, want: "read file"},
+		{name: "from invoice missing invoice", args: []string{"recurring-invoices", "from-invoice", "--name", "Branch", "--frequency", "monthly", "--start-date", "2026-05-01"}, want: "invoice-id is required"},
+		{name: "from invoice missing name", args: []string{"recurring-invoices", "from-invoice", "--invoice-id", "inv-branch", "--frequency", "monthly", "--start-date", "2026-05-01"}, want: "name is required"},
+		{name: "from invoice invalid frequency", args: []string{"recurring-invoices", "from-invoice", "--invoice-id", "inv-branch", "--name", "Branch", "--frequency", "daily", "--start-date", "2026-05-01"}, want: "invalid recurring invoice frequency"},
+		{name: "from invoice bad start date", args: []string{"recurring-invoices", "from-invoice", "--invoice-id", "inv-branch", "--name", "Branch", "--frequency", "monthly", "--start-date", "bad"}, want: "parse start-date"},
+		{name: "from invoice bad end date", args: []string{"recurring-invoices", "from-invoice", "--invoice-id", "inv-branch", "--name", "Branch", "--frequency", "monthly", "--start-date", "2026-05-01", "--end-date", "bad"}, want: "parse end-date"},
+		{name: "from invoice bad payment terms", args: []string{"recurring-invoices", "from-invoice", "--invoice-id", "inv-branch", "--name", "Branch", "--frequency", "monthly", "--start-date", "2026-05-01", "--payment-terms-days", "-1"}, want: "payment-terms-days must be non-negative"},
+		{name: "get missing id", args: []string{"recurring-invoices", "get", "--id", " "}, want: "id is required"},
+		{name: "update missing id", args: []string{"recurring-invoices", "update", "--name", "Branch"}, want: "id is required"},
+		{name: "update invalid frequency", args: []string{"recurring-invoices", "update", "--id", "rec-branch", "--frequency", "daily"}, want: "invalid recurring invoice frequency"},
+		{name: "update bad end date", args: []string{"recurring-invoices", "update", "--id", "rec-branch", "--end-date", "bad"}, want: "parse end-date"},
+		{name: "update bad payment terms", args: []string{"recurring-invoices", "update", "--id", "rec-branch", "--payment-terms-days", "-1"}, want: "payment-terms-days must be non-negative"},
+		{name: "update bad send email bool", args: []string{"recurring-invoices", "update", "--id", "rec-branch", "--send-email", "sometimes"}, want: "parse send-email"},
+		{name: "update bad attach pdf bool", args: []string{"recurring-invoices", "update", "--id", "rec-branch", "--attach-pdf", "sometimes"}, want: "parse attach-pdf"},
+		{name: "delete missing id", args: []string{"recurring-invoices", "delete", "--id", " "}, want: "id is required"},
+		{name: "pause missing id", args: []string{"recurring-invoices", "pause", "--id", " "}, want: "id is required"},
+		{name: "resume missing id", args: []string{"recurring-invoices", "resume", "--id", " "}, want: "id is required"},
+		{name: "generate missing id", args: []string{"recurring-invoices", "generate", "--id", " "}, want: "id is required"},
+		{name: "generate due bad flag", args: []string{"recurring-invoices", "generate-due", "--unknown"}, want: "flag provided but not defined"},
+	}
+	for _, tc := range validationCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+
+	generationPayload := recurringGenerationPayload("rec-branch")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices":
+			assert.Empty(t, r.URL.Query().Get("active_only"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{recurringInvoicePayload("rec-branch", "Branch retainer", false)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices":
+			var req recurring.CreateRecurringInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Branch retainer", req.Name)
+			assert.Equal(t, "contact-branch", req.ContactID)
+			assert.Equal(t, "PURCHASE", req.InvoiceType)
+			assert.Equal(t, "GBP", req.Currency)
+			assert.Equal(t, recurring.FrequencyYearly, req.Frequency)
+			assert.Equal(t, "2026-05-01", req.StartDate.Format("2006-01-02"))
+			require.Nil(t, req.EndDate)
+			assert.Equal(t, 0, req.PaymentTermsDays)
+			assert.Equal(t, "BR-1", req.Reference)
+			assert.Equal(t, "Branch notes", req.Notes)
+			assert.True(t, req.SendEmailOnGeneration)
+			assert.Equal(t, "REMINDER", req.EmailTemplateType)
+			assert.Equal(t, "branch@example.com", req.RecipientEmailOverride)
+			require.NotNil(t, req.AttachPDFToEmail)
+			assert.False(t, *req.AttachPDFToEmail)
+			assert.Equal(t, "Branch subject", req.EmailSubjectOverride)
+			assert.Equal(t, "Branch message", req.EmailMessage)
+			require.Len(t, req.Lines, 1)
+			assert.Equal(t, "Branch work", req.Lines[0].Description)
+			assert.Equal(t, "day", req.Lines[0].Unit)
+			assert.True(t, req.Lines[0].Quantity.Equal(decimal.RequireFromString("1")))
+			assert.True(t, req.Lines[0].UnitPrice.Equal(decimal.RequireFromString("200")))
+			assert.True(t, req.Lines[0].VATRate.Equal(decimal.RequireFromString("20")))
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(recurringInvoicePayload("rec-branch", "Branch retainer", true))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/import":
+			var req recurring.ImportRecurringInvoicesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "branch-recurring.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "Branch Legacy")
+			_ = json.NewEncoder(w).Encode(recurring.ImportRecurringInvoicesResult{
+				FileName:         req.FileName,
+				RowsProcessed:    2,
+				TemplatesCreated: 1,
+				LinesImported:    1,
+				RowsSkipped:      1,
+				Errors: []recurring.ImportRecurringInvoicesRowError{{
+					Row:     2,
+					Message: "missing contact",
+				}},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/from-invoice/inv-branch":
+			var req recurring.CreateFromInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "From branch", req.Name)
+			assert.Equal(t, recurring.FrequencyQuarterly, req.Frequency)
+			assert.Equal(t, "2026-06-01", req.StartDate.Format("2006-01-02"))
+			require.NotNil(t, req.EndDate)
+			assert.Equal(t, "2026-12-31", req.EndDate.Format("2006-01-02"))
+			assert.Equal(t, 45, req.PaymentTermsDays)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(recurringInvoicePayload("rec-from-branch", "From branch", true))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/rec-branch":
+			_ = json.NewEncoder(w).Encode(recurringInvoicePayload("rec-branch", "Branch retainer", true))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/rec-branch":
+			var req recurring.UpdateRecurringInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.NotNil(t, req.Name)
+			assert.Equal(t, "Updated branch", *req.Name)
+			require.NotNil(t, req.ContactID)
+			assert.Equal(t, "contact-updated", *req.ContactID)
+			require.NotNil(t, req.Frequency)
+			assert.Equal(t, recurring.FrequencyBiweekly, *req.Frequency)
+			require.NotNil(t, req.EndDate)
+			assert.Equal(t, "2026-11-30", req.EndDate.Format("2006-01-02"))
+			require.NotNil(t, req.PaymentTermsDays)
+			assert.Equal(t, 7, *req.PaymentTermsDays)
+			require.NotNil(t, req.Reference)
+			assert.Equal(t, "UPDATED", *req.Reference)
+			require.NotNil(t, req.Notes)
+			assert.Equal(t, "Updated notes", *req.Notes)
+			require.NotNil(t, req.SendEmailOnGeneration)
+			assert.True(t, *req.SendEmailOnGeneration)
+			require.NotNil(t, req.EmailTemplateType)
+			assert.Equal(t, "FOLLOW_UP", *req.EmailTemplateType)
+			require.NotNil(t, req.RecipientEmailOverride)
+			assert.Equal(t, "updated@example.com", *req.RecipientEmailOverride)
+			require.NotNil(t, req.AttachPDFToEmail)
+			assert.True(t, *req.AttachPDFToEmail)
+			require.NotNil(t, req.EmailSubjectOverride)
+			assert.Equal(t, "Updated subject", *req.EmailSubjectOverride)
+			require.NotNil(t, req.EmailMessage)
+			assert.Equal(t, "Updated message", *req.EmailMessage)
+			require.Len(t, req.Lines, 1)
+			assert.Equal(t, "Updated branch work", req.Lines[0].Description)
+			payload := recurringInvoicePayload("rec-branch", "Updated branch", true)
+			payload["frequency"] = "BIWEEKLY"
+			_ = json.NewEncoder(w).Encode(payload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/rec-branch/pause":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "paused"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/rec-branch/generate":
+			_ = json.NewEncoder(w).Encode(generationPayload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/generate-due":
+			_ = json.NewEncoder(w).Encode([]map[string]any{})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/rec-branch":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	stdout.Reset()
+	err := app.run(context.Background(), []string{"recurring-invoices", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "ID")
+	assert.Contains(t, stdout.String(), "Branch retainer")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"recurring-invoices", "create",
+		"--name", " Branch retainer ",
+		"--contact-id", " contact-branch ",
+		"--type", " purchase ",
+		"--currency", " gbp ",
+		"--frequency", " yearly ",
+		"--start-date", "2026-05-01",
+		"--payment-terms-days", "0",
+		"--reference", " BR-1 ",
+		"--notes", " Branch notes ",
+		"--send-email",
+		"--email-template-type", " REMINDER ",
+		"--recipient-email", " branch@example.com ",
+		"--attach-pdf=false",
+		"--email-subject", " Branch subject ",
+		"--email-message", " Branch message ",
+		"--line", "description=Branch work,quantity=1,unit=day,unit_price=200,vat_rate=20,account=acc-branch,product=prod-branch",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "rec-branch"`)
+	assert.Contains(t, stdout.String(), `"name": "Branch retainer"`)
+
+	importFile := writeTempCSV(t, "branch-recurring.csv", "name,contact_id,frequency,start_date,line_description,quantity,unit_price,vat_rate\nBranch Legacy,contact-branch,MONTHLY,2026-05-01,Work,1,100,22\n")
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"recurring-invoices", "import", "--file", importFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"templates_created": 1`)
+	assert.Contains(t, stdout.String(), `"message": "missing contact"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"recurring-invoices", "from-invoice",
+		"--invoice-id", " inv-branch ",
+		"--name", " From branch ",
+		"--frequency", " quarterly ",
+		"--start-date", "2026-06-01",
+		"--end-date", "2026-12-31",
+		"--payment-terms-days", "45",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "rec-from-branch"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"recurring-invoices", "get", "--id", " rec-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "rec-branch"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"recurring-invoices", "update",
+		"--id", " rec-branch ",
+		"--name", " Updated branch ",
+		"--contact-id", " contact-updated ",
+		"--frequency", " biweekly ",
+		"--end-date", "2026-11-30",
+		"--payment-terms-days", "7",
+		"--reference", " UPDATED ",
+		"--notes", " Updated notes ",
+		"--send-email", "true",
+		"--email-template-type", " FOLLOW_UP ",
+		"--recipient-email", " updated@example.com ",
+		"--attach-pdf", "true",
+		"--email-subject", " Updated subject ",
+		"--email-message", " Updated message ",
+		"--line", "description=Updated branch work,quantity=2,unit_price=150,vat_rate=22",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"frequency": "BIWEEKLY"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"recurring-invoices", "pause", "--id", " rec-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "paused"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"recurring-invoices", "generate", "--id", " rec-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"recurring_invoice_id": "rec-branch"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"recurring-invoices", "generate-due", "--json"})
+	require.NoError(t, err)
+	assert.Equal(t, "[]\n", stdout.String())
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"recurring-invoices", "delete", "--id", " rec-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "deleted"`)
 }
 
 func TestCLIAssetCommands(t *testing.T) {
