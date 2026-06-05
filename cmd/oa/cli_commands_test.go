@@ -239,6 +239,25 @@ func cliOrderPayload(id, number, status string) map[string]any {
 	}
 }
 
+func cliTSDDeclarationPayload(id string, year, month int, status string) map[string]any {
+	return map[string]any{
+		"id":                          id,
+		"tenant_id":                   "tenant-1",
+		"period_year":                 year,
+		"period_month":                month,
+		"total_payments":              "3200.00",
+		"total_income_tax":            "500.00",
+		"total_social_tax":            "1056.00",
+		"total_unemployment_employer": "25.60",
+		"total_unemployment_employee": "51.20",
+		"total_funded_pension":        "64.00",
+		"emta_reference":              "EMTA-REF",
+		"status":                      status,
+		"created_at":                  "2026-03-31T12:00:00Z",
+		"updated_at":                  "2026-03-31T12:00:00Z",
+	}
+}
+
 func tenantPluginPayload(tenantPluginID, tenantID, pluginID, name, displayName string, enabled bool, settings map[string]any) map[string]any {
 	if settings == nil {
 		settings = map[string]any{}
@@ -12881,6 +12900,164 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"country_code": "DE"`)
 	assert.Contains(t, stdout.String(), `"include_b2b": true`)
+}
+
+func TestCLITSDBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tsd":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				cliTSDDeclarationPayload("tsd-1", 2026, 3, "DRAFT"),
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3":
+			w.Header().Set("Content-Type", "application/json")
+			declaration := cliTSDDeclarationPayload("tsd-1", 2026, 3, "DRAFT")
+			declaration["rows"] = []map[string]any{{
+				"id":                              "row-1",
+				"tenant_id":                       "tenant-1",
+				"declaration_id":                  "tsd-1",
+				"employee_id":                     "emp-1",
+				"personal_code":                   "49001010001",
+				"first_name":                      "Mari",
+				"last_name":                       "Maasikas",
+				"payment_type":                    "10",
+				"gross_payment":                   "3200.00",
+				"basic_exemption":                 "700.00",
+				"taxable_amount":                  "2500.00",
+				"income_tax":                      "500.00",
+				"social_tax":                      "1056.00",
+				"unemployment_insurance_employer": "25.60",
+				"unemployment_insurance_employee": "51.20",
+				"funded_pension":                  "64.00",
+				"created_at":                      "2026-03-31T12:00:00Z",
+			}}
+			_ = json.NewEncoder(w).Encode(declaration)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-1/tsd":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(cliTSDDeclarationPayload("tsd-2", 2026, 4, "DRAFT"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/xml":
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = w.Write([]byte("<TSD>branch</TSD>"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/csv":
+			w.Header().Set("Content-Type", "text/csv")
+			_, _ = w.Write([]byte("period,total\n2026-03,3200.00\n"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/submit":
+			w.Header().Set("Content-Type", "application/json")
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "EMTA-456", req["emta_reference"])
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "submitted"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/accept":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/reject":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "rejected"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"tsd", "list", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "tsd-1"`)
+	assert.Contains(t, stdout.String(), `"emta_reference": "EMTA-REF"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tsd", "get", "--year", "2026", "--month", "3", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"period_month": 3`)
+	assert.Contains(t, stdout.String(), `"first_name": "Mari"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tsd", "generate", "--run-id", " run-1 "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "TSD 2026-04")
+
+	stdout.Reset()
+	xmlPath := filepath.Join(t.TempDir(), "tsd.xml")
+	err = app.run(context.Background(), []string{"tsd", "export-xml", "--year", "2026", "--month", "3", "--output", xmlPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote TSD XML")
+	xmlContent, err := os.ReadFile(xmlPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("<TSD>branch</TSD>"), xmlContent)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tsd", "export-csv", "--year", "2026", "--month", "3"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "period,total")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tsd", "mark-submitted", "--year", "2026", "--month", "3", "--emta-reference", " EMTA-456 ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "submitted"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tsd", "mark-accepted", "--year", "2026", "--month", "3", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "accepted"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tsd", "mark-rejected", "--year", "2026", "--month", "3"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Marked TSD 2026-03 as rejected")
+}
+
+func TestCLITSDValidationBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown subcommand", args: []string{"legacy"}, want: `unknown tsd subcommand "legacy"`},
+		{name: "list flag parse", args: []string{"list", "--bad"}, want: "flag provided but not defined"},
+		{name: "get missing year", args: []string{"get", "--month", "3"}, want: "year is required"},
+		{name: "get parse year", args: []string{"get", "--year", "bad", "--month", "3"}, want: "parse year"},
+		{name: "get month out of range", args: []string{"get", "--year", "2026", "--month", "13"}, want: "month must be between 1 and 12"},
+		{name: "generate missing run id", args: []string{"generate"}, want: "run-id is required"},
+		{name: "generate flag parse", args: []string{"generate", "--bad"}, want: "flag provided but not defined"},
+		{name: "export xml missing month", args: []string{"export-xml", "--year", "2026"}, want: "month is required"},
+		{name: "export csv month not positive", args: []string{"export-csv", "--year", "2026", "--month", "0"}, want: "month must be positive"},
+		{name: "mark submitted parse month", args: []string{"mark-submitted", "--year", "2026", "--month", "bad"}, want: "parse month"},
+		{name: "mark accepted missing year", args: []string{"mark-accepted", "--month", "3"}, want: "year is required"},
+		{name: "mark rejected month out of range", args: []string{"mark-rejected", "--year", "2026", "--month", "13"}, want: "month must be between 1 and 12"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			app, _, _ := newTestCLIApp()
+			err := app.run(context.Background(), append([]string{"tsd"}, tc.args...))
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+		})
+	}
 }
 
 func TestCLITaxOSSValidationBranches(t *testing.T) {
