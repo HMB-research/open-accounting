@@ -195,6 +195,49 @@ func recurringInvoicePayload(id, name string, active bool) map[string]any {
 	}
 }
 
+func cliQuotePayload(id, number, status string) map[string]any {
+	return map[string]any{
+		"id":           id,
+		"tenant_id":    "tenant-1",
+		"quote_number": number,
+		"contact_id":   "contact-1",
+		"contact": map[string]any{
+			"id":           "contact-1",
+			"name":         "Acme",
+			"contact_type": "CUSTOMER",
+			"is_active":    true,
+		},
+		"quote_date":    "2026-03-15T00:00:00Z",
+		"valid_until":   "2026-04-15T00:00:00Z",
+		"status":        status,
+		"currency":      "EUR",
+		"exchange_rate": "1.00",
+		"subtotal":      "180.00",
+		"vat_amount":    "39.60",
+		"total":         "219.60",
+		"notes":         "March offer",
+		"created_at":    "2026-03-15T12:00:00Z",
+		"created_by":    "user-1",
+		"updated_at":    "2026-03-15T12:00:00Z",
+		"lines": []map[string]any{{
+			"id":               "line-1",
+			"tenant_id":        "tenant-1",
+			"quote_id":         id,
+			"line_number":      1,
+			"description":      "Consulting",
+			"quantity":         "2.00",
+			"unit":             "hour",
+			"unit_price":       "100.00",
+			"discount_percent": "10.00",
+			"vat_rate":         "22.00",
+			"line_subtotal":    "180.00",
+			"line_vat":         "39.60",
+			"line_total":       "219.60",
+			"product_id":       "prod-1",
+		}},
+	}
+}
+
 func cliOrderPayload(id, number, status string) map[string]any {
 	return map[string]any{
 		"id":           id,
@@ -3394,49 +3437,6 @@ func TestCLIQuoteCommands(t *testing.T) {
 		APIToken:   "oa_saved_token",
 	}))
 
-	quotePayload := func(id, number, status string) map[string]any {
-		return map[string]any{
-			"id":           id,
-			"tenant_id":    "tenant-1",
-			"quote_number": number,
-			"contact_id":   "contact-1",
-			"contact": map[string]any{
-				"id":           "contact-1",
-				"name":         "Acme",
-				"contact_type": "CUSTOMER",
-				"is_active":    true,
-			},
-			"quote_date":    "2026-03-15T00:00:00Z",
-			"valid_until":   "2026-04-15T00:00:00Z",
-			"status":        status,
-			"currency":      "EUR",
-			"exchange_rate": "1.00",
-			"subtotal":      "180.00",
-			"vat_amount":    "39.60",
-			"total":         "219.60",
-			"notes":         "March offer",
-			"created_at":    "2026-03-15T12:00:00Z",
-			"created_by":    "user-1",
-			"updated_at":    "2026-03-15T12:00:00Z",
-			"lines": []map[string]any{{
-				"id":               "line-1",
-				"tenant_id":        "tenant-1",
-				"quote_id":         id,
-				"line_number":      1,
-				"description":      "Consulting",
-				"quantity":         "2.00",
-				"unit":             "hour",
-				"unit_price":       "100.00",
-				"discount_percent": "10.00",
-				"vat_rate":         "22.00",
-				"line_subtotal":    "180.00",
-				"line_vat":         "39.60",
-				"line_total":       "219.60",
-				"product_id":       "prod-1",
-			}},
-		}
-	}
-
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
@@ -3448,7 +3448,7 @@ func TestCLIQuoteCommands(t *testing.T) {
 			require.Equal(t, "2026-03-01", r.URL.Query().Get("from_date"))
 			require.Equal(t, "2026-03-31", r.URL.Query().Get("to_date"))
 			require.Equal(t, "QUO", r.URL.Query().Get("search"))
-			_ = json.NewEncoder(w).Encode([]map[string]any{quotePayload("quote-1", "QUO-00001", "DRAFT")})
+			_ = json.NewEncoder(w).Encode([]map[string]any{cliQuotePayload("quote-1", "QUO-00001", "DRAFT")})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes":
 			var req quotes.CreateQuoteRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -3468,7 +3468,7 @@ func TestCLIQuoteCommands(t *testing.T) {
 			require.NotNil(t, line.ProductID)
 			assert.Equal(t, "prod-1", *line.ProductID)
 			w.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(w).Encode(quotePayload("quote-1", "QUO-00001", "DRAFT"))
+			_ = json.NewEncoder(w).Encode(cliQuotePayload("quote-1", "QUO-00001", "DRAFT"))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/import":
 			var req quotes.ImportQuotesRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -3481,7 +3481,7 @@ func TestCLIQuoteCommands(t *testing.T) {
 				"rows_skipped":   0,
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-1":
-			_ = json.NewEncoder(w).Encode(quotePayload("quote-1", "QUO-00001", "DRAFT"))
+			_ = json.NewEncoder(w).Encode(cliQuotePayload("quote-1", "QUO-00001", "DRAFT"))
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-1":
 			var req quotes.UpdateQuoteRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -3490,7 +3490,7 @@ func TestCLIQuoteCommands(t *testing.T) {
 			assert.Equal(t, "Updated offer", req.Notes)
 			require.Len(t, req.Lines, 1)
 			assert.Equal(t, "Updated consulting", req.Lines[0].Description)
-			_ = json.NewEncoder(w).Encode(quotePayload("quote-1", "QUO-00002", "DRAFT"))
+			_ = json.NewEncoder(w).Encode(cliQuotePayload("quote-1", "QUO-00002", "DRAFT"))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-1/send":
 			var req documentEvidenceRequirementRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -3504,7 +3504,7 @@ func TestCLIQuoteCommands(t *testing.T) {
 			assert.Equal(t, "2026-03-20", req.IssueDate.Format("2006-01-02"))
 			assert.Equal(t, "2026-04-03", req.DueDate.Format("2006-01-02"))
 			assert.Equal(t, "Invoice from quote", req.Notes)
-			convertedQuote := quotePayload("quote-1", "QUO-00001", "CONVERTED")
+			convertedQuote := cliQuotePayload("quote-1", "QUO-00001", "CONVERTED")
 			convertedQuote["converted_to_invoice_id"] = "inv-1"
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -3641,6 +3641,229 @@ func TestCLIQuoteCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"quotes", "delete", "--id", "quote-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Deleted quote quote-1")
+}
+
+func TestCLIQuoteBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	quoteImportFile := writeTempCSV(t, "quotes.csv", "quote_number,contact_id,quote_date,line_description,quantity,unit_price,vat_rate\nQT-BRANCH,contact-1,2026-03-15,Branch work,1,100,22\n")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/quotes":
+			assert.Empty(t, r.URL.Query().Get("status"))
+			assert.Empty(t, r.URL.Query().Get("contact_id"))
+			assert.Empty(t, r.URL.Query().Get("from_date"))
+			assert.Empty(t, r.URL.Query().Get("to_date"))
+			assert.Empty(t, r.URL.Query().Get("search"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{cliQuotePayload("quote-branch", "QUO-BRANCH", "SENT")})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes":
+			var req quotes.CreateQuoteRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "contact-branch", req.ContactID)
+			assert.Equal(t, "2026-03-17", req.QuoteDate.Format("2006-01-02"))
+			assert.Nil(t, req.ValidUntil)
+			assert.Equal(t, "USD", req.Currency)
+			assert.True(t, req.ExchangeRate.Equal(decimal.RequireFromString("1.25")))
+			assert.Equal(t, "Branch offer", req.Notes)
+			require.Len(t, req.Lines, 1)
+			assert.Equal(t, "Branch work", req.Lines[0].Description)
+			assert.Equal(t, "pcs", req.Lines[0].Unit)
+			assert.True(t, req.Lines[0].DiscountPercent.Equal(decimal.RequireFromString("5")))
+			require.NotNil(t, req.Lines[0].ProductID)
+			assert.Equal(t, "prod-branch", *req.Lines[0].ProductID)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(cliQuotePayload("quote-branch", "QUO-BRANCH", "DRAFT"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/import":
+			var req quotes.ImportQuotesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "quotes.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "QT-BRANCH")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed": 2,
+				"quotes_created": 1,
+				"lines_imported": 1,
+				"rows_skipped":   1,
+				"errors": []map[string]any{{
+					"row":          2,
+					"quote_number": "QT-DUP",
+					"message":      "duplicate quote",
+				}},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-branch":
+			_ = json.NewEncoder(w).Encode(cliQuotePayload("quote-branch", "QUO-BRANCH", "SENT"))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-branch":
+			var req quotes.UpdateQuoteRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "contact-updated", req.ContactID)
+			assert.Equal(t, "2026-03-18", req.QuoteDate.Format("2006-01-02"))
+			require.NotNil(t, req.ValidUntil)
+			assert.Equal(t, "2026-04-18", req.ValidUntil.Format("2006-01-02"))
+			assert.Equal(t, "GBP", req.Currency)
+			assert.True(t, req.ExchangeRate.Equal(decimal.RequireFromString("0.85")))
+			assert.Equal(t, "Updated branch offer", req.Notes)
+			require.Len(t, req.Lines, 1)
+			assert.Equal(t, "Updated branch work", req.Lines[0].Description)
+			_ = json.NewEncoder(w).Encode(cliQuotePayload("quote-branch", "QUO-BRANCH-2", "DRAFT"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-branch/send":
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			assert.Empty(t, string(body))
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "sent"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-branch/convert-to-invoice":
+			var req quotes.ConvertQuoteToInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.True(t, req.IssueDate.IsZero())
+			assert.True(t, req.DueDate.IsZero())
+			assert.Equal(t, "Create invoice later", req.Notes)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"quote":   cliQuotePayload("quote-branch", "QUO-BRANCH", "CONVERTED"),
+				"invoice": nil,
+			})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-branch":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"quotes", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "QUO-BRANCH")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"quotes", "create",
+		"--contact-id", " contact-branch ",
+		"--quote-date", " 2026-03-17 ",
+		"--currency", " usd ",
+		"--exchange-rate", "1.25",
+		"--notes", " Branch offer ",
+		"--line", "description=Branch work,qty=2,unit=pcs,price=50,discount=5,vat=22,product=prod-branch",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"quote_number": "QUO-BRANCH"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"quotes", "import", "--file", quoteImportFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"rows_processed": 2`)
+	assert.Contains(t, stdout.String(), `"rows_skipped": 1`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"quotes", "get", "--id", " quote-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "SENT"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"quotes", "update",
+		"--id", " quote-branch ",
+		"--contact-id", " contact-updated ",
+		"--quote-date", "2026-03-18",
+		"--valid-until", "2026-04-18",
+		"--currency", " gbp ",
+		"--exchange-rate", "0.85",
+		"--notes", " Updated branch offer ",
+		"--line", "description=Updated branch work,quantity=3,unit=hour,unit_price=100.00,vat_rate=22.00",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"quote_number": "QUO-BRANCH-2"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"quotes", "send", "--id", " quote-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "sent"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"quotes", "convert-to-invoice", "--id", " quote-branch ", "--notes", " Create invoice later ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"quote_number": "QUO-BRANCH"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"quotes", "delete", "--id", " quote-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "deleted"`)
+}
+
+func TestCLIQuoteValidationBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	missingFile := filepath.Join(t.TempDir(), "missing.csv")
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown subcommand", args: []string{"legacy"}, want: `unknown quotes subcommand "legacy"`},
+		{name: "list bad flag", args: []string{"list", "--bad"}, want: "flag provided but not defined"},
+		{name: "list invalid status", args: []string{"list", "--status", "bad"}, want: "invalid quote status"},
+		{name: "list invalid from date", args: []string{"list", "--from", "bad"}, want: "parse from"},
+		{name: "list invalid to date", args: []string{"list", "--to", "bad"}, want: "parse to"},
+		{name: "create bad flag", args: []string{"create", "--bad"}, want: "flag provided but not defined"},
+		{name: "create missing contact", args: []string{"create", "--quote-date", "2026-03-15"}, want: "contact-id is required"},
+		{name: "create missing quote date", args: []string{"create", "--contact-id", "contact-1"}, want: "quote-date is required"},
+		{name: "create invalid quote date", args: []string{"create", "--contact-id", "contact-1", "--quote-date", "bad"}, want: "parse quote-date"},
+		{name: "create invalid valid until", args: []string{"create", "--contact-id", "contact-1", "--quote-date", "2026-03-15", "--valid-until", "bad"}, want: "parse valid-until"},
+		{name: "create missing line", args: []string{"create", "--contact-id", "contact-1", "--quote-date", "2026-03-15"}, want: "at least one line is required"},
+		{name: "create invalid line", args: []string{"create", "--line", "quantity=1,unit_price=100,vat_rate=22"}, want: "line description is required"},
+		{name: "create invalid exchange rate", args: []string{"create", "--contact-id", "contact-1", "--quote-date", "2026-03-15", "--line", "description=Work,quantity=1,unit_price=100,vat_rate=22", "--exchange-rate", "bad"}, want: "parse exchange-rate"},
+		{name: "create nonpositive exchange rate", args: []string{"create", "--contact-id", "contact-1", "--quote-date", "2026-03-15", "--line", "description=Work,quantity=1,unit_price=100,vat_rate=22", "--exchange-rate", "0"}, want: "exchange-rate must be positive"},
+		{name: "import bad flag", args: []string{"import", "--bad"}, want: "flag provided but not defined"},
+		{name: "import missing file", args: []string{"import"}, want: "file is required"},
+		{name: "import unreadable file", args: []string{"import", "--file", missingFile}, want: "read file"},
+		{name: "get bad flag", args: []string{"get", "--bad"}, want: "flag provided but not defined"},
+		{name: "get missing id", args: []string{"get"}, want: "id is required"},
+		{name: "update bad flag", args: []string{"update", "--bad"}, want: "flag provided but not defined"},
+		{name: "update missing id", args: []string{"update", "--contact-id", "contact-1", "--quote-date", "2026-03-15"}, want: "id is required"},
+		{name: "update missing contact", args: []string{"update", "--id", "quote-1", "--quote-date", "2026-03-15"}, want: "contact-id is required"},
+		{name: "update missing quote date", args: []string{"update", "--id", "quote-1", "--contact-id", "contact-1"}, want: "quote-date is required"},
+		{name: "update invalid valid until", args: []string{"update", "--id", "quote-1", "--contact-id", "contact-1", "--quote-date", "2026-03-15", "--valid-until", "bad"}, want: "parse valid-until"},
+		{name: "update missing line", args: []string{"update", "--id", "quote-1", "--contact-id", "contact-1", "--quote-date", "2026-03-15"}, want: "at least one line is required"},
+		{name: "update invalid exchange rate", args: []string{"update", "--id", "quote-1", "--contact-id", "contact-1", "--quote-date", "2026-03-15", "--line", "description=Work,quantity=1,unit_price=100,vat_rate=22", "--exchange-rate", "bad"}, want: "parse exchange-rate"},
+		{name: "delete bad flag", args: []string{"delete", "--bad"}, want: "flag provided but not defined"},
+		{name: "delete missing id", args: []string{"delete"}, want: "id is required"},
+		{name: "send bad flag", args: []string{"send", "--bad"}, want: "flag provided but not defined"},
+		{name: "send missing id", args: []string{"send"}, want: "id is required"},
+		{name: "accept evidence flag", args: []string{"accept", "--id", "quote-1", "--require-approved-evidence"}, want: "require-approved-evidence is only supported for quotes send"},
+		{name: "convert bad flag", args: []string{"convert-to-invoice", "--bad"}, want: "flag provided but not defined"},
+		{name: "convert missing id", args: []string{"convert-to-invoice"}, want: "id is required"},
+		{name: "convert invalid issue date", args: []string{"convert-to-invoice", "--id", "quote-1", "--issue-date", "bad"}, want: "parse issue-date"},
+		{name: "convert invalid due date", args: []string{"convert-to-invoice", "--id", "quote-1", "--due-date", "bad"}, want: "parse due-date"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			app, _, _ := newTestCLIApp()
+			err := app.run(context.Background(), append([]string{"quotes"}, tc.args...))
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+		})
+	}
 }
 
 func TestCLIOrderCommands(t *testing.T) {
