@@ -538,6 +538,8 @@ go run ./cmd/oa orders import --file ./orders.csv
 
 Use `--line` repeatedly on `orders create` and `orders update`. Each line accepts `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, and `product_id`. Order statuses are `PENDING`, `CONFIRMED`, `PROCESSING`, `SHIPPED`, `DELIVERED`, and `CANCELED`. `orders confirm --require-approved-evidence` blocks confirmation until an approved `contract` or `supporting_document` is attached to the order.
 
+Use `--json` on order read, write, stock, import, and status commands when scripting. Mutating commands return the updated order or operation result; `orders delete --json` returns `{"status":"deleted"}`. The `--require-approved-evidence` flag is only valid on `orders confirm`.
+
 `orders stock-check` checks tracked product lines without mutating inventory. It sums all warehouses unless `--warehouse-id` is provided, consumes repeated lines for the same product cumulatively inside the check, and reports per-line statuses: `AVAILABLE`, `SHORTAGE`, `NOT_TRACKED`, and `PRODUCT_NOT_FOUND`.
 
 `orders reserve-stock` and `orders release-stock` mutate the selected warehouse's reserved and available quantities for the order's cumulative tracked goods and update the persisted order-level reservation ledger. `reserve-stock` first requires the selected warehouse to be ready for every tracked line. Use `orders stock-reservations` to inspect the ledger by order, and `orders pick-list` to turn those reservations into a warehouse picking view.
