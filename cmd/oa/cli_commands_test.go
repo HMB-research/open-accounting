@@ -195,6 +195,50 @@ func recurringInvoicePayload(id, name string, active bool) map[string]any {
 	}
 }
 
+func cliOrderPayload(id, number, status string) map[string]any {
+	return map[string]any{
+		"id":           id,
+		"tenant_id":    "tenant-1",
+		"order_number": number,
+		"contact_id":   "contact-1",
+		"contact": map[string]any{
+			"id":           "contact-1",
+			"name":         "Acme",
+			"contact_type": "CUSTOMER",
+			"is_active":    true,
+		},
+		"order_date":        "2026-03-15T00:00:00Z",
+		"expected_delivery": "2026-03-22T00:00:00Z",
+		"status":            status,
+		"currency":          "EUR",
+		"exchange_rate":     "1.00",
+		"subtotal":          "180.00",
+		"vat_amount":        "39.60",
+		"total":             "219.60",
+		"notes":             "March order",
+		"quote_id":          "quote-1",
+		"created_at":        "2026-03-15T12:00:00Z",
+		"created_by":        "user-1",
+		"updated_at":        "2026-03-15T12:00:00Z",
+		"lines": []map[string]any{{
+			"id":               "line-1",
+			"tenant_id":        "tenant-1",
+			"order_id":         id,
+			"line_number":      1,
+			"description":      "Consulting",
+			"quantity":         "2.00",
+			"unit":             "hour",
+			"unit_price":       "100.00",
+			"discount_percent": "10.00",
+			"vat_rate":         "22.00",
+			"line_subtotal":    "180.00",
+			"line_vat":         "39.60",
+			"line_total":       "219.60",
+			"product_id":       "prod-1",
+		}},
+	}
+}
+
 func tenantPluginPayload(tenantPluginID, tenantID, pluginID, name, displayName string, enabled bool, settings map[string]any) map[string]any {
 	if settings == nil {
 		settings = map[string]any{}
@@ -3446,50 +3490,6 @@ func TestCLIOrderCommands(t *testing.T) {
 		APIToken:   "oa_saved_token",
 	}))
 
-	orderPayload := func(id, number, status string) map[string]any {
-		return map[string]any{
-			"id":           id,
-			"tenant_id":    "tenant-1",
-			"order_number": number,
-			"contact_id":   "contact-1",
-			"contact": map[string]any{
-				"id":           "contact-1",
-				"name":         "Acme",
-				"contact_type": "CUSTOMER",
-				"is_active":    true,
-			},
-			"order_date":        "2026-03-15T00:00:00Z",
-			"expected_delivery": "2026-03-22T00:00:00Z",
-			"status":            status,
-			"currency":          "EUR",
-			"exchange_rate":     "1.00",
-			"subtotal":          "180.00",
-			"vat_amount":        "39.60",
-			"total":             "219.60",
-			"notes":             "March order",
-			"quote_id":          "quote-1",
-			"created_at":        "2026-03-15T12:00:00Z",
-			"created_by":        "user-1",
-			"updated_at":        "2026-03-15T12:00:00Z",
-			"lines": []map[string]any{{
-				"id":               "line-1",
-				"tenant_id":        "tenant-1",
-				"order_id":         id,
-				"line_number":      1,
-				"description":      "Consulting",
-				"quantity":         "2.00",
-				"unit":             "hour",
-				"unit_price":       "100.00",
-				"discount_percent": "10.00",
-				"vat_rate":         "22.00",
-				"line_subtotal":    "180.00",
-				"line_vat":         "39.60",
-				"line_total":       "219.60",
-				"product_id":       "prod-1",
-			}},
-		}
-	}
-
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
@@ -3501,7 +3501,7 @@ func TestCLIOrderCommands(t *testing.T) {
 			require.Equal(t, "2026-03-01", r.URL.Query().Get("from_date"))
 			require.Equal(t, "2026-03-31", r.URL.Query().Get("to_date"))
 			require.Equal(t, "ORD", r.URL.Query().Get("search"))
-			_ = json.NewEncoder(w).Encode([]map[string]any{orderPayload("order-1", "ORD-00001", "CONFIRMED")})
+			_ = json.NewEncoder(w).Encode([]map[string]any{cliOrderPayload("order-1", "ORD-00001", "CONFIRMED")})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders":
 			var req orders.CreateOrderRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -3523,7 +3523,7 @@ func TestCLIOrderCommands(t *testing.T) {
 			require.NotNil(t, line.ProductID)
 			assert.Equal(t, "prod-1", *line.ProductID)
 			w.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(w).Encode(orderPayload("order-1", "ORD-00001", "PENDING"))
+			_ = json.NewEncoder(w).Encode(cliOrderPayload("order-1", "ORD-00001", "PENDING"))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/import":
 			var req orders.ImportOrdersRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -3536,7 +3536,7 @@ func TestCLIOrderCommands(t *testing.T) {
 				"rows_skipped":   0,
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1":
-			_ = json.NewEncoder(w).Encode(orderPayload("order-1", "ORD-00001", "CONFIRMED"))
+			_ = json.NewEncoder(w).Encode(cliOrderPayload("order-1", "ORD-00001", "CONFIRMED"))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1/stock-check":
 			require.Equal(t, "wh-1", r.URL.Query().Get("warehouse_id"))
 			_ = json.NewEncoder(w).Encode(orders.OrderStockCheck{
@@ -3638,7 +3638,7 @@ func TestCLIOrderCommands(t *testing.T) {
 			assert.Equal(t, "Updated order", req.Notes)
 			require.Len(t, req.Lines, 1)
 			assert.Equal(t, "Updated consulting", req.Lines[0].Description)
-			_ = json.NewEncoder(w).Encode(orderPayload("order-1", "ORD-00002", "CONFIRMED"))
+			_ = json.NewEncoder(w).Encode(cliOrderPayload("order-1", "ORD-00002", "CONFIRMED"))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1/confirm":
 			var req documentEvidenceRequirementRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -3774,6 +3774,265 @@ func TestCLIOrderCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"orders", "delete", "--id", "order-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Deleted order order-1")
+}
+
+func TestCLIOrderBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders":
+			assert.Empty(t, r.URL.Query().Get("status"))
+			assert.Empty(t, r.URL.Query().Get("contact_id"))
+			assert.Empty(t, r.URL.Query().Get("from_date"))
+			assert.Empty(t, r.URL.Query().Get("to_date"))
+			assert.Empty(t, r.URL.Query().Get("search"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{cliOrderPayload("order-branch", "ORD-BRANCH", "PENDING")})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders":
+			var req orders.CreateOrderRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "contact-branch", req.ContactID)
+			assert.Equal(t, "2026-03-15", req.OrderDate.Format("2006-01-02"))
+			assert.Nil(t, req.ExpectedDelivery)
+			assert.Equal(t, "USD", req.Currency)
+			assert.True(t, req.ExchangeRate.Equal(decimal.RequireFromString("0.92")))
+			assert.Equal(t, "Branch order", req.Notes)
+			require.NotNil(t, req.QuoteID)
+			assert.Equal(t, "quote-branch", *req.QuoteID)
+			require.Len(t, req.Lines, 1)
+			assert.Equal(t, "Branch line", req.Lines[0].Description)
+			assert.True(t, req.Lines[0].Quantity.Equal(decimal.RequireFromString("1.50")))
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(cliOrderPayload("order-created", "ORD-CREATED", "PENDING"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/import":
+			var req orders.ImportOrdersRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "orders-branch.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "ORD-BRANCH")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed": 1,
+				"orders_created": 1,
+				"lines_imported": 1,
+				"rows_skipped":   0,
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-branch":
+			_ = json.NewEncoder(w).Encode(cliOrderPayload("order-branch", "ORD-BRANCH", "CONFIRMED"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-branch/stock-check":
+			assert.Empty(t, r.URL.Query().Get("warehouse_id"))
+			_ = json.NewEncoder(w).Encode(orders.OrderStockCheck{
+				OrderID:     "order-branch",
+				OrderNumber: "ORD-BRANCH",
+				Ready:       true,
+				Lines: []orders.OrderStockCheckLine{{
+					LineID:       "line-branch",
+					LineNumber:   1,
+					Description:  "Branch line",
+					ProductID:    "prod-branch",
+					ProductCode:  "BR-1",
+					ProductName:  "Branch product",
+					RequiredQty:  decimal.RequireFromString("1.50"),
+					AvailableQty: decimal.RequireFromString("4.00"),
+					Status:       orders.OrderStockLineStatusAvailable,
+				}},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-branch/stock-reservations":
+			_ = json.NewEncoder(w).Encode([]orders.OrderStockReservation{})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-branch/pick-list":
+			assert.Equal(t, "wh-branch", r.URL.Query().Get("warehouse_id"))
+			_ = json.NewEncoder(w).Encode(orders.OrderPickList{
+				OrderID:     "order-branch",
+				OrderNumber: "ORD-BRANCH",
+				WarehouseID: "wh-branch",
+				Ready:       true,
+				Lines: []orders.OrderPickListLine{{
+					LineID:       "line-branch",
+					LineNumber:   1,
+					Description:  "Branch line",
+					ProductID:    "prod-branch",
+					ProductCode:  "BR-1",
+					ProductName:  "Branch product",
+					RequiredQty:  decimal.RequireFromString("1.50"),
+					ReservedQty:  decimal.RequireFromString("1.50"),
+					PickQty:      decimal.RequireFromString("1.50"),
+					AvailableQty: decimal.RequireFromString("4.00"),
+					Status:       orders.OrderPickListLineStatusReady,
+				}},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-branch/reserve-stock":
+			var req orders.OrderStockReservationRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "wh-branch", req.WarehouseID)
+			assert.Equal(t, "Branch pick", req.Reason)
+			_ = json.NewEncoder(w).Encode(orders.OrderStockReservationResult{
+				OrderID:     "order-branch",
+				OrderNumber: "ORD-BRANCH",
+				WarehouseID: "wh-branch",
+				Action:      orders.OrderStockReservationActionReserve,
+				Lines: []orders.OrderStockReservationLine{{
+					ProductID:    "prod-branch",
+					ProductCode:  "BR-1",
+					ProductName:  "Branch product",
+					Quantity:     decimal.RequireFromString("1.50"),
+					ReservedQty:  decimal.RequireFromString("1.50"),
+					AvailableQty: decimal.RequireFromString("2.50"),
+					Status:       orders.OrderStockReservationStatusReserved,
+				}},
+			})
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-branch":
+			var req orders.UpdateOrderRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "contact-branch", req.ContactID)
+			assert.Equal(t, "2026-03-16", req.OrderDate.Format("2006-01-02"))
+			require.NotNil(t, req.ExpectedDelivery)
+			assert.Equal(t, "2026-03-25", req.ExpectedDelivery.Format("2006-01-02"))
+			assert.Equal(t, "USD", req.Currency)
+			assert.True(t, req.ExchangeRate.Equal(decimal.RequireFromString("1.25")))
+			assert.Equal(t, "Updated branch order", req.Notes)
+			require.Len(t, req.Lines, 1)
+			assert.Equal(t, "Updated branch line", req.Lines[0].Description)
+			_ = json.NewEncoder(w).Encode(cliOrderPayload("order-branch", "ORD-UPDATED", "PROCESSING"))
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-branch":
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-branch/confirm":
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			assert.Empty(t, string(body))
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "confirmed"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	errorCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing subcommand", args: []string{"orders"}, want: "orders subcommand required"},
+		{name: "unknown subcommand", args: []string{"orders", "archive"}, want: `unknown orders subcommand "archive"`},
+		{name: "list invalid status", args: []string{"orders", "list", "--status", "queued"}, want: "invalid order status"},
+		{name: "list invalid from date", args: []string{"orders", "list", "--from", "not-a-date"}, want: "from"},
+		{name: "list invalid to date", args: []string{"orders", "list", "--to", "not-a-date"}, want: "to"},
+		{name: "create missing contact", args: []string{"orders", "create", "--order-date", "2026-03-15"}, want: "contact-id is required"},
+		{name: "create missing date", args: []string{"orders", "create", "--contact-id", "contact-branch"}, want: "order-date"},
+		{name: "create invalid expected delivery", args: []string{"orders", "create", "--contact-id", "contact-branch", "--order-date", "2026-03-15", "--expected-delivery", "not-a-date"}, want: "expected-delivery"},
+		{name: "create missing line", args: []string{"orders", "create", "--contact-id", "contact-branch", "--order-date", "2026-03-15"}, want: "at least one line is required"},
+		{name: "create invalid exchange rate", args: []string{"orders", "create", "--contact-id", "contact-branch", "--order-date", "2026-03-15", "--exchange-rate", "0", "--line", "description=Branch line,quantity=1,unit_price=80,vat_rate=22"}, want: "exchange-rate"},
+		{name: "import missing file", args: []string{"orders", "import"}, want: "file is required"},
+		{name: "get missing id", args: []string{"orders", "get"}, want: "id is required"},
+		{name: "stock check missing id", args: []string{"orders", "stock-check"}, want: "id is required"},
+		{name: "reservations missing id", args: []string{"orders", "stock-reservations"}, want: "id is required"},
+		{name: "pick list missing id", args: []string{"orders", "pick-list", "--warehouse-id", "wh-branch"}, want: "id is required"},
+		{name: "pick list missing warehouse", args: []string{"orders", "pick-list", "--id", "order-branch"}, want: "warehouse-id is required"},
+		{name: "reserve missing id", args: []string{"orders", "reserve-stock", "--warehouse-id", "wh-branch"}, want: "id is required"},
+		{name: "reserve missing warehouse", args: []string{"orders", "reserve-stock", "--id", "order-branch"}, want: "warehouse-id is required"},
+		{name: "release missing warehouse", args: []string{"orders", "release-stock", "--id", "order-branch"}, want: "warehouse-id is required"},
+		{name: "update missing id", args: []string{"orders", "update", "--contact-id", "contact-branch"}, want: "id is required"},
+		{name: "update missing contact", args: []string{"orders", "update", "--id", "order-branch"}, want: "contact-id is required"},
+		{name: "update missing date", args: []string{"orders", "update", "--id", "order-branch", "--contact-id", "contact-branch"}, want: "order-date"},
+		{name: "update missing line", args: []string{"orders", "update", "--id", "order-branch", "--contact-id", "contact-branch", "--order-date", "2026-03-16"}, want: "at least one line is required"},
+		{name: "update invalid exchange rate", args: []string{"orders", "update", "--id", "order-branch", "--contact-id", "contact-branch", "--order-date", "2026-03-16", "--exchange-rate", "0", "--line", "description=Branch line,quantity=1,unit_price=80,vat_rate=22"}, want: "exchange-rate"},
+		{name: "delete missing id", args: []string{"orders", "delete"}, want: "id is required"},
+		{name: "confirm missing id", args: []string{"orders", "confirm"}, want: "id is required"},
+		{name: "evidence gate only confirm", args: []string{"orders", "process", "--id", "order-branch", "--require-approved-evidence"}, want: "require-approved-evidence is only supported for orders confirm"},
+	}
+	for _, tc := range errorCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+		})
+	}
+
+	err := app.run(context.Background(), []string{"orders", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "ORD-BRANCH")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"orders", "create",
+		"--contact-id", " contact-branch ",
+		"--order-date", "2026-03-15",
+		"--currency", " usd ",
+		"--exchange-rate", "0.92",
+		"--notes", " Branch order ",
+		"--quote-id", " quote-branch ",
+		"--line", "description=Branch line,quantity=1.50,unit=hour,unit_price=80.00,discount_percent=5.00,vat_rate=22.00,product_id=prod-branch",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"order_number": "ORD-CREATED"`)
+
+	orderImportFile := writeTempCSV(t, "orders-branch.csv", "order_number,contact_id,order_date,line_description,quantity,unit_price,vat_rate\nORD-BRANCH,contact-branch,2026-03-15,Branch line,1,80,22\n")
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"orders", "import", "--file", orderImportFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"orders_created": 1`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"orders", "get", "--id", " order-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"order_number": "ORD-BRANCH"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"orders", "stock-check", "--id", " order-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"ready": true`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"orders", "stock-reservations", "--id", " order-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Equal(t, "[]\n", stdout.String())
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"orders", "pick-list", "--id", " order-branch ", "--warehouse-id", " wh-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"warehouse_id": "wh-branch"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"orders", "reserve-stock", "--id", " order-branch ", "--warehouse-id", " wh-branch ", "--reason", " Branch pick ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"action": "RESERVE"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"orders", "update",
+		"--id", " order-branch ",
+		"--contact-id", " contact-branch ",
+		"--order-date", "2026-03-16",
+		"--expected-delivery", "2026-03-25",
+		"--currency", " usd ",
+		"--exchange-rate", "1.25",
+		"--notes", " Updated branch order ",
+		"--line", "description=Updated branch line,quantity=2,unit_price=90,vat_rate=22",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"order_number": "ORD-UPDATED"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"orders", "delete", "--id", " order-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "deleted"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"orders", "confirm", "--id", " order-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "confirmed"`)
 }
 
 func TestCLIRecurringInvoiceCommands(t *testing.T) {
