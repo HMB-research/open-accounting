@@ -9746,6 +9746,163 @@ func TestCLIEmailCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Email sent")
 }
 
+func TestCLIEmailBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	now := "2026-04-01T10:00:00Z"
+	emailSentPayload := map[string]any{
+		"success": true,
+		"log_id":  "email-branch",
+		"message": "Email queued for delivery",
+	}
+	requestCounts := map[string]int{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/email-log":
+			requestCounts["log"]++
+			switch r.URL.Query().Get("limit") {
+			case "13":
+				_ = json.NewEncoder(w).Encode([]map[string]any{{
+					"id":              "email-json",
+					"tenant_id":       "tenant-1",
+					"email_type":      "PAYMENT_RECEIPT",
+					"recipient_email": "receipt@example.com",
+					"recipient_name":  "Receipt Customer",
+					"subject":         "Receipt",
+					"status":          "FAILED",
+					"error":           "Mailbox unavailable",
+					"related_id":      "pay-1",
+					"created_at":      now,
+				}})
+			case "99":
+				w.WriteHeader(http.StatusBadGateway)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "email log unavailable"})
+			default:
+				t.Fatalf("unexpected email log limit: %q", r.URL.Query().Get("limit"))
+			}
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/trimmed-inv/email":
+			requestCounts["invoice"]++
+			var req email.SendInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "customer@example.com", req.RecipientEmail)
+			assert.Equal(t, "Customer", req.RecipientName)
+			assert.Equal(t, "Invoice Subject", req.Subject)
+			assert.Equal(t, "Please see attached.", req.Message)
+			assert.True(t, req.AttachPDF)
+			_ = json.NewEncoder(w).Encode(emailSentPayload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/api-error/email":
+			requestCounts["invoice-error"]++
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "invoice already sent"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments/trimmed-pay/email-receipt":
+			requestCounts["payment"]++
+			var req email.SendPaymentReceiptRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "payer@example.com", req.RecipientEmail)
+			assert.Equal(t, "Payer", req.RecipientName)
+			assert.Equal(t, "Payment Receipt", req.Subject)
+			assert.Equal(t, "Payment received.", req.Message)
+			assert.True(t, req.RequireApprovedEvidence)
+			_ = json.NewEncoder(w).Encode(emailSentPayload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments/api-error/email-receipt":
+			requestCounts["payment-error"]++
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "approved evidence missing"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+	app, stdout, stderr := newTestCLIApp()
+
+	errorCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown subcommand", args: []string{"email", "archive"}, want: `unknown email subcommand "archive"`},
+		{name: "log invalid flag", args: []string{"email", "log", "--bogus"}, want: "flag provided but not defined"},
+		{name: "log invalid limit", args: []string{"email", "log", "--limit", "0"}, want: "limit must be positive"},
+		{name: "log bad limit", args: []string{"email", "log", "--limit", "many"}, want: "parse limit"},
+		{name: "log api error", args: []string{"email", "log", "--limit", "99"}, want: "email log unavailable"},
+		{name: "invoice invalid flag", args: []string{"email", "invoice", "--bogus"}, want: "flag provided but not defined"},
+		{name: "invoice missing invoice id", args: []string{"email", "invoice", "--recipient-email", "customer@example.com"}, want: "invoice-id is required"},
+		{name: "invoice missing recipient", args: []string{"email", "invoice", "--invoice-id", "inv-1"}, want: "recipient-email is required"},
+		{name: "invoice api error", args: []string{"email", "invoice", "--invoice-id", "api-error", "--recipient-email", "customer@example.com"}, want: "invoice already sent"},
+		{name: "payment receipt invalid flag", args: []string{"email", "payment-receipt", "--bogus"}, want: "flag provided but not defined"},
+		{name: "payment receipt missing payment id", args: []string{"email", "payment-receipt", "--recipient-email", "payer@example.com"}, want: "payment-id is required"},
+		{name: "payment receipt missing recipient", args: []string{"email", "payment-receipt", "--payment-id", "pay-1"}, want: "recipient-email is required"},
+		{name: "payment receipt api error", args: []string{"email", "payment-receipt", "--payment-id", "api-error", "--recipient-email", "payer@example.com"}, want: "approved evidence missing"},
+	}
+	for _, tc := range errorCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			stderr.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	stdout.Reset()
+	err := app.run(context.Background(), []string{"email", "log", "--limit", "13", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "email-json"`)
+	assert.Contains(t, stdout.String(), `"status": "FAILED"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"email", "invoice",
+		"--invoice-id", " trimmed-inv ",
+		"--recipient-email", " customer@example.com ",
+		"--recipient-name", " Customer ",
+		"--subject", " Invoice Subject ",
+		"--message", " Please see attached. ",
+		"--attach-pdf",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"log_id": "email-branch"`)
+	assert.Contains(t, stdout.String(), `"message": "Email queued for delivery"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"email", "payment-receipt",
+		"--payment-id", " trimmed-pay ",
+		"--recipient-email", " payer@example.com ",
+		"--recipient-name", " Payer ",
+		"--subject", " Payment Receipt ",
+		"--message", " Payment received. ",
+		"--require-approved-evidence",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"success": true`)
+	assert.Contains(t, stdout.String(), `"log_id": "email-branch"`)
+
+	assert.Equal(t, map[string]int{
+		"log":           2,
+		"invoice":       1,
+		"invoice-error": 1,
+		"payment":       1,
+		"payment-error": 1,
+	}, requestCounts)
+}
+
 func TestCLIEmailSMTPBranches(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
