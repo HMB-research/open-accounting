@@ -7724,6 +7724,153 @@ func TestCLIInventoryValidationBranches(t *testing.T) {
 	}
 }
 
+func TestCLIInventoryTopLevelAuthFlagsAndAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"inventory", "valuation"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		APIToken: "oa_saved_token",
+	}))
+	err = app.run(context.Background(), []string{"inventory", "valuation"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no tenant configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "valuation bad flag", args: []string{"inventory", "valuation", "--bad"}, want: "flag provided but not defined"},
+		{name: "adjust bad flag", args: []string{"inventory", "adjust", "--bad"}, want: "flag provided but not defined"},
+		{name: "transfer bad flag", args: []string{"inventory", "transfer", "--bad"}, want: "flag provided but not defined"},
+		{name: "reserve bad flag", args: []string{"inventory", "reserve", "--bad"}, want: "flag provided but not defined"},
+		{name: "reserve missing product", args: []string{"inventory", "reserve", "--warehouse-id", "wh-1", "--quantity", "1"}, want: "product-id is required"},
+		{name: "release bad flag", args: []string{"inventory", "release", "--bad"}, want: "flag provided but not defined"},
+		{name: "release missing warehouse", args: []string{"inventory", "release", "--product-id", "prod-1", "--quantity", "1"}, want: "warehouse-id is required"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	successServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/transfer":
+			var req inventory.TransferStockRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "prod-1", req.ProductID)
+			assert.Equal(t, "wh-1", req.FromWarehouseID)
+			assert.Equal(t, "wh-2", req.ToWarehouseID)
+			assert.Equal(t, "3", req.Quantity)
+			assert.Equal(t, "Move to branch", req.Notes)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "transferred"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/reserve":
+			var req inventory.StockReservationRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "prod-1", req.ProductID)
+			assert.Equal(t, "wh-1", req.WarehouseID)
+			assert.Equal(t, "2", req.Quantity)
+			assert.Equal(t, "Sales order", req.Reason)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":            "stock-1",
+				"tenant_id":     "tenant-1",
+				"product_id":    "prod-1",
+				"warehouse_id":  "wh-1",
+				"quantity":      "12.00",
+				"reserved_qty":  "4.00",
+				"available_qty": "8.00",
+				"last_updated":  "2026-03-15T12:00:00Z",
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/release":
+			var req inventory.StockReservationRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "prod-1", req.ProductID)
+			assert.Equal(t, "wh-1", req.WarehouseID)
+			assert.Equal(t, "1", req.Quantity)
+			assert.Equal(t, "Order canceled", req.Reason)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":            "stock-1",
+				"tenant_id":     "tenant-1",
+				"product_id":    "prod-1",
+				"warehouse_id":  "wh-1",
+				"quantity":      "12.00",
+				"reserved_qty":  "3.00",
+				"available_qty": "9.00",
+				"last_updated":  "2026-03-15T12:00:00Z",
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer successServer.Close()
+	t.Setenv("OA_BASE_URL", successServer.URL)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "transfer", "--product-id", " prod-1 ", "--from-warehouse-id", " wh-1 ", "--to-warehouse-id", " wh-2 ", "--quantity", "3.00", "--notes", " Move to branch "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Transferred 3 of product prod-1 from wh-1 to wh-2")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "reserve", "--product-id", " prod-1 ", "--warehouse-id", " wh-1 ", "--quantity", "2.00", "--reason", " Sales order ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"reserved_qty": "4"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "release", "--product-id", " prod-1 ", "--warehouse-id", " wh-1 ", "--quantity", "1.00", "--reason", " Order canceled "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Released 1 of product prod-1 in warehouse wh-1")
+
+	errorServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"inventory backend unavailable"}`))
+	}))
+	defer errorServer.Close()
+	t.Setenv("OA_BASE_URL", errorServer.URL)
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "valuation", args: []string{"inventory", "valuation", "--warehouse-id", "wh-1", "--method", "fifo"}},
+		{name: "adjust", args: []string{"inventory", "adjust", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "1", "--unit-cost", "10"}},
+		{name: "transfer", args: []string{"inventory", "transfer", "--product-id", "prod-1", "--from-warehouse-id", "wh-1", "--to-warehouse-id", "wh-2", "--quantity", "1"}},
+		{name: "reserve", args: []string{"inventory", "reserve", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "1"}},
+		{name: "release", args: []string{"inventory", "release", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "1"}},
+	} {
+		t.Run(tc.name+" API error", func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "inventory backend unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIInventoryProductBranches(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
