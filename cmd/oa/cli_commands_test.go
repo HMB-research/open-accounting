@@ -12018,6 +12018,23 @@ func TestCLICloseCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "zip-bytes", stdout.String())
 
+	archiveDir := t.TempDir()
+	t.Chdir(archiveDir)
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"close", "year-end-archive", "--period-end", "2025-12-31"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Downloaded year-end close audit archive to year-end-close-audit-2025-12-31.zip")
+	defaultArchiveBytes, err := os.ReadFile(filepath.Join(archiveDir, "year-end-close-audit-2025-12-31.zip"))
+	require.NoError(t, err)
+	assert.Equal(t, "zip-bytes", string(defaultArchiveBytes))
+
+	stdout.Reset()
+	missingParentArchivePath := filepath.Join(archiveDir, "missing", "year-end-audit.zip")
+	err = app.run(context.Background(), []string{"close", "year-end-archive", "--period-end", "2025-12-31", "--output", missingParentArchivePath})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "write year-end audit archive")
+	assert.Empty(t, stdout.String())
+
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"close", "carry-forward", "--period-end", "2025-12-31"})
 	require.NoError(t, err)
@@ -12074,6 +12091,90 @@ func TestCLICloseCommandValidation(t *testing.T) {
 			err := app.run(context.Background(), append([]string{"close"}, tc.args...))
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+}
+
+func TestCLICloseAuthFlagsAndAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"close", "events"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		APIToken: "oa_saved_token",
+	}))
+	err = app.run(context.Background(), []string{"close", "events"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no tenant configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "events bad flag", args: []string{"close", "events", "--bad"}, want: "flag provided but not defined"},
+		{name: "events invalid limit", args: []string{"close", "events", "--limit", "many"}, want: "parse limit"},
+		{name: "period bad flag", args: []string{"close", "period", "--bad"}, want: "flag provided but not defined"},
+		{name: "reopen bad flag", args: []string{"close", "reopen", "--bad"}, want: "flag provided but not defined"},
+		{name: "year end status bad flag", args: []string{"close", "year-end-status", "--bad"}, want: "flag provided but not defined"},
+		{name: "year end pack bad flag", args: []string{"close", "year-end-pack", "--bad"}, want: "flag provided but not defined"},
+		{name: "year end audit bad flag", args: []string{"close", "year-end-audit", "--bad"}, want: "flag provided but not defined"},
+		{name: "year end archive bad flag", args: []string{"close", "year-end-archive", "--bad"}, want: "flag provided but not defined"},
+		{name: "carry forward bad flag", args: []string{"close", "carry-forward", "--bad"}, want: "flag provided but not defined"},
+		{name: "reverse carry forward bad flag", args: []string{"close", "reverse-carry-forward", "--bad"}, want: "flag provided but not defined"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "close API unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "events", args: []string{"close", "events", "--limit", "10"}},
+		{name: "period", args: []string{"close", "period", "--period-end", "2026-03-31", "--note", "March close"}},
+		{name: "reopen", args: []string{"close", "reopen", "--period-end", "2026-03-31", "--note", "Adjustments"}},
+		{name: "year end status", args: []string{"close", "year-end-status", "--period-end", "2025-12-31"}},
+		{name: "year end pack", args: []string{"close", "year-end-pack", "--period-end", "2025-12-31"}},
+		{name: "year end audit", args: []string{"close", "year-end-audit", "--period-end", "2025-12-31"}},
+		{name: "year end archive", args: []string{"close", "year-end-archive", "--period-end", "2025-12-31"}},
+		{name: "carry forward", args: []string{"close", "carry-forward", "--period-end", "2025-12-31"}},
+		{name: "reverse carry forward", args: []string{"close", "reverse-carry-forward", "--period-end", "2025-12-31", "--reason", "Late supplier accrual"}},
+	} {
+		t.Run(tc.name+" API error", func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "close API unavailable")
+			assert.Empty(t, stdout.String())
 		})
 	}
 }
