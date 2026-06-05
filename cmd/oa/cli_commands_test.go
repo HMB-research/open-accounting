@@ -12056,6 +12056,56 @@ func cliSalaryComponentPayload(name string, taxable, recurring bool) map[string]
 	}
 }
 
+func cliPayrollRunPayload(id, status string, year, month int) map[string]any {
+	return map[string]any{
+		"id":                  id,
+		"tenant_id":           "tenant-1",
+		"period_year":         year,
+		"period_month":        month,
+		"status":              status,
+		"payment_date":        "2026-03-31T00:00:00Z",
+		"total_gross":         "3200.00",
+		"total_net":           "2534.80",
+		"total_employer_cost": "4281.60",
+		"notes":               "March payroll",
+		"created_at":          "2026-03-20T12:00:00Z",
+		"updated_at":          "2026-03-20T12:00:00Z",
+	}
+}
+
+func cliPayslipPayload(id, runID string) map[string]any {
+	return map[string]any{
+		"id":                              id,
+		"tenant_id":                       "tenant-1",
+		"payroll_run_id":                  runID,
+		"employee_id":                     "emp-1",
+		"gross_salary":                    "3200.00",
+		"taxable_income":                  "2500.00",
+		"income_tax":                      "550.00",
+		"unemployment_insurance_employee": "51.20",
+		"funded_pension":                  "64.00",
+		"net_salary":                      "2534.80",
+		"social_tax":                      "1056.00",
+		"unemployment_insurance_employer": "25.60",
+		"total_employer_cost":             "4281.60",
+		"basic_exemption_applied":         "700.00",
+		"payment_status":                  "PENDING",
+		"created_at":                      "2026-03-20T12:00:00Z",
+		"employee": map[string]any{
+			"id":              "emp-1",
+			"tenant_id":       "tenant-1",
+			"employee_number": "EMP-001",
+			"first_name":      "Mari",
+			"last_name":       "Maasikas",
+			"start_date":      "2026-01-01T00:00:00Z",
+			"employment_type": "FULL_TIME",
+			"is_active":       true,
+			"created_at":      "2026-01-01T00:00:00Z",
+			"updated_at":      "2026-01-01T00:00:00Z",
+		},
+	}
+}
+
 func TestCLIEmployeesCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
@@ -12437,23 +12487,6 @@ func TestCLIPayrollRunCommands(t *testing.T) {
 		APIToken:   "oa_saved_token",
 	}))
 
-	payrollRunPayload := func(id, status string, year, month int) map[string]any {
-		return map[string]any{
-			"id":                  id,
-			"tenant_id":           "tenant-1",
-			"period_year":         year,
-			"period_month":        month,
-			"status":              status,
-			"payment_date":        "2026-03-31T00:00:00Z",
-			"total_gross":         "3200.00",
-			"total_net":           "2534.80",
-			"total_employer_cost": "4281.60",
-			"notes":               "March payroll",
-			"created_at":          "2026-03-20T12:00:00Z",
-			"updated_at":          "2026-03-20T12:00:00Z",
-		}
-	}
-
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
@@ -12461,7 +12494,7 @@ func TestCLIPayrollRunCommands(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs":
 			require.Equal(t, "2026", r.URL.Query().Get("year"))
-			_ = json.NewEncoder(w).Encode([]map[string]any{payrollRunPayload("run-1", "DRAFT", 2026, 3)})
+			_ = json.NewEncoder(w).Encode([]map[string]any{cliPayrollRunPayload("run-1", "DRAFT", 2026, 3)})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs":
 			var req payroll.CreatePayrollRunRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -12470,84 +12503,26 @@ func TestCLIPayrollRunCommands(t *testing.T) {
 			require.NotNil(t, req.PaymentDate)
 			assert.Equal(t, "March payroll", req.Notes)
 			w.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(w).Encode(payrollRunPayload("run-1", "DRAFT", 2026, 3))
+			_ = json.NewEncoder(w).Encode(cliPayrollRunPayload("run-1", "DRAFT", 2026, 3))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-1":
-			payload := payrollRunPayload("run-1", "DRAFT", 2026, 3)
-			payload["payslips"] = []map[string]any{{
-				"id":                              "payslip-1",
-				"tenant_id":                       "tenant-1",
-				"payroll_run_id":                  "run-1",
-				"employee_id":                     "emp-1",
-				"gross_salary":                    "3200.00",
-				"taxable_income":                  "2500.00",
-				"income_tax":                      "550.00",
-				"unemployment_insurance_employee": "51.20",
-				"funded_pension":                  "64.00",
-				"net_salary":                      "2534.80",
-				"social_tax":                      "1056.00",
-				"unemployment_insurance_employer": "25.60",
-				"total_employer_cost":             "4281.60",
-				"basic_exemption_applied":         "700.00",
-				"payment_status":                  "PENDING",
-				"created_at":                      "2026-03-20T12:00:00Z",
-				"employee": map[string]any{
-					"id":              "emp-1",
-					"tenant_id":       "tenant-1",
-					"employee_number": "EMP-001",
-					"first_name":      "Mari",
-					"last_name":       "Maasikas",
-					"start_date":      "2026-01-01T00:00:00Z",
-					"employment_type": "FULL_TIME",
-					"is_active":       true,
-					"created_at":      "2026-01-01T00:00:00Z",
-					"updated_at":      "2026-01-01T00:00:00Z",
-				},
-			}}
+			payload := cliPayrollRunPayload("run-1", "DRAFT", 2026, 3)
+			payload["payslips"] = []map[string]any{cliPayslipPayload("payslip-1", "run-1")}
 			_ = json.NewEncoder(w).Encode(payload)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-1/calculate":
-			_ = json.NewEncoder(w).Encode(payrollRunPayload("run-1", "CALCULATED", 2026, 3))
+			_ = json.NewEncoder(w).Encode(cliPayrollRunPayload("run-1", "CALCULATED", 2026, 3))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-1/process":
 			var req payroll.ProcessPayrollRunRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.True(t, req.Approve)
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"payroll_run":   payrollRunPayload("run-1", "APPROVED", 2026, 3),
+				"payroll_run":   cliPayrollRunPayload("run-1", "APPROVED", 2026, 3),
 				"payslip_count": 1,
 				"approved":      true,
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-1/approve":
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "approved"})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-1/payslips":
-			_ = json.NewEncoder(w).Encode([]map[string]any{{
-				"id":                              "payslip-1",
-				"tenant_id":                       "tenant-1",
-				"payroll_run_id":                  "run-1",
-				"employee_id":                     "emp-1",
-				"gross_salary":                    "3200.00",
-				"taxable_income":                  "2500.00",
-				"income_tax":                      "550.00",
-				"unemployment_insurance_employee": "51.20",
-				"funded_pension":                  "64.00",
-				"net_salary":                      "2534.80",
-				"social_tax":                      "1056.00",
-				"unemployment_insurance_employer": "25.60",
-				"total_employer_cost":             "4281.60",
-				"basic_exemption_applied":         "700.00",
-				"payment_status":                  "PENDING",
-				"created_at":                      "2026-03-20T12:00:00Z",
-				"employee": map[string]any{
-					"id":              "emp-1",
-					"tenant_id":       "tenant-1",
-					"employee_number": "EMP-001",
-					"first_name":      "Mari",
-					"last_name":       "Maasikas",
-					"start_date":      "2026-01-01T00:00:00Z",
-					"employment_type": "FULL_TIME",
-					"is_active":       true,
-					"created_at":      "2026-01-01T00:00:00Z",
-					"updated_at":      "2026-01-01T00:00:00Z",
-				},
-			}})
+			_ = json.NewEncoder(w).Encode([]map[string]any{cliPayslipPayload("payslip-1", "run-1")})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-1/payslips/payslip-1/pdf":
 			w.Header().Set("Content-Type", "application/pdf")
 			_, _ = w.Write([]byte("%PDF payslip"))
@@ -12634,6 +12609,168 @@ func TestCLIPayrollRunCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"payroll", "tax-preview", "--gross-salary", "3200.00"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Net salary: 2534.8")
+}
+
+func TestCLIPayrollRunBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs":
+			require.Empty(t, r.URL.Query().Get("year"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{cliPayrollRunPayload("run-branch", "CALCULATED", 2026, 4)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs":
+			var req payroll.CreatePayrollRunRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, 2026, req.PeriodYear)
+			assert.Equal(t, 4, req.PeriodMonth)
+			assert.Nil(t, req.PaymentDate)
+			assert.Equal(t, "April payroll", req.Notes)
+			payload := cliPayrollRunPayload("run-created", "DRAFT", 2026, 4)
+			payload["notes"] = req.Notes
+			_ = json.NewEncoder(w).Encode(payload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-branch":
+			payload := cliPayrollRunPayload("run-branch", "CALCULATED", 2026, 4)
+			payload["payslips"] = []map[string]any{cliPayslipPayload("payslip-branch", "run-branch")}
+			_ = json.NewEncoder(w).Encode(payload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-branch/calculate":
+			_ = json.NewEncoder(w).Encode(cliPayrollRunPayload("run-branch", "CALCULATED", 2026, 4))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-branch/process":
+			var req payroll.ProcessPayrollRunRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.False(t, req.Approve)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"payroll_run":   cliPayrollRunPayload("run-branch", "CALCULATED", 2026, 4),
+				"payslip_count": 2,
+				"approved":      false,
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-branch/approve":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "approved"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-branch/payslips":
+			_ = json.NewEncoder(w).Encode([]map[string]any{cliPayslipPayload("payslip-branch", "run-branch")})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-branch/payslips/payslip-branch/pdf":
+			w.Header().Set("Content-Type", "application/pdf")
+			_, _ = w.Write([]byte("%PDF branch payslip"))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"payroll", "runs", "list", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "run-branch"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"payroll", "runs", "create",
+		"--year", " 2026 ",
+		"--month", " 4 ",
+		"--notes", " April payroll ",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "run-created"`)
+	assert.Contains(t, stdout.String(), `"notes": "April payroll"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payroll", "runs", "get", "--id", " run-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"period_month": 4`)
+	assert.Contains(t, stdout.String(), `"id": "payslip-branch"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payroll", "runs", "calculate", "--id", " run-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "CALCULATED"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payroll", "runs", "process", "--id", " run-branch "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Processed payroll run run-branch with 2 payslips")
+	assert.NotContains(t, stdout.String(), "Payroll run was approved")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payroll", "runs", "process", "--id", " run-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"approved": false`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payroll", "runs", "approve", "--id", " run-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "approved"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payroll", "runs", "payslips", "--id", " run-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "payslip-branch"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payroll", "runs", "payslip-pdf", "--run-id", " run-branch ", "--payslip-id", " payslip-branch "})
+	require.NoError(t, err)
+	assert.Equal(t, "%PDF branch payslip", stdout.String())
+}
+
+func TestCLIPayrollRunValidationBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing subcommand", args: []string{"payroll", "runs"}, want: "payroll runs subcommand required"},
+		{name: "unknown subcommand", args: []string{"payroll", "runs", "legacy"}, want: `unknown payroll runs subcommand "legacy"`},
+		{name: "list bad flag", args: []string{"payroll", "runs", "list", "--bad"}, want: "flag provided but not defined"},
+		{name: "list invalid year", args: []string{"payroll", "runs", "list", "--year", "soon"}, want: "parse year:"},
+		{name: "list nonpositive year", args: []string{"payroll", "runs", "list", "--year", "0"}, want: "year must be positive"},
+		{name: "create bad flag", args: []string{"payroll", "runs", "create", "--bad"}, want: "flag provided but not defined"},
+		{name: "create missing year", args: []string{"payroll", "runs", "create", "--month", "3"}, want: "year is required"},
+		{name: "create missing month", args: []string{"payroll", "runs", "create", "--year", "2026"}, want: "month is required"},
+		{name: "create invalid month", args: []string{"payroll", "runs", "create", "--year", "2026", "--month", "later"}, want: "parse month:"},
+		{name: "create month out of range", args: []string{"payroll", "runs", "create", "--year", "2026", "--month", "13"}, want: "month must be between 1 and 12"},
+		{name: "create invalid payment date", args: []string{"payroll", "runs", "create", "--year", "2026", "--month", "3", "--payment-date", "march"}, want: "parse payment-date:"},
+		{name: "get bad flag", args: []string{"payroll", "runs", "get", "--bad"}, want: "flag provided but not defined"},
+		{name: "get missing id", args: []string{"payroll", "runs", "get"}, want: "id is required"},
+		{name: "calculate bad flag", args: []string{"payroll", "runs", "calculate", "--bad"}, want: "flag provided but not defined"},
+		{name: "calculate missing id", args: []string{"payroll", "runs", "calculate"}, want: "id is required"},
+		{name: "process bad flag", args: []string{"payroll", "runs", "process", "--bad"}, want: "flag provided but not defined"},
+		{name: "process missing id", args: []string{"payroll", "runs", "process"}, want: "id is required"},
+		{name: "approve bad flag", args: []string{"payroll", "runs", "approve", "--bad"}, want: "flag provided but not defined"},
+		{name: "approve missing id", args: []string{"payroll", "runs", "approve"}, want: "id is required"},
+		{name: "payslips bad flag", args: []string{"payroll", "runs", "payslips", "--bad"}, want: "flag provided but not defined"},
+		{name: "payslips missing id", args: []string{"payroll", "runs", "payslips"}, want: "id is required"},
+		{name: "payslip pdf bad flag", args: []string{"payroll", "runs", "payslip-pdf", "--bad"}, want: "flag provided but not defined"},
+		{name: "payslip pdf missing run id", args: []string{"payroll", "runs", "payslip-pdf", "--payslip-id", "payslip-1"}, want: "run-id is required"},
+		{name: "payslip pdf missing payslip id", args: []string{"payroll", "runs", "payslip-pdf", "--run-id", "run-1"}, want: "payslip-id is required"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, _, _ := newTestCLIApp()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+		})
+	}
 }
 
 func TestCLIPayrollImportHistoryCommand(t *testing.T) {
