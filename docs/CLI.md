@@ -404,7 +404,7 @@ go run ./cmd/oa leave records reject --id <leave-record-id> --reason "Staffing s
 go run ./cmd/oa leave records cancel --id <leave-record-id>
 ```
 
-Use `--json` on leave-management reads and mutations for automation. Leave record statuses are `PENDING`, `APPROVED`, `REJECTED`, and `CANCELLED`. Absence types marked `requires_document=true` block approval until the leave record has at least one approved `supporting_document` or `tax_support` document attached with `--entity-type leave_record`.
+Use `--json` on leave-management reads and mutations for automation. Leave commands trim identifiers and dates before sending API requests, validate required IDs, years, positive day counts, and non-negative balance adjustments locally, and surface API errors without falling back to legacy client-side behavior. Leave record statuses are `PENDING`, `APPROVED`, `REJECTED`, and `CANCELLED`. Absence types marked `requires_document=true` block approval until the leave record has at least one approved `supporting_document` or `tax_support` document attached with `--entity-type leave_record`.
 
 ## TSD declarations
 

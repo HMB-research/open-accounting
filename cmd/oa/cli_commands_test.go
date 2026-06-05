@@ -15430,6 +15430,109 @@ func TestCLILeaveRecordsBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), "CANCELLED") //nolint:misspell // API status value uses existing database spelling.
 }
 
+func TestCLILeaveRoutingAndValidationBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, _, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"leave", "records"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no API token configured")
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	missingLeaveFile := filepath.Join(t.TempDir(), "missing-leave-balances.csv")
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown leave subcommand", args: []string{"leave", "archive"}, want: `unknown leave subcommand "archive"`},
+		{name: "absence list invalid flag", args: []string{"leave", "absence-types", "list", "--bogus"}, want: "flag provided but not defined"},
+		{name: "absence get invalid flag", args: []string{"leave", "absence-types", "get", "--bogus"}, want: "flag provided but not defined"},
+		{name: "balances list invalid flag", args: []string{"leave", "balances", "list", "--bogus"}, want: "flag provided but not defined"},
+		{name: "balances by year invalid flag", args: []string{"leave", "balances", "by-year", "--bogus"}, want: "flag provided but not defined"},
+		{name: "balances update invalid flag", args: []string{"leave", "balances", "update", "--bogus"}, want: "flag provided but not defined"},
+		{
+			name: "balances update invalid carryover",
+			args: []string{"leave", "balances", "update", "--employee-id", "emp-1", "--absence-type-id", "type-1", "--year", "2026", "--carryover-days", "-1"},
+			want: "carryover-days must be non-negative",
+		},
+		{name: "balances initialize invalid flag", args: []string{"leave", "balances", "initialize", "--bogus"}, want: "flag provided but not defined"},
+		{name: "balances import invalid flag", args: []string{"leave", "balances", "import", "--bogus"}, want: "flag provided but not defined"},
+		{name: "balances import unreadable file", args: []string{"leave", "balances", "import", "--file", missingLeaveFile}, want: "read file"},
+		{name: "records list invalid flag", args: []string{"leave", "records", "list", "--bogus"}, want: "flag provided but not defined"},
+		{name: "records create invalid flag", args: []string{"leave", "records", "create", "--bogus"}, want: "flag provided but not defined"},
+		{name: "records get invalid flag", args: []string{"leave", "records", "get", "--bogus"}, want: "flag provided but not defined"},
+		{name: "records approve invalid flag", args: []string{"leave", "records", "approve", "--bogus"}, want: "flag provided but not defined"},
+		{name: "records reject invalid flag", args: []string{"leave", "records", "reject", "--bogus"}, want: "flag provided but not defined"},
+		{name: "records cancel invalid flag", args: []string{"leave", "records", "cancel", "--bogus"}, want: "flag provided but not defined"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			app, _, _ := newTestCLIApp()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+}
+
+func TestCLILeaveAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	leaveFile := writeTempCSV(t, "leave-balances.csv", "year,employee_number,absence_type_code,entitled_days\n2026,EMP-100,ANNUAL_LEAVE,28\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"leave backend unavailable"}`))
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "absence list", args: []string{"leave", "absence-types", "list", "--active-only"}},
+		{name: "absence get", args: []string{"leave", "absence-types", "get", "--id", "type-1"}},
+		{name: "balances list", args: []string{"leave", "balances", "list", "--employee-id", "emp-1", "--year", "2026"}},
+		{name: "balances by year", args: []string{"leave", "balances", "by-year", "--employee-id", "emp-1", "--year", "2026"}},
+		{name: "balances update", args: []string{"leave", "balances", "update", "--employee-id", "emp-1", "--absence-type-id", "type-1", "--year", "2026", "--entitled-days", "30"}},
+		{name: "balances initialize", args: []string{"leave", "balances", "initialize", "--employee-id", "emp-1", "--year", "2026"}},
+		{name: "balances import", args: []string{"leave", "balances", "import", "--file", leaveFile}},
+		{name: "records list", args: []string{"leave", "records", "list", "--employee-id", "emp-1", "--year", "2026"}},
+		{name: "records create", args: []string{"leave", "records", "create", "--employee-id", "emp-1", "--absence-type-id", "type-1", "--start-date", "2026-03-15", "--end-date", "2026-03-19", "--total-days", "5", "--working-days", "3"}},
+		{name: "records get", args: []string{"leave", "records", "get", "--id", "leave-1"}},
+		{name: "records approve", args: []string{"leave", "records", "approve", "--id", "leave-1"}},
+		{name: "records reject", args: []string{"leave", "records", "reject", "--id", "leave-1", "--reason", "Staffing shortage"}},
+		{name: "records cancel", args: []string{"leave", "records", "cancel", "--id", "leave-1"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			app, _, _ := newTestCLIApp()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "leave backend unavailable")
+		})
+	}
+}
+
 func TestCLITaxAndTSDCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
