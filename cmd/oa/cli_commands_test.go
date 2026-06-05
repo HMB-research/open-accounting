@@ -127,6 +127,41 @@ func cliInventoryMovementPayload(productID, warehouseID string) map[string]any {
 	}
 }
 
+func cliPaymentPayload(id, number string, paymentType payments.PaymentType, contactID, allocationAmount string) map[string]any {
+	payload := map[string]any{
+		"id":             id,
+		"tenant_id":      "tenant-1",
+		"payment_number": number,
+		"payment_type":   paymentType,
+		"payment_date":   "2026-03-15T00:00:00Z",
+		"amount":         "100.00",
+		"currency":       "EUR",
+		"exchange_rate":  "1.00",
+		"base_amount":    "100.00",
+		"payment_method": "BANK_TRANSFER",
+		"bank_account":   "EE471000001020145685",
+		"reference":      "REF-1",
+		"notes":          "March receipt",
+		"created_at":     "2026-03-15T12:00:00Z",
+		"created_by":     "user-1",
+		"allocations":    []map[string]any{},
+	}
+	if strings.TrimSpace(contactID) != "" {
+		payload["contact_id"] = contactID
+	}
+	if strings.TrimSpace(allocationAmount) != "" {
+		payload["allocations"] = []map[string]any{{
+			"id":         "alloc-1",
+			"tenant_id":  "tenant-1",
+			"payment_id": id,
+			"invoice_id": "inv-1",
+			"amount":     allocationAmount,
+			"created_at": "2026-03-15T12:05:00Z",
+		}}
+	}
+	return payload
+}
+
 func journalEntryPayload(id, number string, status accounting.JournalEntryStatus) map[string]any {
 	return map[string]any{
 		"id":                id,
@@ -8398,32 +8433,7 @@ func TestCLIPaymentCommands(t *testing.T) {
 	}))
 
 	paymentPayload := func(id, number string) map[string]any {
-		return map[string]any{
-			"id":             id,
-			"tenant_id":      "tenant-1",
-			"payment_number": number,
-			"payment_type":   "RECEIVED",
-			"contact_id":     "contact-1",
-			"payment_date":   "2026-03-15T00:00:00Z",
-			"amount":         "100.00",
-			"currency":       "EUR",
-			"exchange_rate":  "1.00",
-			"base_amount":    "100.00",
-			"payment_method": "BANK_TRANSFER",
-			"bank_account":   "EE471000001020145685",
-			"reference":      "REF-1",
-			"notes":          "March receipt",
-			"created_at":     "2026-03-15T12:00:00Z",
-			"created_by":     "user-1",
-			"allocations": []map[string]any{{
-				"id":         "alloc-1",
-				"tenant_id":  "tenant-1",
-				"payment_id": id,
-				"invoice_id": "inv-1",
-				"amount":     "60.00",
-				"created_at": "2026-03-15T12:05:00Z",
-			}},
-		}
+		return cliPaymentPayload(id, number, payments.PaymentTypeReceived, "contact-1", "60.00")
 	}
 	importFile := writeTempCSV(t, "payments.csv", "payment_number,payment_type,payment_date,amount\nPAY-001,RECEIVED,2026-03-15,100.00\n")
 
@@ -8569,6 +8579,377 @@ func TestCLIPaymentCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"payments", "unallocated", "--type", "received"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "PMT-00002")
+}
+
+func TestCLIPaymentBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "unknown command",
+			args: []string{"archive"},
+			want: `unknown payments subcommand "archive"`,
+		},
+		{
+			name: "list invalid flag",
+			args: []string{"list", "--legacy"},
+			want: "flag provided but not defined",
+		},
+		{
+			name: "list invalid type",
+			args: []string{"list", "--type", "refund"},
+			want: "invalid payment type",
+		},
+		{
+			name: "list invalid from date",
+			args: []string{"list", "--from", "2026/03/01"},
+			want: "parse from",
+		},
+		{
+			name: "list invalid to date",
+			args: []string{"list", "--to", "2026/03/31"},
+			want: "parse to",
+		},
+		{
+			name: "create invalid flag",
+			args: []string{"create", "--json=maybe"},
+			want: "invalid boolean value",
+		},
+		{
+			name: "create missing type",
+			args: []string{"create", "--amount", "100"},
+			want: "type is required",
+		},
+		{
+			name: "create invalid type",
+			args: []string{"create", "--type", "refund", "--amount", "100"},
+			want: "invalid payment type",
+		},
+		{
+			name: "create missing amount",
+			args: []string{"create", "--type", "received"},
+			want: "amount is required",
+		},
+		{
+			name: "create zero amount",
+			args: []string{"create", "--type", "received", "--amount", "0"},
+			want: "amount must be positive",
+		},
+		{
+			name: "create invalid date",
+			args: []string{"create", "--type", "received", "--amount", "100", "--date", "2026/03/15"},
+			want: "parse date",
+		},
+		{
+			name: "create invalid exchange rate",
+			args: []string{"create", "--type", "received", "--amount", "100", "--exchange-rate", "bad"},
+			want: "parse exchange-rate",
+		},
+		{
+			name: "create zero exchange rate",
+			args: []string{"create", "--type", "received", "--amount", "100", "--exchange-rate", "0"},
+			want: "exchange-rate must be positive",
+		},
+		{
+			name: "create invalid allocation format",
+			args: []string{"create", "--type", "received", "--amount", "100", "--allocate", "inv-1"},
+			want: "allocate must be in invoice-id:amount form",
+		},
+		{
+			name: "create nonpositive allocation",
+			args: []string{"create", "--type", "received", "--amount", "100", "--allocate", "inv-1:0"},
+			want: "allocation amount must be positive",
+		},
+		{
+			name: "import invalid flag",
+			args: []string{"import", "--json=maybe"},
+			want: "invalid boolean value",
+		},
+		{
+			name: "import missing file",
+			args: []string{"import"},
+			want: "file is required",
+		},
+		{
+			name: "import unreadable file",
+			args: []string{"import", "--file", filepath.Join(t.TempDir(), "missing.csv")},
+			want: "no such file",
+		},
+		{
+			name: "sepa export invalid flag",
+			args: []string{"sepa-export", "--batch-booking=maybe"},
+			want: "invalid boolean value",
+		},
+		{
+			name: "sepa export missing debtor name",
+			args: []string{"sepa-export", "--debtor-iban", "EE382200221020145685", "--execution-date", "2026-04-01", "--line", "name=Supplier,iban=EE471000001020145685,amount=10"},
+			want: "debtor-name is required",
+		},
+		{
+			name: "sepa export missing debtor iban",
+			args: []string{"sepa-export", "--debtor-name", "Example OU", "--execution-date", "2026-04-01", "--line", "name=Supplier,iban=EE471000001020145685,amount=10"},
+			want: "debtor-iban is required",
+		},
+		{
+			name: "sepa export missing execution date",
+			args: []string{"sepa-export", "--debtor-name", "Example OU", "--debtor-iban", "EE382200221020145685", "--line", "name=Supplier,iban=EE471000001020145685,amount=10"},
+			want: "execution-date is required",
+		},
+		{
+			name: "sepa export missing line",
+			args: []string{"sepa-export", "--debtor-name", "Example OU", "--debtor-iban", "EE382200221020145685", "--execution-date", "2026-04-01"},
+			want: "at least one line is required",
+		},
+		{
+			name: "sepa export invalid line field",
+			args: []string{"sepa-export", "--debtor-name", "Example OU", "--debtor-iban", "EE382200221020145685", "--execution-date", "2026-04-01", "--line", "not-a-pair"},
+			want: "must be key=value",
+		},
+		{
+			name: "sepa export missing line creditor",
+			args: []string{"sepa-export", "--debtor-name", "Example OU", "--debtor-iban", "EE382200221020145685", "--execution-date", "2026-04-01", "--line", "iban=EE471000001020145685,amount=10"},
+			want: "line creditor_name is required",
+		},
+		{
+			name: "sepa export missing line iban",
+			args: []string{"sepa-export", "--debtor-name", "Example OU", "--debtor-iban", "EE382200221020145685", "--execution-date", "2026-04-01", "--line", "name=Supplier,amount=10"},
+			want: "line creditor_iban is required",
+		},
+		{
+			name: "sepa export nonpositive line amount",
+			args: []string{"sepa-export", "--debtor-name", "Example OU", "--debtor-iban", "EE382200221020145685", "--execution-date", "2026-04-01", "--line", "name=Supplier,iban=EE471000001020145685,amount=0"},
+			want: "line amount must be positive",
+		},
+		{
+			name: "get missing id",
+			args: []string{"get"},
+			want: "id is required",
+		},
+		{
+			name: "allocate missing id",
+			args: []string{"allocate", "--invoice-id", "inv-1", "--amount", "10"},
+			want: "id is required",
+		},
+		{
+			name: "allocate missing invoice",
+			args: []string{"allocate", "--id", "pay-1", "--amount", "10"},
+			want: "invoice-id is required",
+		},
+		{
+			name: "allocate missing amount",
+			args: []string{"allocate", "--id", "pay-1", "--invoice-id", "inv-1"},
+			want: "amount is required",
+		},
+		{
+			name: "allocate zero amount",
+			args: []string{"allocate", "--id", "pay-1", "--invoice-id", "inv-1", "--amount", "0"},
+			want: "amount must be positive",
+		},
+		{
+			name: "unallocated invalid flag",
+			args: []string{"unallocated", "--json=maybe"},
+			want: "invalid boolean value",
+		},
+		{
+			name: "unallocated invalid type",
+			args: []string{"unallocated", "--type", "refund"},
+			want: "invalid payment type",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := app.runPayments(ctx, tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+		})
+	}
+
+	importFile := writeTempCSV(t, "payments-branch.csv", "payment_number,payment_type,payment_date,amount\nPAY-002,MADE,2026-03-16,50.00\nBAD,MADE,,0\n")
+	sepaXML := []byte(`<?xml version="1.0" encoding="UTF-8"?><Document><MsgId>MSG-JSON</MsgId><InstdAmt Ccy="USD">50.00</InstdAmt></Document>`)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/tenants/tenant-1/payments/sepa-export" {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payments":
+			require.Empty(t, r.URL.RawQuery)
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				cliPaymentPayload("pay-text", "PMT-00010", payments.PaymentTypeMade, "", ""),
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments":
+			var req payments.CreatePaymentRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, payments.PaymentTypeMade, req.PaymentType)
+			require.NotNil(t, req.ContactID)
+			assert.Equal(t, "contact-branch", *req.ContactID)
+			assert.True(t, req.PaymentDate.IsZero())
+			assert.True(t, req.Amount.Equal(decimal.RequireFromString("50.25")))
+			assert.Equal(t, "USD", req.Currency)
+			assert.True(t, req.ExchangeRate.Equal(decimal.RequireFromString("0.92")))
+			assert.Equal(t, "CARD", req.PaymentMethod)
+			assert.Equal(t, "ACC-USD", req.BankAccount)
+			assert.Equal(t, "REF-JSON", req.Reference)
+			assert.Equal(t, "Branch payment", req.Notes)
+			require.Len(t, req.Allocations, 2)
+			assert.Equal(t, "inv-branch-1", req.Allocations[0].InvoiceID)
+			assert.True(t, req.Allocations[0].Amount.Equal(decimal.RequireFromString("20.25")))
+			assert.Equal(t, "inv-branch-2", req.Allocations[1].InvoiceID)
+			assert.True(t, req.Allocations[1].Amount.Equal(decimal.RequireFromString("30.00")))
+			payload := cliPaymentPayload("pay-json", "PMT-00011", payments.PaymentTypeMade, "contact-branch", "50.25")
+			payload["amount"] = "50.25"
+			payload["currency"] = "USD"
+			payload["exchange_rate"] = "0.92"
+			payload["base_amount"] = "46.23"
+			payload["payment_method"] = "CARD"
+			payload["bank_account"] = "ACC-USD"
+			payload["reference"] = "REF-JSON"
+			payload["notes"] = "Branch payment"
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(payload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments/import":
+			var req payments.ImportPaymentsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "payments-branch.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "PAY-002")
+			_ = json.NewEncoder(w).Encode(payments.ImportPaymentsResult{
+				FileName:        "payments-branch.csv",
+				RowsProcessed:   2,
+				PaymentsCreated: 1,
+				RowsSkipped:     1,
+				Errors: []payments.ImportPaymentsRowError{{
+					Row:           3,
+					PaymentNumber: "BAD",
+					Message:       "payment_date is required",
+				}},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments/sepa-export":
+			var req payments.SEPAExportRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "MSG-JSON", req.MessageID)
+			assert.Equal(t, "PMT-INF-JSON", req.PaymentInfoID)
+			assert.Equal(t, "2026-03-31T12:00:00Z", req.CreationDateTime)
+			assert.Equal(t, "Example OU", req.DebtorName)
+			assert.Equal(t, "EE382200221020145685", req.DebtorIBAN)
+			assert.Equal(t, "HABAEE2X", req.DebtorBIC)
+			assert.Equal(t, "2026-04-01", req.ExecutionDate)
+			require.NotNil(t, req.BatchBooking)
+			assert.False(t, *req.BatchBooking)
+			assert.Equal(t, "SHAR", req.ChargeBearer)
+			require.Len(t, req.Lines, 1)
+			assert.Equal(t, "E2E-1", req.Lines[0].EndToEndID)
+			assert.Equal(t, "Supplier AS", req.Lines[0].CreditorName)
+			assert.Equal(t, "EE471000001020145685", req.Lines[0].CreditorIBAN)
+			assert.Equal(t, "FOOBAR22", req.Lines[0].CreditorBIC)
+			assert.Equal(t, "USD", req.Lines[0].Currency)
+			assert.Equal(t, "Invoice INV-1002", req.Lines[0].Remittance)
+			assert.Equal(t, "inv-branch-1", req.Lines[0].InvoiceID)
+			assert.Equal(t, "pay-json", req.Lines[0].PaymentID)
+			assert.Equal(t, "PMT-00011", req.Lines[0].PaymentNumber)
+			assert.True(t, req.Lines[0].Amount.Equal(decimal.RequireFromString("50.00")))
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = w.Write(sepaXML)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payments/pay-json":
+			_ = json.NewEncoder(w).Encode(cliPaymentPayload("pay-json", "PMT-00011", payments.PaymentTypeMade, "contact-branch", "50.25"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments/pay-json/allocate":
+			var req payments.AllocationRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "inv-branch-3", req.InvoiceID)
+			assert.True(t, req.Amount.Equal(decimal.RequireFromString("10.50")))
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "allocated", "payment_id": "pay-json"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payments/unallocated":
+			require.Equal(t, "MADE", r.URL.Query().Get("type"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				cliPaymentPayload("pay-unallocated", "PMT-00012", payments.PaymentTypeMade, "", ""),
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	stdout.Reset()
+	err := app.run(context.Background(), []string{"payments", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "PMT-00010")
+	assert.Contains(t, stdout.String(), "MADE")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"payments", "create",
+		"--type", " made ",
+		"--amount", "50.25",
+		"--currency", " usd ",
+		"--exchange-rate", "0.92",
+		"--method", " CARD ",
+		"--contact-id", " contact-branch ",
+		"--bank-account", " ACC-USD ",
+		"--reference", " REF-JSON ",
+		"--notes", " Branch payment ",
+		"--allocate", " inv-branch-1 : 20.25 ",
+		"--allocate", " inv-branch-2 : 30.00 ",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"payment_number": "PMT-00011"`)
+	assert.Contains(t, stdout.String(), `"currency": "USD"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payments", "import", "--file", importFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"rows_skipped": 1`)
+	assert.Contains(t, stdout.String(), `"message": "payment_date is required"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"payments", "sepa-export",
+		"--message-id", " MSG-JSON ",
+		"--payment-info-id", " PMT-INF-JSON ",
+		"--creation-date-time", " 2026-03-31T12:00:00Z ",
+		"--debtor-name", " Example OU ",
+		"--debtor-iban", " EE382200221020145685 ",
+		"--debtor-bic", " HABAEE2X ",
+		"--execution-date", " 2026-04-01 ",
+		"--batch-booking=false",
+		"--charge-bearer", " SHAR ",
+		"--line", "end_to_end_id=E2E-1,name=Supplier AS,iban=EE471000001020145685,bic=FOOBAR22,amount=50.00,currency=usd,remittance=Invoice INV-1002,invoice_id=inv-branch-1,payment_id=pay-json,payment_number=PMT-00011",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "<MsgId>MSG-JSON</MsgId>")
+	assert.Contains(t, stdout.String(), `Ccy="USD"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payments", "get", "--id", " pay-json ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "pay-json"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payments", "allocate", "--id", " pay-json ", "--invoice-id", " inv-branch-3 ", "--amount", "10.50", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "allocated"`)
+	assert.Contains(t, stdout.String(), `"payment_id": "pay-json"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payments", "unallocated", "--type", " made ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "pay-unallocated"`)
+	assert.Contains(t, stdout.String(), `"payment_type": "MADE"`)
 }
 
 func TestCLIReminderCommands(t *testing.T) {
