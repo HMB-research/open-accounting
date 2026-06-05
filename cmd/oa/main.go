@@ -829,7 +829,7 @@ func (a *cliApp) runAuth(ctx context.Context, args []string) error {
 		}
 
 		client := newAPIClient(*baseURL, "")
-		loginResp, err := client.login(ctx, *email, passwordValue, "")
+		loginResp, err := client.login(ctx, strings.TrimSpace(*email), passwordValue, "")
 		if err != nil {
 			return err
 		}
@@ -844,7 +844,7 @@ func (a *cliApp) runAuth(ctx context.Context, args []string) error {
 		}
 
 		createResp, err := client.createAPIToken(ctx, membership.Tenant.ID, &apitoken.CreateRequest{
-			Name:      *tokenName,
+			Name:      strings.TrimSpace(*tokenName),
 			ExpiresAt: parseDaysToExpiry(*expiresInDays),
 		}, loginResp.AccessToken)
 		if err != nil {

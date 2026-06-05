@@ -953,6 +953,415 @@ func TestCLIAuthPublicCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Removed local CLI config")
 }
 
+func TestCLIAuthValidationBranches(t *testing.T) {
+	configureCLIEnv(t)
+	app, stdout, stderr := newTestCLIApp()
+
+	runWithStdin := func(args []string, input string) error {
+		stdinReader, stdinWriter, err := os.Pipe()
+		require.NoError(t, err)
+		_, err = stdinWriter.WriteString(input)
+		require.NoError(t, err)
+		require.NoError(t, stdinWriter.Close())
+		originalStdin := os.Stdin
+		os.Stdin = stdinReader
+		defer func() {
+			os.Stdin = originalStdin
+			_ = stdinReader.Close()
+		}()
+		return app.run(context.Background(), args)
+	}
+
+	publicErrorCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown subcommand", args: []string{"auth", "archive"}, want: `unknown auth subcommand "archive"`},
+		{name: "register invalid flag", args: []string{"auth", "register", "--bogus"}, want: "flag provided but not defined"},
+		{name: "register missing email", args: []string{"auth", "register", "--name", "User", "--password", "secret123"}, want: "email and name are required"},
+		{name: "register missing password", args: []string{"auth", "register", "--email", "new@example.com", "--name", "User"}, want: "password is required"},
+		{name: "login invalid flag", args: []string{"auth", "login", "--bogus"}, want: "flag provided but not defined"},
+		{name: "login missing email", args: []string{"auth", "login", "--password", "secret123"}, want: "email is required"},
+		{name: "login missing password", args: []string{"auth", "login", "--email", "new@example.com"}, want: "password is required"},
+		{name: "init invalid flag", args: []string{"auth", "init", "--bogus"}, want: "flag provided but not defined"},
+		{name: "init missing email", args: []string{"auth", "init", "--password", "secret123"}, want: "email is required"},
+		{name: "init missing password", args: []string{"auth", "init", "--email", "new@example.com"}, want: "password is required"},
+		{name: "refresh invalid flag", args: []string{"auth", "refresh", "--bogus"}, want: "flag provided but not defined"},
+		{name: "refresh missing token", args: []string{"auth", "refresh"}, want: "refresh-token is required"},
+		{name: "request reset invalid flag", args: []string{"auth", "request-password-reset", "--bogus"}, want: "flag provided but not defined"},
+		{name: "request reset missing email", args: []string{"auth", "request-password-reset"}, want: "email is required"},
+		{name: "reset password invalid flag", args: []string{"auth", "reset-password", "--bogus"}, want: "flag provided but not defined"},
+		{name: "reset password missing token", args: []string{"auth", "reset-password", "--new-password", "newpassword123"}, want: "token is required"},
+		{name: "reset password missing password", args: []string{"auth", "reset-password", "--token", "reset-token"}, want: "password is required"},
+		{name: "logout invalid flag", args: []string{"auth", "logout", "--bogus"}, want: "flag provided but not defined"},
+	}
+	for _, tc := range publicErrorCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			stderr.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	t.Run("register empty stdin password", func(t *testing.T) {
+		stdout.Reset()
+		stderr.Reset()
+		err := runWithStdin([]string{"auth", "register", "--email", "new@example.com", "--name", "User", "--password-stdin"}, "\n")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "password from stdin is empty")
+		assert.Empty(t, stdout.String())
+	})
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+	tokenErrorCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "tenants invalid flag", args: []string{"auth", "tenants", "--bogus"}, want: "flag provided but not defined"},
+		{name: "sessions invalid flag", args: []string{"auth", "sessions", "--bogus"}, want: "flag provided but not defined"},
+		{name: "security events invalid flag", args: []string{"auth", "security-events", "--limit", "many"}, want: "invalid value"},
+		{name: "revoke session invalid flag", args: []string{"auth", "revoke-session", "--bogus"}, want: "flag provided but not defined"},
+		{name: "revoke session missing id", args: []string{"auth", "revoke-session"}, want: "id is required"},
+		{name: "change password invalid flag", args: []string{"auth", "change-password", "--bogus"}, want: "flag provided but not defined"},
+		{name: "change password missing values", args: []string{"auth", "change-password"}, want: "current-password and new-password are required"},
+	}
+	for _, tc := range tokenErrorCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			stderr.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "",
+	}))
+	stdout.Reset()
+	err := app.run(context.Background(), []string{"auth", "status"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no API token configured")
+	assert.Empty(t, stdout.String())
+}
+
+func TestCLIAuthBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	loginRequests := map[string]map[string]string{}
+	requestCounts := map[string]int{}
+	now := "2026-06-01T12:00:00Z"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/register":
+			requestCounts["register"]++
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "stdin@example.com", req["email"])
+			assert.Equal(t, "stdin-password", req["password"])
+			assert.Equal(t, "Stdin User", req["name"])
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"id":    "user-stdin",
+				"email": "stdin@example.com",
+				"name":  "Stdin User",
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/login":
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			loginRequests[req["email"]] = req
+			switch req["email"] {
+			case "json@example.com":
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"access_token":  "jwt-json",
+					"refresh_token": "refresh-json",
+					"token_type":    "Bearer",
+					"expires_in":    900,
+					"user": map[string]string{
+						"id":    "user-json",
+						"email": "json@example.com",
+						"name":  "JSON User",
+					},
+				})
+			case "init@example.com":
+				_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "jwt-init"})
+			default:
+				t.Fatalf("unexpected login email: %q", req["email"])
+			}
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/me/tenants":
+			requestCounts["tenants"]++
+			require.Contains(t, []string{"Bearer jwt-init", "Bearer oa_branch_token_123456789"}, r.Header.Get("Authorization"))
+			_ = json.NewEncoder(w).Encode([]tenant.TenantMembership{
+				{
+					Tenant:    tenant.Tenant{ID: "tenant-1", Name: "Alpha", Slug: "alpha"},
+					Role:      tenant.RoleAdmin,
+					IsDefault: false,
+				},
+				{
+					Tenant:    tenant.Tenant{ID: "tenant-2", Name: "Beta", Slug: "beta"},
+					Role:      tenant.RoleAccountant,
+					IsDefault: true,
+				},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-2/api-tokens":
+			requestCounts["api-token"]++
+			require.Equal(t, "Bearer jwt-init", r.Header.Get("Authorization"))
+			var req apitoken.CreateRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Trimmed Token", req.Name)
+			assert.Nil(t, req.ExpiresAt)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"token": "oa_branch_token_123456789",
+				"api_token": map[string]any{
+					"id":           "token-branch",
+					"tenant_id":    "tenant-2",
+					"user_id":      "user-json",
+					"name":         "Trimmed Token",
+					"token_prefix": "oa_branch_",
+					"created_at":   now,
+				},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/refresh":
+			requestCounts["refresh"]++
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "refresh-json", req["refresh_token"])
+			assert.Equal(t, "tenant-2", req["tenant_id"])
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"access_token":  "jwt-refreshed-json",
+				"refresh_token": "refresh-replacement",
+				"token_type":    "Bearer",
+				"expires_in":    1200,
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/password-reset/request":
+			requestCounts["request-reset"]++
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "reset@example.com", req["email"])
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"status":      "accepted",
+				"message":     "prepared",
+				"reset_token": "reset-json",
+				"expires_at":  "2026-06-01T13:00:00Z",
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/password-reset/confirm":
+			requestCounts["reset-password"]++
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "reset-json", req["token"])
+			assert.Equal(t, "stdin-new-password", req["new_password"])
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "password_reset"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/auth/sessions":
+			requestCounts["sessions"]++
+			require.Equal(t, "Bearer oa_branch_token_123456789", r.Header.Get("Authorization"))
+			assert.Empty(t, r.URL.Query().Get("include_inactive"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"id":           "session-json",
+				"user_id":      "user-json",
+				"created_at":   now,
+				"last_used_at": now,
+				"expires_at":   "2027-06-01T12:00:00Z",
+			}})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/auth/security-events":
+			requestCounts["security-events"]++
+			require.Equal(t, "Bearer oa_branch_token_123456789", r.Header.Get("Authorization"))
+			assert.Equal(t, "7", r.URL.Query().Get("limit"))
+			_ = json.NewEncoder(w).Encode([]auth.SecurityAuditEvent{{
+				ID:         "event-json",
+				ActorEmail: "json@example.com",
+				Action:     auth.SecurityAuditActionLogin,
+				RequestIP:  "192.0.2.20",
+				Metadata:   map[string]string{"source": "cli"},
+				CreatedAt:  time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC),
+			}})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/auth/sessions/session-json":
+			requestCounts["revoke-session"]++
+			require.Equal(t, "Bearer oa_branch_token_123456789", r.Header.Get("Authorization"))
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/auth/sessions":
+			requestCounts["revoke-all"]++
+			require.Equal(t, "Bearer oa_branch_token_123456789", r.Header.Get("Authorization"))
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/auth/password":
+			requestCounts["change-password"]++
+			require.Equal(t, "Bearer oa_branch_token_123456789", r.Header.Get("Authorization"))
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "current-stdin", req["current_password"])
+			assert.Equal(t, "new-stdin", req["new_password"])
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "password_changed"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/me":
+			requestCounts["status"]++
+			require.Equal(t, "Bearer oa_branch_token_123456789", r.Header.Get("Authorization"))
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"id":    "user-json",
+				"name":  "JSON User",
+				"email": "json@example.com",
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/logout":
+			requestCounts["logout"]++
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "refresh-json", req["refresh_token"])
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "revoked"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	app, stdout, _ := newTestCLIApp()
+	runWithStdin := func(args []string, input string) error {
+		stdinReader, stdinWriter, err := os.Pipe()
+		require.NoError(t, err)
+		_, err = stdinWriter.WriteString(input)
+		require.NoError(t, err)
+		require.NoError(t, stdinWriter.Close())
+		originalStdin := os.Stdin
+		os.Stdin = stdinReader
+		defer func() {
+			os.Stdin = originalStdin
+			_ = stdinReader.Close()
+		}()
+		return app.run(context.Background(), args)
+	}
+
+	err := runWithStdin([]string{
+		"auth", "register",
+		"--base-url", server.URL,
+		"--email", " stdin@example.com ",
+		"--name", " Stdin User ",
+		"--password-stdin",
+		"--json",
+	}, "stdin-password\n")
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"email": "stdin@example.com"`)
+
+	stdout.Reset()
+	err = runWithStdin([]string{
+		"auth", "login",
+		"--base-url", server.URL,
+		"--email", " json@example.com ",
+		"--tenant-id", " tenant-2 ",
+		"--password-stdin",
+		"--json",
+	}, "json-password\n")
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"access_token": "jwt-json"`)
+	assert.Equal(t, "json-password", loginRequests["json@example.com"]["password"])
+	assert.Equal(t, "tenant-2", loginRequests["json@example.com"]["tenant_id"])
+
+	stdout.Reset()
+	err = runWithStdin([]string{
+		"auth", "init",
+		"--base-url", server.URL,
+		"--email", " init@example.com ",
+		"--tenant", " beta ",
+		"--token-name", " Trimmed Token ",
+		"--expires-in-days", "0",
+		"--password-stdin",
+	}, "init-password\n")
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Stored API token for tenant Beta (tenant-2)")
+	assert.Equal(t, "init-password", loginRequests["init@example.com"]["password"])
+	cfg, err := loadStoredConfig()
+	require.NoError(t, err)
+	assert.Equal(t, server.URL, cfg.BaseURL)
+	assert.Equal(t, "tenant-2", cfg.TenantID)
+	assert.Equal(t, "oa_branch_token_123456789", cfg.APIToken)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"auth", "tenants", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"slug": "beta"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"auth", "refresh", "--base-url", server.URL, "--refresh-token", " refresh-json ", "--tenant-id", " tenant-2 ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"access_token": "jwt-refreshed-json"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"auth", "request-password-reset", "--base-url", server.URL, "--email", " reset@example.com ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"reset_token": "reset-json"`)
+
+	stdout.Reset()
+	err = runWithStdin([]string{"auth", "reset-password", "--base-url", server.URL, "--token", " reset-json ", "--password-stdin"}, "stdin-new-password\n")
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Reset password")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"auth", "sessions", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "session-json"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"auth", "security-events", "--limit", "7", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "event-json"`)
+	assert.Contains(t, stdout.String(), string(auth.SecurityAuditActionLogin))
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"auth", "revoke-session", "--id", " session-json "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Revoked refresh session")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"auth", "revoke-all-sessions"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Revoked all refresh sessions")
+
+	stdout.Reset()
+	err = runWithStdin([]string{"auth", "change-password", "--passwords-stdin"}, "current-stdin\nnew-stdin\n")
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Changed password")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"auth", "status"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "JSON User <json@example.com>")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"auth", "logout", "--base-url", server.URL, "--refresh-token", " refresh-json "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Revoked refresh session")
+	assert.Contains(t, stdout.String(), "Removed local CLI config")
+
+	assert.Equal(t, map[string]int{
+		"register":        1,
+		"tenants":         2,
+		"api-token":       1,
+		"refresh":         1,
+		"request-reset":   1,
+		"reset-password":  1,
+		"sessions":        1,
+		"security-events": 1,
+		"revoke-session":  1,
+		"revoke-all":      1,
+		"change-password": 1,
+		"status":          1,
+		"logout":          1,
+	}, requestCounts)
+}
+
 func TestCLITokenCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
