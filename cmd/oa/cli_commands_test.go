@@ -12050,6 +12050,30 @@ func TestCLIBankingCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Completed bank reconciliation rec-1")
 }
 
+func TestCLIBankingTopLevelBranches(t *testing.T) {
+	configureCLIEnv(t)
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	err := app.run(ctx, []string{"banking", "accounts", "list"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	err = app.run(ctx, []string{"banking", "archive"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unknown banking subcommand "archive"`)
+	assert.Empty(t, stdout.String())
+}
+
 func TestCLIBankAccountBranches(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
