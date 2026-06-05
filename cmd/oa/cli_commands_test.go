@@ -2021,20 +2021,29 @@ func TestCLIUsersBranches(t *testing.T) {
 		{name: "missing subcommand", args: []string{"users"}, want: "users subcommand required"},
 		{name: "unknown subcommand", args: []string{"users", "unknown"}, want: `unknown users subcommand "unknown"`},
 		{name: "list bad flag", args: []string{"users", "list", "--unknown"}, want: "flag provided but not defined"},
+		{name: "update role bad flag", args: []string{"users", "update-role", "--unknown"}, want: "flag provided but not defined"},
 		{name: "update role missing id", args: []string{"users", "update-role", "--role", "viewer"}, want: "id and role are required"},
 		{name: "update role missing role", args: []string{"users", "update-role", "--id", "user-branch"}, want: "id and role are required"},
 		{name: "update role invalid role", args: []string{"users", "update-role", "--id", "user-branch", "--role", "owner"}, want: "role must be one of"},
+		{name: "set status bad flag", args: []string{"users", "set-status", "--unknown"}, want: "flag provided but not defined"},
 		{name: "set status missing id", args: []string{"users", "set-status", "--active", "true"}, want: "id and active are required"},
 		{name: "set status missing active", args: []string{"users", "set-status", "--id", "user-branch"}, want: "id and active are required"},
 		{name: "set status invalid active", args: []string{"users", "set-status", "--id", "user-branch", "--active", "sometimes"}, want: "parse active"},
+		{name: "sessions bad flag", args: []string{"users", "sessions", "--unknown"}, want: "flag provided but not defined"},
 		{name: "sessions missing id", args: []string{"users", "sessions", "--id", " "}, want: "id is required"},
+		{name: "security events bad flag", args: []string{"users", "security-events", "--unknown"}, want: "flag provided but not defined"},
 		{name: "security events missing id", args: []string{"users", "security-events", "--limit", "2"}, want: "id is required"},
 		{name: "security events invalid lower limit", args: []string{"users", "security-events", "--id", "user-branch", "--limit", "0"}, want: "limit must be between 1 and 200"},
 		{name: "security events invalid upper limit", args: []string{"users", "security-events", "--id", "user-branch", "--limit", "201"}, want: "limit must be between 1 and 200"},
+		{name: "api tokens bad flag", args: []string{"users", "api-tokens", "--unknown"}, want: "flag provided but not defined"},
 		{name: "api tokens missing id", args: []string{"users", "api-tokens", "--id", " "}, want: "id is required"},
+		{name: "revoke api token bad flag", args: []string{"users", "revoke-api-token", "--unknown"}, want: "flag provided but not defined"},
 		{name: "revoke api token missing token", args: []string{"users", "revoke-api-token", "--id", "user-branch"}, want: "id and token-id are required"},
+		{name: "revoke session bad flag", args: []string{"users", "revoke-session", "--unknown"}, want: "flag provided but not defined"},
 		{name: "revoke session missing session", args: []string{"users", "revoke-session", "--id", "user-branch"}, want: "id and session-id are required"},
+		{name: "revoke all sessions bad flag", args: []string{"users", "revoke-all-sessions", "--unknown"}, want: "flag provided but not defined"},
 		{name: "revoke all sessions missing id", args: []string{"users", "revoke-all-sessions", "--id", " "}, want: "id is required"},
+		{name: "remove bad flag", args: []string{"users", "remove", "--unknown"}, want: "flag provided but not defined"},
 		{name: "remove missing id", args: []string{"users", "remove", "--id", " "}, want: "id is required"},
 	}
 	for _, tc := range validationCases {
@@ -2186,6 +2195,66 @@ func TestCLIUsersBranches(t *testing.T) {
 	err = app.run(context.Background(), []string{"users", "remove", "--id", " user-branch "})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Removed user user-branch")
+}
+
+func TestCLIUsersAuthAndAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"users", "list"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		APIToken: "oa_saved_token",
+	}))
+	err = app.run(context.Background(), []string{"users", "list"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no tenant configured")
+	assert.Empty(t, stdout.String())
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "tenant user API unavailable"})
+	}))
+	defer server.Close()
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    server.URL,
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	errorCases := []struct {
+		name string
+		args []string
+	}{
+		{name: "list", args: []string{"users", "list"}},
+		{name: "update role", args: []string{"users", "update-role", "--id", "user-branch", "--role", "viewer"}},
+		{name: "set status", args: []string{"users", "set-status", "--id", "user-branch", "--active", "true"}},
+		{name: "sessions", args: []string{"users", "sessions", "--id", "user-branch"}},
+		{name: "security events", args: []string{"users", "security-events", "--id", "user-branch"}},
+		{name: "api tokens", args: []string{"users", "api-tokens", "--id", "user-branch"}},
+		{name: "revoke api token", args: []string{"users", "revoke-api-token", "--id", "user-branch", "--token-id", "token-branch"}},
+		{name: "revoke session", args: []string{"users", "revoke-session", "--id", "user-branch", "--session-id", "session-branch"}},
+		{name: "revoke all sessions", args: []string{"users", "revoke-all-sessions", "--id", "user-branch"}},
+		{name: "remove", args: []string{"users", "remove", "--id", "user-branch"}},
+	}
+	for _, tc := range errorCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "tenant user API unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
 }
 
 func TestCLIInvitationCommands(t *testing.T) {
