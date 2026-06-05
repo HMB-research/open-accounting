@@ -520,6 +520,111 @@ func TestCLIOperationalCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "\"message\": \"reset\"")
 }
 
+func TestCLIDemoBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	requests := make([]string, 0)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.RequestURI()+" secret="+r.Header.Get("X-Demo-Secret"))
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/demo/status":
+			switch r.URL.Query().Get("user") {
+			case "7":
+				require.Equal(t, "trimmed-secret", r.Header.Get("X-Demo-Secret"))
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"user":     7,
+					"accounts": map[string]any{"count": 33, "keys": []string{"Cash"}},
+				})
+			case "8":
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "demo status unavailable"})
+			default:
+				t.Fatalf("unexpected status user: %s", r.URL.RawQuery)
+			}
+		case r.Method == http.MethodPost && r.URL.Path == "/api/demo/reset":
+			switch r.URL.Query().Get("user") {
+			case "":
+				require.Empty(t, r.Header.Get("X-Demo-Secret"))
+				_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "reset all"})
+			case "4":
+				require.Equal(t, "reset-secret", r.Header.Get("X-Demo-Secret"))
+				_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "reset one"})
+			case "9":
+				w.WriteHeader(http.StatusUnauthorized)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid demo secret"})
+			default:
+				t.Fatalf("unexpected reset user: %s", r.URL.RawQuery)
+			}
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.RequestURI())
+		}
+	}))
+	defer server.Close()
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"demo"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "demo subcommand required")
+
+	err = app.run(context.Background(), []string{"demo", "nope"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unknown demo subcommand "nope"`)
+
+	err = app.run(context.Background(), []string{"demo", "status", "--base-url", server.URL})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "user is required")
+
+	err = app.run(context.Background(), []string{"demo", "status", "--not-a-flag"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "flag provided but not defined")
+
+	err = app.run(context.Background(), []string{"demo", "reset", "--not-a-flag"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "flag provided but not defined")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"demo", "status",
+		"--base-url", server.URL,
+		"--secret", " trimmed-secret ",
+		"--user", "7",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "\"user\": 7")
+	assert.Contains(t, stdout.String(), "\"count\": 33")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"demo", "status", "--base-url", server.URL, "--secret", "trimmed-secret", "--user", "8"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "demo status unavailable")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"demo", "reset", "--base-url", server.URL})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "\"message\": \"reset all\"")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"demo", "reset", "--base-url", server.URL, "--secret", "reset-secret", "--user", "4"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "\"message\": \"reset one\"")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"demo", "reset", "--base-url", server.URL, "--secret", "bad-secret", "--user", "9"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid demo secret")
+
+	assert.Equal(t, []string{
+		"GET /api/demo/status?user=7 secret=trimmed-secret",
+		"GET /api/demo/status?user=8 secret=trimmed-secret",
+		"POST /api/demo/reset secret=",
+		"POST /api/demo/reset?user=4 secret=reset-secret",
+		"POST /api/demo/reset?user=9 secret=bad-secret",
+	}, requests)
+}
+
 func TestCLIOpsBackupCommands(t *testing.T) {
 	scriptDir := t.TempDir()
 	for _, scriptName := range []string{

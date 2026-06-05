@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -44,11 +45,21 @@ func NewGormDBFromPool(ctx context.Context, pool *pgxpool.Pool) (*gorm.DB, error
 	if pool == nil {
 		return nil, fmt.Errorf("database connection not available")
 	}
-	gormDB, err := NewGormDB(ctx, pool.Config().ConnString())
+
+	sqlDB := stdlib.OpenDBFromPool(pool)
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{
+		Logger:                 logger.Default.LogMode(logger.Warn),
+		SkipDefaultTransaction: true,
+	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open gorm connection: %w", err)
 	}
-	return gormDB.DB, nil
+
+	if err := sqlDB.PingContext(ctx); err != nil {
+		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	return db, nil
 }
 
 // Close closes the database connection
