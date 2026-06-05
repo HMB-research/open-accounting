@@ -1584,6 +1584,181 @@ func TestCLITenantCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "user:user-2")
 }
 
+func TestCLITenantValidationBranches(t *testing.T) {
+	configureCLIEnv(t)
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "create without token", args: []string{"tenant", "create"}, want: "no API token configured"},
+		{name: "get without token", args: []string{"tenant", "get"}, want: "no API token configured"},
+		{name: "update without token", args: []string{"tenant", "update"}, want: "no API token configured"},
+		{name: "complete without token", args: []string{"tenant", "complete-onboarding"}, want: "no API token configured"},
+		{name: "audit events without token", args: []string{"tenant", "audit-events"}, want: "no API token configured"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown subcommand", args: []string{"tenant", "archive"}, want: `unknown tenant subcommand "archive"`},
+		{name: "create invalid flag", args: []string{"tenant", "create", "--bogus"}, want: "flag provided but not defined"},
+		{name: "create missing name", args: []string{"tenant", "create", "--slug", "alpha"}, want: "name and slug are required"},
+		{name: "create bad settings", args: []string{"tenant", "create", "--name", "Alpha", "--slug", "alpha", "--settings-json", "{"}, want: "unexpected end of JSON input"},
+		{name: "get invalid flag", args: []string{"tenant", "get", "--bogus"}, want: "flag provided but not defined"},
+		{name: "update invalid flag", args: []string{"tenant", "update", "--bogus"}, want: "flag provided but not defined"},
+		{name: "update bad settings", args: []string{"tenant", "update", "--settings-json", "{"}, want: "unexpected end of JSON input"},
+		{name: "update missing values", args: []string{"tenant", "update"}, want: "name, settings-json, or settings-file is required"},
+		{name: "complete invalid flag", args: []string{"tenant", "complete-onboarding", "--bogus"}, want: "flag provided but not defined"},
+		{name: "audit invalid flag", args: []string{"tenant", "audit-events", "--bogus"}, want: "flag provided but not defined"},
+		{name: "audit invalid limit", args: []string{"tenant", "audit-events", "--limit", "0"}, want: "limit must be between 1 and 200"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
+func TestCLITenantBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	settingsFile := writeTempCSV(t, "tenant-settings.json", `{"default_currency":"EUR","country_code":"EE","timezone":"Europe/Tallinn","email":"ops@example.com"}`)
+	requestCounts := map[string]int{}
+	tenantResponse := func(id, name, slug string) map[string]any {
+		return map[string]any{
+			"id":                   id,
+			"name":                 name,
+			"slug":                 slug,
+			"schema_name":          "tenant_" + id,
+			"is_active":            true,
+			"onboarding_completed": true,
+			"settings": map[string]any{
+				"default_currency": "EUR",
+				"country_code":     "EE",
+				"timezone":         "Europe/Tallinn",
+				"email":            "ops@example.com",
+			},
+			"created_at": "2026-03-12T00:00:00Z",
+			"updated_at": "2026-03-12T00:00:00Z",
+		}
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants":
+			requestCounts["create"]++
+			var req tenant.CreateTenantRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Beta", req.Name)
+			assert.Equal(t, "beta", req.Slug)
+			require.NotNil(t, req.Settings)
+			assert.Equal(t, "ops@example.com", req.Settings.Email)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(tenantResponse("tenant-2", "Beta", "beta"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-2":
+			requestCounts["get"]++
+			_ = json.NewEncoder(w).Encode(tenantResponse("tenant-2", "Beta", "beta"))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-2":
+			requestCounts["update"]++
+			var req tenant.UpdateTenantRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Nil(t, req.Name)
+			require.NotNil(t, req.Settings)
+			assert.Equal(t, "ops@example.com", req.Settings.Email)
+			_ = json.NewEncoder(w).Encode(tenantResponse("tenant-2", "Beta", "beta"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-2/complete-onboarding":
+			requestCounts["complete"]++
+			_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-2/audit-events":
+			requestCounts["audit"]++
+			assert.Equal(t, "3", r.URL.Query().Get("limit"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"id":           "audit-json",
+				"tenant_id":    "tenant-2",
+				"action":       tenant.AuditActionTenantUpdated,
+				"target_type":  tenant.AuditTargetTenant,
+				"target_id":    "tenant-2",
+				"target_email": "",
+				"created_at":   "2026-03-12T00:00:00Z",
+			}})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	err := app.run(ctx, []string{"tenant", "create", "--name", " Beta ", "--slug", " beta ", "--settings-file", settingsFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "tenant-2"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"tenant", "get", "--id", " tenant-2 ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Beta"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"tenant", "update", "--id", " tenant-2 ", "--settings-file", settingsFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"email": "ops@example.com"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"tenant", "complete-onboarding", "--id", " tenant-2 ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"success": true`)
+	assert.Contains(t, stdout.String(), `"tenant_id": "tenant-2"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"tenant", "audit-events", "--id", " tenant-2 ", "--limit", "3", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "audit-json"`)
+
+	assert.Equal(t, map[string]int{
+		"create":   1,
+		"get":      1,
+		"update":   1,
+		"complete": 1,
+		"audit":    1,
+	}, requestCounts)
+}
+
 func TestCLIUsersCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
