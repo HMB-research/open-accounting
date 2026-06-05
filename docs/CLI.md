@@ -431,9 +431,11 @@ go run ./cmd/oa tax oss report --year 2026 --quarter 1
 go run ./cmd/oa tax oss report --year 2026 --quarter 1 --include-b2b --json
 ```
 
+KMD period commands require `--year` and `--month`; `--month` must be between 1 and 12. Use `--json` on `list`, `generate`, `inf`, and `import-history` for automation.
+
 Historical KMD import expects `year`, `month`, and `row_code` columns, plus optional `tax_base`, `tax_amount`, `status`, `submitted_at`, `description`, `total_output_vat`, and `total_input_vat` columns. Existing declaration periods are skipped instead of overwritten.
 
-KMD INF generation returns A-part sales and B-part purchase invoice rows for domestic VAT-bearing invoices whose partner-period taxable total reaches the threshold excluding VAT. The default threshold is `1000`.
+KMD INF generation returns A-part sales and B-part purchase invoice rows for domestic VAT-bearing invoices whose partner-period taxable total reaches the threshold excluding VAT. The default threshold is `1000`; pass `--threshold` only with a positive decimal value when overriding it.
 
 KMD export writes e-MTA XML. Omit `--output` to stream the XML to stdout.
 
