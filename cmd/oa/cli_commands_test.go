@@ -64,6 +64,69 @@ func writeTempCSV(t *testing.T, name, content string) string {
 	return path
 }
 
+func cliInventoryProductPayload(id, code, name string, productType inventory.ProductType, active, trackInventory bool) map[string]any {
+	return map[string]any{
+		"id":                   id,
+		"tenant_id":            "tenant-1",
+		"code":                 code,
+		"name":                 name,
+		"description":          "Inventory item",
+		"product_type":         productType,
+		"category_id":          "cat-1",
+		"unit":                 "pcs",
+		"purchase_price":       "10.50",
+		"sales_price":          "15.00",
+		"vat_rate":             "22.00",
+		"min_stock_level":      "5.00",
+		"current_stock":        "12.00",
+		"reorder_point":        "7.00",
+		"sale_account_id":      "acc-sale",
+		"purchase_account_id":  "acc-purchase",
+		"inventory_account_id": "acc-inventory",
+		"track_inventory":      trackInventory,
+		"is_active":            active,
+		"barcode":              "123456",
+		"supplier_id":          "supplier-1",
+		"lead_time_days":       4,
+		"created_at":           "2026-03-15T12:00:00Z",
+		"updated_at":           "2026-03-15T12:00:00Z",
+	}
+}
+
+func cliInventoryStockLevelPayload(productID, warehouseID string) map[string]any {
+	return map[string]any{
+		"id":            "stock-1",
+		"tenant_id":     "tenant-1",
+		"product_id":    productID,
+		"warehouse_id":  warehouseID,
+		"quantity":      "12.00",
+		"reserved_qty":  "2.00",
+		"available_qty": "10.00",
+		"last_updated":  "2026-03-15T12:00:00Z",
+	}
+}
+
+func cliInventoryMovementPayload(productID, warehouseID string) map[string]any {
+	return map[string]any{
+		"id":            "mov-1",
+		"tenant_id":     "tenant-1",
+		"product_id":    productID,
+		"warehouse_id":  warehouseID,
+		"movement_type": "ADJUSTMENT",
+		"quantity":      "2.00",
+		"unit_cost":     "10.50",
+		"total_cost":    "21.00",
+		"lot_number":    "LOT-2026-01",
+		"serial_number": "SN-001",
+		"expiry_date":   "2027-01-31",
+		"reference":     "ADJ-1",
+		"notes":         "Cycle count",
+		"movement_date": "2026-03-15T00:00:00Z",
+		"created_at":    "2026-03-15T12:00:00Z",
+		"created_by":    "user-1",
+	}
+}
+
 func journalEntryPayload(id, number string, status accounting.JournalEntryStatus) map[string]any {
 	return map[string]any{
 		"id":                id,
@@ -5941,32 +6004,7 @@ func TestCLIInventoryCommands(t *testing.T) {
 		"updated_at":  "2026-03-15T12:00:00Z",
 	}
 	productPayload := func(name string, active bool) map[string]any {
-		return map[string]any{
-			"id":                   "prod-1",
-			"tenant_id":            "tenant-1",
-			"code":                 "PRD-001",
-			"name":                 name,
-			"description":          "Inventory item",
-			"product_type":         "GOODS",
-			"category_id":          "cat-1",
-			"unit":                 "pcs",
-			"purchase_price":       "10.50",
-			"sales_price":          "15.00",
-			"vat_rate":             "22.00",
-			"min_stock_level":      "5.00",
-			"current_stock":        "12.00",
-			"reorder_point":        "7.00",
-			"sale_account_id":      "acc-sale",
-			"purchase_account_id":  "acc-purchase",
-			"inventory_account_id": "acc-inventory",
-			"track_inventory":      true,
-			"is_active":            active,
-			"barcode":              "123456",
-			"supplier_id":          "supplier-1",
-			"lead_time_days":       4,
-			"created_at":           "2026-03-15T12:00:00Z",
-			"updated_at":           "2026-03-15T12:00:00Z",
-		}
+		return cliInventoryProductPayload("prod-1", "PRD-001", name, inventory.ProductTypeGoods, active, true)
 	}
 	warehousePayload := func(name string) map[string]any {
 		return map[string]any{
@@ -5981,16 +6019,7 @@ func TestCLIInventoryCommands(t *testing.T) {
 			"updated_at": "2026-03-15T12:00:00Z",
 		}
 	}
-	stockLevelPayload := map[string]any{
-		"id":            "stock-1",
-		"tenant_id":     "tenant-1",
-		"product_id":    "prod-1",
-		"warehouse_id":  "wh-1",
-		"quantity":      "12.00",
-		"reserved_qty":  "2.00",
-		"available_qty": "10.00",
-		"last_updated":  "2026-03-15T12:00:00Z",
-	}
+	stockLevelPayload := cliInventoryStockLevelPayload("prod-1", "wh-1")
 	reservedStockLevelPayload := map[string]any{
 		"id":            "stock-1",
 		"tenant_id":     "tenant-1",
@@ -6011,24 +6040,7 @@ func TestCLIInventoryCommands(t *testing.T) {
 		"available_qty": "9.00",
 		"last_updated":  "2026-03-15T12:00:00Z",
 	}
-	movementPayload := map[string]any{
-		"id":            "mov-1",
-		"tenant_id":     "tenant-1",
-		"product_id":    "prod-1",
-		"warehouse_id":  "wh-1",
-		"movement_type": "ADJUSTMENT",
-		"quantity":      "2.00",
-		"unit_cost":     "10.50",
-		"total_cost":    "21.00",
-		"lot_number":    "LOT-2026-01",
-		"serial_number": "SN-001",
-		"expiry_date":   "2027-01-31",
-		"reference":     "ADJ-1",
-		"notes":         "Cycle count",
-		"movement_date": "2026-03-15T00:00:00Z",
-		"created_at":    "2026-03-15T12:00:00Z",
-		"created_by":    "user-1",
-	}
+	movementPayload := cliInventoryMovementPayload("prod-1", "wh-1")
 	valuationPayload := map[string]any{
 		"tenant_id":        "tenant-1",
 		"warehouse_id":     "wh-1",
@@ -6635,6 +6647,373 @@ func TestCLIInventoryValidationBranches(t *testing.T) {
 			assert.ErrorContains(t, err, tc.want)
 		})
 	}
+}
+
+func TestCLIInventoryProductBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+	cfg := &cliConfig{TenantID: "tenant-1"}
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "missing products command",
+			args: nil,
+			want: "inventory products subcommand required",
+		},
+		{
+			name: "unknown products command",
+			args: []string{"archive"},
+			want: `unknown inventory products subcommand "archive"`,
+		},
+		{
+			name: "list invalid flag",
+			args: []string{"list", "--legacy"},
+			want: "flag provided but not defined",
+		},
+		{
+			name: "list invalid type",
+			args: []string{"list", "--type", "bundle"},
+			want: "invalid product type",
+		},
+		{
+			name: "list invalid status",
+			args: []string{"list", "--status", "archived"},
+			want: "invalid product status",
+		},
+		{
+			name: "create invalid flag",
+			args: []string{"create", "--track-inventory=maybe"},
+			want: "invalid boolean value",
+		},
+		{
+			name: "create missing name",
+			args: []string{"create", "--sales-price", "15"},
+			want: "name is required",
+		},
+		{
+			name: "create invalid type",
+			args: []string{"create", "--name", "Widget", "--type", "bundle", "--sales-price", "15"},
+			want: "invalid product type",
+		},
+		{
+			name: "create missing sales price",
+			args: []string{"create", "--name", "Widget"},
+			want: "sales-price is required",
+		},
+		{
+			name: "create negative purchase price",
+			args: []string{"create", "--name", "Widget", "--purchase-price", "-1", "--sales-price", "15"},
+			want: "purchase-price must be non-negative",
+		},
+		{
+			name: "create invalid vat rate",
+			args: []string{"create", "--name", "Widget", "--sales-price", "15", "--vat-rate", "bad"},
+			want: "parse vat-rate",
+		},
+		{
+			name: "create negative minimum stock",
+			args: []string{"create", "--name", "Widget", "--sales-price", "15", "--min-stock-level", "-1"},
+			want: "min-stock-level must be non-negative",
+		},
+		{
+			name: "create negative reorder point",
+			args: []string{"create", "--name", "Widget", "--sales-price", "15", "--reorder-point", "-1"},
+			want: "reorder-point must be non-negative",
+		},
+		{
+			name: "create negative lead time",
+			args: []string{"create", "--name", "Widget", "--sales-price", "15", "--lead-time-days", "-1"},
+			want: "lead-time-days must be non-negative",
+		},
+		{
+			name: "import missing file",
+			args: []string{"import"},
+			want: "file is required",
+		},
+		{
+			name: "import unreadable file",
+			args: []string{"import", "--file", filepath.Join(t.TempDir(), "missing.csv")},
+			want: "no such file",
+		},
+		{
+			name: "get missing id",
+			args: []string{"get"},
+			want: "id is required",
+		},
+		{
+			name: "update missing id",
+			args: []string{"update", "--name", "Widget"},
+			want: "id is required",
+		},
+		{
+			name: "update missing name",
+			args: []string{"update", "--id", "prod-1"},
+			want: "name is required",
+		},
+		{
+			name: "update missing sales price",
+			args: []string{"update", "--id", "prod-1", "--name", "Widget"},
+			want: "sales-price is required",
+		},
+		{
+			name: "update invalid purchase price",
+			args: []string{"update", "--id", "prod-1", "--name", "Widget", "--purchase-price", "bad", "--sales-price", "15"},
+			want: "parse purchase-price",
+		},
+		{
+			name: "update negative vat rate",
+			args: []string{"update", "--id", "prod-1", "--name", "Widget", "--sales-price", "15", "--vat-rate", "-1"},
+			want: "vat-rate must be non-negative",
+		},
+		{
+			name: "update invalid active flag",
+			args: []string{"update", "--id", "prod-1", "--name", "Widget", "--sales-price", "15", "--active=maybe"},
+			want: "invalid boolean value",
+		},
+		{
+			name: "update invalid lead time",
+			args: []string{"update", "--id", "prod-1", "--name", "Widget", "--sales-price", "15", "--lead-time-days", "soon"},
+			want: "parse lead-time-days",
+		},
+		{
+			name: "delete missing id",
+			args: []string{"delete"},
+			want: "id is required",
+		},
+		{
+			name: "stock levels missing id",
+			args: []string{"stock-levels"},
+			want: "id is required",
+		},
+		{
+			name: "movements missing id",
+			args: []string{"movements"},
+			want: "id is required",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := app.runInventoryProducts(ctx, cfg, nil, tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+		})
+	}
+
+	productPayload := func(name string, active bool) map[string]any {
+		payload := cliInventoryProductPayload("prod-json", "SVC-001", name, inventory.ProductTypeService, active, false)
+		payload["description"] = "Monthly package"
+		payload["category_id"] = "cat-branch"
+		payload["unit"] = "hour"
+		payload["purchase_price"] = "20.00"
+		payload["sales_price"] = "75.50"
+		payload["vat_rate"] = "22.50"
+		payload["min_stock_level"] = "2.00"
+		payload["reorder_point"] = "4.00"
+		payload["barcode"] = "BAR-SVC"
+		payload["supplier_id"] = "supplier-json"
+		payload["lead_time_days"] = 6
+		return payload
+	}
+	importFile := writeTempCSV(t, "branch-products.csv", "code,name,sales_price\nSVC-001,Consulting,75.50\nBAD,,0\n")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/products":
+			require.Equal(t, "SERVICE", r.URL.Query().Get("product_type"))
+			require.Equal(t, "INACTIVE", r.URL.Query().Get("status"))
+			require.Equal(t, "cat-branch", r.URL.Query().Get("category_id"))
+			require.Equal(t, "Branch", r.URL.Query().Get("search"))
+			require.Empty(t, r.URL.Query().Get("low_stock"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{productPayload("Consulting", false)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/products":
+			var req inventory.CreateProductRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "SVC-001", req.Code)
+			assert.Equal(t, "Consulting", req.Name)
+			assert.Equal(t, "Monthly package", req.Description)
+			assert.Equal(t, "SERVICE", req.ProductType)
+			assert.Equal(t, "cat-branch", req.CategoryID)
+			assert.Equal(t, "hour", req.Unit)
+			assert.Equal(t, "20", req.PurchasePrice)
+			assert.Equal(t, "75.5", req.SalesPrice)
+			assert.Equal(t, "22.5", req.VATRate)
+			assert.Equal(t, "2", req.MinStockLevel)
+			assert.Equal(t, "4", req.ReorderPoint)
+			assert.Equal(t, "acc-sale", req.SaleAccountID)
+			assert.Equal(t, "acc-purchase", req.PurchaseAccountID)
+			assert.Equal(t, "acc-inventory", req.InventoryAccountID)
+			assert.False(t, req.TrackInventory)
+			assert.Equal(t, "BAR-SVC", req.Barcode)
+			assert.Equal(t, "supplier-json", req.SupplierID)
+			assert.Equal(t, 6, req.LeadTimeDays)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(productPayload("Consulting", true))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/products/import":
+			var req inventory.ImportProductsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "branch-products.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "SVC-001")
+			_ = json.NewEncoder(w).Encode(inventory.ImportProductsResult{
+				FileName:        "branch-products.csv",
+				RowsProcessed:   2,
+				ProductsCreated: 1,
+				RowsSkipped:     1,
+				Errors: []inventory.ImportProductsRowError{{
+					Row:     3,
+					Code:    "BAD",
+					Message: "name is required",
+				}},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-json":
+			_ = json.NewEncoder(w).Encode(productPayload("Consulting", true))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-json":
+			var req inventory.UpdateProductRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Consulting updated", req.Name)
+			assert.Equal(t, "Updated package", req.Description)
+			assert.Equal(t, "cat-branch", req.CategoryID)
+			assert.Equal(t, "hour", req.Unit)
+			assert.Equal(t, "21", req.PurchasePrice)
+			assert.Equal(t, "80", req.SalesPrice)
+			assert.Equal(t, "24", req.VATRate)
+			assert.Equal(t, "3", req.MinStockLevel)
+			assert.Equal(t, "5", req.ReorderPoint)
+			assert.Equal(t, "acc-sale", req.SaleAccountID)
+			assert.Equal(t, "acc-purchase", req.PurchaseAccountID)
+			assert.Equal(t, "acc-inventory", req.InventoryAccountID)
+			assert.False(t, req.TrackInventory)
+			assert.False(t, req.IsActive)
+			assert.Equal(t, "BAR-SVC-2", req.Barcode)
+			assert.Equal(t, "supplier-updated", req.SupplierID)
+			assert.Equal(t, 8, req.LeadTimeDays)
+
+			payload := productPayload("Consulting updated", false)
+			payload["barcode"] = "BAR-SVC-2"
+			payload["supplier_id"] = "supplier-updated"
+			payload["lead_time_days"] = 8
+			_ = json.NewEncoder(w).Encode(payload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-json/stock-levels":
+			_ = json.NewEncoder(w).Encode([]map[string]any{cliInventoryStockLevelPayload("prod-json", "wh-json")})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-json/movements":
+			_ = json.NewEncoder(w).Encode([]map[string]any{cliInventoryMovementPayload("prod-json", "wh-json")})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-json":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	stdout.Reset()
+	err := app.run(context.Background(), []string{
+		"inventory", "products", "list",
+		"--type", " service ",
+		"--status", " inactive ",
+		"--category-id", " cat-branch ",
+		"--search", " Branch ",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"product_type": "SERVICE"`)
+	assert.Contains(t, stdout.String(), `"is_active": false`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"inventory", "products", "create",
+		"--code", " SVC-001 ",
+		"--name", " Consulting ",
+		"--description", " Monthly package ",
+		"--type", " service ",
+		"--category-id", " cat-branch ",
+		"--unit", " hour ",
+		"--purchase-price", "20.00",
+		"--sales-price", "75.50",
+		"--vat-rate", "22.50",
+		"--min-stock-level", "2.00",
+		"--reorder-point", "4.00",
+		"--sale-account-id", " acc-sale ",
+		"--purchase-account-id", " acc-purchase ",
+		"--inventory-account-id", " acc-inventory ",
+		"--track-inventory=false",
+		"--barcode", " BAR-SVC ",
+		"--supplier-id", " supplier-json ",
+		"--lead-time-days", "6",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"code": "SVC-001"`)
+	assert.Contains(t, stdout.String(), `"track_inventory": false`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "products", "import", "--file", importFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"rows_skipped": 1`)
+	assert.Contains(t, stdout.String(), `"message": "name is required"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "products", "get", "--id", " prod-json ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "prod-json"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"inventory", "products", "update",
+		"--id", " prod-json ",
+		"--name", " Consulting updated ",
+		"--description", " Updated package ",
+		"--category-id", " cat-branch ",
+		"--unit", " hour ",
+		"--purchase-price", "21.00",
+		"--sales-price", "80.00",
+		"--vat-rate", "24.00",
+		"--min-stock-level", "3.00",
+		"--reorder-point", "5.00",
+		"--sale-account-id", " acc-sale ",
+		"--purchase-account-id", " acc-purchase ",
+		"--inventory-account-id", " acc-inventory ",
+		"--track-inventory=false",
+		"--active=false",
+		"--barcode", " BAR-SVC-2 ",
+		"--supplier-id", " supplier-updated ",
+		"--lead-time-days", "8",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Consulting updated"`)
+	assert.Contains(t, stdout.String(), `"is_active": false`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "products", "stock-levels", "--id", " prod-json ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"warehouse_id": "wh-json"`)
+	assert.Contains(t, stdout.String(), `"available_qty": "10"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "products", "movements", "--id", " prod-json ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"product_id": "prod-json"`)
+	assert.Contains(t, stdout.String(), `"movement_type": "ADJUSTMENT"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "products", "delete", "--id", " prod-json ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "deleted"`)
 }
 
 func TestCLIInventoryWarehouseBranches(t *testing.T) {
