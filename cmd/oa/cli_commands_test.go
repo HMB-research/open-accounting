@@ -520,6 +520,28 @@ func TestCLIOperationalCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "\"message\": \"reset\"")
 }
 
+func TestCLIHealthBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, _, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"health", "--bogus"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "flag provided but not defined")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "/health", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"health check unavailable"}`))
+	}))
+	defer server.Close()
+
+	err = app.run(context.Background(), []string{"health", "--base-url", server.URL})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "health check unavailable")
+}
+
 func TestCLIDemoBranches(t *testing.T) {
 	configureCLIEnv(t)
 

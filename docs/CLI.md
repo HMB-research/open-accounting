@@ -25,6 +25,7 @@ go run ./cmd/oa demo reset --base-url http://localhost:8080 --secret <demo-secre
 ```
 
 `demo status` requires `--user 1` through `--user 4` and prints the API's raw JSON status payload. `demo reset` accepts `--user 1` through `--user 4` for a single seeded demo user; omit `--user` to reset all demo users. When `--secret` is provided, the CLI sends it as the `X-Demo-Secret` header expected by the demo endpoints.
+`health` calls the public `/health` endpoint at `--base-url` and does not require a configured API token.
 
 ## Operator backup commands
 
