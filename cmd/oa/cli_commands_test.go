@@ -2381,6 +2381,16 @@ func TestCLIAdminPluginRegistryBranches(t *testing.T) {
 			want: `unknown admin registries subcommand "archive"`,
 		},
 		{
+			name: "list invalid flag",
+			args: []string{"list", "--bogus"},
+			want: "flag provided but not defined",
+		},
+		{
+			name: "create invalid flag",
+			args: []string{"create", "--bogus"},
+			want: "flag provided but not defined",
+		},
+		{
 			name: "create missing name",
 			args: []string{"create", "--url", "https://plugins.example.com"},
 			want: "name and url are required",
@@ -2396,6 +2406,11 @@ func TestCLIAdminPluginRegistryBranches(t *testing.T) {
 			want: "id is required",
 		},
 		{
+			name: "delete invalid flag",
+			args: []string{"delete", "--bogus"},
+			want: "flag provided but not defined",
+		},
+		{
 			name: "remove missing id alias",
 			args: []string{"remove"},
 			want: "id is required",
@@ -2404,6 +2419,11 @@ func TestCLIAdminPluginRegistryBranches(t *testing.T) {
 			name: "sync missing id",
 			args: []string{"sync"},
 			want: "id is required",
+		},
+		{
+			name: "sync invalid flag",
+			args: []string{"sync", "--bogus"},
+			want: "flag provided but not defined",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2477,6 +2497,26 @@ func TestCLIAdminPluginRegistryBranches(t *testing.T) {
 	err = app.run(context.Background(), []string{"admin", "plugin-registries", "remove", "--id", " " + registryID + " "})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Removed plugin registry "+registryID)
+}
+
+func TestCLIAdminTopLevelBranches(t *testing.T) {
+	configureCLIEnv(t)
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	err := app.run(ctx, []string{"admin", "plugins", "list"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		APIToken: "oa_saved_token",
+	}))
+	err = app.run(ctx, []string{"admin", "archive"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unknown admin subcommand "archive"`)
+	assert.Empty(t, stdout.String())
 }
 
 func TestCLIWebhookCommands(t *testing.T) {
@@ -3062,12 +3102,20 @@ func TestCLIAdminPluginBranches(t *testing.T) {
 	}{
 		{name: "missing subcommand", args: nil, want: "admin plugins subcommand required"},
 		{name: "unknown subcommand", args: []string{"archive"}, want: `unknown admin plugins subcommand "archive"`},
+		{name: "list invalid flag", args: []string{"list", "--bogus"}, want: "flag provided but not defined"},
+		{name: "search invalid flag", args: []string{"search", "--bogus"}, want: "flag provided but not defined"},
 		{name: "search missing query", args: []string{"search"}, want: "q is required"},
+		{name: "get invalid flag", args: []string{"get", "--bogus"}, want: "flag provided but not defined"},
 		{name: "get missing id", args: []string{"get"}, want: "id is required"},
+		{name: "install invalid flag", args: []string{"install", "--bogus"}, want: "flag provided but not defined"},
 		{name: "install missing repository", args: []string{"install"}, want: "repository-url is required"},
+		{name: "permissions invalid flag", args: []string{"permissions", "--bogus"}, want: "flag provided but not defined"},
+		{name: "enable invalid flag", args: []string{"enable", "--bogus"}, want: "flag provided but not defined"},
 		{name: "enable missing id", args: []string{"enable"}, want: "id is required"},
 		{name: "enable blank permission", args: []string{"enable", "--id", "plugin-1", "--permission", " "}, want: "value cannot be empty"},
+		{name: "disable invalid flag", args: []string{"disable", "--bogus"}, want: "flag provided but not defined"},
 		{name: "disable missing id", args: []string{"disable"}, want: "id is required"},
+		{name: "uninstall invalid flag", args: []string{"uninstall", "--bogus"}, want: "flag provided but not defined"},
 		{name: "uninstall missing id", args: []string{"uninstall"}, want: "id is required"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
