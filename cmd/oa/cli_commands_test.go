@@ -2568,6 +2568,77 @@ func TestCLIPluginBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Disabled tenant plugin "+pluginID)
 }
 
+func TestCLIPluginRoutingAndAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	err := app.run(ctx, []string{"plugins", "list"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	for _, tt := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list bad flag", args: []string{"plugins", "list", "--bogus"}},
+		{name: "enable bad flag", args: []string{"plugins", "enable", "--bogus"}},
+		{name: "disable bad flag", args: []string{"plugins", "disable", "--bogus"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tt.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "flag provided but not defined")
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	const pluginID = "11111111-1111-1111-1111-111111111111"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/plugins",
+			r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/enable",
+			r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/disable":
+			w.WriteHeader(http.StatusBadGateway)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "plugin service unavailable"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	for _, tt := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list API error", args: []string{"plugins", "list"}},
+		{name: "enable API error", args: []string{"plugins", "enable", "--id", pluginID}},
+		{name: "disable API error", args: []string{"plugins", "disable", "--id", pluginID}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tt.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "plugin service unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIPluginSettingsBranches(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
