@@ -4953,6 +4953,326 @@ func TestCLIAssetCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Deleted asset asset-1")
 }
 
+func TestCLIAssetBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	for _, tt := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing subcommand", args: nil, want: "assets subcommand required"},
+		{name: "unknown subcommand", args: []string{"archive"}, want: `unknown assets subcommand "archive"`},
+		{name: "list bad flag", args: []string{"list", "--unknown"}, want: "flag provided but not defined"},
+		{name: "list invalid status", args: []string{"list", "--status", "retired"}, want: `invalid asset status "retired"`},
+		{name: "create bad flag", args: []string{"create", "--unknown"}, want: "flag provided but not defined"},
+		{name: "create missing name", args: []string{"create"}, want: "name is required"},
+		{name: "create missing purchase date", args: []string{"create", "--name", "Laptop"}, want: "purchase-date is required"},
+		{name: "create invalid purchase date", args: []string{"create", "--name", "Laptop", "--purchase-date", "tomorrow"}, want: "parse purchase-date"},
+		{name: "create missing purchase cost", args: []string{"create", "--name", "Laptop", "--purchase-date", "2026-03-15"}, want: "purchase-cost is required"},
+		{name: "create invalid purchase cost", args: []string{"create", "--name", "Laptop", "--purchase-date", "2026-03-15", "--purchase-cost", "many"}, want: "parse purchase-cost"},
+		{name: "create nonpositive purchase cost", args: []string{"create", "--name", "Laptop", "--purchase-date", "2026-03-15", "--purchase-cost", "0"}, want: "purchase-cost must be positive"},
+		{name: "create invalid depreciation method", args: []string{"create", "--name", "Laptop", "--purchase-date", "2026-03-15", "--purchase-cost", "1200", "--depreciation-method", "accelerated"}, want: `invalid depreciation method "accelerated"`},
+		{name: "create invalid useful life", args: []string{"create", "--name", "Laptop", "--purchase-date", "2026-03-15", "--purchase-cost", "1200", "--useful-life-months", "many"}, want: "parse useful-life-months"},
+		{name: "create nonpositive useful life", args: []string{"create", "--name", "Laptop", "--purchase-date", "2026-03-15", "--purchase-cost", "1200", "--useful-life-months", "0"}, want: "useful-life-months must be positive"},
+		{name: "create invalid residual value", args: []string{"create", "--name", "Laptop", "--purchase-date", "2026-03-15", "--purchase-cost", "1200", "--residual-value", "many"}, want: "parse residual-value"},
+		{name: "create negative residual value", args: []string{"create", "--name", "Laptop", "--purchase-date", "2026-03-15", "--purchase-cost", "1200", "--residual-value", "-1"}, want: "residual-value must be non-negative"},
+		{name: "create invalid depreciation start date", args: []string{"create", "--name", "Laptop", "--purchase-date", "2026-03-15", "--purchase-cost", "1200", "--depreciation-start-date", "next-month"}, want: "parse depreciation-start-date"},
+		{name: "import bad flag", args: []string{"import", "--unknown"}, want: "flag provided but not defined"},
+		{name: "import missing file", args: []string{"import"}, want: "file is required"},
+		{name: "import unreadable file", args: []string{"import", "--file", "/tmp/open-accounting-missing-assets.csv"}, want: "read file"},
+		{name: "get bad flag", args: []string{"get", "--unknown"}, want: "flag provided but not defined"},
+		{name: "get missing id", args: []string{"get"}, want: "id is required"},
+		{name: "update bad flag", args: []string{"update", "--unknown"}, want: "flag provided but not defined"},
+		{name: "update missing id", args: []string{"update"}, want: "id is required"},
+		{name: "update missing name", args: []string{"update", "--id", "asset-branch"}, want: "name is required"},
+		{name: "update invalid depreciation method", args: []string{"update", "--id", "asset-branch", "--name", "Laptop", "--depreciation-method", "accelerated"}, want: `invalid depreciation method "accelerated"`},
+		{name: "update invalid useful life", args: []string{"update", "--id", "asset-branch", "--name", "Laptop", "--useful-life-months", "many"}, want: "parse useful-life-months"},
+		{name: "update negative residual value", args: []string{"update", "--id", "asset-branch", "--name", "Laptop", "--residual-value", "-1"}, want: "residual-value must be non-negative"},
+		{name: "delete bad flag", args: []string{"delete", "--unknown"}, want: "flag provided but not defined"},
+		{name: "delete missing id", args: []string{"delete"}, want: "id is required"},
+		{name: "activate bad flag", args: []string{"activate", "--unknown"}, want: "flag provided but not defined"},
+		{name: "activate missing id", args: []string{"activate"}, want: "id is required"},
+		{name: "dispose bad flag", args: []string{"dispose", "--unknown"}, want: "flag provided but not defined"},
+		{name: "dispose missing id", args: []string{"dispose"}, want: "id is required"},
+		{name: "dispose missing date", args: []string{"dispose", "--id", "asset-branch"}, want: "disposal-date is required"},
+		{name: "dispose missing method", args: []string{"dispose", "--id", "asset-branch", "--disposal-date", "2026-05-01"}, want: "method is required"},
+		{name: "dispose invalid method", args: []string{"dispose", "--id", "asset-branch", "--disposal-date", "2026-05-01", "--method", "trashed"}, want: `invalid disposal method "trashed"`},
+		{name: "dispose negative proceeds", args: []string{"dispose", "--id", "asset-branch", "--disposal-date", "2026-05-01", "--method", "lost", "--proceeds", "-1"}, want: "proceeds must be non-negative"},
+		{name: "depreciate bad flag", args: []string{"depreciate", "--unknown"}, want: "flag provided but not defined"},
+		{name: "depreciate missing id", args: []string{"depreciate"}, want: "id is required"},
+		{name: "depreciation bad flag", args: []string{"depreciation", "--unknown"}, want: "flag provided but not defined"},
+		{name: "depreciation missing id", args: []string{"depreciation"}, want: "id is required"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := app.runAssets(ctx, tt.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tt.want)
+		})
+	}
+
+	importFile := writeTempCSV(t, "asset-branches.csv", "asset_number,name,purchase_date,purchase_cost\nBR-001,Branch laptop,2026-03-15,1250.50\n")
+	assetPayload := func(status string) map[string]any {
+		return map[string]any{
+			"id":                                  "asset-branch",
+			"tenant_id":                           "tenant-1",
+			"asset_number":                        "FA-BRANCH",
+			"name":                                "Branch laptop",
+			"description":                         "Branch coverage laptop",
+			"category_id":                         "cat-branch",
+			"status":                              status,
+			"purchase_date":                       "2026-03-15T00:00:00Z",
+			"purchase_cost":                       "1250.50",
+			"supplier_id":                         "supplier-branch",
+			"serial_number":                       "SN-BRANCH",
+			"location":                            "Tallinn",
+			"depreciation_method":                 "UNITS_OF_PRODUCTION",
+			"useful_life_months":                  24,
+			"residual_value":                      "50.25",
+			"depreciation_start_date":             "2026-04-01T00:00:00Z",
+			"accumulated_depreciation":            "100.00",
+			"book_value":                          "1150.50",
+			"asset_account_id":                    "asset-account",
+			"depreciation_expense_account_id":     "depreciation-expense-account",
+			"accumulated_depreciation_account_id": "accumulated-depreciation-account",
+			"created_at":                          "2026-03-15T12:00:00Z",
+			"created_by":                          "user-1",
+			"updated_at":                          "2026-03-15T12:00:00Z",
+		}
+	}
+	depreciationPayload := map[string]any{
+		"id":                  "dep-branch",
+		"tenant_id":           "tenant-1",
+		"asset_id":            "asset-branch",
+		"depreciation_date":   "2026-04-30T00:00:00Z",
+		"period_start":        "2026-04-01T00:00:00Z",
+		"period_end":          "2026-04-30T00:00:00Z",
+		"depreciation_amount": "33.33",
+		"accumulated_total":   "133.33",
+		"book_value_after":    "1117.17",
+		"journal_entry_id":    "journal-branch",
+		"created_at":          "2026-04-30T12:00:00Z",
+		"created_by":          "user-1",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/assets":
+			require.Empty(t, r.URL.RawQuery)
+			_ = json.NewEncoder(w).Encode([]map[string]any{assetPayload("ACTIVE")})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/assets":
+			var req assets.CreateAssetRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Branch laptop", req.Name)
+			assert.Equal(t, "Branch coverage laptop", req.Description)
+			require.NotNil(t, req.CategoryID)
+			assert.Equal(t, "cat-branch", *req.CategoryID)
+			assert.Equal(t, "2026-03-15", req.PurchaseDate.Format("2006-01-02"))
+			assert.True(t, req.PurchaseCost.Equal(decimal.RequireFromString("1250.50")))
+			require.NotNil(t, req.SupplierID)
+			assert.Equal(t, "supplier-branch", *req.SupplierID)
+			assert.Equal(t, "SN-BRANCH", req.SerialNumber)
+			assert.Equal(t, "Tallinn", req.Location)
+			assert.Equal(t, assets.DepreciationUnitsOfProd, req.DepreciationMethod)
+			assert.Equal(t, 24, req.UsefulLifeMonths)
+			assert.True(t, req.ResidualValue.Equal(decimal.RequireFromString("50.25")))
+			require.NotNil(t, req.DepreciationStartDate)
+			assert.Equal(t, "2026-04-01", req.DepreciationStartDate.Format("2006-01-02"))
+			require.NotNil(t, req.AssetAccountID)
+			require.NotNil(t, req.DepreciationExpenseAccountID)
+			require.NotNil(t, req.AccumulatedDepreciationAcctID)
+			assert.Equal(t, "asset-account", *req.AssetAccountID)
+			assert.Equal(t, "depreciation-expense-account", *req.DepreciationExpenseAccountID)
+			assert.Equal(t, "accumulated-depreciation-account", *req.AccumulatedDepreciationAcctID)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(assetPayload("DRAFT"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/assets/import":
+			var req assets.ImportAssetsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "asset-branches.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "BR-001")
+			_ = json.NewEncoder(w).Encode(assets.ImportAssetsResult{
+				FileName:      "asset-branches.csv",
+				RowsProcessed: 2,
+				AssetsCreated: 1,
+				RowsSkipped:   1,
+				Errors: []assets.ImportAssetsRowError{{
+					Row:         3,
+					AssetNumber: "BR-002",
+					Name:        "Duplicate asset",
+					Message:     "duplicate asset number",
+				}},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-branch":
+			_ = json.NewEncoder(w).Encode(assetPayload("ACTIVE"))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-branch":
+			var req assets.UpdateAssetRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Updated branch laptop", req.Name)
+			assert.Equal(t, "Updated branch description", req.Description)
+			require.NotNil(t, req.CategoryID)
+			assert.Equal(t, "cat-updated", *req.CategoryID)
+			assert.Equal(t, "SN-UPDATED", req.SerialNumber)
+			assert.Equal(t, "Tartu", req.Location)
+			assert.Equal(t, assets.DepreciationDecliningBalance, req.DepreciationMethod)
+			assert.Equal(t, 30, req.UsefulLifeMonths)
+			assert.True(t, req.ResidualValue.Equal(decimal.RequireFromString("75.00")))
+			require.NotNil(t, req.AssetAccountID)
+			require.NotNil(t, req.DepreciationExpenseAccountID)
+			require.NotNil(t, req.AccumulatedDepreciationAcctID)
+			assert.Equal(t, "asset-account-updated", *req.AssetAccountID)
+			assert.Equal(t, "depreciation-expense-updated", *req.DepreciationExpenseAccountID)
+			assert.Equal(t, "accumulated-depreciation-updated", *req.AccumulatedDepreciationAcctID)
+			payload := assetPayload("ACTIVE")
+			payload["name"] = "Updated branch laptop"
+			payload["description"] = "Updated branch description"
+			payload["category_id"] = "cat-updated"
+			payload["serial_number"] = "SN-UPDATED"
+			payload["location"] = "Tartu"
+			payload["depreciation_method"] = "DECLINING_BALANCE"
+			payload["useful_life_months"] = 30
+			payload["residual_value"] = "75.00"
+			_ = json.NewEncoder(w).Encode(payload)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-branch":
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-branch/activate":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "active"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-branch/dispose":
+			var req assets.DisposeAssetRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-05-01", req.DisposalDate.Format("2006-01-02"))
+			assert.Equal(t, assets.DisposalDonated, req.DisposalMethod)
+			assert.True(t, req.DisposalProceeds.Equal(decimal.RequireFromString("0")))
+			assert.Equal(t, "Donated to school", req.DisposalNotes)
+			require.NotNil(t, req.DisposalProceedsAccountID)
+			require.NotNil(t, req.DisposalGainLossAccountID)
+			assert.Equal(t, "cash-account", *req.DisposalProceedsAccountID)
+			assert.Equal(t, "asset-disposal-loss", *req.DisposalGainLossAccountID)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "disposed"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-branch/depreciation":
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(depreciationPayload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-branch/depreciation":
+			_ = json.NewEncoder(w).Encode([]map[string]any{depreciationPayload})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	err := app.run(ctx, []string{"assets", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "FA-BRANCH")
+	assert.Contains(t, stdout.String(), "Branch laptop")
+
+	stdout.Reset()
+	err = app.run(ctx, []string{
+		"assets", "create",
+		"--name", " Branch laptop ",
+		"--description", " Branch coverage laptop ",
+		"--category-id", " cat-branch ",
+		"--purchase-date", " 2026-03-15 ",
+		"--purchase-cost", " 1250.50 ",
+		"--supplier-id", " supplier-branch ",
+		"--serial-number", " SN-BRANCH ",
+		"--location", " Tallinn ",
+		"--depreciation-method", " units_of_production ",
+		"--useful-life-months", " 24 ",
+		"--residual-value", " 50.25 ",
+		"--depreciation-start-date", " 2026-04-01 ",
+		"--asset-account-id", " asset-account ",
+		"--depreciation-expense-account-id", " depreciation-expense-account ",
+		"--accumulated-depreciation-account-id", " accumulated-depreciation-account ",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "asset-branch"`)
+	assert.Contains(t, stdout.String(), `"status": "DRAFT"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"assets", "import", "--file", importFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"assets_created": 1`)
+	assert.Contains(t, stdout.String(), `"duplicate asset number"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"assets", "get", "--id", " asset-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"asset_number": "FA-BRANCH"`)
+	assert.Contains(t, stdout.String(), `"name": "Branch laptop"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{
+		"assets", "update",
+		"--id", " asset-branch ",
+		"--name", " Updated branch laptop ",
+		"--description", " Updated branch description ",
+		"--category-id", " cat-updated ",
+		"--serial-number", " SN-UPDATED ",
+		"--location", " Tartu ",
+		"--depreciation-method", " declining_balance ",
+		"--useful-life-months", " 30 ",
+		"--residual-value", " 75.00 ",
+		"--asset-account-id", " asset-account-updated ",
+		"--depreciation-expense-account-id", " depreciation-expense-updated ",
+		"--accumulated-depreciation-account-id", " accumulated-depreciation-updated ",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Updated branch laptop"`)
+	assert.Contains(t, stdout.String(), `"depreciation_method": "DECLINING_BALANCE"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"assets", "activate", "--id", " asset-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "active"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{
+		"assets", "dispose",
+		"--id", " asset-branch ",
+		"--disposal-date", " 2026-05-01 ",
+		"--method", " donated ",
+		"--proceeds", " 0 ",
+		"--proceeds-account-id", " cash-account ",
+		"--gain-loss-account-id", " asset-disposal-loss ",
+		"--notes", " Donated to school ",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "disposed"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"assets", "depreciate", "--id", " asset-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "dep-branch"`)
+	assert.Contains(t, stdout.String(), `"journal_entry_id": "journal-branch"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"assets", "depreciation", "--id", " asset-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"depreciation_amount": "33.33"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"assets", "delete", "--id", " asset-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "deleted"`)
+}
+
 func TestCLIAssetCategoryBranches(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
