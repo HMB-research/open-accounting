@@ -688,6 +688,86 @@ func TestCLIOpsBackupCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "db-restore-drill.sh --backup /backups/openaccounting.dump --restore-url postgres://drill --source-url postgres://prod --allow-non-empty --skip-checksum --dry-run")
 }
 
+func TestCLIOpsBackupBranches(t *testing.T) {
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown ops subcommand", args: []string{"ops", "archive"}, want: `unknown ops subcommand "archive"`},
+		{name: "unknown backup subcommand", args: []string{"ops", "backup", "archive"}, want: `unknown ops backup subcommand "archive"`},
+		{name: "create invalid flag", args: []string{"ops", "backup", "create", "--bogus"}, want: "flag provided but not defined"},
+		{name: "health invalid flag", args: []string{"ops", "backup", "health", "--bogus"}, want: "flag provided but not defined"},
+		{name: "offsite sync invalid flag", args: []string{"ops", "backup", "offsite-sync", "--bogus"}, want: "flag provided but not defined"},
+		{name: "restore drill invalid flag", args: []string{"ops", "backup", "restore-drill", "--bogus"}, want: "flag provided but not defined"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	t.Run("missing script", func(t *testing.T) {
+		stdout.Reset()
+		t.Setenv("OA_SCRIPT_DIR", t.TempDir())
+		err := app.run(ctx, []string{"ops", "backup", "create", "--dry-run"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "operator script not found")
+		assert.Empty(t, stdout.String())
+	})
+
+	t.Run("script path directory", func(t *testing.T) {
+		stdout.Reset()
+		scriptDir := t.TempDir()
+		require.NoError(t, os.Mkdir(filepath.Join(scriptDir, "db-backup.sh"), 0o700))
+		t.Setenv("OA_SCRIPT_DIR", scriptDir)
+		err := app.run(ctx, []string{"ops", "backup", "create", "--dry-run"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "operator script path is a directory")
+		assert.Empty(t, stdout.String())
+	})
+
+	t.Run("script failure", func(t *testing.T) {
+		stdout.Reset()
+		scriptDir := t.TempDir()
+		path := filepath.Join(scriptDir, "db-backup.sh")
+		require.NoError(t, os.WriteFile(path, []byte("#!/usr/bin/env bash\nexit 7\n"), 0o700))
+		t.Setenv("OA_SCRIPT_DIR", scriptDir)
+		err := app.run(ctx, []string{"ops", "backup", "create", "--dry-run"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "db-backup.sh failed")
+		assert.Empty(t, stdout.String())
+	})
+}
+
+func TestCLIOpsBackupResolvesScriptsFromWorkingTree(t *testing.T) {
+	root := t.TempDir()
+	scriptDir := filepath.Join(root, "scripts")
+	require.NoError(t, os.Mkdir(scriptDir, 0o700))
+	writeTempOperatorScript(t, scriptDir, "db-backup.sh")
+
+	nested := filepath.Join(root, "nested", "deeper")
+	require.NoError(t, os.MkdirAll(nested, 0o700))
+	previousWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(nested))
+	t.Cleanup(func() {
+		require.NoError(t, os.Chdir(previousWD))
+	})
+	t.Setenv("OA_SCRIPT_DIR", "")
+
+	app, stdout, _ := newTestCLIApp()
+	err = app.run(context.Background(), []string{"ops", "backup", "create", "--backup-dir", " ./backups ", "--dry-run"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "db-backup.sh --backup-dir ./backups --dry-run")
+}
+
 func TestCLIAuthInitStatusAndLogoutFlow(t *testing.T) {
 	configureCLIEnv(t)
 
