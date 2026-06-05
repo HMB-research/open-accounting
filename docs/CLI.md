@@ -718,7 +718,7 @@ go run ./cmd/oa payments create \
   --method BANK_TRANSFER \
   --reference BANK-001 \
   --allocate <invoice-id>:1220.00
-go run ./cmd/oa payments import --file ./payments.csv
+go run ./cmd/oa payments import --file ./payments.csv --json
 go run ./cmd/oa payments sepa-export \
   --message-id MSG-20260331 \
   --debtor-name "Example OU" \
@@ -727,12 +727,17 @@ go run ./cmd/oa payments sepa-export \
   --execution-date 2026-04-01 \
   --line "name=Supplier AS,iban=EE471000001020145685,amount=125.50,remittance=Invoice INV-1001" \
   --output ./sepa-payments.xml
-go run ./cmd/oa payments get --id <payment-id>
-go run ./cmd/oa payments allocate --id <payment-id> --invoice-id <invoice-id> --amount 250.00
-go run ./cmd/oa payments unallocated --type RECEIVED
+go run ./cmd/oa payments sepa-export \
+  --debtor-name "Example OU" \
+  --debtor-iban EE382200221020145685 \
+  --execution-date 2026-04-01 \
+  --line "name=Supplier AS,iban=EE471000001020145685,amount=125.50"
+go run ./cmd/oa payments get --id <payment-id> --json
+go run ./cmd/oa payments allocate --id <payment-id> --invoice-id <invoice-id> --amount 250.00 --json
+go run ./cmd/oa payments unallocated --type RECEIVED --json
 ```
 
-Use `--allocate invoice-id:amount` repeatedly on `payments create` to allocate a new payment to multiple invoices. Payment CSV imports require `payment_type`, `payment_date`, and `amount`, with optional `payment_number`, `contact_id`, `invoice_id`, and `allocation_amount`. Payment types are `RECEIVED` and `MADE`; `--json` is available on list, create, import, get, allocate, and unallocated commands. `payments sepa-export` writes ISO 20022 `pain.001.001.03` XML for manual bank upload; repeat `--line` with comma-separated `key=value` pairs including `name`, `iban`, and `amount`, plus optional `bic`, `end_to_end_id`, `remittance`, `invoice_id`, `payment_id`, or `payment_number`.
+Payment list filters accept `--type RECEIVED|MADE`, `--method`, `--contact-id`, `--from`, and `--to`; date filters must use `YYYY-MM-DD`. Payment create requires `--type` and a positive `--amount`; `--exchange-rate` and allocation amounts must also be positive. Contact IDs, bank accounts, references, notes, payment IDs, invoice IDs, and SEPA debtor/creditor fields are trimmed before requests are sent, and currencies are normalized to uppercase. Use `--allocate invoice-id:amount` repeatedly on `payments create` to allocate a new payment to multiple invoices. Payment CSV imports require `payment_type`, `payment_date`, and `amount`, with optional `payment_number`, `contact_id`, `invoice_id`, and `allocation_amount`; JSON import output includes row-level errors when rows are skipped. Payment types are `RECEIVED` and `MADE`; `--json` is available on list, create, import, get, allocate, and unallocated commands. `payments sepa-export` writes ISO 20022 `pain.001.001.03` XML for manual bank upload; omit `--output` to stream the XML to stdout. Repeat `--line` with comma-separated `key=value` pairs including `name`, `iban`, and `amount`, plus optional `bic`, `end_to_end_id`, `currency`, `remittance`, `invoice_id`, `payment_id`, or `payment_number`.
 
 ## Payment reminders
 
