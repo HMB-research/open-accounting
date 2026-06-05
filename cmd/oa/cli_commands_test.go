@@ -9159,6 +9159,263 @@ func TestCLIContactsInvoicesAndJournalCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "debit 500")
 }
 
+func TestCLIContactsBranches(t *testing.T) {
+	configureCLIEnv(t)
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	err := app.run(ctx, []string{"contacts", "list"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown subcommand", args: []string{"contacts", "archive"}, want: `unknown contacts subcommand "archive"`},
+		{name: "list invalid flag", args: []string{"contacts", "list", "--bogus"}, want: "flag provided but not defined"},
+		{name: "create invalid flag", args: []string{"contacts", "create", "--bogus"}, want: "flag provided but not defined"},
+		{name: "create missing name", args: []string{"contacts", "create"}, want: "name is required"},
+		{name: "create invalid credit limit", args: []string{"contacts", "create", "--name", "Acme", "--credit-limit", "not-money"}, want: "parse credit limit"},
+		{name: "get invalid flag", args: []string{"contacts", "get", "--bogus"}, want: "flag provided but not defined"},
+		{name: "get missing id", args: []string{"contacts", "get"}, want: "id is required"},
+		{name: "update invalid flag", args: []string{"contacts", "update", "--bogus"}, want: "flag provided but not defined"},
+		{name: "update missing id", args: []string{"contacts", "update", "--name", "Acme"}, want: "id is required"},
+		{name: "update invalid payment terms", args: []string{"contacts", "update", "--id", "contact-2", "--payment-terms-days", "-1"}, want: "payment-terms-days must be non-negative"},
+		{name: "update invalid credit limit", args: []string{"contacts", "update", "--id", "contact-2", "--credit-limit", "nope"}, want: "parse credit limit"},
+		{name: "update invalid active", args: []string{"contacts", "update", "--id", "contact-2", "--active", "maybe"}, want: "parse active"},
+		{name: "delete invalid flag", args: []string{"contacts", "delete", "--bogus"}, want: "flag provided but not defined"},
+		{name: "delete missing id", args: []string{"contacts", "delete"}, want: "id is required"},
+		{name: "import invalid flag", args: []string{"contacts", "import", "--bogus"}, want: "flag provided but not defined"},
+		{name: "import missing file", args: []string{"contacts", "import"}, want: "file is required"},
+		{name: "import unreadable file", args: []string{"contacts", "import", "--file", filepath.Join(t.TempDir(), "missing.csv")}, want: "read file"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	importFile := writeTempCSV(t, "contacts-branch.csv", "name,email\nBranch Co,branch@example.com\n")
+	requestCounts := map[string]int{}
+	contactPayload := func(id, name string, contactType contacts.ContactType, active bool) map[string]any {
+		return map[string]any{
+			"id":                 id,
+			"tenant_id":          "tenant-1",
+			"code":               "SUP-9",
+			"name":               name,
+			"contact_type":       contactType,
+			"reg_code":           "99887766",
+			"vat_number":         "EE99887766",
+			"email":              "branch@example.com",
+			"phone":              "+372 555 0909",
+			"address_line1":      "Main 1",
+			"address_line2":      "Suite 2",
+			"city":               "Tartu",
+			"postal_code":        "50090",
+			"country_code":       "EE",
+			"payment_terms_days": 21,
+			"credit_limit":       "99.50",
+			"default_account_id": "acc-branch",
+			"is_active":          active,
+			"notes":              "Branch fixture",
+			"created_at":         "2026-03-12T00:00:00Z",
+			"updated_at":         "2026-03-12T00:00:00Z",
+		}
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/contacts":
+			requestCounts["list"]++
+			assert.Empty(t, r.URL.Query().Get("type"))
+			assert.Empty(t, r.URL.Query().Get("search"))
+			assert.Empty(t, r.URL.Query().Get("active_only"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{contactPayload("contact-2", "Branch Supplier", contacts.ContactTypeSupplier, true)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/contacts":
+			requestCounts["create"]++
+			var req contacts.CreateContactRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "SUP-9", req.Code)
+			assert.Equal(t, "Branch Supplier", req.Name)
+			assert.Equal(t, contacts.ContactTypeSupplier, req.ContactType)
+			assert.Equal(t, "99887766", req.RegCode)
+			assert.Equal(t, "EE99887766", req.VATNumber)
+			assert.Equal(t, "branch@example.com", req.Email)
+			assert.Equal(t, "+372 555 0909", req.Phone)
+			assert.Equal(t, "Main 1", req.AddressLine1)
+			assert.Equal(t, "Suite 2", req.AddressLine2)
+			assert.Equal(t, "Tartu", req.City)
+			assert.Equal(t, "50090", req.PostalCode)
+			assert.Equal(t, "EE", req.CountryCode)
+			assert.Equal(t, 21, req.PaymentTermsDays)
+			assert.True(t, req.CreditLimit.Equal(decimal.RequireFromString("99.50")))
+			require.NotNil(t, req.DefaultAccountID)
+			assert.Equal(t, "acc-branch", *req.DefaultAccountID)
+			assert.Equal(t, "Branch fixture", req.Notes)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(contactPayload("contact-2", req.Name, req.ContactType, true))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/contacts/contact-2":
+			requestCounts["get"]++
+			_ = json.NewEncoder(w).Encode(contactPayload("contact-2", "Branch Supplier", contacts.ContactTypeSupplier, true))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/contacts/contact-2":
+			requestCounts["update"]++
+			var req contacts.UpdateContactRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.NotNil(t, req.Name)
+			assert.Equal(t, "Branch Updated", *req.Name)
+			require.NotNil(t, req.RegCode)
+			assert.Equal(t, "11223344", *req.RegCode)
+			require.NotNil(t, req.VATNumber)
+			assert.Equal(t, "EE11223344", *req.VATNumber)
+			require.NotNil(t, req.Email)
+			assert.Equal(t, "updated@example.com", *req.Email)
+			require.NotNil(t, req.Phone)
+			assert.Equal(t, "+372 555 1111", *req.Phone)
+			require.NotNil(t, req.AddressLine1)
+			assert.Equal(t, "Second 2", *req.AddressLine1)
+			require.NotNil(t, req.AddressLine2)
+			assert.Equal(t, "Floor 3", *req.AddressLine2)
+			require.NotNil(t, req.City)
+			assert.Equal(t, "Parnu", *req.City)
+			require.NotNil(t, req.PostalCode)
+			assert.Equal(t, "80010", *req.PostalCode)
+			require.NotNil(t, req.CountryCode)
+			assert.Equal(t, "EE", *req.CountryCode)
+			require.NotNil(t, req.PaymentTermsDays)
+			assert.Equal(t, 45, *req.PaymentTermsDays)
+			require.NotNil(t, req.CreditLimit)
+			assert.True(t, req.CreditLimit.Equal(decimal.RequireFromString("199.99")))
+			require.NotNil(t, req.DefaultAccountID)
+			assert.Equal(t, "acc-updated", *req.DefaultAccountID)
+			require.NotNil(t, req.Notes)
+			assert.Equal(t, "Updated branch", *req.Notes)
+			require.NotNil(t, req.IsActive)
+			assert.True(t, *req.IsActive)
+			_ = json.NewEncoder(w).Encode(contactPayload("contact-2", "Branch Updated", contacts.ContactTypeSupplier, true))
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/contacts/contact-2":
+			requestCounts["delete"]++
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/contacts/import":
+			requestCounts["import"]++
+			var req contacts.ImportContactsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "contacts-branch.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "Branch Co")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"file_name":        req.FileName,
+				"rows_processed":   2,
+				"contacts_created": 1,
+				"rows_skipped":     1,
+				"errors": []map[string]any{{
+					"row":     2,
+					"name":    "Bad Contact",
+					"message": "missing email",
+				}},
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"contacts", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Branch Supplier")
+
+	stdout.Reset()
+	err = app.run(ctx, []string{
+		"contacts", "create",
+		"--code", " SUP-9 ",
+		"--name", " Branch Supplier ",
+		"--type", " supplier ",
+		"--reg-code", " 99887766 ",
+		"--vat-number", " EE99887766 ",
+		"--email", " branch@example.com ",
+		"--phone", " +372 555 0909 ",
+		"--address-line1", " Main 1 ",
+		"--address-line2", " Suite 2 ",
+		"--city", " Tartu ",
+		"--postal-code", " 50090 ",
+		"--country-code", " ee ",
+		"--payment-terms-days", "21",
+		"--credit-limit", " 99.50 ",
+		"--default-account-id", " acc-branch ",
+		"--notes", " Branch fixture ",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Branch Supplier"`)
+	assert.Contains(t, stdout.String(), `"contact_type": "SUPPLIER"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"contacts", "get", "--id", " contact-2 ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "contact-2"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{
+		"contacts", "update",
+		"--id", " contact-2 ",
+		"--name", " Branch Updated ",
+		"--reg-code", " 11223344 ",
+		"--vat-number", " EE11223344 ",
+		"--email", " updated@example.com ",
+		"--phone", " +372 555 1111 ",
+		"--address-line1", " Second 2 ",
+		"--address-line2", " Floor 3 ",
+		"--city", " Parnu ",
+		"--postal-code", " 80010 ",
+		"--country-code", " ee ",
+		"--payment-terms-days", "45",
+		"--credit-limit", "199.99",
+		"--default-account-id", " acc-updated ",
+		"--notes", " Updated branch ",
+		"--active", " true ",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Branch Updated"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"contacts", "delete", "--id", " contact-2 ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "deleted"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"contacts", "import", "--file", importFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"rows_skipped": 1`)
+	assert.Contains(t, stdout.String(), `"message": "missing email"`)
+
+	assert.Equal(t, map[string]int{
+		"list":   1,
+		"create": 1,
+		"get":    1,
+		"update": 1,
+		"delete": 1,
+		"import": 1,
+	}, requestCounts)
+}
+
 func TestCLIPaymentCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
