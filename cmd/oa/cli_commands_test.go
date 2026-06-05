@@ -3273,6 +3273,67 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"files_validated": 2`)
 }
 
+func TestCLIMigrationValidationBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, _, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"migration"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "migration subcommand required")
+
+	err = app.run(context.Background(), []string{"migration", "validate"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no API token configured")
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		APIToken: "oa_saved_token",
+	}))
+	err = app.run(context.Background(), []string{"migration", "validate"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no tenant configured")
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	err = app.run(context.Background(), []string{"migration", "nope"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unknown migration subcommand "nope"`)
+
+	err = app.run(context.Background(), []string{"migration", "validate", "--not-a-flag"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "flag provided but not defined")
+
+	err = app.run(context.Background(), []string{"migration", "validate"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "at least one migration CSV or XML file is required")
+
+	err = app.run(context.Background(), []string{"migration", "validate", "--contacts", filepath.Join(t.TempDir(), "missing.csv")})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read file")
+
+	contactsFile := writeTempCSV(t, "contacts.csv", "contact_code,name\nCUST-1,Customer One\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/api/v1/tenants/tenant-1/migration/validate", r.URL.Path)
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "migration validation unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	err = app.run(context.Background(), []string{"migration", "validate", "--contacts", contactsFile})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "migration validation unavailable")
+}
+
 func TestCLIAdminPluginCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
