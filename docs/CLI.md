@@ -203,7 +203,7 @@ go run ./cmd/oa admin plugins uninstall --id <plugin-id>
 ```
 
 Tenant plugin `enable` and `settings update` accept exactly one settings source: `--settings-json` for inline JSON or `--settings-file` for a JSON object on disk.
-Use `--permission` repeatedly when enabling an instance-level plugin with multiple permissions.
+Admin plugin commands use the saved API token from `auth init`; `admin registries` and `admin plugin-registries` are equivalent aliases. Use `--permission` repeatedly when enabling an instance-level plugin with multiple permissions.
 
 ## Webhooks
 
