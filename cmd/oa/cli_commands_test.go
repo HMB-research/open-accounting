@@ -9494,6 +9494,181 @@ func TestCLIBankingCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Completed bank reconciliation rec-1")
 }
 
+func TestCLIBankAccountBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	cfg := &cliConfig{TenantID: "tenant-1"}
+	ctx := context.Background()
+	invalidImportFile := writeTempCSV(t, "bank-account-invalid.csv", "name,bank_name\nReserve,LHV\n")
+
+	for _, tt := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown subcommand", args: []string{"archive"}, want: `unknown banking accounts subcommand "archive"`},
+		{name: "list bad flag", args: []string{"list", "--unknown"}, want: "flag provided but not defined"},
+		{name: "create bad flag", args: []string{"create", "--unknown"}, want: "flag provided but not defined"},
+		{name: "create missing name", args: []string{"create", "--account-number", "EE123"}, want: "name is required"},
+		{name: "create missing account number", args: []string{"create", "--name", "Main"}, want: "account-number is required"},
+		{name: "import bad flag", args: []string{"import", "--unknown"}, want: "flag provided but not defined"},
+		{name: "import invalid row", args: []string{"import", "--file", invalidImportFile}, want: "requires name and account_number"},
+		{name: "get bad flag", args: []string{"get", "--unknown"}, want: "flag provided but not defined"},
+		{name: "get missing id", args: []string{"get"}, want: "id is required"},
+		{name: "update bad flag", args: []string{"update", "--unknown"}, want: "flag provided but not defined"},
+		{name: "update missing id", args: []string{"update"}, want: "id is required"},
+		{name: "update invalid active", args: []string{"update", "--id", "bank-1", "--active", "maybe"}, want: "parse active"},
+		{name: "update invalid default", args: []string{"update", "--id", "bank-1", "--default", "maybe"}, want: "parse default"},
+		{name: "delete bad flag", args: []string{"delete", "--unknown"}, want: "flag provided but not defined"},
+		{name: "delete missing id", args: []string{"delete"}, want: "id is required"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := app.runBankAccounts(ctx, cfg, &apiClient{}, tt.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
+
+	importFile := writeTempCSV(t, "bank-accounts-branches.csv", "account_name;iban;bank;bic;currency;ledger_account_id;default;active\nReserve bank;EE999;LHV;LHVBEE22;usd;acc-reserve;yes;false\n")
+	accountPayload := func(id, name string, active bool) map[string]any {
+		return map[string]any{
+			"id":             id,
+			"tenant_id":      "tenant-1",
+			"name":           name,
+			"account_number": "EE999",
+			"bank_name":      "LHV",
+			"swift_code":     "LHVBEE22",
+			"currency":       "USD",
+			"gl_account_id":  "acc-reserve",
+			"is_default":     false,
+			"is_active":      active,
+			"created_at":     "2026-03-15T12:00:00Z",
+			"balance":        "42.00",
+		}
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts":
+			require.Empty(t, r.URL.Query().Get("active_only"))
+			_ = json.NewEncoder(w).Encode([]map[string]any{accountPayload("bank-branch", "Reserve bank", true)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts":
+			var req banking.CreateBankAccountRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Reserve bank", req.Name)
+			assert.Equal(t, "EE999", req.AccountNumber)
+			assert.Equal(t, "LHV", req.BankName)
+			assert.Equal(t, "LHVBEE22", req.SwiftCode)
+			assert.Equal(t, "USD", req.Currency)
+			assert.Nil(t, req.GLAccountID)
+			assert.False(t, req.IsDefault)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(accountPayload("bank-created", "Reserve bank", true))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/import":
+			var req banking.ImportBankAccountsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "bank-accounts-branches.csv", req.FileName)
+			assert.False(t, req.SkipDuplicates)
+			require.Len(t, req.Rows, 1)
+			assert.Equal(t, "Reserve bank", req.Rows[0].Name)
+			assert.Equal(t, "EE999", req.Rows[0].AccountNumber)
+			assert.Equal(t, "LHV", req.Rows[0].BankName)
+			assert.Equal(t, "LHVBEE22", req.Rows[0].SwiftCode)
+			assert.Equal(t, "usd", req.Rows[0].Currency)
+			assert.Equal(t, "acc-reserve", req.Rows[0].GLAccountID)
+			assert.Equal(t, "yes", req.Rows[0].IsDefault)
+			assert.Equal(t, "false", req.Rows[0].IsActive)
+			_ = json.NewEncoder(w).Encode(banking.ImportBankAccountsResult{
+				FileName:         "bank-accounts-branches.csv",
+				RowsProcessed:    2,
+				AccountsImported: 1,
+				RowsSkipped:      1,
+				Errors:           []string{"row 3 duplicate"},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-branch":
+			_ = json.NewEncoder(w).Encode(accountPayload("bank-branch", "Reserve bank", true))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-branch":
+			var req banking.UpdateBankAccountRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Updated reserve", req.Name)
+			assert.Equal(t, "Coop", req.BankName)
+			assert.Equal(t, "COBAEE2X", req.SwiftCode)
+			require.NotNil(t, req.GLAccountID)
+			assert.Equal(t, "acc-updated", *req.GLAccountID)
+			require.NotNil(t, req.IsActive)
+			assert.True(t, *req.IsActive)
+			require.NotNil(t, req.IsDefault)
+			assert.False(t, *req.IsDefault)
+			payload := accountPayload("bank-branch", "Updated reserve", true)
+			payload["bank_name"] = "Coop"
+			payload["swift_code"] = "COBAEE2X"
+			payload["gl_account_id"] = "acc-updated"
+			_ = json.NewEncoder(w).Encode(payload)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-branch":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	err := app.run(ctx, []string{"banking", "accounts", "list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Reserve bank")
+	assert.Contains(t, stdout.String(), "EE999")
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"banking", "accounts", "create", "--name", " Reserve bank ", "--account-number", " EE999 ", "--bank-name", " LHV ", "--swift-code", " LHVBEE22 ", "--currency", " usd ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "bank-created"`)
+	assert.Contains(t, stdout.String(), `"currency": "USD"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"banking", "accounts", "import", "--file", importFile, "--skip-duplicates=false", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"accounts_imported": 1`)
+	assert.Contains(t, stdout.String(), `"row 3 duplicate"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"banking", "accounts", "get", "--id", " bank-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "bank-branch"`)
+	assert.Contains(t, stdout.String(), `"name": "Reserve bank"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{
+		"banking", "accounts", "update",
+		"--id", " bank-branch ",
+		"--name", "Updated reserve",
+		"--bank-name", "Coop",
+		"--swift-code", "COBAEE2X",
+		"--gl-account-id", "acc-updated",
+		"--active", "true",
+		"--default", "false",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"name": "Updated reserve"`)
+	assert.Contains(t, stdout.String(), `"swift_code": "COBAEE2X"`)
+
+	stdout.Reset()
+	err = app.run(ctx, []string{"banking", "accounts", "delete", "--id", " bank-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "deleted"`)
+}
+
 func TestCLIBankTransactionBranches(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
