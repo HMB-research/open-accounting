@@ -11497,6 +11497,82 @@ func TestCLIInterestValidationBranches(t *testing.T) {
 	}
 }
 
+func TestCLIInterestAuthAndAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"interest", "overdue"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		APIToken: "oa_saved_token",
+	}))
+	err = app.run(context.Background(), []string{"interest", "overdue"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no tenant configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+	validationCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "settings get bad flag", args: []string{"interest", "settings", "get", "--unknown"}, want: "flag provided but not defined"},
+		{name: "settings update bad flag", args: []string{"interest", "settings", "update", "--unknown"}, want: "flag provided but not defined"},
+		{name: "overdue bad flag", args: []string{"interest", "overdue", "--unknown"}, want: "flag provided but not defined"},
+		{name: "invoice bad flag", args: []string{"interest", "invoice", "--unknown"}, want: "flag provided but not defined"},
+		{name: "history bad flag", args: []string{"interest", "history", "--unknown"}, want: "flag provided but not defined"},
+	}
+	for _, tc := range validationCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "interest API unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	errorCases := []struct {
+		name string
+		args []string
+	}{
+		{name: "settings get", args: []string{"interest", "settings", "get"}},
+		{name: "settings update", args: []string{"interest", "settings", "update", "--rate", "0.0005"}},
+		{name: "overdue", args: []string{"interest", "overdue"}},
+		{name: "invoice", args: []string{"interest", "invoice", "--invoice-id", "inv-1"}},
+		{name: "history", args: []string{"interest", "history", "--invoice-id", "inv-1"}},
+	}
+	for _, tc := range errorCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "interest API unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLICloseCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
