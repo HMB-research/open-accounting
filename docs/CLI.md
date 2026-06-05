@@ -317,6 +317,8 @@ go run ./cmd/oa contacts delete --id <contact-id>
 go run ./cmd/oa contacts import --file ./contacts.csv
 ```
 
+Use `--json` on contacts list/create/get/update/delete/import commands for automation. Contact list filters and create/update fields are trimmed before API requests; contact type and country code inputs are normalized to uppercase.
+
 ## Employees
 
 ```bash
