@@ -341,6 +341,7 @@ go run ./cmd/oa employees import --file ./employees.csv
 ```bash
 go run ./cmd/oa payroll runs list
 go run ./cmd/oa payroll runs list --year 2026
+go run ./cmd/oa payroll runs list --json
 go run ./cmd/oa payroll runs create --year 2026 --month 3 --payment-date 2026-03-31
 go run ./cmd/oa payroll runs get --id <payroll-run-id>
 go run ./cmd/oa payroll runs calculate --id <payroll-run-id>
@@ -351,7 +352,7 @@ go run ./cmd/oa payroll runs payslip-pdf --run-id <payroll-run-id> --payslip-id 
 go run ./cmd/oa payroll tax-preview --gross-salary 3200.00
 ```
 
-Use `payroll runs calculate` after employee salary setup, then `payroll runs approve` before TSD generation. Use `payroll runs process --approve` to bulk-calculate all active employees in a draft run and approve it in one request. `payroll runs payslip-pdf` downloads a generated PDF for one payslip. Use `--json` on read and mutation commands when scripting.
+Use `payroll runs calculate` after employee salary setup, then `payroll runs approve` before TSD generation. Use `payroll runs process --approve` to bulk-calculate all active employees in a draft run and approve it in one request. `payroll runs create` accepts an optional `--payment-date`; when omitted, the API receives no payment date. Payroll run IDs are trimmed before API requests. Use `--json` on read and mutation commands when scripting, including list/create/get/calculate/process/approve/payslips. `payroll runs payslip-pdf` downloads a generated PDF for one payslip; pass `--output` to write a file, or omit it to stream the PDF bytes to stdout.
 
 ## Payroll migration imports
 
