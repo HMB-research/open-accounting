@@ -415,7 +415,7 @@ go run ./cmd/oa tsd mark-accepted --year 2026 --month 3
 go run ./cmd/oa tsd mark-rejected --year 2026 --month 3
 ```
 
-Omit `--output` on export commands to write the raw XML or CSV to stdout. Use `--json` on list/get/generate/mark-submitted/mark-accepted/mark-rejected for automation.
+TSD period commands require `--year` and `--month`; `--month` must be between 1 and 12. Omit `--output` on export commands to write the raw XML or CSV to stdout. Use `--json` on list/get/generate/mark-submitted/mark-accepted/mark-rejected for automation.
 
 ## KMD declarations
 
