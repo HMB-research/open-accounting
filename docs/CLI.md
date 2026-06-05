@@ -38,6 +38,7 @@ go run ./cmd/oa ops backup restore-drill --backup ./backups/openaccounting_20260
 ```
 
 `ops backup create` delegates to `db-backup.sh`, which requires `DATABASE_URL` unless `--database-url` is passed. `ops backup restore-drill` requires a separate disposable restore database and refuses to restore into the source URL when `DATABASE_URL` or `--source-url` matches. `ops backup offsite-sync` requires exactly one destination: `--s3-uri` or `--rclone-remote`.
+The CLI trims and forwards only provided backup flags to the matching local script; `OA_SCRIPT_DIR` can point at a custom scripts directory, otherwise the CLI searches for `scripts/` from the current working tree.
 
 ## Bootstrap a token
 
