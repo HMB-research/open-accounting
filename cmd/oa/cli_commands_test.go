@@ -15421,6 +15421,82 @@ func TestCLIPayrollTopLevelBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"leave_balances_updated": 1`)
 }
 
+func TestCLIPayrollTopLevelAuthFlagsAndAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"payroll", "tax-preview", "--gross-salary", "3200.00"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		APIToken: "oa_saved_token",
+	}))
+	err = app.run(context.Background(), []string{"payroll", "tax-preview", "--gross-salary", "3200.00"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no tenant configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	missingFile := filepath.Join(t.TempDir(), "missing.csv")
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "tax preview bad flag", args: []string{"payroll", "tax-preview", "--bad"}, want: "flag provided but not defined"},
+		{name: "import history bad flag", args: []string{"payroll", "import-history", "--bad"}, want: "flag provided but not defined"},
+		{name: "import history unreadable file", args: []string{"payroll", "import-history", "--file", missingFile}, want: "read file"},
+		{name: "import leave balances bad flag", args: []string{"payroll", "import-leave-balances", "--bad"}, want: "flag provided but not defined"},
+		{name: "import leave balances unreadable file", args: []string{"payroll", "import-leave-balances", "--file", missingFile}, want: "read file"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	historyFile := writeTempCSV(t, "payroll-history.csv", "period_year,period_month,employee_number,gross_salary\n2025,12,EMP-100,3200.00\n")
+	leaveFile := writeTempCSV(t, "leave-balances.csv", "year,employee_number,absence_type_code,entitled_days\n2025,EMP-100,ANNUAL_LEAVE,28\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"payroll backend unavailable"}`))
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "tax preview", args: []string{"payroll", "tax-preview", "--gross-salary", "3200.00"}},
+		{name: "import history", args: []string{"payroll", "import-history", "--file", historyFile}},
+		{name: "import leave balances", args: []string{"payroll", "import-leave-balances", "--file", leaveFile}},
+	} {
+		t.Run(tc.name+" API error", func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "payroll backend unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLILeaveCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
