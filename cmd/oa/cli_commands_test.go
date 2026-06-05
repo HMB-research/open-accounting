@@ -267,6 +267,19 @@ func tenantPluginPayload(tenantPluginID, tenantID, pluginID, name, displayName s
 	}
 }
 
+func cliInvitationPayload(id, email, role string) map[string]any {
+	return map[string]any{
+		"id":          id,
+		"tenant_id":   "tenant-1",
+		"tenant_name": "Alpha",
+		"email":       email,
+		"role":        role,
+		"invited_by":  "user-1",
+		"expires_at":  "2026-03-19T00:00:00Z",
+		"created_at":  "2026-03-12T00:00:00Z",
+	}
+}
+
 func recurringGenerationPayload(recurringID string) map[string]any {
 	return map[string]any{
 		"recurring_invoice_id":     recurringID,
@@ -1234,16 +1247,7 @@ func TestCLIInvitationCommands(t *testing.T) {
 		APIToken:   "oa_saved_token",
 	}))
 
-	invitationResponse := map[string]any{
-		"id":          "inv-1",
-		"tenant_id":   "tenant-1",
-		"tenant_name": "Alpha",
-		"email":       "new@example.com",
-		"role":        "accountant",
-		"invited_by":  "user-1",
-		"expires_at":  "2026-03-19T00:00:00Z",
-		"created_at":  "2026-03-12T00:00:00Z",
-	}
+	invitationResponse := cliInvitationPayload("inv-1", "new@example.com", tenant.RoleAccountant)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -1323,6 +1327,146 @@ func TestCLIInvitationCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"invitations", "accept", "--token", "public-token", "--name", "New User", "--password", "secret", "--base-url", server.URL})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Joined tenant Alpha")
+}
+
+func TestCLIInvitationBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasPrefix(r.URL.Path, "/api/v1/tenants/") {
+			require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		} else {
+			assert.Empty(t, r.Header.Get("Authorization"))
+		}
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invitations":
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				cliInvitationPayload("inv-branch", "branch@example.com", tenant.RoleViewer),
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invitations":
+			var req tenant.CreateInvitationRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "branch@example.com", req.Email)
+			assert.Equal(t, tenant.RoleAdmin, req.Role)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(cliInvitationPayload("inv-branch", req.Email, req.Role))
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/invitations/inv-branch":
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/invitations/public-branch":
+			_ = json.NewEncoder(w).Encode(cliInvitationPayload("inv-branch", "branch@example.com", tenant.RoleAdmin))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/invitations/accept":
+			var req tenant.AcceptInvitationRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "public-branch", req.Token)
+			assert.Equal(t, "stdin-secret", req.Password)
+			assert.Equal(t, "Branch User", req.Name)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tenant": map[string]any{
+					"id":   "tenant-1",
+					"name": "Alpha",
+					"slug": "alpha",
+					"settings": map[string]any{
+						"default_currency": "EUR",
+						"country_code":     "EE",
+						"timezone":         "Europe/Tallinn",
+					},
+					"is_active":  true,
+					"created_at": "2026-03-12T00:00:00Z",
+					"updated_at": "2026-03-12T00:00:00Z",
+				},
+				"role":       tenant.RoleAdmin,
+				"is_default": true,
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	validationCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing subcommand", args: []string{"invitations"}, want: "invitations subcommand required"},
+		{name: "unknown subcommand", args: []string{"invitations", "unknown"}, want: `unknown invitations subcommand "unknown"`},
+		{name: "list bad flag", args: []string{"invitations", "list", "--unknown"}, want: "flag provided but not defined"},
+		{name: "create missing email", args: []string{"invitations", "create", "--role", tenant.RoleViewer}, want: "email and role are required"},
+		{name: "create missing role", args: []string{"invitations", "create", "--email", "branch@example.com", "--role", " "}, want: "email and role are required"},
+		{name: "create bad flag", args: []string{"invitations", "create", "--unknown"}, want: "flag provided but not defined"},
+		{name: "revoke missing id", args: []string{"invitations", "revoke"}, want: "id is required"},
+		{name: "revoke bad flag", args: []string{"invitations", "revoke", "--unknown"}, want: "flag provided but not defined"},
+		{name: "get missing token", args: []string{"invitations", "get"}, want: "token is required"},
+		{name: "get bad flag", args: []string{"invitations", "get", "--unknown"}, want: "flag provided but not defined"},
+		{name: "accept missing token", args: []string{"invitations", "accept", "--name", "Branch User"}, want: "token is required"},
+		{name: "accept bad flag", args: []string{"invitations", "accept", "--unknown"}, want: "flag provided but not defined"},
+	}
+	for _, tc := range validationCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+		})
+	}
+
+	originalStdin := os.Stdin
+	t.Cleanup(func() {
+		os.Stdin = originalStdin
+	})
+	emptyReader, emptyWriter, err := os.Pipe()
+	require.NoError(t, err)
+	require.NoError(t, emptyWriter.Close())
+	os.Stdin = emptyReader
+	err = app.run(context.Background(), []string{"invitations", "accept", "--token", "public-branch", "--password-stdin"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "password from stdin is empty")
+	os.Stdin = originalStdin
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"invitations", "list", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"email": "branch@example.com"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"invitations", "create", "--email", " branch@example.com ", "--role", " admin ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"role": "admin"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"invitations", "revoke", "--id", " inv-branch "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Revoked invitation inv-branch")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"invitations", "get", "--token", " public-branch ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"email": "branch@example.com"`)
+
+	stdinReader, stdinWriter, err := os.Pipe()
+	require.NoError(t, err)
+	_, err = stdinWriter.WriteString("stdin-secret\n")
+	require.NoError(t, err)
+	require.NoError(t, stdinWriter.Close())
+	os.Stdin = stdinReader
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"invitations", "accept", "--token", " public-branch ", "--name", " Branch User ", "--password-stdin", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"role": "admin"`)
+	assert.Contains(t, stdout.String(), `"is_default": true`)
 }
 
 func TestCLIPluginCommands(t *testing.T) {

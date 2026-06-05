@@ -175,7 +175,7 @@ go run ./cmd/oa invitations accept \
   --base-url http://localhost:8080
 ```
 
-`users update-role` accepts `admin`, `accountant`, or `viewer`. The `owner` role is assigned only at tenant creation and cannot be granted through the CLI role-update flow. `users set-status --active false` suspends tenant access without deleting the membership, revokes active refresh sessions, and blocks existing tenant-scoped access/API-token use; `--active true` restores tenant login/refresh/API-token access. `users sessions`, `users api-tokens`, `users security-events`, and the tenant-user revocation commands require a tenant admin or owner and record audit events when sessions or API tokens are revoked. Use `--password-stdin` on `invitations accept` to avoid placing a new-user password in shell history.
+`users update-role` accepts `admin`, `accountant`, or `viewer`. The `owner` role is assigned only at tenant creation and cannot be granted through the CLI role-update flow. `users set-status --active false` suspends tenant access without deleting the membership, revokes active refresh sessions, and blocks existing tenant-scoped access/API-token use; `--active true` restores tenant login/refresh/API-token access. `users sessions`, `users api-tokens`, `users security-events`, and the tenant-user revocation commands require a tenant admin or owner and record audit events when sessions or API tokens are revoked. Use `--json` on invitation list, create, get, and accept commands for automation. Public invitation get/accept commands can use `--base-url`, `OA_BASE_URL`, or saved config for the API URL. Use `--password-stdin` on `invitations accept` to avoid placing a new-user password in shell history.
 
 ## Plugins
 
