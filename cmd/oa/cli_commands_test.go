@@ -14291,6 +14291,140 @@ func TestCLIReportsValidationBranches(t *testing.T) {
 	}
 }
 
+func TestCLIReportsAuthFlagsAndAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"reports", "trial-balance"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		APIToken: "oa_saved_token",
+	}))
+	err = app.run(context.Background(), []string{"reports", "trial-balance"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no tenant configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	validationCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "account balance bad flag", args: []string{"reports", "account-balance", "--bad"}, want: "flag provided but not defined"},
+		{name: "account balance conflicting output", args: []string{"reports", "account-balance", "--account-id", "acc-1", "--json", "--csv"}, want: "json, csv, xlsx, and pdf cannot be combined"},
+		{name: "balance sheet bad flag", args: []string{"reports", "balance-sheet", "--bad"}, want: "flag provided but not defined"},
+		{name: "balance sheet conflicting output", args: []string{"reports", "balance-sheet", "--json", "--csv"}, want: "json, csv, xlsx, and pdf cannot be combined"},
+		{name: "income statement bad flag", args: []string{"reports", "income-statement", "--bad"}, want: "flag provided but not defined"},
+		{name: "income statement conflicting output", args: []string{"reports", "income-statement", "--start", "2026-01-01", "--end", "2026-03-31", "--json", "--csv"}, want: "json, csv, xlsx, and pdf cannot be combined"},
+		{name: "consolidated bad flag", args: []string{"reports", "consolidated", "--bad"}, want: "flag provided but not defined"},
+		{name: "annual bad flag", args: []string{"reports", "annual", "--bad"}, want: "flag provided but not defined"},
+		{name: "cash flow bad flag", args: []string{"reports", "cash-flow", "--bad"}, want: "flag provided but not defined"},
+		{name: "cash flow conflicting output", args: []string{"reports", "cash-flow", "--start", "2026-01-01", "--end", "2026-03-31", "--json", "--csv"}, want: "json, csv, xlsx, and pdf cannot be combined"},
+		{name: "aging bad flag", args: []string{"reports", "aging", "--bad"}, want: "flag provided but not defined"},
+		{name: "aging conflicting output", args: []string{"reports", "aging", "--type", "receivables", "--json", "--csv"}, want: "json, csv, xlsx, and pdf cannot be combined"},
+		{name: "balance confirmations bad flag", args: []string{"reports", "balance-confirmations", "--bad"}, want: "flag provided but not defined"},
+		{name: "balance confirmations conflicting output", args: []string{"reports", "balance-confirmations", "--type", "RECEIVABLE", "--as-of", "2026-03-31", "--json", "--csv"}, want: "json, csv, xlsx, and pdf cannot be combined"},
+		{name: "balance confirmation bad flag", args: []string{"reports", "balance-confirmation", "--bad"}, want: "flag provided but not defined"},
+		{name: "balance confirmation conflicting output", args: []string{"reports", "balance-confirmation", "--contact-id", "contact-1", "--type", "RECEIVABLE", "--as-of", "2026-03-31", "--json", "--csv"}, want: "json, csv, xlsx, and pdf cannot be combined"},
+		{name: "contact statement bad flag", args: []string{"reports", "contact-statement", "--bad"}, want: "flag provided but not defined"},
+		{name: "contact statement conflicting output", args: []string{"reports", "contact-statement", "--contact-id", "contact-1", "--type", "RECEIVABLE", "--start", "2026-01-01", "--end", "2026-01-31", "--json", "--csv"}, want: "json, csv, xlsx, and pdf cannot be combined"},
+		{name: "sales margin bad flag", args: []string{"reports", "sales-margin", "--bad"}, want: "flag provided but not defined"},
+		{name: "sales margin conflicting output", args: []string{"reports", "sales-margin", "--start", "2026-01-01", "--end", "2026-03-31", "--json", "--csv"}, want: "json, csv, xlsx, and pdf cannot be combined"},
+		{name: "customer profitability bad flag", args: []string{"reports", "customer-profitability", "--bad"}, want: "flag provided but not defined"},
+		{name: "customer profitability conflicting output", args: []string{"reports", "customer-profitability", "--start", "2026-01-01", "--end", "2026-03-31", "--json", "--csv"}, want: "json, csv, xlsx, and pdf cannot be combined"},
+		{name: "budget vs actual bad flag", args: []string{"reports", "budget-vs-actual", "--bad"}, want: "flag provided but not defined"},
+		{name: "budget vs actual conflicting output", args: []string{"reports", "budget-vs-actual", "--json", "--csv"}, want: "json, csv, xlsx, and pdf cannot be combined"},
+	}
+	for _, tc := range validationCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "reports API unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	appendArgs := func(base []string, more ...string) []string {
+		args := append([]string{}, base...)
+		return append(args, more...)
+	}
+	exportModes := []struct {
+		name string
+		flag string
+	}{
+		{name: "csv", flag: "--csv"},
+		{name: "xlsx", flag: "--xlsx"},
+		{name: "pdf", flag: "--pdf"},
+	}
+	exportCommands := []struct {
+		name string
+		base []string
+	}{
+		{name: "trial balance", base: []string{"reports", "trial-balance", "--as-of", "2026-03-31"}},
+		{name: "account balance", base: []string{"reports", "account-balance", "--account-id", "acc-1", "--as-of", "2026-03-31"}},
+		{name: "balance sheet", base: []string{"reports", "balance-sheet", "--as-of", "2026-03-31"}},
+		{name: "income statement", base: []string{"reports", "income-statement", "--start", "2026-01-01", "--end", "2026-03-31"}},
+		{name: "cash flow", base: []string{"reports", "cash-flow", "--start", "2026-01-01", "--end", "2026-03-31", "--method", "direct"}},
+		{name: "aging", base: []string{"reports", "aging", "--type", "receivables"}},
+		{name: "balance confirmations", base: []string{"reports", "balance-confirmations", "--type", "RECEIVABLE", "--as-of", "2026-03-31"}},
+		{name: "balance confirmation", base: []string{"reports", "balance-confirmation", "--contact-id", "contact-1", "--type", "RECEIVABLE", "--as-of", "2026-03-31"}},
+		{name: "contact statement", base: []string{"reports", "contact-statement", "--contact-id", "contact-1", "--type", "RECEIVABLE", "--start", "2026-01-01", "--end", "2026-01-31"}},
+		{name: "sales margin", base: []string{"reports", "sales-margin", "--start", "2026-01-01", "--end", "2026-03-31"}},
+		{name: "customer profitability", base: []string{"reports", "customer-profitability", "--start", "2026-01-01", "--end", "2026-03-31"}},
+		{name: "budget vs actual", base: []string{"reports", "budget-vs-actual", "--start", "2026-03-01", "--end", "2026-03-31"}},
+	}
+	errorCases := []struct {
+		name string
+		args []string
+	}{
+		{name: "consolidated", args: []string{"reports", "consolidated", "--as-of", "2026-03-31", "--start", "2026-01-01", "--end", "2026-03-31", "--tenant-ids", "tenant-1,tenant-2"}},
+		{name: "annual", args: []string{"reports", "annual", "--period-end", "2026-12-31", "--cash-flow-method", "indirect"}},
+	}
+	for _, command := range exportCommands {
+		errorCases = append(errorCases, struct {
+			name string
+			args []string
+		}{name: command.name, args: appendArgs(command.base)})
+		for _, mode := range exportModes {
+			errorCases = append(errorCases, struct {
+				name string
+				args []string
+			}{name: command.name + " " + mode.name, args: appendArgs(command.base, mode.flag)})
+		}
+	}
+	for _, tc := range errorCases {
+		t.Run(tc.name+" API error", func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "reports API unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLICashFlowMappingValidationBranches(t *testing.T) {
 	app, _, _ := newTestCLIApp()
 	ctx := context.Background()
