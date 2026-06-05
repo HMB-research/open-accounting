@@ -13266,6 +13266,82 @@ func TestCLIAnalyticsValidationBranches(t *testing.T) {
 	}
 }
 
+func TestCLIAnalyticsAuthFlagsAndAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"analytics", "dashboard"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		APIToken: "oa_saved_token",
+	}))
+	err = app.run(context.Background(), []string{"analytics", "dashboard"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no tenant configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	flagCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "dashboard bad flag", args: []string{"analytics", "dashboard", "--bad"}, want: "flag provided but not defined"},
+		{name: "revenue bad flag", args: []string{"analytics", "revenue-expense", "--bad"}, want: "flag provided but not defined"},
+		{name: "cash flow bad flag", args: []string{"analytics", "cash-flow", "--bad"}, want: "flag provided but not defined"},
+		{name: "activity bad flag", args: []string{"analytics", "activity", "--bad"}, want: "flag provided but not defined"},
+		{name: "activity limit invalid", args: []string{"analytics", "activity", "--limit", "many"}, want: "parse limit"},
+	}
+	for _, tc := range flagCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "analytics API unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	apiErrorCases := []struct {
+		name string
+		args []string
+	}{
+		{name: "dashboard API error", args: []string{"analytics", "dashboard"}},
+		{name: "revenue API error", args: []string{"analytics", "revenue-expense", "--months", "3"}},
+		{name: "cash flow API error", args: []string{"analytics", "cash-flow", "--months", "6"}},
+		{name: "activity API error", args: []string{"analytics", "activity", "--limit", "5"}},
+	}
+	for _, tc := range apiErrorCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "analytics API unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIReportsCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
