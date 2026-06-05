@@ -11065,6 +11065,179 @@ func TestCLIReportsCommands(t *testing.T) {
 	budgetVsActualPDF, err := os.ReadFile(budgetVsActualPDFPath)
 	require.NoError(t, err)
 	assert.Equal(t, []byte("%PDF budget vs actual"), budgetVsActualPDF)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "trial-balance", "--as-of", "2026-03-31", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"is_balanced": true`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "account-balance", "--account-id", "acc-1", "--as-of", "2026-03-31", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"account_id": "acc-1"`)
+
+	stdout.Reset()
+	balanceSheetCSVPath := filepath.Join(t.TempDir(), "balance-sheet.csv")
+	err = app.run(context.Background(), []string{"reports", "balance-sheet", "--as-of", "2026-03-31", "--csv", "--output", balanceSheetCSVPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote balance sheet CSV")
+	balanceSheetCSV, err := os.ReadFile(balanceSheetCSVPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(balanceSheetCSV), "tenant-1")
+
+	stdout.Reset()
+	balanceSheetXLSXPath := filepath.Join(t.TempDir(), "balance-sheet.xlsx")
+	err = app.run(context.Background(), []string{"reports", "balance-sheet", "--as-of", "2026-03-31", "--xlsx", "--output", balanceSheetXLSXPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote balance sheet XLSX")
+	balanceSheetXLSX, err := os.ReadFile(balanceSheetXLSXPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(balanceSheetXLSX), "tenant-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "balance-sheet", "--as-of", "2026-03-31", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"is_balanced": true`)
+
+	stdout.Reset()
+	incomeStatementCSVPath := filepath.Join(t.TempDir(), "income-statement.csv")
+	err = app.run(context.Background(), []string{"reports", "income-statement", "--start", "2026-01-01", "--end", "2026-03-31", "--csv", "--output", incomeStatementCSVPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote income statement CSV")
+	incomeStatementCSV, err := os.ReadFile(incomeStatementCSVPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(incomeStatementCSV), "tenant-1")
+
+	stdout.Reset()
+	incomeStatementXLSXPath := filepath.Join(t.TempDir(), "income-statement.xlsx")
+	err = app.run(context.Background(), []string{"reports", "income-statement", "--start", "2026-01-01", "--end", "2026-03-31", "--xlsx", "--output", incomeStatementXLSXPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote income statement XLSX")
+	incomeStatementXLSX, err := os.ReadFile(incomeStatementXLSXPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(incomeStatementXLSX), "tenant-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "income-statement", "--start", "2026-01-01", "--end", "2026-03-31", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"net_income": "500"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "consolidated", "--as-of", "2026-03-31", "--start", "2026-01-01", "--end", "2026-03-31", "--tenant-ids", "tenant-1,tenant-2", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"tenant_count": 2`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "annual", "--period-end", "2026-12-31", "--cash-flow-method", "indirect", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"fiscal_year_label": "2026"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "aging", "--type", "receivables"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Receivables aging")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "balance-confirmations", "--type", "receivable", "--as-of", "2026-03-31", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"total_balance": "900"`)
+
+	stdout.Reset()
+	confirmationSummaryCSVPath := filepath.Join(t.TempDir(), "balance-confirmations.csv")
+	err = app.run(context.Background(), []string{"reports", "balance-confirmations", "--type", "receivable", "--as-of", "2026-03-31", "--csv", "--output", confirmationSummaryCSVPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote balance confirmations CSV")
+	confirmationSummaryCSV, err := os.ReadFile(confirmationSummaryCSVPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(confirmationSummaryCSV), "RECEIVABLE")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "balance-confirmation", "--contact-id", "contact-1", "--type", "RECEIVABLE", "--as-of", "2026-03-31", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"contact_id": "contact-1"`)
+
+	stdout.Reset()
+	confirmationXLSXPath := filepath.Join(t.TempDir(), "balance-confirmation.xlsx")
+	err = app.run(context.Background(), []string{"reports", "balance-confirmation", "--contact-id", "contact-1", "--type", "RECEIVABLE", "--as-of", "2026-03-31", "--xlsx", "--output", confirmationXLSXPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote balance confirmation XLSX")
+	confirmationXLSX, err := os.ReadFile(confirmationXLSXPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(confirmationXLSX), "contact-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "contact-statement", "--contact-id", "contact-1", "--type", "RECEIVABLE", "--start", "2026-01-01", "--end", "2026-01-31", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"closing_balance": "1050"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "sales-margin", "--start", "2026-01-01", "--end", "2026-03-31", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"total_margin": "700"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "budget-vs-actual", "--start", "2026-03-01", "--end", "2026-03-31", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"total_budget": "1000"`)
+}
+
+func TestCLIReportsValidationBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown subcommand", args: []string{"legacy"}, want: `unknown reports subcommand "legacy"`},
+		{name: "trial flag parse", args: []string{"trial-balance", "--bad"}, want: "flag provided but not defined"},
+		{name: "trial output without export", args: []string{"trial-balance", "--output", "trial.csv"}, want: "output requires csv, xlsx, or pdf"},
+		{name: "trial conflicting outputs", args: []string{"trial-balance", "--json", "--csv"}, want: "json, csv, xlsx, and pdf cannot be combined"},
+		{name: "account balance missing account id", args: []string{"account-balance", "--as-of", "2026-03-31"}, want: "account-id is required"},
+		{name: "income statement missing range", args: []string{"income-statement", "--start", "2026-01-01"}, want: "start and end are required"},
+		{name: "annual missing period end", args: []string{"annual"}, want: "period-end is required"},
+		{name: "annual bad cash flow method", args: []string{"annual", "--period-end", "2026-12-31", "--cash-flow-method", "legacy"}, want: "cash flow method must be direct or indirect"},
+		{name: "cash flow missing range", args: []string{"cash-flow", "--start", "2026-01-01"}, want: "start and end are required"},
+		{name: "cash flow bad method", args: []string{"cash-flow", "--start", "2026-01-01", "--end", "2026-03-31", "--method", "legacy"}, want: "cash flow method must be direct or indirect"},
+		{name: "cash flow conflicting mapping", args: []string{"cash-flow", "--start", "2026-01-01", "--end", "2026-03-31", "--operating-accounts", "prepay", "--investing-accounts", "PREPAY"}, want: "cannot be assigned to both"},
+		{name: "cash flow mapping missing subcommand through reports", args: []string{"cash-flow-mapping"}, want: "reports cash-flow-mapping subcommand required"},
+		{name: "aging invalid type", args: []string{"aging", "--type", "legacy"}, want: "type must be receivables or payables"},
+		{name: "balance confirmations invalid type", args: []string{"balance-confirmations", "--type", "legacy", "--as-of", "2026-03-31"}, want: "type must be RECEIVABLE or PAYABLE"},
+		{name: "balance confirmations missing as of", args: []string{"balance-confirmations", "--type", "receivable"}, want: "as-of is required"},
+		{name: "balance confirmation missing contact", args: []string{"balance-confirmation", "--type", "RECEIVABLE", "--as-of", "2026-03-31"}, want: "contact-id is required"},
+		{name: "balance confirmation invalid type", args: []string{"balance-confirmation", "--contact-id", "contact-1", "--type", "legacy", "--as-of", "2026-03-31"}, want: "type must be RECEIVABLE or PAYABLE"},
+		{name: "balance confirmation missing as of", args: []string{"balance-confirmation", "--contact-id", "contact-1", "--type", "RECEIVABLE"}, want: "as-of is required"},
+		{name: "contact statement missing contact", args: []string{"contact-statement", "--type", "RECEIVABLE", "--start", "2026-01-01", "--end", "2026-01-31"}, want: "contact-id is required"},
+		{name: "contact statement invalid type", args: []string{"contact-statement", "--contact-id", "contact-1", "--type", "legacy", "--start", "2026-01-01", "--end", "2026-01-31"}, want: "type must be RECEIVABLE or PAYABLE"},
+		{name: "contact statement missing start", args: []string{"contact-statement", "--contact-id", "contact-1", "--type", "RECEIVABLE", "--end", "2026-01-31"}, want: "start is required"},
+		{name: "contact statement invalid end", args: []string{"contact-statement", "--contact-id", "contact-1", "--type", "RECEIVABLE", "--start", "2026-01-01", "--end", "bad"}, want: "parse end"},
+		{name: "contact statement inverted range", args: []string{"contact-statement", "--contact-id", "contact-1", "--type", "RECEIVABLE", "--start", "2026-02-01", "--end", "2026-01-31"}, want: "end must be on or after start"},
+		{name: "sales margin missing start", args: []string{"sales-margin", "--end", "2026-03-31"}, want: "start is required"},
+		{name: "sales margin invalid end", args: []string{"sales-margin", "--start", "2026-01-01", "--end", "bad"}, want: "parse end"},
+		{name: "sales margin inverted range", args: []string{"sales-margin", "--start", "2026-04-01", "--end", "2026-03-31"}, want: "end must be on or after start"},
+		{name: "customer profitability missing start", args: []string{"customer-profitability", "--end", "2026-03-31"}, want: "start is required"},
+		{name: "customer profitability invalid end", args: []string{"customer-profitability", "--start", "2026-01-01", "--end", "bad"}, want: "parse end"},
+		{name: "customer profitability inverted range", args: []string{"customer-profitability", "--start", "2026-04-01", "--end", "2026-03-31"}, want: "end must be on or after start"},
+		{name: "budget invalid start", args: []string{"budget-vs-actual", "--start", "bad"}, want: "parse start"},
+		{name: "budget invalid end", args: []string{"budget-vs-actual", "--end", "bad"}, want: "parse end"},
+		{name: "budget inverted range", args: []string{"budget-vs-actual", "--start", "2026-04-01", "--end", "2026-03-31"}, want: "end must be on or after start"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			app, _, _ := newTestCLIApp()
+			err := app.run(context.Background(), append([]string{"reports"}, tc.args...))
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+		})
+	}
 }
 
 func TestCLICashFlowMappingValidationBranches(t *testing.T) {
