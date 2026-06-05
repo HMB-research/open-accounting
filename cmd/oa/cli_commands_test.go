@@ -13397,6 +13397,222 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"include_b2b": true`)
 }
 
+func TestCLITaxBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	kmdFile := writeTempCSV(t, "kmd-history.csv", "year,month,row_code,tax_base,tax_amount\n2026,3,1,1000.00,220.00\n")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd":
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"id":               "kmd-json",
+				"tenant_id":        "tenant-1",
+				"year":             2026,
+				"month":            3,
+				"status":           "DRAFT",
+				"total_output_vat": "220.00",
+				"total_input_vat":  "80.00",
+				"rows":             []map[string]any{},
+				"created_at":       "2026-03-31T12:00:00Z",
+				"updated_at":       "2026-03-31T12:00:00Z",
+			}})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd":
+			var req tax.CreateKMDRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, 2026, req.Year)
+			assert.Equal(t, 3, req.Month)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":               "kmd-generated",
+				"tenant_id":        "tenant-1",
+				"year":             2026,
+				"month":            3,
+				"status":           "DRAFT",
+				"total_output_vat": "220.00",
+				"total_input_vat":  "80.00",
+				"rows": []map[string]any{{
+					"code":        "1",
+					"description": "Taxable sales",
+					"tax_base":    "1000.00",
+					"tax_amount":  "220.00",
+				}},
+				"created_at": "2026-03-31T12:00:00Z",
+				"updated_at": "2026-03-31T12:00:00Z",
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd/2026/3/inf":
+			assert.Empty(t, r.URL.Query().Get("threshold"))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tenant_id":    "tenant-1",
+				"year":         2026,
+				"month":        3,
+				"threshold":    "1000.00",
+				"generated_at": "2026-03-31T12:00:00Z",
+				"summary": []map[string]any{{
+					"part":           "A",
+					"partner_count":  1,
+					"invoice_count":  1,
+					"taxable_amount": "1200.00",
+					"vat_amount":     "264.00",
+					"total_amount":   "1464.00",
+				}},
+				"rows": []map[string]any{{
+					"part":                          "A",
+					"contact_id":                    "contact-1",
+					"contact_name":                  "Alpha OU",
+					"contact_reg_code":              "12345678",
+					"invoice_id":                    "invoice-1",
+					"invoice_number":                "INV-1",
+					"invoice_date":                  "2026-03-05T00:00:00Z",
+					"invoice_type":                  "SALES",
+					"taxable_amount":                "1200.00",
+					"vat_amount":                    "264.00",
+					"total_amount":                  "1464.00",
+					"partner_period_taxable_amount": "1200.00",
+				}},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd/import-history":
+			var req tax.ImportKMDHistoryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "kmd-history.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "220.00")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed":       2,
+				"declarations_created": 1,
+				"rows_imported":        1,
+				"rows_skipped":         1,
+				"errors": []map[string]any{{
+					"row":   2,
+					"error": "duplicate period",
+				}},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd/2026/3/xml":
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = w.Write([]byte("<KMD>file</KMD>"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tax/eu-vat/oss":
+			assert.Equal(t, "2026", r.URL.Query().Get("year"))
+			assert.Equal(t, "1", r.URL.Query().Get("quarter"))
+			assert.Empty(t, r.URL.Query().Get("include_b2b"))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tenant_id":      "tenant-1",
+				"year":           2026,
+				"quarter":        1,
+				"period_start":   "2026-01-01T00:00:00Z",
+				"period_end":     "2026-03-31T23:59:59Z",
+				"scheme":         "UNION",
+				"currency":       "EUR",
+				"include_b2b":    false,
+				"generated_at":   "2026-03-31T12:00:00Z",
+				"taxable_amount": "100.00",
+				"vat_amount":     "19.00",
+				"total_amount":   "119.00",
+				"invoice_count":  1,
+				"line_count":     1,
+				"summary":        []map[string]any{},
+				"rows":           []map[string]any{},
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"tax", "kmd", "list", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "kmd-json"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tax", "kmd", "generate", "--year", " 2026 ", "--month", " 3 ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "kmd-generated"`)
+	assert.Contains(t, stdout.String(), `"total_output_vat": "220"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tax", "kmd", "inf", "--year", "2026", "--month", "3", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"contact_name": "Alpha OU"`)
+	assert.Contains(t, stdout.String(), `"threshold": "1000"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tax", "kmd", "import-history", "--file", kmdFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"rows_processed": 2`)
+	assert.Contains(t, stdout.String(), `"rows_skipped": 1`)
+
+	stdout.Reset()
+	xmlPath := filepath.Join(t.TempDir(), "kmd.xml")
+	err = app.run(context.Background(), []string{"tax", "kmd", "export-xml", "--year", "2026", "--month", "3", "--output", xmlPath})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Wrote KMD XML")
+	xmlContent, err := os.ReadFile(xmlPath)
+	require.NoError(t, err)
+	assert.Equal(t, "<KMD>file</KMD>", string(xmlContent))
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tax", "oss", "report", "--year", "2026", "--quarter", "1", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"include_b2b": false`)
+}
+
+func TestCLITaxValidationBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	missingFile := filepath.Join(t.TempDir(), "missing.csv")
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown tax subcommand", args: []string{"legacy"}, want: `unknown tax subcommand "legacy"`},
+		{name: "missing kmd subcommand", args: []string{"kmd"}, want: "tax kmd subcommand required"},
+		{name: "unknown kmd subcommand", args: []string{"kmd", "legacy"}, want: `unknown tax kmd subcommand "legacy"`},
+		{name: "list bad flag", args: []string{"kmd", "list", "--bad"}, want: "flag provided but not defined"},
+		{name: "generate bad flag", args: []string{"kmd", "generate", "--bad"}, want: "flag provided but not defined"},
+		{name: "generate missing year", args: []string{"kmd", "generate", "--month", "3"}, want: "year is required"},
+		{name: "generate parse month", args: []string{"kmd", "generate", "--year", "2026", "--month", "bad"}, want: "parse month"},
+		{name: "generate month out of range", args: []string{"kmd", "generate", "--year", "2026", "--month", "13"}, want: "month must be between 1 and 12"},
+		{name: "inf bad flag", args: []string{"kmd", "inf", "--bad"}, want: "flag provided but not defined"},
+		{name: "inf missing month", args: []string{"kmd", "inf", "--year", "2026"}, want: "month is required"},
+		{name: "inf invalid threshold", args: []string{"kmd", "inf", "--year", "2026", "--month", "3", "--threshold", "many"}, want: "parse threshold"},
+		{name: "inf non positive threshold", args: []string{"kmd", "inf", "--year", "2026", "--month", "3", "--threshold", "0"}, want: "threshold must be positive"},
+		{name: "import history bad flag", args: []string{"kmd", "import-history", "--bad"}, want: "flag provided but not defined"},
+		{name: "import history missing file", args: []string{"kmd", "import-history"}, want: "file is required"},
+		{name: "import history unreadable file", args: []string{"kmd", "import-history", "--file", missingFile}, want: "read file"},
+		{name: "export xml bad flag", args: []string{"kmd", "export-xml", "--bad"}, want: "flag provided but not defined"},
+		{name: "export xml missing year", args: []string{"kmd", "export-xml", "--month", "3"}, want: "year is required"},
+		{name: "export xml non positive month", args: []string{"kmd", "export-xml", "--year", "2026", "--month", "0"}, want: "month must be positive"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			app, _, _ := newTestCLIApp()
+			err := app.run(context.Background(), append([]string{"tax"}, tc.args...))
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+		})
+	}
+}
+
 func TestCLITSDBranches(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
