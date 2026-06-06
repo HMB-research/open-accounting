@@ -14982,6 +14982,80 @@ func TestCLICashFlowMappingValidationBranches(t *testing.T) {
 	}
 }
 
+func TestCLICashFlowMappingFlagsAndAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "get bad flag", args: []string{"reports", "cash-flow-mapping", "get", "--bad"}},
+		{name: "update bad flag", args: []string{"reports", "cash-flow-mapping", "update", "--bad"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "flag provided but not defined")
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/cash-flow/mapping":
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/reports/cash-flow/mapping":
+			var req reports.CashFlowMappingOverrides
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, []string{"PREPAY"}, req.OperatingAccountCodes)
+			assert.Equal(t, []string{"CAPEX-1"}, req.InvestingAccountCodes)
+			assert.Equal(t, []string{"FOUNDERS"}, req.FinancingAccountCodes)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "cash flow mapping API unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "get API error", args: []string{"reports", "cash-flow-mapping", "get"}},
+		{
+			name: "update API error",
+			args: []string{
+				"reports", "cash-flow-mapping", "update",
+				"--operating-accounts", "prepay",
+				"--investing-accounts", "capex-1",
+				"--financing-accounts", "founders",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "cash flow mapping API unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func cliEmployeePayload(firstName, lastName string, active bool) map[string]any {
 	return map[string]any{
 		"id":                     "emp-1",
