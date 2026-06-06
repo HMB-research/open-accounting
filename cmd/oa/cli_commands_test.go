@@ -11011,6 +11011,119 @@ func TestCLIReminderRuleBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"reminders_sent": 2`)
 }
 
+func TestCLIRemindersAuthFlagsAndAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"reminders", "overdue"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		APIToken: "oa_saved_token",
+	}))
+	err = app.run(context.Background(), []string{"reminders", "overdue"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no tenant configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "overdue bad flag", args: []string{"reminders", "overdue", "--bad"}},
+		{name: "send bad flag", args: []string{"reminders", "send", "--bad"}},
+		{name: "send bulk bad flag", args: []string{"reminders", "send-bulk", "--bad"}},
+		{name: "history bad flag", args: []string{"reminders", "history", "--bad"}},
+		{name: "rules list bad flag", args: []string{"reminders", "rules", "list", "--bad"}},
+		{name: "rules create bad flag", args: []string{"reminders", "rules", "create", "--bad"}},
+		{name: "rules get bad flag", args: []string{"reminders", "rules", "get", "--bad"}},
+		{name: "rules update bad flag", args: []string{"reminders", "rules", "update", "--bad"}},
+		{name: "rules delete bad flag", args: []string{"reminders", "rules", "delete", "--bad"}},
+		{name: "rules trigger bad flag", args: []string{"reminders", "rules", "trigger", "--bad"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "flag provided but not defined")
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/overdue":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/reminders":
+			var req invoicing.SendReminderRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "inv-1", req.InvoiceID)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/reminders/bulk":
+			var req invoicing.SendBulkRemindersRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, []string{"inv-1", "inv-2"}, req.InvoiceIDs)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/inv-1/reminders":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reminder-rules":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/reminder-rules":
+			var req invoicing.CreateReminderRuleRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Seven days overdue", req.Name)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reminder-rules/rule-1":
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/reminder-rules/rule-1":
+			var req invoicing.UpdateReminderRuleRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.NotNil(t, req.Name)
+			assert.Equal(t, "Updated reminder", *req.Name)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/reminder-rules/rule-1":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/reminder-rules/trigger":
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "reminders API unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "overdue API error", args: []string{"reminders", "overdue"}},
+		{name: "send API error", args: []string{"reminders", "send", "--invoice-id", "inv-1"}},
+		{name: "send bulk API error", args: []string{"reminders", "send-bulk", "--invoice-id", "inv-1", "--invoice-id", "inv-2"}},
+		{name: "history API error", args: []string{"reminders", "history", "--invoice-id", "inv-1"}},
+		{name: "rules list API error", args: []string{"reminders", "rules", "list"}},
+		{name: "rules create API error", args: []string{"reminders", "rules", "create", "--name", "Seven days overdue", "--trigger-type", "after_due", "--days-offset", "7"}},
+		{name: "rules get API error", args: []string{"reminders", "rules", "get", "--id", "rule-1"}},
+		{name: "rules update API error", args: []string{"reminders", "rules", "update", "--id", "rule-1", "--name", "Updated reminder"}},
+		{name: "rules delete API error", args: []string{"reminders", "rules", "delete", "--id", "rule-1"}},
+		{name: "rules trigger API error", args: []string{"reminders", "rules", "trigger"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "reminders API unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIEmailCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
