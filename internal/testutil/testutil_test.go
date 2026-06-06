@@ -45,24 +45,30 @@ func TestDatabaseSetupPaths(t *testing.T) {
 
 func TestSchemaTenantAndUserHelpers(t *testing.T) {
 	pool := SetupTestDB(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	scanWithTimeout := func(failure string, scan func(context.Context) error) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := scan(ctx); err != nil {
+			t.Fatalf("%s: %v", failure, err)
+		}
+	}
 
 	schemaName := SetupTestSchema(t, pool)
 
 	var schemaExists bool
-	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = $1)`, schemaName).Scan(&schemaExists); err != nil {
-		t.Fatalf("failed to check test schema existence: %v", err)
-	}
+	scanWithTimeout("failed to check test schema existence", func(ctx context.Context) error {
+		return pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = $1)`, schemaName).Scan(&schemaExists)
+	})
 	if !schemaExists {
 		t.Fatalf("expected schema %s to exist", schemaName)
 	}
 
 	TeardownTestSchema(t, pool, schemaName)
 
-	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = $1)`, schemaName).Scan(&schemaExists); err != nil {
-		t.Fatalf("failed to check schema after teardown: %v", err)
-	}
+	scanWithTimeout("failed to check schema after teardown", func(ctx context.Context) error {
+		return pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = $1)`, schemaName).Scan(&schemaExists)
+	})
 	if schemaExists {
 		t.Fatalf("expected schema %s to be dropped", schemaName)
 	}
@@ -73,9 +79,9 @@ func TestSchemaTenantAndUserHelpers(t *testing.T) {
 	}
 
 	var tenantName string
-	if err := pool.QueryRow(ctx, `SELECT name FROM public.tenants WHERE id = $1`, tenant.ID).Scan(&tenantName); err != nil {
-		t.Fatalf("failed to query tenant: %v", err)
-	}
+	scanWithTimeout("failed to query tenant", func(ctx context.Context) error {
+		return pool.QueryRow(ctx, `SELECT name FROM public.tenants WHERE id = $1`, tenant.ID).Scan(&tenantName)
+	})
 	if tenantName == "" {
 		t.Fatal("expected tenant name")
 	}
@@ -89,9 +95,9 @@ func TestSchemaTenantAndUserHelpers(t *testing.T) {
 	AddUserToTenant(t, pool, tenant.ID, userID, "owner")
 
 	var role string
-	if err := pool.QueryRow(ctx, `SELECT role FROM public.tenant_users WHERE tenant_id = $1 AND user_id = $2`, tenant.ID, userID).Scan(&role); err != nil {
-		t.Fatalf("failed to query tenant user role: %v", err)
-	}
+	scanWithTimeout("failed to query tenant user role", func(ctx context.Context) error {
+		return pool.QueryRow(ctx, `SELECT role FROM public.tenant_users WHERE tenant_id = $1 AND user_id = $2`, tenant.ID, userID).Scan(&role)
+	})
 	if role != "owner" {
 		t.Fatalf("expected owner role, got %q", role)
 	}
@@ -99,9 +105,9 @@ func TestSchemaTenantAndUserHelpers(t *testing.T) {
 	cleanupTestUser(t, pool, userID)
 
 	var userExists bool
-	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM public.users WHERE id = $1)`, userID).Scan(&userExists); err != nil {
-		t.Fatalf("failed to check cleaned up user: %v", err)
-	}
+	scanWithTimeout("failed to check cleaned up user", func(ctx context.Context) error {
+		return pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM public.users WHERE id = $1)`, userID).Scan(&userExists)
+	})
 	if userExists {
 		t.Fatalf("expected user %s to be removed", userID)
 	}
@@ -109,9 +115,9 @@ func TestSchemaTenantAndUserHelpers(t *testing.T) {
 	cleanupTestTenant(t, pool, tenant)
 
 	var tenantExists bool
-	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM public.tenants WHERE id = $1)`, tenant.ID).Scan(&tenantExists); err != nil {
-		t.Fatalf("failed to check cleaned up tenant: %v", err)
-	}
+	scanWithTimeout("failed to check cleaned up tenant", func(ctx context.Context) error {
+		return pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM public.tenants WHERE id = $1)`, tenant.ID).Scan(&tenantExists)
+	})
 	if tenantExists {
 		t.Fatalf("expected tenant %s to be removed", tenant.ID)
 	}
