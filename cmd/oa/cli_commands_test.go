@@ -1578,6 +1578,88 @@ func TestCLITokenValidationBranches(t *testing.T) {
 	}
 }
 
+func TestCLITokenAuthFlagsAndAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"tokens", "list"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		APIToken: "oa_saved_token",
+	}))
+	err = app.run(context.Background(), []string{"tokens", "list"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no tenant configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list bad flag", args: []string{"tokens", "list", "--bad"}},
+		{name: "create bad flag", args: []string{"tokens", "create", "--bad"}},
+		{name: "revoke bad flag", args: []string{"tokens", "revoke", "--bad"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "flag provided but not defined")
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/api-tokens":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/api-tokens":
+			var req apitoken.CreateRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Nightly", req.Name)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/api-tokens/token-1":
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "tokens API unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list API error", args: []string{"tokens", "list"}},
+		{name: "create API error", args: []string{"tokens", "create", "--name", "Nightly"}},
+		{name: "revoke API error", args: []string{"tokens", "revoke", "--id", "token-1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "tokens API unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLITenantCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
