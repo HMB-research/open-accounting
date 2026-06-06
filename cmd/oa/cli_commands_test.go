@@ -7810,6 +7810,94 @@ func TestCLIInventoryValidationBranches(t *testing.T) {
 	}
 }
 
+func TestCLIInventoryCategoryFlagsAndAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list bad flag", args: []string{"inventory", "categories", "list", "--bad"}},
+		{name: "create bad flag", args: []string{"inventory", "categories", "create", "--bad"}},
+		{name: "import bad flag", args: []string{"inventory", "categories", "import", "--bad"}},
+		{name: "get bad flag", args: []string{"inventory", "categories", "get", "--bad"}},
+		{name: "delete bad flag", args: []string{"inventory", "categories", "delete", "--bad"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "flag provided but not defined")
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	importFile := writeTempCSV(t, "categories.csv", "name,description\nParts,Spare parts\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/product-categories":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/product-categories":
+			var req inventory.CreateCategoryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Parts", req.Name)
+			assert.Equal(t, "Spare parts", req.Description)
+			assert.Equal(t, "parent-1", req.ParentID)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/product-categories/import":
+			var req inventory.ImportProductCategoriesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "categories.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "Parts")
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/product-categories/cat-1":
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/product-categories/cat-1":
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "product category API unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list API error", args: []string{"inventory", "categories", "list"}},
+		{
+			name: "create API error",
+			args: []string{
+				"inventory", "categories", "create",
+				"--name", " Parts ",
+				"--description", " Spare parts ",
+				"--parent-id", " parent-1 ",
+			},
+		},
+		{name: "import API error", args: []string{"inventory", "categories", "import", "--file", importFile}},
+		{name: "get API error", args: []string{"inventory", "categories", "get", "--id", " cat-1 "}},
+		{name: "delete API error", args: []string{"inventory", "categories", "delete", "--id", " cat-1 "}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "product category API unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIInventoryTopLevelAuthFlagsAndAPIErrorBranches(t *testing.T) {
 	configureCLIEnv(t)
 
