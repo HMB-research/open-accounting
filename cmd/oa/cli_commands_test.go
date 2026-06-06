@@ -1953,6 +1953,10 @@ func TestCLIUsersCommands(t *testing.T) {
 		APIToken:   "oa_saved_token",
 	}))
 
+	now := time.Now().UTC()
+	activeSessionCreatedAt := now.Add(-7 * 24 * time.Hour).Format(time.RFC3339)
+	activeSessionExpiresAt := now.Add(7 * 24 * time.Hour).Format(time.RFC3339)
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
@@ -1983,8 +1987,8 @@ func TestCLIUsersCommands(t *testing.T) {
 				{
 					"id":         "session-1",
 					"user_id":    "user-2",
-					"created_at": "2026-05-30T12:00:00Z",
-					"expires_at": "2026-06-06T12:00:00Z",
+					"created_at": activeSessionCreatedAt,
+					"expires_at": activeSessionExpiresAt,
 				},
 			})
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/users/user-2/sessions/session-1":
