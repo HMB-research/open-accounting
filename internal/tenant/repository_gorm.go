@@ -111,15 +111,14 @@ func (r *GORMRepository) UpdateTenant(ctx context.Context, tenantID, name string
 
 // DeleteTenant deletes a tenant and its schema
 func (r *GORMRepository) DeleteTenant(ctx context.Context, tenantID, schemaName string) error {
+	if err := r.db.WithContext(ctx).Exec("SELECT drop_tenant_schema(?)", schemaName).Error; err != nil {
+		return fmt.Errorf("drop tenant schema: %w", err)
+	}
+
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Remove all tenant users
 		if err := tx.Where("tenant_id = ?", tenantID).Delete(&models.TenantUserModel{}).Error; err != nil {
 			return fmt.Errorf("delete tenant users: %w", err)
-		}
-
-		// Drop tenant schema (PostgreSQL function)
-		if err := tx.Exec("SELECT drop_tenant_schema(?)", schemaName).Error; err != nil {
-			return fmt.Errorf("drop tenant schema: %w", err)
 		}
 
 		// Delete tenant record
