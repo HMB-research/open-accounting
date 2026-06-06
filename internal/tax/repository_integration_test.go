@@ -433,7 +433,7 @@ func TestRepository_QueryVATData(t *testing.T) {
 
 	// Create revenue account (for output VAT) with unique code
 	revenueAccountID := uuid.New().String()
-	uniqueCode1 := "4" + uuid.New().String()[:3]
+	uniqueCode1 := "49" + uuid.New().String()[:8]
 	_, err := pool.Exec(ctx, `
 		INSERT INTO `+tenant.SchemaName+`.accounts
 		(id, tenant_id, code, name, account_type, is_active, created_at)
@@ -445,7 +445,7 @@ func TestRepository_QueryVATData(t *testing.T) {
 
 	// Create expense account (for input VAT) with unique code
 	expenseAccountID := uuid.New().String()
-	uniqueCode2 := "5" + uuid.New().String()[:3]
+	uniqueCode2 := "59" + uuid.New().String()[:8]
 	_, err = pool.Exec(ctx, `
 		INSERT INTO `+tenant.SchemaName+`.accounts
 		(id, tenant_id, code, name, account_type, is_active, created_at)
