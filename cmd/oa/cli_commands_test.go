@@ -3299,6 +3299,123 @@ func TestCLIWebhookBranches(t *testing.T) {
 	}
 }
 
+func TestCLIWebhookAuthFlagsAndAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"webhooks", "events"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		APIToken: "oa_saved_token",
+	}))
+	err = app.run(context.Background(), []string{"webhooks", "events"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no tenant configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "events bad flag", args: []string{"webhooks", "events", "--bad"}, want: "flag provided but not defined"},
+		{name: "list bad flag", args: []string{"webhooks", "list", "--bad"}, want: "flag provided but not defined"},
+		{name: "create bad flag", args: []string{"webhooks", "create", "--bad"}, want: "flag provided but not defined"},
+		{name: "get bad flag", args: []string{"webhooks", "get", "--bad"}, want: "flag provided but not defined"},
+		{name: "update bad flag", args: []string{"webhooks", "update", "--bad"}, want: "flag provided but not defined"},
+		{name: "delete bad flag", args: []string{"webhooks", "delete", "--bad"}, want: "flag provided but not defined"},
+		{name: "deliveries bad flag", args: []string{"webhooks", "deliveries", "--bad"}, want: "flag provided but not defined"},
+		{name: "test bad flag", args: []string{"webhooks", "test", "--bad"}, want: "flag provided but not defined"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	const webhookID = "11111111-1111-4111-8111-222222222222"
+	payloadFile := writeTempCSV(t, "webhook-error-payload.json", `{"source":"error-branch"}`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks/events":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks":
+			require.Equal(t, "true", r.URL.Query().Get("active_only"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks":
+			var req map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "CRM error relay", req["name"])
+			assert.Equal(t, "https://crm.example.com/error", req["url"])
+			assert.Equal(t, []any{"invoice.created", "payment.received"}, req["events"])
+			assert.Equal(t, "secret-token", req["secret"])
+			assert.Equal(t, true, req["is_active"])
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks/"+webhookID:
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks/"+webhookID:
+			var req map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "CRM error relay", req["name"])
+			assert.Equal(t, "https://crm.example.com/error", req["url"])
+			assert.Equal(t, []any{"invoice.created"}, req["events"])
+			assert.Equal(t, "rotated-secret", req["secret"])
+			assert.Equal(t, false, req["is_active"])
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks/"+webhookID:
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks/"+webhookID+"/deliveries":
+			require.Equal(t, "25", r.URL.Query().Get("limit"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/webhooks/"+webhookID+"/test":
+			var req map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "payment.received", req["event_type"])
+			assert.Equal(t, map[string]any{"source": "error-branch"}, req["payload"])
+		default:
+			t.Fatalf("unexpected webhook error request: %s %s", r.Method, r.URL.Path)
+		}
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "webhook backend unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "events API error", args: []string{"webhooks", "events"}},
+		{name: "list API error", args: []string{"webhooks", "list", "--active-only"}},
+		{name: "create API error", args: []string{"webhooks", "create", "--name", "CRM error relay", "--url", "https://crm.example.com/error", "--events", "invoice.created,payment.received", "--secret", "secret-token"}},
+		{name: "get API error", args: []string{"webhooks", "get", "--id", webhookID}},
+		{name: "update API error", args: []string{"webhooks", "update", "--id", webhookID, "--name", "CRM error relay", "--url", "https://crm.example.com/error", "--events", "invoice.created", "--secret", "rotated-secret", "--active", "false"}},
+		{name: "delete API error", args: []string{"webhooks", "delete", "--id", webhookID}},
+		{name: "deliveries API error", args: []string{"webhooks", "deliveries", "--id", webhookID, "--limit", "25"}},
+		{name: "test API error", args: []string{"webhooks", "test", "--id", webhookID, "--event", "payment.received", "--payload-file", payloadFile}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "webhook backend unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIMigrationValidationCommand(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
