@@ -9163,6 +9163,16 @@ func TestCLICostCenterValidationBranches(t *testing.T) {
 			want: `unknown cost-centers subcommand "legacy"`,
 		},
 		{
+			name: "list bad flag",
+			args: []string{"list", "--unknown"},
+			want: "flag provided but not defined",
+		},
+		{
+			name: "create bad flag",
+			args: []string{"create", "--unknown"},
+			want: "flag provided but not defined",
+		},
+		{
 			name: "create missing code",
 			args: []string{"create", "--name", "Sales"},
 			want: "code is required",
@@ -9183,6 +9193,11 @@ func TestCLICostCenterValidationBranches(t *testing.T) {
 			want: `invalid budget period "weekly"`,
 		},
 		{
+			name: "import bad flag",
+			args: []string{"import", "--unknown"},
+			want: "flag provided but not defined",
+		},
+		{
 			name: "import missing file",
 			args: []string{"import"},
 			want: "file is required",
@@ -9193,9 +9208,19 @@ func TestCLICostCenterValidationBranches(t *testing.T) {
 			want: "no such file",
 		},
 		{
+			name: "get bad flag",
+			args: []string{"get", "--unknown"},
+			want: "flag provided but not defined",
+		},
+		{
 			name: "get missing id",
 			args: []string{"get"},
 			want: "id is required",
+		},
+		{
+			name: "update bad flag",
+			args: []string{"update", "--unknown"},
+			want: "flag provided but not defined",
 		},
 		{
 			name: "update missing id",
@@ -9223,9 +9248,19 @@ func TestCLICostCenterValidationBranches(t *testing.T) {
 			want: `invalid budget period "weekly"`,
 		},
 		{
+			name: "delete bad flag",
+			args: []string{"delete", "--unknown"},
+			want: "flag provided but not defined",
+		},
+		{
 			name: "delete missing id",
 			args: []string{"delete"},
 			want: "id is required",
+		},
+		{
+			name: "report bad flag",
+			args: []string{"report", "--unknown"},
+			want: "flag provided but not defined",
 		},
 		{
 			name: "report combines output formats",
@@ -9252,6 +9287,92 @@ func TestCLICostCenterValidationBranches(t *testing.T) {
 			err := app.runCostCenters(ctx, tc.args)
 			require.Error(t, err)
 			assert.ErrorContains(t, err, tc.want)
+		})
+	}
+}
+
+func TestCLICostCenterAuthBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, _, _ := newTestCLIApp()
+	err := app.runCostCenters(context.Background(), []string{"list"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no API token configured")
+}
+
+func TestCLICostCenterAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	importFile := writeTempCSV(t, "cost-centers-error.csv", "code,name,budget_amount\nCC001,Sales,1000.00\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers":
+			assert.Equal(t, "true", r.URL.Query().Get("active_only"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers":
+			var req accounting.CreateCostCenterRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "CC001", req.Code)
+			assert.Equal(t, "Sales", req.Name)
+			assert.True(t, req.IsActive)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/import":
+			var req accounting.ImportCostCentersRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "cost-centers-error.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "CC001")
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/cc-error":
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/cc-error":
+			var req accounting.UpdateCostCenterRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "CC002", req.Code)
+			assert.Equal(t, "Sales updated", req.Name)
+			assert.False(t, req.IsActive)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/cc-error":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/report":
+			assert.Equal(t, "2026-03-01", r.URL.Query().Get("start_date"))
+			assert.Equal(t, "2026-03-31", r.URL.Query().Get("end_date"))
+		default:
+			t.Fatalf("unexpected cost center error request: %s %s", r.Method, r.URL.String())
+		}
+
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "cost center service unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+	for _, tt := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list API error", args: []string{"cost-centers", "list", "--active-only"}},
+		{name: "create API error", args: []string{"cost-centers", "create", "--code", "CC001", "--name", "Sales"}},
+		{name: "import API error", args: []string{"cost-centers", "import", "--file", importFile}},
+		{name: "get API error", args: []string{"cost-centers", "get", "--id", "cc-error"}},
+		{name: "update API error", args: []string{"cost-centers", "update", "--id", "cc-error", "--code", "CC002", "--name", "Sales updated", "--active=false"}},
+		{name: "delete API error", args: []string{"cost-centers", "delete", "--id", "cc-error"}},
+		{name: "report CSV API error", args: []string{"cost-centers", "report", "--start", "2026-03-01", "--end", "2026-03-31", "--csv"}},
+		{name: "report XLSX API error", args: []string{"cost-centers", "report", "--start", "2026-03-01", "--end", "2026-03-31", "--xlsx"}},
+		{name: "report PDF API error", args: []string{"cost-centers", "report", "--start", "2026-03-01", "--end", "2026-03-31", "--pdf"}},
+		{name: "report API error", args: []string{"cost-centers", "report", "--start", "2026-03-01", "--end", "2026-03-31"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tt.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "cost center service unavailable")
+			assert.Empty(t, stdout.String())
 		})
 	}
 }
