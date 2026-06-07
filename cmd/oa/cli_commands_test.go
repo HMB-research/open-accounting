@@ -17443,6 +17443,103 @@ func TestCLITSDValidationBranches(t *testing.T) {
 	}
 }
 
+func TestCLITSDAuthFlagsAndAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"tsd", "list"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		APIToken: "oa_saved_token",
+	}))
+	err = app.run(context.Background(), []string{"tsd", "list"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no tenant configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "get bad flag", args: []string{"tsd", "get", "--bad"}},
+		{name: "export xml bad flag", args: []string{"tsd", "export-xml", "--bad"}},
+		{name: "export csv bad flag", args: []string{"tsd", "export-csv", "--bad"}},
+		{name: "mark submitted bad flag", args: []string{"tsd", "mark-submitted", "--bad"}},
+		{name: "mark accepted bad flag", args: []string{"tsd", "mark-accepted", "--bad"}},
+		{name: "mark rejected bad flag", args: []string{"tsd", "mark-rejected", "--bad"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "flag provided but not defined")
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tsd":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-error/tsd":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/xml":
+			assert.Equal(t, "*/*", r.Header.Get("Accept"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/csv":
+			assert.Equal(t, "*/*", r.Header.Get("Accept"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/submit":
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "EMTA-ERR", req["emta_reference"])
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/accept":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/reject":
+		default:
+			t.Fatalf("unexpected TSD error request: %s %s", r.Method, r.URL.Path)
+		}
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "tsd backend unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list API error", args: []string{"tsd", "list"}},
+		{name: "get API error", args: []string{"tsd", "get", "--year", "2026", "--month", "3"}},
+		{name: "generate API error", args: []string{"tsd", "generate", "--run-id", " run-error "}},
+		{name: "export xml API error", args: []string{"tsd", "export-xml", "--year", "2026", "--month", "3"}},
+		{name: "export csv API error", args: []string{"tsd", "export-csv", "--year", "2026", "--month", "3"}},
+		{name: "mark submitted API error", args: []string{"tsd", "mark-submitted", "--year", "2026", "--month", "3", "--emta-reference", " EMTA-ERR "}},
+		{name: "mark accepted API error", args: []string{"tsd", "mark-accepted", "--year", "2026", "--month", "3"}},
+		{name: "mark rejected API error", args: []string{"tsd", "mark-rejected", "--year", "2026", "--month", "3"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "tsd backend unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLITaxOSSValidationBranches(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
