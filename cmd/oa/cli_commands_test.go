@@ -7496,6 +7496,14 @@ func TestCLIExpenseCommands(t *testing.T) {
 
 func TestCLIExpenseBranches(t *testing.T) {
 	configureCLIEnv(t)
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	err := app.run(ctx, []string{"expenses", "list"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no API token configured")
+	assert.Empty(t, stdout.String())
+
 	require.NoError(t, saveConfig(&cliConfig{
 		BaseURL:    "https://placeholder.example.com",
 		TenantID:   "tenant-1",
@@ -7504,9 +7512,6 @@ func TestCLIExpenseBranches(t *testing.T) {
 		APIToken:   "oa_saved_token",
 	}))
 
-	app, stdout, _ := newTestCLIApp()
-	ctx := context.Background()
-
 	for _, tc := range []struct {
 		name string
 		args []string
@@ -7514,7 +7519,9 @@ func TestCLIExpenseBranches(t *testing.T) {
 	}{
 		{name: "missing subcommand", args: nil, want: "expenses subcommand required"},
 		{name: "unknown subcommand", args: []string{"archive"}, want: `unknown expenses subcommand "archive"`},
+		{name: "list bad flag", args: []string{"list", "--unknown"}, want: "flag provided but not defined"},
 		{name: "list invalid status", args: []string{"list", "--status", "waiting"}, want: `invalid expense status "waiting"`},
+		{name: "create bad flag", args: []string{"create", "--unknown"}, want: "flag provided but not defined"},
 		{name: "create missing merchant", args: []string{"create"}, want: "merchant is required"},
 		{name: "create missing expense account", args: []string{"create", "--merchant", "Office Store"}, want: "expense-account-id is required"},
 		{name: "create missing payment account", args: []string{"create", "--merchant", "Office Store", "--expense-account-id", "expense-account"}, want: "payment-account-id is required"},
@@ -7524,12 +7531,16 @@ func TestCLIExpenseBranches(t *testing.T) {
 		{name: "create non-positive amount", args: []string{"create", "--merchant", "Office Store", "--expense-account-id", "expense-account", "--payment-account-id", "cash-account", "--expense-date", "2026-05-30", "--amount", "0"}, want: "amount must be positive"},
 		{name: "create invalid exchange rate", args: []string{"create", "--merchant", "Office Store", "--expense-account-id", "expense-account", "--payment-account-id", "cash-account", "--expense-date", "2026-05-30", "--amount", "10", "--exchange-rate", "many"}, want: "parse exchange-rate"},
 		{name: "create non-positive exchange rate", args: []string{"create", "--merchant", "Office Store", "--expense-account-id", "expense-account", "--payment-account-id", "cash-account", "--expense-date", "2026-05-30", "--amount", "10", "--exchange-rate", "0"}, want: "exchange-rate must be positive"},
+		{name: "import bad flag", args: []string{"import", "--unknown"}, want: "flag provided but not defined"},
 		{name: "import missing file", args: []string{"import"}, want: "file is required"},
 		{name: "import unreadable file", args: []string{"import", "--file", filepath.Join(t.TempDir(), "missing.csv")}, want: "no such file"},
+		{name: "get bad flag", args: []string{"get", "--unknown"}, want: "flag provided but not defined"},
 		{name: "get missing id", args: []string{"get"}, want: "id is required"},
+		{name: "submit bad flag", args: []string{"submit", "--unknown"}, want: "flag provided but not defined"},
 		{name: "submit missing id", args: []string{"submit"}, want: "id is required"},
 		{name: "approve missing id", args: []string{"approve"}, want: "id is required"},
 		{name: "post missing id", args: []string{"post"}, want: "id is required"},
+		{name: "reject bad flag", args: []string{"reject", "--unknown"}, want: "flag provided but not defined"},
 		{name: "reject missing id", args: []string{"reject"}, want: "id is required"},
 		{name: "reject missing reason", args: []string{"reject", "--id", "expense-1"}, want: "reason is required"},
 	} {
@@ -7600,7 +7611,7 @@ func TestCLIExpenseBranches(t *testing.T) {
 
 	t.Setenv("OA_BASE_URL", server.URL)
 
-	err := app.run(ctx, []string{"expenses", "list"})
+	err = app.run(ctx, []string{"expenses", "list"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "EXP-00001")
 	assert.Contains(t, stdout.String(), "POSTED")
@@ -7645,6 +7656,90 @@ func TestCLIExpenseBranches(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"status": "REJECTED"`)
 	assert.Contains(t, stdout.String(), `"rejection_reason": "Need project code"`)
+}
+
+func TestCLIExpenseAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	importFile := writeTempCSV(t, "expenses-error.csv", "expense_number,expense_date,merchant,expense_account_id,payment_account_id,amount,status\nEXP-ERR-1,2026-06-01,Taxi,expense-account,cash-account,35.25,DRAFT\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/expenses":
+			assert.Equal(t, "SUBMITTED", r.URL.Query().Get("status"))
+			assert.Equal(t, "7", r.URL.Query().Get("limit"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses":
+			var req expenses.CreateExpenseRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Taxi", req.Merchant)
+			assert.Equal(t, "Airport transfer", req.Description)
+			assert.Equal(t, "2026-06-01", req.ExpenseDate.Format("2006-01-02"))
+			require.NotNil(t, req.EmployeeID)
+			assert.Equal(t, "employee-error", *req.EmployeeID)
+			require.NotNil(t, req.ContactID)
+			assert.Equal(t, "supplier-error", *req.ContactID)
+			assert.Equal(t, "expense-account", req.ExpenseAccountID)
+			assert.Equal(t, "cash-account", req.PaymentAccountID)
+			assert.True(t, req.Amount.Equal(decimal.RequireFromString("35.25")))
+			assert.Equal(t, "EUR", req.Currency)
+			assert.True(t, req.ExchangeRate.Equal(decimal.RequireFromString("1")))
+			require.NotNil(t, req.RequiresReceipt)
+			assert.True(t, *req.RequiresReceipt)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/import":
+			var req expenses.ImportExpensesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "expenses-error.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "EXP-ERR-1")
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/expense-error":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/expense-error/submit":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/expense-error/approve":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/expense-error/post":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/expenses/expense-error/reject":
+			var req expenses.RejectExpenseRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Missing receipt", req.Reason)
+		default:
+			t.Fatalf("unexpected expense error request: %s %s", r.Method, r.URL.String())
+		}
+
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "expense service unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+	for _, tt := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list API error", args: []string{"expenses", "list", "--status", "submitted", "--limit", "7"}},
+		{name: "create API error", args: []string{"expenses", "create", "--merchant", "Taxi", "--description", "Airport transfer", "--expense-date", "2026-06-01", "--employee-id", "employee-error", "--contact-id", "supplier-error", "--expense-account-id", "expense-account", "--payment-account-id", "cash-account", "--amount", "35.25"}},
+		{name: "import API error", args: []string{"expenses", "import", "--file", importFile}},
+		{name: "get API error", args: []string{"expenses", "get", "--id", "expense-error"}},
+		{name: "submit API error", args: []string{"expenses", "submit", "--id", "expense-error"}},
+		{name: "approve API error", args: []string{"expenses", "approve", "--id", "expense-error"}},
+		{name: "post API error", args: []string{"expenses", "post", "--id", "expense-error"}},
+		{name: "reject API error", args: []string{"expenses", "reject", "--id", "expense-error", "--reason", "Missing receipt"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tt.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "expense service unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
 }
 
 func TestCLIInventoryCommands(t *testing.T) {
