@@ -7,6 +7,21 @@ import {
 	type RetryConfig
 } from '$lib/api';
 
+async function resolveWithRetryTimers<T>(promise: Promise<T>): Promise<T> {
+	const observed = promise.then(
+		(value) => ({ status: 'fulfilled' as const, value }),
+		(error: unknown) => ({ status: 'rejected' as const, error })
+	);
+	for (let attempt = 0; attempt < DEFAULT_RETRY_CONFIG.maxRetries; attempt += 1) {
+		await vi.advanceTimersByTimeAsync(DEFAULT_RETRY_CONFIG.maxDelayMs);
+	}
+	const result = await observed;
+	if (result.status === 'rejected') {
+		throw result.error;
+	}
+	return result.value;
+}
+
 describe('Retry Utility Functions', () => {
 	describe('isRetryableError', () => {
 		it('should return true for 500 Internal Server Error', () => {
@@ -159,6 +174,7 @@ describe('API Client Retry Integration', () => {
 
 	afterEach(() => {
 		global.fetch = originalFetch;
+		vi.useRealTimers();
 		vi.clearAllMocks();
 	});
 
@@ -181,7 +197,8 @@ describe('API Client Retry Integration', () => {
 
 			api.setTokens('test-token', 'test-refresh');
 
-			const result = await api.getMyTenants();
+			vi.useFakeTimers();
+			const result = await resolveWithRetryTimers(api.getMyTenants());
 
 			expect(result).toEqual({ data: 'success' });
 			expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -200,7 +217,8 @@ describe('API Client Retry Integration', () => {
 
 			api.setTokens('test-token', 'test-refresh');
 
-			const result = await api.getMyTenants();
+			vi.useFakeTimers();
+			const result = await resolveWithRetryTimers(api.getMyTenants());
 
 			expect(result).toEqual({ recovered: true });
 			expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -223,7 +241,8 @@ describe('API Client Retry Integration', () => {
 
 			api.setTokens('test-token', 'test-refresh');
 
-			const result = await api.getMyTenants();
+			vi.useFakeTimers();
+			const result = await resolveWithRetryTimers(api.getMyTenants());
 
 			expect(result).toEqual({ ok: true });
 			expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -295,7 +314,8 @@ describe('API Client Retry Integration', () => {
 
 			api.setTokens('test-token', 'test-refresh');
 
-			await expect(api.getMyTenants()).rejects.toThrow('Request failed');
+			vi.useFakeTimers();
+			await expect(resolveWithRetryTimers(api.getMyTenants())).rejects.toThrow('Request failed');
 
 			// 1 initial + 3 retries = 4 total attempts
 			expect(mockFetch).toHaveBeenCalledTimes(4);
@@ -312,7 +332,8 @@ describe('API Client Retry Integration', () => {
 
 			api.setTokens('test-token', 'test-refresh');
 
-			await expect(api.getMyTenants()).rejects.toThrow('Failed to fetch');
+			vi.useFakeTimers();
+			await expect(resolveWithRetryTimers(api.getMyTenants())).rejects.toThrow('Failed to fetch');
 			expect(mockFetch).toHaveBeenCalledTimes(4);
 		}, 15000);
 
@@ -338,7 +359,8 @@ describe('API Client Retry Integration', () => {
 
 			api.setTokens('test-token', 'test-refresh');
 
-			const result = await api.getMyTenants();
+			vi.useFakeTimers();
+			const result = await resolveWithRetryTimers(api.getMyTenants());
 
 			expect(result).toEqual({ finally: 'success' });
 			expect(mockFetch).toHaveBeenCalledTimes(4);
