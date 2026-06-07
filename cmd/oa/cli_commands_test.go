@@ -7046,13 +7046,17 @@ func TestCLIAssetCategoryBranches(t *testing.T) {
 	}{
 		{name: "missing subcommand", args: nil, want: "assets categories subcommand required"},
 		{name: "unknown subcommand", args: []string{"archive"}, want: `unknown assets categories subcommand "archive"`},
+		{name: "list bad flag", args: []string{"list", "--unknown"}, want: "flag provided but not defined"},
+		{name: "create bad flag", args: []string{"create", "--unknown"}, want: "flag provided but not defined"},
 		{name: "create missing name", args: []string{"create"}, want: "name is required"},
 		{name: "create invalid depreciation method", args: []string{"create", "--name", "Vehicles", "--depreciation-method", "accelerated"}, want: `invalid depreciation method "accelerated"`},
 		{name: "create invalid useful life", args: []string{"create", "--name", "Vehicles", "--useful-life-months", "zero"}, want: "parse useful-life-months"},
 		{name: "create non-positive useful life", args: []string{"create", "--name", "Vehicles", "--useful-life-months", "0"}, want: "useful-life-months must be positive"},
 		{name: "create invalid residual percent", args: []string{"create", "--name", "Vehicles", "--residual-percent", "many"}, want: "parse residual-percent"},
 		{name: "create negative residual percent", args: []string{"create", "--name", "Vehicles", "--residual-percent", "-1"}, want: "residual-percent must be non-negative"},
+		{name: "get bad flag", args: []string{"get", "--unknown"}, want: "flag provided but not defined"},
 		{name: "get missing id", args: []string{"get"}, want: "id is required"},
+		{name: "delete bad flag", args: []string{"delete", "--unknown"}, want: "flag provided but not defined"},
 		{name: "delete missing id", args: []string{"delete"}, want: "id is required"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -7147,6 +7151,63 @@ func TestCLIAssetCategoryBranches(t *testing.T) {
 	err = app.run(context.Background(), []string{"assets", "categories", "delete", "--id", "cat-branch", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"status": "deleted"`)
+}
+
+func TestCLIAssetCategoryAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/asset-categories":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/asset-categories":
+			var req assets.CreateCategoryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Vehicles", req.Name)
+			assert.Equal(t, "Fleet assets", req.Description)
+			assert.Equal(t, assets.DepreciationDecliningBalance, req.DepreciationMethod)
+			assert.Equal(t, 72, req.DefaultUsefulLifeMonths)
+			assert.True(t, req.DefaultResidualValuePercent.Equal(decimal.RequireFromString("15.25")))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/asset-categories/cat-error":
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/asset-categories/cat-error":
+		default:
+			t.Fatalf("unexpected asset category error request: %s %s", r.Method, r.URL.String())
+		}
+
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "asset category service unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+	for _, tt := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list API error", args: []string{"assets", "categories", "list"}},
+		{name: "create API error", args: []string{"assets", "categories", "create", "--name", "Vehicles", "--description", "Fleet assets", "--depreciation-method", "declining_balance", "--useful-life-months", "72", "--residual-percent", "15.25"}},
+		{name: "get API error", args: []string{"assets", "categories", "get", "--id", "cat-error"}},
+		{name: "delete API error", args: []string{"assets", "categories", "delete", "--id", "cat-error"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tt.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "asset category service unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
 }
 
 func cliExpensePayload(status string) map[string]any {
