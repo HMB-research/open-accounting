@@ -18118,6 +18118,181 @@ func TestCLIDocumentBranches(t *testing.T) {
 	assert.Equal(t, 1, retentionPatchCount)
 }
 
+func TestCLIDocumentAuthFlagsAndAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"documents", "list", "--entity-type", "expense", "--entity-id", "exp-1"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		APIToken: "oa_saved_token",
+	}))
+	err = app.run(context.Background(), []string{"documents", "list", "--entity-type", "expense", "--entity-id", "exp-1"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no tenant configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list bad flag", args: []string{"documents", "list", "--bad"}},
+		{name: "review summary bad flag", args: []string{"documents", "review-summary", "--bad"}},
+		{name: "review queue bad flag", args: []string{"documents", "review-queue", "--bad"}},
+		{name: "evidence policy bad flag", args: []string{"documents", "evidence-policy", "--bad"}},
+		{name: "retention bad flag", args: []string{"documents", "retention", "--bad"}},
+		{name: "retention set bad flag", args: []string{"documents", "retention-set", "--bad"}},
+		{name: "upload bad flag", args: []string{"documents", "upload", "--bad"}},
+		{name: "download bad flag", args: []string{"documents", "download", "--bad"}},
+		{name: "mark reviewed bad flag", args: []string{"documents", "mark-reviewed", "--bad"}},
+		{name: "review bad flag", args: []string{"documents", "review", "--bad"}},
+		{name: "delete bad flag", args: []string{"documents", "delete", "--bad"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "flag provided but not defined")
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	successServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/documents":
+			assert.Equal(t, documents.EntityTypeExpense, r.URL.Query().Get("entity_type"))
+			assert.Equal(t, "exp-1", r.URL.Query().Get("entity_id"))
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				cliDocumentPayload("doc-table", documents.ReviewStatusPending),
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-default/download":
+			w.Header().Set("Content-Disposition", `attachment; filename="default-download.txt"`)
+			_, _ = w.Write([]byte("default download body"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-write-error/download":
+			_, _ = w.Write([]byte("write error body"))
+		default:
+			t.Fatalf("unexpected success request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer successServer.Close()
+	t.Setenv("OA_BASE_URL", successServer.URL)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"documents", "list", "--entity-type", " expense ", "--entity-id", " exp-1 "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "doc-table")
+	assert.Contains(t, stdout.String(), "receipt-json.pdf")
+
+	originalCWD, err := os.Getwd()
+	require.NoError(t, err)
+	downloadDir := t.TempDir()
+	require.NoError(t, os.Chdir(downloadDir))
+	t.Cleanup(func() {
+		_ = os.Chdir(originalCWD)
+	})
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"documents", "download", "--id", "doc-default"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Downloaded doc-default to default-download.txt")
+	downloaded, err := os.ReadFile(filepath.Join(downloadDir, "default-download.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "default download body", string(downloaded))
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"documents", "download", "--id", "doc-write-error", "--output", downloadDir})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "write document")
+	assert.Empty(t, stdout.String())
+
+	uploadPath := writeTempCSV(t, "document-error.txt", "document payload")
+	errorServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/documents":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents/review-summary":
+			var req documentReviewSummaryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, documents.EntityTypeExpense, req.EntityType)
+			assert.Equal(t, []string{"exp-1"}, req.EntityIDs)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/documents/review-queue":
+			assert.Equal(t, documents.ReviewStatusPending, r.URL.Query().Get("review_status"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents/evidence-policy":
+			var req documents.EvidencePolicyRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, documents.EntityTypeExpense, req.EntityType)
+			assert.Equal(t, []string{"exp-1"}, req.EntityIDs)
+			require.Len(t, req.Rules, 1)
+			assert.Equal(t, []string{documents.DocumentTypeReceipt}, req.Rules[0].DocumentTypes)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/documents/retention":
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-error/retention":
+			var req documentRetentionUpdateRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2028-03-31", req.RetentionUntil)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents":
+			require.NoError(t, r.ParseMultipartForm(2<<20))
+			assert.Equal(t, documents.EntityTypeExpense, r.FormValue("entity_type"))
+			assert.Equal(t, "exp-1", r.FormValue("entity_id"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-error/download":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-error/mark-reviewed":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-error/review":
+			var req documents.ReviewDocumentRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, documents.ReviewStatusApproved, req.ReviewStatus)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-error":
+		default:
+			t.Fatalf("unexpected error request: %s %s", r.Method, r.URL.Path)
+		}
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "document API unavailable"})
+	}))
+	defer errorServer.Close()
+	t.Setenv("OA_BASE_URL", errorServer.URL)
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list API error", args: []string{"documents", "list", "--entity-type", "expense", "--entity-id", "exp-1"}},
+		{name: "review summary API error", args: []string{"documents", "review-summary", "--entity-type", "expense", "--entity-id", "exp-1"}},
+		{name: "review queue API error", args: []string{"documents", "review-queue"}},
+		{name: "evidence policy API error", args: []string{"documents", "evidence-policy", "--entity-type", "expense", "--entity-id", "exp-1", "--document-type", "receipt"}},
+		{name: "retention API error", args: []string{"documents", "retention"}},
+		{name: "retention set API error", args: []string{"documents", "retention-set", "--id", "doc-error", "--retention-until", "2028-03-31"}},
+		{name: "upload API error", args: []string{"documents", "upload", "--entity-type", "expense", "--entity-id", "exp-1", "--file", uploadPath}},
+		{name: "download API error", args: []string{"documents", "download", "--id", "doc-error", "--output", "-"}},
+		{name: "mark reviewed API error", args: []string{"documents", "mark-reviewed", "--id", "doc-error"}},
+		{name: "review API error", args: []string{"documents", "review", "--id", "doc-error", "--status", "approved"}},
+		{name: "delete API error", args: []string{"documents", "delete", "--id", "doc-error"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "document API unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	configureCLIEnv(t)
 

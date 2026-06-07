@@ -11332,9 +11332,6 @@ func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
 			_, err := a.stdout.Write(download.Content)
 			return err
 		}
-		if strings.TrimSpace(targetPath) == "" {
-			targetPath = strings.TrimSpace(*documentID)
-		}
 		if err := os.WriteFile(targetPath, download.Content, 0o600); err != nil {
 			return fmt.Errorf("write document: %w", err)
 		}
