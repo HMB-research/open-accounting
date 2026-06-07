@@ -2814,7 +2814,9 @@ func TestCLIPluginSettingsBranches(t *testing.T) {
 		wantText string
 	}{
 		{name: "missing subcommand", args: nil, wantText: "plugins settings subcommand required"},
+		{name: "get bad flag", args: []string{"get", "--bogus"}, wantText: "flag provided but not defined"},
 		{name: "get missing id", args: []string{"get"}, wantText: "id is required"},
+		{name: "update bad flag", args: []string{"update", "--bogus"}, wantText: "flag provided but not defined"},
 		{name: "update missing id", args: []string{"update"}, wantText: "id is required"},
 		{name: "update missing settings", args: []string{"update", "--id", pluginID}, wantText: "settings-json or settings-file is required"},
 		{name: "update conflicting settings sources", args: []string{"update", "--id", pluginID, "--settings-json", `{"a":1}`, "--settings-file", "settings.json"}, wantText: "use either settings-json or settings-file"},
@@ -2856,6 +2858,51 @@ func TestCLIPluginSettingsBranches(t *testing.T) {
 	err = app.run(context.Background(), []string{"plugins", "settings", "update", "--id", pluginID, "--settings-file", settingsFile})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Updated tenant plugin")
+}
+
+func TestCLIPluginSettingsAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	const pluginID = "11111111-1111-1111-1111-111111111111"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/settings",
+			r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/settings":
+			w.WriteHeader(http.StatusBadGateway)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "plugin settings service unavailable"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	for _, tt := range []struct {
+		name string
+		args []string
+	}{
+		{name: "get API error", args: []string{"plugins", "settings", "get", "--id", pluginID}},
+		{name: "update API error", args: []string{"plugins", "settings", "update", "--id", pluginID, "--settings-json", `{"threshold":8}`}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tt.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "plugin settings service unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
 }
 
 func TestCLIAdminPluginRegistryBranches(t *testing.T) {
