@@ -9545,6 +9545,129 @@ func TestCLIJournalBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"entry_number": "JE-2026-013"`)
 }
 
+func TestCLIJournalAuthFlagsAndAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"journal", "list"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		APIToken: "oa_saved_token",
+	}))
+	err = app.run(context.Background(), []string{"journal", "list"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no tenant configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	missingFile := filepath.Join(t.TempDir(), "missing.csv")
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "list bad flag", args: []string{"journal", "list", "--bad"}, want: "flag provided but not defined"},
+		{name: "get bad flag", args: []string{"journal", "get", "--bad"}, want: "flag provided but not defined"},
+		{name: "create bad flag", args: []string{"journal", "create", "--bad"}, want: "flag provided but not defined"},
+		{name: "post bad flag", args: []string{"journal", "post", "--bad"}, want: "flag provided but not defined"},
+		{name: "void bad flag", args: []string{"journal", "void", "--bad"}, want: "flag provided but not defined"},
+		{name: "opening balances bad flag", args: []string{"journal", "import-opening-balances", "--bad"}, want: "flag provided but not defined"},
+		{name: "opening balances unreadable file", args: []string{"journal", "import-opening-balances", "--file", missingFile, "--entry-date", "2026-01-01"}, want: "read file"},
+		{name: "journal import bad flag", args: []string{"journal", "import", "--bad"}, want: "flag provided but not defined"},
+		{name: "journal import unreadable file", args: []string{"journal", "import", "--file", missingFile}, want: "read file"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	openingBalancesFile := writeTempCSV(t, "opening-balances-error.csv", "account_code,debit,credit\n1000,500,0\n2000,0,500\n")
+	journalImportFile := writeTempCSV(t, "journals-error.csv", "entry_reference,entry_date,account_code,debit,credit\nERR-001,2026-04-01,1000,20,0\nERR-001,2026-04-01,4000,0,20\n")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries":
+			require.Equal(t, "25", r.URL.Query().Get("limit"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-error":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries":
+			var req accounting.CreateJournalEntryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-04-01", req.EntryDate.Format("2006-01-02"))
+			assert.Equal(t, "Error branch accrual", req.Description)
+			assert.Equal(t, "ERR-1", req.Reference)
+			assert.Equal(t, "MANUAL", req.SourceType)
+			assert.False(t, req.RequiresEvidence)
+			assert.Nil(t, req.SourceID)
+			require.Len(t, req.Lines, 2)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-error/post":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-error/void":
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Duplicate", req["reason"])
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/import-opening-balances":
+			var req accounting.ImportOpeningBalancesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "opening-balances-error.csv", req.FileName)
+			assert.Equal(t, "2026-01-01", req.EntryDate)
+			assert.Equal(t, "Opening balances", req.Description)
+			assert.Contains(t, req.CSVContent, "1000,500,0")
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/import":
+			var req accounting.ImportJournalEntriesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "journals-error.csv", req.FileName)
+			assert.Equal(t, "HISTORICAL", req.SourceType)
+			assert.True(t, req.PostEntries)
+			assert.Contains(t, req.CSVContent, "ERR-001")
+		default:
+			t.Fatalf("unexpected journal error request: %s %s", r.Method, r.URL.Path)
+		}
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "journal backend unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list API error", args: []string{"journal", "list", "--limit", "25"}},
+		{name: "get API error", args: []string{"journal", "get", "--id", "je-error"}},
+		{name: "create API error", args: []string{"journal", "create", "--entry-date", "2026-04-01", "--description", "Error branch accrual", "--reference", "ERR-1", "--source-type", "MANUAL", "--line", "account_id=acc-1,debit=20.00", "--line", "account_id=acc-2,credit=20.00"}},
+		{name: "post API error", args: []string{"journal", "post", "--id", "je-error"}},
+		{name: "void API error", args: []string{"journal", "void", "--id", "je-error", "--reason", "Duplicate"}},
+		{name: "opening balances API error", args: []string{"journal", "import-opening-balances", "--file", openingBalancesFile, "--entry-date", "2026-01-01"}},
+		{name: "journal import API error", args: []string{"journal", "import", "--file", journalImportFile, "--source-type", "HISTORICAL", "--post"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "journal backend unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIJournalTemplateBranches(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
