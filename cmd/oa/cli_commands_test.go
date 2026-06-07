@@ -18026,6 +18026,59 @@ func TestCLITaxOSSValidationBranches(t *testing.T) {
 	}
 }
 
+func TestCLITaxOSSAuthFlagsAndAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	err := app.run(ctx, []string{"tax", "oss", "report", "--year", "2026", "--quarter", "1"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		APIToken: "oa_saved_token",
+	}))
+	err = app.run(ctx, []string{"tax", "oss", "report", "--year", "2026", "--quarter", "1"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no tenant configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+	err = app.run(ctx, []string{"tax", "oss", "report", "--bad"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "flag provided but not defined")
+	assert.Empty(t, stdout.String())
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/tenants/tenant-1/tax/eu-vat/oss" {
+			t.Fatalf("unexpected OSS error request: %s %s", r.Method, r.URL.Path)
+		}
+		assert.Equal(t, "2026", r.URL.Query().Get("year"))
+		assert.Equal(t, "1", r.URL.Query().Get("quarter"))
+		assert.Equal(t, "true", r.URL.Query().Get("include_b2b"))
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "oss backend unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	err = app.run(ctx, []string{"tax", "oss", "report", "--year", "2026", "--quarter", "1", "--include-b2b"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "oss backend unavailable")
+	assert.Empty(t, stdout.String())
+}
+
 func cliDocumentPayload(id, reviewStatus string) map[string]any {
 	return map[string]any{
 		"id":            id,
