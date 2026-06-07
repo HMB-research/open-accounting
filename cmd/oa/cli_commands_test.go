@@ -5832,6 +5832,7 @@ func TestCLIOrderBranches(t *testing.T) {
 	t.Setenv("OA_BASE_URL", server.URL)
 
 	app, stdout, _ := newTestCLIApp()
+	missingOrderFile := filepath.Join(t.TempDir(), "missing-orders.csv")
 
 	errorCases := []struct {
 		name string
@@ -5840,29 +5841,44 @@ func TestCLIOrderBranches(t *testing.T) {
 	}{
 		{name: "missing subcommand", args: []string{"orders"}, want: "orders subcommand required"},
 		{name: "unknown subcommand", args: []string{"orders", "archive"}, want: `unknown orders subcommand "archive"`},
+		{name: "list bad flag", args: []string{"orders", "list", "--bad"}, want: "flag provided but not defined"},
 		{name: "list invalid status", args: []string{"orders", "list", "--status", "queued"}, want: "invalid order status"},
 		{name: "list invalid from date", args: []string{"orders", "list", "--from", "not-a-date"}, want: "from"},
 		{name: "list invalid to date", args: []string{"orders", "list", "--to", "not-a-date"}, want: "to"},
+		{name: "create bad flag", args: []string{"orders", "create", "--bad"}, want: "flag provided but not defined"},
 		{name: "create missing contact", args: []string{"orders", "create", "--order-date", "2026-03-15"}, want: "contact-id is required"},
 		{name: "create missing date", args: []string{"orders", "create", "--contact-id", "contact-branch"}, want: "order-date"},
 		{name: "create invalid expected delivery", args: []string{"orders", "create", "--contact-id", "contact-branch", "--order-date", "2026-03-15", "--expected-delivery", "not-a-date"}, want: "expected-delivery"},
 		{name: "create missing line", args: []string{"orders", "create", "--contact-id", "contact-branch", "--order-date", "2026-03-15"}, want: "at least one line is required"},
 		{name: "create invalid exchange rate", args: []string{"orders", "create", "--contact-id", "contact-branch", "--order-date", "2026-03-15", "--exchange-rate", "0", "--line", "description=Branch line,quantity=1,unit_price=80,vat_rate=22"}, want: "exchange-rate"},
+		{name: "import bad flag", args: []string{"orders", "import", "--bad"}, want: "flag provided but not defined"},
 		{name: "import missing file", args: []string{"orders", "import"}, want: "file is required"},
+		{name: "import missing source file", args: []string{"orders", "import", "--file", missingOrderFile}, want: "missing-orders.csv"},
+		{name: "get bad flag", args: []string{"orders", "get", "--bad"}, want: "flag provided but not defined"},
 		{name: "get missing id", args: []string{"orders", "get"}, want: "id is required"},
+		{name: "stock check bad flag", args: []string{"orders", "stock-check", "--bad"}, want: "flag provided but not defined"},
 		{name: "stock check missing id", args: []string{"orders", "stock-check"}, want: "id is required"},
+		{name: "reservations bad flag", args: []string{"orders", "stock-reservations", "--bad"}, want: "flag provided but not defined"},
 		{name: "reservations missing id", args: []string{"orders", "stock-reservations"}, want: "id is required"},
+		{name: "pick list bad flag", args: []string{"orders", "pick-list", "--bad"}, want: "flag provided but not defined"},
 		{name: "pick list missing id", args: []string{"orders", "pick-list", "--warehouse-id", "wh-branch"}, want: "id is required"},
 		{name: "pick list missing warehouse", args: []string{"orders", "pick-list", "--id", "order-branch"}, want: "warehouse-id is required"},
+		{name: "reserve bad flag", args: []string{"orders", "reserve-stock", "--bad"}, want: "flag provided but not defined"},
 		{name: "reserve missing id", args: []string{"orders", "reserve-stock", "--warehouse-id", "wh-branch"}, want: "id is required"},
 		{name: "reserve missing warehouse", args: []string{"orders", "reserve-stock", "--id", "order-branch"}, want: "warehouse-id is required"},
+		{name: "release bad flag", args: []string{"orders", "release-stock", "--bad"}, want: "flag provided but not defined"},
+		{name: "release missing id", args: []string{"orders", "release-stock", "--warehouse-id", "wh-branch"}, want: "id is required"},
 		{name: "release missing warehouse", args: []string{"orders", "release-stock", "--id", "order-branch"}, want: "warehouse-id is required"},
+		{name: "update bad flag", args: []string{"orders", "update", "--bad"}, want: "flag provided but not defined"},
 		{name: "update missing id", args: []string{"orders", "update", "--contact-id", "contact-branch"}, want: "id is required"},
 		{name: "update missing contact", args: []string{"orders", "update", "--id", "order-branch"}, want: "contact-id is required"},
 		{name: "update missing date", args: []string{"orders", "update", "--id", "order-branch", "--contact-id", "contact-branch"}, want: "order-date"},
+		{name: "update invalid expected delivery", args: []string{"orders", "update", "--id", "order-branch", "--contact-id", "contact-branch", "--order-date", "2026-03-16", "--expected-delivery", "not-a-date"}, want: "expected-delivery"},
 		{name: "update missing line", args: []string{"orders", "update", "--id", "order-branch", "--contact-id", "contact-branch", "--order-date", "2026-03-16"}, want: "at least one line is required"},
 		{name: "update invalid exchange rate", args: []string{"orders", "update", "--id", "order-branch", "--contact-id", "contact-branch", "--order-date", "2026-03-16", "--exchange-rate", "0", "--line", "description=Branch line,quantity=1,unit_price=80,vat_rate=22"}, want: "exchange-rate"},
+		{name: "delete bad flag", args: []string{"orders", "delete", "--bad"}, want: "flag provided but not defined"},
 		{name: "delete missing id", args: []string{"orders", "delete"}, want: "id is required"},
+		{name: "status bad flag", args: []string{"orders", "confirm", "--bad"}, want: "flag provided but not defined"},
 		{name: "confirm missing id", args: []string{"orders", "confirm"}, want: "id is required"},
 		{name: "evidence gate only confirm", args: []string{"orders", "process", "--id", "order-branch", "--require-approved-evidence"}, want: "require-approved-evidence is only supported for orders confirm"},
 	}
@@ -5949,6 +5965,125 @@ func TestCLIOrderBranches(t *testing.T) {
 	err = app.run(context.Background(), []string{"orders", "confirm", "--id", " order-branch ", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"status": "confirmed"`)
+}
+
+func TestCLIOrderAuthFlagsAndAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"orders", "list"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		APIToken: "oa_saved_token",
+	}))
+	err = app.run(context.Background(), []string{"orders", "list"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no tenant configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	orderImportFile := writeTempCSV(t, "orders-error.csv", "order_number,contact_id,order_date,line_description,quantity,unit_price,vat_rate\nORD-ERROR,contact-error,2026-03-15,Error line,1,80,22\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders":
+			assert.Equal(t, "PENDING", r.URL.Query().Get("status"))
+			assert.Equal(t, "contact-error", r.URL.Query().Get("contact_id"))
+			assert.Equal(t, "2026-03-01", r.URL.Query().Get("from_date"))
+			assert.Equal(t, "2026-03-31", r.URL.Query().Get("to_date"))
+			assert.Equal(t, "ORD-ERROR", r.URL.Query().Get("search"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders":
+			var req orders.CreateOrderRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "contact-error", req.ContactID)
+			assert.Equal(t, "2026-03-15", req.OrderDate.Format("2006-01-02"))
+			assert.Equal(t, "USD", req.Currency)
+			require.Len(t, req.Lines, 1)
+			assert.Equal(t, "Error line", req.Lines[0].Description)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/import":
+			var req orders.ImportOrdersRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "orders-error.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "ORD-ERROR")
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-error":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-error/stock-check":
+			assert.Equal(t, "wh-error", r.URL.Query().Get("warehouse_id"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-error/stock-reservations":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-error/pick-list":
+			assert.Equal(t, "wh-error", r.URL.Query().Get("warehouse_id"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-error/reserve-stock":
+			var req orders.OrderStockReservationRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "wh-error", req.WarehouseID)
+			assert.Equal(t, "Hold stock", req.Reason)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-error/release-stock":
+			var req orders.OrderStockReservationRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "wh-error", req.WarehouseID)
+			assert.Equal(t, "Release stock", req.Reason)
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-error":
+			var req orders.UpdateOrderRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "contact-error", req.ContactID)
+			assert.Equal(t, "2026-03-16", req.OrderDate.Format("2006-01-02"))
+			assert.Equal(t, "USD", req.Currency)
+			require.Len(t, req.Lines, 1)
+			assert.Equal(t, "Updated error line", req.Lines[0].Description)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-error":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-error/confirm":
+			var req documentEvidenceRequirementRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.True(t, req.RequireApprovedEvidence)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "order service unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{name: "list api error", args: []string{"orders", "list", "--status", "pending", "--contact-id", "contact-error", "--from", "2026-03-01", "--to", "2026-03-31", "--search", "ORD-ERROR"}},
+		{name: "create api error", args: []string{"orders", "create", "--contact-id", "contact-error", "--order-date", "2026-03-15", "--currency", "usd", "--line", "description=Error line,quantity=1,unit_price=80,vat_rate=22"}},
+		{name: "import api error", args: []string{"orders", "import", "--file", orderImportFile}},
+		{name: "get api error", args: []string{"orders", "get", "--id", "order-error"}},
+		{name: "stock check api error", args: []string{"orders", "stock-check", "--id", "order-error", "--warehouse-id", "wh-error"}},
+		{name: "reservations api error", args: []string{"orders", "stock-reservations", "--id", "order-error"}},
+		{name: "pick list api error", args: []string{"orders", "pick-list", "--id", "order-error", "--warehouse-id", "wh-error"}},
+		{name: "reserve api error", args: []string{"orders", "reserve-stock", "--id", "order-error", "--warehouse-id", "wh-error", "--reason", "Hold stock"}},
+		{name: "release api error", args: []string{"orders", "release-stock", "--id", "order-error", "--warehouse-id", "wh-error", "--reason", "Release stock"}},
+		{name: "update api error", args: []string{"orders", "update", "--id", "order-error", "--contact-id", "contact-error", "--order-date", "2026-03-16", "--currency", "usd", "--line", "description=Updated error line,quantity=2,unit_price=90,vat_rate=22"}},
+		{name: "delete api error", args: []string{"orders", "delete", "--id", "order-error"}},
+		{name: "status api error", args: []string{"orders", "confirm", "--id", "order-error", "--require-approved-evidence"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "order service unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
 }
 
 func TestCLIRecurringInvoiceCommands(t *testing.T) {
