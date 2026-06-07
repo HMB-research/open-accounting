@@ -2575,6 +2575,112 @@ func TestCLIInvitationBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"is_default": true`)
 }
 
+func TestCLIInvitationAuthAndPublicClientBranches(t *testing.T) {
+	configureCLIEnv(t)
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	for _, tt := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list auth error", args: []string{"invitations", "list"}},
+		{name: "create auth error", args: []string{"invitations", "create", "--email", "branch@example.com", "--role", tenant.RoleViewer}},
+		{name: "revoke auth error", args: []string{"invitations", "revoke", "--id", "inv-branch"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tt.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "no API token configured")
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", "")
+	for _, tt := range []struct {
+		name string
+		args []string
+	}{
+		{name: "get public config error", args: []string{"invitations", "get", "--token", "public-branch"}},
+		{name: "accept public config error", args: []string{"invitations", "accept", "--token", "public-branch"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tt.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "resolve user config dir")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
+func TestCLIInvitationAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasPrefix(r.URL.Path, "/api/v1/tenants/") {
+			require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		} else {
+			assert.Empty(t, r.Header.Get("Authorization"))
+		}
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invitations":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invitations":
+			var req tenant.CreateInvitationRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "error@example.com", req.Email)
+			assert.Equal(t, tenant.RoleAccountant, req.Role)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/invitations/inv-error":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/invitations/public-error":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/invitations/accept":
+			var req tenant.AcceptInvitationRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "public-error", req.Token)
+			assert.Equal(t, "Accepted User", req.Name)
+			assert.Equal(t, "invite-secret", req.Password)
+		default:
+			t.Fatalf("unexpected invitation error request: %s %s", r.Method, r.URL.String())
+		}
+
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invitation service unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+	for _, tt := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list API error", args: []string{"invitations", "list"}},
+		{name: "create API error", args: []string{"invitations", "create", "--email", "error@example.com", "--role", tenant.RoleAccountant}},
+		{name: "revoke API error", args: []string{"invitations", "revoke", "--id", "inv-error"}},
+		{name: "get API error", args: []string{"invitations", "get", "--token", "public-error", "--base-url", server.URL}},
+		{name: "accept API error", args: []string{"invitations", "accept", "--token", "public-error", "--name", "Accepted User", "--password", "invite-secret", "--base-url", server.URL}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tt.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "invitation service unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIPluginCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
