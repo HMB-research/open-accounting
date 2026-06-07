@@ -4651,6 +4651,148 @@ func TestCLIInvoiceBranches(t *testing.T) {
 	}, requestCounts)
 }
 
+func TestCLIInvoiceAuthFlagsAndAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"invoices", "list"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		APIToken: "oa_saved_token",
+	}))
+	err = app.run(context.Background(), []string{"invoices", "list"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no tenant configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	missingFile := filepath.Join(t.TempDir(), "missing.csv")
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "list bad flag", args: []string{"invoices", "list", "--bad"}, want: "flag provided but not defined"},
+		{name: "create bad flag", args: []string{"invoices", "create", "--bad"}, want: "flag provided but not defined"},
+		{name: "get bad flag", args: []string{"invoices", "get", "--bad"}, want: "flag provided but not defined"},
+		{name: "pdf bad flag", args: []string{"invoices", "pdf", "--bad"}, want: "flag provided but not defined"},
+		{name: "send bad flag", args: []string{"invoices", "send", "--bad"}, want: "flag provided but not defined"},
+		{name: "void bad flag", args: []string{"invoices", "void", "--bad"}, want: "flag provided but not defined"},
+		{name: "import bad flag", args: []string{"invoices", "import", "--bad"}, want: "flag provided but not defined"},
+		{name: "import unreadable file", args: []string{"invoices", "import", "--file", missingFile}, want: "read file"},
+		{name: "import einvoice bad flag", args: []string{"invoices", "import-einvoice", "--bad"}, want: "flag provided but not defined"},
+		{name: "import einvoice unreadable file", args: []string{"invoices", "import-einvoice", "--file", missingFile}, want: "read file"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	importFile := writeTempCSV(t, "invoice-json.csv", "invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\nINV-JSON,CUST-1,2026-04-01,Work,1,100,22\n")
+	successServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/import":
+			var req invoicing.ImportInvoicesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "invoice-json.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "INV-JSON")
+			_ = json.NewEncoder(w).Encode(invoicing.ImportInvoicesResult{
+				FileName:        req.FileName,
+				RowsProcessed:   2,
+				InvoicesCreated: 1,
+				LinesImported:   1,
+				RowsSkipped:     1,
+			})
+		default:
+			t.Fatalf("unexpected invoice success request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer successServer.Close()
+	t.Setenv("OA_BASE_URL", successServer.URL)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"invoices", "import", "--file", importFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"file_name": "invoice-json.csv"`)
+	assert.Contains(t, stdout.String(), `"rows_skipped": 1`)
+
+	eInvoiceFile := writeTempCSV(t, "invoice-error.xml", "<E_Invoice><Invoice><InvoiceInformation><InvoiceNumber>ERR-1</InvoiceNumber></InvoiceInformation></Invoice></E_Invoice>")
+	errorServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invoices":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices":
+			var req invoicing.CreateInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, invoicing.InvoiceTypeSales, req.InvoiceType)
+			assert.Equal(t, "contact-1", req.ContactID)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/inv-error":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/inv-error/pdf":
+			assert.Equal(t, "*/*", r.Header.Get("Accept"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/inv-error/send":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/inv-error/void":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/import":
+			var req invoicing.ImportInvoicesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "invoice-json.csv", req.FileName)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/invoices/import-einvoice":
+			var req invoicing.ImportEInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "invoice-error.xml", req.FileName)
+			assert.Equal(t, invoicing.InvoiceTypePurchase, req.InvoiceType)
+		default:
+			t.Fatalf("unexpected invoice error request: %s %s", r.Method, r.URL.Path)
+		}
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invoice backend unavailable"})
+	}))
+	defer errorServer.Close()
+	t.Setenv("OA_BASE_URL", errorServer.URL)
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list API error", args: []string{"invoices", "list"}},
+		{name: "create API error", args: []string{"invoices", "create", "--type", "sales", "--contact-id", "contact-1", "--issue-date", "2026-04-01", "--due-date", "2026-04-15", "--line", "description=Work,quantity=1,unit_price=100,vat_rate=22"}},
+		{name: "get API error", args: []string{"invoices", "get", "--id", "inv-error"}},
+		{name: "pdf API error", args: []string{"invoices", "pdf", "--id", "inv-error"}},
+		{name: "send API error", args: []string{"invoices", "send", "--id", "inv-error"}},
+		{name: "void API error", args: []string{"invoices", "void", "--id", "inv-error"}},
+		{name: "import API error", args: []string{"invoices", "import", "--file", importFile}},
+		{name: "import einvoice API error", args: []string{"invoices", "import-einvoice", "--file", eInvoiceFile, "--invoice-type", " purchase "}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "invoice backend unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIQuoteCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
