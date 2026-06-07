@@ -60,7 +60,7 @@ func (r *GORMResetRepository) ResetDemoData(ctx context.Context, users []ResetUs
 	}()
 
 	for _, user := range users {
-		if err := r.dropTenantSchema(ctx, user.Schema); err != nil {
+		if err := r.dropTenantSchema(ctx, conn, user.Schema); err != nil {
 			return err
 		}
 	}
@@ -76,12 +76,12 @@ func (r *GORMResetRepository) ResetDemoData(ctx context.Context, users []ResetUs
 	return nil
 }
 
-func (r *GORMResetRepository) dropTenantSchema(ctx context.Context, schemaName string) error {
+func (r *GORMResetRepository) dropTenantSchema(ctx context.Context, conn *pgxpool.Conn, schemaName string) error {
 	quotedSchema, err := database.QuoteIdentifier(schemaName)
 	if err != nil {
 		return fmt.Errorf("quote tenant schema: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec("DROP SCHEMA IF EXISTS " + quotedSchema + " CASCADE").Error; err != nil {
+	if _, err := conn.Exec(ctx, "DROP SCHEMA IF EXISTS "+quotedSchema+" CASCADE"); err != nil {
 		return fmt.Errorf("drop tenant schema %s: %w", schemaName, err)
 	}
 	return nil
