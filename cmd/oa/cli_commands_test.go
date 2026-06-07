@@ -8944,6 +8944,16 @@ func TestCLIInventoryWarehouseBranches(t *testing.T) {
 			want: `unknown inventory warehouses subcommand "archive"`,
 		},
 		{
+			name: "list bad flag",
+			args: []string{"list", "--bad"},
+			want: "flag provided but not defined",
+		},
+		{
+			name: "create bad flag",
+			args: []string{"create", "--bad"},
+			want: "flag provided but not defined",
+		},
+		{
 			name: "create missing code",
 			args: []string{"create", "--name", "Branch warehouse"},
 			want: "code is required",
@@ -8959,14 +8969,29 @@ func TestCLIInventoryWarehouseBranches(t *testing.T) {
 			want: "file is required",
 		},
 		{
+			name: "import bad flag",
+			args: []string{"import", "--bad"},
+			want: "flag provided but not defined",
+		},
+		{
 			name: "import unreadable file",
 			args: []string{"import", "--file", filepath.Join(t.TempDir(), "missing.csv")},
 			want: "no such file",
 		},
 		{
+			name: "get bad flag",
+			args: []string{"get", "--bad"},
+			want: "flag provided but not defined",
+		},
+		{
 			name: "get missing id",
 			args: []string{"get"},
 			want: "id is required",
+		},
+		{
+			name: "update bad flag",
+			args: []string{"update", "--bad"},
+			want: "flag provided but not defined",
 		},
 		{
 			name: "update missing id",
@@ -8982,6 +9007,11 @@ func TestCLIInventoryWarehouseBranches(t *testing.T) {
 			name: "update invalid active flag",
 			args: []string{"update", "--id", "wh-branch", "--name", "Branch warehouse", "--active=maybe"},
 			want: "invalid boolean value",
+		},
+		{
+			name: "delete bad flag",
+			args: []string{"delete", "--bad"},
+			want: "flag provided but not defined",
 		},
 		{
 			name: "delete missing id",
@@ -9089,6 +9119,79 @@ func TestCLIInventoryWarehouseBranches(t *testing.T) {
 	err = app.run(context.Background(), []string{"inventory", "warehouses", "delete", "--id", "wh-branch", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"status": "deleted"`)
+}
+
+func TestCLIInventoryWarehouseAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	importFile := writeTempCSV(t, "warehouses-error.csv", "code,name,address,is_default\nERR,Error warehouse,Tallinn,true\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses":
+			assert.Equal(t, "true", r.URL.Query().Get("active_only"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses":
+			var req inventory.CreateWarehouseRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "ERR", req.Code)
+			assert.Equal(t, "Error warehouse", req.Name)
+			assert.Equal(t, "Tallinn", req.Address)
+			assert.True(t, req.IsDefault)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses/import":
+			var req inventory.ImportWarehousesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "warehouses-error.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "ERR")
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses/wh-error":
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses/wh-error":
+			var req inventory.UpdateWarehouseRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Error warehouse updated", req.Name)
+			assert.Equal(t, "Tartu", req.Address)
+			assert.True(t, req.IsDefault)
+			assert.False(t, req.IsActive)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses/wh-error":
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "warehouse service unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{name: "list api error", args: []string{"inventory", "warehouses", "list", "--active-only"}},
+		{name: "create api error", args: []string{"inventory", "warehouses", "create", "--code", " ERR ", "--name", " Error warehouse ", "--address", " Tallinn ", "--default"}},
+		{name: "import api error", args: []string{"inventory", "warehouses", "import", "--file", importFile}},
+		{name: "get api error", args: []string{"inventory", "warehouses", "get", "--id", " wh-error "}},
+		{name: "update api error", args: []string{"inventory", "warehouses", "update", "--id", " wh-error ", "--name", " Error warehouse updated ", "--address", " Tartu ", "--default", "--active=false"}},
+		{name: "delete api error", args: []string{"inventory", "warehouses", "delete", "--id", " wh-error "}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "warehouse service unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
 }
 
 func TestCLICostCenterCommands(t *testing.T) {
