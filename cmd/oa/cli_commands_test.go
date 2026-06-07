@@ -13927,14 +13927,19 @@ func TestCLIBankReconciliationBranches(t *testing.T) {
 		args []string
 		want string
 	}{
+		{name: "missing subcommand", args: nil, want: "banking reconciliations subcommand required"},
+		{name: "list bad flag", args: []string{"list", "--unknown"}, want: "flag provided but not defined"},
 		{name: "list missing account", args: []string{"list"}, want: "account-id is required"},
+		{name: "create bad flag", args: []string{"create", "--unknown"}, want: "flag provided but not defined"},
 		{name: "create missing account", args: []string{"create"}, want: "account-id is required"},
 		{name: "create missing statement date", args: []string{"create", "--account-id", "bank-1"}, want: "statement-date is required"},
 		{name: "create invalid statement date", args: []string{"create", "--account-id", "bank-1", "--statement-date", "tomorrow"}, want: "parse statement-date"},
 		{name: "create missing opening balance", args: []string{"create", "--account-id", "bank-1", "--statement-date", "2026-03-31"}, want: "opening-balance is required"},
 		{name: "create invalid opening balance", args: []string{"create", "--account-id", "bank-1", "--statement-date", "2026-03-31", "--opening-balance", "many"}, want: "parse opening-balance"},
 		{name: "create missing closing balance", args: []string{"create", "--account-id", "bank-1", "--statement-date", "2026-03-31", "--opening-balance", "0.00"}, want: "closing-balance is required"},
+		{name: "get bad flag", args: []string{"get", "--unknown"}, want: "flag provided but not defined"},
 		{name: "get missing id", args: []string{"get"}, want: "id is required"},
+		{name: "complete bad flag", args: []string{"complete", "--unknown"}, want: "flag provided but not defined"},
 		{name: "complete missing id", args: []string{"complete"}, want: "id is required"},
 		{name: "unknown subcommand", args: []string{"reopen"}, want: `unknown banking reconciliations subcommand "reopen"`},
 	} {
@@ -14003,6 +14008,61 @@ func TestCLIBankReconciliationBranches(t *testing.T) {
 	err = app.run(context.Background(), []string{"banking", "reconciliations", "complete", "--id", "rec-2", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"status": "completed"`)
+}
+
+func TestCLIBankReconciliationAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-error/reconciliations":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-error/reconciliation":
+			var req banking.CreateReconciliationRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-04-30", req.StatementDate)
+			assert.True(t, req.OpeningBalance.Equal(decimal.RequireFromString("100.00")))
+			assert.True(t, req.ClosingBalance.Equal(decimal.RequireFromString("250.50")))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reconciliations/rec-error":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/reconciliations/rec-error/complete":
+		default:
+			t.Fatalf("unexpected reconciliation error request: %s %s", r.Method, r.URL.String())
+		}
+
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "bank reconciliation service unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+	for _, tt := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list API error", args: []string{"banking", "reconciliations", "list", "--account-id", "bank-error"}},
+		{name: "create API error", args: []string{"banking", "reconciliations", "create", "--account-id", "bank-error", "--statement-date", "2026-04-30", "--opening-balance", "100.00", "--closing-balance", "250.50"}},
+		{name: "get API error", args: []string{"banking", "reconciliations", "get", "--id", "rec-error"}},
+		{name: "complete API error", args: []string{"banking", "reconciliations", "complete", "--id", "rec-error"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tt.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "bank reconciliation service unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
 }
 
 func TestCLIBankMatchRulesJSONAndValidationBranches(t *testing.T) {
