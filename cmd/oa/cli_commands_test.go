@@ -13512,23 +13512,34 @@ func TestCLIBankTransactionBranches(t *testing.T) {
 	}{
 		{name: "missing subcommand", args: nil, want: "banking transactions subcommand required"},
 		{name: "unknown subcommand", args: []string{"archive"}, want: `unknown banking transactions subcommand "archive"`},
+		{name: "list bad flag", args: []string{"list", "--unknown"}, want: "flag provided but not defined"},
 		{name: "list missing account", args: []string{"list"}, want: "account-id is required"},
 		{name: "list invalid status", args: []string{"list", "--account-id", "bank-1", "--status", "waiting"}, want: `invalid bank transaction status "waiting"`},
 		{name: "list invalid from date", args: []string{"list", "--account-id", "bank-1", "--from", "2026/03/01"}, want: "parse from"},
 		{name: "list invalid to date", args: []string{"list", "--account-id", "bank-1", "--to", "2026/03/31"}, want: "parse to"},
+		{name: "import bad flag", args: []string{"import", "--unknown"}, want: "flag provided but not defined"},
 		{name: "import missing account", args: []string{"import"}, want: "account-id is required"},
 		{name: "import missing file", args: []string{"import", "--account-id", "bank-1"}, want: "read file"},
 		{name: "import unreadable file", args: []string{"import", "--account-id", "bank-1", "--file", filepath.Join(t.TempDir(), "missing.csv")}, want: "no such file"},
 		{name: "import invalid format", args: []string{"import", "--account-id", "bank-1", "--file", invalidFormatFile, "--format", "legacy"}, want: "unsupported bank transaction import format"},
+		{name: "import history bad flag", args: []string{"import-history", "--unknown"}, want: "flag provided but not defined"},
+		{name: "import history missing account", args: []string{"import-history"}, want: "account-id is required"},
+		{name: "get bad flag", args: []string{"get", "--unknown"}, want: "flag provided but not defined"},
 		{name: "get missing id", args: []string{"get"}, want: "id is required"},
+		{name: "suggestions bad flag", args: []string{"suggestions", "--unknown"}, want: "flag provided but not defined"},
 		{name: "suggestions missing id", args: []string{"suggestions"}, want: "id is required"},
+		{name: "match bad flag", args: []string{"match", "--unknown"}, want: "flag provided but not defined"},
 		{name: "match missing id", args: []string{"match", "--payment-id", "pay-1"}, want: "id is required"},
 		{name: "match missing payment", args: []string{"match", "--id", "tx-1"}, want: "payment-id is required"},
+		{name: "unmatch bad flag", args: []string{"unmatch", "--unknown"}, want: "flag provided but not defined"},
 		{name: "unmatch missing id", args: []string{"unmatch"}, want: "id is required"},
+		{name: "review bad flag", args: []string{"review", "--unknown"}, want: "flag provided but not defined"},
 		{name: "review missing id", args: []string{"review", "--review-note", "Ready"}, want: "id is required"},
 		{name: "review invalid follow-up", args: []string{"review", "--id", "tx-1", "--follow-up-status", "later"}, want: `invalid bank follow-up status "later"`},
 		{name: "review missing update", args: []string{"review", "--id", "tx-1"}, want: "follow-up-status or review-note is required"},
+		{name: "create payment bad flag", args: []string{"create-payment", "--unknown"}, want: "flag provided but not defined"},
 		{name: "create payment missing id", args: []string{"create-payment"}, want: "id is required"},
+		{name: "auto match bad flag", args: []string{"auto-match", "--unknown"}, want: "flag provided but not defined"},
 		{name: "auto match missing account", args: []string{"auto-match"}, want: "account-id is required"},
 		{name: "auto match invalid confidence", args: []string{"auto-match", "--account-id", "bank-1", "--min-confidence", "many"}, want: "parse min-confidence"},
 		{name: "auto match confidence below range", args: []string{"auto-match", "--account-id", "bank-1", "--min-confidence", "-0.1"}, want: "min-confidence must be between 0 and 1"},
@@ -13695,6 +13706,86 @@ func TestCLIBankTransactionBranches(t *testing.T) {
 	err = app.run(ctx, []string{"banking", "transactions", "auto-match", "--account-id", " bank-branch ", "--min-confidence", "1", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"matched": 2`)
+}
+
+func TestCLIBankTransactionAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	importFile := writeTempCSV(t, "bank-transactions-error.csv", "date,value_date,amount,currency,source_account,description,reference,counterparty_name,counterparty_account,external_id\n2026-03-17,2026-03-18,-45.60,EUR,EE222,Card fee,REF-2,Vendor,EE333,ext-2\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-error/transactions":
+			assert.Equal(t, "MATCHED", r.URL.Query().Get("status"))
+			assert.Equal(t, "2026-03-01", r.URL.Query().Get("from_date"))
+			assert.Equal(t, "2026-03-31", r.URL.Query().Get("to_date"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-error/import":
+			var req banking.ImportCSVRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "bank-transactions-error.csv", req.FileName)
+			assert.False(t, req.SkipDuplicates)
+			require.Len(t, req.Transactions, 1)
+			assert.Equal(t, "-45.60", req.Transactions[0].Amount)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-error/import-history":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-transactions/tx-error":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-transactions/tx-error/suggestions":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-transactions/tx-error/match":
+			var req banking.MatchTransactionRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "pay-error", req.PaymentID)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-transactions/tx-error/unmatch":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-transactions/tx-error/review":
+			var req banking.UpdateTransactionReviewRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.NotNil(t, req.FollowUpStatus)
+			assert.Equal(t, banking.FollowUpReadyToMatch, *req.FollowUpStatus)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-transactions/tx-error/create-payment":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-error/auto-match":
+			assert.Equal(t, "0.8", r.URL.Query().Get("min_confidence"))
+		default:
+			t.Fatalf("unexpected bank transaction error request: %s %s", r.Method, r.URL.String())
+		}
+
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "bank transaction service unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+	for _, tt := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list API error", args: []string{"banking", "transactions", "list", "--account-id", "bank-error", "--status", "matched", "--from", "2026-03-01", "--to", "2026-03-31"}},
+		{name: "import API error", args: []string{"banking", "transactions", "import", "--account-id", "bank-error", "--file", importFile, "--format", "generic", "--skip-duplicates=false"}},
+		{name: "import history API error", args: []string{"banking", "transactions", "import-history", "--account-id", "bank-error"}},
+		{name: "get API error", args: []string{"banking", "transactions", "get", "--id", "tx-error"}},
+		{name: "suggestions API error", args: []string{"banking", "transactions", "suggestions", "--id", "tx-error"}},
+		{name: "match API error", args: []string{"banking", "transactions", "match", "--id", "tx-error", "--payment-id", "pay-error"}},
+		{name: "unmatch API error", args: []string{"banking", "transactions", "unmatch", "--id", "tx-error"}},
+		{name: "review API error", args: []string{"banking", "transactions", "review", "--id", "tx-error", "--follow-up-status", "ready_to_match"}},
+		{name: "create payment API error", args: []string{"banking", "transactions", "create-payment", "--id", "tx-error"}},
+		{name: "auto match API error", args: []string{"banking", "transactions", "auto-match", "--account-id", "bank-error", "--min-confidence", "0.8"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tt.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "bank transaction service unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
 }
 
 func TestCLIBankReconciliationBranches(t *testing.T) {
