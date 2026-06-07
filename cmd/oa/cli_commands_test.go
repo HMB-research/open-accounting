@@ -1079,6 +1079,7 @@ func TestCLIAuthValidationBranches(t *testing.T) {
 		args []string
 		want string
 	}{
+		{name: "missing subcommand", args: []string{"auth"}, want: "auth subcommand required"},
 		{name: "unknown subcommand", args: []string{"auth", "archive"}, want: `unknown auth subcommand "archive"`},
 		{name: "register invalid flag", args: []string{"auth", "register", "--bogus"}, want: "flag provided but not defined"},
 		{name: "register missing email", args: []string{"auth", "register", "--name", "User", "--password", "secret123"}, want: "email and name are required"},
@@ -1462,6 +1463,220 @@ func TestCLIAuthBranches(t *testing.T) {
 		"status":          1,
 		"logout":          1,
 	}, requestCounts)
+}
+
+func TestCLIAuthConfigErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+	app, stdout, _ := newTestCLIApp()
+
+	tokenCommands := []struct {
+		name string
+		args []string
+	}{
+		{name: "tenants", args: []string{"auth", "tenants"}},
+		{name: "sessions", args: []string{"auth", "sessions"}},
+		{name: "security events", args: []string{"auth", "security-events"}},
+		{name: "revoke session", args: []string{"auth", "revoke-session", "--id", "session-1"}},
+		{name: "revoke all sessions", args: []string{"auth", "revoke-all-sessions"}},
+		{name: "change password", args: []string{"auth", "change-password", "--current-password", "oldpassword", "--new-password", "newpassword"}},
+	}
+	for _, tc := range tokenCommands {
+		t.Run(tc.name+" requires token config", func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "no API token configured")
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	t.Run("status config dir error", func(t *testing.T) {
+		t.Setenv("HOME", "")
+		t.Setenv("XDG_CONFIG_HOME", "")
+
+		stdout.Reset()
+		err := app.run(context.Background(), []string{"auth", "status"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "resolve user config dir")
+		assert.Empty(t, stdout.String())
+	})
+
+	t.Run("logout config dir error", func(t *testing.T) {
+		t.Setenv("HOME", "")
+		t.Setenv("XDG_CONFIG_HOME", "")
+
+		stdout.Reset()
+		err := app.run(context.Background(), []string{"auth", "logout"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "resolve user config dir")
+		assert.Empty(t, stdout.String())
+	})
+}
+
+func TestCLIAuthAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+
+	writeAPIError := func(w http.ResponseWriter, status int, message string) {
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/register":
+			writeAPIError(w, http.StatusBadGateway, "register service unavailable")
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/login":
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			switch req["email"] {
+			case "login-error@example.com", "init-login-error@example.com":
+				writeAPIError(w, http.StatusBadGateway, "login service unavailable")
+			case "init-tenants-error@example.com":
+				_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "jwt-tenants-error"})
+			case "init-missing-tenant@example.com":
+				_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "jwt-missing-tenant"})
+			case "init-token-error@example.com":
+				_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "jwt-token-error"})
+			case "init-save-error@example.com":
+				_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "jwt-save-error"})
+			default:
+				t.Fatalf("unexpected login email: %q", req["email"])
+			}
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/me/tenants":
+			switch r.Header.Get("Authorization") {
+			case "Bearer jwt-tenants-error":
+				writeAPIError(w, http.StatusServiceUnavailable, "tenant list unavailable")
+			case "Bearer jwt-missing-tenant", "Bearer jwt-token-error", "Bearer jwt-save-error":
+				_ = json.NewEncoder(w).Encode([]tenant.TenantMembership{{
+					Tenant: tenant.Tenant{ID: "tenant-1", Name: "Alpha", Slug: "alpha"},
+					Role:   tenant.RoleAdmin,
+				}})
+			case "Bearer oa_auth_error_token":
+				writeAPIError(w, http.StatusBadGateway, "tenant list failed")
+			default:
+				t.Fatalf("unexpected tenant authorization: %q", r.Header.Get("Authorization"))
+			}
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/api-tokens":
+			switch r.Header.Get("Authorization") {
+			case "Bearer jwt-token-error":
+				writeAPIError(w, http.StatusBadGateway, "api token create failed")
+			case "Bearer jwt-save-error":
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"token": "oa_init_save_token_123456789",
+					"api_token": map[string]any{
+						"id":           "token-save",
+						"tenant_id":    "tenant-1",
+						"user_id":      "user-1",
+						"name":         "CLI Token",
+						"token_prefix": "oa_init_",
+						"created_at":   "2026-06-01T12:00:00Z",
+					},
+				})
+			default:
+				t.Fatalf("unexpected token authorization: %q", r.Header.Get("Authorization"))
+			}
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/refresh":
+			writeAPIError(w, http.StatusBadGateway, "refresh failed")
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/password-reset/request":
+			writeAPIError(w, http.StatusBadGateway, "password reset request failed")
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/password-reset/confirm":
+			writeAPIError(w, http.StatusBadGateway, "password reset confirm failed")
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/auth/sessions":
+			require.Equal(t, "Bearer oa_auth_error_token", r.Header.Get("Authorization"))
+			writeAPIError(w, http.StatusBadGateway, "session list failed")
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/auth/security-events":
+			require.Equal(t, "Bearer oa_auth_error_token", r.Header.Get("Authorization"))
+			writeAPIError(w, http.StatusBadGateway, "security event list failed")
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/auth/sessions/session-error":
+			require.Equal(t, "Bearer oa_auth_error_token", r.Header.Get("Authorization"))
+			writeAPIError(w, http.StatusBadGateway, "session revoke failed")
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/auth/sessions":
+			require.Equal(t, "Bearer oa_auth_error_token", r.Header.Get("Authorization"))
+			writeAPIError(w, http.StatusBadGateway, "all session revoke failed")
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/auth/password":
+			require.Equal(t, "Bearer oa_auth_error_token", r.Header.Get("Authorization"))
+			writeAPIError(w, http.StatusBadGateway, "password change failed")
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/me":
+			require.Equal(t, "Bearer oa_auth_error_token", r.Header.Get("Authorization"))
+			writeAPIError(w, http.StatusBadGateway, "current user failed")
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/logout":
+			writeAPIError(w, http.StatusBadGateway, "logout failed")
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	app, stdout, _ := newTestCLIApp()
+	publicCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "register API error", args: []string{"auth", "register", "--base-url", server.URL, "--email", "register-error@example.com", "--password", "secret123", "--name", "Register Error"}, want: "register service unavailable"},
+		{name: "login API error", args: []string{"auth", "login", "--base-url", server.URL, "--email", "login-error@example.com", "--password", "secret123"}, want: "login service unavailable"},
+		{name: "init login API error", args: []string{"auth", "init", "--base-url", server.URL, "--email", "init-login-error@example.com", "--password", "secret123"}, want: "login service unavailable"},
+		{name: "init tenant list API error", args: []string{"auth", "init", "--base-url", server.URL, "--email", "init-tenants-error@example.com", "--password", "secret123"}, want: "tenant list unavailable"},
+		{name: "init missing tenant", args: []string{"auth", "init", "--base-url", server.URL, "--email", "init-missing-tenant@example.com", "--password", "secret123", "--tenant", "missing"}, want: `tenant "missing" not found`},
+		{name: "init API token API error", args: []string{"auth", "init", "--base-url", server.URL, "--email", "init-token-error@example.com", "--password", "secret123"}, want: "api token create failed"},
+		{name: "refresh API error", args: []string{"auth", "refresh", "--base-url", server.URL, "--refresh-token", "refresh-error"}, want: "refresh failed"},
+		{name: "request password reset API error", args: []string{"auth", "request-password-reset", "--base-url", server.URL, "--email", "reset@example.com"}, want: "password reset request failed"},
+		{name: "reset password API error", args: []string{"auth", "reset-password", "--base-url", server.URL, "--token", "reset-error", "--new-password", "newpassword123"}, want: "password reset confirm failed"},
+		{name: "logout API error", args: []string{"auth", "logout", "--base-url", server.URL, "--refresh-token", "refresh-error"}, want: "logout failed"},
+	}
+	for _, tc := range publicCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	t.Run("init save config error", func(t *testing.T) {
+		t.Setenv("HOME", "")
+		t.Setenv("XDG_CONFIG_HOME", "")
+
+		stdout.Reset()
+		err := app.run(context.Background(), []string{"auth", "init", "--base-url", server.URL, "--email", "init-save-error@example.com", "--password", "secret123"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "resolve user config dir")
+		assert.Empty(t, stdout.String())
+	})
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    server.URL,
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_auth_error_token",
+	}))
+
+	tokenCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "tenants API error", args: []string{"auth", "tenants"}, want: "tenant list failed"},
+		{name: "sessions API error", args: []string{"auth", "sessions"}, want: "session list failed"},
+		{name: "security events API error", args: []string{"auth", "security-events"}, want: "security event list failed"},
+		{name: "revoke session API error", args: []string{"auth", "revoke-session", "--id", "session-error"}, want: "session revoke failed"},
+		{name: "revoke all sessions API error", args: []string{"auth", "revoke-all-sessions"}, want: "all session revoke failed"},
+		{name: "change password API error", args: []string{"auth", "change-password", "--current-password", "oldpassword", "--new-password", "newpassword"}, want: "password change failed"},
+		{name: "status API error", args: []string{"auth", "status"}, want: "current user failed"},
+	}
+	for _, tc := range tokenCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
 }
 
 func TestCLITokenCommands(t *testing.T) {
