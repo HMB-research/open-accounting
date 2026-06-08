@@ -8715,6 +8715,11 @@ func TestCLIInventoryValidationBranches(t *testing.T) {
 			want: "file is required",
 		},
 		{
+			name: "stock import bad flag",
+			args: []string{"import", "--bad"},
+			want: "flag provided but not defined",
+		},
+		{
 			name: "stock import unreadable file",
 			args: []string{"import", "--file", filepath.Join(t.TempDir(), "missing.csv")},
 			want: "no such file",
@@ -8814,6 +8819,43 @@ func TestCLIInventoryCategoryFlagsAndAPIErrorBranches(t *testing.T) {
 			assert.Empty(t, stdout.String())
 		})
 	}
+}
+
+func TestCLIInventoryStockImportAPIErrorBranch(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	importFile := writeTempCSV(t, "stock.csv", "product_code,warehouse_code,quantity,lot_number\nSKU-001,MAIN,12,LOT-2026-01\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/api/v1/tenants/tenant-1/inventory/stock-import", r.URL.Path)
+
+		var req inventory.ImportStockAdjustmentsRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		assert.Equal(t, "stock.csv", req.FileName)
+		assert.Contains(t, req.CSVContent, "SKU-001")
+		assert.Contains(t, req.CSVContent, "LOT-2026-01")
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "stock import unavailable"})
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"inventory", "stock", "import", "--file", importFile})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "stock import unavailable")
+	assert.Empty(t, stdout.String())
 }
 
 func TestCLIInventoryTopLevelAuthFlagsAndAPIErrorBranches(t *testing.T) {
