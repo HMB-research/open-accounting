@@ -8,24 +8,25 @@
 
 ## Summary
 
-| Category | Working | Issues | Not Tested |
-|----------|---------|--------|------------|
-| Landing/Auth | 2/2 | 0 | 0 |
-| Core Accounting | 6/6 | 0 | 0 |
-| Business Operations | 7/7 | 0 | 0 |
-| Payroll | 5/5 | 0 | 0 |
-| Banking | 2/2 | 0 | 0 |
-| Tax & Compliance | 2/2 | 0 | 0 |
-| Reports | 3/3 | 0 | 0 |
-| Settings | 5/5 | 0 | 0 |
-| Admin | 1/1 | 0 | 0 |
-| **Total** | **33/33** | **0** | **0** |
+| Category            | Working   | Issues | Not Tested |
+| ------------------- | --------- | ------ | ---------- |
+| Landing/Auth        | 2/2       | 0      | 0          |
+| Core Accounting     | 6/6       | 0      | 0          |
+| Business Operations | 7/7       | 0      | 0          |
+| Payroll             | 5/5       | 0      | 0          |
+| Banking             | 2/2       | 0      | 0          |
+| Tax & Compliance    | 2/2       | 0      | 0          |
+| Reports             | 3/3       | 0      | 0          |
+| Settings            | 5/5       | 0      | 0          |
+| Admin               | 1/1       | 0      | 0          |
+| **Total**           | **33/33** | **0**  | **0**      |
 
 ---
 
 ## Testing Criteria
 
 Each view is tested for:
+
 1. **Page Load** - Does the page load without errors?
 2. **Data Display** - Does data render correctly in tables/lists?
 3. **Navigation** - Do all links/buttons navigate correctly?
@@ -34,6 +35,7 @@ Each view is tested for:
 6. **Responsive** - Does it work on mobile viewport?
 
 ### Status Legend
+
 - ✅ **Working** - All criteria pass
 - ⚠️ **Partial** - Some issues exist (see notes)
 - ❌ **Broken** - Critical issues prevent usage
@@ -46,16 +48,18 @@ Each view is tested for:
 ### Landing & Authentication
 
 #### / (Landing Page)
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Loads correctly with SvelteKit initialization |
-| Data Display | ✅ | Shows 6 core features: Invoicing, Payroll, Banking, TSD, Reports, Open Source |
-| Navigation | ✅ | Get Started → /login, Try Demo → /login, Learn More → features section, GitHub link |
-| CRUD | N/A | |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Mobile nav menu indicator not visible (needs manual verification) |
+
+| Criteria     | Status | Notes                                                                               |
+| ------------ | ------ | ----------------------------------------------------------------------------------- |
+| Page Load    | ✅     | Loads correctly with SvelteKit initialization                                       |
+| Data Display | ✅     | Shows 6 core features: Invoicing, Payroll, Banking, TSD, Reports, Open Source       |
+| Navigation   | ✅     | Get Started → /login, Try Demo → /login, Learn More → features section, GitHub link |
+| CRUD         | N/A    |                                                                                     |
+| Errors       | ✅     | No errors observed                                                                  |
+| Responsive   | ⚠️     | Mobile nav menu indicator not visible (needs manual verification)                   |
 
 **Features Verified:**
+
 - Hero section with clear value proposition
 - Estonian business targeting
 - Demo credentials displayed (demo@example.com / demo123)
@@ -66,18 +70,20 @@ Each view is tested for:
 ---
 
 #### /login
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Loads correctly |
-| Data Display | ✅ | Email field, Password field, Remember me checkbox, Language selector |
-| Navigation | ✅ | Sign In button, Create Account link |
-| CRUD | N/A | |
-| Errors | ✅ | Error handling for invalid credentials |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                                                |
+| ------------ | ------ | -------------------------------------------------------------------- |
+| Page Load    | ✅     | Loads correctly                                                      |
+| Data Display | ✅     | Email field, Password field, Remember me checkbox, Language selector |
+| Navigation   | ✅     | Sign In button, Create Account link                                  |
+| CRUD         | N/A    |                                                                      |
+| Errors       | ✅     | Error handling for invalid credentials                               |
+| Responsive   | ⚠️     | Needs manual verification                                            |
 
 **Features Verified:**
+
 - Email input field
-- Password input field with visibility toggle (eye icon) - *added recently*
+- Password input field with visibility toggle (eye icon) - _added recently_
 - "Remember me" checkbox for session persistence
 - Language selector (English/Eesti)
 - API endpoint configured correctly
@@ -91,16 +97,18 @@ Each view is tested for:
 ### Core Accounting
 
 #### /dashboard
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Loads correctly with tenant selector |
-| Data Display | ✅ | Cash Flow card, Recent Activity, Revenue vs Expenses chart all visible |
-| Navigation | ✅ | Navigation header visible with main menu items |
-| CRUD | N/A | |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Mobile navigation collapsed behind hamburger |
+
+| Criteria     | Status | Notes                                                                  |
+| ------------ | ------ | ---------------------------------------------------------------------- |
+| Page Load    | ✅     | Loads correctly with tenant selector                                   |
+| Data Display | ✅     | Cash Flow card, Recent Activity, Revenue vs Expenses chart all visible |
+| Navigation   | ✅     | Navigation header visible with main menu items                         |
+| CRUD         | N/A    |                                                                        |
+| Errors       | ✅     | No errors observed                                                     |
+| Responsive   | ⚠️     | Mobile navigation collapsed behind hamburger                           |
 
 **E2E Tests:** 6/6 passed
+
 - Organization selector or dashboard content displays
 - Cash Flow card visible
 - Recent Activity section visible
@@ -113,16 +121,18 @@ Each view is tested for:
 ---
 
 #### /accounts
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Loads correctly |
-| Data Display | ✅ | Shows 20+ accounts with codes (1000, 1100, etc.) and types (Asset, Liability) |
-| Navigation | ✅ | Navigation works |
-| CRUD | ⚠️ | Read verified, Create/Update/Delete not tested |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                                                         |
+| ------------ | ------ | ----------------------------------------------------------------------------- |
+| Page Load    | ✅     | Loads correctly                                                               |
+| Data Display | ✅     | Shows 20+ accounts with codes (1000, 1100, etc.) and types (Asset, Liability) |
+| Navigation   | ✅     | Navigation works                                                              |
+| CRUD         | ⚠️     | Read verified, Create/Update/Delete not tested                                |
+| Errors       | ✅     | No errors observed                                                            |
+| Responsive   | ⚠️     | Needs manual verification                                                     |
 
 **E2E Tests:** 4/4 passed
+
 - Displays seeded accounts (Cash, Bank Account EUR)
 - Shows account codes (1000-series)
 - Shows different account types (Asset, Liability)
@@ -133,16 +143,18 @@ Each view is tested for:
 ---
 
 #### /journal
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Loads correctly with heading |
-| Data Display | ✅ | Shows entries or empty state appropriately |
-| Navigation | ✅ | New entry button visible |
-| CRUD | ⚠️ | Read verified, Create/Update/Delete not tested |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                          |
+| ------------ | ------ | ---------------------------------------------- |
+| Page Load    | ✅     | Loads correctly with heading                   |
+| Data Display | ✅     | Shows entries or empty state appropriately     |
+| Navigation   | ✅     | New entry button visible                       |
+| CRUD         | ⚠️     | Read verified, Create/Update/Delete not tested |
+| Errors       | ✅     | No errors observed                             |
+| Responsive   | ⚠️     | Needs manual verification                      |
 
 **E2E Tests:** 3/3 passed
+
 - Journal entries page heading visible
 - New entry button or empty state visible
 - Page structure correct (heading + action buttons)
@@ -152,16 +164,18 @@ Each view is tested for:
 ---
 
 #### /invoices
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Loads correctly |
-| Data Display | ✅ | Shows seeded invoices with proper columns |
-| Navigation | ✅ | New Invoice button works |
-| CRUD | ✅ | Create modal opens, form has required fields, inline contact creation |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                                                 |
+| ------------ | ------ | --------------------------------------------------------------------- |
+| Page Load    | ✅     | Loads correctly                                                       |
+| Data Display | ✅     | Shows seeded invoices with proper columns                             |
+| Navigation   | ✅     | New Invoice button works                                              |
+| CRUD         | ✅     | Create modal opens, form has required fields, inline contact creation |
+| Errors       | ✅     | No errors observed                                                    |
+| Responsive   | ⚠️     | Needs manual verification                                             |
 
 **E2E Tests:** 13/13 passed
+
 - Displays seeded invoices
 - Shows invoice statuses (Paid, Sent, etc.)
 - New Invoice button visible
@@ -175,16 +189,18 @@ Each view is tested for:
 ---
 
 #### /invoices/reminders
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Loads correctly with heading |
-| Data Display | ✅ | Shows overdue invoices or empty state, summary statistics |
-| Navigation | ✅ | Refresh button, back to invoices link |
-| CRUD | ✅ | Select invoices, send reminders modal with custom message |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                                     |
+| ------------ | ------ | --------------------------------------------------------- |
+| Page Load    | ✅     | Loads correctly with heading                              |
+| Data Display | ✅     | Shows overdue invoices or empty state, summary statistics |
+| Navigation   | ✅     | Refresh button, back to invoices link                     |
+| CRUD         | ✅     | Select invoices, send reminders modal with custom message |
+| Errors       | ✅     | No errors observed                                        |
+| Responsive   | ⚠️     | Needs manual verification                                 |
 
 **E2E Tests:** 14/14 passed
+
 - Page heading visible
 - Refresh and back buttons work
 - Overdue summary statistics display
@@ -200,20 +216,21 @@ Each view is tested for:
 ---
 
 #### /contacts
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Loads correctly |
-| Data Display | ✅ | Shows seeded customer and supplier contacts with email/phone |
-| Navigation | ✅ | Works correctly |
-| CRUD | ⚠️ | Read verified, Create/Update/Delete not tested |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Needs manual verification |
 
-**E2E Tests:** 4/4 passed
-- Displays seeded customer contacts
-- Displays seeded supplier contacts
-- Shows correct contact count
-- Contact details include email and phone
+| Criteria     | Status | Notes                                                                        |
+| ------------ | ------ | ---------------------------------------------------------------------------- |
+| Page Load    | ✅     | Loads correctly                                                              |
+| Data Display | ✅     | Shows seeded customer and supplier contacts with email/phone                 |
+| Navigation   | ✅     | Works correctly                                                              |
+| CRUD         | ✅     | Create, update, delete, search, and type filtering verified through demo E2E |
+| Errors       | ✅     | No errors observed                                                           |
+| Responsive   | ⚠️     | Needs manual verification                                                    |
+
+**E2E Tests:** 3/3 passed
+
+- Displays seeded contacts with workflow controls
+- Creates a customer and filters it by search and type
+- Creates, edits, and deletes a contact
 
 **Overall:** ✅ Working
 
@@ -222,22 +239,25 @@ Each view is tested for:
 ### Business Operations
 
 #### /quotes
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Loads correctly |
-| Data Display | ✅ | Shows quotes with statuses in table |
-| Navigation | ✅ | New Quote button visible, status filter works, accepted quote conversion action visible |
-| CRUD | ✅ | Create, delete, send, accept, and quote-to-invoice conversion verified |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                                                                   |
+| ------------ | ------ | --------------------------------------------------------------------------------------- |
+| Page Load    | ✅     | Loads correctly                                                                         |
+| Data Display | ✅     | Shows quotes with statuses in table                                                     |
+| Navigation   | ✅     | New Quote button visible, status filter works, accepted quote conversion action visible |
+| CRUD         | ✅     | Create, delete, send, accept, and quote-to-invoice conversion verified                  |
+| Errors       | ✅     | No errors observed                                                                      |
+| Responsive   | ⚠️     | Needs manual verification                                                               |
 
 **E2E Tests:** 4/4 passed
+
 - Displays seeded quotes with statuses and controls
 - Creates a quote and filters by status
 - Creates and deletes a draft quote
 - Sends, accepts, and converts a quote into a draft invoice
 
 **Known Issues (require manual verification):**
+
 - Email quote functionality needs implementation
 - Quote PDF generation needs verification
 
@@ -246,22 +266,25 @@ Each view is tested for:
 ---
 
 #### /orders
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Loads correctly |
-| Data Display | ✅ | Shows orders with statuses, links to quotes |
-| Navigation | ✅ | New Order button visible, status filter works |
-| CRUD | ✅ | Create, delete, status workflow, and order-to-invoice conversion verified |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                                                     |
+| ------------ | ------ | ------------------------------------------------------------------------- |
+| Page Load    | ✅     | Loads correctly                                                           |
+| Data Display | ✅     | Shows orders with statuses, links to quotes                               |
+| Navigation   | ✅     | New Order button visible, status filter works                             |
+| CRUD         | ✅     | Create, delete, status workflow, and order-to-invoice conversion verified |
+| Errors       | ✅     | No errors observed                                                        |
+| Responsive   | ⚠️     | Needs manual verification                                                 |
 
 **E2E Tests:** 4/4 passed
+
 - Displays seeded orders with statuses and controls
 - Creates an order and filters by status
 - Creates and deletes a pending order
 - Moves an order through lifecycle and converts the delivered order into a draft invoice
 
 **Known Issues (require manual verification):**
+
 - Email/order PDF workflows need verification
 
 **Overall:** ✅ Working
@@ -269,16 +292,18 @@ Each view is tested for:
 ---
 
 #### /payments
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Loads correctly |
-| Data Display | ✅ | Shows payments content with heading |
-| Navigation | ✅ | New payment button visible, payment type filter works |
-| CRUD | ⚠️ | Read verified, Create/Update/Delete not tested |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                                 |
+| ------------ | ------ | ----------------------------------------------------- |
+| Page Load    | ✅     | Loads correctly                                       |
+| Data Display | ✅     | Shows payments content with heading                   |
+| Navigation   | ✅     | New payment button visible, payment type filter works |
+| CRUD         | ⚠️     | Read verified, Create/Update/Delete not tested        |
+| Errors       | ✅     | No errors observed                                    |
+| Responsive   | ⚠️     | Needs manual verification                             |
 
 **E2E Tests:** 4/4 passed
+
 - Displays payments page content
 - Shows payment page heading
 - Has new payment button
@@ -289,16 +314,18 @@ Each view is tested for:
 ---
 
 #### /payments/cash
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Loads correctly |
-| Data Display | ✅ | Shows cash payments content |
-| Navigation | ✅ | Page structure and tabs visible |
-| CRUD | ⚠️ | Read verified, Create/Update/Delete not tested |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                          |
+| ------------ | ------ | ---------------------------------------------- |
+| Page Load    | ✅     | Loads correctly                                |
+| Data Display | ✅     | Shows cash payments content                    |
+| Navigation   | ✅     | Page structure and tabs visible                |
+| CRUD         | ⚠️     | Read verified, Create/Update/Delete not tested |
+| Errors       | ✅     | No errors observed                             |
+| Responsive   | ⚠️     | Needs manual verification                      |
 
 **E2E Tests:** 5/5 passed
+
 - Displays cash payments page with correct structure
 - Shows summary cards or empty state
 - Navigation tabs work
@@ -309,16 +336,18 @@ Each view is tested for:
 ---
 
 #### /recurring
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Loads correctly |
-| Data Display | ✅ | Shows recurring invoices or empty state |
-| Navigation | ✅ | Page heading visible |
-| CRUD | ⚠️ | Read verified, Create/Update/Delete not tested |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                          |
+| ------------ | ------ | ---------------------------------------------- |
+| Page Load    | ✅     | Loads correctly                                |
+| Data Display | ✅     | Shows recurring invoices or empty state        |
+| Navigation   | ✅     | Page heading visible                           |
+| CRUD         | ⚠️     | Read verified, Create/Update/Delete not tested |
+| Errors       | ✅     | No errors observed                             |
+| Responsive   | ⚠️     | Needs manual verification                      |
 
 **E2E Tests:** 4/4 passed
+
 - Displays seeded recurring invoices or empty state
 - Shows frequency types (Monthly, Quarterly, Yearly)
 - Shows correct recurring invoice count
@@ -329,16 +358,18 @@ Each view is tested for:
 ---
 
 #### /assets
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Loads correctly |
-| Data Display | ✅ | Shows fixed assets with table/list |
-| Navigation | ✅ | New Asset button visible, filters work |
-| CRUD | ⚠️ | Read verified, Create/Update/Delete not tested |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                          |
+| ------------ | ------ | ---------------------------------------------- |
+| Page Load    | ✅     | Loads correctly                                |
+| Data Display | ✅     | Shows fixed assets with table/list             |
+| Navigation   | ✅     | New Asset button visible, filters work         |
+| CRUD         | ⚠️     | Read verified, Create/Update/Delete not tested |
+| Errors       | ✅     | No errors observed                             |
+| Responsive   | ⚠️     | Needs manual verification                      |
 
 **E2E Tests:** 5/5 passed
+
 - Displays assets page with correct structure
 - Shows asset categories
 - Shows depreciation information
@@ -350,16 +381,18 @@ Each view is tested for:
 ---
 
 #### /inventory
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Loads correctly |
-| Data Display | ✅ | Shows seeded products, warehouses, and product categories |
-| Navigation | ✅ | Product, warehouse, and category tabs verified |
-| CRUD | ✅ | Product create and delete verified through demo E2E |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                                     |
+| ------------ | ------ | --------------------------------------------------------- |
+| Page Load    | ✅     | Loads correctly                                           |
+| Data Display | ✅     | Shows seeded products, warehouses, and product categories |
+| Navigation   | ✅     | Product, warehouse, and category tabs verified            |
+| CRUD         | ✅     | Product create and delete verified through demo E2E       |
+| Errors       | ✅     | No errors observed                                        |
+| Responsive   | ⚠️     | Needs manual verification                                 |
 
 **E2E Tests:** 7/7 passed
+
 - Displays seeded products and inventory controls
 - Filters products by search, type, and category
 - Shows warehouse and category tabs with seeded data
@@ -368,6 +401,7 @@ Each view is tested for:
 - Records and displays stock lot metadata
 
 **Known Limitations (not bugs):**
+
 - The current UI exposes product create/delete, stock transfer, stock adjustment, and movement review workflows; inline edit controls are not present.
 - Backend/API/CLI support now exists for warehouses, stock levels, signed stock adjustments, transfers, reservations, imports, valuation, and movement metadata; this view is no longer classified as missing stock or warehouse management.
 
@@ -380,16 +414,18 @@ Each view is tested for:
 > **Note:** E2E tests blocked by demo user credential mismatch (demo1-4@example.com users not seeded in Railway). Pages verified via WebFetch showing correct rendering.
 
 #### /employees
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Page renders with "Employees" heading |
-| Data Display | ✅ | Shows "+ New Employee" button, "Active only" filter, loading state |
-| Navigation | ✅ | Navigation visible |
-| CRUD | ⚠️ | Read verified, Create/Update/Delete need E2E |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                                              |
+| ------------ | ------ | ------------------------------------------------------------------ |
+| Page Load    | ✅     | Page renders with "Employees" heading                              |
+| Data Display | ✅     | Shows "+ New Employee" button, "Active only" filter, loading state |
+| Navigation   | ✅     | Navigation visible                                                 |
+| CRUD         | ⚠️     | Read verified, Create/Update/Delete need E2E                       |
+| Errors       | ✅     | No errors observed                                                 |
+| Responsive   | ⚠️     | Needs manual verification                                          |
 
 **Features Verified:**
+
 - Employee list view with table structure
 - Add new employee button
 - Active/inactive filter toggle
@@ -400,16 +436,18 @@ Each view is tested for:
 ---
 
 #### /employees/absences
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Page renders as "Leave Management" |
-| Data Display | ✅ | Year filter (2022-2026), Employee filter, two tabs (Leave Records, Leave Balances) |
-| Navigation | ✅ | Request Leave button visible |
-| CRUD | ⚠️ | Read verified, need E2E for full CRUD |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                                                              |
+| ------------ | ------ | ---------------------------------------------------------------------------------- |
+| Page Load    | ✅     | Page renders as "Leave Management"                                                 |
+| Data Display | ✅     | Year filter (2022-2026), Employee filter, two tabs (Leave Records, Leave Balances) |
+| Navigation   | ✅     | Request Leave button visible                                                       |
+| CRUD         | ⚠️     | Read verified, need E2E for full CRUD                                              |
+| Errors       | ✅     | No errors observed                                                                 |
+| Responsive   | ⚠️     | Needs manual verification                                                          |
 
 **Features Verified:**
+
 - Leave request creation button
 - Year filter dropdown
 - Employee filter (All Employees default)
@@ -420,16 +458,18 @@ Each view is tested for:
 ---
 
 #### /payroll
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Page renders with "Payroll Runs" heading |
-| Data Display | ✅ | "+ New Payroll Run" button, year filter, Estonian tax rates reference table |
-| Navigation | ✅ | Navigation visible |
-| CRUD | ⚠️ | Read verified, need E2E for full CRUD |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                                                       |
+| ------------ | ------ | --------------------------------------------------------------------------- |
+| Page Load    | ✅     | Page renders with "Payroll Runs" heading                                    |
+| Data Display | ✅     | "+ New Payroll Run" button, year filter, Estonian tax rates reference table |
+| Navigation   | ✅     | Navigation visible                                                          |
+| CRUD         | ⚠️     | Read verified, need E2E for full CRUD                                       |
+| Errors       | ✅     | No errors observed                                                          |
+| Responsive   | ⚠️     | Needs manual verification                                                   |
 
 **Features Verified:**
+
 - Payroll runs list view
 - New payroll run button
 - Year filter (2022-2026)
@@ -445,16 +485,18 @@ Each view is tested for:
 ---
 
 #### /payroll/calculator
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Estonian Payroll Tax Calculator renders |
-| Data Display | ✅ | Gross salary input, tax exemption checkbox, Funded Pension selector |
-| Navigation | ✅ | Navigation visible |
-| CRUD | N/A | Calculator tool, no data persistence |
-| Errors | ✅ | Shows "Enter a gross salary to see calculations" prompt |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                                               |
+| ------------ | ------ | ------------------------------------------------------------------- |
+| Page Load    | ✅     | Estonian Payroll Tax Calculator renders                             |
+| Data Display | ✅     | Gross salary input, tax exemption checkbox, Funded Pension selector |
+| Navigation   | ✅     | Navigation visible                                                  |
+| CRUD         | N/A    | Calculator tool, no data persistence                                |
+| Errors       | ✅     | Shows "Enter a gross salary to see calculations" prompt             |
+| Responsive   | ⚠️     | Needs manual verification                                           |
 
 **Features Verified:**
+
 - Gross salary input field (EUR)
 - Basic tax exemption toggle with amount field (max 700 EUR/month - 2024 rates)
 - Funded Pension (II Pillar) selector: 0%, 2%, 4%
@@ -466,16 +508,18 @@ Each view is tested for:
 ---
 
 #### /tsd
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | TSD Declarations page renders |
-| Data Display | ✅ | Year selector (2022-2026), 6-step workflow displayed |
-| Navigation | ✅ | Navigation visible |
-| CRUD | ⚠️ | Read verified, need E2E for XML export/submission |
-| Errors | ✅ | Shows "Automatic e-MTA submission is not yet available" notice |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                                          |
+| ------------ | ------ | -------------------------------------------------------------- |
+| Page Load    | ✅     | TSD Declarations page renders                                  |
+| Data Display | ✅     | Year selector (2022-2026), 6-step workflow displayed           |
+| Navigation   | ✅     | Navigation visible                                             |
+| CRUD         | ⚠️     | Read verified, need E2E for XML export/submission              |
+| Errors       | ✅     | Shows "Automatic e-MTA submission is not yet available" notice |
+| Responsive   | ⚠️     | Needs manual verification                                      |
 
 **Features Verified:**
+
 - TSD (Tulu- ja sotsiaalmaksu deklaratsioon) management
 - Year selector dropdown
 - Manual submission workflow steps:
@@ -496,16 +540,18 @@ Each view is tested for:
 > **Note:** Verified via WebFetch (E2E tests blocked by demo user credential mismatch).
 
 #### /banking
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Page renders with "Bank Reconciliation" heading |
-| Data Display | ✅ | "Add Bank Account" button visible |
-| Navigation | ✅ | Navigation visible |
-| CRUD | ⚠️ | Read verified, need E2E for full CRUD |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                           |
+| ------------ | ------ | ----------------------------------------------- |
+| Page Load    | ✅     | Page renders with "Bank Reconciliation" heading |
+| Data Display | ✅     | "Add Bank Account" button visible               |
+| Navigation   | ✅     | Navigation visible                              |
+| CRUD         | ⚠️     | Read verified, need E2E for full CRUD           |
+| Errors       | ✅     | No errors observed                              |
+| Responsive   | ⚠️     | Needs manual verification                       |
 
 **Features Verified:**
+
 - Bank Reconciliation interface
 - Add Bank Account action button
 - Client-side rendering with API connection
@@ -515,16 +561,18 @@ Each view is tested for:
 ---
 
 #### /banking/import
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Page renders with "Import Bank Transactions" heading |
-| Data Display | ✅ | Import settings, account selector, LHV/generic format presets, and file preview visible |
-| Navigation | ✅ | Back navigation visible; successful import returns to banking view |
-| CRUD | ✅ | LHV CSV upload/import verified through UI and resulting transaction appears in banking list |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                                                                       |
+| ------------ | ------ | ------------------------------------------------------------------------------------------- |
+| Page Load    | ✅     | Page renders with "Import Bank Transactions" heading                                        |
+| Data Display | ✅     | Import settings, account selector, LHV/generic format presets, and file preview visible     |
+| Navigation   | ✅     | Back navigation visible; successful import returns to banking view                          |
+| CRUD         | ✅     | LHV CSV upload/import verified through UI and resulting transaction appears in banking list |
+| Errors       | ✅     | No errors observed                                                                          |
+| Responsive   | ⚠️     | Needs manual verification                                                                   |
 
 **E2E Tests:** 5/5 passed
+
 - Displays bank import settings, account selector, file input, preset selector, duplicate toggle, and disabled submit state before file selection
 - Shows seeded demo bank accounts in the import account selector
 - Exposes Auto, Generic CSV, LHV CSV, and LHV CAMT.053 format presets
@@ -540,16 +588,18 @@ Each view is tested for:
 > **Note:** Pages require tenant selection. Verified via WebFetch showing correct structure.
 
 #### /tax
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Page renders as "VAT Declarations (KMD)" |
-| Data Display | ✅ | Framework scaffold visible, awaiting tenant |
-| Navigation | ✅ | Back navigation visible |
-| CRUD | N/A | |
-| Errors | ✅ | No errors - expected tenant selection state |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                       |
+| ------------ | ------ | ------------------------------------------- |
+| Page Load    | ✅     | Page renders as "VAT Declarations (KMD)"    |
+| Data Display | ✅     | Framework scaffold visible, awaiting tenant |
+| Navigation   | ✅     | Back navigation visible                     |
+| CRUD         | N/A    |                                             |
+| Errors       | ✅     | No errors - expected tenant selection state |
+| Responsive   | ⚠️     | Needs manual verification                   |
 
 **Features Verified:**
+
 - VAT Declarations (KMD) heading
 - Estonian tax compliance interface
 - Tenant selection prompt (expected UX)
@@ -559,16 +609,18 @@ Each view is tested for:
 ---
 
 #### /vat-returns
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Page renders with "VAT Returns" heading |
-| Data Display | ✅ | Shows tenant selection prompt as expected |
-| Navigation | ✅ | Dashboard link visible |
-| CRUD | ⚠️ | Need tenant + E2E for full verification |
-| Errors | ✅ | No errors - shows "Select a tenant from Dashboard" |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                              |
+| ------------ | ------ | -------------------------------------------------- |
+| Page Load    | ✅     | Page renders with "VAT Returns" heading            |
+| Data Display | ✅     | Shows tenant selection prompt as expected          |
+| Navigation   | ✅     | Dashboard link visible                             |
+| CRUD         | ⚠️     | Need tenant + E2E for full verification            |
+| Errors       | ✅     | No errors - shows "Select a tenant from Dashboard" |
+| Responsive   | ⚠️     | Needs manual verification                          |
 
 **Features Verified:**
+
 - VAT Returns interface
 - Tenant selection workflow prompt
 - Client-side rendering ready
@@ -582,16 +634,18 @@ Each view is tested for:
 > **Note:** Pages require tenant selection. Verified via WebFetch showing correct structure.
 
 #### /reports
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Page renders with "Financial Reports" heading |
-| Data Display | ✅ | Shows tenant selection prompt as expected |
-| Navigation | ✅ | Dashboard link visible |
-| CRUD | N/A | |
-| Errors | ✅ | No errors - expected tenant selection state |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                         |
+| ------------ | ------ | --------------------------------------------- |
+| Page Load    | ✅     | Page renders with "Financial Reports" heading |
+| Data Display | ✅     | Shows tenant selection prompt as expected     |
+| Navigation   | ✅     | Dashboard link visible                        |
+| CRUD         | N/A    |                                               |
+| Errors       | ✅     | No errors - expected tenant selection state   |
+| Responsive   | ⚠️     | Needs manual verification                     |
 
 **Features Verified:**
+
 - Financial Reports hub
 - Tenant selection workflow
 - Navigation to Dashboard
@@ -601,16 +655,18 @@ Each view is tested for:
 ---
 
 #### /reports/balance-confirmations
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Page renders with "Balance Confirmations" heading |
-| Data Display | ✅ | Back navigation to reports visible |
-| Navigation | ✅ | Reports link visible |
-| CRUD | ⚠️ | Need tenant + E2E for full verification |
-| Errors | ✅ | No errors - shows "Select a tenant from Dashboard" |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                              |
+| ------------ | ------ | -------------------------------------------------- |
+| Page Load    | ✅     | Page renders with "Balance Confirmations" heading  |
+| Data Display | ✅     | Back navigation to reports visible                 |
+| Navigation   | ✅     | Reports link visible                               |
+| CRUD         | ⚠️     | Need tenant + E2E for full verification            |
+| Errors       | ✅     | No errors - shows "Select a tenant from Dashboard" |
+| Responsive   | ⚠️     | Needs manual verification                          |
 
 **Features Verified:**
+
 - Balance Confirmations interface
 - Back navigation to reports section
 - Tenant selection prerequisite
@@ -620,16 +676,18 @@ Each view is tested for:
 ---
 
 #### /reports/cash-flow
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Page renders with "Cash Flow Statement" heading |
-| Data Display | ✅ | Shows tenant selection prompt as expected |
-| Navigation | ✅ | Reports and Dashboard links visible |
-| CRUD | N/A | |
-| Errors | ✅ | No errors - expected tenant selection state |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                           |
+| ------------ | ------ | ----------------------------------------------- |
+| Page Load    | ✅     | Page renders with "Cash Flow Statement" heading |
+| Data Display | ✅     | Shows tenant selection prompt as expected       |
+| Navigation   | ✅     | Reports and Dashboard links visible             |
+| CRUD         | N/A    |                                                 |
+| Errors       | ✅     | No errors - expected tenant selection state     |
+| Responsive   | ⚠️     | Needs manual verification                       |
 
 **Features Verified:**
+
 - Cash Flow Statement report
 - Navigation links to reports and dashboard
 - Tenant selection workflow
@@ -643,16 +701,18 @@ Each view is tested for:
 > **Note:** Verified via WebFetch. Settings hub fully rendered, sub-pages in loading state (expected).
 
 #### /settings
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Settings hub renders with 3 categories |
-| Data Display | ✅ | Company Profile, Email Settings, Plugins cards visible |
-| Navigation | ✅ | Navigation to each settings section works |
-| CRUD | N/A | |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                                  |
+| ------------ | ------ | ------------------------------------------------------ |
+| Page Load    | ✅     | Settings hub renders with 3 categories                 |
+| Data Display | ✅     | Company Profile, Email Settings, Plugins cards visible |
+| Navigation   | ✅     | Navigation to each settings section works              |
+| CRUD         | N/A    |                                                        |
+| Errors       | ✅     | No errors observed                                     |
+| Responsive   | ⚠️     | Needs manual verification                              |
 
 **Features Verified:**
+
 - Settings hub with 3 main categories:
   1. **Company Profile** - "Manage company details, branding, VAT number, and regional settings"
   2. **Email Settings** - "Configure SMTP settings and email templates"
@@ -664,16 +724,18 @@ Each view is tested for:
 ---
 
 #### /settings/company
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Page renders with "Company Settings" heading |
-| Data Display | ✅ | Loading state visible (expected for client-side render) |
-| Navigation | ✅ | Back navigation to settings visible |
-| CRUD | ⚠️ | Need E2E for full verification |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                                   |
+| ------------ | ------ | ------------------------------------------------------- |
+| Page Load    | ✅     | Page renders with "Company Settings" heading            |
+| Data Display | ✅     | Loading state visible (expected for client-side render) |
+| Navigation   | ✅     | Back navigation to settings visible                     |
+| CRUD         | ⚠️     | Need E2E for full verification                          |
+| Errors       | ✅     | No errors observed                                      |
+| Responsive   | ⚠️     | Needs manual verification                               |
 
 **Features Verified:**
+
 - Company Settings interface
 - Back navigation to settings section
 - Client-side form loading ready
@@ -683,16 +745,18 @@ Each view is tested for:
 ---
 
 #### /settings/email
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Page renders with "Email Settings" heading |
-| Data Display | ✅ | Loading state visible (expected for client-side render) |
-| Navigation | ✅ | Back navigation to dashboard visible |
-| CRUD | ⚠️ | SMTP configuration needs E2E verification |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                                   |
+| ------------ | ------ | ------------------------------------------------------- |
+| Page Load    | ✅     | Page renders with "Email Settings" heading              |
+| Data Display | ✅     | Loading state visible (expected for client-side render) |
+| Navigation   | ✅     | Back navigation to dashboard visible                    |
+| CRUD         | ⚠️     | SMTP configuration needs E2E verification               |
+| Errors       | ✅     | No errors observed                                      |
+| Responsive   | ⚠️     | Needs manual verification                               |
 
 **Features Verified:**
+
 - Email Settings interface
 - SMTP configuration form loading
 - Navigation structure
@@ -702,16 +766,18 @@ Each view is tested for:
 ---
 
 #### /settings/plugins
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Page renders with "Plugin Settings" heading |
-| Data Display | ✅ | "Manage plugins for your organization" subtitle visible |
-| Navigation | ✅ | Navigation visible |
-| CRUD | ⚠️ | Plugin enable/disable needs E2E verification |
-| Errors | ✅ | Shows "Loading plugins..." - expected state |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                                   |
+| ------------ | ------ | ------------------------------------------------------- |
+| Page Load    | ✅     | Page renders with "Plugin Settings" heading             |
+| Data Display | ✅     | "Manage plugins for your organization" subtitle visible |
+| Navigation   | ✅     | Navigation visible                                      |
+| CRUD         | ⚠️     | Plugin enable/disable needs E2E verification            |
+| Errors       | ✅     | Shows "Loading plugins..." - expected state             |
+| Responsive   | ⚠️     | Needs manual verification                               |
 
 **Features Verified:**
+
 - Plugin Settings management interface
 - Plugin list loading state
 - Organization-level plugin management
@@ -721,16 +787,18 @@ Each view is tested for:
 ---
 
 #### /settings/cost-centers
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Page renders with "Cost Centers" heading |
-| Data Display | ✅ | "+ Add Cost Center" button visible, Loading state |
-| Navigation | ✅ | Navigation visible |
-| CRUD | ⚠️ | Add/Edit/Delete needs E2E verification |
-| Errors | ✅ | No errors observed |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                             |
+| ------------ | ------ | ------------------------------------------------- |
+| Page Load    | ✅     | Page renders with "Cost Centers" heading          |
+| Data Display | ✅     | "+ Add Cost Center" button visible, Loading state |
+| Navigation   | ✅     | Navigation visible                                |
+| CRUD         | ⚠️     | Add/Edit/Delete needs E2E verification            |
+| Errors       | ✅     | No errors observed                                |
+| Responsive   | ⚠️     | Needs manual verification                         |
 
 **Features Verified:**
+
 - Cost Centers management interface
 - "Manage cost centers for expense tracking and budget allocation" description
 - Add Cost Center action button
@@ -745,16 +813,18 @@ Each view is tested for:
 > **Note:** Verified via WebFetch. Plugin marketplace interface renders correctly.
 
 #### /admin/plugins
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Page Load | ✅ | Plugin marketplace renders |
-| Data Display | ✅ | Search, "Install from URL", Installed Plugins (0), Registries (0) visible |
-| Navigation | ✅ | Navigation visible |
-| CRUD | ⚠️ | Plugin installation needs E2E verification |
-| Errors | ✅ | Shows "Loading..." - expected initial state |
-| Responsive | ⚠️ | Needs manual verification |
+
+| Criteria     | Status | Notes                                                                     |
+| ------------ | ------ | ------------------------------------------------------------------------- |
+| Page Load    | ✅     | Plugin marketplace renders                                                |
+| Data Display | ✅     | Search, "Install from URL", Installed Plugins (0), Registries (0) visible |
+| Navigation   | ✅     | Navigation visible                                                        |
+| CRUD         | ⚠️     | Plugin installation needs E2E verification                                |
+| Errors       | ✅     | Shows "Loading..." - expected initial state                               |
+| Responsive   | ⚠️     | Needs manual verification                                                 |
 
 **Features Verified:**
+
 - Plugin Marketplace interface
 - Search functionality ready
 - "Install from URL" option
@@ -769,49 +839,53 @@ Each view is tested for:
 ## Issues Summary
 
 ### Critical Issues (Blocking)
+
 _None identified - All 33 views render correctly_
 
 ### Major Issues (Functional Problems)
+
 _None identified_
 
 ### Minor Issues (Polish/UX)
+
 1. **Responsive Design** - All views need manual mobile viewport verification
 2. **E2E Test Infrastructure** - Demo users (demo1-4@example.com) not seeded in Railway, blocking automated E2E tests for some pages
 
 ### Known Feature Gaps (Not Bugs)
+
 1. **/tsd** - Automatic e-MTA submission not yet available (manual XML export required)
 
 ---
 
 ## Change Log
 
-| Date | Tester | Changes |
-|------|--------|---------|
-| 2026-06-08 | Codex | Replaced soft `/inventory` checks with product, warehouse, category, filter, create/delete, transfer, and stock lot metadata E2E coverage |
-| 2026-06-08 | Codex | Replaced soft `/banking/import` checks with real LHV CSV preview/import E2E coverage and updated the UI audit evidence |
-| 2026-05-30 | Codex | Corrected stale inventory limitations against current repository evidence; stock and warehouse workflows now exist outside this historical UI sweep |
-| 2026-01-12 | Claude | **COMPLETE** - All 33 views tested, all working |
-| 2026-01-12 | Claude | Tested Admin Plugins (/admin/plugins) - Working (WebFetch) |
-| 2026-01-12 | Claude | Tested Settings section (5 pages) - All Working (WebFetch) |
-| 2026-01-12 | Claude | Tested Reports section (3 pages) - All Working (WebFetch) |
-| 2026-01-12 | Claude | Tested Tax & Compliance section (2 pages) - All Working (WebFetch) |
-| 2026-01-12 | Claude | Tested Banking section (2 pages) - All Working (WebFetch) |
-| 2026-01-12 | Claude | Tested Payroll section (5 pages) - All Working (WebFetch) |
-| 2026-01-12 | Claude | Note: E2E tests blocked by demo user credential mismatch (demo1-4 not seeded) |
-| 2026-06-08 | Codex | Tested Quotes (/quotes) - Working (4/4 E2E tests passed, quote-to-invoice conversion verified) |
-| 2026-01-11 | Claude | Tested Cash Payments (/payments/cash) - Working (5/5 E2E tests passed) |
-| 2026-01-11 | Claude | Tested Recurring (/recurring) - Working (4/4 E2E tests passed) |
-| 2026-01-11 | Claude | Tested Fixed Assets (/assets) - Working (5/5 E2E tests passed) |
-| 2026-01-11 | Claude | Tested Inventory (/inventory) - Working (5/5 E2E tests passed) |
-| 2026-01-11 | Claude | Tested Quotes (/quotes) - Working (4/4 E2E tests passed) |
-| 2026-01-11 | Claude | Tested Orders (/orders) - Working (6/6 E2E tests passed) |
-| 2026-01-11 | Claude | Tested Payments (/payments) - Working (4/4 E2E tests passed) |
-| 2026-01-11 | Claude | Tested Invoices (/invoices) - Working (13/13 E2E tests passed) |
-| 2026-01-11 | Claude | Tested Payment Reminders (/invoices/reminders) - Working (14/14 E2E tests passed) |
-| 2026-01-11 | Claude | Tested Contacts (/contacts) - Working (4/4 E2E tests passed) |
-| 2026-01-11 | Claude | Tested Dashboard (/dashboard) - Working (6/6 E2E tests passed) |
-| 2026-01-11 | Claude | Tested Accounts (/accounts) - Working (4/4 E2E tests passed) |
-| 2026-01-11 | Claude | Tested Journal (/journal) - Working (3/3 E2E tests passed) |
-| 2026-01-11 | Claude | Tested Landing page (/) - Working |
-| 2026-01-11 | Claude | Tested Login page (/login) - Working |
-| 2026-01-11 | - | Initial template created |
+| Date       | Tester | Changes                                                                                                                                             |
+| ---------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-06-08 | Codex  | Replaced soft `/inventory` checks with product, warehouse, category, filter, create/delete, transfer, and stock lot metadata E2E coverage           |
+| 2026-06-08 | Codex  | Replaced soft `/banking/import` checks with real LHV CSV preview/import E2E coverage and updated the UI audit evidence                              |
+| 2026-05-30 | Codex  | Corrected stale inventory limitations against current repository evidence; stock and warehouse workflows now exist outside this historical UI sweep |
+| 2026-01-12 | Claude | **COMPLETE** - All 33 views tested, all working                                                                                                     |
+| 2026-01-12 | Claude | Tested Admin Plugins (/admin/plugins) - Working (WebFetch)                                                                                          |
+| 2026-01-12 | Claude | Tested Settings section (5 pages) - All Working (WebFetch)                                                                                          |
+| 2026-01-12 | Claude | Tested Reports section (3 pages) - All Working (WebFetch)                                                                                           |
+| 2026-01-12 | Claude | Tested Tax & Compliance section (2 pages) - All Working (WebFetch)                                                                                  |
+| 2026-01-12 | Claude | Tested Banking section (2 pages) - All Working (WebFetch)                                                                                           |
+| 2026-01-12 | Claude | Tested Payroll section (5 pages) - All Working (WebFetch)                                                                                           |
+| 2026-01-12 | Claude | Note: E2E tests blocked by demo user credential mismatch (demo1-4 not seeded)                                                                       |
+| 2026-06-08 | Codex  | Tested Quotes (/quotes) - Working (4/4 E2E tests passed, quote-to-invoice conversion verified)                                                      |
+| 2026-01-11 | Claude | Tested Cash Payments (/payments/cash) - Working (5/5 E2E tests passed)                                                                              |
+| 2026-01-11 | Claude | Tested Recurring (/recurring) - Working (4/4 E2E tests passed)                                                                                      |
+| 2026-01-11 | Claude | Tested Fixed Assets (/assets) - Working (5/5 E2E tests passed)                                                                                      |
+| 2026-01-11 | Claude | Tested Inventory (/inventory) - Working (5/5 E2E tests passed)                                                                                      |
+| 2026-01-11 | Claude | Tested Quotes (/quotes) - Working (4/4 E2E tests passed)                                                                                            |
+| 2026-01-11 | Claude | Tested Orders (/orders) - Working (6/6 E2E tests passed)                                                                                            |
+| 2026-01-11 | Claude | Tested Payments (/payments) - Working (4/4 E2E tests passed)                                                                                        |
+| 2026-01-11 | Claude | Tested Invoices (/invoices) - Working (13/13 E2E tests passed)                                                                                      |
+| 2026-01-11 | Claude | Tested Payment Reminders (/invoices/reminders) - Working (14/14 E2E tests passed)                                                                   |
+| 2026-01-11 | Claude | Tested Contacts (/contacts) - Working (4/4 E2E tests passed)                                                                                        |
+| 2026-01-11 | Claude | Tested Dashboard (/dashboard) - Working (6/6 E2E tests passed)                                                                                      |
+| 2026-01-11 | Claude | Tested Accounts (/accounts) - Working (4/4 E2E tests passed)                                                                                        |
+| 2026-01-11 | Claude | Tested Journal (/journal) - Working (3/3 E2E tests passed)                                                                                          |
+| 2026-01-11 | Claude | Tested Landing page (/) - Working                                                                                                                   |
+| 2026-01-11 | Claude | Tested Login page (/login) - Working                                                                                                                |
+| 2026-01-11 | -      | Initial template created                                                                                                                            |
