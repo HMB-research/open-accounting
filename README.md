@@ -18,8 +18,9 @@
 > **⚠️ Development Status**
 > This project is under active development and not yet production-ready. APIs may change, and features may be incomplete. Contributions and feedback welcome!
 >
-> Full local baseline last verified on 2026-05-28:
-> `go test ./...`, `golangci-lint run`, `go test -count=1 -race -tags=integration $(go list ./... | grep -v /testutil)`, `cd frontend && bun run lint`, `cd frontend && bun run check`, `cd frontend && bun run test`, `cd frontend && bun run build`, `cd frontend && bun run test:e2e:smoke`, and the full local `demo-chromium` Playwright project pass against fresh PostgreSQL-backed demo environments.
+> Full local baseline last verified on 2026-06-08:
+> `go test -p 1 -count=1 -race ./...`, `make test-cli-coverage`, `golangci-lint run`, `go test -p 1 -count=1 -race -tags=integration $(go list ./... | rg -v /testutil)`, `cd frontend && bun run lint`, `cd frontend && bun run check`, `cd frontend && bun run test`, `cd frontend && bun run build`, `cd frontend && bun run test:e2e:smoke`, and the full local `bun run test:e2e` suite pass against fresh PostgreSQL-backed demo environments.
+> The `cmd/oa` CLI package is held at 100.0% statement coverage by `make test-cli-coverage`, and local seeded smoke plus full demo E2E shards are CI gates. The optional remote hosted-demo E2E job remains informational.
 > Production hardening, deeper historical cutover tooling beyond the current payroll, tax, commercial history, e-invoice XML, payment, expense, inventory, fixed-asset, bank-transaction, opening-balance, historical-journal, and migration-preflight coverage, deeper accountant exception actions, and automated document retention/reconciliation policy enforcement are still in progress.
 
 CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API token once and then uses that token for subsequent reads and mutations.
