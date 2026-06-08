@@ -6997,6 +6997,121 @@ func TestCLIRecurringInvoiceBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"status": "deleted"`)
 }
 
+func TestCLIRecurringInvoiceFlagAndAPIErrors(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"recurring-invoices", "list"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	badFlagCases := []struct {
+		name string
+		args []string
+	}{
+		{name: "import bad flag", args: []string{"recurring-invoices", "import", "--bad"}},
+		{name: "from invoice bad flag", args: []string{"recurring-invoices", "from-invoice", "--bad"}},
+		{name: "get bad flag", args: []string{"recurring-invoices", "get", "--bad"}},
+		{name: "update bad flag", args: []string{"recurring-invoices", "update", "--bad"}},
+		{name: "delete bad flag", args: []string{"recurring-invoices", "delete", "--bad"}},
+		{name: "pause bad flag", args: []string{"recurring-invoices", "pause", "--bad"}},
+		{name: "resume bad flag", args: []string{"recurring-invoices", "resume", "--bad"}},
+		{name: "generate bad flag", args: []string{"recurring-invoices", "generate", "--bad"}},
+	}
+	for _, tc := range badFlagCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "flag provided but not defined")
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	importFile := writeTempCSV(t, "recurring-error.csv", "name,contact_id,frequency,start_date,line_description,quantity,unit_price,vat_rate\nError Legacy,contact-error,MONTHLY,2026-07-01,Work,1,100,22\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices":
+			assert.Equal(t, "true", r.URL.Query().Get("active_only"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices":
+			var req recurring.CreateRecurringInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Error retainer", req.Name)
+			assert.Equal(t, "contact-error", req.ContactID)
+			assert.Equal(t, recurring.FrequencyMonthly, req.Frequency)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/import":
+			var req recurring.ImportRecurringInvoicesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "recurring-error.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "Error Legacy")
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/from-invoice/inv-error":
+			var req recurring.CreateFromInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "From error", req.Name)
+			assert.Equal(t, recurring.FrequencyMonthly, req.Frequency)
+			assert.Equal(t, "2026-07-01", req.StartDate.Format("2006-01-02"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/rec-error":
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/rec-error":
+			var req recurring.UpdateRecurringInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.NotNil(t, req.Name)
+			assert.Equal(t, "Error updated", *req.Name)
+			require.NotNil(t, req.PaymentTermsDays)
+			assert.Equal(t, 10, *req.PaymentTermsDays)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/rec-error":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/rec-error/pause":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/rec-error/resume":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/rec-error/generate":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/recurring-invoices/generate-due":
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "recurring backend unavailable"})
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+	apiErrorCases := []struct {
+		name string
+		args []string
+	}{
+		{name: "list api error", args: []string{"recurring-invoices", "list", "--active-only"}},
+		{name: "create api error", args: []string{"recurring-invoices", "create", "--name", "Error retainer", "--contact-id", "contact-error", "--frequency", "monthly", "--start-date", "2026-07-01", "--line", "description=Error work,quantity=1,unit_price=100,vat_rate=22"}},
+		{name: "import api error", args: []string{"recurring-invoices", "import", "--file", importFile}},
+		{name: "from invoice api error", args: []string{"recurring-invoices", "from-invoice", "--invoice-id", "inv-error", "--name", "From error", "--frequency", "monthly", "--start-date", "2026-07-01"}},
+		{name: "get api error", args: []string{"recurring-invoices", "get", "--id", "rec-error"}},
+		{name: "update api error", args: []string{"recurring-invoices", "update", "--id", "rec-error", "--name", "Error updated", "--payment-terms-days", "10"}},
+		{name: "delete api error", args: []string{"recurring-invoices", "delete", "--id", "rec-error"}},
+		{name: "pause api error", args: []string{"recurring-invoices", "pause", "--id", "rec-error"}},
+		{name: "resume api error", args: []string{"recurring-invoices", "resume", "--id", "rec-error"}},
+		{name: "generate api error", args: []string{"recurring-invoices", "generate", "--id", "rec-error"}},
+		{name: "generate due api error", args: []string{"recurring-invoices", "generate-due"}},
+	}
+	for _, tc := range apiErrorCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "recurring backend unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIAssetCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
