@@ -13612,6 +13612,65 @@ func TestCLIEmailSMTPBranches(t *testing.T) {
 	}, requestCounts)
 }
 
+func TestCLIEmailSMTPAPIErrors(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/settings/smtp":
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/settings/smtp":
+			var req email.UpdateSMTPConfigRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "smtp.error.example.com", req.Host)
+			assert.Equal(t, 2525, req.Port)
+			assert.Equal(t, "error-user", req.Username)
+			assert.Equal(t, "error-secret", req.Password)
+			assert.Equal(t, "billing-error@example.com", req.FromEmail)
+			assert.Equal(t, "Error Billing", req.FromName)
+			assert.False(t, req.UseTLS)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/settings/smtp/test":
+			var req email.TestSMTPRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "qa-error@example.com", req.RecipientEmail)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "smtp backend unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "get api error", args: []string{"email", "smtp", "get"}},
+		{name: "update api error", args: []string{"email", "smtp", "update", "--host", " smtp.error.example.com ", "--port", "2525", "--username", " error-user ", "--password", "error-secret", "--from-email", " billing-error@example.com ", "--from-name", " Error Billing ", "--use-tls=false"}},
+		{name: "test api error", args: []string{"email", "smtp", "test", "--recipient-email", " qa-error@example.com "}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "smtp backend unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIEmailTemplateBranches(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
