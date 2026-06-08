@@ -23,7 +23,7 @@ Full local baseline last completed on 2026-06-08:
 - `go test -p 1 -count=1 -race -tags=integration $(go list ./... | rg -v /testutil)` passes against a fresh PostgreSQL database after applying all migrations
 - `cd frontend && bun run lint` passes
 - `cd frontend && bun run check` passes with 0 errors and 0 warnings
-- `cd frontend && bun run test` passes with 22 files and 509 tests
+- `cd frontend && bun run test` passes with 22 files and 510 tests
 - `cd frontend && bun run build` passes, with the existing large-chunk warning
 - `cd frontend && bun run test:e2e:smoke` passes against a fresh locally seeded demo environment with 8 passed
 - `cd frontend && bun run test:e2e` passes against a fresh locally seeded demo environment with 259 passed and 12 intentionally skipped reset tests under `CI=true`
