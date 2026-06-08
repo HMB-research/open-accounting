@@ -131,7 +131,18 @@ DEMO_RESET_SECRET=test-demo-secret \
 bun run test:e2e:smoke
 ```
 
-The broader `e2e` job runs the full `demo-chromium` project in shards and is informational.
+The broader `e2e` job runs the full `demo-chromium` project in shards and is blocking. Each shard starts its own local PostgreSQL-backed demo environment, seeds all four demo users through `/api/demo/reset`, builds the frontend, and runs:
+
+```bash
+cd frontend
+CI=true \
+BASE_URL=http://localhost:5173 \
+PUBLIC_API_URL=http://localhost:8080 \
+DEMO_RESET_SECRET=test-demo-secret \
+bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium --shard=<shard>/2
+```
+
+The separate `e2e-demo` job targets an externally hosted demo and remains optional/informational because it only runs when hosted demo URLs and secrets are explicitly configured.
 
 ## Troubleshooting
 
@@ -139,12 +150,13 @@ If login fails, verify the API is in demo mode and the reset endpoint succeeded:
 
 ```bash
 curl http://localhost:8080/health
-curl http://localhost:8080/api/demo/status?user=2
+curl http://localhost:8080/api/demo/status?user=2 -H "X-Demo-Secret: test-demo-secret"
 curl -X POST http://localhost:8080/api/demo/reset -H "X-Demo-Secret: test-demo-secret"
 ```
 
-If Playwright cannot start the frontend because a port is busy, choose another local port:
+If Playwright cannot start the frontend because a port is busy, choose another local port and allow that origin in the API CORS configuration:
 
 ```bash
-BASE_URL=http://localhost:5185 bun run test:e2e:smoke
+ALLOWED_ORIGINS=http://localhost:5185 DEMO_MODE=true DEMO_RESET_SECRET=test-demo-secret go run ./cmd/api
+BASE_URL=http://localhost:5185 PUBLIC_API_URL=http://localhost:8080 DEMO_RESET_SECRET=test-demo-secret bun run test:e2e:smoke
 ```
