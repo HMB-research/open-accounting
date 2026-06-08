@@ -4265,6 +4265,64 @@ func TestCLIAdminPluginBranches(t *testing.T) {
 	}
 }
 
+func TestCLIAdminPluginAPIErrors(t *testing.T) {
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+	const pluginID = "33333333-3333-4333-8333-333333333333"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/plugins":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/plugins/search":
+			assert.Equal(t, "audit", r.URL.Query().Get("q"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/plugins/permissions":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/plugins/install":
+			var req plugin.InstallPluginRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "https://github.com/example/audit-tools", req.RepositoryURL)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/plugins/"+pluginID:
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/plugins/"+pluginID+"/enable":
+			var req plugin.EnablePluginRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, []string{"audit:read"}, req.GrantedPermissions)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/plugins/"+pluginID+"/disable":
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/admin/plugins/"+pluginID:
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "admin plugin backend unavailable"})
+	}))
+	defer server.Close()
+	client := newAPIClient(server.URL, "oa_saved_token")
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list api error", args: []string{"list"}},
+		{name: "search api error", args: []string{"search", "--q", "audit"}},
+		{name: "permissions api error", args: []string{"permissions"}},
+		{name: "install api error", args: []string{"install", "--repository-url", "https://github.com/example/audit-tools"}},
+		{name: "get api error", args: []string{"get", "--id", pluginID}},
+		{name: "enable api error", args: []string{"enable", "--id", pluginID, "--permission", "audit:read"}},
+		{name: "disable api error", args: []string{"disable", "--id", pluginID}},
+		{name: "uninstall api error", args: []string{"uninstall", "--id", pluginID}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.runAdminPlugins(ctx, client, tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "admin plugin backend unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIAccountsCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
