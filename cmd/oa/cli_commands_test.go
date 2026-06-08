@@ -12423,6 +12423,122 @@ func TestCLIPaymentBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"payment_type": "MADE"`)
 }
 
+func TestCLIPaymentAuthFlagsAndAPIErrors(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	err := app.run(ctx, []string{"payments", "list"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "get bad flag", args: []string{"payments", "get", "--bad"}},
+		{name: "allocate bad flag", args: []string{"payments", "allocate", "--bad"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "flag provided but not defined")
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	importFile := writeTempCSV(t, "payments-error.csv", "payment_number,payment_type,payment_date,amount\nPAY-ERR,RECEIVED,2026-04-15,100.00\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payments":
+			assert.Equal(t, "RECEIVED", r.URL.Query().Get("type"))
+			assert.Equal(t, "BANK_TRANSFER", r.URL.Query().Get("method"))
+			assert.Equal(t, "contact-error", r.URL.Query().Get("contact_id"))
+			assert.Equal(t, "2026-04-01", r.URL.Query().Get("from_date"))
+			assert.Equal(t, "2026-04-30", r.URL.Query().Get("to_date"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments":
+			var req payments.CreatePaymentRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, payments.PaymentTypeReceived, req.PaymentType)
+			require.NotNil(t, req.ContactID)
+			assert.Equal(t, "contact-error", *req.ContactID)
+			assert.Equal(t, "2026-04-15", req.PaymentDate.Format("2006-01-02"))
+			assert.True(t, req.Amount.Equal(decimal.RequireFromString("100.00")))
+			assert.Equal(t, "EUR", req.Currency)
+			assert.Equal(t, "BANK_TRANSFER", req.PaymentMethod)
+			assert.Equal(t, "ERR-REF", req.Reference)
+			require.Len(t, req.Allocations, 1)
+			assert.Equal(t, "inv-error", req.Allocations[0].InvoiceID)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments/import":
+			var req payments.ImportPaymentsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "payments-error.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "PAY-ERR")
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments/sepa-export":
+			var req payments.SEPAExportRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "MSG-ERROR", req.MessageID)
+			assert.Equal(t, "Example OU", req.DebtorName)
+			assert.Equal(t, "EE382200221020145685", req.DebtorIBAN)
+			assert.Equal(t, "2026-04-20", req.ExecutionDate)
+			require.Len(t, req.Lines, 1)
+			assert.Equal(t, "Supplier AS", req.Lines[0].CreditorName)
+			assert.True(t, req.Lines[0].Amount.Equal(decimal.RequireFromString("25.00")))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payments/pay-error":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments/pay-error/allocate":
+			var req payments.AllocationRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "inv-error", req.InvoiceID)
+			assert.True(t, req.Amount.Equal(decimal.RequireFromString("25.00")))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payments/unallocated":
+			assert.Equal(t, "MADE", r.URL.Query().Get("type"))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "payments backend unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{name: "list api error", args: []string{"payments", "list", "--type", "received", "--method", "BANK_TRANSFER", "--contact-id", "contact-error", "--from", "2026-04-01", "--to", "2026-04-30"}},
+		{name: "create api error", args: []string{"payments", "create", "--type", "received", "--contact-id", "contact-error", "--date", "2026-04-15", "--amount", "100.00", "--currency", "eur", "--method", "BANK_TRANSFER", "--reference", "ERR-REF", "--allocate", "inv-error:25.00"}},
+		{name: "import api error", args: []string{"payments", "import", "--file", importFile}},
+		{name: "sepa export api error", args: []string{"payments", "sepa-export", "--message-id", "MSG-ERROR", "--debtor-name", "Example OU", "--debtor-iban", "EE382200221020145685", "--execution-date", "2026-04-20", "--line", "name=Supplier AS,iban=EE471000001020145685,amount=25.00"}},
+		{name: "get api error", args: []string{"payments", "get", "--id", "pay-error"}},
+		{name: "allocate api error", args: []string{"payments", "allocate", "--id", "pay-error", "--invoice-id", "inv-error", "--amount", "25.00"}},
+		{name: "unallocated api error", args: []string{"payments", "unallocated", "--type", "made"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "payments backend unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIReminderCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
