@@ -3313,6 +3313,100 @@ func (h *Handlers) ImportCostCenters(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, result)
 }
 
+// ListCostAllocations handles GET /tenants/{tenantID}/cost-centers/allocations.
+// @Summary List cost allocations
+// @Description List journal-entry-line allocations to cost centers, optionally filtered by cost center, journal line, or allocation date range
+// @Tags Cost Centers
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param cost_center_id query string false "Cost center ID"
+// @Param journal_entry_line_id query string false "Journal entry line ID"
+// @Param start_date query string false "Start date (YYYY-MM-DD)"
+// @Param end_date query string false "End date (YYYY-MM-DD)"
+// @Success 200 {array} accounting.CostAllocation
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/cost-centers/allocations [get]
+func (h *Handlers) ListCostAllocations(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	filters := accounting.CostAllocationFilters{
+		CostCenterID:       r.URL.Query().Get("cost_center_id"),
+		JournalEntryLineID: r.URL.Query().Get("journal_entry_line_id"),
+	}
+	if startStr := r.URL.Query().Get("start_date"); startStr != "" {
+		start, err := time.Parse("2006-01-02", startStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "Invalid start_date format (use YYYY-MM-DD)")
+			return
+		}
+		filters.StartDate = &start
+	}
+	if endStr := r.URL.Query().Get("end_date"); endStr != "" {
+		end, err := time.Parse("2006-01-02", endStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "Invalid end_date format (use YYYY-MM-DD)")
+			return
+		}
+		filters.EndDate = &end
+	}
+
+	allocations, err := h.costCenterService.ListCostAllocations(r.Context(), schemaName, tenantID, filters)
+	if err != nil {
+		if strings.Contains(err.Error(), "end_date") {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, allocations)
+}
+
+// CreateCostAllocation handles POST /tenants/{tenantID}/cost-centers/allocations.
+// @Summary Create cost allocation
+// @Description Assign a positive journal-entry-line amount to a tenant cost center
+// @Tags Cost Centers
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body accounting.CreateCostAllocationRequest true "Cost allocation"
+// @Success 201 {object} accounting.CostAllocation
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/cost-centers/allocations [post]
+func (h *Handlers) CreateCostAllocation(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req accounting.CreateCostAllocationRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	allocation, err := h.costCenterService.CreateCostAllocation(r.Context(), schemaName, tenantID, &req)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			respondError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		if strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "greater than zero") || strings.Contains(err.Error(), "between 0 and 100") {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, allocation)
+}
+
 // UpdateCostCenter handles PUT /tenants/{tenantID}/cost-centers/{costCenterID}.
 // @Summary Update cost center
 // @Description Update cost center details, hierarchy, activity, and budget settings

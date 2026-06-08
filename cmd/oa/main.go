@@ -446,6 +446,8 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  cost-centers update       Update a cost center")
 	_, _ = fmt.Fprintln(a.stdout, "  cost-centers delete       Delete a cost center")
 	_, _ = fmt.Fprintln(a.stdout, "  cost-centers report       Show cost center budget report")
+	_, _ = fmt.Fprintln(a.stdout, "  cost-centers allocations list   List cost allocations")
+	_, _ = fmt.Fprintln(a.stdout, "  cost-centers allocations create Create a cost allocation")
 	_, _ = fmt.Fprintln(a.stdout, "  analytics dashboard       Show dashboard summary")
 	_, _ = fmt.Fprintln(a.stdout, "  analytics revenue-expense Show revenue and expense chart data")
 	_, _ = fmt.Fprintln(a.stdout, "  analytics cash-flow       Show cash-flow chart data")
@@ -8122,8 +8124,112 @@ func (a *cliApp) runCostCenters(ctx context.Context, args []string) error {
 		printCostCenterReport(a.stdout, report)
 		return nil
 
+	case "allocations":
+		return a.runCostCenterAllocations(ctx, client, cfg.TenantID, args[1:])
+
 	default:
 		return fmt.Errorf("unknown cost-centers subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runCostCenterAllocations(ctx context.Context, client *apiClient, tenantID string, args []string) error {
+	if len(args) == 0 {
+		return errors.New("cost-centers allocations subcommand required")
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("cost-centers allocations list", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		costCenterID := fs.String("cost-center-id", "", "Filter by cost center id")
+		journalEntryLineID := fs.String("journal-entry-line-id", "", "Filter by journal entry line id")
+		startDate := fs.String("start", "", "Start allocation date in YYYY-MM-DD")
+		endDate := fs.String("end", "", "End allocation date in YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		startDateValue, err := parseOptionalDate("start", *startDate)
+		if err != nil {
+			return err
+		}
+		endDateValue, err := parseOptionalDate("end", *endDate)
+		if err != nil {
+			return err
+		}
+		if startDateValue != nil && endDateValue != nil && endDateValue.Before(*startDateValue) {
+			return errors.New("end must be on or after start")
+		}
+
+		allocations, err := client.listCostAllocations(ctx, tenantID, accounting.CostAllocationFilters{
+			CostCenterID:       strings.TrimSpace(*costCenterID),
+			JournalEntryLineID: strings.TrimSpace(*journalEntryLineID),
+			StartDate:          startDateValue,
+			EndDate:            endDateValue,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, allocations)
+		}
+		printCostAllocationsTable(a.stdout, allocations)
+		return nil
+
+	case "create":
+		fs := flag.NewFlagSet("cost-centers allocations create", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		costCenterID := fs.String("cost-center-id", "", "Cost center id")
+		journalEntryLineID := fs.String("journal-entry-line-id", "", "Journal entry line id")
+		amountFlag := fs.String("amount", "", "Positive allocation amount")
+		allocationPercentageFlag := fs.String("allocation-percentage", "", "Optional allocation percentage from 0 to 100")
+		allocationDate := fs.String("allocation-date", "", "Allocation date in YYYY-MM-DD")
+		notes := fs.String("notes", "", "Allocation notes")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*costCenterID) == "" {
+			return errors.New("cost-center-id is required")
+		}
+		if strings.TrimSpace(*journalEntryLineID) == "" {
+			return errors.New("journal-entry-line-id is required")
+		}
+		amount, err := parseRequiredPositiveDecimal("amount", *amountFlag)
+		if err != nil {
+			return err
+		}
+		allocationPercentage, err := parseOptionalNonNegativeDecimalPtr("allocation-percentage", *allocationPercentageFlag)
+		if err != nil {
+			return err
+		}
+		if allocationPercentage != nil && allocationPercentage.GreaterThan(decimal.NewFromInt(100)) {
+			return errors.New("allocation-percentage must be between 0 and 100")
+		}
+		allocationDateValue, err := parseRequiredDate("allocation-date", *allocationDate)
+		if err != nil {
+			return err
+		}
+
+		allocation, err := client.createCostAllocation(ctx, tenantID, &accounting.CreateCostAllocationRequest{
+			CostCenterID:         strings.TrimSpace(*costCenterID),
+			JournalEntryLineID:   strings.TrimSpace(*journalEntryLineID),
+			Amount:               amount,
+			AllocationPercentage: allocationPercentage,
+			AllocationDate:       allocationDateValue,
+			Notes:                strings.TrimSpace(*notes),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, allocation)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Created cost allocation %s for cost center %s\n", allocation.ID, allocation.CostCenterID)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown cost-centers allocations subcommand %q", args[0])
 	}
 }
 

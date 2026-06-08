@@ -125,6 +125,118 @@ func TestCostCenterServiceValidation(t *testing.T) {
 	}
 }
 
+func TestCostCenterAllocationService(t *testing.T) {
+	repo := NewMockCostCenterRepository()
+	repo.CostCenters["cc-1"] = &CostCenter{
+		ID:       "cc-1",
+		TenantID: "tenant-1",
+		Code:     "OPS",
+		Name:     "Operations",
+		IsActive: true,
+	}
+	service := NewCostCenterServiceWithRepository(repo)
+	percentage := decimal.NewFromInt(75)
+	allocationDate := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+
+	allocation, err := service.CreateCostAllocation(context.Background(), "tenant_1", "tenant-1", &CreateCostAllocationRequest{
+		CostCenterID:         " cc-1 ",
+		JournalEntryLineID:   " line-1 ",
+		Amount:               decimal.NewFromFloat(125.50),
+		AllocationPercentage: &percentage,
+		AllocationDate:       allocationDate,
+		Notes:                "  Shared hosting  ",
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "cc-1", allocation.CostCenterID)
+	assert.Equal(t, "line-1", allocation.JournalEntryLineID)
+	assert.Equal(t, "Shared hosting", allocation.Notes)
+	assert.True(t, allocation.Amount.Equal(decimal.NewFromFloat(125.50)))
+
+	allocations, err := service.ListCostAllocations(context.Background(), "tenant_1", "tenant-1", CostAllocationFilters{
+		CostCenterID: "cc-1",
+		StartDate:    ptrTime(allocationDate.AddDate(0, 0, -1)),
+		EndDate:      ptrTime(allocationDate.AddDate(0, 0, 1)),
+	})
+	assert.NoError(t, err)
+	assert.Len(t, allocations, 1)
+	assert.Equal(t, "OPS", allocations[0].CostCenterCode)
+
+	_, err = service.ListCostAllocations(context.Background(), "tenant_1", "tenant-1", CostAllocationFilters{
+		StartDate: ptrTime(allocationDate),
+		EndDate:   ptrTime(allocationDate.AddDate(0, 0, -1)),
+	})
+	assert.ErrorContains(t, err, "end_date must be on or after start_date")
+}
+
+func TestCostCenterAllocationServiceValidation(t *testing.T) {
+	service := NewCostCenterServiceWithRepository(NewMockCostCenterRepository())
+	validDate := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+	tooHighPercentage := decimal.NewFromInt(101)
+
+	for _, tt := range []struct {
+		name string
+		req  CreateCostAllocationRequest
+		want string
+	}{
+		{
+			name: "missing cost center",
+			req: CreateCostAllocationRequest{
+				JournalEntryLineID: "line-1",
+				Amount:             decimal.NewFromInt(10),
+				AllocationDate:     validDate,
+			},
+			want: "cost_center_id is required",
+		},
+		{
+			name: "missing line",
+			req: CreateCostAllocationRequest{
+				CostCenterID:   "cc-1",
+				Amount:         decimal.NewFromInt(10),
+				AllocationDate: validDate,
+			},
+			want: "journal_entry_line_id is required",
+		},
+		{
+			name: "zero amount",
+			req: CreateCostAllocationRequest{
+				CostCenterID:       "cc-1",
+				JournalEntryLineID: "line-1",
+				AllocationDate:     validDate,
+			},
+			want: "amount must be greater than zero",
+		},
+		{
+			name: "missing date",
+			req: CreateCostAllocationRequest{
+				CostCenterID:       "cc-1",
+				JournalEntryLineID: "line-1",
+				Amount:             decimal.NewFromInt(10),
+			},
+			want: "allocation_date is required",
+		},
+		{
+			name: "invalid percentage",
+			req: CreateCostAllocationRequest{
+				CostCenterID:         "cc-1",
+				JournalEntryLineID:   "line-1",
+				Amount:               decimal.NewFromInt(10),
+				AllocationDate:       validDate,
+				AllocationPercentage: &tooHighPercentage,
+			},
+			want: "allocation_percentage must be between 0 and 100",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := service.CreateCostAllocation(context.Background(), "tenant_1", "tenant-1", &tt.req)
+			assert.ErrorContains(t, err, tt.want)
+		})
+	}
+}
+
+func ptrTime(value time.Time) *time.Time {
+	return &value
+}
+
 // TestCostCenterReportCalculations tests expense calculation logic
 func TestCostCenterReportCalculations(t *testing.T) {
 	expenses := []CostAllocation{

@@ -928,6 +928,11 @@ func tenantCLICommand(method, path string) (string, bool) {
 		return commandForMethod(method, map[string]string{"POST": "cost-centers import"})
 	case "/cost-centers/report":
 		return commandForMethod(method, map[string]string{"GET": "cost-centers report"})
+	case "/cost-centers/allocations":
+		return commandForMethod(method, map[string]string{
+			"GET":  "cost-centers allocations list",
+			"POST": "cost-centers allocations create",
+		})
 	case "/cost-centers/{costCenterID}":
 		return commandForMethod(method, map[string]string{
 			"GET":    "cost-centers get",

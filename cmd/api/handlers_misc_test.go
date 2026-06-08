@@ -568,6 +568,42 @@ func TestReminderAndCostCenterHandlers(t *testing.T) {
 	h.ImportCostCenters(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/cost-centers/allocations?cost_center_id=cc-1&start_date=2026-01-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.ListCostAllocations(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "alloc-1")
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/cost-centers/allocations", map[string]interface{}{
+		"cost_center_id":        "cc-1",
+		"journal_entry_line_id": "line-2",
+		"amount":                "125.50",
+		"allocation_percentage": "50.00",
+		"allocation_date":       "2026-01-20T00:00:00Z",
+		"notes":                 "Shared office expense",
+	}, nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.CreateCostAllocation(rr, req)
+	assert.Equal(t, http.StatusCreated, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Shared office expense")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/cost-centers/allocations?start_date=2026-02-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.ListCostAllocations(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/cost-centers/allocations", map[string]interface{}{
+		"cost_center_id":        "missing",
+		"journal_entry_line_id": "line-3",
+		"amount":                "10.00",
+		"allocation_date":       "2026-01-20T00:00:00Z",
+	}, nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.CreateCostAllocation(rr, req)
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+
 	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1/cost-centers/cc-1", map[string]interface{}{
 		"code": "ADMIN",
 		"name": "Admin Updated",

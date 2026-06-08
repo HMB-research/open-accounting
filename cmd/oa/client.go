@@ -2127,6 +2127,36 @@ func (c *apiClient) importCostCenters(ctx context.Context, tenantID string, req 
 	return &resp, nil
 }
 
+func (c *apiClient) listCostAllocations(ctx context.Context, tenantID string, filters accounting.CostAllocationFilters) ([]accounting.CostAllocation, error) {
+	values := url.Values{}
+	if strings.TrimSpace(filters.CostCenterID) != "" {
+		values.Set("cost_center_id", strings.TrimSpace(filters.CostCenterID))
+	}
+	if strings.TrimSpace(filters.JournalEntryLineID) != "" {
+		values.Set("journal_entry_line_id", strings.TrimSpace(filters.JournalEntryLineID))
+	}
+	if filters.StartDate != nil {
+		values.Set("start_date", filters.StartDate.Format("2006-01-02"))
+	}
+	if filters.EndDate != nil {
+		values.Set("end_date", filters.EndDate.Format("2006-01-02"))
+	}
+
+	var resp []accounting.CostAllocation
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "cost-centers", "allocations"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) createCostAllocation(ctx context.Context, tenantID string, req *accounting.CreateCostAllocationRequest) (*accounting.CostAllocation, error) {
+	var resp accounting.CostAllocation
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "cost-centers", "allocations"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) getCostCenter(ctx context.Context, tenantID, costCenterID string) (*accounting.CostCenter, error) {
 	var resp accounting.CostCenter
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "cost-centers", costCenterID), nil, c.apiToken, &resp); err != nil {

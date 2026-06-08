@@ -2332,6 +2332,26 @@ Content-Type: application/json
 
 Cost center CSV imports require `code` and `name`. Optional columns include `description`, `parent_id`, `parent_code`, `budget_amount`, `budget_period`, `status`, and `is_active`; parent codes can reference existing cost centers or rows in the same import.
 
+### Cost Allocations
+
+```http
+GET /tenants/{tenantId}/cost-centers/allocations?cost_center_id={costCenterId}&start_date=2026-03-01&end_date=2026-03-31
+POST /tenants/{tenantId}/cost-centers/allocations
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "cost_center_id": "cc-uuid",
+  "journal_entry_line_id": "journal-line-uuid",
+  "amount": "125.50",
+  "allocation_percentage": "50.00",
+  "allocation_date": "2026-03-20T00:00:00Z",
+  "notes": "Shared office expense"
+}
+```
+
+Cost allocations assign a positive journal-entry-line amount to a cost center for budget-vs-actual and cost-center reporting. Listing supports optional `cost_center_id`, `journal_entry_line_id`, `start_date`, and `end_date` filters; returned rows include joined `cost_center_code` and `cost_center_name` when available.
+
 ### Get, Update, and Delete Cost Center
 
 ```http
