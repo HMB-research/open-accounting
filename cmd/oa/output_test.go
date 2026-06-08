@@ -15,6 +15,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/assets"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/cutover"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/expenses"
@@ -58,6 +59,241 @@ func TestPrintJSON(t *testing.T) {
 	assert.Contains(t, buf.String(), "Token type: Bearer")
 	assert.Contains(t, buf.String(), "Expires in: 900 seconds")
 	assert.Contains(t, buf.String(), "User: CLI User <cli@example.com> (user-1)")
+}
+
+func TestPrintOutputEdgeBranches(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 12, 10, 0, 0, 0, time.UTC)
+	var buf bytes.Buffer
+
+	err := printJSON(&buf, map[string]any{"bad": make(chan int)})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "encode json output")
+
+	buf.Reset()
+	err = printRawJSON(&buf, []byte("{"))
+	require.NoError(t, err)
+	assert.Equal(t, "{\n", buf.String())
+
+	buf.Reset()
+	printMigrationValidationReport(&buf, nil)
+	assert.Contains(t, buf.String(), "No migration validation report")
+
+	buf.Reset()
+	printMigrationValidationReport(&buf, &cutover.BundleValidationReport{
+		Summary: cutover.BundleValidationSummary{FilesValidated: 1, RowsValidated: 2, ErrorCount: 1, WarningCount: 1, Ready: false},
+		Files: []cutover.FileValidation{{
+			Kind:           cutover.KindAccounts,
+			FileName:       "accounts.csv",
+			Rows:           2,
+			MissingColumns: []string{"name"},
+		}},
+		Issues: []cutover.ValidationIssue{{
+			Severity: cutover.SeverityError,
+			FileName: "accounts.csv",
+			Message:  "missing required field",
+		}},
+	})
+	assert.Contains(t, buf.String(), "blocked")
+	assert.Contains(t, buf.String(), "name")
+	assert.Contains(t, buf.String(), "missing required field")
+
+	periodLock := "2026-03-31"
+	buf.Reset()
+	printTenant(&buf, &tenant.Tenant{
+		ID:         "tenant-edge",
+		Name:       "Edge Tenant",
+		Slug:       "edge",
+		SchemaName: "tenant_edge",
+		Settings: tenant.TenantSettings{
+			DefaultCurrency: "EUR",
+			CountryCode:     "EE",
+			Timezone:        "Europe/Tallinn",
+			VATNumber:       "EE123",
+			RegCode:         "12345678",
+			PeriodLockDate:  &periodLock,
+		},
+	})
+	assert.Contains(t, buf.String(), "Schema: tenant_edge")
+	assert.Contains(t, buf.String(), "VAT number: EE123")
+	assert.Contains(t, buf.String(), "Period lock date: 2026-03-31")
+
+	buf.Reset()
+	printWebhookEndpoint(&buf, nil)
+	assert.Empty(t, buf.String())
+
+	buf.Reset()
+	printWebhookDeliveryResult(&buf, nil)
+	assert.Empty(t, buf.String())
+
+	deliveredAt := now
+	buf.Reset()
+	printWebhookEndpoint(&buf, &webhooks.Endpoint{
+		ID:             "hook-edge",
+		Name:           "Edge Hook",
+		URL:            "https://hooks.example.com",
+		Events:         []string{"invoice.created"},
+		LastDeliveryAt: &deliveredAt,
+	})
+	assert.Contains(t, buf.String(), "Last delivery: 2026-03-12T10:00:00Z")
+
+	parentID := "parent-1"
+	buf.Reset()
+	printAccount(&buf, &accounting.Account{
+		ID:          "account-edge",
+		Code:        "1010",
+		Name:        "Child cash",
+		AccountType: accounting.AccountTypeAsset,
+		ParentID:    &parentID,
+		IsActive:    true,
+	})
+	assert.Contains(t, buf.String(), "Parent: parent-1")
+
+	convertedOrderID := "order-1"
+	convertedInvoiceID := "invoice-1"
+	buf.Reset()
+	printQuote(&buf, &quotes.Quote{
+		ID:                   "quote-edge",
+		QuoteNumber:          "Q-EDGE",
+		Status:               quotes.QuoteStatusAccepted,
+		QuoteDate:            now,
+		Subtotal:             decimal.NewFromInt(100),
+		VATAmount:            decimal.NewFromInt(22),
+		Total:                decimal.NewFromInt(122),
+		Currency:             "EUR",
+		Notes:                "Optional quote note",
+		ConvertedToOrderID:   &convertedOrderID,
+		ConvertedToInvoiceID: &convertedInvoiceID,
+		Lines: []quotes.QuoteLine{{
+			LineNumber:  1,
+			Description: "Quoted service",
+			Quantity:    decimal.NewFromInt(1),
+			UnitPrice:   decimal.NewFromInt(100),
+			VATRate:     decimal.NewFromInt(22),
+			LineTotal:   decimal.NewFromInt(122),
+		}},
+	})
+	assert.Contains(t, buf.String(), "Optional quote note")
+	assert.Contains(t, buf.String(), "Converted order: order-1")
+	assert.Contains(t, buf.String(), "Converted invoice: invoice-1")
+
+	buf.Reset()
+	printOrderStockCheck(&buf, nil)
+	assert.Empty(t, buf.String())
+
+	buf.Reset()
+	printOrderPickList(&buf, nil)
+	assert.Empty(t, buf.String())
+
+	buf.Reset()
+	printOrderStockReservation(&buf, nil)
+	assert.Empty(t, buf.String())
+
+	buf.Reset()
+	printOrderStockReservation(&buf, &orders.OrderStockReservationResult{
+		OrderNumber: "ORD-EDGE",
+		WarehouseID: "wh-1",
+		Action:      orders.OrderStockReservationActionRelease,
+		Lines: []orders.OrderStockReservationLine{{
+			ProductID:    "prod-1",
+			Quantity:     decimal.NewFromInt(1),
+			ReservedQty:  decimal.NewFromInt(0),
+			AvailableQty: decimal.NewFromInt(5),
+			Status:       orders.OrderStockReservationStatusReleased,
+		}},
+	})
+	assert.Contains(t, buf.String(), "Order stock released ORD-EDGE")
+
+	employeeID := "emp-1"
+	contactID := "contact-1"
+	buf.Reset()
+	printExpense(&buf, &expenses.Expense{
+		ID:               "exp-edge",
+		ExpenseNumber:    "EXP-EDGE",
+		ExpenseDate:      now,
+		Merchant:         "Edge Store",
+		EmployeeID:       &employeeID,
+		ContactID:        &contactID,
+		ExpenseAccountID: "acc-expense",
+		PaymentAccountID: "acc-cash",
+		Amount:           decimal.NewFromInt(20),
+		Currency:         "EUR",
+		ExchangeRate:     decimal.NewFromInt(1),
+		BaseAmount:       decimal.NewFromInt(20),
+		RejectionReason:  "missing receipt",
+	})
+	assert.Contains(t, buf.String(), "Employee: emp-1")
+	assert.Contains(t, buf.String(), "Contact: contact-1")
+	assert.Contains(t, buf.String(), "Rejection reason: missing receipt")
+
+	disposalMethod := assets.DisposalSold
+	disposalJournalID := "je-disposal"
+	buf.Reset()
+	printAsset(&buf, &assets.FixedAsset{
+		ID:                     "asset-edge",
+		AssetNumber:            "FA-EDGE",
+		Name:                   "Disposed asset",
+		Status:                 assets.AssetStatusSold,
+		PurchaseDate:           now,
+		PurchaseCost:           decimal.NewFromInt(100),
+		BookValue:              decimal.NewFromInt(0),
+		DepreciationMethod:     assets.DepreciationStraightLine,
+		UsefulLifeMonths:       12,
+		ResidualValue:          decimal.Zero,
+		DisposalDate:           &now,
+		DisposalMethod:         &disposalMethod,
+		DisposalProceeds:       decimal.NewFromInt(10),
+		DisposalNotes:          "sold at auction",
+		DisposalJournalEntryID: &disposalJournalID,
+	})
+	assert.Contains(t, buf.String(), "Disposal date: 2026-03-12")
+	assert.Contains(t, buf.String(), "Disposal method: SOLD")
+	assert.Contains(t, buf.String(), "Disposal journal: je-disposal")
+
+	buf.Reset()
+	printInventoryValuation(&buf, nil)
+	assert.Empty(t, buf.String())
+
+	budgetAmount := decimal.NewFromInt(100)
+	totalSpent := decimal.NewFromInt(75)
+	budgetUsed := decimal.NewFromInt(75)
+	buf.Reset()
+	printCostCenter(&buf, &accounting.CostCenter{
+		ID:           "cc-edge",
+		Code:         "CC-EDGE",
+		Name:         "Edge cost center",
+		ParentID:     &parentID,
+		IsActive:     true,
+		BudgetAmount: &budgetAmount,
+		BudgetPeriod: accounting.BudgetPeriodMonthly,
+		TotalSpent:   &totalSpent,
+		BudgetUsed:   &budgetUsed,
+	})
+	assert.Contains(t, buf.String(), "Parent: parent-1")
+	assert.Contains(t, buf.String(), "Total spent: 75")
+	assert.Contains(t, buf.String(), "Budget used: 75%")
+
+	buf.Reset()
+	printCostCenterBudgetReport(&buf, &accounting.CostCenterReport{
+		PeriodStart:   now,
+		PeriodEnd:     now,
+		TotalExpenses: decimal.NewFromInt(0),
+		TotalBudget:   decimal.NewFromInt(0),
+	}, "Empty budget report")
+	assert.Contains(t, buf.String(), "Empty budget report")
+	assert.NotContains(t, buf.String(), "CODE")
+
+	buf.Reset()
+	printJournalEntry(&buf, &accounting.JournalEntry{
+		ID:          "je-edge",
+		EntryNumber: "JE-EDGE",
+		EntryDate:   now,
+		Status:      accounting.StatusVoided,
+		Description: "Voided entry",
+		VoidReason:  "correction",
+	})
+	assert.Contains(t, buf.String(), "Void reason: correction")
 }
 
 func TestPrintTables(t *testing.T) {
