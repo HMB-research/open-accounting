@@ -42,7 +42,7 @@ This repo treats ORM/repository-backed persistence and reusable application code
 
 - **Tenant context**: `internal/auth/middleware.go` (JWT extraction)
 - **Schema routing**: `internal/tenant/service.go` (schema name generation)
-- **Demo detection**: Check for `demo@example.com` user or demo tenant ID
+- **Demo detection**: Check for `DEMO_MODE=true`, demo tenant IDs, or `demoN@example.com` users
 - **Multi-tenant queries**: All repositories use `schemaName` parameter for table qualification
 
 ## Testing Strategy
@@ -79,7 +79,7 @@ Is the change in...
 
 ### Demo E2E Priority
 
-The demo at `open-accounting.up.railway.app` is the first impression for users. All demo functionality must have E2E coverage:
+The resettable local demo is the authoritative demo verification target unless a hosted demo URL is explicitly configured. All demo functionality must have E2E coverage:
 
 - Login/logout flow
 - Dashboard widgets and navigation
@@ -91,27 +91,28 @@ The demo at `open-accounting.up.railway.app` is the first impression for users. 
 
 ### Credentials
 
-- **Email**: `demo@example.com`
-- **Password**: `demo123`
-- **Live demo**: `open-accounting.up.railway.app`
+- **Emails**: `demo1@example.com`, `demo2@example.com`, `demo3@example.com`, `demo4@example.com`
+- **Password**: `demo12345`
+- **Local demo API**: run with `DEMO_MODE=true DEMO_RESET_SECRET=test-demo-secret`
+- **Hosted demo**: optional; only use when `TEST_DEMO=true`, `BASE_URL`, and `PUBLIC_API_URL` are explicitly provided
 
 ### Demo Data Seeding Flow
 
 ```
-Login as demo@example.com
-  → Backend checks if demo tenant exists
-  → If not: creates tenant + schema + seeds demo data
-  → If exists: optionally resets to fresh state (hourly on Railway)
+Start API with DEMO_MODE=true
+  → POST /api/demo/reset with X-Demo-Secret
+  → Backend recreates and seeds tenant_demo1..tenant_demo4
+  → Playwright auth setup logs in all four demo users
 ```
 
 ### Key Demo Files
 
 | Purpose | Location |
 |---------|----------|
-| Seed logic | `internal/tenant/demo_seed.go` |
-| Demo handlers | `internal/tenant/handlers.go` (demo reset endpoint) |
-| E2E tests | `frontend/e2e/demo-*.spec.ts` |
-| Test config | `frontend/playwright.config.ts` |
+| Seed template | `internal/demo/seed_template.sql` |
+| Demo handlers | `cmd/api/handlers_demo.go` (demo reset/status endpoints) |
+| E2E tests | `frontend/e2e/demo/*.spec.ts`, `frontend/e2e/smoke/*.spec.ts` |
+| Test config | `frontend/playwright.demo.config.ts` |
 | Test reports | `frontend/playwright-report-demo/` |
 
 ### Multi-User Parallel Testing
@@ -134,7 +135,7 @@ E2E tests support parallel execution with isolated demo data:
 
 3. **Check E2E logs**: Review `frontend/playwright-report-demo/` for failure screenshots and traces
 
-4. **Test locally**: `cd frontend && bun run test:e2e:demo`
+4. **Test locally**: `cd frontend && bun run test:e2e:smoke` for the gate smoke suite or `bun run test:e2e` for the full local seeded suite
 
 ## Documentation Checklist
 
@@ -263,7 +264,8 @@ cd frontend
 bun run dev                                   # Dev server
 bun test                                      # Vitest unit tests
 bun run test:e2e                              # Playwright E2E
-bun run test:e2e:demo                         # Demo-specific E2E
+bun run test:e2e:smoke                        # Blocking smoke E2E
+bun run test:e2e:verify                       # Seeded demo data verification
 bun run check                                 # TypeScript check
 bun run paraglide                             # Compile translations
 ```

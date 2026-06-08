@@ -434,7 +434,7 @@ Coverage is tracked in CI and Codecov, but the repository does not currently cla
 | Backend | `go test ./...` must pass |
 | Backend integration | `go test -tags=integration -race ...` must pass |
 | Frontend | `bun run check` and `bun run test` must pass |
-| E2E | Blocking smoke E2E plus informational demo shards |
+| E2E | Blocking smoke E2E plus blocking local seeded demo shards; optional remote hosted-demo E2E remains informational |
 
 ### Backend Testing
 
