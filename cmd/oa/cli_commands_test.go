@@ -13712,6 +13712,13 @@ func TestCLIEmailCommands(t *testing.T) {
 
 func TestCLIEmailBranches(t *testing.T) {
 	configureCLIEnv(t)
+	app, stdout, stderr := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{"email", "log"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no API token configured")
+	assert.Empty(t, stdout.String())
+
 	require.NoError(t, saveConfig(&cliConfig{
 		BaseURL:    "https://placeholder.example.com",
 		TenantID:   "tenant-1",
@@ -13790,7 +13797,6 @@ func TestCLIEmailBranches(t *testing.T) {
 	defer server.Close()
 
 	t.Setenv("OA_BASE_URL", server.URL)
-	app, stdout, stderr := newTestCLIApp()
 
 	errorCases := []struct {
 		name string
@@ -13823,7 +13829,7 @@ func TestCLIEmailBranches(t *testing.T) {
 	}
 
 	stdout.Reset()
-	err := app.run(context.Background(), []string{"email", "log", "--limit", "13", "--json"})
+	err = app.run(context.Background(), []string{"email", "log", "--limit", "13", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"id": "email-json"`)
 	assert.Contains(t, stdout.String(), `"status": "FAILED"`)
