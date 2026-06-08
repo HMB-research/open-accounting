@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import {
     api,
     type DocumentAttachment,
@@ -13,13 +12,24 @@
   interface Props {
     tenantId: string;
     backHref?: string;
+    initialView?: string;
+    initialEntityType?: string;
+    initialDocumentType?: string;
+    initialReviewStatus?: string;
   }
 
   type QueueView = "review" | "retention";
   type EntityTypeFilter = DocumentAttachment["entity_type"] | "";
   type DocumentTypeFilter = DocumentAttachment["document_type"] | "";
 
-  let { tenantId, backHref = "" }: Props = $props();
+  let {
+    tenantId,
+    backHref = "",
+    initialView = "review",
+    initialEntityType = "",
+    initialDocumentType = "",
+    initialReviewStatus = "PENDING",
+  }: Props = $props();
 
   const reviewStatusOptions: DocumentReviewStatusFilter[] = [
     "PENDING",
@@ -78,6 +88,7 @@
   let downloadingDocumentId = $state("");
   let error = $state("");
   let successMessage = $state("");
+  let loadedInitialFilterKey = "";
 
   let activeDocuments = $derived(
     activeView === "review"
@@ -85,9 +96,48 @@
       : (retentionReview?.documents ?? []),
   );
 
-  onMount(() => {
+  $effect(() => {
+    const nextInitialFilterKey = [
+      tenantId,
+      initialView,
+      initialEntityType,
+      initialDocumentType,
+      initialReviewStatus,
+    ].join("|");
+
+    if (nextInitialFilterKey === loadedInitialFilterKey) {
+      return;
+    }
+
+    loadedInitialFilterKey = nextInitialFilterKey;
+    activeView = normalizeQueueView(initialView);
+    entityType = normalizeEntityType(initialEntityType);
+    documentType = normalizeDocumentType(initialDocumentType);
+    reviewStatus = normalizeReviewStatus(initialReviewStatus);
     void refreshActiveQueue();
   });
+
+  function normalizeQueueView(value: string): QueueView {
+    return value === "retention" ? "retention" : "review";
+  }
+
+  function normalizeEntityType(value: string): EntityTypeFilter {
+    return entityTypeOptions.includes(value as EntityTypeFilter)
+      ? (value as EntityTypeFilter)
+      : "";
+  }
+
+  function normalizeDocumentType(value: string): DocumentTypeFilter {
+    return documentTypeOptions.includes(value as DocumentTypeFilter)
+      ? (value as DocumentTypeFilter)
+      : "";
+  }
+
+  function normalizeReviewStatus(value: string): DocumentReviewStatusFilter {
+    return reviewStatusOptions.includes(value as DocumentReviewStatusFilter)
+      ? (value as DocumentReviewStatusFilter)
+      : "PENDING";
+  }
 
   async function refreshActiveQueue(clearSuccess = true) {
     if (clearSuccess) {

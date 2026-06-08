@@ -5,6 +5,10 @@
 
 	let tenantId = $derived($page.url.searchParams.get('tenant') || '');
 	let settingsHref = $derived(tenantId ? `/settings?tenant=${tenantId}` : '/settings');
+	let initialView = $derived($page.url.searchParams.get('view') || 'review');
+	let initialEntityType = $derived($page.url.searchParams.get('entity_type') || '');
+	let initialDocumentType = $derived($page.url.searchParams.get('document_type') || '');
+	let initialReviewStatus = $derived($page.url.searchParams.get('review_status') || 'PENDING');
 </script>
 
 <svelte:head>
@@ -12,5 +16,12 @@
 </svelte:head>
 
 <div class="container">
-	<DocumentReviewQueuePanel {tenantId} backHref={settingsHref} />
+	<DocumentReviewQueuePanel
+		{tenantId}
+		backHref={settingsHref}
+		{initialView}
+		{initialEntityType}
+		{initialDocumentType}
+		{initialReviewStatus}
+	/>
 </div>

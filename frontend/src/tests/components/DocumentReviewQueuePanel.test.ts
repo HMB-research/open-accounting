@@ -161,6 +161,29 @@ describe("DocumentReviewQueuePanel", () => {
     ).toBeInTheDocument();
   });
 
+  it("seeds review filters from initial props", async () => {
+    render(DocumentReviewQueuePanel, {
+      tenantId: "tenant-1",
+      initialEntityType: "bank_transaction",
+      initialDocumentType: "reconciliation_evidence",
+      initialReviewStatus: "ALL",
+    });
+
+    await waitFor(() => {
+      expect(apiMock.getDocumentReviewQueue).toHaveBeenCalledWith("tenant-1", {
+        entity_type: "bank_transaction",
+        document_type: "reconciliation_evidence",
+        review_status: "ALL",
+        limit: 50,
+      });
+    });
+    expect(screen.getByLabelText("Entity type")).toHaveValue("bank_transaction");
+    expect(screen.getByLabelText("Document type")).toHaveValue(
+      "reconciliation_evidence",
+    );
+    expect(screen.getByLabelText("Review status")).toHaveValue("ALL");
+  });
+
   it("applies review filters and opens the retention queue", async () => {
     render(DocumentReviewQueuePanel, { tenantId: "tenant-1" });
 
