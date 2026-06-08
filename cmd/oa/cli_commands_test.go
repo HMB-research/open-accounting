@@ -3370,6 +3370,54 @@ func TestCLIAdminPluginRegistryBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Removed plugin registry "+registryID)
 }
 
+func TestCLIAdminPluginRegistryAPIErrors(t *testing.T) {
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+	const registryID = "55555555-5555-4555-8555-555555555555"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/plugin-registries":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/plugin-registries":
+			var req plugin.CreateRegistryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Broken Registry", req.Name)
+			assert.Equal(t, "https://plugins.example.com/broken", req.URL)
+			assert.Equal(t, "Fails on purpose", req.Description)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/admin/plugin-registries/"+registryID:
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/plugin-registries/"+registryID+"/sync":
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "plugin registry backend unavailable"})
+	}))
+	defer server.Close()
+	client := newAPIClient(server.URL, "oa_saved_token")
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list api error", args: []string{"list"}},
+		{name: "create api error", args: []string{"create", "--name", "Broken Registry", "--url", "https://plugins.example.com/broken", "--description", "Fails on purpose"}},
+		{name: "delete api error", args: []string{"delete", "--id", registryID}},
+		{name: "sync api error", args: []string{"sync", "--id", registryID}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.runAdminPluginRegistries(ctx, client, tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "plugin registry backend unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIAdminTopLevelBranches(t *testing.T) {
 	configureCLIEnv(t)
 	app, stdout, _ := newTestCLIApp()
