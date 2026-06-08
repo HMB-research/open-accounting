@@ -1044,6 +1044,18 @@ class ApiClient {
     );
   }
 
+  async convertQuoteToInvoice(
+    tenantId: string,
+    quoteId: string,
+    data: ConvertQuoteToInvoiceRequest = {},
+  ) {
+    return this.request<QuoteInvoiceConversionResult>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/quotes/${quoteId}/convert-to-invoice`,
+      data,
+    );
+  }
+
   // Orders endpoints
   async listOrders(tenantId: string, filter?: OrderFilter) {
     const query = buildQuery(filter);
@@ -3349,6 +3361,17 @@ export interface QuoteFilter {
   from_date?: string;
   to_date?: string;
   search?: string;
+}
+
+export interface ConvertQuoteToInvoiceRequest {
+  issue_date?: string;
+  due_date?: string;
+  notes?: string;
+}
+
+export interface QuoteInvoiceConversionResult {
+  quote: Quote;
+  invoice: Invoice;
 }
 
 // Order types

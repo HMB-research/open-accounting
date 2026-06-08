@@ -430,6 +430,8 @@
   "quotes_statusRejected": "Keeldutud",
   "quotes_statusExpired": "Aegunud",
   "quotes_statusConverted": "Teisendatud",
+  "quotes_convertToInvoice": "Teisenda arveks",
+  "quotes_convertedToInvoice": "Teisendatud arveks {number}",
   "quotes_confirmDelete": "Kas olete kindel, et soovite selle pakkumise kustutada?",
   "nav_orders": "Tellimused",
   "orders_title": "Müügitellimused",

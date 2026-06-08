@@ -12,6 +12,7 @@ import {
 	calculateDateRange,
 	formatDateET,
 	formatDate,
+	dateInputToApiTimestamp,
 	type DatePreset
 } from '$lib/utils/dates';
 
@@ -43,6 +44,22 @@ describe('Date Utilities', () => {
 		it('handles end of year', () => {
 			const date = new Date('2024-12-31T12:00:00Z');
 			expect(toISODate(date)).toBe('2024-12-31');
+		});
+	});
+
+	describe('dateInputToApiTimestamp', () => {
+		it('converts date input values to RFC3339-compatible timestamps', () => {
+			expect(dateInputToApiTimestamp('2026-06-08')).toBe('2026-06-08T00:00:00Z');
+		});
+
+		it('trims browser date input values before converting', () => {
+			expect(dateInputToApiTimestamp(' 2026-06-08 ')).toBe('2026-06-08T00:00:00Z');
+		});
+
+		it('passes existing timestamps through unchanged', () => {
+			expect(dateInputToApiTimestamp('2026-06-08T12:30:00Z')).toBe(
+				'2026-06-08T12:30:00Z'
+			);
 		});
 	});
 

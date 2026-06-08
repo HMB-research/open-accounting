@@ -18,6 +18,15 @@ export interface LineItem {
 	discount_percent: string;
 }
 
+export function formStringValue(value: string | number): string {
+	return String(value).trim();
+}
+
+export function optionalFormStringValue(value: string | number): string | undefined {
+	const text = formStringValue(value);
+	return text === '' ? undefined : text;
+}
+
 /**
  * Format a value as currency using Intl.NumberFormat.
  * Handles Decimal.js instances, numbers, and string values.

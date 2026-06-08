@@ -3,7 +3,12 @@
 	import { api, type Product, type ProductCategory, type Warehouse, type ProductType, type ProductStatus, type StockLevel, type InventoryMovement, type MovementType } from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
-	import { formatCurrency, formatDate } from '$lib/utils/formatting';
+	import {
+		formatCurrency,
+		formatDate,
+		formStringValue,
+		optionalFormStringValue
+	} from '$lib/utils/formatting';
 
 	type Tab = 'products' | 'warehouses' | 'categories';
 
@@ -82,15 +87,6 @@
 
 		if (showAdjustStock) showAdjustStock = false;
 		if (showMovements) showMovements = false;
-	}
-
-	function formStringValue(value: string | number): string {
-		return String(value).trim();
-	}
-
-	function optionalFormStringValue(value: string | number): string | undefined {
-		const text = formStringValue(value);
-		return text === '' ? undefined : text;
 	}
 
 	async function loadData(tenantId: string) {

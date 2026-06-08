@@ -226,23 +226,22 @@ Each view is tested for:
 |----------|--------|-------|
 | Page Load | ✅ | Loads correctly |
 | Data Display | ✅ | Shows quotes with statuses in table |
-| Navigation | ✅ | New Quote button visible, status filter works |
-| CRUD | ⚠️ | Read verified, quote-to-order conversion needs verification |
+| Navigation | ✅ | New Quote button visible, status filter works, accepted quote conversion action visible |
+| CRUD | ✅ | Create, delete, send, accept, and quote-to-invoice conversion verified |
 | Errors | ✅ | No errors observed |
 | Responsive | ⚠️ | Needs manual verification |
 
 **E2E Tests:** 4/4 passed
-- Displays quotes page with correct structure
-- Displays quote statuses in table
-- Can filter quotes by status
-- Has New Quote button
+- Displays seeded quotes with statuses and controls
+- Creates a quote and filters by status
+- Creates and deletes a draft quote
+- Sends, accepts, and converts a quote into a draft invoice
 
 **Known Issues (require manual verification):**
-- Quote-to-Order conversion needs verification
 - Email quote functionality needs implementation
 - Quote PDF generation needs verification
 
-**Overall:** ✅ Working (basic functionality)
+**Overall:** ✅ Working
 
 ---
 
@@ -801,6 +800,7 @@ _None identified_
 | 2026-01-12 | Claude | Tested Banking section (2 pages) - All Working (WebFetch) |
 | 2026-01-12 | Claude | Tested Payroll section (5 pages) - All Working (WebFetch) |
 | 2026-01-12 | Claude | Note: E2E tests blocked by demo user credential mismatch (demo1-4 not seeded) |
+| 2026-06-08 | Codex | Tested Quotes (/quotes) - Working (4/4 E2E tests passed, quote-to-invoice conversion verified) |
 | 2026-01-11 | Claude | Tested Cash Payments (/payments/cash) - Working (5/5 E2E tests passed) |
 | 2026-01-11 | Claude | Tested Recurring (/recurring) - Working (4/4 E2E tests passed) |
 | 2026-01-11 | Claude | Tested Fixed Assets (/assets) - Working (5/5 E2E tests passed) |
