@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/database"
@@ -103,6 +104,24 @@ type UpdateCostCenterRequest struct {
 	BudgetPeriod BudgetPeriod     `json:"budget_period,omitempty"`
 }
 
+// CreateCostAllocationRequest assigns a journal entry line amount to a cost center.
+type CreateCostAllocationRequest struct {
+	CostCenterID         string           `json:"cost_center_id"`
+	JournalEntryLineID   string           `json:"journal_entry_line_id"`
+	Amount               decimal.Decimal  `json:"amount"`
+	AllocationPercentage *decimal.Decimal `json:"allocation_percentage,omitempty"`
+	AllocationDate       time.Time        `json:"allocation_date"`
+	Notes                string           `json:"notes,omitempty"`
+}
+
+// CostAllocationFilters filters cost allocations for review and reporting.
+type CostAllocationFilters struct {
+	CostCenterID       string
+	JournalEntryLineID string
+	StartDate          *time.Time
+	EndDate            *time.Time
+}
+
 // CostCenterSummary provides expense summary for a cost center
 type CostCenterSummary struct {
 	CostCenter    CostCenter      `json:"cost_center"`
@@ -133,6 +152,8 @@ type CostCenterRepository interface {
 	Update(ctx context.Context, schemaName string, cc *CostCenter) error
 	Delete(ctx context.Context, schemaName, tenantID, costCenterID string) error
 	GetExpensesByPeriod(ctx context.Context, schemaName, tenantID, costCenterID string, start, end time.Time) (decimal.Decimal, error)
+	CreateAllocation(ctx context.Context, schemaName string, allocation *CostAllocation) error
+	ListAllocations(ctx context.Context, schemaName, tenantID string, filters CostAllocationFilters) ([]CostAllocation, error)
 }
 
 // CostCenterGORMRepository implements CostCenterRepository with the shared ORM layer.
@@ -324,6 +345,69 @@ func (r *CostCenterGORMRepository) GetExpensesByPeriod(ctx context.Context, sche
 	return row.Total.Decimal, nil
 }
 
+// CreateAllocation creates a cost allocation row.
+func (r *CostCenterGORMRepository) CreateAllocation(ctx context.Context, schemaName string, allocation *CostAllocation) error {
+	if allocation.ID == "" {
+		allocation.ID = uuid.New().String()
+	}
+	allocation.CreatedAt = time.Now()
+
+	db, err := r.tenantTable(ctx, schemaName, "cost_allocations")
+	if err != nil {
+		return fmt.Errorf("qualify cost allocations table: %w", err)
+	}
+	if err := db.Create(costAllocationToModel(allocation)).Error; err != nil {
+		return fmt.Errorf("create cost allocation: %w", err)
+	}
+	return nil
+}
+
+// ListAllocations lists cost allocations with optional cost center and date filters.
+func (r *CostCenterGORMRepository) ListAllocations(ctx context.Context, schemaName, tenantID string, filters CostAllocationFilters) ([]CostAllocation, error) {
+	allocationsTable, err := r.tenantTable(ctx, schemaName, "cost_allocations")
+	if err != nil {
+		return nil, fmt.Errorf("qualify cost allocations table: %w", err)
+	}
+	costCentersTable, err := database.QualifiedTable(schemaName, "cost_centers")
+	if err != nil {
+		return nil, fmt.Errorf("qualify cost centers table: %w", err)
+	}
+
+	query := allocationsTable.
+		Select("cost_allocations.*, cost_centers.code AS cost_center_code, cost_centers.name AS cost_center_name").
+		Joins("LEFT JOIN "+costCentersTable+" AS cost_centers ON cost_centers.id = cost_allocations.cost_center_id AND cost_centers.tenant_id = cost_allocations.tenant_id").
+		Where("cost_allocations.tenant_id = ?", tenantID)
+	if strings.TrimSpace(filters.CostCenterID) != "" {
+		query = query.Where("cost_allocations.cost_center_id = ?", strings.TrimSpace(filters.CostCenterID))
+	}
+	if strings.TrimSpace(filters.JournalEntryLineID) != "" {
+		query = query.Where("cost_allocations.journal_entry_line_id = ?", strings.TrimSpace(filters.JournalEntryLineID))
+	}
+	if filters.StartDate != nil {
+		query = query.Where("cost_allocations.allocation_date >= ?", *filters.StartDate)
+	}
+	if filters.EndDate != nil {
+		query = query.Where("cost_allocations.allocation_date <= ?", *filters.EndDate)
+	}
+
+	var rows []struct {
+		models.CostAllocation
+		CostCenterCode string
+		CostCenterName string
+	}
+	if err := query.Order("cost_allocations.allocation_date DESC, cost_allocations.created_at DESC").Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list cost allocations: %w", err)
+	}
+
+	allocations := make([]CostAllocation, len(rows))
+	for i := range rows {
+		allocations[i] = *costAllocationFromModel(&rows[i].CostAllocation)
+		allocations[i].CostCenterCode = rows[i].CostCenterCode
+		allocations[i].CostCenterName = rows[i].CostCenterName
+	}
+	return allocations, nil
+}
+
 func costCenterToModel(cc *CostCenter) *models.CostCenter {
 	return &models.CostCenter{
 		ID:           cc.ID,
@@ -370,6 +454,34 @@ func costCenterBudgetAmountFromModel(amount *models.Decimal) *decimal.Decimal {
 	}
 	value := amount.Decimal
 	return &value
+}
+
+func costAllocationToModel(allocation *CostAllocation) *models.CostAllocation {
+	return &models.CostAllocation{
+		ID:                   allocation.ID,
+		TenantID:             allocation.TenantID,
+		CostCenterID:         allocation.CostCenterID,
+		JournalEntryLineID:   allocation.JournalEntryLineID,
+		Amount:               models.NewDecimal(allocation.Amount),
+		AllocationPercentage: costCenterBudgetAmountToModel(allocation.AllocationPercentage),
+		AllocationDate:       allocation.AllocationDate,
+		Notes:                allocation.Notes,
+		CreatedAt:            allocation.CreatedAt,
+	}
+}
+
+func costAllocationFromModel(allocation *models.CostAllocation) *CostAllocation {
+	return &CostAllocation{
+		ID:                   allocation.ID,
+		TenantID:             allocation.TenantID,
+		CostCenterID:         allocation.CostCenterID,
+		JournalEntryLineID:   allocation.JournalEntryLineID,
+		Amount:               allocation.Amount.Decimal,
+		AllocationPercentage: costCenterBudgetAmountFromModel(allocation.AllocationPercentage),
+		AllocationDate:       allocation.AllocationDate,
+		Notes:                allocation.Notes,
+		CreatedAt:            allocation.CreatedAt,
+	}
 }
 
 // CostCenterService provides business logic for cost centers
@@ -507,6 +619,56 @@ func (s *CostCenterService) GetCostCenterReport(ctx context.Context, schemaName,
 	return report, nil
 }
 
+// CreateCostAllocation assigns a journal entry line amount to a cost center.
+func (s *CostCenterService) CreateCostAllocation(ctx context.Context, schemaName, tenantID string, req *CreateCostAllocationRequest) (*CostAllocation, error) {
+	costCenterID := strings.TrimSpace(req.CostCenterID)
+	if costCenterID == "" {
+		return nil, fmt.Errorf("cost_center_id is required")
+	}
+	journalEntryLineID := strings.TrimSpace(req.JournalEntryLineID)
+	if journalEntryLineID == "" {
+		return nil, fmt.Errorf("journal_entry_line_id is required")
+	}
+	if !req.Amount.GreaterThan(decimal.Zero) {
+		return nil, fmt.Errorf("amount must be greater than zero")
+	}
+	if req.AllocationDate.IsZero() {
+		return nil, fmt.Errorf("allocation_date is required")
+	}
+	if req.AllocationPercentage != nil {
+		if req.AllocationPercentage.LessThan(decimal.Zero) || req.AllocationPercentage.GreaterThan(decimal.NewFromInt(100)) {
+			return nil, fmt.Errorf("allocation_percentage must be between 0 and 100")
+		}
+	}
+	if _, err := s.repo.GetByID(ctx, schemaName, tenantID, costCenterID); err != nil {
+		return nil, err
+	}
+
+	allocation := &CostAllocation{
+		TenantID:             tenantID,
+		CostCenterID:         costCenterID,
+		JournalEntryLineID:   journalEntryLineID,
+		Amount:               req.Amount,
+		AllocationPercentage: req.AllocationPercentage,
+		AllocationDate:       req.AllocationDate,
+		Notes:                strings.TrimSpace(req.Notes),
+	}
+	if err := s.repo.CreateAllocation(ctx, schemaName, allocation); err != nil {
+		return nil, err
+	}
+	return allocation, nil
+}
+
+// ListCostAllocations returns cost-center allocations for review and automation.
+func (s *CostCenterService) ListCostAllocations(ctx context.Context, schemaName, tenantID string, filters CostAllocationFilters) ([]CostAllocation, error) {
+	if filters.StartDate != nil && filters.EndDate != nil && filters.EndDate.Before(*filters.StartDate) {
+		return nil, fmt.Errorf("end_date must be on or after start_date")
+	}
+	filters.CostCenterID = strings.TrimSpace(filters.CostCenterID)
+	filters.JournalEntryLineID = strings.TrimSpace(filters.JournalEntryLineID)
+	return s.repo.ListAllocations(ctx, schemaName, tenantID, filters)
+}
+
 // MockCostCenterRepository is a mock implementation for testing
 type MockCostCenterRepository struct {
 	CostCenters map[string]*CostCenter
@@ -581,4 +743,46 @@ func (m *MockCostCenterRepository) GetExpensesByPeriod(_ context.Context, _, ten
 		}
 	}
 	return total, nil
+}
+
+// CreateAllocation mock implementation
+func (m *MockCostCenterRepository) CreateAllocation(_ context.Context, _ string, allocation *CostAllocation) error {
+	if allocation.ID == "" {
+		allocation.ID = uuid.New().String()
+	}
+	if allocation.CreatedAt.IsZero() {
+		allocation.CreatedAt = time.Now()
+	}
+	m.Allocations[allocation.CostCenterID] = append(m.Allocations[allocation.CostCenterID], *allocation)
+	return nil
+}
+
+// ListAllocations mock implementation
+func (m *MockCostCenterRepository) ListAllocations(_ context.Context, _, tenantID string, filters CostAllocationFilters) ([]CostAllocation, error) {
+	result := []CostAllocation{}
+	for _, allocations := range m.Allocations {
+		for _, allocation := range allocations {
+			if allocation.TenantID != tenantID {
+				continue
+			}
+			if strings.TrimSpace(filters.CostCenterID) != "" && allocation.CostCenterID != strings.TrimSpace(filters.CostCenterID) {
+				continue
+			}
+			if strings.TrimSpace(filters.JournalEntryLineID) != "" && allocation.JournalEntryLineID != strings.TrimSpace(filters.JournalEntryLineID) {
+				continue
+			}
+			if filters.StartDate != nil && allocation.AllocationDate.Before(*filters.StartDate) {
+				continue
+			}
+			if filters.EndDate != nil && allocation.AllocationDate.After(*filters.EndDate) {
+				continue
+			}
+			if costCenter, ok := m.CostCenters[allocation.CostCenterID]; ok {
+				allocation.CostCenterCode = costCenter.Code
+				allocation.CostCenterName = costCenter.Name
+			}
+			result = append(result, allocation)
+		}
+	}
+	return result, nil
 }

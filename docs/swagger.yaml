@@ -188,6 +188,32 @@ definitions:
     - BudgetPeriodMonthly
     - BudgetPeriodQuarterly
     - BudgetPeriodAnnual
+  github_com_HMB-research_open-accounting_internal_accounting.CostAllocation:
+    properties:
+      allocation_date:
+        type: string
+      allocation_percentage:
+        type: number
+      amount:
+        type: number
+      cost_center_code:
+        description: Joined fields
+        type: string
+      cost_center_id:
+        type: string
+      cost_center_name:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      journal_entry_line_id:
+        type: string
+      notes:
+        type: string
+      tenant_id:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_accounting.CostCenter:
     properties:
       budget_amount:
@@ -269,6 +295,21 @@ definitions:
       name:
         type: string
       parent_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.CreateCostAllocationRequest:
+    properties:
+      allocation_date:
+        type: string
+      allocation_percentage:
+        type: number
+      amount:
+        type: number
+      cost_center_id:
+        type: string
+      journal_entry_line_id:
+        type: string
+      notes:
         type: string
     type: object
   github_com_HMB-research_open-accounting_internal_accounting.CreateCostCenterRequest:
@@ -10138,6 +10179,109 @@ paths:
       security:
       - BearerAuth: []
       summary: Update cost center
+      tags:
+      - Cost Centers
+  /tenants/{tenantID}/cost-centers/allocations:
+    get:
+      description: List journal-entry-line allocations to cost centers, optionally
+        filtered by cost center, journal line, or allocation date range
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Cost center ID
+        in: query
+        name: cost_center_id
+        type: string
+      - description: Journal entry line ID
+        in: query
+        name: journal_entry_line_id
+        type: string
+      - description: Start date (YYYY-MM-DD)
+        in: query
+        name: start_date
+        type: string
+      - description: End date (YYYY-MM-DD)
+        in: query
+        name: end_date
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CostAllocation'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List cost allocations
+      tags:
+      - Cost Centers
+    post:
+      consumes:
+      - application/json
+      description: Assign a positive journal-entry-line amount to a tenant cost center
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Cost allocation
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CreateCostAllocationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CostAllocation'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create cost allocation
       tags:
       - Cost Centers
   /tenants/{tenantID}/cost-centers/import:

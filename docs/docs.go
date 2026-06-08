@@ -5660,6 +5660,166 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/cost-centers/allocations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List journal-entry-line allocations to cost centers, optionally filtered by cost center, journal line, or allocation date range",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Cost Centers"
+                ],
+                "summary": "List cost allocations",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cost center ID",
+                        "name": "cost_center_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Journal entry line ID",
+                        "name": "journal_entry_line_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "start_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "end_date",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CostAllocation"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Assign a positive journal-entry-line amount to a tenant cost center",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Cost Centers"
+                ],
+                "summary": "Create cost allocation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Cost allocation",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CreateCostAllocationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.CostAllocation"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/cost-centers/import": {
             "post": {
                 "security": [
@@ -20516,6 +20676,45 @@ const docTemplate = `{
                 "BudgetPeriodAnnual"
             ]
         },
+        "github_com_HMB-research_open-accounting_internal_accounting.CostAllocation": {
+            "type": "object",
+            "properties": {
+                "allocation_date": {
+                    "type": "string"
+                },
+                "allocation_percentage": {
+                    "type": "number"
+                },
+                "amount": {
+                    "type": "number"
+                },
+                "cost_center_code": {
+                    "description": "Joined fields",
+                    "type": "string"
+                },
+                "cost_center_id": {
+                    "type": "string"
+                },
+                "cost_center_name": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "journal_entry_line_id": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_accounting.CostCenter": {
             "type": "object",
             "properties": {
@@ -20638,6 +20837,29 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "parent_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.CreateCostAllocationRequest": {
+            "type": "object",
+            "properties": {
+                "allocation_date": {
+                    "type": "string"
+                },
+                "allocation_percentage": {
+                    "type": "number"
+                },
+                "amount": {
+                    "type": "number"
+                },
+                "cost_center_id": {
+                    "type": "string"
+                },
+                "journal_entry_line_id": {
+                    "type": "string"
+                },
+                "notes": {
                     "type": "string"
                 }
             }

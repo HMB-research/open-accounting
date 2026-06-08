@@ -1423,6 +1423,29 @@ func printCostCenterBudgetReport(w io.Writer, report *accounting.CostCenterRepor
 	_ = tw.Flush()
 }
 
+func printCostAllocationsTable(w io.Writer, allocations []accounting.CostAllocation) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tDATE\tCOST CENTER\tJOURNAL LINE\tAMOUNT\tPERCENT\tNOTES")
+	for _, allocation := range allocations {
+		costCenterLabel := allocation.CostCenterID
+		if allocation.CostCenterCode != "" || allocation.CostCenterName != "" {
+			costCenterLabel = strings.TrimSpace(allocation.CostCenterCode + " " + allocation.CostCenterName)
+		}
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			allocation.ID,
+			formatDate(allocation.AllocationDate),
+			costCenterLabel,
+			allocation.JournalEntryLineID,
+			allocation.Amount.String(),
+			formatDecimalPtr(allocation.AllocationPercentage),
+			allocation.Notes,
+		)
+	}
+	_ = tw.Flush()
+}
+
 func printJournalEntriesTable(w io.Writer, entries []accounting.JournalEntry) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tNUMBER\tDATE\tSTATUS\tEVIDENCE\tDEBIT\tCREDIT\tREFERENCE\tDESCRIPTION")
