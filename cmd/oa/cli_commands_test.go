@@ -7882,6 +7882,103 @@ func TestCLIAssetBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"status": "deleted"`)
 }
 
+func TestCLIAssetAuthAndAPIErrors(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	err := app.run(ctx, []string{"assets", "list"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	importFile := writeTempCSV(t, "assets-error.csv", "asset_number,name,purchase_date,purchase_cost\nFA-ERR,Error laptop,2026-07-01,1500\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/assets":
+			assert.Equal(t, "ACTIVE", r.URL.Query().Get("status"))
+			assert.Equal(t, "cat-error", r.URL.Query().Get("category_id"))
+			assert.Equal(t, "Laptop", r.URL.Query().Get("search"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/assets":
+			var req assets.CreateAssetRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Error laptop", req.Name)
+			assert.Equal(t, "2026-07-01", req.PurchaseDate.Format("2006-01-02"))
+			assert.True(t, req.PurchaseCost.Equal(decimal.NewFromInt(1500)))
+			assert.Equal(t, assets.DepreciationStraightLine, req.DepreciationMethod)
+			assert.Equal(t, 60, req.UsefulLifeMonths)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/assets/import":
+			var req assets.ImportAssetsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "assets-error.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "FA-ERR")
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-error":
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-error":
+			var req assets.UpdateAssetRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Updated error laptop", req.Name)
+			assert.Equal(t, assets.DepreciationDecliningBalance, req.DepreciationMethod)
+			assert.Equal(t, 48, req.UsefulLifeMonths)
+			assert.True(t, req.ResidualValue.Equal(decimal.NewFromInt(100)))
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-error":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-error/activate":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-error/dispose":
+			var req assets.DisposeAssetRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-08-01", req.DisposalDate.Format("2006-01-02"))
+			assert.Equal(t, assets.DisposalSold, req.DisposalMethod)
+			assert.True(t, req.DisposalProceeds.Equal(decimal.NewFromInt(250)))
+			assert.Equal(t, "Sold damaged asset", req.DisposalNotes)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-error/depreciation":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/assets/asset-error/depreciation":
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "asset backend unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{name: "list api error", args: []string{"assets", "list", "--status", "active", "--category-id", "cat-error", "--search", "Laptop"}},
+		{name: "create api error", args: []string{"assets", "create", "--name", "Error laptop", "--purchase-date", "2026-07-01", "--purchase-cost", "1500", "--depreciation-method", "straight_line", "--useful-life-months", "60"}},
+		{name: "import api error", args: []string{"assets", "import", "--file", importFile}},
+		{name: "get api error", args: []string{"assets", "get", "--id", "asset-error"}},
+		{name: "update api error", args: []string{"assets", "update", "--id", "asset-error", "--name", "Updated error laptop", "--depreciation-method", "declining_balance", "--useful-life-months", "48", "--residual-value", "100"}},
+		{name: "delete api error", args: []string{"assets", "delete", "--id", "asset-error"}},
+		{name: "activate api error", args: []string{"assets", "activate", "--id", "asset-error"}},
+		{name: "dispose api error", args: []string{"assets", "dispose", "--id", "asset-error", "--disposal-date", "2026-08-01", "--method", "sold", "--proceeds", "250", "--notes", "Sold damaged asset"}},
+		{name: "depreciate api error", args: []string{"assets", "depreciate", "--id", "asset-error"}},
+		{name: "depreciation api error", args: []string{"assets", "depreciation", "--id", "asset-error"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "asset backend unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIAssetCategoryBranches(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
