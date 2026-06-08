@@ -1,8 +1,8 @@
-import { test as setup, expect } from '@playwright/test';
+import { test as setup } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { DEMO_CREDENTIALS, DEMO_URL } from './utils';
+import { DEMO_CREDENTIALS, loginWithDemoCredentials } from './utils';
 
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -33,33 +33,8 @@ setup('authenticate all demo users', async ({ browser }) => {
 		const page = await context.newPage();
 
 		try {
-			// Navigate to login page
-			await page.goto(`${DEMO_URL}/login`);
-			await page.waitForLoadState('networkidle');
-
-			// Fill credentials
-			await page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 10000 });
-			const emailInput = page.locator('input[type="email"], input[name="email"]').first();
-			const passwordInput = page.locator('input[type="password"]').first();
-			await emailInput.fill(creds.email);
-			await passwordInput.fill(creds.password);
-
-			// Check "Remember Me" to store tokens in localStorage (required for session persistence)
-			// Without this, tokens go to sessionStorage which Playwright's storageState doesn't save
-			const rememberMeCheckbox = page.locator('input[type="checkbox"]').first();
-			if (await rememberMeCheckbox.isVisible().catch(() => false)) {
-				await rememberMeCheckbox.check();
-				console.log(`[Auth Setup] Checked "Remember Me" for ${creds.email}`);
-			}
-
-			// Submit and wait for dashboard
-			const signInButton = page.getByRole('button', { name: /sign in|login|logi sisse/i });
-			await signInButton.click();
-			await page.waitForURL(/dashboard/, { timeout: 30000 });
-
-			// Wait for dashboard to be fully loaded
-			await page.waitForLoadState('domcontentloaded');
-			await expect(page.getByText(/dashboard|cash flow|revenue/i).first()).toBeVisible({ timeout: 10000 });
+			// Remember Me stores tokens in localStorage, which Playwright storageState preserves.
+			await loginWithDemoCredentials(page, creds, { rememberMe: true, logPrefix: '[Auth Setup] Login' });
 
 			console.log(`[Auth Setup] Login successful for ${creds.email}, saving state to ${authFile}`);
 
