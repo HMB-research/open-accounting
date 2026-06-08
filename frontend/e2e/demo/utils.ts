@@ -27,6 +27,8 @@ export const DEMO_CREDENTIALS = [
 	{ email: 'demo4@example.com', password: 'demo12345', tenantSlug: 'demo4', tenantName: 'Demo Company 4', tenantId: 'b0000000-0000-0000-0004-000000000001' }
 ] as const;
 
+export type DemoCredentials = (typeof DEMO_CREDENTIALS)[number];
+
 /**
  * Get demo credentials for the current worker
  * @param testInfo - Playwright TestInfo object containing parallelIndex
@@ -37,11 +39,15 @@ export function getDemoCredentials(testInfo: TestInfo) {
 }
 
 /**
- * Login as the demo user assigned to this worker
+ * Login with explicit demo credentials.
  */
-export async function loginAsDemo(page: Page, testInfo: TestInfo): Promise<void> {
-	const creds = getDemoCredentials(testInfo);
+export async function loginWithDemoCredentials(
+	page: Page,
+	creds: DemoCredentials,
+	options: { rememberMe?: boolean; logPrefix?: string } = {}
+): Promise<void> {
 	const startTime = Date.now();
+	const logPrefix = options.logPrefix ?? 'Login';
 
 	// Navigate to login page
 	await page.goto(`${DEMO_URL}/login`);
@@ -55,6 +61,14 @@ export async function loginAsDemo(page: Page, testInfo: TestInfo): Promise<void>
 	const passwordInput = page.locator('input[type="password"]').first();
 	await emailInput.fill(creds.email);
 	await passwordInput.fill(creds.password);
+
+	if (options.rememberMe) {
+		const rememberMeCheckbox = page.locator('input[type="checkbox"]').first();
+		if (await rememberMeCheckbox.isVisible().catch(() => false)) {
+			await rememberMeCheckbox.check();
+			console.log(`${logPrefix} checked "Remember Me" for ${creds.email}`);
+		}
+	}
 
 	// Click sign in and wait for navigation
 	// Support both English "Sign In" and Estonian "Logi sisse"
@@ -84,7 +98,14 @@ export async function loginAsDemo(page: Page, testInfo: TestInfo): Promise<void>
 	await page.waitForSelector('h1, .dashboard-header, [data-testid="dashboard"]', { timeout: 10000 }).catch(() => {
 		// Dashboard loaded even if selector not found
 	});
-	console.log(`Login completed in ${Date.now() - startTime}ms for ${creds.email}`);
+	console.log(`${logPrefix} completed in ${Date.now() - startTime}ms for ${creds.email}`);
+}
+
+/**
+ * Login as the demo user assigned to this worker
+ */
+export async function loginAsDemo(page: Page, testInfo: TestInfo): Promise<void> {
+	await loginWithDemoCredentials(page, getDemoCredentials(testInfo));
 }
 
 /**
