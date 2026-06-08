@@ -27,6 +27,11 @@ export function toISODate(date: Date): string {
 	return date.toISOString().slice(0, 10);
 }
 
+export function dateInputToApiTimestamp(value: string): string {
+	const trimmed = value.trim();
+	return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? `${trimmed}T00:00:00Z` : trimmed;
+}
+
 /**
  * Get the first day of the month for a given date
  */

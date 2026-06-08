@@ -5,10 +5,12 @@
 	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
 	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
 	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
+	import { dateInputToApiTimestamp } from '$lib/utils/dates';
 	import { requireTenantId, parseApiError } from '$lib/utils/tenant';
 	import {
 		formatCurrency,
 		formatDate,
+		formStringValue,
 		calculateLineTotal as calcLineTotal,
 		calculateLinesTotal,
 		createEmptyLine,
@@ -85,15 +87,15 @@
 		try {
 			const quote = await api.createQuote(tenantId, {
 				contact_id: newContactId,
-				quote_date: newQuoteDate,
-				valid_until: newValidUntil || undefined,
+				quote_date: dateInputToApiTimestamp(newQuoteDate),
+				valid_until: newValidUntil ? dateInputToApiTimestamp(newValidUntil) : undefined,
 				notes: newNotes || undefined,
 				lines: newLines.map((line) => ({
 					description: line.description,
-					quantity: line.quantity,
-					unit_price: line.unit_price,
-					vat_rate: line.vat_rate,
-					discount_percent: line.discount_percent || '0'
+					quantity: formStringValue(line.quantity),
+					unit_price: formStringValue(line.unit_price),
+					vat_rate: formStringValue(line.vat_rate),
+					discount_percent: formStringValue(line.discount_percent || '0')
 				}))
 			});
 			quotes = [quote, ...quotes];
@@ -168,6 +170,24 @@
 		try {
 			await api.rejectQuote(tenantId, quoteId);
 			success = m.quotes_statusRejected();
+			setTimeout(() => (success = ''), 3000);
+			loadData(tenantId);
+		} catch (err) {
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
+		}
+	}
+
+	async function convertQuoteToInvoice(quoteId: string) {
+		const tenantId = requireTenantId($page, (err) => (error = err));
+		if (!tenantId) return;
+
+		actionLoading = true;
+		error = '';
+		try {
+			const result = await api.convertQuoteToInvoice(tenantId, quoteId);
+			success = m.quotes_convertedToInvoice({ number: result.invoice.invoice_number });
 			setTimeout(() => (success = ''), 3000);
 			loadData(tenantId);
 		} catch (err) {
@@ -276,7 +296,7 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each quotes as quote}
+						{#each quotes as quote (quote.id)}
 							<tr>
 								<td class="number" data-label={m.quotes_number()}>{quote.quote_number}</td>
 								<td data-label={m.invoices_status()}>
@@ -303,6 +323,14 @@
 										<button class="btn btn-small btn-danger" onclick={() => rejectQuote(quote.id)} title={m.quotes_reject()}>
 											{m.quotes_reject()}
 										</button>
+									{:else if quote.status === 'ACCEPTED'}
+										<button
+											class="btn btn-small btn-success"
+											onclick={() => convertQuoteToInvoice(quote.id)}
+											title={m.quotes_convertToInvoice()}
+										>
+											{m.quotes_convertToInvoice()}
+										</button>
 									{/if}
 								</td>
 							</tr>
@@ -326,7 +354,7 @@
 						<label class="label" for="contact">{m.invoices_customer()} *</label>
 						<select class="input" id="contact" bind:value={newContactId} required>
 							<option value="">{m.invoices_selectContact()}</option>
-							{#each contacts as contact}
+							{#each contacts as contact (contact.id)}
 								<option value={contact.id}>{contact.name}</option>
 							{/each}
 						</select>
@@ -347,7 +375,7 @@
 				<div class="form-group">
 					<span class="label">{m.invoices_lineItems()}</span>
 					<div class="lines-container">
-						{#each newLines as line, i}
+						{#each newLines as line, i (line)}
 							<div class="line-row">
 								<input
 									class="input line-description"

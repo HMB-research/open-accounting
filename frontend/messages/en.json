@@ -430,6 +430,8 @@
   "quotes_statusRejected": "Rejected",
   "quotes_statusExpired": "Expired",
   "quotes_statusConverted": "Converted",
+  "quotes_convertToInvoice": "Convert to invoice",
+  "quotes_convertedToInvoice": "Converted to invoice {number}",
   "quotes_confirmDelete": "Are you sure you want to delete this quote?",
   "nav_orders": "Orders",
   "orders_title": "Sales Orders",
