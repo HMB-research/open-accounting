@@ -9372,6 +9372,163 @@ func TestCLIInventoryProductBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"status": "deleted"`)
 }
 
+func TestCLIInventoryProductFlagAndAPIErrors(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+	cfg := &cliConfig{TenantID: "tenant-1"}
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "import invalid flag",
+			args: []string{"import", "--bad"},
+			want: "flag provided but not defined",
+		},
+		{
+			name: "get invalid flag",
+			args: []string{"get", "--bad"},
+			want: "flag provided but not defined",
+		},
+		{
+			name: "update negative minimum stock",
+			args: []string{"update", "--id", "prod-error", "--name", "Widget", "--sales-price", "15", "--min-stock-level", "-1"},
+			want: "min-stock-level must be non-negative",
+		},
+		{
+			name: "update negative reorder point",
+			args: []string{"update", "--id", "prod-error", "--name", "Widget", "--sales-price", "15", "--reorder-point", "-1"},
+			want: "reorder-point must be non-negative",
+		},
+		{
+			name: "delete invalid flag",
+			args: []string{"delete", "--bad"},
+			want: "flag provided but not defined",
+		},
+		{
+			name: "stock levels invalid flag",
+			args: []string{"stock-levels", "--bad"},
+			want: "flag provided but not defined",
+		},
+		{
+			name: "movements invalid flag",
+			args: []string{"movements", "--bad"},
+			want: "flag provided but not defined",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := app.runInventoryProducts(ctx, cfg, nil, tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.want)
+		})
+	}
+
+	tableServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "/api/v1/tenants/tenant-1/products", r.URL.Path)
+		require.Empty(t, r.URL.RawQuery)
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			cliInventoryProductPayload("prod-table", "PRD-TABLE", "Table widget", inventory.ProductTypeGoods, true, true),
+		})
+	}))
+	defer tableServer.Close()
+
+	stdout.Reset()
+	err := app.runInventoryProducts(ctx, cfg, newAPIClient(tableServer.URL, "oa_saved_token"), []string{"list"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "PRD-TABLE")
+	assert.Contains(t, stdout.String(), "Table widget")
+
+	importFile := writeTempCSV(t, "error-products.csv", "code,name,sales_price\nERR-001,Error widget,15\n")
+	errorServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/products":
+			assert.Equal(t, "GOODS", r.URL.Query().Get("product_type"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/products":
+			var req inventory.CreateProductRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "ERR-001", req.Code)
+			assert.Equal(t, "Error widget", req.Name)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/products/import":
+			var req inventory.ImportProductsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "error-products.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "ERR-001")
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-error":
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-error":
+			var req inventory.UpdateProductRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Error widget updated", req.Name)
+			assert.Equal(t, "16", req.SalesPrice)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-error":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-error/stock-levels":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-error/movements":
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "inventory products backend unavailable"})
+	}))
+	defer errorServer.Close()
+	errorClient := newAPIClient(errorServer.URL, "oa_saved_token")
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "list api error",
+			args: []string{"list", "--type", "goods"},
+		},
+		{
+			name: "create api error",
+			args: []string{"create", "--code", "ERR-001", "--name", "Error widget", "--sales-price", "15"},
+		},
+		{
+			name: "import api error",
+			args: []string{"import", "--file", importFile},
+		},
+		{
+			name: "get api error",
+			args: []string{"get", "--id", "prod-error"},
+		},
+		{
+			name: "update api error",
+			args: []string{"update", "--id", "prod-error", "--name", "Error widget updated", "--sales-price", "16"},
+		},
+		{
+			name: "delete api error",
+			args: []string{"delete", "--id", "prod-error"},
+		},
+		{
+			name: "stock levels api error",
+			args: []string{"stock-levels", "--id", "prod-error"},
+		},
+		{
+			name: "movements api error",
+			args: []string{"movements", "--id", "prod-error"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.runInventoryProducts(ctx, cfg, errorClient, tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "inventory products backend unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIInventoryWarehouseBranches(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
