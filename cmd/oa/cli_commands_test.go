@@ -22089,6 +22089,174 @@ func TestCLIHelperEdgeCases(t *testing.T) {
 	require.NoError(t, deleteConfig())
 }
 
+func TestCLIHelperAdditionalParserBranches(t *testing.T) {
+	followUpStatus, err := parseRequiredBankFollowUpStatus("")
+	require.Error(t, err)
+	assert.Empty(t, followUpStatus)
+	assert.Contains(t, err.Error(), "follow-up-status is required")
+
+	depreciationMethod, err := parseOptionalDepreciationMethod("")
+	require.NoError(t, err)
+	assert.Empty(t, depreciationMethod)
+
+	budgetPeriod, err := parseOptionalBudgetPeriod("")
+	require.NoError(t, err)
+	assert.Empty(t, budgetPeriod)
+
+	_, err = parseInterestRateFlags("not-rate", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "parse rate")
+
+	_, err = parseInterestRateFlags("-0.1", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "rate")
+
+	var invoiceLines invoiceLineFlags
+	for _, tc := range []struct {
+		name string
+		line string
+		want string
+	}{
+		{name: "csv parse", line: `"`, want: "parse line"},
+		{name: "missing key value", line: "description", want: "must be key=value"},
+		{name: "missing description", line: "quantity=1,unit_price=100,vat_rate=22", want: "description is required"},
+		{name: "bad quantity", line: "description=Service,quantity=bad,unit_price=100,vat_rate=22", want: "parse line quantity"},
+		{name: "missing vat", line: "description=Service,quantity=1,unit_price=100", want: "vat_rate is required"},
+		{name: "bad discount", line: "description=Service,quantity=1,unit_price=100,vat_rate=22,discount=bad", want: "parse line discount_percent"},
+		{name: "bad reverse charge", line: "description=Service,quantity=1,unit_price=100,vat_rate=22,reverse_charge=maybe", want: "parse reverse_charge"},
+		{name: "zero reverse charge vat", line: "description=Service,quantity=1,unit_price=100,vat_rate=0,reverse_charge=true", want: "reverse charge VAT rate must be positive"},
+	} {
+		t.Run("invoice "+tc.name, func(t *testing.T) {
+			err := invoiceLines.Set(tc.line)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+
+	var orderLines orderLineFlags
+	for _, tc := range []struct {
+		name string
+		line string
+		want string
+	}{
+		{name: "csv parse", line: `"`, want: "parse line"},
+		{name: "missing key value", line: "description", want: "must be key=value"},
+		{name: "missing description", line: "quantity=1,unit_price=100,vat_rate=22", want: "description is required"},
+		{name: "missing price", line: "description=Order,quantity=1,vat_rate=22", want: "unit_price is required"},
+		{name: "missing vat", line: "description=Order,quantity=1,unit_price=100", want: "vat_rate is required"},
+		{name: "bad discount", line: "description=Order,quantity=1,unit_price=100,vat_rate=22,discount=bad", want: "parse line discount_percent"},
+	} {
+		t.Run("order "+tc.name, func(t *testing.T) {
+			err := orderLines.Set(tc.line)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+
+	var quoteLines quoteLineFlags
+	for _, tc := range []struct {
+		name string
+		line string
+		want string
+	}{
+		{name: "csv parse", line: `"`, want: "parse line"},
+		{name: "missing key value", line: "description", want: "must be key=value"},
+		{name: "bad quantity", line: "description=Quote,quantity=bad,unit_price=100,vat_rate=22", want: "parse line quantity"},
+		{name: "bad price", line: "description=Quote,quantity=1,unit_price=bad,vat_rate=22", want: "parse line unit_price"},
+		{name: "bad discount", line: "description=Quote,quantity=1,unit_price=100,vat_rate=22,discount=bad", want: "parse line discount_percent"},
+	} {
+		t.Run("quote "+tc.name, func(t *testing.T) {
+			err := quoteLines.Set(tc.line)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+	var nilQuoteLines *quoteLineFlags
+	assert.Empty(t, nilQuoteLines.String())
+
+	var recurringLines recurringLineFlags
+	for _, tc := range []struct {
+		name string
+		line string
+		want string
+	}{
+		{name: "csv parse", line: `"`, want: "parse line"},
+		{name: "missing key value", line: "description", want: "must be key=value"},
+		{name: "missing description", line: "quantity=1,unit_price=100,vat_rate=22", want: "description is required"},
+		{name: "missing price", line: "description=Recurring,quantity=1,vat_rate=22", want: "unit_price is required"},
+		{name: "bad discount", line: "description=Recurring,quantity=1,unit_price=100,vat_rate=22,discount=bad", want: "parse line discount_percent"},
+	} {
+		t.Run("recurring "+tc.name, func(t *testing.T) {
+			err := recurringLines.Set(tc.line)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+	var nilRecurringLines *recurringLineFlags
+	assert.Empty(t, nilRecurringLines.String())
+
+	var journalLines journalLineFlags
+	for _, tc := range []struct {
+		name string
+		line string
+		want string
+	}{
+		{name: "csv parse", line: `"`, want: "parse line"},
+		{name: "missing key value", line: "account_id", want: "must be key=value"},
+		{name: "bad debit", line: "account_id=acc-1,debit=bad", want: "parse line debit_amount"},
+		{name: "bad credit", line: "account_id=acc-1,credit=bad", want: "parse line credit_amount"},
+	} {
+		t.Run("journal "+tc.name, func(t *testing.T) {
+			err := journalLines.Set(tc.line)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+	var nilJournalLines *journalLineFlags
+	assert.Empty(t, nilJournalLines.String())
+
+	var nilAllocations *allocationFlags
+	assert.Empty(t, nilAllocations.String())
+
+	var sepaLines sepaLineFlags
+	require.NoError(t, sepaLines.Set("creditor_name=Acme,creditor_iban=EE123,amount=10.50,remittance=Invoice"))
+	assert.Equal(t, "Acme:10.5", sepaLines.String())
+	err = sepaLines.Set(`"`)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "parse line")
+	var nilSepaLines *sepaLineFlags
+	assert.Empty(t, nilSepaLines.String())
+
+	var exportBuf strings.Builder
+	outPath := filepath.Join(t.TempDir(), "report.csv")
+	require.NoError(t, writeExportOutput(&exportBuf, outPath, []byte("a,b\n"), "CSV report"))
+	assert.Contains(t, exportBuf.String(), "Wrote CSV report")
+	exported, err := os.ReadFile(outPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("a,b\n"), exported)
+
+	err = writeExportOutput(&exportBuf, t.TempDir(), []byte("a,b\n"), "CSV report")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "write")
+
+	_, err = parseBankAccountCSVRows("")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bank account CSV is empty")
+
+	bankAccountRows, err := parseBankAccountCSVRows("name,account_number\n,\nMain,EE123\n")
+	require.NoError(t, err)
+	require.Len(t, bankAccountRows, 1)
+	assert.Equal(t, "Main", bankAccountRows[0].Name)
+
+	_, err = parseBankAccountCSVRows("name,account_number\n")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "contains no accounts")
+
+	_, err = parseBankAccountCSVRows("name,account_number\n\"")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read bank account CSV row")
+}
+
 func TestLoadStoredConfigRejectsInvalidJSON(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("HOME", tempDir)
