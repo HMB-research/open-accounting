@@ -356,21 +356,22 @@ Each view is tested for:
 | Criteria | Status | Notes |
 |----------|--------|-------|
 | Page Load | ✅ | Loads correctly |
-| Data Display | ✅ | Shows inventory table or empty state |
-| Navigation | ✅ | New Product button, filter options, tabs |
-| CRUD | ⚠️ | Read verified, Create/Update/Delete not tested |
+| Data Display | ✅ | Shows seeded products, warehouses, and product categories |
+| Navigation | ✅ | Product, warehouse, and category tabs verified |
+| CRUD | ✅ | Product create and delete verified through demo E2E |
 | Errors | ✅ | No errors observed |
 | Responsive | ⚠️ | Needs manual verification |
 
-**E2E Tests:** 5/5 passed
-- Displays inventory page with correct structure
-- Has New Product button
-- Has filter options
-- Displays table or empty state
-- Can switch between tabs
+**E2E Tests:** 7/7 passed
+- Displays seeded products and inventory controls
+- Filters products by search, type, and category
+- Shows warehouse and category tabs with seeded data
+- Creates and deletes a product through the UI
+- Transfers stock between warehouses and records a movement
+- Records and displays stock lot metadata
 
 **Known Limitations (not bugs):**
-- Advanced inventory workflows need a refreshed UI E2E pass beyond the January basic render checks.
+- The current UI exposes product create/delete, stock transfer, stock adjustment, and movement review workflows; inline edit controls are not present.
 - Backend/API/CLI support now exists for warehouses, stock levels, signed stock adjustments, transfers, reservations, imports, valuation, and movement metadata; this view is no longer classified as missing stock or warehouse management.
 
 **Overall:** ✅ Working (basic functionality; advanced workflow E2E refresh needed)
@@ -782,7 +783,6 @@ _None identified_
 
 ### Known Feature Gaps (Not Bugs)
 1. **/tsd** - Automatic e-MTA submission not yet available (manual XML export required)
-2. **/inventory** - Advanced inventory UI workflow E2E coverage needs refresh; backend/API/CLI stock and warehouse workflows are implemented
 
 ---
 
@@ -790,6 +790,7 @@ _None identified_
 
 | Date | Tester | Changes |
 |------|--------|---------|
+| 2026-06-08 | Codex | Replaced soft `/inventory` checks with product, warehouse, category, filter, create/delete, transfer, and stock lot metadata E2E coverage |
 | 2026-06-08 | Codex | Replaced soft `/banking/import` checks with real LHV CSV preview/import E2E coverage and updated the UI audit evidence |
 | 2026-05-30 | Codex | Corrected stale inventory limitations against current repository evidence; stock and warehouse workflows now exist outside this historical UI sweep |
 | 2026-01-12 | Claude | **COMPLETE** - All 33 views tested, all working |

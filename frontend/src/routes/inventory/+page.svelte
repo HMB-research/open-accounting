@@ -139,11 +139,11 @@
 				product_type: newProductType,
 				category_id: newProductCategoryId || undefined,
 				unit: newProductUnit,
-				purchase_price: newProductPurchasePrice || undefined,
-				sales_price: newProductSalesPrice,
-				vat_rate: newProductVatRate || '22',
-				min_stock_level: newProductMinStock || undefined,
-				reorder_point: newProductReorderPoint || undefined,
+				purchase_price: optionalFormStringValue(newProductPurchasePrice),
+				sales_price: formStringValue(newProductSalesPrice),
+				vat_rate: formStringValue(newProductVatRate || '22'),
+				min_stock_level: optionalFormStringValue(newProductMinStock),
+				reorder_point: optionalFormStringValue(newProductReorderPoint),
 				barcode: newProductBarcode || undefined
 			});
 			products = [product, ...products];
