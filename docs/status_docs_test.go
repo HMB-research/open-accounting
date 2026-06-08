@@ -35,6 +35,7 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 		"docs/DEVELOPMENT_STATUS.md": {
 			"Full local baseline last completed on 2026-06-08",
 			"`make test-cli-coverage` passes",
+			"`cd frontend && bun run test` passes with 22 files and 510 tests",
 			"Full local seeded demo E2E shards are now blocking in CI",
 		},
 		"docs/ARCHITECTURE.md": {
@@ -68,6 +69,7 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 		"Full local baseline last completed on 2026-05-28",
 		"verified repository baseline as of 2026-04-24",
 		"21 files and 493 tests",
+		"22 files and 509 tests",
 		"251 passed",
 		"Broad demo E2E remains informational",
 		"Blocking smoke E2E plus informational demo shards",
