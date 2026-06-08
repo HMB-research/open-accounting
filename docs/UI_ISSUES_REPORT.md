@@ -734,9 +734,7 @@ Each view is tested for:
 - Cost Centers management interface
 - "Manage cost centers for expense tracking and budget allocation" description
 - Add Cost Center action button
-
-**Known Limitation:**
-- Cost center assignment to transactions needs UI (documented feature gap)
+- Cost allocation assignment controls render for journal entry lines
 
 **Overall:** ✅ Working
 
@@ -782,8 +780,7 @@ _None identified_
 
 ### Known Feature Gaps (Not Bugs)
 1. **/tsd** - Automatic e-MTA submission not yet available (manual XML export required)
-2. **/settings/cost-centers** - Cost center assignment to transactions needs UI
-3. **/inventory** - Advanced inventory UI workflow E2E coverage needs refresh; backend/API/CLI stock and warehouse workflows are implemented
+2. **/inventory** - Advanced inventory UI workflow E2E coverage needs refresh; backend/API/CLI stock and warehouse workflows are implemented
 
 ---
 
