@@ -593,6 +593,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Post("/orders/{orderID}/ship", h.ShipOrder)
 				r.Post("/orders/{orderID}/deliver", h.DeliverOrder)
 				r.Post("/orders/{orderID}/cancel", h.CancelOrder)
+				r.Post("/orders/{orderID}/convert-to-invoice", h.ConvertOrderToInvoice)
 
 				// Fixed Assets
 				r.Get("/asset-categories", h.ListAssetCategories)

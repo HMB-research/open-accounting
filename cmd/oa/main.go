@@ -382,6 +382,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  orders ship               Mark an order shipped")
 	_, _ = fmt.Fprintln(a.stdout, "  orders deliver            Mark an order delivered")
 	_, _ = fmt.Fprintln(a.stdout, "  orders cancel             Cancel an order")
+	_, _ = fmt.Fprintln(a.stdout, "  orders convert-to-invoice Convert a delivered order to an invoice")
 	_, _ = fmt.Fprintln(a.stdout, "  recurring-invoices list   List recurring invoice templates")
 	_, _ = fmt.Fprintln(a.stdout, "  recurring-invoices create Create a recurring invoice template")
 	_, _ = fmt.Fprintln(a.stdout, "  recurring-invoices import Import recurring invoice templates from CSV")
@@ -5879,6 +5880,62 @@ func (a *cliApp) runOrders(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, result)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "%s order %s\n", orderActionPastTense(args[0]), strings.TrimSpace(*orderID))
+		return nil
+
+	case "convert-to-invoice":
+		fs := flag.NewFlagSet("orders convert-to-invoice", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		orderID := fs.String("id", "", "Order id")
+		issueDateFlag := fs.String("issue-date", "", "Invoice issue date in YYYY-MM-DD")
+		dueDateFlag := fs.String("due-date", "", "Invoice due date in YYYY-MM-DD")
+		notes := fs.String("notes", "", "Invoice notes")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		trimmedOrderID := strings.TrimSpace(*orderID)
+		if trimmedOrderID == "" {
+			return errors.New("id is required")
+		}
+
+		var issueDate time.Time
+		if strings.TrimSpace(*issueDateFlag) != "" {
+			issueDate, err = parseRequiredDate("issue-date", *issueDateFlag)
+			if err != nil {
+				return err
+			}
+		}
+		var dueDate time.Time
+		if strings.TrimSpace(*dueDateFlag) != "" {
+			dueDate, err = parseRequiredDate("due-date", *dueDateFlag)
+			if err != nil {
+				return err
+			}
+		}
+
+		result, err := client.convertOrderToInvoice(ctx, cfg.TenantID, trimmedOrderID, &orders.ConvertOrderToInvoiceRequest{
+			IssueDate: issueDate,
+			DueDate:   dueDate,
+			Notes:     strings.TrimSpace(*notes),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+
+		orderNumber := trimmedOrderID
+		if result.Order != nil && strings.TrimSpace(result.Order.OrderNumber) != "" {
+			orderNumber = result.Order.OrderNumber
+		}
+		invoiceNumber := ""
+		invoiceID := ""
+		if result.Invoice != nil {
+			invoiceNumber = result.Invoice.InvoiceNumber
+			invoiceID = result.Invoice.ID
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Converted order %s to invoice %s (%s)\n", orderNumber, invoiceNumber, invoiceID)
 		return nil
 
 	default:

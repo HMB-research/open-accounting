@@ -4,10 +4,14 @@
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
 	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
+	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
 	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
+	import { dateInputToApiTimestamp } from '$lib/utils/dates';
+	import { requireTenantId, parseApiError } from '$lib/utils/tenant';
 	import {
 		formatCurrency,
 		formatDate,
+		formStringValue,
 		calculateLineTotal as calcLineTotal,
 		calculateLinesTotal,
 		createEmptyLine,
@@ -18,6 +22,8 @@
 	let contacts = $state<Contact[]>([]);
 	let isLoading = $state(true);
 	let error = $state('');
+	let success = $state('');
+	let actionLoading = $state(false);
 	let showCreateOrder = $state(false);
 	let filterStatus = $state<OrderStatus | ''>('');
 	let filterFromDate = $state('');
@@ -73,28 +79,34 @@
 
 	async function createOrder(e: Event) {
 		e.preventDefault();
-		const tenantId = $page.url.searchParams.get('tenant');
+		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId) return;
 
+		actionLoading = true;
+		error = '';
 		try {
 			const order = await api.createOrder(tenantId, {
 				contact_id: newContactId,
-				order_date: newOrderDate,
-				expected_delivery: newExpectedDelivery || undefined,
+				order_date: dateInputToApiTimestamp(newOrderDate),
+				expected_delivery: newExpectedDelivery ? dateInputToApiTimestamp(newExpectedDelivery) : undefined,
 				notes: newNotes || undefined,
 				lines: newLines.map((line) => ({
 					description: line.description,
-					quantity: line.quantity,
-					unit_price: line.unit_price,
-					vat_rate: line.vat_rate,
-					discount_percent: line.discount_percent || '0'
+					quantity: formStringValue(line.quantity),
+					unit_price: formStringValue(line.unit_price),
+					vat_rate: formStringValue(line.vat_rate),
+					discount_percent: formStringValue(line.discount_percent || '0')
 				}))
 			});
 			orders = [order, ...orders];
 			showCreateOrder = false;
 			resetForm();
+			success = m.orders_orderCreated();
+			setTimeout(() => (success = ''), 3000);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to create order';
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
@@ -114,78 +126,130 @@
 	}
 
 	async function confirmOrder(orderId: string) {
-		const tenantId = $page.url.searchParams.get('tenant');
+		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId) return;
 
+		actionLoading = true;
+		error = '';
 		try {
 			await api.confirmOrder(tenantId, orderId);
+			success = m.orders_statusConfirmed();
+			setTimeout(() => (success = ''), 3000);
 			loadData(tenantId);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to confirm order';
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
 	async function processOrder(orderId: string) {
-		const tenantId = $page.url.searchParams.get('tenant');
+		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId) return;
 
+		actionLoading = true;
+		error = '';
 		try {
 			await api.processOrder(tenantId, orderId);
+			success = m.orders_statusProcessing();
+			setTimeout(() => (success = ''), 3000);
 			loadData(tenantId);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to process order';
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
 	async function shipOrder(orderId: string) {
-		const tenantId = $page.url.searchParams.get('tenant');
+		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId) return;
 
+		actionLoading = true;
+		error = '';
 		try {
 			await api.shipOrder(tenantId, orderId);
+			success = m.orders_statusShipped();
+			setTimeout(() => (success = ''), 3000);
 			loadData(tenantId);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to ship order';
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
 	async function deliverOrder(orderId: string) {
-		const tenantId = $page.url.searchParams.get('tenant');
+		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId) return;
 
+		actionLoading = true;
+		error = '';
 		try {
 			await api.deliverOrder(tenantId, orderId);
+			success = m.orders_statusDelivered();
+			setTimeout(() => (success = ''), 3000);
 			loadData(tenantId);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to deliver order';
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
+		}
+	}
+
+	async function convertOrderToInvoice(orderId: string) {
+		const tenantId = requireTenantId($page, (err) => (error = err));
+		if (!tenantId) return;
+
+		actionLoading = true;
+		error = '';
+		try {
+			const result = await api.convertOrderToInvoice(tenantId, orderId);
+			success = m.orders_convertedToInvoice({ number: result.invoice.invoice_number });
+			setTimeout(() => (success = ''), 3000);
+			loadData(tenantId);
+		} catch (err) {
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
 	async function cancelOrder(orderId: string) {
-		const tenantId = $page.url.searchParams.get('tenant');
+		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId) return;
 
 		if (!confirm(m.orders_confirmCancel())) return;
 
+		actionLoading = true;
+		error = '';
 		try {
 			await api.cancelOrder(tenantId, orderId);
+			success = m.orders_statusCancelled();
+			setTimeout(() => (success = ''), 3000);
 			loadData(tenantId);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to cancel order';
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
 	async function deleteOrder(orderId: string) {
-		const tenantId = $page.url.searchParams.get('tenant');
+		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId) return;
 
 		if (!confirm(m.orders_confirmDelete())) return;
 
+		actionLoading = true;
+		error = '';
 		try {
 			await api.deleteOrder(tenantId, orderId);
 			orders = orders.filter(o => o.id !== orderId);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to delete order';
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
@@ -195,7 +259,7 @@
 		PROCESSING: { class: 'badge-processing', label: m.orders_statusProcessing() },
 		SHIPPED: { class: 'badge-shipped', label: m.orders_statusShipped() },
 		DELIVERED: { class: 'badge-delivered', label: m.orders_statusDelivered() },
-		CANCELLED: { class: 'badge-cancelled', label: m.orders_statusCancelled() }
+		CANCELED: { class: 'badge-cancelled', label: m.orders_statusCancelled() }
 	};
 
 	function getContactName(contactId: string): string {
@@ -227,7 +291,7 @@
 				<option value="PROCESSING">{m.orders_statusProcessing()}</option>
 				<option value="SHIPPED">{m.orders_statusShipped()}</option>
 				<option value="DELIVERED">{m.orders_statusDelivered()}</option>
-				<option value="CANCELLED">{m.orders_statusCancelled()}</option>
+				<option value="CANCELED">{m.orders_statusCancelled()}</option>
 			</select>
 			<DateRangeFilter
 				bind:fromDate={filterFromDate}
@@ -237,8 +301,12 @@
 		</div>
 	</div>
 
+	{#if success}
+		<ErrorAlert message={success} type="success" onDismiss={() => (success = '')} />
+	{/if}
+
 	{#if error}
-		<div class="alert alert-error">{error}</div>
+		<ErrorAlert message={error} type="error" onDismiss={() => (error = '')} />
 	{/if}
 
 	{#if isLoading}
@@ -263,7 +331,7 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each orders as order}
+						{#each orders as order (order.id)}
 							<tr>
 								<td class="number" data-label={m.orders_number()}>{order.order_number}</td>
 								<td data-label={m.invoices_status()}>
@@ -277,32 +345,36 @@
 								<td class="amount text-right" data-label={m.common_total()}>{formatCurrency(order.total)}</td>
 								<td class="actions hide-mobile" data-label={m.common_actions()}>
 									{#if order.status === 'PENDING'}
-										<button class="btn btn-small btn-success" onclick={() => confirmOrder(order.id)} title={m.orders_confirm()}>
+										<button class="btn btn-small btn-success" onclick={() => confirmOrder(order.id)} disabled={actionLoading} title={m.orders_confirm()}>
 											{m.orders_confirm()}
 										</button>
-										<button class="btn btn-small btn-danger" onclick={() => deleteOrder(order.id)} title={m.common_delete()}>
+										<button class="btn btn-small btn-danger" onclick={() => deleteOrder(order.id)} disabled={actionLoading} title={m.common_delete()}>
 											{m.common_delete()}
 										</button>
 									{:else if order.status === 'CONFIRMED'}
-										<button class="btn btn-small" onclick={() => processOrder(order.id)} title={m.orders_process()}>
+										<button class="btn btn-small" onclick={() => processOrder(order.id)} disabled={actionLoading} title={m.orders_process()}>
 											{m.orders_process()}
 										</button>
-										<button class="btn btn-small" onclick={() => shipOrder(order.id)} title={m.orders_ship()}>
+										<button class="btn btn-small" onclick={() => shipOrder(order.id)} disabled={actionLoading} title={m.orders_ship()}>
 											{m.orders_ship()}
 										</button>
-										<button class="btn btn-small btn-danger" onclick={() => cancelOrder(order.id)} title={m.orders_cancel()}>
+										<button class="btn btn-small btn-danger" onclick={() => cancelOrder(order.id)} disabled={actionLoading} title={m.orders_cancel()}>
 											{m.orders_cancel()}
 										</button>
 									{:else if order.status === 'PROCESSING'}
-										<button class="btn btn-small" onclick={() => shipOrder(order.id)} title={m.orders_ship()}>
+										<button class="btn btn-small" onclick={() => shipOrder(order.id)} disabled={actionLoading} title={m.orders_ship()}>
 											{m.orders_ship()}
 										</button>
-										<button class="btn btn-small btn-danger" onclick={() => cancelOrder(order.id)} title={m.orders_cancel()}>
+										<button class="btn btn-small btn-danger" onclick={() => cancelOrder(order.id)} disabled={actionLoading} title={m.orders_cancel()}>
 											{m.orders_cancel()}
 										</button>
 									{:else if order.status === 'SHIPPED'}
-										<button class="btn btn-small btn-success" onclick={() => deliverOrder(order.id)} title={m.orders_deliver()}>
+										<button class="btn btn-small btn-success" onclick={() => deliverOrder(order.id)} disabled={actionLoading} title={m.orders_deliver()}>
 											{m.orders_deliver()}
+										</button>
+									{:else if order.status === 'DELIVERED' && !order.converted_to_invoice_id}
+										<button class="btn btn-small btn-success" onclick={() => convertOrderToInvoice(order.id)} disabled={actionLoading} title={m.orders_convertToInvoice()}>
+											{m.orders_convertToInvoice()}
 										</button>
 									{/if}
 								</td>
@@ -316,7 +388,6 @@
 </div>
 
 {#if showCreateOrder}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div class="modal-backdrop" onclick={() => (showCreateOrder = false)} role="presentation">
 		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-order-title" tabindex="-1">
@@ -327,7 +398,7 @@
 						<label class="label" for="contact">{m.invoices_customer()} *</label>
 						<select class="input" id="contact" bind:value={newContactId} required>
 							<option value="">{m.invoices_selectContact()}</option>
-							{#each contacts as contact}
+							{#each contacts as contact (contact.id)}
 								<option value={contact.id}>{contact.name}</option>
 							{/each}
 						</select>
@@ -348,7 +419,7 @@
 				<div class="form-group">
 					<span class="label">{m.invoices_lineItems()}</span>
 					<div class="lines-container">
-						{#each newLines as line, i}
+						{#each newLines as line, i (line)}
 							<div class="line-row">
 								<input
 									class="input line-description"
@@ -419,7 +490,7 @@
 					<button type="button" class="btn btn-secondary" onclick={() => (showCreateOrder = false)}>
 						{m.common_cancel()}
 					</button>
-					<button type="submit" class="btn btn-primary">{m.orders_createOrder()}</button>
+					<button type="submit" class="btn btn-primary" disabled={actionLoading}>{m.orders_createOrder()}</button>
 				</div>
 			</form>
 		</div>

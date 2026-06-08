@@ -550,14 +550,15 @@ go run ./cmd/oa orders confirm --id <order-id> --require-approved-evidence
 go run ./cmd/oa orders process --id <order-id>
 go run ./cmd/oa orders ship --id <order-id>
 go run ./cmd/oa orders deliver --id <order-id>
+go run ./cmd/oa orders convert-to-invoice --id <order-id> --issue-date 2026-03-24 --due-date 2026-04-07
 go run ./cmd/oa orders cancel --id <order-id>
 go run ./cmd/oa orders delete --id <order-id>
 go run ./cmd/oa orders import --file ./orders.csv
 ```
 
-Use `--line` repeatedly on `orders create` and `orders update`. Each line accepts `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, and `product_id`. Order statuses are `PENDING`, `CONFIRMED`, `PROCESSING`, `SHIPPED`, `DELIVERED`, and `CANCELED`. `orders confirm --require-approved-evidence` blocks confirmation until an approved `contract` or `supporting_document` is attached to the order.
+Use `--line` repeatedly on `orders create` and `orders update`. Each line accepts `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, and `product_id`. Order statuses are `PENDING`, `CONFIRMED`, `PROCESSING`, `SHIPPED`, `DELIVERED`, and `CANCELED`. Delivered orders can be converted into draft sales invoices. `orders confirm --require-approved-evidence` blocks confirmation until an approved `contract` or `supporting_document` is attached to the order.
 
-Use `--json` on order read, write, stock, import, and status commands when scripting. Mutating commands return the updated order or operation result; `orders delete --json` returns `{"status":"deleted"}`. The `--require-approved-evidence` flag is only valid on `orders confirm`.
+Use `--json` on order read, write, stock, import, status, conversion, and delete commands when scripting. Mutating commands return the updated order or operation result; `orders convert-to-invoice --json` returns both the updated order and the created draft invoice, while `orders delete --json` returns `{"status":"deleted"}`. The `--require-approved-evidence` flag is only valid on `orders confirm`.
 
 `orders stock-check` checks tracked product lines without mutating inventory. It sums all warehouses unless `--warehouse-id` is provided, consumes repeated lines for the same product cumulatively inside the check, and reports per-line statuses: `AVAILABLE`, `SHORTAGE`, `NOT_TRACKED`, and `PRODUCT_NOT_FOUND`.
 

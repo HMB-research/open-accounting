@@ -1134,6 +1134,18 @@ class ApiClient {
     );
   }
 
+  async convertOrderToInvoice(
+    tenantId: string,
+    orderId: string,
+    data: ConvertOrderToInvoiceRequest = {},
+  ) {
+    return this.request<OrderInvoiceConversionResult>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/orders/${orderId}/convert-to-invoice`,
+      data,
+    );
+  }
+
   // Fixed Assets - Categories endpoints
   async listAssetCategories(tenantId: string) {
     return this.request<AssetCategory[]>(
@@ -3381,7 +3393,7 @@ export type OrderStatus =
   | "PROCESSING"
   | "SHIPPED"
   | "DELIVERED"
-  | "CANCELLED";
+  | "CANCELED";
 
 export interface Order {
   id: string;
@@ -3460,6 +3472,17 @@ export interface OrderFilter {
   from_date?: string;
   to_date?: string;
   search?: string;
+}
+
+export interface ConvertOrderToInvoiceRequest {
+  issue_date?: string;
+  due_date?: string;
+  notes?: string;
+}
+
+export interface OrderInvoiceConversionResult {
+  order: Order;
+  invoice: Invoice;
 }
 
 // Fixed Asset types

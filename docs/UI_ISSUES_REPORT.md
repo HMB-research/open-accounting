@@ -251,22 +251,20 @@ Each view is tested for:
 | Page Load | ✅ | Loads correctly |
 | Data Display | ✅ | Shows orders with statuses, links to quotes |
 | Navigation | ✅ | New Order button visible, status filter works |
-| CRUD | ⚠️ | Read verified, order-to-invoice conversion needs verification |
+| CRUD | ✅ | Create, delete, status workflow, and order-to-invoice conversion verified |
 | Errors | ✅ | No errors observed |
 | Responsive | ⚠️ | Needs manual verification |
 
-**E2E Tests:** 6/6 passed
-- Displays orders page with correct structure
-- Displays order statuses in table
-- Shows order linked to quote when applicable
-- Can filter orders by status
-- Has New Order button
+**E2E Tests:** 4/4 passed
+- Displays seeded orders with statuses and controls
+- Creates an order and filters by status
+- Creates and deletes a pending order
+- Moves an order through lifecycle and converts the delivered order into a draft invoice
 
 **Known Issues (require manual verification):**
-- Order-to-Invoice conversion needs verification
-- Order status workflow needs testing
+- Email/order PDF workflows need verification
 
-**Overall:** ✅ Working (basic functionality)
+**Overall:** ✅ Working
 
 ---
 

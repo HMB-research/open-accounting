@@ -5328,6 +5328,106 @@ func (h *Handlers) CancelOrder(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"status": "canceled"})
 }
 
+// ConvertOrderToInvoice creates a draft sales invoice from a delivered order.
+// @Summary Convert order to invoice
+// @Description Create a draft sales invoice from a delivered order and mark the order converted
+// @Tags Orders
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param orderID path string true "Order ID"
+// @Param request body orders.ConvertOrderToInvoiceRequest true "Invoice conversion options"
+// @Success 201 {object} orders.OrderInvoiceConversionResult
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/orders/{orderID}/convert-to-invoice [post]
+func (h *Handlers) ConvertOrderToInvoice(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	orderID := chi.URLParam(r, "orderID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req orders.ConvertOrderToInvoiceRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	req.UserID = claims.UserID
+	if req.IssueDate.IsZero() {
+		req.IssueDate = time.Now()
+	}
+	if req.DueDate.IsZero() {
+		req.DueDate = req.IssueDate.AddDate(0, 0, 14)
+	}
+	if req.DueDate.Before(req.IssueDate) {
+		respondError(w, http.StatusBadRequest, "due date cannot be before issue date")
+		return
+	}
+	if h.rejectLockedPeriod(w, r.Context(), tenantID, req.IssueDate) {
+		return
+	}
+
+	order, err := h.ordersService.GetByID(r.Context(), tenantID, schemaName, orderID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Order not found")
+		return
+	}
+	if order.Status != orders.OrderStatusDelivered {
+		respondError(w, http.StatusConflict, "order must be delivered before conversion")
+		return
+	}
+	if order.ConvertedToInvoiceID != nil {
+		respondError(w, http.StatusConflict, "order has already been converted to an invoice")
+		return
+	}
+
+	notes := strings.TrimSpace(req.Notes)
+	if notes == "" {
+		notes = order.Notes
+	}
+	invoiceReq := invoicing.CreateInvoiceRequest{
+		InvoiceType:  invoicing.InvoiceTypeSales,
+		ContactID:    order.ContactID,
+		IssueDate:    req.IssueDate,
+		DueDate:      req.DueDate,
+		Currency:     order.Currency,
+		ExchangeRate: order.ExchangeRate,
+		Reference:    order.OrderNumber,
+		Notes:        notes,
+		UserID:       req.UserID,
+	}
+	for _, line := range order.Lines {
+		invoiceReq.Lines = append(invoiceReq.Lines, invoicing.CreateInvoiceLineRequest{
+			Description:     line.Description,
+			Quantity:        line.Quantity,
+			Unit:            line.Unit,
+			UnitPrice:       line.UnitPrice,
+			DiscountPercent: line.DiscountPercent,
+			VATRate:         line.VATRate,
+			ProductID:       line.ProductID,
+		})
+	}
+
+	invoice, err := h.invoicingService.Create(r.Context(), tenantID, schemaName, &invoiceReq)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.ordersService.ConvertToInvoice(r.Context(), tenantID, schemaName, orderID, invoice.ID); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to mark order converted")
+		return
+	}
+	order.ConvertedToInvoiceID = &invoice.ID
+
+	respondJSON(w, http.StatusCreated, &orders.OrderInvoiceConversionResult{
+		Order:   order,
+		Invoice: invoice,
+	})
+}
+
 // =============================================================================
 // FIXED ASSETS HANDLERS
 // =============================================================================
