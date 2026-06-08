@@ -10896,6 +10896,101 @@ func TestCLIJournalTemplateBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"source_id": "tpl-branch"`)
 }
 
+func TestCLIJournalTemplateFlagAndAPIErrors(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list bad flag", args: []string{"journal", "templates", "list", "--bad"}},
+		{name: "create bad flag", args: []string{"journal", "templates", "create", "--bad"}},
+		{name: "get bad flag", args: []string{"journal", "templates", "get", "--bad"}},
+		{name: "generate bad flag", args: []string{"journal", "templates", "generate", "--bad"}},
+		{name: "generate due bad flag", args: []string{"journal", "templates", "generate-due", "--bad"}},
+		{name: "apply bad flag", args: []string{"journal", "templates", "apply", "--bad"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "flag provided but not defined")
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entry-templates":
+			require.Equal(t, "true", r.URL.Query().Get("active_only"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entry-templates":
+			var req accounting.CreateJournalEntryTemplateRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Error template", req.Name)
+			assert.Equal(t, "Error template", req.Description)
+			require.Len(t, req.Lines, 2)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entry-templates/tpl-error":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entry-templates/tpl-error/generate":
+			var req accounting.GenerateJournalEntryTemplateRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.NotNil(t, req.EntryDate)
+			assert.Equal(t, "2026-04-15", req.EntryDate.Format("2006-01-02"))
+			assert.True(t, req.Post)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entry-templates/generate-due":
+			var req accounting.GenerateDueJournalEntryTemplatesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.NotNil(t, req.AsOfDate)
+			assert.Equal(t, "2026-04-30", req.AsOfDate.Format("2006-01-02"))
+			assert.False(t, req.Post)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entry-templates/tpl-error/apply":
+			var req accounting.ApplyJournalEntryTemplateRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-04-30", req.EntryDate.Format("2006-01-02"))
+			assert.Equal(t, "Error applied", req.Description)
+			assert.Equal(t, "ERR-APR", req.Reference)
+			assert.True(t, req.Post)
+		default:
+			t.Fatalf("unexpected journal template error request: %s %s", r.Method, r.URL.Path)
+		}
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "journal template backend unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list API error", args: []string{"journal", "templates", "list", "--active-only"}},
+		{name: "create API error", args: []string{"journal", "templates", "create", "--name", "Error template", "--description", "Error template", "--line", "account_id=acc-1,debit=10", "--line", "account_id=acc-2,credit=10"}},
+		{name: "get API error", args: []string{"journal", "templates", "get", "--id", "tpl-error"}},
+		{name: "generate API error", args: []string{"journal", "templates", "generate", "--id", "tpl-error", "--entry-date", "2026-04-15", "--post"}},
+		{name: "generate due API error", args: []string{"journal", "templates", "generate-due", "--as-of", "2026-04-30"}},
+		{name: "apply API error", args: []string{"journal", "templates", "apply", "--id", "tpl-error", "--entry-date", "2026-04-30", "--description", "Error applied", "--reference", "ERR-APR", "--post"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "journal template backend unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIContactsInvoicesAndJournalCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
