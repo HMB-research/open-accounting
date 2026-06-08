@@ -24,7 +24,9 @@ func TestDefaultBaseURLUsesEnv(t *testing.T) {
 }
 
 func TestLoadRuntimeConfigDefaultsWithoutStoredConfig(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	tempDir := t.TempDir()
+	t.Setenv("HOME", tempDir)
+	t.Setenv("XDG_CONFIG_HOME", tempDir)
 	t.Setenv("OA_BASE_URL", "")
 	t.Setenv("OA_API_TOKEN", "")
 	t.Setenv("OA_TENANT_ID", "")
@@ -38,7 +40,9 @@ func TestLoadRuntimeConfigDefaultsWithoutStoredConfig(t *testing.T) {
 }
 
 func TestLoadRuntimeConfigAppliesStoredConfigAndEnvOverrides(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	tempDir := t.TempDir()
+	t.Setenv("HOME", tempDir)
+	t.Setenv("XDG_CONFIG_HOME", tempDir)
 
 	require.NoError(t, saveConfig(&cliConfig{
 		BaseURL:    "https://stored.example.com/",
