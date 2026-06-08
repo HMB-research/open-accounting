@@ -16,6 +16,16 @@ go build -o oa ./cmd/oa
 ./oa help
 ```
 
+## Coverage gate
+
+The CLI package is expected to stay at 100% statement coverage. Before changing `cmd/oa`, run:
+
+```bash
+make test-cli-coverage
+```
+
+The target writes `coverage-cli.out`, fails if any `cmd/oa` function is below 100.0%, and is cleaned by `make clean`.
+
 ## Operational checks
 
 ```bash

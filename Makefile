@@ -1,4 +1,4 @@
-.PHONY: all build run test clean docker-build docker-up docker-down migrate help
+.PHONY: all build run test test-cli-coverage clean docker-build docker-up docker-down migrate help
 
 # Variables
 BINARY_API=api
@@ -28,6 +28,12 @@ test-coverage:
 	$(GO) test -v -coverprofile=coverage.out ./...
 	$(GO) tool cover -html=coverage.out -o coverage.html
 
+# Verify the operator CLI stays fully covered.
+test-cli-coverage:
+	$(GO) test ./cmd/oa -coverprofile=coverage-cli.out -count=1
+	$(GO) tool cover -func=coverage-cli.out | awk '$$3 ~ /%/ { pct=$$3; gsub(/%/, "", pct); if (pct+0 < 100) { print; failed=1 } } END { if (failed) exit 1 }'
+	@echo "cmd/oa coverage is 100%"
+
 # Lint code
 lint:
 	golangci-lint run
@@ -40,7 +46,7 @@ fmt:
 # Clean build artifacts
 clean:
 	rm -rf bin/
-	rm -f coverage.out coverage.html
+	rm -f coverage.out coverage.html coverage-cli.out
 
 # Docker commands
 docker-build:
@@ -124,6 +130,7 @@ help:
 	@echo "  make run            - Run API server locally"
 	@echo "  make test           - Run tests"
 	@echo "  make test-coverage  - Run tests with coverage report"
+	@echo "  make test-cli-coverage - Enforce 100% cmd/oa coverage"
 	@echo "  make lint           - Run linter"
 	@echo "  make fmt            - Format code"
 	@echo "  make clean          - Clean build artifacts"
