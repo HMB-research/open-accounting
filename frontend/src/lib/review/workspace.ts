@@ -3,6 +3,7 @@ import {
 	api,
 	type BankAccount,
 	type BankTransaction,
+	type DocumentAttachment,
 	type DocumentReviewSummary,
 	type JournalEntry,
 	type OverdueInvoicesSummary,
@@ -22,12 +23,18 @@ export type BankExceptionItem = {
 	documentSummary: DocumentReviewSummary;
 };
 
+export type JournalEvidenceItem = {
+	entry: JournalEntry;
+	documentSummary: DocumentReviewSummary;
+};
+
 export type TenantReviewSnapshot = {
 	tenant: Tenant;
 	overdueSummary: OverdueInvoicesSummary | null;
 	bankExceptions: BankExceptionGroup[];
 	periodCloseEvents: PeriodCloseEvent[];
 	journalEntries: JournalEntry[];
+	journalEvidence: JournalEvidenceItem[];
 	errorCount: number;
 };
 
@@ -44,6 +51,9 @@ export async function loadTenantReviewSnapshot(tenant: Tenant): Promise<TenantRe
 		bankExceptions = await loadUnmatchedTransactions(tenant.id, accountsResult.value);
 	}
 
+	const journalEntries = journalResult.status === 'fulfilled' ? journalResult.value : [];
+	const journalEvidence = await loadJournalEvidence(tenant.id, journalEntries);
+
 	const errorCount = [overdueResult, accountsResult, closeResult, journalResult].filter(
 		(result) => result.status === 'rejected'
 	).length;
@@ -53,7 +63,8 @@ export async function loadTenantReviewSnapshot(tenant: Tenant): Promise<TenantRe
 		overdueSummary: overdueResult.status === 'fulfilled' ? overdueResult.value : null,
 		bankExceptions,
 		periodCloseEvents: closeResult.status === 'fulfilled' ? closeResult.value : [],
-		journalEntries: journalResult.status === 'fulfilled' ? journalResult.value : [],
+		journalEntries,
+		journalEvidence,
 		errorCount
 	};
 }
@@ -65,18 +76,11 @@ async function loadUnmatchedTransactions(tenantId: string, accounts: BankAccount
 				const transactions = await api.listBankTransactions(tenantId, account.id, { status: 'UNMATCHED' });
 				let documentSummaries: Record<string, DocumentReviewSummary> = {};
 				if (transactions.length > 0) {
-					try {
-						const summaries = await api.listDocumentReviewSummaries(
-							tenantId,
-							'bank_transaction',
-							transactions.map((transaction) => transaction.id)
-						);
-						documentSummaries = Object.fromEntries(
-							summaries.map((summary) => [summary.entity_id, summary])
-						);
-					} catch {
-						documentSummaries = {};
-					}
+					documentSummaries = await loadDocumentSummaries(
+						tenantId,
+						'bank_transaction',
+						transactions.map((transaction) => transaction.id)
+					);
 				}
 				return { account, transactions, documentSummaries };
 			} catch {
@@ -90,6 +94,51 @@ async function loadUnmatchedTransactions(tenantId: string, accounts: BankAccount
 		.sort((left, right) => right.transactions.length - left.transactions.length);
 }
 
+async function loadJournalEvidence(tenantId: string, entries: JournalEntry[]): Promise<JournalEvidenceItem[]> {
+	const draftEvidenceEntries = entries.filter(
+		(entry) => entry.requires_evidence && entry.status === 'DRAFT'
+	);
+	const documentSummaries = await loadDocumentSummaries(
+		tenantId,
+		'journal_entry',
+		draftEvidenceEntries.map((entry) => entry.id)
+	);
+
+	return draftEvidenceEntries
+		.map((entry) => ({
+			entry,
+			documentSummary: documentSummaries[entry.id] ?? missingDocumentSummary('journal_entry', entry.id)
+		}))
+		.filter((item) => needsEvidenceFollowUp(item.documentSummary))
+		.sort((left, right) => new Date(right.entry.entry_date).getTime() - new Date(left.entry.entry_date).getTime());
+}
+
+async function loadDocumentSummaries(
+	tenantId: string,
+	entityType: DocumentAttachment['entity_type'],
+	entityIDs: string[]
+): Promise<Record<string, DocumentReviewSummary>> {
+	if (entityIDs.length === 0) {
+		return {};
+	}
+
+	try {
+		const summaries = await api.listDocumentReviewSummaries(tenantId, entityType, entityIDs);
+		return Object.fromEntries(summaries.map((summary) => [summary.entity_id, summary]));
+	} catch {
+		return {};
+	}
+}
+
+function needsEvidenceFollowUp(summary: DocumentReviewSummary): boolean {
+	return (
+		summary.missing_evidence ||
+		summary.has_pending_review ||
+		summary.has_rejected ||
+		summary.approved_count === 0
+	);
+}
+
 export function flattenUnmatchedTransactions(bankExceptions: BankExceptionGroup[]) {
 	return bankExceptions
 		.flatMap((group) =>
@@ -97,15 +146,18 @@ export function flattenUnmatchedTransactions(bankExceptions: BankExceptionGroup[
 				account: group.account,
 				transaction,
 				documentSummary:
-					group.documentSummaries[transaction.id] ?? missingDocumentSummary(transaction.id)
+					group.documentSummaries[transaction.id] ?? missingDocumentSummary('bank_transaction', transaction.id)
 			}))
 		)
 		.sort((left, right) => new Date(right.transaction.transaction_date).getTime() - new Date(left.transaction.transaction_date).getTime());
 }
 
-function missingDocumentSummary(entityID: string): DocumentReviewSummary {
+function missingDocumentSummary(
+	entityType: DocumentAttachment['entity_type'],
+	entityID: string
+): DocumentReviewSummary {
 	return {
-		entity_type: 'bank_transaction',
+		entity_type: entityType,
 		entity_id: entityID,
 		total_count: 0,
 		pending_review_count: 0,

@@ -2879,6 +2879,7 @@ export interface JournalEntry {
   reference?: string;
   source_type?: string;
   source_id?: string;
+  requires_evidence: boolean;
   status: "DRAFT" | "POSTED" | "VOIDED";
   lines: JournalEntryLine[];
   posted_at?: string;
@@ -2909,6 +2910,7 @@ export interface CreateJournalEntryRequest {
   reference?: string;
   source_type?: string;
   source_id?: string;
+  requires_evidence?: boolean;
   lines: {
     account_id: string;
     description?: string;

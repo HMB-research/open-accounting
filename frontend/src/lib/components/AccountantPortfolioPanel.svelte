@@ -20,6 +20,10 @@
 		unmatchedAmount: Decimal;
 		missingEvidenceCount: number;
 		pendingEvidenceCount: number;
+		journalEvidenceCount: number;
+		journalMissingEvidenceCount: number;
+		journalPendingEvidenceCount: number;
+		journalRejectedEvidenceCount: number;
 		needsClose: boolean;
 		suggestedCloseDate: string;
 		lastCloseEvent: PeriodCloseEvent | null;
@@ -160,6 +164,20 @@
 			const pendingEvidenceCount = unmatchedTransactions.filter(
 				(item) => item.documentSummary.has_pending_review
 			).length;
+			const journalEvidenceCount = snapshot.journalEvidence.length;
+			const journalMissingEvidenceCount = snapshot.journalEvidence.filter(
+				(item) =>
+					item.documentSummary.missing_evidence ||
+					(!item.documentSummary.has_pending_review &&
+						!item.documentSummary.has_rejected &&
+						item.documentSummary.approved_count === 0)
+			).length;
+			const journalPendingEvidenceCount = snapshot.journalEvidence.filter(
+				(item) => item.documentSummary.has_pending_review
+			).length;
+			const journalRejectedEvidenceCount = snapshot.journalEvidence.filter(
+				(item) => item.documentSummary.has_rejected
+			).length;
 			const periodLockDate = snapshot.tenant.settings?.period_lock_date ?? null;
 			const closeIsDue = needsPeriodClose(periodLockDate);
 			const openTasks =
@@ -167,6 +185,7 @@
 				unmatchedCount +
 				missingEvidenceCount +
 				pendingEvidenceCount +
+				journalEvidenceCount +
 				(closeIsDue ? 1 : 0) +
 				(snapshot.tenant.onboarding_completed ? 0 : 1);
 			const urgency =
@@ -175,6 +194,9 @@
 				Math.min(5, unmatchedCount) +
 				Math.min(5, missingEvidenceCount) +
 				Math.min(3, pendingEvidenceCount) +
+				Math.min(5, journalEvidenceCount) +
+				Math.min(3, journalPendingEvidenceCount) +
+				Math.min(2, journalRejectedEvidenceCount) +
 				(closeIsDue ? 3 : 0) +
 				(snapshot.tenant.onboarding_completed ? 0 : 2);
 
@@ -187,6 +209,10 @@
 				unmatchedAmount,
 				missingEvidenceCount,
 				pendingEvidenceCount,
+				journalEvidenceCount,
+				journalMissingEvidenceCount,
+				journalPendingEvidenceCount,
+				journalRejectedEvidenceCount,
 				needsClose: closeIsDue,
 				suggestedCloseDate: getSuggestedCloseDate(periodLockDate),
 				lastCloseEvent: snapshot.periodCloseEvents[0] ?? null,
@@ -220,6 +246,9 @@
 	);
 	const totalPendingEvidence = $derived(
 		attentionTenants.reduce((sum, item) => sum + item.pendingEvidenceCount, 0)
+	);
+	const totalJournalEvidence = $derived(
+		attentionTenants.reduce((sum, item) => sum + item.journalEvidenceCount, 0)
 	);
 	const tenantsNeedingClose = $derived(
 		attentionTenants.filter((item) => item.needsClose).length
@@ -278,6 +307,10 @@
 							<span>{m.dashboard_reviewPortfolioEvidencePending()}</span>
 						</div>
 						<div>
+							<strong>{totalJournalEvidence}</strong>
+							<span>{m.dashboard_reviewPortfolioJournalEvidence()}</span>
+						</div>
+						<div>
 							<strong>{tenantsNeedingClose}</strong>
 							<span>{m.dashboard_reviewPortfolioCloseDueCount()}</span>
 						</div>
@@ -317,6 +350,9 @@
 											{#if item.pendingEvidenceCount > 0}
 												<span class="portfolio-pill">{item.pendingEvidenceCount} {m.dashboard_reviewPortfolioEvidencePendingTag()}</span>
 											{/if}
+											{#if item.journalEvidenceCount > 0}
+												<span class="portfolio-pill portfolio-pill-alert">{item.journalEvidenceCount} {m.dashboard_reviewPortfolioJournalEvidenceTag()}</span>
+											{/if}
 											{#if item.needsClose}
 												<span class="portfolio-pill portfolio-pill-alert">{m.dashboard_reviewPortfolioCloseTag()}</span>
 											{/if}
@@ -331,6 +367,13 @@
 												{m.dashboard_reviewPortfolioEvidenceStatus({
 													missing: item.missingEvidenceCount.toString(),
 													pending: item.pendingEvidenceCount.toString()
+												})}
+											</p>
+										{/if}
+										{#if item.journalEvidenceCount > 0}
+											<p class="portfolio-evidence-note">
+												{m.dashboard_reviewPortfolioJournalEvidenceStatus({
+													count: item.journalEvidenceCount.toString()
 												})}
 											</p>
 										{/if}
@@ -368,6 +411,25 @@
 													})}
 												>
 													{m.dashboard_reviewPortfolioActionEvidence()}
+												</a>
+											{/if}
+											{#if item.journalEvidenceCount > 0}
+												<a
+													class="portfolio-action-link"
+													href={buildTenantHref('/journal', item.membership.tenant.id)}
+												>
+													{m.dashboard_reviewPortfolioActionJournal()}
+												</a>
+											{/if}
+											{#if item.journalPendingEvidenceCount > 0}
+												<a
+													class="portfolio-action-link"
+													href={buildTenantHref('/documents', item.membership.tenant.id, {
+														entity_type: 'journal_entry',
+														review_status: 'PENDING'
+													})}
+												>
+													{m.dashboard_reviewPortfolioActionJournalEvidence()}
 												</a>
 											{/if}
 											{#if item.needsClose}
