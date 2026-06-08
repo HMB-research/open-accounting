@@ -16,6 +16,7 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/documents"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -386,6 +387,181 @@ func TestAPIClientAuthSessionRequestsUseFallbackToken(t *testing.T) {
 		"revoke-all":      1,
 		"change-password": 1,
 	}, requestCounts)
+}
+
+func TestAPIClientDocumentUploadDownloadBranches(t *testing.T) {
+	t.Parallel()
+
+	retentionUntil := time.Date(2028, 6, 30, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 6, 8, 10, 0, 0, 0, time.UTC)
+	requestCounts := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer document-token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents":
+			requestCounts["upload"]++
+			assert.Equal(t, "application/json", r.Header.Get("Accept"))
+			assert.Contains(t, r.Header.Get("Content-Type"), "multipart/form-data")
+			require.NoError(t, r.ParseMultipartForm(1024))
+			assert.Equal(t, "invoice", r.FormValue("entity_type"))
+			assert.Equal(t, "inv-1", r.FormValue("entity_id"))
+			assert.Equal(t, "receipt", r.FormValue("document_type"))
+			assert.Equal(t, "Uploaded from CLI", r.FormValue("notes"))
+			assert.Equal(t, "2028-06-30", r.FormValue("retention_until"))
+			assert.Equal(t, "7", r.FormValue("retention_years"))
+			file, header, err := r.FormFile("file")
+			require.NoError(t, err)
+			defer func() {
+				_ = file.Close()
+			}()
+			assert.Equal(t, "invoice.pdf", header.Filename)
+			content, err := io.ReadAll(file)
+			require.NoError(t, err)
+			assert.Equal(t, []byte("pdf-bytes"), content)
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(documents.Document{
+				ID:             "doc-1",
+				TenantID:       "tenant-1",
+				EntityType:     documents.EntityTypeInvoice,
+				EntityID:       "inv-1",
+				DocumentType:   documents.DocumentTypeReceipt,
+				FileName:       "invoice.pdf",
+				ContentType:    "application/pdf",
+				FileSize:       int64(len(content)),
+				Notes:          "Uploaded from CLI",
+				RetentionUntil: &retentionUntil,
+				ReviewStatus:   documents.ReviewStatusPending,
+				CreatedAt:      now,
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-error/documents":
+			requestCounts["upload-error"]++
+			w.WriteHeader(http.StatusBadGateway)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "document upload unavailable"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-decode/documents":
+			requestCounts["upload-decode"]++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("{"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-1/download":
+			requestCounts["download"]++
+			w.Header().Set("Content-Type", "application/pdf")
+			w.Header().Set("Content-Disposition", `attachment; filename="invoice.pdf"`)
+			_, _ = w.Write([]byte("downloaded-pdf"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-error/download":
+			requestCounts["download-error"]++
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "document not found"})
+		default:
+			t.Fatalf("unexpected document client request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	client := newAPIClient(server.URL, " document-token ")
+	uploaded, err := client.uploadDocument(context.Background(), "tenant-1", &documents.UploadDocumentRequest{
+		EntityType:     " invoice ",
+		EntityID:       " inv-1 ",
+		DocumentType:   " receipt ",
+		FileName:       " invoice.pdf ",
+		Notes:          " Uploaded from CLI ",
+		RetentionUntil: &retentionUntil,
+		RetentionYears: 7,
+	}, []byte("pdf-bytes"))
+	require.NoError(t, err)
+	assert.Equal(t, "doc-1", uploaded.ID)
+	assert.Equal(t, "invoice.pdf", uploaded.FileName)
+
+	_, err = client.uploadDocument(context.Background(), "tenant-error", &documents.UploadDocumentRequest{
+		EntityType: "invoice",
+		EntityID:   "inv-1",
+		FileName:   "invoice.pdf",
+	}, []byte("pdf-bytes"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "document upload unavailable")
+
+	_, err = client.uploadDocument(context.Background(), "tenant-decode", &documents.UploadDocumentRequest{
+		EntityType: "invoice",
+		EntityID:   "inv-1",
+		FileName:   "invoice.pdf",
+	}, []byte("pdf-bytes"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "decode response")
+
+	downloaded, err := client.downloadDocument(context.Background(), "tenant-1", "doc-1")
+	require.NoError(t, err)
+	assert.Equal(t, "invoice.pdf", downloaded.FileName)
+	assert.Equal(t, "application/pdf", downloaded.ContentType)
+	assert.Equal(t, []byte("downloaded-pdf"), downloaded.Content)
+
+	_, err = client.downloadDocument(context.Background(), "tenant-1", "doc-error")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "document not found")
+
+	assert.Equal(t, map[string]int{
+		"upload":         1,
+		"upload-error":   1,
+		"upload-decode":  1,
+		"download":       1,
+		"download-error": 1,
+	}, requestCounts)
+}
+
+func TestAPIClientDocumentTransportErrorBranches(t *testing.T) {
+	t.Parallel()
+
+	client := &apiClient{
+		baseURL:  "https://api.example.com",
+		apiToken: "token-123",
+		httpClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return nil, errors.New("document transport unavailable")
+		})},
+	}
+
+	_, err := client.uploadDocument(context.Background(), "tenant-1", &documents.UploadDocumentRequest{
+		EntityType: "invoice",
+		EntityID:   "inv-1",
+		FileName:   "invoice.pdf",
+	}, []byte("pdf"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "document transport unavailable")
+
+	_, err = client.downloadDocument(context.Background(), "tenant-1", "doc-1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "document transport unavailable")
+}
+
+func TestAPIClientDocumentRequestConstructionAndReadErrors(t *testing.T) {
+	t.Parallel()
+
+	client := &apiClient{baseURL: "http://[::1", httpClient: http.DefaultClient}
+	_, err := client.uploadDocument(context.Background(), "tenant-1", &documents.UploadDocumentRequest{
+		EntityType: "invoice",
+		EntityID:   "inv-1",
+		FileName:   "invoice.pdf",
+	}, []byte("pdf"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create request")
+
+	_, err = client.downloadDocument(context.Background(), "tenant-1", "doc-1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create request")
+
+	client = &apiClient{
+		baseURL: "https://api.example.com",
+		httpClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Body:       errReadCloser{},
+				Header:     make(http.Header),
+			}, nil
+		})},
+	}
+
+	_, err = client.downloadDocument(context.Background(), "tenant-1", "doc-1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read download response")
 }
 
 func TestParseDaysToExpiry(t *testing.T) {
