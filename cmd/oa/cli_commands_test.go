@@ -12162,6 +12162,106 @@ func TestCLIContactsBranches(t *testing.T) {
 	}, requestCounts)
 }
 
+func TestCLIContactsAPIErrors(t *testing.T) {
+	configureCLIEnv(t)
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	importFile := writeTempCSV(t, "contacts-error.csv", "name,email\nError Co,error@example.com\n")
+	requestCounts := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/contacts":
+			requestCounts["list"]++
+			assert.Equal(t, "SUPPLIER", r.URL.Query().Get("type"))
+			assert.Equal(t, "Error", r.URL.Query().Get("search"))
+			assert.Equal(t, "true", r.URL.Query().Get("active_only"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/contacts":
+			requestCounts["create"]++
+			var req contacts.CreateContactRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "ERR-1", req.Code)
+			assert.Equal(t, "Error Supplier", req.Name)
+			assert.Equal(t, contacts.ContactTypeSupplier, req.ContactType)
+			assert.Equal(t, "error@example.com", req.Email)
+			assert.Equal(t, "EE", req.CountryCode)
+			assert.Equal(t, 30, req.PaymentTermsDays)
+			assert.True(t, req.CreditLimit.Equal(decimal.RequireFromString("50.25")))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/contacts/contact-error":
+			requestCounts["get"]++
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/contacts/contact-error":
+			requestCounts["update"]++
+			var req contacts.UpdateContactRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.NotNil(t, req.Name)
+			assert.Equal(t, "Updated Error Supplier", *req.Name)
+			require.NotNil(t, req.Email)
+			assert.Equal(t, "updated-error@example.com", *req.Email)
+			require.NotNil(t, req.PaymentTermsDays)
+			assert.Equal(t, 45, *req.PaymentTermsDays)
+			require.NotNil(t, req.CreditLimit)
+			assert.True(t, req.CreditLimit.Equal(decimal.RequireFromString("75.50")))
+			require.NotNil(t, req.IsActive)
+			assert.False(t, *req.IsActive)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/contacts/contact-error":
+			requestCounts["delete"]++
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/contacts/import":
+			requestCounts["import"]++
+			var req contacts.ImportContactsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "contacts-error.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "Error Co")
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "contacts backend unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list", args: []string{"contacts", "list", "--type", "supplier", "--search", "Error", "--active-only"}},
+		{name: "create", args: []string{"contacts", "create", "--code", "ERR-1", "--name", "Error Supplier", "--type", "supplier", "--email", "error@example.com", "--country-code", "ee", "--payment-terms-days", "30", "--credit-limit", "50.25"}},
+		{name: "get", args: []string{"contacts", "get", "--id", "contact-error"}},
+		{name: "update", args: []string{"contacts", "update", "--id", "contact-error", "--name", "Updated Error Supplier", "--email", "updated-error@example.com", "--payment-terms-days", "45", "--credit-limit", "75.50", "--active", "false"}},
+		{name: "delete", args: []string{"contacts", "delete", "--id", "contact-error"}},
+		{name: "import", args: []string{"contacts", "import", "--file", importFile}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "contacts backend unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	assert.Equal(t, map[string]int{
+		"list":   1,
+		"create": 1,
+		"get":    1,
+		"update": 1,
+		"delete": 1,
+		"import": 1,
+	}, requestCounts)
+}
+
 func TestCLIPaymentCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
