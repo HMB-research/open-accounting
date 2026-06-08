@@ -120,10 +120,10 @@
 			});
 
 			let message: string = m.bankingImport_importedTransactions({ count: result.transactions_imported.toString() });
-			if (result.transactions_duplicates > 0) {
-				message += `, ${m.bankingImport_duplicatesSkipped({ count: result.transactions_duplicates.toString() })}`;
+			if (result.duplicates_skipped > 0) {
+				message += `, ${m.bankingImport_duplicatesSkipped({ count: result.duplicates_skipped.toString() })}`;
 			}
-			if (result.errors.length > 0) {
+			if (result.errors?.length) {
 				message += `\n\nErrors:\n${result.errors.join('\n')}`;
 			}
 

@@ -4129,7 +4129,7 @@ export interface BankStatementImport {
   file_name: string;
   transactions_imported: number;
   transactions_matched: number;
-  transactions_duplicates: number;
+  duplicates_skipped: number;
   created_at: string;
   created_by: string;
 }
@@ -4177,8 +4177,8 @@ export interface ImportTransactionsRequest {
 export interface ImportResult {
   import_id: string;
   transactions_imported: number;
-  transactions_duplicates: number;
-  errors: string[];
+  duplicates_skipped: number;
+  errors?: string[];
 }
 
 export interface CreateReconciliationRequest {

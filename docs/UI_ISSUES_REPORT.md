@@ -520,16 +520,18 @@ Each view is tested for:
 | Criteria | Status | Notes |
 |----------|--------|-------|
 | Page Load | ✅ | Page renders with "Import Bank Transactions" heading |
-| Data Display | ✅ | Back navigation visible |
-| Navigation | ✅ | Navigation visible |
-| CRUD | ⚠️ | Import functionality needs E2E verification |
+| Data Display | ✅ | Import settings, account selector, LHV/generic format presets, and file preview visible |
+| Navigation | ✅ | Back navigation visible; successful import returns to banking view |
+| CRUD | ✅ | LHV CSV upload/import verified through UI and resulting transaction appears in banking list |
 | Errors | ✅ | No errors observed |
 | Responsive | ⚠️ | Needs manual verification |
 
-**Features Verified:**
-- Bank transaction import interface
-- Back navigation to banking section
-- SvelteKit-based file upload ready
+**E2E Tests:** 5/5 passed
+- Displays bank import settings, account selector, file input, preset selector, duplicate toggle, and disabled submit state before file selection
+- Shows seeded demo bank accounts in the import account selector
+- Exposes Auto, Generic CSV, LHV CSV, and LHV CAMT.053 format presets
+- Previews selected LHV CSV statement data before import
+- Imports an LHV CSV statement and verifies the new unmatched transaction on the banking page
 
 **Overall:** ✅ Working
 
@@ -788,6 +790,7 @@ _None identified_
 
 | Date | Tester | Changes |
 |------|--------|---------|
+| 2026-06-08 | Codex | Replaced soft `/banking/import` checks with real LHV CSV preview/import E2E coverage and updated the UI audit evidence |
 | 2026-05-30 | Codex | Corrected stale inventory limitations against current repository evidence; stock and warehouse workflows now exist outside this historical UI sweep |
 | 2026-01-12 | Claude | **COMPLETE** - All 33 views tested, all working |
 | 2026-01-12 | Claude | Tested Admin Plugins (/admin/plugins) - Working (WebFetch) |
