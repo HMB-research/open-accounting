@@ -2052,6 +2052,27 @@ class ApiClient {
     );
   }
 
+  async listCostAllocations(
+    tenantId: string,
+    filters: CostAllocationFilters = {},
+  ) {
+    return this.request<CostAllocation[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/cost-centers/allocations${buildQuery(filters)}`,
+    );
+  }
+
+  async createCostAllocation(
+    tenantId: string,
+    data: CreateCostAllocationRequest,
+  ) {
+    return this.request<CostAllocation>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/cost-centers/allocations`,
+      data,
+    );
+  }
+
   async getCostCenterReport(
     tenantId: string,
     startDate?: string,
@@ -4855,6 +4876,37 @@ export interface UpdateCostCenterRequest {
   is_active: boolean;
   budget_amount?: string;
   budget_period?: BudgetPeriod;
+}
+
+export interface CostAllocation {
+  id: string;
+  tenant_id: string;
+  cost_center_id: string;
+  journal_entry_line_id: string;
+  amount: Decimal;
+  allocation_percentage?: Decimal;
+  allocation_date: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+  cost_center_code?: string;
+  cost_center_name?: string;
+}
+
+export interface CreateCostAllocationRequest {
+  cost_center_id: string;
+  journal_entry_line_id: string;
+  amount: string;
+  allocation_percentage?: string;
+  allocation_date: string;
+  notes?: string;
+}
+
+export interface CostAllocationFilters {
+  cost_center_id?: string;
+  journal_entry_line_id?: string;
+  start_date?: string;
+  end_date?: string;
 }
 
 export interface CostCenterSummary {

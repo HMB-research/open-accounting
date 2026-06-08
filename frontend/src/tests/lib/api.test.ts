@@ -2865,6 +2865,65 @@ describe("API Client - Core Functionality", () => {
       );
       expect(result.period_end).toBe("2024-01-31");
     });
+
+    it("should list cost allocations with filters", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            id: "alloc-1",
+            amount: "125.00",
+            cost_center_id: "cc-1",
+            journal_entry_line_id: "line-1",
+          },
+        ],
+      });
+
+      const result = await api.listCostAllocations("tenant-123", {
+        cost_center_id: "cc-1",
+        start_date: "2024-01-01",
+        end_date: "2024-01-31",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/cost-centers/allocations?cost_center_id=cc-1&start_date=2024-01-01&end_date=2024-01-31",
+        ),
+        expect.any(Object),
+      );
+      expect(result[0].id).toBe("alloc-1");
+    });
+
+    it("should create cost allocation", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          id: "alloc-new",
+          amount: "125.00",
+          cost_center_id: "cc-1",
+          journal_entry_line_id: "line-1",
+        }),
+      });
+
+      const result = await api.createCostAllocation("tenant-123", {
+        cost_center_id: "cc-1",
+        journal_entry_line_id: "line-1",
+        amount: "125.00",
+        allocation_percentage: "50",
+        allocation_date: "2024-01-31T00:00:00Z",
+        notes: "Shared office cost",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/cost-centers/allocations",
+        ),
+        expect.objectContaining({ method: "POST" }),
+      );
+      expect(result.id).toBe("alloc-new");
+    });
   });
 
   describe("Leave Management Endpoints", () => {

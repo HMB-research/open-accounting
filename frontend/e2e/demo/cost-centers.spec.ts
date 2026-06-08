@@ -32,11 +32,16 @@ test.describe('Demo Cost Centers - Page Structure', () => {
 
 	test('shows empty state or cost center list', async ({ page }) => {
 		await expect(async () => {
-			const hasEmptyState = await page.locator('.empty-state').isVisible().catch(() => false);
+			const hasEmptyState = await page.getByRole('heading', { name: /no cost centers yet|kulukohti pole veel/i }).isVisible().catch(() => false);
 			const hasTable = await page.locator('table').isVisible().catch(() => false);
-			const hasCard = await page.locator('.card').isVisible().catch(() => false);
-			expect(hasEmptyState || hasTable || hasCard).toBeTruthy();
+			expect(hasEmptyState || hasTable).toBeTruthy();
 		}).toPass({ timeout: 10000 });
+	});
+
+	test('shows allocation assignment controls', async ({ page }) => {
+		await expect(page.getByRole('heading', { name: /cost allocation assignments|kulukohade jaotused/i })).toBeVisible({ timeout: 10000 });
+		await expect(page.getByLabel(/journal line|pearaamatu rida/i)).toBeVisible({ timeout: 10000 });
+		await expect(page.getByRole('button', { name: /create allocation|loo jaotus/i })).toBeVisible({ timeout: 10000 });
 	});
 });
 
