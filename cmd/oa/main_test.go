@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,12 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
+
+type errReader struct{}
+
+func (errReader) Read([]byte) (int, error) {
+	return 0, errors.New("read failed")
+}
 
 func TestResolveTenantMembership(t *testing.T) {
 	memberships := []tenant.TenantMembership{
@@ -114,6 +121,22 @@ func TestResolveOperatorScriptPathReturnsMissingScriptError(t *testing.T) {
 	assert.Contains(t, err.Error(), "operator script not found")
 }
 
+func TestResolveOperatorScriptPathFallsBackToRelativeMissingScript(t *testing.T) {
+	rootDir := t.TempDir()
+	t.Setenv("OA_SCRIPT_DIR", "")
+	oldCWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(rootDir))
+	t.Cleanup(func() {
+		_ = os.Chdir(oldCWD)
+	})
+
+	_, err = resolveOperatorScriptPath("definitely-missing-oa-script.sh")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "operator script not found")
+}
+
 func TestMainPrintsUsageWithoutArgs(t *testing.T) {
 	oldArgs := os.Args
 	oldStdout := os.Stdout
@@ -133,6 +156,21 @@ func TestMainPrintsUsageWithoutArgs(t *testing.T) {
 	n, err := reader.Read(output)
 	require.NoError(t, err)
 	assert.Contains(t, string(output[:n]), "Open Accounting CLI")
+}
+
+func TestLoadTokenClientReturnsConfigLoadError(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("HOME", tempDir)
+	t.Setenv("XDG_CONFIG_HOME", tempDir)
+
+	path, err := configPath()
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	require.NoError(t, os.WriteFile(path, []byte("{bad json"), 0o600))
+
+	_, _, err = (&cliApp{}).loadTokenClient()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "decode config")
 }
 
 func TestResolvePasswordPair(t *testing.T) {
@@ -163,6 +201,52 @@ func TestResolvePasswordPair(t *testing.T) {
 	assert.Equal(t, "new-from-stdin", newPassword)
 }
 
+func TestResolvePasswordStdinReadErrors(t *testing.T) {
+	oldStdin := os.Stdin
+	reader, writer, err := os.Pipe()
+	require.NoError(t, err)
+	require.NoError(t, reader.Close())
+	require.NoError(t, writer.Close())
+	os.Stdin = reader
+	t.Cleanup(func() {
+		os.Stdin = oldStdin
+	})
+
+	_, err = resolvePassword("", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read password from stdin")
+}
+
+func TestResolvePasswordPairPropagatesStdinReadErrors(t *testing.T) {
+	oldStdin := os.Stdin
+	reader, writer, err := os.Pipe()
+	require.NoError(t, err)
+	require.NoError(t, reader.Close())
+	require.NoError(t, writer.Close())
+	os.Stdin = reader
+	t.Cleanup(func() {
+		os.Stdin = oldStdin
+	})
+
+	_, _, err = resolvePasswordPair("", "", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read current password from stdin")
+
+	reader, writer, err = os.Pipe()
+	require.NoError(t, err)
+	_, err = writer.WriteString("current\n")
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	os.Stdin = reader
+	t.Cleanup(func() {
+		_ = reader.Close()
+	})
+
+	_, _, err = resolvePasswordPair("", "", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "new password from stdin is empty")
+}
+
 func TestReadPasswordLine(t *testing.T) {
 	value, err := readPasswordLine(bufio.NewReader(strings.NewReader("secret\r\n")), "password")
 	require.NoError(t, err)
@@ -171,4 +255,30 @@ func TestReadPasswordLine(t *testing.T) {
 	_, err = readPasswordLine(bufio.NewReader(strings.NewReader("\n")), "password")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "password from stdin is empty")
+
+	_, err = readPasswordLine(bufio.NewReader(errReader{}), "password")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read password from stdin")
+}
+
+func TestReadFileInputStdinReadError(t *testing.T) {
+	oldStdin := os.Stdin
+	reader, writer, err := os.Pipe()
+	require.NoError(t, err)
+	require.NoError(t, reader.Close())
+	require.NoError(t, writer.Close())
+	os.Stdin = reader
+	t.Cleanup(func() {
+		os.Stdin = oldStdin
+	})
+
+	_, _, err = readFileInput("-", "stdin.bin")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read stdin")
+}
+
+func TestParseBankAccountCSVRowsHeaderError(t *testing.T) {
+	_, err := parseBankAccountCSVRows(`"`)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read bank account CSV header")
 }
