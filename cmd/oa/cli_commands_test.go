@@ -5896,6 +5896,112 @@ func TestCLIQuoteValidationBranches(t *testing.T) {
 	}
 }
 
+func TestCLIQuoteAuthAndAPIErrors(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	err := app.run(ctx, []string{"quotes"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "quotes subcommand required")
+	assert.Empty(t, stdout.String())
+
+	err = app.run(ctx, []string{"quotes", "list"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	importFile := writeTempCSV(t, "quotes-error.csv", "quote_number,contact_id,quote_date,line_description,quantity,unit_price,vat_rate\nQT-ERR,contact-error,2026-06-01,Error work,1,100,22\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/quotes":
+			assert.Equal(t, "SENT", r.URL.Query().Get("status"))
+			assert.Equal(t, "contact-error", r.URL.Query().Get("contact_id"))
+			assert.Equal(t, "2026-06-01", r.URL.Query().Get("from_date"))
+			assert.Equal(t, "2026-06-30", r.URL.Query().Get("to_date"))
+			assert.Equal(t, "ERR", r.URL.Query().Get("search"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes":
+			var req quotes.CreateQuoteRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "contact-error", req.ContactID)
+			assert.Equal(t, "2026-06-01", req.QuoteDate.Format("2006-01-02"))
+			require.NotNil(t, req.ValidUntil)
+			assert.Equal(t, "2026-06-30", req.ValidUntil.Format("2006-01-02"))
+			assert.Equal(t, "EUR", req.Currency)
+			assert.Equal(t, "Error quote", req.Notes)
+			require.Len(t, req.Lines, 1)
+			assert.Equal(t, "Error work", req.Lines[0].Description)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/import":
+			var req quotes.ImportQuotesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "quotes-error.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "QT-ERR")
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-error":
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-error":
+			var req quotes.UpdateQuoteRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "contact-error", req.ContactID)
+			assert.Equal(t, "2026-06-02", req.QuoteDate.Format("2006-01-02"))
+			assert.Equal(t, "Updated error quote", req.Notes)
+			require.Len(t, req.Lines, 1)
+			assert.Equal(t, "Updated error work", req.Lines[0].Description)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-error":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-error/send":
+			var req documentEvidenceRequirementRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.True(t, req.RequireApprovedEvidence)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-error/convert-to-invoice":
+			var req quotes.ConvertQuoteToInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-06-05", req.IssueDate.Format("2006-01-02"))
+			assert.Equal(t, "2026-06-19", req.DueDate.Format("2006-01-02"))
+			assert.Equal(t, "Convert error quote", req.Notes)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "quote backend unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{name: "list api error", args: []string{"quotes", "list", "--status", "sent", "--contact-id", "contact-error", "--from", "2026-06-01", "--to", "2026-06-30", "--search", "ERR"}},
+		{name: "create api error", args: []string{"quotes", "create", "--contact-id", "contact-error", "--quote-date", "2026-06-01", "--valid-until", "2026-06-30", "--currency", "eur", "--notes", "Error quote", "--line", "description=Error work,quantity=1,unit_price=100,vat_rate=22"}},
+		{name: "import api error", args: []string{"quotes", "import", "--file", importFile}},
+		{name: "get api error", args: []string{"quotes", "get", "--id", "quote-error"}},
+		{name: "update api error", args: []string{"quotes", "update", "--id", "quote-error", "--contact-id", "contact-error", "--quote-date", "2026-06-02", "--notes", "Updated error quote", "--line", "description=Updated error work,quantity=2,unit_price=80,vat_rate=22"}},
+		{name: "delete api error", args: []string{"quotes", "delete", "--id", "quote-error"}},
+		{name: "send api error", args: []string{"quotes", "send", "--id", "quote-error", "--require-approved-evidence"}},
+		{name: "convert api error", args: []string{"quotes", "convert-to-invoice", "--id", "quote-error", "--issue-date", "2026-06-05", "--due-date", "2026-06-19", "--notes", "Convert error quote"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "quote backend unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIOrderCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
