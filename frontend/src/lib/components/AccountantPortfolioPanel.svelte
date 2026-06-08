@@ -127,6 +127,16 @@
 		return m.dashboard_reviewPortfolioLockedThrough({ date: formatDate(lockDate) });
 	}
 
+	function buildTenantHref(
+		path: string,
+		tenantId: string,
+		params: Record<string, string> = {},
+		hash = ''
+	): string {
+		const search = new URLSearchParams({ tenant: tenantId, ...params }).toString();
+		return `${path}?${search}${hash ? `#${hash}` : ''}`;
+	}
+
 	const portfolioItems = $derived.by(() => {
 		const items: PortfolioItem[] = [];
 
@@ -331,6 +341,52 @@
 												<span>{formatDate(item.lastCloseEvent.created_at)}</span>
 											</div>
 										{/if}
+
+										<nav class="portfolio-action-row" aria-label={m.dashboard_reviewPortfolioActions()}>
+											{#if item.overdueCount > 0}
+												<a
+													class="portfolio-action-link"
+													href={buildTenantHref('/invoices/reminders', item.membership.tenant.id)}
+												>
+													{m.dashboard_reviewPortfolioActionReminders()}
+												</a>
+											{/if}
+											{#if item.unmatchedCount > 0}
+												<a
+													class="portfolio-action-link"
+													href={buildTenantHref('/banking', item.membership.tenant.id)}
+												>
+													{m.dashboard_reviewPortfolioActionBanking()}
+												</a>
+											{/if}
+											{#if item.pendingEvidenceCount > 0}
+												<a
+													class="portfolio-action-link"
+													href={buildTenantHref('/documents', item.membership.tenant.id, {
+														entity_type: 'bank_transaction',
+														review_status: 'PENDING'
+													})}
+												>
+													{m.dashboard_reviewPortfolioActionEvidence()}
+												</a>
+											{/if}
+											{#if item.needsClose}
+												<a
+													class="portfolio-action-link"
+													href={buildTenantHref('/settings/company', item.membership.tenant.id, {}, 'period-history')}
+												>
+													{m.dashboard_reviewPortfolioActionClose()}
+												</a>
+											{/if}
+											{#if !item.snapshot.tenant.onboarding_completed}
+												<a
+													class="portfolio-action-link"
+													href={buildTenantHref('/dashboard', item.membership.tenant.id)}
+												>
+													{m.dashboard_reviewPortfolioActionSetup()}
+												</a>
+											{/if}
+										</nav>
 									</div>
 
 									<div class="portfolio-list-side">
@@ -563,6 +619,31 @@
 		flex-wrap: wrap;
 		gap: 0.75rem;
 		font-size: 0.82rem;
+	}
+
+	.portfolio-action-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.45rem;
+	}
+
+	.portfolio-action-link {
+		display: inline-flex;
+		align-items: center;
+		min-height: 2.25rem;
+		padding: 0.45rem 0.72rem;
+		border-radius: 0.55rem;
+		border: 1px solid rgba(121, 85, 58, 0.16);
+		background: rgba(255, 252, 247, 0.72);
+		color: rgba(68, 48, 34, 0.94);
+		font-size: 0.82rem;
+		font-weight: 700;
+		text-decoration: none;
+	}
+
+	.portfolio-action-link:hover {
+		border-color: rgba(121, 85, 58, 0.28);
+		background: rgba(255, 247, 236, 0.92);
 	}
 
 	.portfolio-list-side {

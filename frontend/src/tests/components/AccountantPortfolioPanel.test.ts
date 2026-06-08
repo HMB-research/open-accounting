@@ -128,6 +128,17 @@ describe('AccountantPortfolioPanel', () => {
 						currency: 'EUR',
 						status: 'UNMATCHED',
 						created_at: '2026-02-09T00:00:00Z'
+					},
+					{
+						id: 'tx-2',
+						tenant_id: tenantId,
+						bank_account_id: accountId,
+						transaction_date: '2026-02-08',
+						description: 'Receipt pending',
+						amount: new Decimal('180'),
+						currency: 'EUR',
+						status: 'UNMATCHED',
+						created_at: '2026-02-08T00:00:00Z'
 					}
 				];
 			}
@@ -145,6 +156,15 @@ describe('AccountantPortfolioPanel', () => {
 						reviewed_count: 0,
 						missing_evidence: true,
 						has_pending_review: false
+					},
+					{
+						entity_type: 'bank_transaction',
+						entity_id: 'tx-2',
+						total_count: 1,
+						pending_review_count: 1,
+						reviewed_count: 0,
+						missing_evidence: false,
+						has_pending_review: true
 					}
 				];
 			}
@@ -192,11 +212,23 @@ describe('AccountantPortfolioPanel', () => {
 
 		expect(screen.getByText('See what needs attention across your companies')).toBeInTheDocument();
 		expect(screen.getByText('2 overdue')).toBeInTheDocument();
-		expect(screen.getByText('1 banking')).toBeInTheDocument();
+		expect(screen.getByText('2 banking')).toBeInTheDocument();
 		expect(screen.getAllByText('1 missing evidence').length).toBeGreaterThan(0);
+		expect(screen.getAllByText('1 pending review').length).toBeGreaterThan(0);
 		expect(screen.getAllByText('Close due').length).toBeGreaterThan(0);
 		expect(screen.getAllByText('Current workspace').length).toBeGreaterThan(0);
 		expect(screen.getByRole('link', { name: 'Open workspace' })).toHaveAttribute('href', '/dashboard?tenant=tenant-1');
+		expect(screen.getByRole('link', { name: 'Open reminders' })).toHaveAttribute('href', '/invoices/reminders?tenant=tenant-1');
+		expect(screen.getByRole('link', { name: 'Open banking' })).toHaveAttribute('href', '/banking?tenant=tenant-1');
+		expect(screen.getByRole('link', { name: 'Review evidence' })).toHaveAttribute(
+			'href',
+			'/documents?tenant=tenant-1&entity_type=bank_transaction&review_status=PENDING'
+		);
+		expect(
+			screen
+				.getAllByRole('link', { name: 'Close controls' })
+				.some((link) => link.getAttribute('href') === '/settings/company?tenant=tenant-1#period-history')
+		).toBe(true);
 	});
 
 	it('shows an empty state when no tenant needs review attention', async () => {
