@@ -14982,6 +14982,92 @@ func TestCLIBankAccountBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"status": "deleted"`)
 }
 
+func TestCLIBankAccountReadAndAPIErrors(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	err := app.run(ctx, []string{"banking", "accounts", "import", "--file", filepath.Join(t.TempDir(), "missing.csv")})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "read file")
+	assert.Empty(t, stdout.String())
+
+	importFile := writeTempCSV(t, "bank-accounts-error.csv", "name,account_number,bank_name,swift_code,currency,gl_account_id,is_default,is_active\nError bank,EEERR,LHV,LHVBEE22,EUR,acc-error,false,true\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts":
+			assert.Equal(t, "true", r.URL.Query().Get("active_only"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts":
+			var req banking.CreateBankAccountRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Error bank", req.Name)
+			assert.Equal(t, "EEERR", req.AccountNumber)
+			assert.Equal(t, "EUR", req.Currency)
+			require.NotNil(t, req.GLAccountID)
+			assert.Equal(t, "acc-error", *req.GLAccountID)
+			assert.True(t, req.IsDefault)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/import":
+			var req banking.ImportBankAccountsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "bank-accounts-error.csv", req.FileName)
+			require.Len(t, req.Rows, 1)
+			assert.Equal(t, "Error bank", req.Rows[0].Name)
+			assert.Equal(t, "EEERR", req.Rows[0].AccountNumber)
+			assert.False(t, req.SkipDuplicates)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-error":
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-error":
+			var req banking.UpdateBankAccountRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Updated error", req.Name)
+			assert.Equal(t, "SEB", req.BankName)
+			require.NotNil(t, req.IsActive)
+			assert.False(t, *req.IsActive)
+			require.NotNil(t, req.IsDefault)
+			assert.True(t, *req.IsDefault)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-error":
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "bank account backend unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{name: "list api error", args: []string{"banking", "accounts", "list", "--active-only"}},
+		{name: "create api error", args: []string{"banking", "accounts", "create", "--name", "Error bank", "--account-number", "EEERR", "--currency", "eur", "--gl-account-id", "acc-error", "--default"}},
+		{name: "import api error", args: []string{"banking", "accounts", "import", "--file", importFile, "--skip-duplicates=false"}},
+		{name: "get api error", args: []string{"banking", "accounts", "get", "--id", "bank-error"}},
+		{name: "update api error", args: []string{"banking", "accounts", "update", "--id", "bank-error", "--name", "Updated error", "--bank-name", "SEB", "--active", "false", "--default", "true"}},
+		{name: "delete api error", args: []string{"banking", "accounts", "delete", "--id", "bank-error"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "bank account backend unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIBankTransactionBranches(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
