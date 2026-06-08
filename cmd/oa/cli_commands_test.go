@@ -2158,6 +2158,72 @@ func TestCLITenantBranches(t *testing.T) {
 	}, requestCounts)
 }
 
+func TestCLITenantAPIErrors(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants":
+			var req tenant.CreateTenantRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Error Tenant", req.Name)
+			assert.Equal(t, "error-tenant", req.Slug)
+			require.NotNil(t, req.Settings)
+			assert.Equal(t, "ops@example.com", req.Settings.Email)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-error":
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-error":
+			var req tenant.UpdateTenantRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.NotNil(t, req.Name)
+			assert.Equal(t, "Updated Error Tenant", *req.Name)
+			require.NotNil(t, req.Settings)
+			assert.Equal(t, "ops@example.com", req.Settings.Email)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-error/complete-onboarding":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-error/audit-events":
+			assert.Equal(t, "2", r.URL.Query().Get("limit"))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "tenant backend unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+	settingsJSON := `{"email":"ops@example.com","timezone":"Europe/Tallinn"}`
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "create api error", args: []string{"tenant", "create", "--name", "Error Tenant", "--slug", "error-tenant", "--settings-json", settingsJSON}},
+		{name: "get api error", args: []string{"tenant", "get", "--id", "tenant-error"}},
+		{name: "update api error", args: []string{"tenant", "update", "--id", "tenant-error", "--name", "Updated Error Tenant", "--settings-json", settingsJSON}},
+		{name: "complete api error", args: []string{"tenant", "complete-onboarding", "--id", "tenant-error"}},
+		{name: "audit api error", args: []string{"tenant", "audit-events", "--id", "tenant-error", "--limit", "2"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "tenant backend unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIUsersCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
