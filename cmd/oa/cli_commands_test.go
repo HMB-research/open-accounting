@@ -17632,6 +17632,119 @@ func TestCLIEmployeesBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"message": "missing first name"`)
 }
 
+func TestCLIEmployeesFlagAndAPIErrors(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+
+	err := app.runEmployees(ctx, []string{"list"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "create invalid flag", args: []string{"create", "--bad"}},
+		{name: "get invalid flag", args: []string{"get", "--bad"}},
+		{name: "update invalid flag", args: []string{"update", "--bad"}},
+		{name: "set salary invalid flag", args: []string{"set-salary", "--bad"}},
+		{name: "salary components invalid flag", args: []string{"salary-components", "--bad"}},
+		{name: "add salary component invalid flag", args: []string{"add-salary-component", "--bad"}},
+		{name: "import invalid flag", args: []string{"import", "--bad"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, append([]string{"employees"}, tc.args...))
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "flag provided but not defined")
+			assert.Empty(t, stdout.String())
+		})
+	}
+
+	importFile := writeTempCSV(t, "employees-error.csv", "employee_number,first_name,last_name,start_date,base_salary\nEMP-ERR,Error,Employee,2026-04-01,3000\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/employees":
+			assert.Equal(t, "true", r.URL.Query().Get("active_only"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/employees":
+			var req payroll.CreateEmployeeRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "EMP-ERR", req.EmployeeNumber)
+			assert.Equal(t, "Error", req.FirstName)
+			assert.Equal(t, "Employee", req.LastName)
+			assert.Equal(t, "2026-04-01", req.StartDate.Format("2006-01-02"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-error":
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-error":
+			var req payroll.UpdateEmployeeRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Error", req.FirstName)
+			require.NotNil(t, req.IsActive)
+			assert.True(t, *req.IsActive)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-error/salary":
+			var req map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "3000", req["amount"])
+			assert.Contains(t, req["effective_from"], "2026-04-01")
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-error/salary-components":
+			assert.Equal(t, "2026-04-15", r.URL.Query().Get("active_on"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/employees/emp-error/salary-components":
+			var req payroll.CreateSalaryComponentRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, payroll.SalaryComponentBonus, req.ComponentType)
+			assert.Equal(t, "Error bonus", req.Name)
+			assert.True(t, req.Amount.Equal(decimal.NewFromInt(500)))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/employees/import":
+			var req payroll.ImportEmployeesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "employees-error.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "EMP-ERR")
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "employee backend unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list api error", args: []string{"list", "--active-only"}},
+		{name: "create api error", args: []string{"create", "--employee-number", "EMP-ERR", "--first-name", "Error", "--last-name", "Employee", "--start-date", "2026-04-01"}},
+		{name: "get api error", args: []string{"get", "--id", "emp-error"}},
+		{name: "update api error", args: []string{"update", "--id", "emp-error", "--first-name", "Error", "--active", "true"}},
+		{name: "set salary api error", args: []string{"set-salary", "--id", "emp-error", "--amount", "3000", "--effective-from", "2026-04-01"}},
+		{name: "salary components api error", args: []string{"salary-components", "--id", "emp-error", "--active-on", "2026-04-15"}},
+		{name: "add salary component api error", args: []string{"add-salary-component", "--id", "emp-error", "--type", "bonus", "--name", "Error bonus", "--amount", "500", "--effective-from", "2026-04-01"}},
+		{name: "import api error", args: []string{"import", "--file", importFile}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, append([]string{"employees"}, tc.args...))
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "employee backend unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIPayrollRunCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
