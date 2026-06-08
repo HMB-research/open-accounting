@@ -18431,6 +18431,76 @@ func TestCLIPayrollRunValidationBranches(t *testing.T) {
 	}
 }
 
+func TestCLIPayrollRunAPIErrors(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs":
+			assert.Equal(t, "2026", r.URL.Query().Get("year"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs":
+			var req payroll.CreatePayrollRunRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, 2026, req.PeriodYear)
+			assert.Equal(t, 5, req.PeriodMonth)
+			require.NotNil(t, req.PaymentDate)
+			assert.Equal(t, "2026-05-31", req.PaymentDate.Format("2006-01-02"))
+			assert.Equal(t, "May payroll", req.Notes)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-error":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-error/calculate":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-error/process":
+			var req payroll.ProcessPayrollRunRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.True(t, req.Approve)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-error/approve":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-error/payslips":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-error/payslips/payslip-error/pdf":
+			assert.Equal(t, "*/*", r.Header.Get("Accept"))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "payroll run backend unavailable"})
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "list api error", args: []string{"list", "--year", "2026"}},
+		{name: "create api error", args: []string{"create", "--year", "2026", "--month", "5", "--payment-date", "2026-05-31", "--notes", "May payroll"}},
+		{name: "get api error", args: []string{"get", "--id", "run-error"}},
+		{name: "calculate api error", args: []string{"calculate", "--id", "run-error"}},
+		{name: "process api error", args: []string{"process", "--id", "run-error", "--approve"}},
+		{name: "approve api error", args: []string{"approve", "--id", "run-error"}},
+		{name: "payslips api error", args: []string{"payslips", "--id", "run-error"}},
+		{name: "payslip pdf api error", args: []string{"payslip-pdf", "--run-id", "run-error", "--payslip-id", "payslip-error"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, append([]string{"payroll", "runs"}, tc.args...))
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "payroll run backend unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIPayrollImportHistoryCommand(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
