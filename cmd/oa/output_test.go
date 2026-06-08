@@ -99,6 +99,34 @@ func TestPrintOutputEdgeBranches(t *testing.T) {
 	assert.Contains(t, buf.String(), "name")
 	assert.Contains(t, buf.String(), "missing required field")
 
+	buf.Reset()
+	printMigrationValidationReport(&buf, &cutover.BundleValidationReport{
+		Summary: cutover.BundleValidationSummary{FilesValidated: 1, RowsValidated: 2, Ready: true},
+		Files: []cutover.FileValidation{{
+			Kind:     cutover.KindInvoices,
+			FileName: "invoices.csv",
+			Rows:     2,
+		}},
+		Issues: []cutover.ValidationIssue{{
+			Severity: cutover.SeverityWarning,
+			FileName: "invoices.csv",
+			Row:      2,
+			Field:    "amount",
+			Message:  "uses fallback currency",
+		}},
+	})
+	assert.Contains(t, buf.String(), "ready")
+	assert.Contains(t, buf.String(), "invoices.csv")
+	assert.Contains(t, buf.String(), "amount")
+	assert.Contains(t, buf.String(), "uses fallback currency")
+
+	buf.Reset()
+	printMigrationValidationReport(&buf, &cutover.BundleValidationReport{
+		Summary: cutover.BundleValidationSummary{FilesValidated: 1, RowsValidated: 1, Ready: true},
+	})
+	assert.Contains(t, buf.String(), "ready")
+	assert.NotContains(t, buf.String(), "Issues:")
+
 	periodLock := "2026-03-31"
 	buf.Reset()
 	printTenant(&buf, &tenant.Tenant{
@@ -294,6 +322,182 @@ func TestPrintOutputEdgeBranches(t *testing.T) {
 		VoidReason:  "correction",
 	})
 	assert.Contains(t, buf.String(), "Void reason: correction")
+}
+
+func TestPrintReportOutputEdgeBranches(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 12, 10, 0, 0, 0, time.UTC)
+	var buf bytes.Buffer
+
+	printDocumentRetentionReview(&buf, nil)
+	assert.Empty(t, buf.String())
+
+	buf.Reset()
+	printDocumentRetentionReview(&buf, &documents.RetentionReview{
+		AsOfDate:              "2026-03-12",
+		CutoffDate:            "2026-04-11",
+		TotalCount:            2,
+		ExpiredCount:          1,
+		DueSoonCount:          1,
+		MissingRetentionCount: 1,
+		PendingReviewCount:    1,
+		RejectedCount:         1,
+	})
+	assert.Contains(t, buf.String(), "Total: 2")
+	assert.NotContains(t, buf.String(), "ID\tENTITY")
+
+	existingCarryForward := accounting.JournalEntrySummary{ID: "je-existing", EntryNumber: "JE-EXISTING"}
+	status := accounting.YearEndCloseStatus{
+		PeriodEndDate:              "2025-12-31",
+		FiscalYearLabel:            "2025",
+		FiscalYearEndDate:          "2025-12-31",
+		CarryForwardDate:           "2026-01-01",
+		IsFiscalYearEnd:            true,
+		PeriodClosed:               true,
+		CarryForwardNeeded:         true,
+		CarryForwardReady:          true,
+		HasRetainedEarningsAccount: true,
+		NetIncome:                  decimal.NewFromInt(1200),
+		ExistingCarryForward:       &existingCarryForward,
+	}
+	buf.Reset()
+	printYearEndCloseStatus(&buf, &status)
+	assert.Contains(t, buf.String(), "Existing carry-forward: JE-EXISTING (je-existing)")
+
+	buf.Reset()
+	printAnnualReport(&buf, nil)
+	assert.Empty(t, buf.String())
+
+	buf.Reset()
+	printYearEndCloseAuditEvidence(&buf, nil)
+	assert.Empty(t, buf.String())
+
+	buf.Reset()
+	printYearEndCloseAuditEvidence(&buf, &accounting.YearEndCloseAuditEvidence{
+		GeneratedAt: now,
+		EvidencePolicy: &documents.EvidencePolicyResult{
+			Compliant:          false,
+			TotalCount:         2,
+			PendingReviewCount: 1,
+			ApprovedCount:      1,
+			RejectedCount:      0,
+		},
+	})
+	assert.Contains(t, buf.String(), "Evidence policy compliant: false")
+	assert.Contains(t, buf.String(), "Attached close-pack documents: 0")
+
+	buf.Reset()
+	printYearEndCarryForwardResult(&buf, &accounting.YearEndCarryForwardResult{
+		Status: &status,
+	})
+	assert.Contains(t, buf.String(), "Existing carry-forward: JE-EXISTING (je-existing)")
+
+	buf.Reset()
+	printBankImportResult(&buf, &banking.ImportResult{
+		ImportID: "import-errors",
+		Errors:   []string{"row 2: invalid amount"},
+	})
+	assert.Contains(t, buf.String(), "Error: row 2: invalid amount")
+
+	buf.Reset()
+	printBankAccountImportResult(&buf, &banking.ImportBankAccountsResult{
+		FileName: "accounts.csv",
+		Errors:   []string{"row 3: missing account number"},
+	})
+	assert.Contains(t, buf.String(), "File: accounts.csv")
+	assert.Contains(t, buf.String(), "Error: row 3: missing account number")
+
+	buf.Reset()
+	printAbsenceType(&buf, &payroll.AbsenceType{
+		ID:                 "absence-edge",
+		Code:               "SICK",
+		Name:               "Sick leave",
+		NameET:             "Haigusleht",
+		Description:        "Medical leave",
+		DocumentType:       "medical_certificate",
+		IsPaid:             true,
+		AffectsSalary:      true,
+		RequiresDocument:   true,
+		DefaultDaysPerYear: decimal.NewFromInt(10),
+		MaxCarryoverDays:   decimal.NewFromInt(0),
+		IsActive:           true,
+	})
+	assert.Contains(t, buf.String(), "Name ET: Haigusleht")
+	assert.Contains(t, buf.String(), "Document type: medical_certificate")
+
+	buf.Reset()
+	printKMDDeclaration(&buf, &tax.KMDDeclaration{
+		Year:           2026,
+		Month:          3,
+		Status:         "DRAFT",
+		TotalOutputVAT: decimal.NewFromInt(220),
+		TotalInputVAT:  decimal.NewFromInt(80),
+	})
+	assert.Contains(t, buf.String(), "KMD 2026-03")
+	assert.NotContains(t, buf.String(), "ROW\tDESCRIPTION")
+
+	buf.Reset()
+	printKMDINFReport(&buf, &tax.KMDINFReport{
+		Year:        2026,
+		Month:       3,
+		Threshold:   decimal.NewFromInt(1000),
+		GeneratedAt: now,
+	})
+	assert.Contains(t, buf.String(), "KMD INF 2026-03")
+	assert.NotContains(t, buf.String(), "PART\tPARTNERS")
+
+	buf.Reset()
+	printEUVATOSSReport(&buf, &tax.EUVATOSSReport{
+		Year:          2026,
+		Quarter:       1,
+		PeriodStart:   time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		PeriodEnd:     time.Date(2026, 3, 31, 23, 59, 59, 0, time.UTC),
+		Scheme:        "UNION",
+		Currency:      "EUR",
+		TaxableAmount: decimal.NewFromInt(100),
+		VATAmount:     decimal.NewFromInt(19),
+		TotalAmount:   decimal.NewFromInt(119),
+	})
+	assert.Contains(t, buf.String(), "EU VAT OSS 2026-Q1")
+	assert.NotContains(t, buf.String(), "COUNTRY\tINVOICES")
+
+	marginReport := &reports.SalesMarginReport{
+		StartDate:     "2026-03-01",
+		EndDate:       "2026-03-31",
+		TotalRevenue:  decimal.NewFromInt(100),
+		TotalCost:     decimal.NewFromInt(60),
+		TotalMargin:   decimal.NewFromInt(40),
+		MarginPercent: decimal.NewFromInt(40),
+		LineCount:     1,
+		ByContact: []reports.SalesMarginContact{{
+			ContactName:   "Acme",
+			Revenue:       decimal.NewFromInt(100),
+			Cost:          decimal.NewFromInt(60),
+			Margin:        decimal.NewFromInt(40),
+			MarginPercent: decimal.NewFromInt(40),
+			LineCount:     1,
+		}},
+		Lines: []reports.SalesMarginLine{{
+			InvoiceDate:   "2026-03-12",
+			InvoiceNumber: "INV-EDGE",
+			ContactName:   "Acme",
+			Description:   "Fallback description",
+			Revenue:       decimal.NewFromInt(100),
+			Cost:          decimal.NewFromInt(60),
+			Margin:        decimal.NewFromInt(40),
+			MarginPercent: decimal.NewFromInt(40),
+		}},
+	}
+	buf.Reset()
+	printSalesMarginReport(&buf, marginReport)
+	assert.Contains(t, buf.String(), "By customer:")
+	assert.Contains(t, buf.String(), "Fallback description")
+
+	buf.Reset()
+	printCustomerProfitabilityReport(&buf, marginReport)
+	assert.Contains(t, buf.String(), "Supporting invoice lines:")
+	assert.Contains(t, buf.String(), "Total estimated cost: 60")
 }
 
 func TestPrintTables(t *testing.T) {
@@ -2322,6 +2526,7 @@ func TestFormatHelpers(t *testing.T) {
 	assert.Equal(t, "-", decimalAt([]decimal.Decimal{decimal.NewFromInt(1)}, -1))
 	assert.Equal(t, "-", decimalAt([]decimal.Decimal{decimal.NewFromInt(1)}, 2))
 	assert.Equal(t, "Receivables", titleLabel("receivables"))
+	assert.Equal(t, "", titleLabel("  "))
 
 	assert.Equal(t, "oa_token_12345...", tokenPreview("oa_token_1234567890"))
 	assert.Equal(t, "short-token", tokenPreview("short-token"))
@@ -2331,7 +2536,9 @@ func TestFormatHelpers(t *testing.T) {
 	assert.Equal(t, "Fallback", orderStockProductLabel(orders.OrderStockCheckLine{Description: "Fallback"}))
 	assert.Equal(t, "prod-1", orderPickListProductLabel(orders.OrderPickListLine{ProductID: "prod-1", Description: "Fallback"}))
 	assert.Equal(t, "Fallback", orderPickListProductLabel(orders.OrderPickListLine{Description: "Fallback"}))
+	assert.Equal(t, "emp-1", leaveEmployeeLabel("emp-1", nil))
 	assert.Equal(t, "emp-1", leaveEmployeeLabel("emp-1", &payroll.Employee{}))
+	assert.Equal(t, "absence-1", leaveAbsenceTypeLabel("absence-1", nil))
 	assert.Equal(t, "SICK", leaveAbsenceTypeLabel("absence-1", &payroll.AbsenceType{Code: " SICK "}))
 	assert.Equal(t, "Sick leave", leaveAbsenceTypeLabel("absence-1", &payroll.AbsenceType{Name: " Sick leave "}))
 	assert.Equal(t, "absence-1", leaveAbsenceTypeLabel("absence-1", &payroll.AbsenceType{}))
