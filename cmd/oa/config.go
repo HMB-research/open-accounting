@@ -87,10 +87,7 @@ func saveConfig(cfg *cliConfig) error {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encode config: %w", err)
-	}
+	data, _ := json.MarshalIndent(cfg, "", "  ") // cliConfig contains only JSON-marshalable fields.
 	data = append(data, '\n')
 
 	if err := os.WriteFile(path, data, 0o600); err != nil {

@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -156,6 +157,33 @@ func TestMainPrintsUsageWithoutArgs(t *testing.T) {
 	n, err := reader.Read(output)
 	require.NoError(t, err)
 	assert.Contains(t, string(output[:n]), "Open Accounting CLI")
+}
+
+func TestMainPrintsErrorAndExitsOnRunError(t *testing.T) {
+	oldArgs := os.Args
+	oldStderr := os.Stderr
+	oldExitProcess := exitProcess
+	reader, writer, err := os.Pipe()
+	require.NoError(t, err)
+	os.Args = []string{"oa", "unknown-command"}
+	os.Stderr = writer
+	exitCode := 0
+	exitProcess = func(code int) {
+		exitCode = code
+	}
+	t.Cleanup(func() {
+		os.Args = oldArgs
+		os.Stderr = oldStderr
+		exitProcess = oldExitProcess
+		_ = reader.Close()
+	})
+
+	main()
+	require.NoError(t, writer.Close())
+	output, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	assert.Equal(t, 1, exitCode)
+	assert.Contains(t, string(output), `Error: unknown command "unknown-command"`)
 }
 
 func TestLoadTokenClientReturnsConfigLoadError(t *testing.T) {
