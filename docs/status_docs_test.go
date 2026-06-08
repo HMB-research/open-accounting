@@ -18,10 +18,11 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 	}
 
 	activeDocs := map[string]string{
-		"README.md":                  read(filepath.Join("..", "README.md")),
-		"docs/DEVELOPMENT_STATUS.md": read("DEVELOPMENT_STATUS.md"),
-		"docs/ARCHITECTURE.md":       read("ARCHITECTURE.md"),
-		"docs/demo-e2e-testing.md":   read("demo-e2e-testing.md"),
+		"README.md":                                           read(filepath.Join("..", "README.md")),
+		"docs/DEVELOPMENT_STATUS.md":                          read("DEVELOPMENT_STATUS.md"),
+		"docs/ARCHITECTURE.md":                                read("ARCHITECTURE.md"),
+		"docs/demo-e2e-testing.md":                            read("demo-e2e-testing.md"),
+		"docs/FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md":         read("FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md"),
 		".agents/skills/open-accounting-development/SKILL.md": read(filepath.Join("..", ".agents", "skills", "open-accounting-development", "SKILL.md")),
 	}
 
@@ -43,6 +44,10 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 			"The broader `e2e` job runs the full `demo-chromium` project in shards and is blocking.",
 			"The separate `e2e-demo` job targets an externally hosted demo and remains optional/informational",
 		},
+		"docs/FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md": {
+			"verified repository baseline as of 2026-06-08",
+			"Testing and coverage status changed materially after this comparison was first drafted.",
+		},
 		".agents/skills/open-accounting-development/SKILL.md": {
 			"demo1@example.com",
 			"demo12345",
@@ -61,6 +66,7 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 	staleSnippets := []string{
 		"Full local baseline last verified on 2026-05-28",
 		"Full local baseline last completed on 2026-05-28",
+		"verified repository baseline as of 2026-04-24",
 		"21 files and 493 tests",
 		"251 passed",
 		"Broad demo E2E remains informational",
