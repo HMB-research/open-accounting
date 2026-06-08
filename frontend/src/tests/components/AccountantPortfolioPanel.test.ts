@@ -145,32 +145,57 @@ describe('AccountantPortfolioPanel', () => {
 
 			return [];
 		});
-		apiMock.listDocumentReviewSummaries.mockImplementation(async (tenantId: string) => {
-			if (tenantId === 'tenant-1') {
-				return [
-					{
-						entity_type: 'bank_transaction',
-						entity_id: 'tx-1',
-						total_count: 0,
-						pending_review_count: 0,
-						reviewed_count: 0,
-						missing_evidence: true,
-						has_pending_review: false
-					},
-					{
-						entity_type: 'bank_transaction',
-						entity_id: 'tx-2',
-						total_count: 1,
-						pending_review_count: 1,
-						reviewed_count: 0,
-						missing_evidence: false,
-						has_pending_review: true
-					}
-				];
-			}
+		apiMock.listDocumentReviewSummaries.mockImplementation(
+			async (tenantId: string, entityType: string) => {
+				if (tenantId === 'tenant-1' && entityType === 'bank_transaction') {
+					return [
+						{
+							entity_type: 'bank_transaction',
+							entity_id: 'tx-1',
+							total_count: 0,
+							pending_review_count: 0,
+							reviewed_count: 0,
+							approved_count: 0,
+							rejected_count: 0,
+							missing_evidence: true,
+							has_pending_review: false,
+							has_rejected: false
+						},
+						{
+							entity_type: 'bank_transaction',
+							entity_id: 'tx-2',
+							total_count: 1,
+							pending_review_count: 1,
+							reviewed_count: 0,
+							approved_count: 0,
+							rejected_count: 0,
+							missing_evidence: false,
+							has_pending_review: true,
+							has_rejected: false
+						}
+					];
+				}
 
-			return [];
-		});
+				if (tenantId === 'tenant-1' && entityType === 'journal_entry') {
+					return [
+						{
+							entity_type: 'journal_entry',
+							entity_id: 'journal-1',
+							total_count: 1,
+							pending_review_count: 1,
+							reviewed_count: 0,
+							approved_count: 0,
+							rejected_count: 0,
+							missing_evidence: false,
+							has_pending_review: true,
+							has_rejected: false
+						}
+					];
+				}
+
+				return [];
+			}
+		);
 
 		apiMock.listPeriodCloseEvents.mockImplementation(async (tenantId: string) => {
 			if (tenantId === 'tenant-1') {
@@ -191,7 +216,26 @@ describe('AccountantPortfolioPanel', () => {
 			return [];
 		});
 
-		apiMock.listJournalEntries.mockResolvedValue([]);
+		apiMock.listJournalEntries.mockImplementation(async (tenantId: string) => {
+			if (tenantId === 'tenant-1') {
+				return [
+					{
+						id: 'journal-1',
+						tenant_id: tenantId,
+						entry_number: 'JE-001',
+						entry_date: '2026-02-10',
+						description: 'Manual accrual',
+						requires_evidence: true,
+						status: 'DRAFT',
+						lines: [],
+						created_at: '2026-02-10T00:00:00Z',
+						created_by: 'user-1'
+					}
+				];
+			}
+
+			return [];
+		});
 	});
 
 	it('loads and renders the cross-tenant review rollup', async () => {
@@ -215,6 +259,8 @@ describe('AccountantPortfolioPanel', () => {
 		expect(screen.getByText('2 banking')).toBeInTheDocument();
 		expect(screen.getAllByText('1 missing evidence').length).toBeGreaterThan(0);
 		expect(screen.getAllByText('1 pending review').length).toBeGreaterThan(0);
+		expect(screen.getAllByText('1 accounting evidence').length).toBeGreaterThan(0);
+		expect(screen.getByText('Draft journal entries needing approved evidence: 1')).toBeInTheDocument();
 		expect(screen.getAllByText('Close due').length).toBeGreaterThan(0);
 		expect(screen.getAllByText('Current workspace').length).toBeGreaterThan(0);
 		expect(screen.getByRole('link', { name: 'Open workspace' })).toHaveAttribute('href', '/dashboard?tenant=tenant-1');
@@ -223,6 +269,12 @@ describe('AccountantPortfolioPanel', () => {
 		expect(screen.getByRole('link', { name: 'Review evidence' })).toHaveAttribute(
 			'href',
 			'/documents?tenant=tenant-1&entity_type=bank_transaction&review_status=PENDING'
+		);
+		expect(apiMock.listDocumentReviewSummaries).toHaveBeenCalledWith('tenant-1', 'journal_entry', ['journal-1']);
+		expect(screen.getByRole('link', { name: 'Open journal' })).toHaveAttribute('href', '/journal?tenant=tenant-1');
+		expect(screen.getByRole('link', { name: 'Review journal evidence' })).toHaveAttribute(
+			'href',
+			'/documents?tenant=tenant-1&entity_type=journal_entry&review_status=PENDING'
 		);
 		expect(
 			screen
@@ -262,6 +314,7 @@ describe('AccountantPortfolioPanel', () => {
 		apiMock.listBankAccounts.mockResolvedValue([]);
 		apiMock.listBankTransactions.mockResolvedValue([]);
 		apiMock.listDocumentReviewSummaries.mockResolvedValue([]);
+		apiMock.listJournalEntries.mockResolvedValue([]);
 		apiMock.listPeriodCloseEvents.mockResolvedValue([
 			{
 				id: 'close-2',
