@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 )
 
@@ -136,6 +137,76 @@ func TestAPIClientReportExportsBuildQueryParameters(t *testing.T) {
 	incomeXLSX, err := client.exportIncomeStatementXLSX(context.Background(), "tenant-1", "2026-01-01", "2026-03-31")
 	require.NoError(t, err)
 	assert.Equal(t, []byte("income-xlsx"), incomeXLSX)
+}
+
+func TestAPIClientAuthSessionRequestsUseFallbackToken(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 8, 9, 30, 0, 0, time.UTC)
+	requestCounts := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer fallback-token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/auth/security-events":
+			requestCounts["security-events"]++
+			assert.Equal(t, "25", r.URL.Query().Get("limit"))
+			_ = json.NewEncoder(w).Encode([]auth.SecurityAuditEvent{{
+				ID:        "event-1",
+				Action:    auth.SecurityAuditActionLogin,
+				CreatedAt: now,
+			}})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/auth/sessions":
+			requestCounts["sessions"]++
+			assert.Equal(t, "true", r.URL.Query().Get("include_inactive"))
+			_ = json.NewEncoder(w).Encode([]refreshSession{{
+				ID:        "session-1",
+				UserID:    "user-1",
+				CreatedAt: now,
+				ExpiresAt: now.Add(24 * time.Hour),
+			}})
+		case r.Method == http.MethodDelete && r.URL.EscapedPath() == "/api/v1/auth/sessions/session%2F1":
+			requestCounts["revoke-session"]++
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/auth/sessions":
+			requestCounts["revoke-all"]++
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/auth/password":
+			requestCounts["change-password"]++
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "old-secret", req["current_password"])
+			assert.Equal(t, "new-secret", req["new_password"])
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected auth client request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	client := newAPIClient(server.URL, "fallback-token")
+	events, err := client.listSecurityAuditEvents(context.Background(), 25, "")
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, auth.SecurityAuditActionLogin, events[0].Action)
+
+	sessions, err := client.listAuthSessions(context.Background(), true, "")
+	require.NoError(t, err)
+	require.Len(t, sessions, 1)
+	assert.Equal(t, "session-1", sessions[0].ID)
+
+	require.NoError(t, client.revokeAuthSession(context.Background(), "session/1", ""))
+	require.NoError(t, client.revokeAllAuthSessions(context.Background(), ""))
+	require.NoError(t, client.changePassword(context.Background(), "old-secret", "new-secret", ""))
+
+	assert.Equal(t, map[string]int{
+		"security-events": 1,
+		"sessions":        1,
+		"revoke-session":  1,
+		"revoke-all":      1,
+		"change-password": 1,
+	}, requestCounts)
 }
 
 func TestParseDaysToExpiry(t *testing.T) {
