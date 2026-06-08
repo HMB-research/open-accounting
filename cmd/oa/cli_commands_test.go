@@ -19608,6 +19608,74 @@ func TestCLITaxValidationBranches(t *testing.T) {
 	}
 }
 
+func TestCLITaxKMDAuthAndAPIErrors(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"tax", "kmd", "list"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	kmdFile := writeTempCSV(t, "kmd-error.csv", "year,month,row_code,tax_base,tax_amount\n2026,4,1,1000.00,220.00\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd":
+			var req tax.CreateKMDRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, 2026, req.Year)
+			assert.Equal(t, 4, req.Month)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd/2026/4/inf":
+			assert.Equal(t, "1000", r.URL.Query().Get("threshold"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd/import-history":
+			var req tax.ImportKMDHistoryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "kmd-error.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "1000.00")
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd/2026/4/xml":
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "tax backend unavailable"})
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{name: "list api error", args: []string{"tax", "kmd", "list"}},
+		{name: "generate api error", args: []string{"tax", "kmd", "generate", "--year", "2026", "--month", "4"}},
+		{name: "inf api error", args: []string{"tax", "kmd", "inf", "--year", "2026", "--month", "4", "--threshold", "1000"}},
+		{name: "import history api error", args: []string{"tax", "kmd", "import-history", "--file", kmdFile}},
+		{name: "export xml api error", args: []string{"tax", "kmd", "export-xml", "--year", "2026", "--month", "4"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "tax backend unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLITSDBranches(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
