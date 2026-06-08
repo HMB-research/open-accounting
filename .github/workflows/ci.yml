@@ -137,6 +137,9 @@ jobs:
           DATABASE_URL: postgres://test:test@localhost:5432/test?sslmode=disable
         run: go test -p 1 -v -race -coverprofile=coverage.out ./...
 
+      - name: Verify CLI coverage gate
+        run: make test-cli-coverage
+
       - name: Upload coverage to Codecov
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
