@@ -16,6 +16,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/inventory"
+	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -963,6 +964,167 @@ func TestOrderStatusTransitions(t *testing.T) {
 				updatedOrder := repo.orders["order-1"]
 				assert.Equal(t, tt.expectedStatus, updatedOrder.Status)
 			}
+		})
+	}
+}
+
+func TestConvertOrderToInvoice(t *testing.T) {
+	h, ordersRepo, tenantRepo := setupOrdersTestHandlers()
+	invoiceRepo := newMockInvoicingRepository()
+	h.invoicingService = invoicing.NewServiceWithRepository(invoiceRepo, nil)
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	orderDate := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	ordersRepo.orders["order-1"] = &orders.Order{
+		ID:           "order-1",
+		TenantID:     "tenant-1",
+		OrderNumber:  "ORD-001",
+		ContactID:    "contact-1",
+		OrderDate:    orderDate,
+		Status:       orders.OrderStatusDelivered,
+		Currency:     "EUR",
+		ExchangeRate: decimal.NewFromInt(1),
+		Notes:        "Order notes",
+		Lines: []orders.OrderLine{
+			{
+				ID:              "line-1",
+				TenantID:        "tenant-1",
+				OrderID:         "order-1",
+				LineNumber:      1,
+				Description:     "Implementation",
+				Quantity:        decimal.NewFromInt(3),
+				Unit:            "hour",
+				UnitPrice:       decimal.NewFromInt(120),
+				DiscountPercent: decimal.NewFromInt(5),
+				VATRate:         decimal.NewFromInt(22),
+			},
+		},
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/orders/order-1/convert-to-invoice",
+		bytes.NewBufferString(`{"issue_date":"2026-03-10T00:00:00Z","due_date":"2026-03-24T00:00:00Z","notes":"Invoice notes"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.ConvertOrderToInvoice(rr, req)
+
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+
+	var result orders.OrderInvoiceConversionResult
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&result))
+	require.NotNil(t, result.Order)
+	require.NotNil(t, result.Invoice)
+	assert.Equal(t, orders.OrderStatusDelivered, result.Order.Status)
+	require.NotNil(t, result.Order.ConvertedToInvoiceID)
+	assert.Equal(t, result.Invoice.ID, *result.Order.ConvertedToInvoiceID)
+	assert.Equal(t, result.Invoice.ID, *ordersRepo.orders["order-1"].ConvertedToInvoiceID)
+
+	assert.Equal(t, invoicing.InvoiceTypeSales, result.Invoice.InvoiceType)
+	assert.Equal(t, invoicing.StatusDraft, result.Invoice.Status)
+	assert.Equal(t, "contact-1", result.Invoice.ContactID)
+	assert.Equal(t, "ORD-001", result.Invoice.Reference)
+	assert.Equal(t, "Invoice notes", result.Invoice.Notes)
+	assert.Equal(t, "2026-03-10", result.Invoice.IssueDate.Format("2006-01-02"))
+	assert.Equal(t, "2026-03-24", result.Invoice.DueDate.Format("2006-01-02"))
+	require.Len(t, result.Invoice.Lines, 1)
+	assert.Equal(t, "Implementation", result.Invoice.Lines[0].Description)
+	assert.True(t, result.Invoice.Lines[0].Quantity.Equal(decimal.NewFromInt(3)))
+	assert.True(t, result.Invoice.Lines[0].UnitPrice.Equal(decimal.NewFromInt(120)))
+	assert.True(t, result.Invoice.Lines[0].DiscountPercent.Equal(decimal.NewFromInt(5)))
+	assert.True(t, result.Invoice.Lines[0].VATRate.Equal(decimal.NewFromInt(22)))
+}
+
+func TestConvertOrderToInvoiceRejectsInvalidState(t *testing.T) {
+	tests := []struct {
+		name       string
+		order      *orders.Order
+		wantStatus int
+		wantBody   string
+	}{
+		{
+			name: "requires delivered order",
+			order: &orders.Order{
+				ID:           "order-1",
+				TenantID:     "tenant-1",
+				OrderNumber:  "ORD-001",
+				ContactID:    "contact-1",
+				OrderDate:    time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+				Status:       orders.OrderStatusShipped,
+				Currency:     "EUR",
+				ExchangeRate: decimal.NewFromInt(1),
+				Lines: []orders.OrderLine{{
+					ID:          "line-1",
+					Description: "Implementation",
+					Quantity:    decimal.NewFromInt(1),
+					UnitPrice:   decimal.NewFromInt(100),
+					VATRate:     decimal.NewFromInt(22),
+				}},
+			},
+			wantStatus: http.StatusConflict,
+			wantBody:   "order must be delivered before conversion",
+		},
+		{
+			name: "rejects already converted order",
+			order: func() *orders.Order {
+				invoiceID := "invoice-1"
+				return &orders.Order{
+					ID:                   "order-1",
+					TenantID:             "tenant-1",
+					OrderNumber:          "ORD-001",
+					ContactID:            "contact-1",
+					OrderDate:            time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+					Status:               orders.OrderStatusDelivered,
+					Currency:             "EUR",
+					ExchangeRate:         decimal.NewFromInt(1),
+					ConvertedToInvoiceID: &invoiceID,
+					Lines: []orders.OrderLine{{
+						ID:          "line-1",
+						Description: "Implementation",
+						Quantity:    decimal.NewFromInt(1),
+						UnitPrice:   decimal.NewFromInt(100),
+						VATRate:     decimal.NewFromInt(22),
+					}},
+				}
+			}(),
+			wantStatus: http.StatusConflict,
+			wantBody:   "order has already been converted to an invoice",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, ordersRepo, tenantRepo := setupOrdersTestHandlers()
+			h.invoicingService = invoicing.NewServiceWithRepository(newMockInvoicingRepository(), nil)
+
+			tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+				ID:         "tenant-1",
+				SchemaName: "tenant_test",
+			}
+			ordersRepo.orders["order-1"] = tt.order
+
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"/tenants/tenant-1/orders/order-1/convert-to-invoice",
+				bytes.NewBufferString(`{"issue_date":"2026-03-10T00:00:00Z","due_date":"2026-03-24T00:00:00Z"}`),
+			)
+			req.Header.Set("Content-Type", "application/json")
+			req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+			req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+			rr := httptest.NewRecorder()
+			h.ConvertOrderToInvoice(rr, req)
+
+			assert.Equal(t, tt.wantStatus, rr.Code)
+			assert.Contains(t, rr.Body.String(), tt.wantBody)
 		})
 	}
 }

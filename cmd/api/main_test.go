@@ -150,6 +150,7 @@ func TestSetupRouterRegistersCoreRoutes(t *testing.T) {
 	assert.Contains(t, routes, "GET /api/v1/tenants/{tenantID}/orders/{orderID}/pick-list")
 	assert.Contains(t, routes, "POST /api/v1/tenants/{tenantID}/orders/{orderID}/reserve-stock")
 	assert.Contains(t, routes, "POST /api/v1/tenants/{tenantID}/orders/{orderID}/release-stock")
+	assert.Contains(t, routes, "POST /api/v1/tenants/{tenantID}/orders/{orderID}/convert-to-invoice")
 	assert.Contains(t, routes, "POST /api/v1/tenants/{tenantID}/recurring-invoices/import")
 	assert.Contains(t, routes, "GET /api/v1/tenants/{tenantID}/documents")
 	assert.Contains(t, routes, "POST /api/v1/tenants/{tenantID}/documents/review-summary")

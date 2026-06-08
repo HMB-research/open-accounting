@@ -1778,6 +1778,22 @@ Authorization: Bearer <token>
 
 `POST /tenants/{tenantId}/orders/{orderId}/confirm` accepts an optional JSON body `{"require_approved_evidence": true}`. When set, the order must have at least one approved `contract` or `supporting_document` document attached to the `order` entity or the endpoint returns `409 Conflict`.
 
+### Convert Order to Invoice
+
+```http
+POST /tenants/{tenantId}/orders/{orderId}/convert-to-invoice
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "issue_date": "2026-03-24T00:00:00Z",
+  "due_date": "2026-04-07T00:00:00Z",
+  "notes": "Invoice from delivered order"
+}
+```
+
+Creates a draft sales invoice from a delivered order, copies the order lines, uses the order number as the invoice reference, and stores the created invoice id in `converted_to_invoice_id`. `issue_date`, `due_date`, and `notes` are optional; the API defaults the issue date to now, the due date to 14 days after the issue date, and notes to the order notes. Orders must be `DELIVERED` and not already converted.
+
 ---
 
 ## Recurring Invoices

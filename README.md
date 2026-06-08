@@ -87,7 +87,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 | ---------------------- | -------------------------------------------------------------------------------------------- |
 | **Invoicing**          | Sales and purchase invoices with line items, VAT, CSV import, and manual Estonian e-invoice XML import |
 | **Quotes**             | Sales quotes with draft/sent/accepted workflow, conversion to orders, and grouped CSV import |
-| **Orders**             | Order management with quote linking, status tracking, and grouped CSV import                 |
+| **Orders**             | Order management with quote linking, status tracking, draft invoice conversion, and grouped CSV import |
 | **Contacts**           | Customer and supplier management                                                             |
 | **Payments**           | Payment recording with invoice allocation                                                    |
 | **Expenses**           | Receipt-backed expense claims with approval and ledger posting                               |
@@ -344,7 +344,7 @@ open-accounting/
 - [x] Mobile-responsive frontend with touch-friendly UI
 - [x] Report exports (Excel, CSV, PDF)
 - [x] Quotes with quote-to-order conversion
-- [x] Order management
+- [x] Order management with delivered order-to-invoice conversion
 - [x] Fixed assets with depreciation tracking
 - [x] Receipt-backed expense tracking with approval and posting
 - [x] Tenant-scoped API token auth and Go CLI

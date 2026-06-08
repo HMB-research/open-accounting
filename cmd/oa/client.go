@@ -1668,6 +1668,14 @@ func (c *apiClient) updateOrderStatus(ctx context.Context, tenantID, orderID, ac
 	return resp, nil
 }
 
+func (c *apiClient) convertOrderToInvoice(ctx context.Context, tenantID, orderID string, req *orders.ConvertOrderToInvoiceRequest) (*orders.OrderInvoiceConversionResult, error) {
+	var resp orders.OrderInvoiceConversionResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "orders", orderID, "convert-to-invoice"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) listRecurringInvoices(ctx context.Context, tenantID string, activeOnly bool) ([]recurring.RecurringInvoice, error) {
 	values := url.Values{}
 	if activeOnly {

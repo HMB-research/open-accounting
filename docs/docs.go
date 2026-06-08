@@ -11485,6 +11485,103 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/orders/{orderID}/convert-to-invoice": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a draft sales invoice from a delivered order and mark the order converted",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orders"
+                ],
+                "summary": "Convert order to invoice",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "orderID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Invoice conversion options",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.ConvertOrderToInvoiceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.OrderInvoiceConversionResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/orders/{orderID}/deliver": {
             "post": {
                 "security": [
@@ -25741,6 +25838,20 @@ const docTemplate = `{
                 "VATTreatmentReverseCharge"
             ]
         },
+        "github_com_HMB-research_open-accounting_internal_orders.ConvertOrderToInvoiceRequest": {
+            "type": "object",
+            "properties": {
+                "due_date": {
+                    "type": "string"
+                },
+                "issue_date": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_orders.CreateOrderLineRequest": {
             "type": "object",
             "properties": {
@@ -25915,6 +26026,17 @@ const docTemplate = `{
                 },
                 "vat_amount": {
                     "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_orders.OrderInvoiceConversionResult": {
+            "type": "object",
+            "properties": {
+                "invoice": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_invoicing.Invoice"
+                },
+                "order": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_orders.Order"
                 }
             }
         },

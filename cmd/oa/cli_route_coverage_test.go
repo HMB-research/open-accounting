@@ -781,6 +781,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 		return commandForMethod(method, map[string]string{"POST": "orders deliver"})
 	case "/orders/{orderID}/cancel":
 		return commandForMethod(method, map[string]string{"POST": "orders cancel"})
+	case "/orders/{orderID}/convert-to-invoice":
+		return commandForMethod(method, map[string]string{"POST": "orders convert-to-invoice"})
 	case "/asset-categories":
 		return commandForMethod(method, map[string]string{
 			"GET":  "assets categories list",

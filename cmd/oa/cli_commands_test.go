@@ -6238,6 +6238,55 @@ func TestCLIOrderCommands(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "shipped"})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1/deliver":
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "delivered"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1/convert-to-invoice":
+			var req orders.ConvertOrderToInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-03-24", req.IssueDate.Format("2006-01-02"))
+			assert.Equal(t, "2026-04-07", req.DueDate.Format("2006-01-02"))
+			assert.Equal(t, "Invoice from order", req.Notes)
+			convertedOrder := cliOrderPayload("order-1", "ORD-00001", "DELIVERED")
+			convertedOrder["converted_to_invoice_id"] = "inv-1"
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"order": convertedOrder,
+				"invoice": map[string]any{
+					"id":             "inv-1",
+					"tenant_id":      "tenant-1",
+					"invoice_number": "INV-2026-0001",
+					"invoice_type":   "SALES",
+					"contact_id":     "contact-1",
+					"issue_date":     "2026-03-24T00:00:00Z",
+					"due_date":       "2026-04-07T00:00:00Z",
+					"status":         "DRAFT",
+					"currency":       "EUR",
+					"exchange_rate":  "1.00",
+					"reference":      "ORD-00001",
+					"subtotal":       "180.00",
+					"vat_amount":     "39.60",
+					"total":          "219.60",
+					"amount_paid":    "0.00",
+					"notes":          "Invoice from order",
+					"created_at":     "2026-03-24T12:00:00Z",
+					"created_by":     "user-1",
+					"updated_at":     "2026-03-24T12:00:00Z",
+					"lines": []map[string]any{{
+						"id":               "line-1",
+						"tenant_id":        "tenant-1",
+						"invoice_id":       "inv-1",
+						"line_number":      1,
+						"description":      "Consulting",
+						"quantity":         "2.00",
+						"unit":             "hour",
+						"unit_price":       "100.00",
+						"discount_percent": "10.00",
+						"vat_rate":         "22.00",
+						"line_subtotal":    "180.00",
+						"line_vat":         "39.60",
+						"line_total":       "219.60",
+						"product_id":       "prod-1",
+					}},
+				},
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1/cancel":
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "canceled"})
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1":
@@ -6352,6 +6401,17 @@ func TestCLIOrderCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"orders", "deliver", "--id", "order-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Delivered order order-1")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"orders", "convert-to-invoice",
+		"--id", "order-1",
+		"--issue-date", "2026-03-24",
+		"--due-date", "2026-04-07",
+		"--notes", "Invoice from order",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Converted order ORD-00001 to invoice INV-2026-0001 (inv-1)")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"orders", "cancel", "--id", "order-1"})
@@ -6496,6 +6556,16 @@ func TestCLIOrderBranches(t *testing.T) {
 			require.NoError(t, err)
 			assert.Empty(t, string(body))
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "confirmed"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-branch/convert-to-invoice":
+			var req orders.ConvertOrderToInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.True(t, req.IssueDate.IsZero())
+			assert.True(t, req.DueDate.IsZero())
+			assert.Equal(t, "Create invoice later", req.Notes)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"order":   cliOrderPayload("order-branch", "ORD-BRANCH", "DELIVERED"),
+				"invoice": nil,
+			})
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
 		}
@@ -6553,6 +6623,10 @@ func TestCLIOrderBranches(t *testing.T) {
 		{name: "status bad flag", args: []string{"orders", "confirm", "--bad"}, want: "flag provided but not defined"},
 		{name: "confirm missing id", args: []string{"orders", "confirm"}, want: "id is required"},
 		{name: "evidence gate only confirm", args: []string{"orders", "process", "--id", "order-branch", "--require-approved-evidence"}, want: "require-approved-evidence is only supported for orders confirm"},
+		{name: "convert bad flag", args: []string{"orders", "convert-to-invoice", "--bad"}, want: "flag provided but not defined"},
+		{name: "convert missing id", args: []string{"orders", "convert-to-invoice"}, want: "id is required"},
+		{name: "convert invalid issue date", args: []string{"orders", "convert-to-invoice", "--id", "order-branch", "--issue-date", "bad"}, want: "parse issue-date"},
+		{name: "convert invalid due date", args: []string{"orders", "convert-to-invoice", "--id", "order-branch", "--due-date", "bad"}, want: "parse due-date"},
 	}
 	for _, tc := range errorCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -6637,6 +6711,11 @@ func TestCLIOrderBranches(t *testing.T) {
 	err = app.run(context.Background(), []string{"orders", "confirm", "--id", " order-branch ", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"status": "confirmed"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"orders", "convert-to-invoice", "--id", " order-branch ", "--notes", " Create invoice later ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"order_number": "ORD-BRANCH"`)
 }
 
 func TestCLIOrderAuthFlagsAndAPIErrorBranches(t *testing.T) {
@@ -6719,6 +6798,12 @@ func TestCLIOrderAuthFlagsAndAPIErrorBranches(t *testing.T) {
 			var req documentEvidenceRequirementRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.True(t, req.RequireApprovedEvidence)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-error/convert-to-invoice":
+			var req orders.ConvertOrderToInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-06-05", req.IssueDate.Format("2006-01-02"))
+			assert.Equal(t, "2026-06-19", req.DueDate.Format("2006-01-02"))
+			assert.Equal(t, "Convert error order", req.Notes)
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
 		}
@@ -6745,6 +6830,7 @@ func TestCLIOrderAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		{name: "update api error", args: []string{"orders", "update", "--id", "order-error", "--contact-id", "contact-error", "--order-date", "2026-03-16", "--currency", "usd", "--line", "description=Updated error line,quantity=2,unit_price=90,vat_rate=22"}},
 		{name: "delete api error", args: []string{"orders", "delete", "--id", "order-error"}},
 		{name: "status api error", args: []string{"orders", "confirm", "--id", "order-error", "--require-approved-evidence"}},
+		{name: "convert api error", args: []string{"orders", "convert-to-invoice", "--id", "order-error", "--issue-date", "2026-06-05", "--due-date", "2026-06-19", "--notes", "Convert error order"}},
 	}
 
 	for _, tc := range cases {

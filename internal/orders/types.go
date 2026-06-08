@@ -7,6 +7,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/invoicing"
 )
 
 // OrderStatus represents the status of an order
@@ -187,6 +188,20 @@ type UpdateOrderRequest struct {
 	ExchangeRate     decimal.Decimal          `json:"exchange_rate,omitempty"`
 	Notes            string                   `json:"notes,omitempty"`
 	Lines            []CreateOrderLineRequest `json:"lines"`
+}
+
+// ConvertOrderToInvoiceRequest requests conversion of a delivered order into a sales invoice.
+type ConvertOrderToInvoiceRequest struct {
+	IssueDate time.Time `json:"issue_date,omitempty"`
+	DueDate   time.Time `json:"due_date,omitempty"`
+	Notes     string    `json:"notes,omitempty"`
+	UserID    string    `json:"-"`
+}
+
+// OrderInvoiceConversionResult returns the converted order and created invoice.
+type OrderInvoiceConversionResult struct {
+	Order   *Order             `json:"order"`
+	Invoice *invoicing.Invoice `json:"invoice"`
 }
 
 // OrderFilter provides filtering options
