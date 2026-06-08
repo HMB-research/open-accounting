@@ -4677,6 +4677,79 @@ func TestCLIAccountsBranches(t *testing.T) {
 	}, requestCounts)
 }
 
+func TestCLIAccountsAuthAndAPIErrors(t *testing.T) {
+	configureCLIEnv(t)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"accounts", "list"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no API token configured")
+	assert.Empty(t, stdout.String())
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	importFile := writeTempCSV(t, "accounts-error.csv", "code,name,type\n6200,Error Supplies,EXPENSE\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/accounts":
+			assert.Equal(t, "true", r.URL.Query().Get("active_only"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/accounts/hierarchy":
+			assert.Equal(t, "true", r.URL.Query().Get("active_only"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/accounts":
+			var req accounting.CreateAccountRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "6200", req.Code)
+			assert.Equal(t, "Error Supplies", req.Name)
+			assert.Equal(t, accounting.AccountTypeExpense, req.AccountType)
+			require.NotNil(t, req.ParentID)
+			assert.Equal(t, "parent-error", *req.ParentID)
+			assert.Equal(t, "Error branch", req.Description)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/accounts/acc-error":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/accounts/import":
+			var req accounting.ImportAccountsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "accounts-error.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "Error Supplies")
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "accounts service unavailable"})
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{name: "list api error", args: []string{"accounts", "list", "--active-only"}},
+		{name: "hierarchy api error", args: []string{"accounts", "hierarchy", "--active-only"}},
+		{name: "create api error", args: []string{"accounts", "create", "--code", "6200", "--name", "Error Supplies", "--type", "expense", "--parent-id", "parent-error", "--description", "Error branch"}},
+		{name: "get api error", args: []string{"accounts", "get", "--id", "acc-error"}},
+		{name: "import api error", args: []string{"accounts", "import", "--file", importFile}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "accounts service unavailable")
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
 func TestCLIInvoiceLifecycleCommands(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
