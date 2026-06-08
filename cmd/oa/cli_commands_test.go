@@ -12929,12 +12929,15 @@ func TestCLIEmailTemplateBranches(t *testing.T) {
 	}{
 		{name: "missing subcommand", args: nil, want: "email templates subcommand required"},
 		{name: "unknown subcommand", args: []string{"archive"}, want: `unknown email templates subcommand "archive"`},
+		{name: "list invalid flag", args: []string{"list", "--bogus"}, want: "flag provided but not defined"},
+		{name: "update invalid flag", args: []string{"update", "--bogus"}, want: "flag provided but not defined"},
 		{name: "update missing type", args: []string{"update"}, want: "type is required"},
 		{name: "update invalid type", args: []string{"update", "--type", "custom"}, want: `invalid email template type "custom"`},
 		{name: "update missing subject", args: []string{"update", "--type", "invoice_send"}, want: "subject is required"},
 		{name: "update conflicting body html inputs", args: []string{"update", "--type", "invoice_send", "--subject", "Invoice", "--body-html", "<p>Inline</p>", "--body-html-file", htmlFile}, want: "body-html and body-html-file cannot both be set"},
 		{name: "update missing body html", args: []string{"update", "--type", "invoice_send", "--subject", "Invoice"}, want: "body-html is required"},
 		{name: "update unreadable body html file", args: []string{"update", "--type", "invoice_send", "--subject", "Invoice", "--body-html-file", filepath.Join(t.TempDir(), "missing.html")}, want: "read file"},
+		{name: "update unreadable body text file", args: []string{"update", "--type", "invoice_send", "--subject", "Invoice", "--body-html", "<p>Invoice</p>", "--body-text-file", filepath.Join(t.TempDir(), "missing.txt")}, want: "read file"},
 		{name: "update invalid active", args: []string{"update", "--type", "invoice_send", "--subject", "Invoice", "--body-html", "<p>Invoice</p>", "--active", "sometimes"}, want: "parse active"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -12989,6 +12992,11 @@ func TestCLIEmailTemplateBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Payment receipt")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"email", "templates", "list", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"template_type": "PAYMENT_RECEIPT"`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{
 		"email", "templates", "update",
 		"--type", "payment_receipt",
@@ -13002,6 +13010,66 @@ func TestCLIEmailTemplateBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"template_type": "PAYMENT_RECEIPT"`)
 	assert.Contains(t, stdout.String(), `"subject": "Updated receipt"`)
 	assert.Contains(t, stdout.String(), `"is_active": false`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"email", "templates", "update",
+		"--type", "payment_receipt",
+		"--subject", "Updated receipt",
+		"--body-html-file", htmlFile,
+		"--body-text-file", textFile,
+		"--active", "false",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Email template PAYMENT_RECEIPT")
+	assert.Contains(t, stdout.String(), "Active: false")
+}
+
+func TestCLIEmailTemplateAPIErrorBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/email-templates":
+			w.WriteHeader(http.StatusBadGateway)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "email template list unavailable"})
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/email-templates/INVOICE_SEND":
+			w.WriteHeader(http.StatusBadGateway)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "email template update unavailable"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "list API error", args: []string{"email", "templates", "list"}, want: "email template list unavailable"},
+		{name: "update API error", args: []string{"email", "templates", "update", "--type", "invoice_send", "--subject", "Invoice", "--body-html", "<p>Invoice</p>"}, want: "email template update unavailable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Empty(t, stdout.String())
+		})
+	}
 }
 
 func TestCLIInterestCommands(t *testing.T) {
