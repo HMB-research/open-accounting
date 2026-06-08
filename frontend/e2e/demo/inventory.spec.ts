@@ -1,104 +1,170 @@
 import { test, expect } from '@playwright/test';
 import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
 
+async function openInventory(page: Parameters<typeof navigateTo>[0], testInfo: Parameters<typeof navigateTo>[2]) {
+	await navigateTo(page, '/inventory', testInfo);
+	await expect(page.getByRole('heading', { name: 'Inventory Management' })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'New Product' })).toBeVisible();
+}
+
+async function waitForProductsReload(page: Parameters<typeof navigateTo>[0], action: () => Promise<void>) {
+	const response = page.waitForResponse((res) =>
+		res.request().method() === 'GET' && res.url().includes('/products')
+	).catch(() => null);
+	await action();
+	await response;
+}
+
 test.describe('Inventory View', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 	});
 
-	test('displays inventory page with correct structure', async ({ page }, testInfo) => {
-		await navigateTo(page, '/inventory', testInfo);
+	test('displays seeded products and inventory controls', async ({ page }, testInfo) => {
+		await openInventory(page, testInfo);
 
-		// Wait for page to load - heading should be visible
-		await expect(page.getByRole('heading', { name: /inventory|products|stock/i })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Products' })).toHaveClass(/active/);
+		await expect(page.getByRole('button', { name: 'Warehouses' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Product Categories' })).toBeVisible();
 
-		// Wait for page content to load
-		await page.waitForTimeout(2000);
+		await expect(page.getByPlaceholder('Search')).toBeVisible();
+		await expect(page.locator('.filters select').nth(0)).toContainText('Filter by type');
+		await expect(page.locator('.filters select').nth(1)).toContainText('Filter by status');
+		await expect(page.locator('.filters select').nth(2)).toContainText('Filter by category');
+		await expect(page.getByLabel('Show low stock only')).toBeVisible();
 
-		// Check for tabs (products, warehouses, categories)
-		const hasTabs = await page
-			.getByRole('tab')
-			.or(page.locator('[role="tablist"]'))
-			.or(page.getByText(/products|warehouses|categories/i).first())
-			.isVisible()
-			.catch(() => false);
+		const laptopRow = page.getByRole('row', { name: /PROD-001.*Laptop Stand/ });
+		await expect(laptopRow).toBeVisible();
+		await expect(laptopRow).toContainText('Goods');
+		await expect(laptopRow).toContainText('Electronics');
+		await expect(laptopRow).toContainText(/49[,.]99/);
+		await expect(laptopRow.getByRole('button', { name: 'Adjust Stock' })).toBeVisible();
+		await expect(laptopRow.getByRole('button', { name: 'Transfer Stock' })).toBeVisible();
+		await expect(laptopRow.getByRole('button', { name: 'Movements' })).toBeVisible();
+		await expect(laptopRow.getByRole('button', { name: 'Delete' })).toBeVisible();
 
-		// Page should have some structure
-		expect(hasTabs || true).toBe(true);
+		await expect(page.getByRole('row', { name: /SVC-001.*IT Support.*Service/ })).toBeVisible();
 	});
 
-	test('has new product button', async ({ page }, testInfo) => {
-		await navigateTo(page, '/inventory', testInfo);
+	test('filters products by search, type, and category', async ({ page }, testInfo) => {
+		await openInventory(page, testInfo);
 
-		await page.waitForTimeout(2000);
+		const search = page.getByPlaceholder('Search');
+		await waitForProductsReload(page, async () => {
+			await search.fill('USB-C');
+			await search.dispatchEvent('change');
+		});
+		await expect(page.getByRole('row', { name: /PROD-002.*USB-C Hub/ })).toBeVisible();
+		await expect(page.getByRole('row', { name: /PROD-001.*Laptop Stand/ })).toBeHidden();
 
-		// Verify New button exists
-		const newButton = page
-			.getByRole('button', { name: /new|create|add/i })
-			.or(page.getByRole('link', { name: /new|create|add/i }));
+		await waitForProductsReload(page, async () => {
+			await search.fill('');
+			await search.dispatchEvent('change');
+		});
 
-		const hasButton = await newButton.first().isVisible().catch(() => false);
-		expect(hasButton || true).toBe(true); // Soft check - may be empty state
+		await waitForProductsReload(page, async () => {
+			await page.locator('.filters select').nth(0).selectOption('SERVICE');
+		});
+		await expect(page.getByRole('row', { name: /SVC-001.*IT Support.*Service/ })).toBeVisible();
+		await expect(page.getByRole('row', { name: /PROD-001.*Laptop Stand/ })).toBeHidden();
+
+		await waitForProductsReload(page, async () => {
+			await page.locator('.filters select').nth(0).selectOption('');
+			await page.locator('.filters select').nth(2).selectOption({ label: 'Office Supplies' });
+		});
+		await expect(page.getByRole('row', { name: /PROD-004.*Notebook A5/ })).toBeVisible();
+		await expect(page.getByRole('row', { name: /PROD-005.*Pen Set/ })).toBeVisible();
+		await expect(page.getByRole('row', { name: /PROD-001.*Laptop Stand/ })).toBeHidden();
 	});
 
-	test('has filter options', async ({ page }, testInfo) => {
-		await navigateTo(page, '/inventory', testInfo);
+	test('shows warehouse and category tabs with seeded data', async ({ page }, testInfo) => {
+		await openInventory(page, testInfo);
 
-		await page.waitForTimeout(2000);
+		await page.getByRole('button', { name: 'Warehouses' }).click();
+		await expect(page.getByRole('button', { name: 'Warehouses' })).toHaveClass(/active/);
+		await expect(page.getByRole('button', { name: 'New Warehouse' })).toBeVisible();
+		await expect(page.getByRole('columnheader', { name: 'Warehouse Code' })).toBeVisible();
+		await expect(page.getByRole('row', { name: /WH-MAIN.*Main Warehouse.*Yes.*Active/ })).toBeVisible();
+		await expect(page.getByRole('row', { name: /WH-BACKUP.*Backup Storage/ })).toBeVisible();
 
-		// Check for filter elements
-		const hasSearch = await page
-			.locator('input[type="search"], input[placeholder*="search" i]')
-			.isVisible()
-			.catch(() => false);
-
-		const hasSelect = await page.locator('select').first().isVisible().catch(() => false);
-
-		// Should have search or filter capability
-		if (hasSearch || hasSelect) {
-			expect(hasSearch || hasSelect).toBe(true);
-		}
+		await page.getByRole('button', { name: 'Product Categories' }).click();
+		await expect(page.getByRole('button', { name: 'Product Categories' })).toHaveClass(/active/);
+		await expect(page.getByRole('button', { name: 'New Category' })).toBeVisible();
+		await expect(page.getByRole('row', { name: /Electronics.*Electronic devices and components/ })).toBeVisible();
+		await expect(page.getByRole('row', { name: /Office Supplies.*General office supplies and stationery/ })).toBeVisible();
+		await expect(page.getByRole('row', { name: /Services.*Professional services and consulting/ })).toBeVisible();
 	});
 
-	test('displays table or empty state', async ({ page }, testInfo) => {
-		await navigateTo(page, '/inventory', testInfo);
+	test('creates and deletes a product through the UI', async ({ page }, testInfo) => {
+		await openInventory(page, testInfo);
 
-		await page.waitForTimeout(2000);
+		const suffix = `${testInfo.parallelIndex}-${testInfo.retry}-${Date.now().toString(36)}`;
+		const productCode = `E2E-P-${suffix}`;
+		const productName = `E2E Product ${suffix}`;
 
-		const table = page.locator('table');
-		const hasTable = await table.isVisible().catch(() => false);
+		await page.getByRole('button', { name: 'New Product' }).click();
+		const dialog = page.getByRole('dialog', { name: 'New Product' });
+		await expect(dialog).toBeVisible();
 
-		const emptyState = page.locator('.empty-state, [class*="empty"]');
-		const hasEmpty = await emptyState.isVisible().catch(() => false);
+		await dialog.getByLabel(/Product Name/).fill(productName);
+		await dialog.locator('#product-code').fill(productCode);
+		await dialog.getByLabel('Product Type').selectOption('GOODS');
+		await dialog.getByLabel('Category').selectOption({ label: 'Electronics' });
+		await dialog.getByLabel('Unit').fill('pcs');
+		await dialog.getByLabel('Purchase Price').fill('12.50');
+		await dialog.getByLabel(/Sales Price/).fill('29.90');
+		await dialog.getByLabel(/VAT Rate/).fill('22');
+		await dialog.getByLabel('Min Stock Level').fill('2');
+		await dialog.getByLabel('Reorder Point').fill('4');
+		await dialog.getByRole('button', { name: 'Create Product' }).click();
+		await expect(dialog).toBeHidden();
 
-		// Either table or empty state
-		expect(hasTable || hasEmpty || true).toBe(true);
+		const newProductRow = page.getByRole('row', { name: new RegExp(`${productCode}.*${productName}`) });
+		await expect(newProductRow).toBeVisible();
+		await expect(newProductRow).toContainText('Goods');
+		await expect(newProductRow).toContainText('Electronics');
+
+		page.once('dialog', async (confirmDialog) => {
+			await confirmDialog.accept();
+		});
+		await newProductRow.getByRole('button', { name: 'Delete' }).click();
+		await expect(newProductRow).toBeHidden();
 	});
 
-	test('can switch between tabs', async ({ page }, testInfo) => {
-		await navigateTo(page, '/inventory', testInfo);
+	test('transfers stock between warehouses and records a movement', async ({ page }, testInfo) => {
+		await openInventory(page, testInfo);
 
-		await page.waitForTimeout(2000);
+		const productRow = page.getByRole('row', { name: /PROD-001.*Laptop Stand/ });
+		await productRow.getByRole('button', { name: 'Transfer Stock' }).click();
 
-		// Try to find and click warehouses tab
-		const warehousesTab = page.getByRole('tab', { name: /warehouses/i }).or(
-			page.getByRole('button', { name: /warehouses/i })
-		);
+		const transferDialog = page.getByRole('dialog', { name: /Transfer Stock: Laptop Stand/ });
+		await expect(transferDialog).toBeVisible();
+		await expect(transferDialog.getByLabel('From Warehouse *')).toContainText('Main Warehouse');
+		await expect(transferDialog.getByLabel('To Warehouse *')).toContainText('Backup Storage');
 
-		const hasWarehousesTab = await warehousesTab.isVisible().catch(() => false);
+		await transferDialog.getByLabel('Quantity *').fill('1');
+		await transferDialog.getByLabel('Notes').fill(`E2E transfer ${testInfo.parallelIndex}-${testInfo.retry}`);
+		await transferDialog.getByRole('button', { name: 'Transfer Stock' }).click();
+		await expect(transferDialog).toBeHidden();
 
-		if (hasWarehousesTab) {
-			await warehousesTab.click();
-			await page.waitForTimeout(500);
+		await productRow.getByRole('button', { name: 'Movements' }).click();
+		const movementsDialog = page.getByRole('dialog', { name: /Movements: Laptop Stand/ });
+		await expect(movementsDialog).toBeVisible();
+		await expect(movementsDialog.getByText('Transfer').first()).toBeVisible();
+		await expect(movementsDialog.getByText('Main Warehouse').first()).toBeVisible();
+		await expect(movementsDialog.getByText('Backup Storage').first()).toBeVisible();
 
-			// Should still be on inventory page
-			await expect(page.getByRole('heading', { name: /inventory|warehouses/i })).toBeVisible();
-		}
+		await movementsDialog.getByRole('button', { name: 'Close' }).click();
+		await expect(movementsDialog).toBeHidden();
 	});
 
 	test('records and displays stock lot metadata', async ({ page }, testInfo) => {
-		await navigateTo(page, '/inventory', testInfo);
+		await openInventory(page, testInfo);
+
+		const suffix = `${testInfo.parallelIndex}-${testInfo.retry}-${Date.now().toString(36)}`;
+		const lotNumber = `LOT-E2E-${suffix}`;
+		const serialNumber = `SN-E2E-${suffix}`;
 
 		const productRow = page.getByRole('row', { name: /PROD-001/ });
 		await expect(productRow).toBeVisible();
@@ -113,8 +179,8 @@ test.describe('Inventory View', () => {
 
 		await adjustDialog.getByLabel(/Quantity/).fill('1');
 		await adjustDialog.getByLabel('Unit Cost').fill('10');
-		await adjustDialog.getByLabel('Lot Number').fill('LOT-E2E');
-		await adjustDialog.getByLabel('Serial Number').fill('SN-E2E');
+		await adjustDialog.getByLabel('Lot Number').fill(lotNumber);
+		await adjustDialog.getByLabel('Serial Number').fill(serialNumber);
 		await adjustDialog.getByLabel('Expiry Date').fill('2027-05-30');
 		await adjustDialog.getByLabel('Reason').fill('E2E metadata check');
 		await adjustDialog.getByRole('button', { name: 'Adjust Stock' }).click();
@@ -127,11 +193,11 @@ test.describe('Inventory View', () => {
 		await expect(movementsDialog.getByRole('columnheader', { name: 'Lot Number' })).toBeVisible();
 		await expect(movementsDialog.getByRole('columnheader', { name: 'Serial Number' })).toBeVisible();
 		await expect(movementsDialog.getByRole('columnheader', { name: 'Expiry Date' })).toBeVisible();
-		await expect(movementsDialog.getByText('LOT-E2E')).toBeVisible();
-		await expect(movementsDialog.getByText('SN-E2E')).toBeVisible();
+		await expect(movementsDialog.getByText(lotNumber)).toBeVisible();
+		await expect(movementsDialog.getByText(serialNumber)).toBeVisible();
 		await expect(movementsDialog.getByText(/30\.0?5\.2027/)).toBeVisible();
 
-		await page.keyboard.press('Escape');
+		await movementsDialog.getByRole('button', { name: 'Close' }).click();
 		await expect(movementsDialog).toBeHidden();
 	});
 });
