@@ -48,6 +48,8 @@ type cliApp struct {
 	stderr io.Writer
 }
 
+var exitProcess = os.Exit
+
 func main() {
 	app := &cliApp{
 		stdout: os.Stdout,
@@ -56,7 +58,7 @@ func main() {
 
 	if err := app.run(context.Background(), os.Args[1:]); err != nil {
 		_, _ = fmt.Fprintf(app.stderr, "Error: %v\n", err)
-		os.Exit(1)
+		exitProcess(1)
 	}
 }
 
@@ -12219,11 +12221,7 @@ func parseInvoiceLineVATTreatment(rawTreatment, rawType, rawReverseCharge string
 	case "reverse_charge", "reverse-charge", "reverse charge", "reversecharge", "rc":
 		return invoicing.VATTreatmentReverseCharge, nil
 	default:
-		treatment, err := invoicing.NormalizeVATTreatment(value)
-		if err != nil {
-			return "", fmt.Errorf("invalid line vat_treatment %q", value)
-		}
-		return treatment, nil
+		return "", fmt.Errorf("invalid line vat_treatment %q", value)
 	}
 }
 

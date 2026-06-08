@@ -3186,43 +3186,26 @@ func (c *apiClient) uploadDocument(ctx context.Context, tenantID string, req *do
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
-	if err := writer.WriteField("entity_type", strings.TrimSpace(req.EntityType)); err != nil {
-		return nil, fmt.Errorf("write entity_type: %w", err)
-	}
-	if err := writer.WriteField("entity_id", strings.TrimSpace(req.EntityID)); err != nil {
-		return nil, fmt.Errorf("write entity_id: %w", err)
-	}
+	// The multipart writer targets an in-memory bytes.Buffer, so field and file
+	// writes cannot fail through an underlying I/O error.
+	_ = writer.WriteField("entity_type", strings.TrimSpace(req.EntityType))
+	_ = writer.WriteField("entity_id", strings.TrimSpace(req.EntityID))
 	if strings.TrimSpace(req.DocumentType) != "" {
-		if err := writer.WriteField("document_type", strings.TrimSpace(req.DocumentType)); err != nil {
-			return nil, fmt.Errorf("write document_type: %w", err)
-		}
+		_ = writer.WriteField("document_type", strings.TrimSpace(req.DocumentType))
 	}
 	if strings.TrimSpace(req.Notes) != "" {
-		if err := writer.WriteField("notes", strings.TrimSpace(req.Notes)); err != nil {
-			return nil, fmt.Errorf("write notes: %w", err)
-		}
+		_ = writer.WriteField("notes", strings.TrimSpace(req.Notes))
 	}
 	if req.RetentionUntil != nil {
-		if err := writer.WriteField("retention_until", req.RetentionUntil.Format("2006-01-02")); err != nil {
-			return nil, fmt.Errorf("write retention_until: %w", err)
-		}
+		_ = writer.WriteField("retention_until", req.RetentionUntil.Format("2006-01-02"))
 	}
 	if req.RetentionYears > 0 {
-		if err := writer.WriteField("retention_years", strconv.Itoa(req.RetentionYears)); err != nil {
-			return nil, fmt.Errorf("write retention_years: %w", err)
-		}
+		_ = writer.WriteField("retention_years", strconv.Itoa(req.RetentionYears))
 	}
 
-	part, err := writer.CreateFormFile("file", strings.TrimSpace(req.FileName))
-	if err != nil {
-		return nil, fmt.Errorf("create multipart file: %w", err)
-	}
-	if _, err := part.Write(fileContent); err != nil {
-		return nil, fmt.Errorf("write multipart file: %w", err)
-	}
-	if err := writer.Close(); err != nil {
-		return nil, fmt.Errorf("close multipart writer: %w", err)
-	}
+	part, _ := writer.CreateFormFile("file", strings.TrimSpace(req.FileName))
+	_, _ = part.Write(fileContent)
+	_ = writer.Close()
 
 	fullURL := c.baseURL + path.Join("/api/v1/tenants", tenantID, "documents")
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, &body)
