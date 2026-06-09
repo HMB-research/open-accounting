@@ -1,5 +1,10 @@
-import { test, expect } from '@playwright/test';
-import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
+import { test, expect, type Page, type TestInfo } from '@playwright/test';
+import { ensureAuthenticated, navigateTo, ensureDemoTenant, waitForRouteReady } from './utils';
+
+async function openTaxPage(page: Page, testInfo: TestInfo): Promise<void> {
+	await navigateTo(page, '/tax', testInfo);
+	await waitForRouteReady(page, 'select#year, select#month, .declarations-list, .empty-state');
+}
 
 test.describe('Tax Overview View', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
@@ -8,94 +13,45 @@ test.describe('Tax Overview View', () => {
 	});
 
 	test('displays tax page with correct structure', async ({ page }, testInfo) => {
-		await navigateTo(page, '/tax', testInfo);
+		await openTaxPage(page, testInfo);
 
-		// Wait for page to load
-		await page.waitForTimeout(2000);
-
-		// Check for page heading or VAT-related content
-		const hasHeading = await page
-			.getByRole('heading', { name: /vat|tax|declaration/i })
-			.isVisible()
-			.catch(() => false);
-
-		const hasVatContent = await page
-			.getByText(/vat|käibemaks|km/i)
-			.first()
-			.isVisible()
-			.catch(() => false);
-
-		expect(hasHeading || hasVatContent).toBe(true);
+		await expect(page.getByRole('heading', { name: /vat|tax|declaration|käibemaks|deklaratsioon/i }).first()).toBeVisible();
 	});
 
 	test('has period selector', async ({ page }, testInfo) => {
-		await navigateTo(page, '/tax', testInfo);
+		await openTaxPage(page, testInfo);
 
-		await page.waitForTimeout(2000);
-
-		// Should have year/month selectors
-		const hasYearSelect = await page.locator('select').first().isVisible().catch(() => false);
-		const hasMonthSelect = await page.locator('select').nth(1).isVisible().catch(() => false);
-
-		// Either selectors or date range picker
-		const hasDateInputs = await page.locator('input[type="date"]').isVisible().catch(() => false);
-
-		expect(hasYearSelect || hasMonthSelect || hasDateInputs || true).toBe(true);
+		await expect(page.locator('select#year')).toBeVisible();
+		await expect(page.locator('select#month')).toBeVisible();
+		await expect(page.locator('select#month option')).toHaveCount(12);
 	});
 
 	test('has generate declaration button', async ({ page }, testInfo) => {
-		await navigateTo(page, '/tax', testInfo);
+		await openTaxPage(page, testInfo);
 
-		await page.waitForTimeout(2000);
-
-		// Should have generate/create button
-		const generateButton = page
-			.getByRole('button', { name: /generate|create|new/i })
-			.or(page.getByRole('link', { name: /generate|create/i }));
-
-		const hasButton = await generateButton.first().isVisible().catch(() => false);
-
-		if (hasButton) {
-			expect(hasButton).toBe(true);
-		}
+		const generateButton = page.getByRole('button', { name: /generate|create|new|genereeri|loo/i }).first();
+		await expect(generateButton).toBeVisible();
+		await expect(generateButton).toBeEnabled();
 	});
 
 	test('displays declarations table or empty state', async ({ page }, testInfo) => {
-		await navigateTo(page, '/tax', testInfo);
+		await openTaxPage(page, testInfo);
 
-		await page.waitForTimeout(2000);
-
-		const table = page.locator('table');
-		const hasTable = await table.isVisible().catch(() => false);
-
-		const emptyState = page.locator('.empty-state, [class*="empty"]');
-		const hasEmpty = await emptyState.isVisible().catch(() => false);
-
-		const hasCard = await page.locator('.card, [class*="declaration"]').isVisible().catch(() => false);
-
-		// Page should show something
-		expect(hasTable || hasEmpty || hasCard || true).toBe(true);
+		await expect(page.locator('.declarations-list, .empty-state').first()).toBeVisible();
 	});
 
 	test('shows VAT amounts when declarations exist', async ({ page }, testInfo) => {
-		await navigateTo(page, '/tax', testInfo);
+		await openTaxPage(page, testInfo);
 
-		await page.waitForTimeout(2000);
-
-		const table = page.locator('table');
-		const hasTable = await table.isVisible().catch(() => false);
-
-		if (hasTable) {
-			const rows = table.locator('tbody tr');
-			const count = await rows.count();
-
-			if (count > 0) {
-				// Should show currency amounts
-				const hasCurrency = await page.getByText(/€|EUR/i).first().isVisible().catch(() => false);
-				if (hasCurrency) {
-					expect(hasCurrency).toBe(true);
-				}
-			}
+		const declarationsList = page.locator('.declarations-list');
+		if (await declarationsList.isVisible().catch(() => false)) {
+			const firstDeclaration = declarationsList.locator('.declaration-item').first();
+			await expect(firstDeclaration).toBeVisible();
+			await expect(firstDeclaration).toContainText(/\d{4}-\d{2}/);
+			await expect(firstDeclaration).toContainText(/€|EUR|\d+[,.]\d{2}/);
+			return;
 		}
+
+		await expect(page.locator('.empty-state')).toBeVisible();
 	});
 });

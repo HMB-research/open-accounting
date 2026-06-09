@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test';
-import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
+import { ensureAuthenticated, navigateTo, ensureDemoTenant, waitForRouteReady } from './utils';
 
 test.describe('Demo Settings - Page Structure Verification', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/settings', testInfo);
-		await page.waitForLoadState('networkidle');
+		await waitForRouteReady(page, '.settings-grid');
 	});
 
 	test('displays settings page heading or cards', async ({ page }) => {
@@ -23,10 +23,7 @@ test.describe('Demo Settings - Page Structure Verification', () => {
 
 	test('can navigate to company settings', async ({ page }, testInfo) => {
 		await navigateTo(page, '/settings/company', testInfo);
-		await page.waitForTimeout(2000);
-		const hasContent = await page.locator('input').first().isVisible().catch(() => false);
-		const hasForm = await page.getByRole('form').isVisible().catch(() => false);
-		const hasText = await page.getByText(/name|company|registration/i).first().isVisible().catch(() => false);
-		expect(hasContent || hasForm || hasText).toBeTruthy();
+		await waitForRouteReady(page, 'input#companyName, .empty-state', 15000);
+		await expect(page.locator('input#companyName')).toBeVisible();
 	});
 });
