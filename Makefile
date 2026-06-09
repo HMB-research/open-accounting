@@ -6,6 +6,9 @@ BINARY_MIGRATE=migrate
 GO=go
 DOCKER_COMPOSE=docker-compose
 
+INTEGRATION_PACKAGE_LIST = git grep -l '^//go:build .*integration' -- '*_test.go' | while IFS= read -r file; do dirname "$$file"; done | sort -u | sed 's|^|./|'
+INTEGRATION_PACKAGE_SHARD = awk -v shard="$(INTEGRATION_SHARD)" -v shards="$(INTEGRATION_SHARDS)" 'BEGIN { if ((shard == "") != (shards == "")) { print "INTEGRATION_SHARD and INTEGRATION_SHARDS must be set together" > "/dev/stderr"; exit 2 } if (shards != "" && (shard < 1 || shards < 1 || shard > shards)) { print "invalid integration shard " shard "/" shards > "/dev/stderr"; exit 2 } } shards == "" || (((NR - 1) % shards) + 1 == shard) { print }'
+
 # Default target
 all: build
 
@@ -29,14 +32,19 @@ test-coverage:
 	$(GO) tool cover -html=coverage.out -o coverage.html
 
 # Run DB-backed integration tests. Packages are discovered from tracked build-tagged tests
-# so local and CI runs do not duplicate every unit-only package.
+# so local and CI runs do not duplicate every unit-only package. Set
+# INTEGRATION_SHARD and INTEGRATION_SHARDS to run one shard of the same package set.
 test-integration:
-	@packages="$$(git grep -l '^//go:build .*integration' -- '*_test.go' | while IFS= read -r file; do dirname "$$file"; done | sort -u | sed 's#^#./#')"; \
+	@packages="$$( $(INTEGRATION_PACKAGE_LIST) | $(INTEGRATION_PACKAGE_SHARD) )"; \
+	status=$$?; \
+	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	if [ -z "$$packages" ]; then echo "No integration test packages found"; exit 0; fi; \
 	$(GO) test -p 1 -v -race -tags=integration $$packages
 
 test-integration-coverage:
-	@packages="$$(git grep -l '^//go:build .*integration' -- '*_test.go' | while IFS= read -r file; do dirname "$$file"; done | sort -u | sed 's#^#./#')"; \
+	@packages="$$( $(INTEGRATION_PACKAGE_LIST) | $(INTEGRATION_PACKAGE_SHARD) )"; \
+	status=$$?; \
+	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	if [ -z "$$packages" ]; then echo "No integration test packages found"; exit 0; fi; \
 	$(GO) test -p 1 -v -race -tags=integration -coverprofile=coverage-integration.out $$packages
 

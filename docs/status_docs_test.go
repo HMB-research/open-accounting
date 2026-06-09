@@ -40,11 +40,13 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 			"`DATABASE_URL=postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable make test-integration-coverage` passes",
 			"`cd frontend && bun run test` passes with 22 files and 515 tests",
 			"Backend unit tests no longer start PostgreSQL in CI",
+			"Backend integration tests are sharded in CI",
 			"Full local seeded demo E2E shards are now blocking in CI",
 		},
 		"docs/ARCHITECTURE.md": {
 			"`go test -p 1 -race ./...` must pass without PostgreSQL",
 			"`DATABASE_URL=... make test-integration-coverage` must pass",
+			"`INTEGRATION_SHARD` and `INTEGRATION_SHARDS`",
 			"Blocking smoke E2E plus blocking local seeded demo shards",
 		},
 		"docs/demo-e2e-testing.md": {
@@ -120,6 +122,41 @@ func TestWorkflowDemoE2EGatesMatchDocumentation(t *testing.T) {
 	}
 	if !strings.Contains(remoteDemo, "TEST_DEMO: 'true'") {
 		t.Fatal("remote hosted demo job must opt into hosted demo testing")
+	}
+}
+
+func TestWorkflowIntegrationShardsMatchMakefile(t *testing.T) {
+	workflowPayload, err := os.ReadFile(filepath.Join("..", ".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Fatalf("read workflow: %v", err)
+	}
+	workflow := string(workflowPayload)
+	integrationJob := workflowJobBlock(t, workflow, "integration-test")
+	for _, snippet := range []string{
+		"shard: [1, 2, 3, 4]",
+		"total-shards: [4]",
+		"INTEGRATION_SHARD: ${{ matrix.shard }}",
+		"INTEGRATION_SHARDS: ${{ matrix.total-shards }}",
+		"make test-integration-coverage",
+	} {
+		if !strings.Contains(integrationJob, snippet) {
+			t.Fatalf("integration workflow missing shard snippet %q", snippet)
+		}
+	}
+
+	makefilePayload, err := os.ReadFile(filepath.Join("..", "Makefile"))
+	if err != nil {
+		t.Fatalf("read Makefile: %v", err)
+	}
+	makefile := string(makefilePayload)
+	for _, snippet := range []string{
+		"INTEGRATION_PACKAGE_SHARD",
+		"INTEGRATION_SHARD and INTEGRATION_SHARDS must be set together",
+		"test-integration-coverage:",
+	} {
+		if !strings.Contains(makefile, snippet) {
+			t.Fatalf("Makefile missing integration shard snippet %q", snippet)
+		}
 	}
 }
 
