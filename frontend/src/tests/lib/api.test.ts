@@ -1567,6 +1567,41 @@ describe("API Client - Core Functionality", () => {
       expect(result.status).toBe("allocated");
     });
 
+    it("should reverse payment", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          original_payment: {
+            id: "pay-1",
+            payment_number: "PMT-001",
+            reversed_by_payment_id: "pay-reversal",
+          },
+          reversal_payment: {
+            id: "pay-reversal",
+            payment_number: "OUT-001",
+            reversal_of_payment_id: "pay-1",
+          },
+        }),
+      });
+
+      const result = await api.reversePayment("tenant-123", "pay-1", {
+        payment_date: "2026-06-09T00:00:00.000Z",
+        reason: "Duplicate bank import",
+        reference: "REV-PMT-001",
+      });
+
+      expect(result.original_payment.reversed_by_payment_id).toBe("pay-reversal");
+      expect(result.reversal_payment.reversal_of_payment_id).toBe("pay-1");
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/payments/pay-1/reverse"),
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining("Duplicate bank import"),
+        }),
+      );
+    });
+
     it("should get unallocated payments", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

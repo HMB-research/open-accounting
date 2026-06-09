@@ -297,21 +297,22 @@ Each view is tested for:
 | Page Load    | ✅     | Loads correctly                                       |
 | Data Display | ✅     | Shows payments content with heading                   |
 | Navigation   | ✅     | New payment button visible, payment type filter works |
-| CRUD         | ⚠️     | Create with invoice allocation verified; update/delete not exposed |
+| CRUD         | ⚠️     | Create with invoice allocation and auditable reversal verified; update/delete not exposed |
 | Errors       | ✅     | No errors observed                                    |
 | Responsive   | ⚠️     | Needs manual verification                             |
 
-**E2E Tests:** 5/5 passed
+**E2E Tests:** 6/6 passed
 
 - Displays payments page content
 - Shows payment page heading
 - Has new payment button
 - Shows payment type filter
 - Creates a received payment, allocates it to an invoice, verifies zero unallocated balance, and filters by payment type
+- Reverses a payment through the UI, verifies original/reversal links in the API response, and refetches the offsetting payment through the made-payment filter
 
 **Known Issues:**
 
-- Payment correction/reversal now has API and CLI support through auditable offsetting payments; frontend exposure and E2E coverage remain pending
+- Payment correction/reversal now has API, CLI, payments-page UI, and demo E2E coverage through auditable offsetting payments. The separate cash-payments page still needs reversal UI exposure.
 
 **Overall:** ✅ Working
 
@@ -338,7 +339,7 @@ Each view is tested for:
 
 **Known Issues:**
 
-- Payment correction/reversal has API and CLI support through auditable offsetting payments; frontend exposure and E2E coverage remain pending.
+- Payment correction/reversal has API, CLI, and payments-page UI support through auditable offsetting payments; cash-page-specific reversal UI exposure remains pending.
 
 **Overall:** ✅ Working
 
