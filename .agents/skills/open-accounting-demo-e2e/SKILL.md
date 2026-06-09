@@ -61,6 +61,14 @@ bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium 
 
 The config starts the frontend server only. Start the API separately first.
 
+## Assertion Discipline
+
+- Prefer API waits and visible UI states over fixed sleeps.
+- Assert mutation responses and rendered UI, not only that a page did not crash.
+- Use unique test data for creates so seeded demo records cannot satisfy assertions.
+- Scope generic controls such as selects and buttons to the route panel or filter bar that owns them.
+- When filtering records, assert both the expected visible row and at least one expected absent row.
+
 ## Failure Triage
 
 - Login page shows another product or brand: wrong frontend server was reused; switch `BASE_URL` to a clean port.

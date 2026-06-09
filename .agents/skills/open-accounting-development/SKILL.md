@@ -11,6 +11,7 @@ Use this skill for architecture, layer boundaries, and general testing decisions
 
 - `open-accounting-stage-gate`: staged PR work, CLI/API/docs parity, local validation gates, commits, pushes, and PR/CI follow-through.
 - `open-accounting-demo-e2e`: local demo Playwright runs, demo reset, auth setup, branch API verification, localhost port conflicts, and CORS/debugging.
+- `open-accounting-frontend-workflow`: Svelte route/component edits, frontend form payload contracts, Svelte MCP validation, and stable Playwright assertions.
 - `open-accounting-import-mappers`: external import format work, provider/bank-specific mapper boundaries, official sample fixtures, registry parity, and legacy parser removal.
 - `open-accounting-pr-conflict-recovery`: PR merge conflicts, branch rebases/merges, conflicted frontend tests, post-conflict local gates, and follow-up pushes.
 
