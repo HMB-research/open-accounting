@@ -430,10 +430,10 @@ func TestDemoHandlersResetAndStatus(t *testing.T) {
 		require.NoError(t, err)
 		defer conn.Release()
 
-		_, err = conn.Exec(ctx, "SELECT pg_advisory_lock($1)", demoResetAdvisoryLockKey)
+		_, err = conn.Exec(ctx, "SELECT pg_advisory_lock($1)", demo.ResetAdvisoryLockKey)
 		require.NoError(t, err)
 		defer func() {
-			_, _ = conn.Exec(context.Background(), "SELECT pg_advisory_unlock($1)", demoResetAdvisoryLockKey)
+			_, _ = conn.Exec(context.Background(), "SELECT pg_advisory_unlock($1)", demo.ResetAdvisoryLockKey)
 		}()
 
 		for _, userNum := range users {
