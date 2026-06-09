@@ -578,32 +578,42 @@
 		gap: 1rem;
 	}
 
+	.cash-payments-table {
+		min-width: 980px;
+	}
+
 	.cash-payments-table .col-number {
-		width: 13%;
-	}
-
-	.cash-payments-table .col-type {
-		width: 16%;
-	}
-
-	.cash-payments-table .col-contact {
-		width: 16%;
-	}
-
-	.cash-payments-table .col-date {
-		width: 10%;
-	}
-
-	.cash-payments-table .col-amount {
 		width: 12%;
 	}
 
+	.cash-payments-table .col-type {
+		width: 14%;
+	}
+
+	.cash-payments-table .col-contact {
+		width: 17%;
+	}
+
+	.cash-payments-table .col-date {
+		width: 11%;
+	}
+
+	.cash-payments-table .col-amount {
+		width: 11%;
+	}
+
 	.cash-payments-table .col-reference {
-		width: 23%;
+		width: 25%;
 	}
 
 	.cash-payments-table .col-actions {
 		width: 10%;
+	}
+
+	@media (max-width: 768px) {
+		.cash-payments-table {
+			min-width: 0;
+		}
 	}
 
 	.btn-danger {
