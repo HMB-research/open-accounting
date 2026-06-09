@@ -395,7 +395,7 @@ jobs:
           retention-days: 7
 
   # E2E tests run against local database with seeded demo data
-  # Sharded across 2 runners for parallel execution (~50% faster).
+  # Sharded across 4 runners for parallel execution.
   # This local seeded suite is a required PR gate; only the remote hosted-demo
   # suite below remains optional.
   e2e:
@@ -410,7 +410,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
+        total-shards: [4]
 
     services:
       postgres:
@@ -500,9 +501,9 @@ jobs:
           fi
           echo "Demo data seeded successfully"
 
-      - name: Run Demo E2E tests (Shard ${{ matrix.shard }}/2)
+      - name: Run Demo E2E tests (Shard ${{ matrix.shard }}/${{ matrix.total-shards }})
         working-directory: frontend
-        run: bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium --shard=${{ matrix.shard }}/2
+        run: bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium --shard=${{ matrix.shard }}/${{ matrix.total-shards }}
         env:
           CI: true
           BASE_URL: http://localhost:5173

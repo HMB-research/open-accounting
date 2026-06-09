@@ -131,7 +131,7 @@ DEMO_RESET_SECRET=test-demo-secret \
 bun run test:e2e:smoke
 ```
 
-The broader `e2e` job runs the full `demo-chromium` project in shards and is blocking. Each shard starts its own local PostgreSQL-backed demo environment, seeds all four demo users through `/api/demo/reset`, builds the frontend, and runs:
+The broader `e2e` job runs the full `demo-chromium` project across four shards and is blocking. Each shard starts its own local PostgreSQL-backed demo environment, seeds all four demo users through `/api/demo/reset`, builds the frontend, and runs:
 
 ```bash
 cd frontend
@@ -139,7 +139,7 @@ CI=true \
 BASE_URL=http://localhost:5173 \
 PUBLIC_API_URL=http://localhost:8080 \
 DEMO_RESET_SECRET=test-demo-secret \
-bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium --shard=<shard>/2
+bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium --shard=<shard>/4
 ```
 
 The separate `e2e-demo` job targets an externally hosted demo and remains optional/informational because it only runs when hosted demo URLs and secrets are explicitly configured.
