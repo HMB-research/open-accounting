@@ -147,15 +147,16 @@ Each view is tested for:
 | Page Load    | ✅     | Loads correctly with heading                   |
 | Data Display | ✅     | Shows entries or empty state appropriately     |
 | Navigation   | ✅     | New entry button visible                       |
-| CRUD         | ⚠️     | Read verified, Create/Update/Delete not tested |
+| CRUD         | ✅     | Create, post, and void lifecycle verified through demo E2E |
 | Errors       | ✅     | No errors observed                             |
 | Responsive   | ⚠️     | Needs manual verification                      |
 
-**E2E Tests:** 3/3 passed
+**E2E Tests:** 4/4 passed
 
 - Journal entries page heading visible
 - New entry button or empty state visible
 - Page structure correct (heading + action buttons)
+- Creates a balanced manual entry, posts it, and voids it with a reason
 
 **Overall:** ✅ Working
 
