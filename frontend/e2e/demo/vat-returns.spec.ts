@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test';
-import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
+import { ensureAuthenticated, navigateTo, ensureDemoTenant, waitForRouteReady } from './utils';
 
 test.describe('Demo VAT Returns (KMD) - Page Structure Verification', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/vat-returns', testInfo);
-		await page.waitForTimeout(2000);
+		await waitForRouteReady(page, '.generate-section, select#year, select#month');
 	});
 
 	test('displays VAT returns page heading', async ({ page }) => {

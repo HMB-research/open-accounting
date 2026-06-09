@@ -452,10 +452,43 @@ export async function waitForPageReady(page: Page, timeout = 10000): Promise<voi
 	await page.waitForLoadState('domcontentloaded', { timeout });
 
 	// Wait for any loading overlays to disappear
-	const loadingOverlay = page.locator('.loading-overlay, [data-loading="true"], .skeleton');
-	if (await loadingOverlay.first().isVisible().catch(() => false)) {
-		await loadingOverlay.first().waitFor({ state: 'hidden', timeout });
-	}
+	await waitForLoadingIndicatorsToClear(page, timeout);
+}
+
+/**
+ * Wait for a route-owned selector after page/global loading indicators have cleared.
+ * Use this instead of fixed sleeps after navigateTo.
+ */
+export async function waitForRouteReady(
+	page: Page,
+	readySelector: string,
+	timeout = 10000
+): Promise<void> {
+	await waitForPageReady(page, timeout);
+	await expect(page.locator(readySelector).first()).toBeVisible({ timeout });
+}
+
+async function waitForLoadingIndicatorsToClear(page: Page, timeout: number): Promise<void> {
+	const loadingIndicators = page.locator(
+		'.loading, .loading-spinner, .loading-overlay, .spinner, .animate-spin, [data-loading="true"], .skeleton'
+	);
+
+	await expect(async () => {
+		const visibleCount = await loadingIndicators.evaluateAll((elements) => {
+			return elements.filter((element) => {
+				const style = window.getComputedStyle(element);
+				const rect = element.getBoundingClientRect();
+				return (
+					style.display !== 'none' &&
+					style.visibility !== 'hidden' &&
+					rect.width > 0 &&
+					rect.height > 0
+				);
+			}).length;
+		});
+
+		expect(visibleCount).toBe(0);
+	}).toPass({ timeout });
 }
 
 /**

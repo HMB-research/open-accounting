@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test';
-import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
+import { ensureAuthenticated, navigateTo, ensureDemoTenant, waitForRouteReady } from './utils';
 
 test.describe('Demo Reports - Page Structure Verification', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/reports', testInfo);
-		await page.waitForTimeout(2000);
+		await waitForRouteReady(page, '.report-controls');
 	});
 
 	test('displays reports page heading', async ({ page }) => {
@@ -14,14 +14,11 @@ test.describe('Demo Reports - Page Structure Verification', () => {
 	});
 
 	test('shows report type selector or buttons', async ({ page }) => {
-		const hasSelector = await page.locator('select').first().isVisible().catch(() => false);
-		const hasButtons = await page.getByRole('button', { name: /trial|balance|income|generate/i }).first().isVisible().catch(() => false);
-		expect(hasSelector || hasButtons).toBeTruthy();
+		await expect(page.locator('select#reportType')).toBeVisible();
+		await expect(page.getByRole('button', { name: /generate|genereeri/i })).toBeVisible();
 	});
 
 	test('shows date range controls', async ({ page }) => {
-		const hasDateInputs = await page.locator('input[type="date"]').first().isVisible().catch(() => false);
-		const hasDatePicker = await page.getByText(/from|to|period|date/i).first().isVisible().catch(() => false);
-		expect(hasDateInputs || hasDatePicker).toBeTruthy();
+		await expect(page.locator('input#asOfDate')).toBeVisible();
 	});
 });

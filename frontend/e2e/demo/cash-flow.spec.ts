@@ -1,12 +1,13 @@
 import { test, expect } from '@playwright/test';
-import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
+import { ensureAuthenticated, navigateTo, ensureDemoTenant, waitForRouteReady } from './utils';
 
 test.describe('Demo Cash Flow Statement - Page Structure Verification', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 		await navigateTo(page, '/reports/cash-flow', testInfo);
-		await page.waitForTimeout(2000);
+		await waitForRouteReady(page, 'input#startDate, input#endDate, .controls-section');
+		await expect(page.getByRole('button', { name: /generate|genereeri/i })).toBeEnabled({ timeout: 15000 });
 	});
 
 	test('displays cash flow statement page heading', async ({ page }) => {
@@ -15,8 +16,8 @@ test.describe('Demo Cash Flow Statement - Page Structure Verification', () => {
 	});
 
 	test('shows date range controls', async ({ page }) => {
-		const hasDateInputs = await page.locator('input[type="date"]').first().isVisible().catch(() => false);
-		expect(hasDateInputs).toBeTruthy();
+		await expect(page.locator('input#startDate')).toBeVisible();
+		await expect(page.locator('input#endDate')).toBeVisible();
 	});
 
 	test('has start and end date inputs', async ({ page }) => {
@@ -47,11 +48,8 @@ test.describe('Demo Cash Flow Statement - Page Structure Verification', () => {
 			const loadingText = page.getByText(/loading|generating|laadimine|genereerin/i);
 			const hasLoading = await loadingText.isVisible().catch(() => false);
 
-			// If still loading, that's fine - keep waiting
-			if (hasLoading) {
-				expect(true).toBe(true);
-				return;
-			}
+			// Keep retrying while the route is still generating the report.
+			expect(hasLoading).toBe(false);
 
 			// Check for various success/error states
 			const hasOperating = await page.getByRole('heading', { name: /operating|äritegevus/i }).isVisible().catch(() => false);

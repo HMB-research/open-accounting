@@ -23,6 +23,7 @@ Use this with `open-accounting-development` for Svelte UI work and with `open-ac
 
 - Use `open-accounting-demo-e2e` for branch-code demo verification. Do not rely on the Docker Compose API on `localhost:8080` as proof of current source.
 - Wait for route API responses or stable loaded UI states instead of sleeping.
+- For demo specs, prefer `waitForRouteReady` with a selector owned by the current route shell, then assert specific controls or rows. Do not replace a sleep with a broad text match that can pass before the workflow is usable.
 - Do not leave unconditional assertions such as `expect(true)`.
 - For create/update workflows, assert the API response status and important response fields, then assert the rendered row or detail view.
 - For filters, assert both sides: the included record is visible and the excluded record is absent.
