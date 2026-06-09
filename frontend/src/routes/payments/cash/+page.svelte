@@ -278,9 +278,9 @@
 			<p>{m.cashPayments_noPayments()}</p>
 		</div>
 	{:else}
-		<div class="card">
+		<div class="card data-table-card">
 			<div class="table-container">
-				<table class="table table-mobile-cards">
+				<table class="table table-mobile-cards readable-table cash-payments-table">
 					<thead>
 						<tr>
 							<th>{m.payments_number()}</th>
@@ -296,26 +296,32 @@
 						{#each payments as payment (payment.id)}
 							<tr>
 								<td class="number" data-label="Number">
-									<div>{payment.payment_number}</div>
-									{#if isReversalPayment(payment)}
-										<span class="payment-state">{m.payments_reversal()}</span>
-									{:else if isReversedPayment(payment)}
-										<span class="payment-state">{m.payments_reversed()}</span>
-									{/if}
+									<div class="cell-stack">
+										<span class="cell-primary">{payment.payment_number}</span>
+										{#if isReversalPayment(payment)}
+											<span class="table-state-badge">{m.payments_reversal()}</span>
+										{:else if isReversedPayment(payment)}
+											<span class="table-state-badge">{m.payments_reversed()}</span>
+										{/if}
+									</div>
 								</td>
-								<td data-label="Type">
+								<td class="payment-type" data-label="Type">
 									<StatusBadge status={payment.payment_type} config={typeConfig} />
 								</td>
-								<td class="hide-mobile" data-label="Contact">{getContactName(payment.contact_id)}</td>
-								<td data-label="Date">{formatDate(payment.payment_date)}</td>
+								<td class="cell-muted hide-mobile" data-label="Contact">{getContactName(payment.contact_id)}</td>
+								<td class="date" data-label="Date">{formatDate(payment.payment_date)}</td>
 								<td class="amount" data-label="Amount">{formatCurrency(payment.amount)}</td>
-								<td class="reference hide-mobile" data-label="Reference">{payment.reference || '-'}</td>
+								<td class="reference hide-mobile" data-label="Reference">
+									<span class="cell-ellipsis">{payment.reference || '-'}</span>
+								</td>
 								<td class="actions" data-label="Actions">
-									{#if canReversePayment(payment)}
-										<button type="button" class="btn btn-secondary btn-small" onclick={() => openReversePayment(payment)}>
-											{m.payments_reverse()}
-										</button>
-									{/if}
+									<div class="actions-stack">
+										{#if canReversePayment(payment)}
+											<button type="button" class="btn btn-secondary btn-small" onclick={() => openReversePayment(payment)}>
+												{m.payments_reverse()}
+											</button>
+										{/if}
+									</div>
 								</td>
 							</tr>
 						{/each}
@@ -563,42 +569,32 @@
 		gap: 1rem;
 	}
 
-	.number {
-		font-family: var(--font-mono);
-		font-weight: 500;
+	.cash-payments-table th:nth-child(1) {
+		width: 13%;
 	}
 
-	.payment-state {
-		display: inline-block;
-		margin-top: 0.25rem;
-		padding: 0.125rem 0.375rem;
-		border-radius: 999px;
-		background: var(--color-bg-secondary, #f3f4f6);
-		color: var(--color-text-muted);
-		font-family: var(--font-sans);
-		font-size: 0.75rem;
-		font-weight: 600;
+	.cash-payments-table th:nth-child(2) {
+		width: 16%;
 	}
 
-	.amount {
-		font-family: var(--font-mono);
-		text-align: right;
+	.cash-payments-table th:nth-child(3) {
+		width: 16%;
 	}
 
-	.reference {
-		font-family: var(--font-mono);
-		font-size: 0.875rem;
-		color: var(--color-text-muted);
+	.cash-payments-table th:nth-child(4) {
+		width: 10%;
 	}
 
-	.actions {
-		width: 1%;
-		white-space: nowrap;
+	.cash-payments-table th:nth-child(5) {
+		width: 12%;
 	}
 
-	.btn-small {
-		padding: 0.25rem 0.5rem;
-		font-size: 0.75rem;
+	.cash-payments-table th:nth-child(6) {
+		width: 25%;
+	}
+
+	.cash-payments-table th:nth-child(7) {
+		width: 8%;
 	}
 
 	.btn-danger {
