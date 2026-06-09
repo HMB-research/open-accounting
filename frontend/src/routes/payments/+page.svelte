@@ -7,7 +7,8 @@
 	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
 	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
 	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
-	import { formatCurrency, formatDate } from '$lib/utils/formatting';
+	import { dateInputToApiTimestamp } from '$lib/utils/dates';
+	import { formatCurrency, formatDate, formStringValue } from '$lib/utils/formatting';
 	import { requireTenantId, parseApiError } from '$lib/utils/tenant';
 
 	let payments = $state<Payment[]>([]);
@@ -32,7 +33,7 @@
 	let newMethod = $state('BANK_TRANSFER');
 	let newReference = $state('');
 	let newNotes = $state('');
-	let selectedInvoices = $state<{ invoice_id: string; amount: string }[]>([]);
+	let selectedInvoices = $state<{ invoice_id: string; amount: string | number }[]>([]);
 
 	$effect(() => {
 		const tenantId = $page.url.searchParams.get('tenant');
@@ -76,12 +77,17 @@
 			const payment = await api.createPayment(tenantId, {
 				payment_type: newType,
 				contact_id: newContactId || undefined,
-				payment_date: newPaymentDate,
-				amount: newAmount,
+				payment_date: dateInputToApiTimestamp(newPaymentDate),
+				amount: formStringValue(newAmount),
 				payment_method: newMethod,
 				reference: newReference || undefined,
 				notes: newNotes || undefined,
-				allocations: selectedInvoices.filter((i) => i.invoice_id && parseFloat(i.amount) > 0)
+				allocations: selectedInvoices
+					.filter((i) => i.invoice_id && Number(i.amount) > 0)
+					.map((i) => ({
+						invoice_id: i.invoice_id,
+						amount: formStringValue(i.amount)
+					}))
 			});
 			payments = [payment, ...payments];
 			showCreatePayment = false;

@@ -297,16 +297,21 @@ Each view is tested for:
 | Page Load    | ✅     | Loads correctly                                       |
 | Data Display | ✅     | Shows payments content with heading                   |
 | Navigation   | ✅     | New payment button visible, payment type filter works |
-| CRUD         | ⚠️     | Read verified, Create/Update/Delete not tested        |
+| CRUD         | ⚠️     | Create with invoice allocation verified; update/delete not exposed |
 | Errors       | ✅     | No errors observed                                    |
 | Responsive   | ⚠️     | Needs manual verification                             |
 
-**E2E Tests:** 4/4 passed
+**E2E Tests:** 5/5 passed
 
 - Displays payments page content
 - Shows payment page heading
 - Has new payment button
 - Shows payment type filter
+- Creates a received payment, allocates it to an invoice, verifies zero unallocated balance, and filters by payment type
+
+**Known Issues:**
+
+- Payment correction/reversal workflow needs product design and E2E coverage
 
 **Overall:** ✅ Working
 
