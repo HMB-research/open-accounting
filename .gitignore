@@ -70,4 +70,5 @@ frontend/test-results/
 # Database files
 *.db
 *.sqlite
+data/
 frontend/.auth/
