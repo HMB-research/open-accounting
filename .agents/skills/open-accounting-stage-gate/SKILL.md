@@ -19,6 +19,7 @@ If GitHub reports merge conflicts or the branch cannot be merged cleanly, load `
    - `make test-cli-coverage` for missing CLI/API/docs parity.
    - `docs/api_route_coverage_test.go` failures for API Markdown or Swagger gaps.
    - `internal/*/mappers/**` and import docs for provider-specific import parity gaps.
+   - `frontend/e2e/demo/*.spec.ts` and Svelte route files for user workflow gaps; load `open-accounting-frontend-workflow` before editing them.
 
 ## Implementation Rules
 
@@ -28,6 +29,7 @@ If GitHub reports merge conflicts or the branch cannot be merged cleanly, load `
 - Prefer reusable services, mappers, and ORM-backed repositories; remove stale direct paths when touching the area.
 - Do not preserve legacy code as a fallback unless the product requirement is explicit and the removal plan is written down. If a stage replaces a parser, mapper, query path, or duplicated entry-point behavior, delete the replaced path in the same stage.
 - Preserve entry-point parity: frontend/API/CLI should call the same service/repository behavior through their normal layers.
+- For Svelte route/component changes, load `open-accounting-frontend-workflow`, run the Svelte MCP autofixer when available, and prove the UI behavior with focused assertions before broad gates.
 - For external import formats, load `open-accounting-import-mappers`; prove provider mapper tests, registry routing, API/CLI docs, and any visible UI import workflow in the same stage.
 
 ## Local Gates
