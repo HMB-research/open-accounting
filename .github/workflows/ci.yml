@@ -158,6 +158,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+        total-shards: [4]
 
     services:
       postgres:
@@ -192,6 +197,8 @@ jobs:
       - name: Run integration tests
         env:
           DATABASE_URL: postgres://test:test@localhost:5432/openaccounting_test?sslmode=disable
+          INTEGRATION_SHARD: ${{ matrix.shard }}
+          INTEGRATION_SHARDS: ${{ matrix.total-shards }}
         run: make test-integration-coverage
 
       - name: Upload integration coverage to Codecov
@@ -204,7 +211,7 @@ jobs:
           fi
           curl -Os https://cli.codecov.io/latest/linux/codecov
           chmod +x codecov
-          ./codecov --verbose upload-process --disable-search -t "$CODECOV_TOKEN" -n "integration-${GITHUB_RUN_ID}" -F integration -f coverage-integration.out || echo "Codecov upload failed"
+          ./codecov --verbose upload-process --disable-search -t "$CODECOV_TOKEN" -n "integration-${GITHUB_RUN_ID}-${{ matrix.shard }}" -F integration -f coverage-integration.out || echo "Codecov upload failed"
 
   build:
     runs-on: ubuntu-latest

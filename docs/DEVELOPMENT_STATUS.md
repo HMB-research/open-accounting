@@ -29,6 +29,7 @@ Full local baseline last completed on 2026-06-08:
 - `cd frontend && bun run test:e2e` passes against a fresh locally seeded demo environment with 260 passed and 12 intentionally skipped reset tests under `CI=true`
 - Frontend lint is now blocking in CI
 - Backend unit tests no longer start PostgreSQL in CI; DB-backed tests run in the tagged integration gate
+- Backend integration tests are sharded in CI while using the same `make test-integration-coverage` package discovery as local runs
 - Backend integration tests are now blocking in CI
 - Core accountant smoke E2E is now blocking in CI
 - Full local seeded demo E2E shards are now blocking in CI

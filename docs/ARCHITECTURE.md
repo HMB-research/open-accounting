@@ -446,6 +446,10 @@ go test -p 1 -race -coverprofile=/tmp/open-accounting-unit-coverage.out ./...
 DATABASE_URL="postgres://..." make test-integration-coverage
 ```
 
+In CI, the integration gate runs the same Make target across four shards by
+setting `INTEGRATION_SHARD` and `INTEGRATION_SHARDS`. Local runs omit those
+variables to execute the full tagged package set in one process.
+
 ### Integration Test Structure
 
 Integration tests use the `//go:build integration` build tag and test real database operations. The Makefile discovers only tracked packages with tagged integration tests so local and CI runs avoid re-running unit-only packages under the integration gate:
