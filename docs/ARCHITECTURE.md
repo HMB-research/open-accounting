@@ -431,8 +431,8 @@ Coverage is tracked in CI and Codecov, but the repository does not currently cla
 
 | Layer | Current Gate |
 |-------|--------------|
-| Backend | `go test ./...` must pass |
-| Backend integration | `go test -tags=integration -race ...` must pass |
+| Backend | `go test -p 1 -race ./...` must pass without PostgreSQL |
+| Backend integration | `DATABASE_URL=... make test-integration-coverage` must pass |
 | Frontend | `bun run check` and `bun run test` must pass |
 | E2E | Blocking smoke E2E plus blocking local seeded demo shards; optional remote hosted-demo E2E remains informational |
 
@@ -440,15 +440,15 @@ Coverage is tracked in CI and Codecov, but the repository does not currently cla
 
 ```bash
 # Unit tests (no database required)
-go test -race -cover ./...
+go test -p 1 -race -coverprofile=/tmp/open-accounting-unit-coverage.out ./...
 
 # Integration tests (requires PostgreSQL)
-DATABASE_URL="postgres://..." go test -tags=integration -race -cover ./...
+DATABASE_URL="postgres://..." make test-integration-coverage
 ```
 
 ### Integration Test Structure
 
-Integration tests use the `//go:build integration` build tag and test real database operations:
+Integration tests use the `//go:build integration` build tag and test real database operations. The Makefile discovers only tracked packages with tagged integration tests so local and CI runs avoid re-running unit-only packages under the integration gate:
 
 ```go
 //go:build integration
