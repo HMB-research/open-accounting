@@ -16,6 +16,7 @@ Use this after `open-accounting-development` when the task is broader than a sin
    - `docs/UI_ISSUES_REPORT.md` for demo/UI workflow gaps.
    - `make test-cli-coverage` for missing CLI/API/docs parity.
    - `docs/api_route_coverage_test.go` failures for API Markdown or Swagger gaps.
+   - `internal/*/mappers/**` and import docs for provider-specific import parity gaps.
 
 ## Implementation Rules
 
@@ -24,6 +25,7 @@ Use this after `open-accounting-development` when the task is broader than a sin
 - For API changes, update `docs/API.md`, generated Swagger artifacts, and route coverage mappings in the same stage.
 - Prefer reusable services, mappers, and ORM-backed repositories; remove stale direct paths when touching the area.
 - Preserve entry-point parity: frontend/API/CLI should call the same service/repository behavior through their normal layers.
+- For external import formats, load `open-accounting-import-mappers`; prove provider mapper tests, registry routing, API/CLI docs, and any visible UI import workflow in the same stage.
 
 ## Local Gates
 

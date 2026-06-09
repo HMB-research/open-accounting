@@ -11,6 +11,7 @@ Use this skill for architecture, layer boundaries, and general testing decisions
 
 - `open-accounting-stage-gate`: staged PR work, CLI/API/docs parity, local validation gates, commits, pushes, and PR/CI follow-through.
 - `open-accounting-demo-e2e`: local demo Playwright runs, demo reset, auth setup, branch API verification, localhost port conflicts, and CORS/debugging.
+- `open-accounting-import-mappers`: external import format work, provider/bank-specific mapper boundaries, official sample fixtures, registry parity, and legacy parser removal.
 
 ## Architecture Context
 
@@ -36,6 +37,7 @@ This repo treats ORM/repository-backed persistence and reusable application code
 - Remove related legacy direct-query, duplicated mapper, or format-specific code while touching the area. Keeping legacy paths around for compatibility is not preferred unless there is an explicit product requirement and a concrete removal plan.
 - CLI, API, service, and frontend entry points should call the same reusable service/mapper/repository behavior instead of maintaining parallel implementations.
 - For bank, payroll, invoice, or other external imports, put parsing and normalization behind reusable mapper packages. Use a bank/provider-specific mapper boundary when formats differ so additional formats can be added without branching through handlers or CLI commands.
+- For provider-specific import changes, load `open-accounting-import-mappers` and verify the mapper, registry, API/CLI/docs, and user-facing workflow together.
 
 ### Layer Responsibilities
 
