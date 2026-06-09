@@ -463,8 +463,6 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 
 			// Tenant management
 			r.Post("/tenants", h.CreateTenant)
-			r.Get("/tenants/{tenantID}", h.GetTenant)
-			r.Put("/tenants/{tenantID}", h.UpdateTenant)
 
 			// Admin routes (instance-level plugin management)
 			r.Route("/admin", func(r chi.Router) {
@@ -865,6 +863,11 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/plugins/{pluginID}/settings", h.GetTenantPluginSettings)
 				r.Put("/plugins/{pluginID}/settings", h.UpdateTenantPluginSettings)
 			})
+
+			// Register exact tenant management routes after the tenant-scoped
+			// subrouter so /tenants/{tenantID} is not shadowed by child routes.
+			r.Get("/tenants/{tenantID}", h.GetTenant)
+			r.Put("/tenants/{tenantID}", h.UpdateTenant)
 		})
 	})
 

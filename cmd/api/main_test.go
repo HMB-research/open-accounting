@@ -171,6 +171,19 @@ func TestSetupRouterRegistersCoreRoutes(t *testing.T) {
 	assert.Contains(t, routes, "POST /api/v1/tenants/{tenantID}/expenses/{expenseID}/post")
 	assert.Contains(t, routes, "GET /api/v1/admin/plugins")
 	assert.Contains(t, routes, "GET /swagger/*")
+
+	for _, tt := range []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodGet, path: "/api/v1/tenants/tenant-1"},
+		{method: http.MethodPut, path: "/api/v1/tenants/tenant-1"},
+	} {
+		req := httptest.NewRequest(tt.method, tt.path, nil)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusUnauthorized, rr.Code, "%s %s should be protected, not missing", tt.method, tt.path)
+	}
 }
 
 func TestSetupRouterDisablesRateLimitInDemoMode(t *testing.T) {
