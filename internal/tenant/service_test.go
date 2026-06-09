@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // =============================================================================
@@ -65,6 +66,10 @@ func NewMockRepository() *MockRepository {
 		periodCloseEvents: make(map[string][]PeriodCloseEvent),
 		auditEvents:       make(map[string][]TenantAuditEvent),
 	}
+}
+
+func newTestServiceWithRepository(repo Repository) *Service {
+	return NewServiceWithRepository(repo, WithPasswordHashCost(bcrypt.MinCost))
 }
 
 func (m *MockRepository) CreateTenant(ctx context.Context, tenant *Tenant, settingsJSON []byte, ownerID string) error {
@@ -473,6 +478,7 @@ func TestNewServiceWithRepository(t *testing.T) {
 
 	assert.NotNil(t, svc)
 	assert.NotNil(t, svc.repo)
+	assert.Equal(t, defaultPasswordHashCost, svc.passwordHashCost)
 }
 
 func TestService_CreateTenant(t *testing.T) {
@@ -549,7 +555,7 @@ func TestService_CreateTenant(t *testing.T) {
 			if tt.setupRepo != nil {
 				tt.setupRepo(repo)
 			}
-			svc := NewServiceWithRepository(repo)
+			svc := newTestServiceWithRepository(repo)
 
 			tenant, err := svc.CreateTenant(context.Background(), tt.req)
 
@@ -604,7 +610,7 @@ func TestService_GetTenant(t *testing.T) {
 			if tt.setupRepo != nil {
 				tt.setupRepo(repo)
 			}
-			svc := NewServiceWithRepository(repo)
+			svc := newTestServiceWithRepository(repo)
 
 			tenant, err := svc.GetTenant(context.Background(), tt.tenantID)
 
@@ -628,7 +634,7 @@ func TestService_GetTenantBySlug(t *testing.T) {
 		Slug:     "test-company",
 		IsActive: true,
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	t.Run("existing slug", func(t *testing.T) {
 		tenant, err := svc.GetTenantBySlug(context.Background(), "test-company")
@@ -784,7 +790,7 @@ func TestService_UpdateTenant(t *testing.T) {
 			if tt.setupRepo != nil {
 				tt.setupRepo(repo)
 			}
-			svc := NewServiceWithRepository(repo)
+			svc := newTestServiceWithRepository(repo)
 
 			tenant, err := svc.UpdateTenant(context.Background(), tt.tenantID, tt.req)
 
@@ -807,7 +813,7 @@ func TestService_UpdateTenantRejectsPeriodLockMutation(t *testing.T) {
 		Slug:     "test",
 		Settings: DefaultSettings(),
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	_, err := svc.UpdateTenant(context.Background(), "tenant-123", &UpdateTenantRequest{
 		Settings: &TenantSettings{
@@ -829,7 +835,7 @@ func TestService_UpdateTenantAllowsUnchangedPeriodLockDate(t *testing.T) {
 		Slug:     "test",
 		Settings: initialSettings,
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	updatedTenant, err := svc.UpdateTenant(context.Background(), "tenant-123", &UpdateTenantRequest{
 		Settings: &TenantSettings{
@@ -853,7 +859,7 @@ func TestService_ClosePeriod(t *testing.T) {
 		Slug:     "test",
 		Settings: initialSettings,
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	updatedTenant, event, err := svc.ClosePeriod(context.Background(), "tenant-123", "user-123", &ClosePeriodRequest{
 		PeriodEndDate: "2026-01-31",
@@ -882,7 +888,7 @@ func TestService_ClosePeriodYearEndRequiresReviewerSignOff(t *testing.T) {
 		Slug:     "test",
 		Settings: DefaultSettings(),
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	_, _, err := svc.ClosePeriod(context.Background(), "tenant-123", "user-123", &ClosePeriodRequest{
 		PeriodEndDate: "2026-12-31",
@@ -911,7 +917,7 @@ func TestService_ClosePeriodRejectsInvalidDate(t *testing.T) {
 		Slug:     "test",
 		Settings: DefaultSettings(),
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	_, _, err := svc.ClosePeriod(context.Background(), "tenant-123", "user-123", &ClosePeriodRequest{
 		PeriodEndDate: "2026-01-30",
@@ -931,7 +937,7 @@ func TestService_ClosePeriodRejectsAlreadyClosedDate(t *testing.T) {
 		Slug:     "test",
 		Settings: initialSettings,
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	_, _, err := svc.ClosePeriod(context.Background(), "tenant-123", "user-123", &ClosePeriodRequest{
 		PeriodEndDate: "2026-01-31",
@@ -974,7 +980,7 @@ func TestService_ReopenPeriodRestoresPreviousLockDate(t *testing.T) {
 			CreatedAt:     time.Now().Add(-time.Hour),
 		},
 	}
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	updatedTenant, event, err := svc.ReopenPeriod(context.Background(), "tenant-123", "user-123", &ReopenPeriodRequest{
 		PeriodEndDate: "2026-02-28",
@@ -1011,7 +1017,7 @@ func TestService_ReopenPeriodClearsInitialLockDate(t *testing.T) {
 			CreatedAt:     time.Now(),
 		},
 	}
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	updatedTenant, event, err := svc.ReopenPeriod(context.Background(), "tenant-123", "user-123", &ReopenPeriodRequest{
 		PeriodEndDate: "2026-01-31",
@@ -1033,7 +1039,7 @@ func TestService_ReopenPeriodRequiresNote(t *testing.T) {
 		Slug:     "test",
 		Settings: initialSettings,
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	_, _, err := svc.ReopenPeriod(context.Background(), "tenant-123", "user-123", &ReopenPeriodRequest{
 		PeriodEndDate: "2026-01-31",
@@ -1053,7 +1059,7 @@ func TestService_ReopenPeriodRequiresExistingCloseEvent(t *testing.T) {
 		Slug:     "test",
 		Settings: initialSettings,
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	_, _, err := svc.ReopenPeriod(context.Background(), "tenant-123", "user-123", &ReopenPeriodRequest{
 		PeriodEndDate: "2026-01-31",
@@ -1072,7 +1078,7 @@ func TestService_DeleteTenant(t *testing.T) {
 		Slug:       "test",
 		SchemaName: "tenant_test",
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	t.Run("delete existing", func(t *testing.T) {
 		err := svc.DeleteTenant(context.Background(), "tenant-123")
@@ -1095,7 +1101,7 @@ func TestService_CompleteOnboarding(t *testing.T) {
 		ID:                  "tenant-123",
 		OnboardingCompleted: false,
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	err := svc.CompleteOnboarding(context.Background(), "tenant-123")
 	require.NoError(t, err)
@@ -1106,7 +1112,7 @@ func TestService_CompleteOnboarding(t *testing.T) {
 
 func TestService_RecordTenantAuditEvent(t *testing.T) {
 	repo := NewMockRepository()
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	event := &TenantAuditEvent{
 		TenantID:    "tenant-1",
@@ -1135,7 +1141,7 @@ func TestService_RecordTenantAuditEvent(t *testing.T) {
 
 func TestService_RecordTenantAuditEventValidatesRequiredFields(t *testing.T) {
 	repo := NewMockRepository()
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	tests := []struct {
 		name       string
@@ -1161,7 +1167,7 @@ func TestService_RecordTenantAuditEventValidatesRequiredFields(t *testing.T) {
 func TestService_ListTenantAuditEventsRepositoryError(t *testing.T) {
 	repo := NewMockRepository()
 	repo.listAuditEventsErr = errors.New("database error")
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	_, err := svc.ListTenantAuditEvents(context.Background(), "tenant-1", 50)
 	require.Error(t, err)
@@ -1175,7 +1181,7 @@ func TestService_ListUserTenants(t *testing.T) {
 	repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-1", Role: RoleOwner, IsDefault: true})
 	repo.AddTestTenantUser(TenantUser{TenantID: "tenant-2", UserID: "user-1", Role: RoleAdmin})
 
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	memberships, err := svc.ListUserTenants(context.Background(), "user-1")
 	require.NoError(t, err)
@@ -1184,7 +1190,7 @@ func TestService_ListUserTenants(t *testing.T) {
 
 func TestService_AddUserToTenant(t *testing.T) {
 	repo := NewMockRepository()
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	err := svc.AddUserToTenant(context.Background(), "tenant-1", "user-1", RoleAdmin)
 	require.NoError(t, err)
@@ -1197,7 +1203,7 @@ func TestService_AddUserToTenant(t *testing.T) {
 func TestService_RemoveUserFromTenant(t *testing.T) {
 	repo := NewMockRepository()
 	repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-1", Role: RoleAdmin})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	t.Run("remove existing user", func(t *testing.T) {
 		err := svc.RemoveUserFromTenant(context.Background(), "tenant-1", "user-1")
@@ -1214,7 +1220,7 @@ func TestService_RemoveUserFromTenant(t *testing.T) {
 func TestService_GetUserRole(t *testing.T) {
 	repo := NewMockRepository()
 	repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-1", Role: RoleAccountant})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	t.Run("existing user", func(t *testing.T) {
 		role, err := svc.GetUserRole(context.Background(), "tenant-1", "user-1")
@@ -1232,7 +1238,7 @@ func TestService_GetUserRole(t *testing.T) {
 func TestService_CreateUser(t *testing.T) {
 	t.Run("valid user", func(t *testing.T) {
 		repo := NewMockRepository()
-		svc := NewServiceWithRepository(repo)
+		svc := newTestServiceWithRepository(repo)
 		user, err := svc.CreateUser(context.Background(), &CreateUserRequest{
 			Email:    "  Test@Example.COM  ",
 			Password: "password123",
@@ -1246,7 +1252,7 @@ func TestService_CreateUser(t *testing.T) {
 	t.Run("duplicate email", func(t *testing.T) {
 		repo := NewMockRepository()
 		repo.createUserErr = ErrEmailExists
-		svc := NewServiceWithRepository(repo)
+		svc := newTestServiceWithRepository(repo)
 		_, err := svc.CreateUser(context.Background(), &CreateUserRequest{
 			Email:    "test@example.com",
 			Password: "password",
@@ -1259,7 +1265,7 @@ func TestService_CreateUser(t *testing.T) {
 	t.Run("repository error", func(t *testing.T) {
 		repo := NewMockRepository()
 		repo.createUserErr = errors.New("database connection failed")
-		svc := NewServiceWithRepository(repo)
+		svc := newTestServiceWithRepository(repo)
 		_, err := svc.CreateUser(context.Background(), &CreateUserRequest{
 			Email:    "test@example.com",
 			Password: "password",
@@ -1276,7 +1282,7 @@ func TestService_GetUserByEmail(t *testing.T) {
 		Email: "test@example.com",
 		Name:  "Test User",
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	t.Run("existing user", func(t *testing.T) {
 		user, err := svc.GetUserByEmail(context.Background(), "test@example.com")
@@ -1294,7 +1300,7 @@ func TestService_GetUserByEmail(t *testing.T) {
 func TestService_GetUserByID(t *testing.T) {
 	repo := NewMockRepository()
 	repo.AddTestUser(&User{ID: "user-123", Email: "test@example.com"})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	t.Run("existing user", func(t *testing.T) {
 		user, err := svc.GetUserByID(context.Background(), "user-123")
@@ -1312,7 +1318,7 @@ func TestService_GetUserByID(t *testing.T) {
 func TestService_ChangeUserPassword(t *testing.T) {
 	t.Run("changes password after verifying current password", func(t *testing.T) {
 		repo := NewMockRepository()
-		svc := NewServiceWithRepository(repo)
+		svc := newTestServiceWithRepository(repo)
 		user, err := svc.CreateUser(context.Background(), &CreateUserRequest{
 			Email:    "change@example.com",
 			Password: "oldpassword123",
@@ -1331,7 +1337,7 @@ func TestService_ChangeUserPassword(t *testing.T) {
 
 	t.Run("rejects invalid current password", func(t *testing.T) {
 		repo := NewMockRepository()
-		svc := NewServiceWithRepository(repo)
+		svc := newTestServiceWithRepository(repo)
 		user, err := svc.CreateUser(context.Background(), &CreateUserRequest{
 			Email:    "wrong-current@example.com",
 			Password: "oldpassword123",
@@ -1346,7 +1352,7 @@ func TestService_ChangeUserPassword(t *testing.T) {
 
 	t.Run("rejects weak or reused new password", func(t *testing.T) {
 		repo := NewMockRepository()
-		svc := NewServiceWithRepository(repo)
+		svc := newTestServiceWithRepository(repo)
 		user, err := svc.CreateUser(context.Background(), &CreateUserRequest{
 			Email:    "weak@example.com",
 			Password: "oldpassword123",
@@ -1428,7 +1434,7 @@ func TestService_CreateInvitation(t *testing.T) {
 			if tt.setupRepo != nil {
 				tt.setupRepo(repo)
 			}
-			svc := NewServiceWithRepository(repo)
+			svc := newTestServiceWithRepository(repo)
 
 			inv, err := svc.CreateInvitation(context.Background(), tt.tenantID, tt.invitedBy, tt.req)
 
@@ -1459,7 +1465,7 @@ func TestService_GetInvitationByToken(t *testing.T) {
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 	}
 	repo.invitations["valid-token"] = validInv
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	t.Run("valid token", func(t *testing.T) {
 		inv, err := svc.GetInvitationByToken(context.Background(), "valid-token")
@@ -1646,7 +1652,7 @@ func TestService_AcceptInvitation(t *testing.T) {
 			if tt.setupRepo != nil {
 				tt.setupRepo(repo)
 			}
-			svc := NewServiceWithRepository(repo)
+			svc := newTestServiceWithRepository(repo)
 
 			membership, err := svc.AcceptInvitation(context.Background(), tt.req)
 
@@ -1680,7 +1686,7 @@ func TestService_AcceptInvitation_GetTenantError(t *testing.T) {
 	// Don't add tenant - GetTenant will fail
 	repo.getTenantErr = errors.New("tenant not found")
 
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	_, err := svc.AcceptInvitation(context.Background(), &AcceptInvitationRequest{
 		Token: "valid-token",
@@ -1692,7 +1698,7 @@ func TestService_AcceptInvitation_GetTenantError(t *testing.T) {
 func TestService_CreateInvitation_CheckMemberError(t *testing.T) {
 	repo := NewMockRepository()
 	repo.checkUserIsMemberErr = errors.New("database error")
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	_, err := svc.CreateInvitation(context.Background(), "tenant-1", "user-1", &CreateInvitationRequest{
 		Email: "test@example.com",
@@ -1704,7 +1710,7 @@ func TestService_CreateInvitation_CheckMemberError(t *testing.T) {
 func TestService_CreateInvitation_RepositoryError(t *testing.T) {
 	repo := NewMockRepository()
 	repo.createInvitationErr = errors.New("database error")
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	_, err := svc.CreateInvitation(context.Background(), "tenant-1", "user-1", &CreateInvitationRequest{
 		Email: "test@example.com",
@@ -1716,7 +1722,7 @@ func TestService_CreateInvitation_RepositoryError(t *testing.T) {
 func TestService_GetInvitationByToken_RepositoryError(t *testing.T) {
 	repo := NewMockRepository()
 	repo.getInvitationByTokenErr = errors.New("database error")
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	_, err := svc.GetInvitationByToken(context.Background(), "token")
 	require.Error(t, err)
@@ -1726,7 +1732,7 @@ func TestService_RemoveTenantUser_RepositoryError(t *testing.T) {
 	repo := NewMockRepository()
 	repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-1", Role: RoleAdmin})
 	repo.getUserRoleErr = errors.New("database error")
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	err := svc.RemoveTenantUser(context.Background(), "tenant-1", "user-1")
 	require.Error(t, err)
@@ -1737,7 +1743,7 @@ func TestService_UpdateTenantUserRole_RepositoryError(t *testing.T) {
 	repo := NewMockRepository()
 	repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-1", Role: RoleAdmin})
 	repo.getUserRoleErr = errors.New("database error")
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	err := svc.UpdateTenantUserRole(context.Background(), "tenant-1", "user-1", RoleViewer)
 	require.Error(t, err)
@@ -1758,7 +1764,7 @@ func TestService_ListInvitations(t *testing.T) {
 		Email:     "test2@example.com",
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 	}
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	invitations, err := svc.ListInvitations(context.Background(), "tenant-1")
 	require.NoError(t, err)
@@ -1773,7 +1779,7 @@ func TestService_RevokeInvitation(t *testing.T) {
 		Token:     "token-1",
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 	}
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	err := svc.RevokeInvitation(context.Background(), "tenant-1", "inv-1")
 	require.NoError(t, err)
@@ -1825,7 +1831,7 @@ func TestService_RemoveTenantUser(t *testing.T) {
 			if tt.setupRepo != nil {
 				tt.setupRepo(repo)
 			}
-			svc := NewServiceWithRepository(repo)
+			svc := newTestServiceWithRepository(repo)
 
 			err := svc.RemoveTenantUser(context.Background(), tt.tenantID, tt.userID)
 
@@ -1907,7 +1913,7 @@ func TestService_UpdateTenantUserRole(t *testing.T) {
 			if tt.setupRepo != nil {
 				tt.setupRepo(repo)
 			}
-			svc := NewServiceWithRepository(repo)
+			svc := newTestServiceWithRepository(repo)
 
 			err := svc.UpdateTenantUserRole(context.Background(), tt.tenantID, tt.userID, tt.newRole)
 
@@ -1928,7 +1934,7 @@ func TestService_SetTenantUserActive(t *testing.T) {
 	t.Run("suspends non-owner membership", func(t *testing.T) {
 		repo := NewMockRepository()
 		repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-1", Role: RoleViewer, IsActive: true})
-		svc := NewServiceWithRepository(repo)
+		svc := newTestServiceWithRepository(repo)
 
 		err := svc.SetTenantUserActive(context.Background(), "tenant-1", "user-1", false)
 
@@ -1941,7 +1947,7 @@ func TestService_SetTenantUserActive(t *testing.T) {
 	t.Run("cannot change owner membership status", func(t *testing.T) {
 		repo := NewMockRepository()
 		repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "owner-1", Role: RoleOwner, IsActive: true})
-		svc := NewServiceWithRepository(repo)
+		svc := newTestServiceWithRepository(repo)
 
 		err := svc.SetTenantUserActive(context.Background(), "tenant-1", "owner-1", false)
 
@@ -1956,7 +1962,7 @@ func TestService_ListTenantUsers(t *testing.T) {
 	repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-2", Role: RoleAdmin})
 	repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-3", Role: RoleViewer})
 
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	users, err := svc.ListTenantUsers(context.Background(), "tenant-1")
 	require.NoError(t, err)
@@ -1970,7 +1976,7 @@ func strPtr(s string) *string {
 
 func TestService_CreateUser_PasswordTooLong(t *testing.T) {
 	repo := NewMockRepository()
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	// bcrypt has a 72 byte limit for passwords
 	longPassword := string(make([]byte, 100))

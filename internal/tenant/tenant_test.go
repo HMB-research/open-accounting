@@ -120,7 +120,7 @@ func TestValidatePassword(t *testing.T) {
 	service := &Service{} // No DB needed for password validation
 
 	password := "securePassword123!"
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
 	require.NoError(t, err)
 
 	user := &User{
@@ -621,6 +621,7 @@ func TestUserWithTenants(t *testing.T) {
 func TestNewService(t *testing.T) {
 	service := NewService(nil)
 	assert.NotNil(t, service)
+	assert.Equal(t, defaultPasswordHashCost, service.passwordHashCost)
 }
 
 func TestSlugRegex(t *testing.T) {

@@ -57,6 +57,10 @@ func newMockTenantRepository() *mockTenantRepository {
 	}
 }
 
+func newTestTenantService(repo tenant.Repository) *tenant.Service {
+	return tenant.NewServiceWithRepository(repo, tenant.WithPasswordHashCost(bcrypt.MinCost))
+}
+
 func (m *mockTenantRepository) CreateTenant(ctx context.Context, t *tenant.Tenant, settingsJSON []byte, ownerID string) error {
 	if m.createTenantErr != nil {
 		return m.createTenantErr
@@ -371,7 +375,7 @@ func (m *mockTenantRepository) CheckUserIsMember(ctx context.Context, tenantID, 
 
 // Helper to add a test user with a hashed password
 func (m *mockTenantRepository) addTestUser(id, email, name, password string, isActive bool) *tenant.User {
-	hash, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
 	user := &tenant.User{
 		ID:           id,
 		Email:        email,
@@ -578,7 +582,7 @@ func (m *mockSecurityAuditService) ListUserEvents(ctx context.Context, userID st
 // setupAuthTestHandlers creates handlers with mock services for auth testing
 func setupAuthTestHandlers() (*Handlers, *mockTenantRepository) {
 	repo := newMockTenantRepository()
-	tenantSvc := tenant.NewServiceWithRepository(repo)
+	tenantSvc := newTestTenantService(repo)
 	tokenSvc := auth.NewTokenService("test-secret-key-for-testing-only", 15*time.Minute, 7*24*time.Hour)
 
 	h := &Handlers{
@@ -1212,7 +1216,7 @@ func TestChangePasswordRevokesRefreshSessions(t *testing.T) {
 	h.ChangePassword(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
-	assert.True(t, tenant.NewServiceWithRepository(repo).ValidatePassword(user, "newpassword123"))
+	assert.True(t, newTestTenantService(repo).ValidatePassword(user, "newpassword123"))
 
 	req = makeAuthenticatedRequest(http.MethodGet, "/auth/sessions", nil, claims)
 	w = httptest.NewRecorder()
@@ -1243,7 +1247,7 @@ func TestChangePasswordRejectsWrongCurrentPassword(t *testing.T) {
 	h.ChangePassword(w, req)
 
 	require.Equal(t, http.StatusUnauthorized, w.Code, "response body: %s", w.Body.String())
-	assert.True(t, tenant.NewServiceWithRepository(repo).ValidatePassword(user, "oldpassword123"))
+	assert.True(t, newTestTenantService(repo).ValidatePassword(user, "oldpassword123"))
 }
 
 func TestListAuthSessions(t *testing.T) {

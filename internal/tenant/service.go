@@ -15,23 +15,46 @@ import (
 
 var slugRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$`)
 
+const defaultPasswordHashCost = 12
+
+// ServiceOption customizes tenant service behavior.
+type ServiceOption func(*Service)
+
+// WithPasswordHashCost overrides the bcrypt cost used when hashing new passwords.
+// Production constructors use cost 12 by default; tests can use bcrypt.MinCost.
+func WithPasswordHashCost(cost int) ServiceOption {
+	return func(s *Service) {
+		if cost < bcrypt.MinCost {
+			cost = bcrypt.MinCost
+		}
+		if cost > bcrypt.MaxCost {
+			cost = bcrypt.MaxCost
+		}
+		s.passwordHashCost = cost
+	}
+}
+
 // Service provides tenant management operations
 type Service struct {
-	repo Repository
+	repo             Repository
+	passwordHashCost int
 }
 
 // NewService creates a new tenant service with an ORM-backed repository.
-func NewService(db *pgxpool.Pool) *Service {
-	return &Service{
-		repo: NewRepository(db),
-	}
+func NewService(db *pgxpool.Pool, opts ...ServiceOption) *Service {
+	return NewServiceWithRepository(NewRepository(db), opts...)
 }
 
 // NewServiceWithRepository creates a new tenant service with a custom repository (for testing)
-func NewServiceWithRepository(repo Repository) *Service {
-	return &Service{
-		repo: repo,
+func NewServiceWithRepository(repo Repository, opts ...ServiceOption) *Service {
+	s := &Service{
+		repo:             repo,
+		passwordHashCost: defaultPasswordHashCost,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // CreateTenant creates a new tenant with its schema
@@ -259,8 +282,7 @@ func (s *Service) GetTenantUser(ctx context.Context, tenantID, userID string) (*
 
 // CreateUser creates a new user
 func (s *Service) CreateUser(ctx context.Context, req *CreateUserRequest) (*User, error) {
-	// Hash password with cost 12 (stronger than default 10)
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
+	hash, err := s.hashPassword(req.Password)
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
@@ -309,6 +331,14 @@ func (s *Service) ValidatePassword(user *User, password string) bool {
 	return err == nil
 }
 
+func (s *Service) hashPassword(password string) ([]byte, error) {
+	cost := s.passwordHashCost
+	if cost == 0 {
+		cost = defaultPasswordHashCost
+	}
+	return bcrypt.GenerateFromPassword([]byte(password), cost)
+}
+
 // ChangeUserPassword verifies the current password and stores a new password hash.
 func (s *Service) ChangeUserPassword(ctx context.Context, userID, currentPassword, newPassword string) error {
 	if strings.TrimSpace(userID) == "" {
@@ -338,7 +368,7 @@ func (s *Service) ChangeUserPassword(ctx context.Context, userID, currentPasswor
 		return fmt.Errorf("new password must be different from current password")
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), 12)
+	hash, err := s.hashPassword(newPassword)
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
 	}
@@ -455,7 +485,7 @@ func (s *Service) AcceptInvitation(ctx context.Context, req *AcceptInvitationReq
 	// Hash password if creating user
 	var passwordHash string
 	if createUser {
-		hash, hashErr := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		hash, hashErr := s.hashPassword(req.Password)
 		if hashErr != nil {
 			return nil, fmt.Errorf("hash password: %w", hashErr)
 		}
