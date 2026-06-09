@@ -132,7 +132,7 @@ func TestWorkflowDemoE2EGatesMatchDocumentation(t *testing.T) {
 	if !strings.Contains(remoteDemo, "continue-on-error: true") {
 		t.Fatal("remote hosted demo job should remain optional/informational")
 	}
-	if !strings.Contains(remoteDemo, "TEST_DEMO: 'true'") {
+	if !strings.Contains(remoteDemo, "TEST_DEMO: 'true'") && !strings.Contains(remoteDemo, `TEST_DEMO: "true"`) {
 		t.Fatal("remote hosted demo job must opt into hosted demo testing")
 	}
 }
