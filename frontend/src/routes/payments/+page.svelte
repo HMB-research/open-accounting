@@ -314,6 +314,17 @@
 		<div class="card data-table-card">
 			<div class="table-container">
 				<table class="table table-mobile-cards readable-table payments-table">
+					<colgroup>
+						<col class="col-number" />
+						<col class="col-type" />
+						<col class="col-contact" />
+						<col class="col-date" />
+						<col class="col-method" />
+						<col class="col-amount" />
+						<col class="col-unallocated" />
+						<col class="col-reference" />
+						<col class="col-actions" />
+					</colgroup>
 					<thead>
 						<tr>
 							<th>{m.payments_number()}</th>
@@ -321,10 +332,10 @@
 							<th class="hide-mobile">{m.payments_contact()}</th>
 							<th>{m.common_date()}</th>
 							<th class="hide-mobile">{m.payments_method()}</th>
-							<th>{m.common_amount()}</th>
-							<th class="hide-mobile">{m.payments_unallocated()}</th>
+							<th class="amount-heading">{m.common_amount()}</th>
+							<th class="amount-heading hide-mobile">{m.payments_unallocated()}</th>
 							<th class="hide-mobile">{m.payments_reference()}</th>
-							<th>{m.common_actions()}</th>
+							<th class="actions-heading">{m.common_actions()}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -354,7 +365,7 @@
 								<td class="reference hide-mobile" data-label="Reference">
 									<span class="cell-ellipsis">{payment.reference || '-'}</span>
 								</td>
-								<td class="actions" data-label="Actions">
+								<td class="actions actions-cell" data-label="Actions">
 									<div class="actions-stack">
 										{#if canReversePayment(payment)}
 											<button type="button" class="btn btn-secondary btn-small" onclick={() => openReversePayment(payment)}>
@@ -623,37 +634,40 @@
 		min-width: 1080px;
 	}
 
-	.payments-table th:nth-child(1) {
-		width: 11%;
-	}
-
-	.payments-table th:nth-child(2) {
-		width: 13%;
-	}
-
-	.payments-table th:nth-child(3) {
-		width: 14%;
-	}
-
-	.payments-table th:nth-child(4) {
-		width: 9%;
-	}
-
-	.payments-table th:nth-child(5) {
-		width: 11%;
-	}
-
-	.payments-table th:nth-child(6),
-	.payments-table th:nth-child(7) {
+	.payments-table .col-number {
 		width: 10%;
 	}
 
-	.payments-table th:nth-child(8) {
-		width: 18%;
+	.payments-table .col-type {
+		width: 12%;
 	}
 
-	.payments-table th:nth-child(9) {
+	.payments-table .col-contact {
+		width: 13%;
+	}
+
+	.payments-table .col-date {
+		width: 9%;
+	}
+
+	.payments-table .col-method {
+		width: 10%;
+	}
+
+	.payments-table .col-amount {
+		width: 9%;
+	}
+
+	.payments-table .col-unallocated {
+		width: 10%;
+	}
+
+	.payments-table .col-reference {
 		width: 14%;
+	}
+
+	.payments-table .col-actions {
+		width: 13%;
 	}
 
 	.unallocated-warning {
