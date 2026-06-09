@@ -639,11 +639,11 @@
 	}
 
 	.payments-table .col-type {
-		width: 12%;
+		width: 11%;
 	}
 
 	.payments-table .col-contact {
-		width: 13%;
+		width: 12%;
 	}
 
 	.payments-table .col-date {
@@ -655,19 +655,19 @@
 	}
 
 	.payments-table .col-amount {
-		width: 9%;
-	}
-
-	.payments-table .col-unallocated {
 		width: 10%;
 	}
 
+	.payments-table .col-unallocated {
+		width: 11%;
+	}
+
 	.payments-table .col-reference {
-		width: 13%;
+		width: 15%;
 	}
 
 	.payments-table .col-actions {
-		width: 14%;
+		width: 12%;
 	}
 
 	@media (max-width: 768px) {
