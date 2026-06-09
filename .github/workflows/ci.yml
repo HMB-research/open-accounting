@@ -7,8 +7,8 @@ on:
     branches: [main]
 
 env:
-  GO_VERSION: '1.26.x'
-  BUN_VERSION: '1.3.5'
+  GO_VERSION: "1.26.x"
+  BUN_VERSION: "1.3.5"
 
 # Cancel redundant runs when new commits arrive
 concurrency:
@@ -19,6 +19,7 @@ jobs:
   # Detect which parts of the codebase changed
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
@@ -102,6 +103,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     needs: changes
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
 
@@ -137,6 +139,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: changes
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
 
@@ -156,6 +159,7 @@ jobs:
 
   integration-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: changes
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
     strategy:
@@ -215,6 +219,7 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     needs: [changes, test, lint, integration-test]
     if: |
       always() &&
@@ -247,6 +252,7 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: changes
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
 
@@ -283,6 +289,7 @@ jobs:
   # E2E tests run against local database with seeded demo data
   e2e-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     needs: changes
     if: |
       needs.changes.outputs.frontend == 'true' ||
@@ -359,7 +366,7 @@ jobs:
           DATABASE_URL: postgres://test:test@localhost:5432/openaccounting_demo?sslmode=disable
           JWT_SECRET: test-secret-key-for-ci
           PORT: 8080
-          DEMO_MODE: 'true'
+          DEMO_MODE: "true"
           DEMO_RESET_SECRET: test-demo-secret
 
       - name: Seed demo data via API
@@ -385,6 +392,7 @@ jobs:
           BASE_URL: http://localhost:5173
           PUBLIC_API_URL: http://localhost:8080
           DEMO_RESET_SECRET: test-demo-secret
+          PLAYWRIGHT_GLOBAL_TIMEOUT_MS: 360000
 
       - name: Upload Playwright smoke report
         uses: actions/upload-artifact@v6
@@ -400,6 +408,7 @@ jobs:
   # suite below remains optional.
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: changes
     if: |
       needs.changes.outputs.frontend == 'true' ||
@@ -483,7 +492,7 @@ jobs:
           DATABASE_URL: postgres://test:test@localhost:5432/openaccounting_demo?sslmode=disable
           JWT_SECRET: test-secret-key-for-ci
           PORT: 8080
-          DEMO_MODE: 'true'
+          DEMO_MODE: "true"
           DEMO_RESET_SECRET: test-demo-secret
 
       - name: Seed demo data via API
@@ -509,6 +518,7 @@ jobs:
           BASE_URL: http://localhost:5173
           PUBLIC_API_URL: http://localhost:8080
           DEMO_RESET_SECRET: test-demo-secret
+          PLAYWRIGHT_GLOBAL_TIMEOUT_MS: 720000
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v6
@@ -522,8 +532,9 @@ jobs:
   # This keeps main green when no hosted demo environment exists.
   e2e-demo:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     needs: [changes, frontend, e2e-smoke]
-    continue-on-error: true  # Demo tests are informational - don't block deployment
+    continue-on-error: true # Demo tests are informational - don't block deployment
     if: |
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
@@ -578,10 +589,11 @@ jobs:
         run: bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium
         env:
           CI: true
-          TEST_DEMO: 'true'
+          TEST_DEMO: "true"
           BASE_URL: ${{ vars.DEMO_E2E_BASE_URL }}
           PUBLIC_API_URL: ${{ vars.DEMO_E2E_API_URL }}
           DEMO_RESET_SECRET: ${{ secrets.DEMO_RESET_SECRET }}
+          PLAYWRIGHT_GLOBAL_TIMEOUT_MS: 1800000
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v6
@@ -593,6 +605,7 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     needs: [changes, test, lint, frontend, e2e-smoke]
     if: |
       always() &&
