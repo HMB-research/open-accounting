@@ -41,7 +41,7 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 			"`cd frontend && bun run test` passes with 22 files and 515 tests",
 			"Backend unit tests no longer start PostgreSQL in CI",
 			"Backend integration tests are sharded in CI",
-			"Full local seeded demo E2E shards are now blocking in CI",
+			"Full local seeded demo E2E runs across four blocking CI shards",
 		},
 		"docs/ARCHITECTURE.md": {
 			"`go test -p 1 -race ./...` must pass without PostgreSQL",
@@ -50,7 +50,7 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 			"Blocking smoke E2E plus blocking local seeded demo shards",
 		},
 		"docs/demo-e2e-testing.md": {
-			"The broader `e2e` job runs the full `demo-chromium` project in shards and is blocking.",
+			"The broader `e2e` job runs the full `demo-chromium` project across four shards and is blocking.",
 			"The separate `e2e-demo` job targets an externally hosted demo and remains optional/informational",
 		},
 		"docs/FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md": {
@@ -86,6 +86,11 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 		"Broad demo E2E remains informational",
 		"Blocking smoke E2E plus informational demo shards",
 		"The broader `e2e` job runs the full `demo-chromium` project in shards and is informational.",
+		"The broader `e2e` job runs the full `demo-chromium` project in shards and is blocking.",
+		"Full local seeded demo E2E shards are now blocking in CI",
+		"two-shard local demo E2E CI job",
+		"--shard=<shard>/2",
+		"Shard ${{ matrix.shard }}/2",
 		"demo@example.com",
 		"`demo123`",
 		"open-accounting.up.railway.app",
@@ -109,8 +114,15 @@ func TestWorkflowDemoE2EGatesMatchDocumentation(t *testing.T) {
 	workflow := string(workflowPayload)
 
 	localE2E := workflowJobBlock(t, workflow, "e2e")
-	if !strings.Contains(localE2E, "Run Demo E2E tests (Shard ${{ matrix.shard }}/2)") {
-		t.Fatal("local e2e job must run sharded demo E2E tests")
+	for _, snippet := range []string{
+		"shard: [1, 2, 3, 4]",
+		"total-shards: [4]",
+		"Run Demo E2E tests (Shard ${{ matrix.shard }}/${{ matrix.total-shards }})",
+		"--shard=${{ matrix.shard }}/${{ matrix.total-shards }}",
+	} {
+		if !strings.Contains(localE2E, snippet) {
+			t.Fatalf("local e2e job missing shard snippet %q", snippet)
+		}
 	}
 	if strings.Contains(localE2E, "continue-on-error") {
 		t.Fatal("local seeded e2e job must be a blocking CI gate")
