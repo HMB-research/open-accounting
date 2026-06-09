@@ -324,7 +324,7 @@ Each view is tested for:
 | Page Load    | ✅     | Loads correctly                                |
 | Data Display | ✅     | Shows cash payments content                    |
 | Navigation   | ✅     | Page structure and tabs visible                |
-| CRUD         | ⚠️     | Read verified, Create/Update/Delete not tested |
+| CRUD         | ✅     | Cash-in/cash-out create and type filtering verified through demo E2E |
 | Errors       | ✅     | No errors observed                             |
 | Responsive   | ⚠️     | Needs manual verification                      |
 
@@ -334,6 +334,11 @@ Each view is tested for:
 - Shows summary cards or empty state
 - Navigation tabs work
 - Page content loads
+- Records cash-in and cash-out payments through the UI and verifies type filters
+
+**Known Issues:**
+
+- Payment correction/reversal workflow is not exposed yet; accounting-safe reversal should replace destructive delete semantics.
 
 **Overall:** ✅ Working
 

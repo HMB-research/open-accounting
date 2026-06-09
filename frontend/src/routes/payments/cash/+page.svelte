@@ -21,6 +21,10 @@
 	let newReference = $state('');
 	let newNotes = $state('');
 
+	function dateInputToApiTimestamp(value: string): string {
+		return value ? `${value}T00:00:00Z` : new Date().toISOString();
+	}
+
 	$effect(() => {
 		const tenantId = $page.url.searchParams.get('tenant');
 		if (tenantId) {
@@ -58,7 +62,7 @@
 			const payment = await api.createPayment(tenantId, {
 				payment_type: newType,
 				contact_id: newContactId || undefined,
-				payment_date: newPaymentDate,
+				payment_date: dateInputToApiTimestamp(newPaymentDate),
 				amount: newAmount,
 				payment_method: 'CASH',
 				reference: newReference || undefined,
@@ -179,7 +183,7 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each payments as payment}
+						{#each payments as payment (payment.id)}
 							<tr>
 								<td class="number" data-label="Number">{payment.payment_number}</td>
 								<td data-label="Type">
@@ -199,7 +203,6 @@
 </div>
 
 {#if showCreatePayment}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div class="modal-backdrop" onclick={() => (showCreatePayment = false)} role="presentation">
 		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-payment-title" tabindex="-1">
@@ -217,7 +220,7 @@
 						<label class="label" for="contact">{m.payments_contact()}</label>
 						<select class="input" id="contact" bind:value={newContactId}>
 							<option value="">{m.payments_noContact()}</option>
-							{#each contacts as contact}
+							{#each contacts as contact (contact.id)}
 								<option value={contact.id}>{contact.name}</option>
 							{/each}
 						</select>
