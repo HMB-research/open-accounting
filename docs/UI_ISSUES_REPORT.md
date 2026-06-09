@@ -346,16 +346,17 @@ Each view is tested for:
 | Page Load    | ✅     | Loads correctly                                |
 | Data Display | ✅     | Shows recurring invoices or empty state        |
 | Navigation   | ✅     | Page heading visible                           |
-| CRUD         | ⚠️     | Read verified, Create/Update/Delete not tested |
+| CRUD         | ✅     | Create, update, pause/resume, and delete verified through demo E2E |
 | Errors       | ✅     | No errors observed                             |
 | Responsive   | ⚠️     | Needs manual verification                      |
 
-**E2E Tests:** 4/4 passed
+**E2E Tests:** 5/5 passed
 
 - Displays seeded recurring invoices or empty state
 - Shows frequency types (Monthly, Quarterly, Yearly)
 - Shows correct recurring invoice count
 - Shows customer names when data exists
+- Creates, edits, pauses, resumes, and deletes a recurring invoice template
 
 **Overall:** ✅ Working
 
