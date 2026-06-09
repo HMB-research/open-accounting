@@ -181,6 +181,121 @@ textarea {
 	background: var(--color-bg);
 }
 
+.data-table-card {
+	overflow: hidden;
+	padding: 1rem 1.25rem 1.25rem;
+}
+
+.readable-table {
+	min-width: 900px;
+	table-layout: fixed;
+	border-collapse: separate;
+	border-spacing: 0;
+}
+
+.readable-table th,
+.readable-table td {
+	border-bottom: 0;
+	padding: 0.9rem 0.75rem;
+	vertical-align: middle;
+}
+
+.readable-table thead tr,
+.readable-table tbody tr {
+	box-shadow: inset 0 -1px 0 var(--color-border);
+}
+
+.readable-table th {
+	background: rgba(15, 23, 42, 0.04);
+	color: var(--color-text);
+	font-size: 0.85rem;
+	font-weight: 700;
+	letter-spacing: 0;
+}
+
+.readable-table tbody tr:hover {
+	background: rgba(37, 99, 235, 0.05);
+}
+
+.readable-table .cell-stack {
+	display: flex;
+	min-width: 0;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 0.35rem;
+}
+
+.readable-table .cell-primary {
+	min-width: 0;
+	color: var(--color-text);
+	font-weight: 600;
+}
+
+.readable-table .cell-muted {
+	color: var(--color-text-muted);
+}
+
+.readable-table .cell-ellipsis {
+	display: block;
+	min-width: 0;
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.readable-table .number .cell-primary,
+.readable-table .reference .cell-ellipsis {
+	font-family: var(--font-mono);
+}
+
+.readable-table .reference .cell-ellipsis {
+	color: var(--color-text-muted);
+	font-size: 0.86rem;
+}
+
+.readable-table .date {
+	white-space: nowrap;
+	color: #334155;
+}
+
+.readable-table .amount {
+	white-space: nowrap;
+}
+
+.readable-table .actions {
+	text-align: right;
+}
+
+.readable-table .actions-stack {
+	display: flex;
+	justify-content: flex-end;
+	align-items: center;
+	gap: 0.5rem;
+	flex-wrap: wrap;
+}
+
+.readable-table .btn-small {
+	min-height: 32px;
+	padding: 0.3rem 0.65rem;
+	font-size: 0.8rem;
+	line-height: 1;
+}
+
+.table-state-badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 0.15rem 0.45rem;
+	border-radius: 999px;
+	background: rgba(100, 116, 139, 0.14);
+	color: var(--color-text-muted);
+	font-family: var(--font-sans);
+	font-size: 0.72rem;
+	font-weight: 700;
+	line-height: 1.2;
+	white-space: nowrap;
+}
+
 .amount {
 	font-family: var(--font-mono);
 	text-align: right;
@@ -324,6 +439,11 @@ textarea {
 /* Visibility utilities */
 .hide-mobile {
 	display: block;
+}
+
+.table th.hide-mobile,
+.table td.hide-mobile {
+	display: table-cell;
 }
 
 .show-mobile {
@@ -497,6 +617,41 @@ textarea {
 
 	.table-mobile-cards td:last-child {
 		border-bottom: none;
+	}
+
+	.data-table-card {
+		overflow: visible;
+		padding: 0.75rem;
+	}
+
+	.readable-table {
+		min-width: 0;
+		table-layout: auto;
+	}
+
+	.readable-table thead tr,
+	.readable-table tbody tr {
+		box-shadow: none;
+	}
+
+	.readable-table td {
+		padding: 0.45rem 0;
+	}
+
+	.readable-table .cell-stack {
+		align-items: flex-end;
+		text-align: right;
+	}
+
+	.readable-table .cell-ellipsis {
+		overflow: visible;
+		text-align: right;
+		white-space: normal;
+		overflow-wrap: anywhere;
+	}
+
+	.readable-table .actions-stack {
+		justify-content: flex-end;
 	}
 
 	/* Hide table actions column header on mobile */
