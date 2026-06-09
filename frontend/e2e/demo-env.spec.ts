@@ -1,4 +1,12 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page, type TestInfo } from '@playwright/test';
+import {
+	DEMO_API_URL as DEMO_API,
+	DEMO_CREDENTIALS,
+	DEMO_URL,
+	ensureAuthenticated,
+	loginWithDemoCredentials,
+	waitForPageReady
+} from './demo/utils';
 
 /**
  * Live Demo Environment E2E Tests
@@ -14,38 +22,41 @@ import { test, expect } from '@playwright/test';
  * - Demo users (demo1@example.com / demo12345) must exist
  */
 
-const DEMO_URL = process.env.BASE_URL || 'http://localhost:5173';
-const DEMO_API = process.env.PUBLIC_API_URL || 'http://localhost:8080';
+// Use demo1 for this environment smoke file; broader demo specs distribute
+// users by worker through the shared auth helpers.
+const DEMO_USER = DEMO_CREDENTIALS[0];
+const DEMO_TENANT_ID = DEMO_USER.tenantId;
 
-// Demo credentials for multi-user testing - use demo1 as the default
-const DEMO_EMAIL = 'demo1@example.com';
-const DEMO_PASSWORD = 'demo12345';
-const DEMO_TENANT_ID = 'b0000000-0000-0000-0001-000000000001';
+async function waitForDemoShell(page: Page) {
+	await waitForPageReady(page);
+	await page.locator('nav.navbar, .mobile-menu-btn').first().waitFor({ state: 'visible', timeout: 10000 });
+}
 
-// Helper to login as demo user
-async function loginAsDemo(page: import('@playwright/test').Page) {
-	await page.goto(`${DEMO_URL}/login`);
-	await page.waitForLoadState('networkidle');
+async function waitForVisibleContent(page: Page) {
+	await waitForPageReady(page);
+	await page.getByText(/^Loading\.\.\.$/).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+	await expect(page.locator('main, .main-content, [class*="content"]').first()).toBeVisible({ timeout: 10000 });
+}
 
-	const emailInput = page.getByLabel(/email/i);
-	const passwordInput = page.locator('#password');
+// Helper to authenticate as demo user. Use saved auth state for non-auth tests
+// so this smoke file does not re-run the login workflow for every route check.
+async function loginAsDemo(page: Page, testInfo?: TestInfo) {
+	if (testInfo) {
+		await ensureAuthenticated(page, testInfo);
+		await waitForDemoShell(page);
+		return;
+	}
 
-	await emailInput.fill(DEMO_EMAIL);
-	await passwordInput.fill(DEMO_PASSWORD);
-
-	await page.getByRole('button', { name: /sign in|login/i }).click();
-
-	// Wait for navigation to dashboard
-	await page.waitForURL(/dashboard/, { timeout: 30000 });
-	await page.waitForLoadState('networkidle');
+	await loginWithDemoCredentials(page, DEMO_USER, { logPrefix: 'Demo env login' });
+	await waitForDemoShell(page);
 }
 
 // Helper to navigate with tenant parameter
-async function navigateToPage(page: import('@playwright/test').Page, path: string) {
+async function navigateToPage(page: Page, path: string) {
 	const separator = path.includes('?') ? '&' : '?';
 	const url = `${DEMO_URL}${path}${separator}tenant=${DEMO_TENANT_ID}`;
 	await page.goto(url);
-	await page.waitForLoadState('networkidle');
+	await waitForVisibleContent(page);
 }
 
 test.describe('Demo Environment - Health Checks', () => {
@@ -87,12 +98,11 @@ test.describe('Demo Environment - Authentication', () => {
 		await page.locator('#password').fill('wrongpassword');
 		await page.getByRole('button', { name: /sign in|login/i }).click();
 
-		// Should stay on login page or show error
-		await page.waitForTimeout(3000);
+		const errorAlert = page.locator('.alert-error, [role="alert"]').first();
+		await expect(errorAlert.or(page.getByLabel(/email/i))).toBeVisible({ timeout: 5000 });
 
 		const stillOnLogin = page.url().includes('/login');
-		const hasError = await page.locator('.alert-error, [role="alert"]').isVisible().catch(() => false);
-
+		const hasError = await errorAlert.isVisible().catch(() => false);
 		expect(stillOnLogin || hasError).toBeTruthy();
 	});
 
@@ -123,8 +133,8 @@ test.describe('Demo Environment - Authentication', () => {
 });
 
 test.describe('Demo Environment - Dashboard', () => {
-	test.beforeEach(async ({ page }) => {
-		await loginAsDemo(page);
+	test.beforeEach(async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
 	});
 
 	test('Dashboard displays organization selector', async ({ page }) => {
@@ -133,8 +143,7 @@ test.describe('Demo Environment - Dashboard', () => {
 	});
 
 	test('Dashboard shows summary cards', async ({ page }) => {
-		// Wait for dashboard data to load
-		await page.waitForLoadState('networkidle');
+		await waitForVisibleContent(page);
 
 		// Look for summary/stat cards
 		const summarySection = page.locator('.summary-grid, .stats, [class*="summary"]').first();
@@ -150,6 +159,7 @@ test.describe('Demo Environment - Dashboard', () => {
 	});
 
 	test('Navigation sidebar is present', async ({ page }) => {
+		await waitForDemoShell(page);
 		const navItems = ['dashboard', 'invoice', 'contact', 'report'];
 		const visibleItems = await Promise.all(
 			navItems.map((item) =>
@@ -171,8 +181,8 @@ test.describe('Demo Environment - Dashboard', () => {
 });
 
 test.describe('Demo Environment - Invoices', () => {
-	test.beforeEach(async ({ page }) => {
-		await loginAsDemo(page);
+	test.beforeEach(async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
 	});
 
 	test('Can navigate to invoices page', async ({ page }) => {
@@ -219,9 +229,9 @@ test.describe('Demo Environment - Invoices', () => {
 
 		if (hasCreate) {
 			await createButton.click();
-			await page.waitForLoadState('networkidle');
 
 			// Should be on create form or modal appeared
+			await expect(page.getByRole('dialog', { name: /new invoice/i })).toBeVisible({ timeout: 10000 });
 			const hasForm = await page.locator('form').first().isVisible().catch(() => false);
 			const hasModal = await page.locator('.modal, [role="dialog"]').first().isVisible().catch(() => false);
 
@@ -231,8 +241,8 @@ test.describe('Demo Environment - Invoices', () => {
 });
 
 test.describe('Demo Environment - Contacts', () => {
-	test.beforeEach(async ({ page }) => {
-		await loginAsDemo(page);
+	test.beforeEach(async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
 	});
 
 	test('Can navigate to contacts page', async ({ page }) => {
@@ -241,7 +251,10 @@ test.describe('Demo Environment - Contacts', () => {
 
 		if (hasLink) {
 			await contactsLink.click();
-			await page.waitForLoadState('networkidle');
+			await waitForVisibleContent(page);
+			await expect(page).toHaveURL(/contact/);
+		} else {
+			await navigateToPage(page, '/contacts');
 			await expect(page).toHaveURL(/contact/);
 		}
 	});
@@ -255,8 +268,8 @@ test.describe('Demo Environment - Contacts', () => {
 });
 
 test.describe('Demo Environment - Reports', () => {
-	test.beforeEach(async ({ page }) => {
-		await loginAsDemo(page);
+	test.beforeEach(async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
 	});
 
 	test('Can navigate to reports page', async ({ page }) => {
@@ -265,7 +278,10 @@ test.describe('Demo Environment - Reports', () => {
 
 		if (hasLink) {
 			await reportsLink.click();
-			await page.waitForLoadState('networkidle');
+			await waitForVisibleContent(page);
+			await expect(page).toHaveURL(/report/);
+		} else {
+			await navigateToPage(page, '/reports');
 			await expect(page).toHaveURL(/report/);
 		}
 	});
@@ -279,8 +295,8 @@ test.describe('Demo Environment - Reports', () => {
 });
 
 test.describe('Demo Environment - Settings', () => {
-	test.beforeEach(async ({ page }) => {
-		await loginAsDemo(page);
+	test.beforeEach(async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
 	});
 
 	test('Can access settings', async ({ page }) => {
@@ -289,16 +305,19 @@ test.describe('Demo Environment - Settings', () => {
 
 		if (hasLink) {
 			await settingsLink.click();
-			await page.waitForLoadState('networkidle');
+			await waitForVisibleContent(page);
+			await expect(page).toHaveURL(/setting/);
+		} else {
+			await navigateToPage(page, '/settings');
 			await expect(page).toHaveURL(/setting/);
 		}
 	});
 });
 
 test.describe('Demo Environment - Responsive Design', () => {
-	test('Mobile viewport works', async ({ page }) => {
+	test('Mobile viewport works', async ({ page }, testInfo) => {
 		await page.setViewportSize({ width: 375, height: 667 });
-		await loginAsDemo(page);
+		await loginAsDemo(page, testInfo);
 
 		// Dashboard should still be accessible
 		await expect(page).toHaveURL(/dashboard/);
@@ -308,9 +327,9 @@ test.describe('Demo Environment - Responsive Design', () => {
 		await expect(content).toBeVisible();
 	});
 
-	test('Tablet viewport works', async ({ page }) => {
+	test('Tablet viewport works', async ({ page }, testInfo) => {
 		await page.setViewportSize({ width: 768, height: 1024 });
-		await loginAsDemo(page);
+		await loginAsDemo(page, testInfo);
 
 		await expect(page).toHaveURL(/dashboard/);
 
@@ -322,7 +341,7 @@ test.describe('Demo Environment - Responsive Design', () => {
 test.describe('Demo Environment - Error Handling', () => {
 	test('Unknown route handled gracefully', async ({ page }) => {
 		await page.goto(`${DEMO_URL}/this-page-does-not-exist`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('domcontentloaded');
 
 		// Should show 404, redirect to login/dashboard, or show any page content
 		const is404 = await page.getByText(/404|not found|page.*exist/i).isVisible().catch(() => false);
@@ -335,7 +354,7 @@ test.describe('Demo Environment - Error Handling', () => {
 	test('Protected routes require authentication', async ({ page }) => {
 		// Try accessing protected route without auth
 		await page.goto(`${DEMO_URL}/dashboard`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('domcontentloaded');
 
 		// Should either redirect to login OR show login form OR show dashboard (if session persisted)
 		const onLogin = page.url().includes('/login');
@@ -347,8 +366,8 @@ test.describe('Demo Environment - Error Handling', () => {
 });
 
 test.describe('Demo Environment - Onboarding Wizard', () => {
-	test('Onboarding wizard displays for new organization', async ({ page }) => {
-		await loginAsDemo(page);
+	test('Onboarding wizard displays for new organization', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
 
 		// Check if onboarding wizard is visible (may or may not appear depending on org state)
 		const wizardHeading = page.getByRole('heading', { name: /welcome to open accounting/i });
@@ -368,8 +387,8 @@ test.describe('Demo Environment - Onboarding Wizard', () => {
 		}
 	});
 
-	test('Company information form displays correctly', async ({ page }) => {
-		await loginAsDemo(page);
+	test('Company information form displays correctly', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
 
 		const companyHeading = page.getByRole('heading', { name: /company information/i });
 		const hasCompanyForm = await companyHeading.isVisible({ timeout: 5000 }).catch(() => false);
@@ -387,8 +406,8 @@ test.describe('Demo Environment - Onboarding Wizard', () => {
 		}
 	});
 
-	test('Onboarding form accepts valid company data', async ({ page }) => {
-		await loginAsDemo(page);
+	test('Onboarding form accepts valid company data', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
 
 		const companyNameInput = page.getByLabel(/company name/i);
 		const hasCompanyForm = await companyNameInput.isVisible({ timeout: 5000 }).catch(() => false);
@@ -408,8 +427,8 @@ test.describe('Demo Environment - Onboarding Wizard', () => {
 		}
 	});
 
-	test('Onboarding wizard step navigation works', async ({ page }) => {
-		await loginAsDemo(page);
+	test('Onboarding wizard step navigation works', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
 
 		// Check if we're on step 1 (Company)
 		const step1Active = page.locator('[class*="active"], [class*="current"]').filter({ hasText: /company/i });
@@ -421,9 +440,9 @@ test.describe('Demo Environment - Onboarding Wizard', () => {
 		}
 	});
 
-	test('Onboarding wizard can be completed to reach dashboard', async ({ page }) => {
+	test('Onboarding wizard can be completed to reach dashboard', async ({ page }, testInfo) => {
 		// This test requires a valid demo user - uses shared login helper
-		await loginAsDemo(page);
+		await loginAsDemo(page, testInfo);
 
 		// Check if onboarding wizard is showing
 		const wizardOverlay = page.locator('.onboarding-overlay, .onboarding-wizard');
@@ -479,15 +498,7 @@ test.describe('Demo Environment - Performance', () => {
 	test('Login flow completes successfully', async ({ page }) => {
 		const startTime = Date.now();
 
-		await page.goto(`${DEMO_URL}/login`);
-		await page.waitForLoadState('networkidle');
-
-		await page.getByLabel(/email/i).fill(DEMO_EMAIL);
-		await page.locator('#password').fill(DEMO_PASSWORD);
-		await page.getByRole('button', { name: /sign in|login/i }).click();
-
-		// Wait for login to complete (allow more time for cold starts and network latency)
-		await page.waitForURL(/dashboard/, { timeout: 45000 });
+		await loginWithDemoCredentials(page, DEMO_USER, { logPrefix: 'Performance login' });
 
 		const elapsed = Date.now() - startTime;
 		// Log performance for monitoring
@@ -497,12 +508,12 @@ test.describe('Demo Environment - Performance', () => {
 		expect(elapsed).toBeLessThan(45000);
 	});
 
-	test('Dashboard reload is responsive', async ({ page }) => {
-		await loginAsDemo(page);
+	test('Dashboard reload is responsive', async ({ page }, testInfo) => {
+		await loginAsDemo(page, testInfo);
 
 		const startTime = Date.now();
 		await page.reload();
-		await page.waitForLoadState('networkidle');
+		await waitForVisibleContent(page);
 
 		const elapsed = Date.now() - startTime;
 		console.log(`Dashboard reload completed in ${elapsed}ms`);
