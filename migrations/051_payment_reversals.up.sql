@@ -27,7 +27,12 @@ DECLARE
     tenant_schema TEXT;
 BEGIN
     FOR tenant_schema IN
-        SELECT schema_name FROM tenants WHERE schema_name IS NOT NULL
+        SELECT t.schema_name
+        FROM tenants t
+        JOIN information_schema.tables tbl
+            ON tbl.table_schema = t.schema_name
+           AND tbl.table_name = 'payments'
+        WHERE t.schema_name IS NOT NULL
     LOOP
         PERFORM add_payment_reversal_columns(tenant_schema);
     END LOOP;

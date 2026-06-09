@@ -41,7 +41,12 @@ DECLARE
     tenant_schema TEXT;
 BEGIN
     FOR tenant_schema IN
-        SELECT schema_name FROM tenants WHERE schema_name IS NOT NULL
+        SELECT t.schema_name
+        FROM tenants t
+        JOIN information_schema.tables tbl
+            ON tbl.table_schema = t.schema_name
+           AND tbl.table_name = 'payments'
+        WHERE t.schema_name IS NOT NULL
     LOOP
         EXECUTE format('DROP INDEX IF EXISTS %I.%I', tenant_schema, 'idx_' || replace(tenant_schema, '-', '_') || '_pay_reversal_of');
         EXECUTE format('DROP INDEX IF EXISTS %I.%I', tenant_schema, 'idx_' || replace(tenant_schema, '-', '_') || '_pay_reversed_by_payment');

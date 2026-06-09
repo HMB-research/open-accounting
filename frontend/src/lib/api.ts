@@ -1069,6 +1069,18 @@ class ApiClient {
     );
   }
 
+  async reversePayment(
+    tenantId: string,
+    paymentId: string,
+    data: ReversePaymentRequest,
+  ) {
+    return this.request<PaymentReversalResult>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/payments/${paymentId}/reverse`,
+      data,
+    );
+  }
+
   async getUnallocatedPayments(
     tenantId: string,
     type: "RECEIVED" | "MADE" = "RECEIVED",
@@ -3355,6 +3367,11 @@ export interface Payment {
   notes?: string;
   allocations: PaymentAllocation[];
   journal_entry_id?: string;
+  reversal_of_payment_id?: string;
+  reversed_by_payment_id?: string;
+  reversed_at?: string;
+  reversed_by?: string;
+  reversal_reason?: string;
   created_at: string;
   created_by: string;
 }
@@ -3393,6 +3410,18 @@ export interface PaymentFilter {
   contact_id?: string;
   from_date?: string;
   to_date?: string;
+}
+
+export interface ReversePaymentRequest {
+  payment_date?: string;
+  reason: string;
+  reference?: string;
+  notes?: string;
+}
+
+export interface PaymentReversalResult {
+  original_payment: Payment;
+  reversal_payment: Payment;
 }
 
 // Quote types

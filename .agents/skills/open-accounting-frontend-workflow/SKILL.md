@@ -10,6 +10,7 @@ Use this with `open-accounting-development` for Svelte UI work and with `open-ac
 ## Svelte Route And Component Rules
 
 - Run the official Svelte MCP autofixer after editing `.svelte` files or Svelte component tests when the tool is available. Fix hard issues before running broader gates.
+- Pass the exact current component source to the Svelte MCP and rerun it after fixes. If a large component input is accidentally truncated or malformed during tool entry, discard that result and rerun with valid current file contents before treating the validation as meaningful.
 - Remove stale `svelte-ignore` comments when the ignored issue no longer exists. Keep an ignore only when the UI pattern is intentional and the reason is still current.
 - Key each blocks by stable domain IDs, not indexes or unkeyed collections, when rendering persisted records.
 - Keep frontend forms aligned with API contracts. If an API expects an RFC3339 timestamp, do not submit a raw `YYYY-MM-DD` date input value.
