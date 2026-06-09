@@ -27,6 +27,7 @@ type mockAccountingRepository struct {
 	periodBalances       []accounting.AccountBalance
 	listAccountsErr      error
 	createAccountErr     error
+	updateAccountErr     error
 	getAccountErr        error
 	getJournalErr        error
 	createJournalErr     error
@@ -76,6 +77,17 @@ func (m *mockAccountingRepository) ListAccounts(ctx context.Context, schemaName,
 func (m *mockAccountingRepository) CreateAccount(ctx context.Context, schemaName string, account *accounting.Account) error {
 	if m.createAccountErr != nil {
 		return m.createAccountErr
+	}
+	m.accounts[account.ID] = account
+	return nil
+}
+
+func (m *mockAccountingRepository) UpdateAccount(ctx context.Context, schemaName string, account *accounting.Account) error {
+	if m.updateAccountErr != nil {
+		return m.updateAccountErr
+	}
+	if _, ok := m.accounts[account.ID]; !ok {
+		return assert.AnError
 	}
 	m.accounts[account.ID] = account
 	return nil

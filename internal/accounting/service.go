@@ -25,6 +25,7 @@ type JournalEntryTemplateRepository interface {
 var (
 	errJournalEntryTemplatesUnsupported = errors.New("journal entry templates are not supported by repository")
 	ErrTemplateEvidenceAutoPost         = errors.New("cannot auto-post a template entry that requires evidence")
+	ErrSystemAccountImmutable           = errors.New("system accounts cannot be modified")
 )
 
 // Service provides accounting operations
@@ -145,16 +146,26 @@ func BuildAccountHierarchy(accounts []Account) []AccountHierarchyRow {
 
 // CreateAccount creates a new account
 func (s *Service) CreateAccount(ctx context.Context, schemaName, tenantID string, req *CreateAccountRequest) (*Account, error) {
+	code := strings.TrimSpace(req.Code)
+	name := strings.TrimSpace(req.Name)
+	description := strings.TrimSpace(req.Description)
+	if code == "" || name == "" || req.AccountType == "" {
+		return nil, errors.New("code, name, and account_type are required")
+	}
+	if !isValidAccountType(req.AccountType) {
+		return nil, fmt.Errorf("invalid account_type: %s", req.AccountType)
+	}
+
 	account := &Account{
 		ID:          uuid.New().String(),
 		TenantID:    tenantID,
-		Code:        req.Code,
-		Name:        req.Name,
+		Code:        code,
+		Name:        name,
 		AccountType: req.AccountType,
 		ParentID:    req.ParentID,
 		IsActive:    true,
 		IsSystem:    false,
-		Description: req.Description,
+		Description: description,
 		CreatedAt:   time.Now(),
 	}
 
@@ -171,6 +182,73 @@ type CreateAccountRequest struct {
 	AccountType AccountType `json:"account_type"`
 	ParentID    *string     `json:"parent_id,omitempty"`
 	Description string      `json:"description,omitempty"`
+}
+
+// UpdateAccount updates an editable chart-of-accounts row.
+func (s *Service) UpdateAccount(ctx context.Context, schemaName, tenantID, accountID string, req *UpdateAccountRequest) (*Account, error) {
+	account, err := s.repo.GetAccountByID(ctx, schemaName, tenantID, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if account.IsSystem {
+		return nil, ErrSystemAccountImmutable
+	}
+
+	code := strings.TrimSpace(req.Code)
+	name := strings.TrimSpace(req.Name)
+	description := strings.TrimSpace(req.Description)
+	if code == "" || name == "" || req.AccountType == "" {
+		return nil, errors.New("code, name, and account_type are required")
+	}
+	if !isValidAccountType(req.AccountType) {
+		return nil, fmt.Errorf("invalid account_type: %s", req.AccountType)
+	}
+
+	account.Code = code
+	account.Name = name
+	account.AccountType = req.AccountType
+	account.ParentID = req.ParentID
+	account.Description = description
+
+	if err := s.repo.UpdateAccount(ctx, schemaName, account); err != nil {
+		return nil, err
+	}
+	return account, nil
+}
+
+// DeactivateAccount soft-deletes a chart-of-accounts row while preserving accounting history.
+func (s *Service) DeactivateAccount(ctx context.Context, schemaName, tenantID, accountID string) (*Account, error) {
+	account, err := s.repo.GetAccountByID(ctx, schemaName, tenantID, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if account.IsSystem {
+		return nil, ErrSystemAccountImmutable
+	}
+
+	account.IsActive = false
+	if err := s.repo.UpdateAccount(ctx, schemaName, account); err != nil {
+		return nil, err
+	}
+	return account, nil
+}
+
+// UpdateAccountRequest is the request to update an editable account.
+type UpdateAccountRequest struct {
+	Code        string      `json:"code"`
+	Name        string      `json:"name"`
+	AccountType AccountType `json:"account_type"`
+	ParentID    *string     `json:"parent_id,omitempty"`
+	Description string      `json:"description,omitempty"`
+}
+
+func isValidAccountType(accountType AccountType) bool {
+	switch accountType {
+	case AccountTypeAsset, AccountTypeLiability, AccountTypeEquity, AccountTypeRevenue, AccountTypeExpense:
+		return true
+	default:
+		return false
+	}
 }
 
 // GetJournalEntry retrieves a journal entry by ID

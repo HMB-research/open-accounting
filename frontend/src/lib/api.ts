@@ -297,8 +297,12 @@ class ApiClient {
     return this.parseDecimals(data) as T;
   }
 
-  private parseDecimals(obj: unknown): unknown {
-    if (typeof obj === "string" && /^-?\d+(\.\d+)?$/.test(obj)) {
+  private parseDecimals(obj: unknown, key?: string): unknown {
+    if (
+      typeof obj === "string" &&
+      /^-?\d+(\.\d+)?$/.test(obj) &&
+      this.shouldParseDecimalField(key)
+    ) {
       return new Decimal(obj);
     }
     if (Array.isArray(obj)) {
@@ -307,11 +311,87 @@ class ApiClient {
     if (obj !== null && typeof obj === "object") {
       const result: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(obj)) {
-        result[key] = this.parseDecimals(value);
+        result[key] = this.parseDecimals(value, key);
       }
       return result;
     }
     return obj;
+  }
+
+  private shouldParseDecimalField(key?: string): boolean {
+    if (!key) return false;
+
+    const normalized = key.toLowerCase();
+    const stringFieldHints = [
+      "id",
+      "code",
+      "number",
+      "email",
+      "phone",
+      "postal",
+      "country",
+      "reg",
+      "reference",
+      "status",
+      "type",
+      "name",
+      "date",
+      "time",
+      "currency",
+      "token",
+      "url",
+      "slug",
+      "iban",
+      "bic",
+      "swift",
+      "file",
+      "message",
+      "description",
+    ];
+    if (
+      stringFieldHints.some(
+        (hint) =>
+          normalized === hint ||
+          normalized.endsWith(`_${hint}`) ||
+          normalized.includes(`${hint}_`),
+      )
+    ) {
+      return false;
+    }
+
+    return [
+      "amount",
+      "balance",
+      "total",
+      "subtotal",
+      "price",
+      "rate",
+      "percent",
+      "percentage",
+      "quantity",
+      "debit",
+      "credit",
+      "vat",
+      "tax",
+      "discount",
+      "income",
+      "revenue",
+      "expense",
+      "payable",
+      "receivable",
+      "cost",
+      "budget",
+      "salary",
+      "days",
+      "hours",
+      "net",
+      "base",
+      "current",
+      "opening",
+      "paid",
+      "used",
+      "limit",
+    ].some((hint) => normalized.includes(hint));
   }
 
   private async refreshAccessToken(): Promise<boolean> {
@@ -695,6 +775,25 @@ class ApiClient {
       "POST",
       `/api/v1/tenants/${tenantId}/accounts`,
       data,
+    );
+  }
+
+  async updateAccount(
+    tenantId: string,
+    accountId: string,
+    data: UpdateAccountRequest,
+  ) {
+    return this.request<Account>(
+      "PUT",
+      `/api/v1/tenants/${tenantId}/accounts/${accountId}`,
+      data,
+    );
+  }
+
+  async deleteAccount(tenantId: string, accountId: string) {
+    return this.request<Account>(
+      "DELETE",
+      `/api/v1/tenants/${tenantId}/accounts/${accountId}`,
     );
   }
 
@@ -2888,6 +2987,14 @@ export interface Account {
 }
 
 export interface CreateAccountRequest {
+  code: string;
+  name: string;
+  account_type: Account["account_type"];
+  parent_id?: string;
+  description?: string;
+}
+
+export interface UpdateAccountRequest {
   code: string;
   name: string;
   account_type: Account["account_type"];

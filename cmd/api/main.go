@@ -524,6 +524,8 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Post("/accounts/import", h.ImportAccounts)
 				r.Get("/accounts/hierarchy", h.GetAccountHierarchy)
 				r.Get("/accounts/{accountID}", h.GetAccount)
+				r.Put("/accounts/{accountID}", h.UpdateAccount)
+				r.Delete("/accounts/{accountID}", h.DeleteAccount)
 
 				// Journal entries
 				r.Post("/journal-entries/import-opening-balances", h.ImportOpeningBalances)

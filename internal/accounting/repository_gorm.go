@@ -110,6 +110,31 @@ func (r *GORMRepository) CreateAccount(ctx context.Context, schemaName string, a
 	return nil
 }
 
+// UpdateAccount updates an existing tenant account.
+func (r *GORMRepository) UpdateAccount(ctx context.Context, schemaName string, a *Account) error {
+	db, err := r.tenantTable(ctx, schemaName, "accounts")
+	if err != nil {
+		return err
+	}
+
+	updates := map[string]interface{}{
+		"code":         a.Code,
+		"name":         a.Name,
+		"account_type": models.AccountType(a.AccountType),
+		"parent_id":    a.ParentID,
+		"is_active":    a.IsActive,
+		"description":  a.Description,
+	}
+	result := db.Where("id = ? AND tenant_id = ?", a.ID, a.TenantID).Updates(updates)
+	if result.Error != nil {
+		return fmt.Errorf("update account: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("account not found: %s", a.ID)
+	}
+	return nil
+}
+
 // GetJournalEntryByID retrieves a journal entry with its lines
 func (r *GORMRepository) GetJournalEntryByID(ctx context.Context, schemaName, tenantID, entryID string) (*JournalEntry, error) {
 	db, err := r.tenantTable(ctx, schemaName, "journal_entries")

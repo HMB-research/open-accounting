@@ -15,6 +15,7 @@ type RepositoryInterface interface {
 	GetAccountByID(ctx context.Context, schemaName, tenantID, accountID string) (*Account, error)
 	ListAccounts(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]Account, error)
 	CreateAccount(ctx context.Context, schemaName string, a *Account) error
+	UpdateAccount(ctx context.Context, schemaName string, a *Account) error
 	ListJournalEntries(ctx context.Context, schemaName, tenantID string, limit int) ([]JournalEntry, error)
 	GetJournalEntryByID(ctx context.Context, schemaName, tenantID, entryID string) (*JournalEntry, error)
 	GetJournalEntryBySource(ctx context.Context, schemaName, tenantID, sourceType, sourceID string) (*JournalEntry, error)

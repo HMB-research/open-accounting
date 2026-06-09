@@ -745,6 +745,22 @@ func (c *apiClient) getAccount(ctx context.Context, tenantID, accountID string) 
 	return &resp, nil
 }
 
+func (c *apiClient) updateAccount(ctx context.Context, tenantID, accountID string, req *accounting.UpdateAccountRequest) (*accounting.Account, error) {
+	var resp accounting.Account
+	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "accounts", accountID), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) deleteAccount(ctx context.Context, tenantID, accountID string) (*accounting.Account, error) {
+	var resp accounting.Account
+	if err := c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "accounts", accountID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) importAccounts(ctx context.Context, tenantID string, req *accounting.ImportAccountsRequest) (*accounting.ImportAccountsResult, error) {
 	var resp accounting.ImportAccountsResult
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "accounts", "import"), req, c.apiToken, &resp); err != nil {

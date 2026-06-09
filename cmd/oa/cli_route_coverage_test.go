@@ -652,7 +652,11 @@ func tenantCLICommand(method, path string) (string, bool) {
 	case "/accounts/hierarchy":
 		return commandForMethod(method, map[string]string{"GET": "accounts hierarchy"})
 	case "/accounts/{accountID}":
-		return commandForMethod(method, map[string]string{"GET": "accounts get"})
+		return commandForMethod(method, map[string]string{
+			"GET":    "accounts get",
+			"PUT":    "accounts update",
+			"DELETE": "accounts delete",
+		})
 	case "/journal-entries":
 		return commandForMethod(method, map[string]string{
 			"GET":  "journal list",

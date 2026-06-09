@@ -116,6 +116,42 @@ func TestAccountingHandlers_ListCreateAndGet(t *testing.T) {
 	rr = httptest.NewRecorder()
 	h.GetAccount(rr, req)
 	assert.Equal(t, http.StatusNotFound, rr.Code)
+
+	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1/accounts/acc-3", map[string]interface{}{
+		"code":         "1120",
+		"name":         "Operating Bank",
+		"account_type": accounting.AccountTypeAsset,
+		"description":  "Updated by API",
+	}, &auth.Claims{UserID: "user-1", TenantID: "tenant-1", Role: tenant.RoleOwner})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "accountID": "acc-3"})
+	rr = httptest.NewRecorder()
+	h.UpdateAccount(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "1120", accountingRepo.accounts["acc-3"].Code)
+	assert.Equal(t, "Operating Bank", accountingRepo.accounts["acc-3"].Name)
+
+	req = makeAuthenticatedRequest(http.MethodDelete, "/tenants/tenant-1/accounts/acc-3", nil, &auth.Claims{UserID: "user-1", TenantID: "tenant-1", Role: tenant.RoleOwner})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "accountID": "acc-3"})
+	rr = httptest.NewRecorder()
+	h.DeleteAccount(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.False(t, accountingRepo.accounts["acc-3"].IsActive)
+
+	accountingRepo.accounts["system"] = &accounting.Account{
+		ID:          "system",
+		TenantID:    "tenant-1",
+		Code:        "1000",
+		Name:        "System Cash",
+		AccountType: accounting.AccountTypeAsset,
+		IsActive:    true,
+		IsSystem:    true,
+	}
+	req = makeAuthenticatedRequest(http.MethodDelete, "/tenants/tenant-1/accounts/system", nil, &auth.Claims{UserID: "user-1", TenantID: "tenant-1", Role: tenant.RoleOwner})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "accountID": "system"})
+	rr = httptest.NewRecorder()
+	h.DeleteAccount(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.True(t, accountingRepo.accounts["system"].IsActive)
 }
 
 func TestJournalEntryHandlers_CreatePostVoidAndGet(t *testing.T) {

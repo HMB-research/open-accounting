@@ -1,49 +1,152 @@
-import { test, expect } from '@playwright/test';
-import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
+import { test, expect, type Page, type TestInfo } from "@playwright/test";
+import { ensureAuthenticated, navigateTo, ensureDemoTenant } from "./utils";
 
-test.describe('Demo Chart of Accounts - Seed Data Verification', () => {
-	test.beforeEach(async ({ page }, testInfo) => {
-		await ensureAuthenticated(page, testInfo);
-		await ensureDemoTenant(page, testInfo);
-		await navigateTo(page, '/accounts', testInfo);
-		await page.waitForLoadState('networkidle');
-	});
+interface AccountResponse {
+  id: string;
+  code: string;
+  name: string;
+  account_type: "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENSE";
+  description?: string;
+  is_active: boolean;
+  is_system: boolean;
+}
 
-	test('displays seeded accounts', async ({ page }) => {
-		await expect(page.locator('table tbody tr, .account-item').first()).toBeVisible({ timeout: 10000 });
+async function openAccounts(page: Page, testInfo: TestInfo) {
+  await navigateTo(page, "/accounts", testInfo);
+  await expect(page.locator("table tbody tr").first()).toBeVisible({
+    timeout: 10000,
+  });
+}
 
-		// Verify key account names - use specific cell selector to avoid matching nav links
-		await expect(page.getByRole('cell', { name: 'Cash' })).toBeVisible();
-		await expect(page.getByRole('cell', { name: /Bank Account.*EUR/i })).toBeVisible();
-	});
+function accountRow(page: Page, text: string) {
+  return page.locator("table tbody tr").filter({ hasText: text });
+}
 
-	test('shows account codes', async ({ page }) => {
-		await expect(page.locator('table tbody tr, .account-item').first()).toBeVisible({ timeout: 10000 });
+async function createAccount(
+  page: Page,
+  overrides: Partial<AccountResponse> = {},
+): Promise<AccountResponse> {
+  const unique = Date.now().toString(36).slice(-5).toUpperCase();
+  const code = overrides.code ?? `89${unique.slice(-3)}`;
+  const name = overrides.name ?? `Workflow Account ${unique}`;
 
-		// Check for account codes (1000, 1100, etc.)
-		const pageContent = await page.content();
-		expect(pageContent).toMatch(/1[0-9]{3}/);
-	});
+  await page.getByRole("button", { name: /new account|uus konto/i }).click();
+  const modal = page.locator('[role="dialog"]').last();
+  await expect(modal).toBeVisible({ timeout: 5000 });
+  await modal.locator("#code").fill(code);
+  await modal.locator("#name").fill(name);
+  await modal
+    .locator("#type")
+    .selectOption(overrides.account_type ?? "EXPENSE");
+  await modal
+    .locator("#description")
+    .fill(overrides.description ?? "Created by accounts workflow E2E");
 
-	test('shows different account types', async ({ page }) => {
-		await expect(page.locator('table tbody tr, .account-item').first()).toBeVisible({ timeout: 10000 });
+  const createResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === "POST" &&
+      /\/api\/v1\/tenants\/[^/]+\/accounts$/.test(url.pathname)
+    );
+  });
+  await modal.getByRole("button", { name: /create|loo/i }).click();
+  const response = await createResponsePromise;
+  expect(response.ok()).toBeTruthy();
+  const account = (await response.json()) as AccountResponse;
+  await expect(accountRow(page, account.code)).toContainText(account.name);
+  return account;
+}
 
-		// Should show Assets, Liabilities, Revenue, Expense
-		const pageContent = await page.content();
-		const hasTypes =
-			pageContent.includes('Asset') ||
-			pageContent.includes('ASSET') ||
-			pageContent.includes('Liability') ||
-			pageContent.includes('LIABILITY');
-		expect(hasTypes).toBeTruthy();
-	});
+test.describe("Demo Chart of Accounts", () => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    await ensureAuthenticated(page, testInfo);
+    await ensureDemoTenant(page, testInfo);
+    await openAccounts(page, testInfo);
+  });
 
-	test('shows minimum expected account count', async ({ page }) => {
-		await page.waitForTimeout(3000);
+  test("displays seeded accounts with workflow controls", async ({ page }) => {
+    await expect(
+      page.getByRole("heading", { name: /chart of accounts|kontoplaan/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /new account|uus konto/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /import accounts|impordi kontod/i }),
+    ).toBeVisible();
+    await expect(page.getByRole("cell", { name: "Cash" })).toBeVisible();
+    await expect(
+      page.getByRole("cell", { name: /Bank Account.*EUR/i }),
+    ).toBeVisible();
+    await expect(page.locator("table tbody tr")).toHaveCount(33, {
+      timeout: 10000,
+    });
+    await expect(
+      page.getByRole("cell", { name: /1[0-9]{3}/ }).first(),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /assets|varad/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /liabilities|kohustused/i }),
+    ).toBeVisible();
+  });
 
-		// Should have 28 accounts
-		const rows = page.locator('table tbody tr, .account-item');
-		const count = await rows.count();
-		expect(count).toBeGreaterThanOrEqual(20);
-	});
+  test("creates, edits, and deactivates a custom account", async ({ page }) => {
+    const unique = Date.now().toString(36).slice(-5).toUpperCase();
+    const account = await createAccount(page, {
+      code: `88${unique.slice(-3)}`,
+      name: `Workflow Expense ${unique}`,
+      account_type: "EXPENSE",
+      description: "Initial workflow description",
+    });
+
+    let row = accountRow(page, account.code);
+    await expect(row).toContainText(account.name);
+    await row.getByRole("button", { name: /edit|muuda/i }).click();
+
+    const updatedCode = `87${unique.slice(-3)}`;
+    const updatedName = `Workflow Edited ${unique}`;
+    const modal = page.locator('[role="dialog"]').last();
+    await expect(
+      modal.getByRole("heading", { name: /edit account|muuda kontot/i }),
+    ).toBeVisible();
+    await modal.locator("#code").fill(updatedCode);
+    await modal.locator("#name").fill(updatedName);
+    await modal.locator("#description").fill("Updated workflow description");
+
+    const updateResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === "PUT" &&
+        response.url().includes(`/accounts/${account.id}`),
+    );
+    await modal.getByRole("button", { name: /save|salvesta/i }).click();
+    const updateResponse = await updateResponsePromise;
+    expect(updateResponse.ok()).toBeTruthy();
+    const updated = (await updateResponse.json()) as AccountResponse;
+    expect(updated.code).toBe(updatedCode);
+    expect(updated.name).toBe(updatedName);
+    expect(updated.description).toBe("Updated workflow description");
+
+    row = accountRow(page, updatedCode);
+    await expect(row).toContainText(updatedName);
+
+    page.once("dialog", (dialog) => dialog.accept());
+    const deleteResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === "DELETE" &&
+        response.url().includes(`/accounts/${account.id}`),
+    );
+    await row.getByRole("button", { name: /delete|kustuta/i }).click();
+    const deleteResponse = await deleteResponsePromise;
+    expect(deleteResponse.ok()).toBeTruthy();
+    const deactivated = (await deleteResponse.json()) as AccountResponse;
+    expect(deactivated.is_active).toBe(false);
+
+    row = accountRow(page, updatedCode);
+    await expect(row).toContainText(/inactive|mitteaktiivne/i);
+    await expect(
+      row.getByRole("button", { name: /delete|kustuta/i }),
+    ).toHaveCount(0);
+  });
 });

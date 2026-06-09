@@ -24,6 +24,7 @@ type MockRepository struct {
 	getAccountErr       error
 	listAccountsErr     error
 	createAccountErr    error
+	updateAccountErr    error
 	getJournalErr       error
 	createJournalErr    error
 	updateStatusErr     error
@@ -73,6 +74,17 @@ func (m *MockRepository) ListAccounts(ctx context.Context, schemaName, tenantID 
 func (m *MockRepository) CreateAccount(ctx context.Context, schemaName string, a *Account) error {
 	if m.createAccountErr != nil {
 		return m.createAccountErr
+	}
+	m.accounts[a.ID] = a
+	return nil
+}
+
+func (m *MockRepository) UpdateAccount(ctx context.Context, schemaName string, a *Account) error {
+	if m.updateAccountErr != nil {
+		return m.updateAccountErr
+	}
+	if _, ok := m.accounts[a.ID]; !ok {
+		return errors.New("account not found")
 	}
 	m.accounts[a.ID] = a
 	return nil
@@ -404,6 +416,81 @@ func TestService_CreateAccount(t *testing.T) {
 		_, err := svc.CreateAccount(ctx, schemaName, "tenant-1", req)
 		assert.Error(t, err)
 		repo.createAccountErr = nil
+	})
+}
+
+func TestService_UpdateAndDeactivateAccount(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	svc := NewServiceWithRepository(repo)
+	schemaName := "tenant_test"
+
+	repo.accounts["custom"] = &Account{
+		ID:          "custom",
+		TenantID:    "tenant-1",
+		Code:        "6100",
+		Name:        "Old Expense",
+		AccountType: AccountTypeExpense,
+		IsActive:    true,
+		IsSystem:    false,
+		Description: "Old description",
+		CreatedAt:   time.Now(),
+	}
+	repo.accounts["system"] = &Account{
+		ID:          "system",
+		TenantID:    "tenant-1",
+		Code:        "1000",
+		Name:        "Cash",
+		AccountType: AccountTypeAsset,
+		IsActive:    true,
+		IsSystem:    true,
+		CreatedAt:   time.Now(),
+	}
+
+	t.Run("updates editable account", func(t *testing.T) {
+		result, err := svc.UpdateAccount(ctx, schemaName, "tenant-1", "custom", &UpdateAccountRequest{
+			Code:        "6150",
+			Name:        "Updated Expense",
+			AccountType: AccountTypeExpense,
+			Description: "Updated description",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "6150", result.Code)
+		assert.Equal(t, "Updated Expense", result.Name)
+		assert.Equal(t, "Updated description", repo.accounts["custom"].Description)
+		assert.True(t, repo.accounts["custom"].IsActive)
+	})
+
+	t.Run("rejects system account update", func(t *testing.T) {
+		_, err := svc.UpdateAccount(ctx, schemaName, "tenant-1", "system", &UpdateAccountRequest{
+			Code:        "1010",
+			Name:        "Changed",
+			AccountType: AccountTypeAsset,
+		})
+		assert.ErrorIs(t, err, ErrSystemAccountImmutable)
+		assert.Equal(t, "1000", repo.accounts["system"].Code)
+	})
+
+	t.Run("rejects invalid update request", func(t *testing.T) {
+		_, err := svc.UpdateAccount(ctx, schemaName, "tenant-1", "custom", &UpdateAccountRequest{
+			Code:        "",
+			Name:        "Invalid",
+			AccountType: AccountTypeExpense,
+		})
+		assert.Error(t, err)
+	})
+
+	t.Run("deactivates editable account", func(t *testing.T) {
+		result, err := svc.DeactivateAccount(ctx, schemaName, "tenant-1", "custom")
+		require.NoError(t, err)
+		assert.False(t, result.IsActive)
+		assert.False(t, repo.accounts["custom"].IsActive)
+	})
+
+	t.Run("rejects system account deactivation", func(t *testing.T) {
+		_, err := svc.DeactivateAccount(ctx, schemaName, "tenant-1", "system")
+		assert.ErrorIs(t, err, ErrSystemAccountImmutable)
+		assert.True(t, repo.accounts["system"].IsActive)
 	})
 }
 

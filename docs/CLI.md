@@ -312,10 +312,12 @@ go run ./cmd/oa accounts list --active-only
 go run ./cmd/oa accounts hierarchy --active-only
 go run ./cmd/oa accounts create --code 1100 --name Cash --type ASSET
 go run ./cmd/oa accounts get --id <account-id>
+go run ./cmd/oa accounts update --id <account-id> --code 1110 --name "Cash on hand" --type ASSET
+go run ./cmd/oa accounts delete --id <account-id>
 go run ./cmd/oa accounts import --file ./accounts.csv
 ```
 
-`accounts hierarchy` shows the parent-child chart of accounts using existing `parent_id` relationships. Account CSV imports can set parent accounts with `parent_code`.
+`accounts hierarchy` shows the parent-child chart of accounts using existing `parent_id` relationships. `accounts update` and `accounts delete` only apply to custom accounts; system accounts are immutable, and delete deactivates the account instead of removing ledger history. Account CSV imports can set parent accounts with `parent_code`.
 
 ## Contacts
 

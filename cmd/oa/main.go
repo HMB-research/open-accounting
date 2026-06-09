@@ -230,6 +230,8 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  accounts hierarchy        Show grouped chart of accounts")
 	_, _ = fmt.Fprintln(a.stdout, "  accounts create           Create an account")
 	_, _ = fmt.Fprintln(a.stdout, "  accounts get              Show one account")
+	_, _ = fmt.Fprintln(a.stdout, "  accounts update           Update a custom account")
+	_, _ = fmt.Fprintln(a.stdout, "  accounts delete           Deactivate a custom account")
 	_, _ = fmt.Fprintln(a.stdout, "  accounts import           Import accounts from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  contacts list             List contacts")
 	_, _ = fmt.Fprintln(a.stdout, "  contacts create           Create a contact")
@@ -2605,6 +2607,72 @@ func (a *cliApp) runAccounts(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, account)
 		}
 		printAccount(a.stdout, account)
+		return nil
+
+	case "update":
+		fs := flag.NewFlagSet("accounts update", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		accountID := fs.String("id", "", "Account id")
+		code := fs.String("code", "", "Account code")
+		name := fs.String("name", "", "Account name")
+		accountType := fs.String("type", "", "Account type: ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE")
+		description := fs.String("description", "", "Description")
+		parentID := fs.String("parent-id", "", "Parent account id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*accountID) == "" {
+			return errors.New("id is required")
+		}
+		if strings.TrimSpace(*code) == "" || strings.TrimSpace(*name) == "" || strings.TrimSpace(*accountType) == "" {
+			return errors.New("code, name, and type are required")
+		}
+		normalizedType := accounting.AccountType(strings.ToUpper(strings.TrimSpace(*accountType)))
+		if !isValidAccountType(normalizedType) {
+			return fmt.Errorf("invalid account type %q", *accountType)
+		}
+		var parentRef *string
+		if trimmed := strings.TrimSpace(*parentID); trimmed != "" {
+			parentRef = &trimmed
+		}
+
+		account, err := client.updateAccount(ctx, cfg.TenantID, strings.TrimSpace(*accountID), &accounting.UpdateAccountRequest{
+			Code:        strings.TrimSpace(*code),
+			Name:        strings.TrimSpace(*name),
+			AccountType: normalizedType,
+			ParentID:    parentRef,
+			Description: strings.TrimSpace(*description),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, account)
+		}
+		printAccount(a.stdout, account)
+		return nil
+
+	case "delete":
+		fs := flag.NewFlagSet("accounts delete", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		accountID := fs.String("id", "", "Account id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*accountID) == "" {
+			return errors.New("id is required")
+		}
+
+		account, err := client.deleteAccount(ctx, cfg.TenantID, strings.TrimSpace(*accountID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, account)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Deactivated account %s (%s)\n", account.Code, account.ID)
 		return nil
 
 	case "import":

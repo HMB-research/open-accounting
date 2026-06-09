@@ -706,6 +706,33 @@ GET /tenants/{tenantId}/accounts/{accountId}
 Authorization: Bearer <token>
 ```
 
+### Update Account
+
+```http
+PUT /tenants/{tenantId}/accounts/{accountId}
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "code": "1010",
+  "name": "Petty Cash",
+  "account_type": "ASSET",
+  "parent_id": "uuid",
+  "description": "Office petty cash"
+}
+```
+
+System accounts cannot be updated. `code`, `name`, and `account_type` are required.
+
+### Delete Account
+
+```http
+DELETE /tenants/{tenantId}/accounts/{accountId}
+Authorization: Bearer <token>
+```
+
+Delete deactivates a custom account by returning it with `is_active=false`, preserving ledger history. System accounts cannot be deleted.
+
 ### Import Invoices
 
 ```http
