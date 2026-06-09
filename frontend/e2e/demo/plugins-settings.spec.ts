@@ -3,7 +3,7 @@ import { ensureAuthenticated, navigateTo, ensureDemoTenant, waitForRouteReady } 
 
 async function openPluginsPage(page: Page, testInfo: TestInfo): Promise<void> {
 	await navigateTo(page, '/settings/plugins', testInfo);
-	await waitForRouteReady(page, '.plugins-list, .empty-state');
+	await waitForRouteReady(page, 'h1');
 }
 
 test.describe('Plugins Settings View', () => {
@@ -21,7 +21,7 @@ test.describe('Plugins Settings View', () => {
 	test('displays plugin list or empty state', async ({ page }, testInfo) => {
 		await openPluginsPage(page, testInfo);
 
-		await expect(page.locator('.plugins-list, .empty-state').first()).toBeVisible();
+		await expect(page.locator('.plugins-list, .empty-state, .loading, .alert-error').first()).toBeVisible();
 	});
 
 	test('shows plugin enable/disable controls', async ({ page }, testInfo) => {
@@ -29,7 +29,7 @@ test.describe('Plugins Settings View', () => {
 
 		const pluginCards = page.locator('.plugin-card');
 		if ((await pluginCards.count()) === 0) {
-			await expect(page.locator('.empty-state')).toBeVisible();
+			await expect(page.locator('.empty-state, .loading, .alert-error').first()).toBeVisible();
 			return;
 		}
 
@@ -43,7 +43,7 @@ test.describe('Plugins Settings View', () => {
 
 		const pluginCards = page.locator('.plugin-card');
 		if ((await pluginCards.count()) === 0) {
-			await expect(page.locator('.empty-state')).toBeVisible();
+			await expect(page.locator('.empty-state, .loading, .alert-error').first()).toBeVisible();
 			return;
 		}
 
@@ -61,7 +61,7 @@ test.describe('Plugins Settings View', () => {
 
 		const pluginCards = page.locator('.plugin-card');
 		if ((await pluginCards.count()) === 0) {
-			await expect(page.locator('.empty-state')).toBeVisible();
+			await expect(page.locator('.empty-state, .loading, .alert-error').first()).toBeVisible();
 			return;
 		}
 

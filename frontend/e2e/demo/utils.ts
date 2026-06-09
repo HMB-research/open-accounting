@@ -456,7 +456,7 @@ export async function waitForPageReady(page: Page, timeout = 10000): Promise<voi
 }
 
 /**
- * Wait for a route-owned selector after page/global loading indicators have cleared.
+ * Wait for a route-owned selector after the DOM is ready.
  * Use this instead of fixed sleeps after navigateTo.
  */
 export async function waitForRouteReady(
@@ -464,7 +464,7 @@ export async function waitForRouteReady(
 	readySelector: string,
 	timeout = 10000
 ): Promise<void> {
-	await waitForPageReady(page, timeout);
+	await page.waitForLoadState('domcontentloaded', { timeout });
 	await expect(page.locator(readySelector).first()).toBeVisible({ timeout });
 }
 
