@@ -579,7 +579,7 @@
 	}
 
 	.cash-payments-table {
-		min-width: 980px;
+		min-width: 1040px;
 	}
 
 	.cash-payments-table .col-number {
@@ -587,27 +587,27 @@
 	}
 
 	.cash-payments-table .col-type {
-		width: 14%;
+		width: 13%;
 	}
 
 	.cash-payments-table .col-contact {
-		width: 17%;
+		width: 16%;
 	}
 
 	.cash-payments-table .col-date {
-		width: 11%;
+		width: 10%;
 	}
 
 	.cash-payments-table .col-amount {
-		width: 11%;
+		width: 12%;
 	}
 
 	.cash-payments-table .col-reference {
-		width: 25%;
+		width: 29%;
 	}
 
 	.cash-payments-table .col-actions {
-		width: 10%;
+		width: 8%;
 	}
 
 	@media (max-width: 768px) {
