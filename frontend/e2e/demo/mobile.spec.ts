@@ -203,9 +203,11 @@ test.describe('Mobile Dashboard', () => {
 	test('should not have horizontal overflow on dashboard', async ({ page }, testInfo) => {
 		await navigateTo(page, '/dashboard', testInfo);
 
-		// Check that body doesn't overflow horizontally
-		const bodyWidth = await page.evaluate(() => document.body.scrollWidth);
-		expect(bodyWidth).toBeLessThanOrEqual(375);
+		const { scrollWidth, viewportWidth } = await page.evaluate(() => ({
+			scrollWidth: Math.max(document.body.scrollWidth, document.documentElement.scrollWidth),
+			viewportWidth: window.innerWidth
+		}));
+		expect(scrollWidth).toBeLessThanOrEqual(viewportWidth);
 	});
 });
 

@@ -49,47 +49,51 @@ export async function loginWithDemoCredentials(
 	const startTime = Date.now();
 	const logPrefix = options.logPrefix ?? 'Login';
 
-	// Navigate to login page
 	await page.goto(`${DEMO_URL}/login`);
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('domcontentloaded');
+	await page.waitForLoadState('networkidle').catch(() => {
+		// Vite and background requests can keep the page busy.
+	});
 
-	// Wait for form elements to be ready
-	await page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 10000 });
+	for (let attempt = 1; attempt <= 2; attempt += 1) {
+		await fillLoginForm(page, creds, options);
 
-	// Fill credentials
-	const emailInput = page.locator('input[type="email"], input[name="email"]').first();
-	const passwordInput = page.locator('input[type="password"]').first();
-	await emailInput.fill(creds.email);
-	await passwordInput.fill(creds.password);
+		try {
+			const outcome = await waitForLoginOutcome(page);
+			if (outcome === 'dashboard') {
+				break;
+			}
 
-	if (options.rememberMe) {
-		const rememberMeCheckbox = page.locator('input[type="checkbox"]').first();
-		if (await rememberMeCheckbox.isVisible().catch(() => false)) {
-			await rememberMeCheckbox.check();
-			console.log(`${logPrefix} checked "Remember Me" for ${creds.email}`);
+			const loginError = await readVisibleLoginError(page);
+			if (loginError) {
+				throw new Error(`Login failed for ${creds.email}: ${loginError}`);
+			}
+
+			if (attempt < 2) {
+				console.log(`${logPrefix} stayed on login after submit for ${creds.email}; retrying`);
+				await page.goto(`${DEMO_URL}/login`);
+				await page.waitForLoadState('networkidle').catch(() => {});
+				continue;
+			}
+
+			const currentUrl = page.url();
+			const formState = await getLoginFormState(page);
+			throw new Error(
+				`Login navigation timeout for ${creds.email}. Current URL: ${currentUrl}. Form state: ${formState}`
+			);
+		} catch (error) {
+			const loginError = await readVisibleLoginError(page);
+			if (loginError) {
+				throw new Error(`Login failed for ${creds.email}: ${loginError}`);
+			}
+			if (attempt < 2 && page.url().includes('/login')) {
+				console.log(`${logPrefix} could not confirm dashboard for ${creds.email}; retrying`);
+				await page.goto(`${DEMO_URL}/login`);
+				await page.waitForLoadState('networkidle').catch(() => {});
+				continue;
+			}
+			throw error;
 		}
-	}
-
-	// Click sign in and wait for navigation
-	// Support both English "Sign In" and Estonian "Logi sisse"
-	const signInButton = page.getByRole('button', { name: /sign in|login|logi sisse/i });
-	await signInButton.click();
-
-	// Wait for navigation with better error handling
-	try {
-		await page.waitForURL(/dashboard/, { timeout: 30000 });
-	} catch (error) {
-		// Check if we're still on login page with an error
-		const errorAlert = page.locator('.alert-error, [role="alert"]');
-		const hasError = await errorAlert.isVisible().catch(() => false);
-		if (hasError) {
-			const errorText = await errorAlert.textContent().catch(() => 'Unknown error');
-			throw new Error(`Login failed for ${creds.email}: ${errorText}`);
-		}
-
-		// Check current URL for debugging
-		const currentUrl = page.url();
-		throw new Error(`Login navigation timeout for ${creds.email}. Current URL: ${currentUrl}`);
 	}
 
 	// Use domcontentloaded instead of networkidle (more reliable for SPA)
@@ -99,6 +103,75 @@ export async function loginWithDemoCredentials(
 		// Dashboard loaded even if selector not found
 	});
 	console.log(`${logPrefix} completed in ${Date.now() - startTime}ms for ${creds.email}`);
+}
+
+async function fillLoginForm(
+	page: Page,
+	creds: DemoCredentials,
+	options: { rememberMe?: boolean; logPrefix?: string }
+): Promise<void> {
+	const logPrefix = options.logPrefix ?? 'Login';
+	const emailInput = page.locator('input[type="email"], input[name="email"]').first();
+	const passwordInput = page.locator('input[type="password"]').first();
+	await emailInput.waitFor({ state: 'visible', timeout: 10000 });
+	await passwordInput.waitFor({ state: 'visible', timeout: 10000 });
+	await emailInput.fill(creds.email);
+	await passwordInput.fill(creds.password);
+	await expect(emailInput).toHaveValue(creds.email);
+	await expect(passwordInput).toHaveValue(creds.password);
+
+	if (options.rememberMe) {
+		const rememberMeCheckbox = page.locator('input[type="checkbox"]').first();
+		if (await rememberMeCheckbox.isVisible().catch(() => false)) {
+			await rememberMeCheckbox.check();
+			console.log(`${logPrefix} checked "Remember Me" for ${creds.email}`);
+		}
+	}
+
+	const signInButton = page.locator('form button[type="submit"]').first();
+	await expect(signInButton).toBeEnabled({ timeout: 10000 });
+	await signInButton.click();
+}
+
+async function waitForLoginOutcome(page: Page): Promise<'dashboard' | 'login'> {
+	const dashboardPromise = page
+		.waitForURL(/dashboard/, { timeout: 30000 })
+		.then((): 'dashboard' => 'dashboard');
+	const loginReloadPromise = page
+		.waitForURL((url) => url.href.endsWith('/login?'), { timeout: 5000 })
+		.then((): 'login' => 'login')
+		.catch(() => undefined);
+	const firstOutcome = await Promise.race([dashboardPromise, loginReloadPromise]);
+
+	if (firstOutcome) {
+		return firstOutcome;
+	}
+
+	return dashboardPromise;
+}
+
+async function readVisibleLoginError(page: Page): Promise<string | null> {
+	const errorAlert = page.locator('.alert-error, [role="alert"]').first();
+	if (!(await errorAlert.isVisible().catch(() => false))) {
+		return null;
+	}
+
+	return (await errorAlert.textContent().catch(() => 'Unknown error'))?.trim() || 'Unknown error';
+}
+
+async function getLoginFormState(page: Page): Promise<string> {
+	return page
+		.evaluate(() => {
+			const email = document.querySelector<HTMLInputElement>('input[type="email"], input[name="email"]');
+			const password = document.querySelector<HTMLInputElement>('input[type="password"]');
+			const submit = document.querySelector<HTMLButtonElement>('form button[type="submit"]');
+			return JSON.stringify({
+				email: email?.value ?? '',
+				passwordLength: password?.value.length ?? 0,
+				submitDisabled: submit?.disabled ?? null
+			});
+		})
+		.catch(() => 'unavailable');
 }
 
 /**
