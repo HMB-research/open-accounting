@@ -631,7 +631,7 @@
 	}
 
 	.payments-table {
-		min-width: 1080px;
+		min-width: 1120px;
 	}
 
 	.payments-table .col-number {
@@ -663,11 +663,17 @@
 	}
 
 	.payments-table .col-reference {
-		width: 14%;
+		width: 13%;
 	}
 
 	.payments-table .col-actions {
-		width: 13%;
+		width: 14%;
+	}
+
+	@media (max-width: 768px) {
+		.payments-table {
+			min-width: 0;
+		}
 	}
 
 	.unallocated-warning {
