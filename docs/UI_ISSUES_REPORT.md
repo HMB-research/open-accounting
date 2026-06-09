@@ -312,7 +312,7 @@ Each view is tested for:
 
 **Known Issues:**
 
-- Payment correction/reversal now has API, CLI, payments-page UI, and demo E2E coverage through auditable offsetting payments. The separate cash-payments page still needs reversal UI exposure.
+- Payment correction/reversal now has API, CLI, payments-page UI, cash-payments UI, and demo E2E coverage through auditable offsetting payments.
 
 **Overall:** ✅ Working
 
@@ -325,21 +325,22 @@ Each view is tested for:
 | Page Load    | ✅     | Loads correctly                                |
 | Data Display | ✅     | Shows cash payments content                    |
 | Navigation   | ✅     | Page structure and tabs visible                |
-| CRUD         | ✅     | Cash-in/cash-out create and type filtering verified through demo E2E |
+| CRUD         | ✅     | Cash-in/cash-out create, auditable reversal, and type filtering verified through demo E2E |
 | Errors       | ✅     | No errors observed                             |
 | Responsive   | ⚠️     | Needs manual verification                      |
 
-**E2E Tests:** 5/5 passed
+**E2E Tests:** 6/6 passed
 
 - Displays cash payments page with correct structure
 - Shows summary cards or empty state
 - Navigation tabs work
 - Page content loads
 - Records cash-in and cash-out payments through the UI and verifies type filters
+- Reverses a cash payment through the UI, verifies original/reversal links in the API response, and refetches the offsetting cash payment through the made-payment filter
 
 **Known Issues:**
 
-- Payment correction/reversal has API, CLI, and payments-page UI support through auditable offsetting payments; cash-page-specific reversal UI exposure remains pending.
+- None specific to cash-payment reversal.
 
 **Overall:** ✅ Working
 

@@ -8,6 +8,14 @@ interface PaymentResponse {
 	amount: number | string;
 	reference?: string;
 	payment_method?: string;
+	reversal_of_payment_id?: string;
+	reversed_by_payment_id?: string;
+	reversal_reason?: string;
+}
+
+interface PaymentReversalResponse {
+	original_payment: PaymentResponse;
+	reversal_payment: PaymentResponse;
 }
 
 async function waitForCashPaymentsLoaded(page: Page) {
@@ -191,5 +199,71 @@ test.describe('Cash Payments View', () => {
 		await selectTypeFilter(page, '');
 		await expect(cashPaymentRow(page, cashIn.payment_number)).toBeVisible({ timeout: 10000 });
 		await expect(cashPaymentRow(page, cashOut.payment_number)).toBeVisible({ timeout: 10000 });
+	});
+
+	test('reverses a cash payment with an auditable offsetting cash payment', async ({ page }) => {
+		const suffix = Date.now();
+		const reference = `E2E-CASH-REV-${suffix}`;
+		const reversalReference = `REV-${reference}`;
+		const reversalReason = `Cash receipt correction ${suffix}`;
+
+		const cashIn = await recordCashPayment(page, {
+			type: 'RECEIVED',
+			amount: '31.20',
+			reference,
+			notes: `Cash payment created for reversal ${suffix}`
+		});
+		expect(cashIn.payment_type).toBe('RECEIVED');
+		expect(cashIn.payment_method).toBe('CASH');
+
+		const originalRow = cashPaymentRow(page, cashIn.payment_number);
+		await expect(originalRow).toBeVisible({ timeout: 10000 });
+		await expect(originalRow).toContainText(reference);
+
+		await originalRow.getByRole('button', { name: /^reverse$/i }).click();
+		const reversalDialog = page.getByRole('dialog', { name: /reverse payment/i });
+		await expect(reversalDialog).toBeVisible();
+		await expect(reversalDialog.locator('#reversal-original')).toHaveValue(cashIn.payment_number);
+		await reversalDialog.locator('#reversal-date').fill('2026-06-09');
+		await reversalDialog.locator('#reversal-reason').fill(reversalReason);
+		await reversalDialog.locator('#reversal-reference').fill(reversalReference);
+		await reversalDialog.locator('#reversal-notes').fill('Offsetting cash payment created by demo E2E');
+
+		const reverseResponsePromise = page.waitForResponse((response) => {
+			const path = new URL(response.url()).pathname;
+			return (
+				response.request().method() === 'POST' &&
+				/\/api\/v1\/tenants\/[^/]+\/payments\/[^/]+\/reverse$/.test(path)
+			);
+		});
+		await reversalDialog.getByRole('button', { name: /^reverse$/i }).click();
+		const reverseResponse = await reverseResponsePromise;
+		expect(reverseResponse.status()).toBe(201);
+		const reversal = (await reverseResponse.json()) as PaymentReversalResponse;
+		expect(reversal.original_payment.id).toBe(cashIn.id);
+		expect(reversal.original_payment.reversed_by_payment_id).toBe(reversal.reversal_payment.id);
+		expect(reversal.original_payment.reversal_reason).toBe(reversalReason);
+		expect(reversal.reversal_payment.payment_type).toBe('MADE');
+		expect(reversal.reversal_payment.payment_method).toBe('CASH');
+		expect(reversal.reversal_payment.reversal_of_payment_id).toBe(cashIn.id);
+		expect(reversal.reversal_payment.reference).toBe(reversalReference);
+		expect(reversal.reversal_payment.reversal_reason).toBe(reversalReason);
+
+		const refreshedOriginalRow = cashPaymentRow(page, reversal.original_payment.payment_number);
+		const reversalRow = cashPaymentRow(page, reversal.reversal_payment.payment_number);
+		await expect(refreshedOriginalRow).toBeVisible({ timeout: 10000 });
+		await expect(refreshedOriginalRow).toContainText(/reversed/i);
+		await expect(refreshedOriginalRow.getByRole('button', { name: /^reverse$/i })).toHaveCount(0);
+		await expect(reversalRow).toBeVisible({ timeout: 10000 });
+		await expect(reversalRow).toContainText(/reversal/i);
+		await expect(reversalRow).toContainText(reversalReference);
+		await expect(reversalRow).toContainText(/made/i);
+		await expect(reversalRow).toContainText(/31[,.]20/);
+
+		await selectTypeFilter(page, 'MADE');
+		await expect(cashPaymentRow(page, reversal.reversal_payment.payment_number)).toBeVisible({
+			timeout: 10000
+		});
+		await expect(cashPaymentRow(page, reversal.original_payment.payment_number)).toHaveCount(0);
 	});
 });

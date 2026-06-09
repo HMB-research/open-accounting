@@ -16,6 +16,8 @@ Use this with `open-accounting-development` for Svelte UI work and with `open-ac
 - Keep frontend forms aligned with API contracts. If an API expects an RFC3339 timestamp, do not submit a raw `YYYY-MM-DD` date input value.
 - Prefer route-local helper functions or shared API-client helpers for payload normalization when multiple handlers need the same shape.
 - Update both `messages/en.json` and `messages/et.json` when adding user-facing text.
+- After significant route or workflow changes, open the affected local page in the in-app Browser when practical. Treat it as a smoke check that the route renders and core controls are visible; focused E2E remains the behavioral proof.
+- For modal workflows, prefer accessible dialog markup with explicit close/cancel actions, Escape handling, submit-disabled loading states, and no stale `svelte-ignore` comments.
 
 ## E2E Test Discipline
 
