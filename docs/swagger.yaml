@@ -297,6 +297,19 @@ definitions:
       parent_id:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_accounting.UpdateAccountRequest:
+    properties:
+      account_type:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.AccountType'
+      code:
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+      parent_id:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_accounting.CreateCostAllocationRequest:
     properties:
       allocation_date:
@@ -7931,6 +7944,45 @@ paths:
       tags:
       - Accounts
   /tenants/{tenantID}/accounts/{accountID}:
+    delete:
+      description: Deactivate an editable chart-of-accounts row while preserving accounting history
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Account ID
+        in: path
+        name: accountID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.Account'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete account
+      tags:
+      - Accounts
     get:
       description: Get account details by ID
       parameters:
@@ -7961,6 +8013,53 @@ paths:
       security:
       - BearerAuth: []
       summary: Get account
+      tags:
+      - Accounts
+    put:
+      consumes:
+      - application/json
+      description: Update an editable chart-of-accounts row
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Account ID
+        in: path
+        name: accountID
+        required: true
+        type: string
+      - description: Updated account details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.UpdateAccountRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.Account'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update account
       tags:
       - Accounts
   /tenants/{tenantID}/accounts/hierarchy:

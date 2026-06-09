@@ -172,6 +172,30 @@ describe("API Client - Core Functionality", () => {
       expect(result.amount.toString()).toBe("1234.56");
       expect(result.lines[0].total).toBeInstanceOf(Decimal);
     });
+
+    it("keeps numeric identifier and code fields as strings", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            id: "acc-1",
+            tenant_id: "tenant-123",
+            code: "1000",
+            name: "Cash",
+            account_type: "ASSET",
+            is_active: true,
+            is_system: true,
+          },
+        ],
+      });
+
+      api.setTokens("token", "refresh");
+      const result = await api.listAccounts("tenant-123");
+
+      expect(result[0].code).toBe("1000");
+      expect(result[0].code).not.toBeInstanceOf(Decimal);
+    });
   });
 
   describe("User Endpoints", () => {
@@ -379,9 +403,7 @@ describe("API Client - Core Functionality", () => {
 
       expect(mockFetch).toHaveBeenNthCalledWith(
         1,
-        expect.stringContaining(
-          "/api/v1/tenants/tenant-123/users/user-2/role",
-        ),
+        expect.stringContaining("/api/v1/tenants/tenant-123/users/user-2/role"),
         expect.objectContaining({
           method: "PUT",
           body: JSON.stringify({ role: "accountant" }),
@@ -452,9 +474,7 @@ describe("API Client - Core Functionality", () => {
       );
       expect(mockFetch).toHaveBeenNthCalledWith(
         3,
-        expect.stringContaining(
-          "/api/v1/tenants/tenant-123/invitations/inv-1",
-        ),
+        expect.stringContaining("/api/v1/tenants/tenant-123/invitations/inv-1"),
         expect.objectContaining({ method: "DELETE" }),
       );
       expect(invitations[0].email).toBe("new@example.com");
@@ -2622,7 +2642,8 @@ describe("API Client - Core Functionality", () => {
 
       const result = await api.importLeaveBalances("tenant-123", {
         file_name: "leave-balances.csv",
-        csv_content: "year,employee_number,absence_type_code\n2025,EMP-100,ANNUAL_LEAVE\n",
+        csv_content:
+          "year,employee_number,absence_type_code\n2025,EMP-100,ANNUAL_LEAVE\n",
       });
 
       expect(mockFetch).toHaveBeenCalledWith(

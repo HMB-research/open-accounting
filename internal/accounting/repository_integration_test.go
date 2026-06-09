@@ -8,6 +8,8 @@ import (
 	"github.com/HMB-research/open-accounting/internal/testutil"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPostgresRepository_VoidJournalEntry(t *testing.T) {
@@ -435,6 +437,39 @@ func TestPostgresRepository_CreateAccount(t *testing.T) {
 	if retrieved.Name != account.Name {
 		t.Errorf("expected name '%s', got '%s'", account.Name, retrieved.Name)
 	}
+}
+
+func TestPostgresRepository_UpdateAccount(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	repo := NewRepository(pool)
+	ctx := context.Background()
+
+	account := &Account{
+		ID:          uuid.New().String(),
+		TenantID:    tenant.ID,
+		Code:        "9910",
+		Name:        "Account Before Update",
+		AccountType: AccountTypeExpense,
+		IsActive:    true,
+		IsSystem:    false,
+		Description: "Before",
+		CreatedAt:   time.Now(),
+	}
+	require.NoError(t, repo.CreateAccount(ctx, tenant.SchemaName, account))
+
+	account.Code = "9920"
+	account.Name = "Account After Update"
+	account.Description = ""
+	account.IsActive = false
+	require.NoError(t, repo.UpdateAccount(ctx, tenant.SchemaName, account))
+
+	retrieved, err := repo.GetAccountByID(ctx, tenant.SchemaName, tenant.ID, account.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "9920", retrieved.Code)
+	assert.Equal(t, "Account After Update", retrieved.Name)
+	assert.Empty(t, retrieved.Description)
+	assert.False(t, retrieved.IsActive)
 }
 
 func TestPostgresRepository_GetAccountBalance(t *testing.T) {

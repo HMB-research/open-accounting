@@ -65,6 +65,11 @@ func (m *mockYearEndAccountingRepository) CreateAccount(ctx context.Context, sch
 	return nil
 }
 
+func (m *mockYearEndAccountingRepository) UpdateAccount(ctx context.Context, schemaName string, a *accounting.Account) error {
+	m.accounts[a.ID] = a
+	return nil
+}
+
 func (m *mockYearEndAccountingRepository) ListJournalEntries(ctx context.Context, schemaName, tenantID string, limit int) ([]accounting.JournalEntry, error) {
 	if m.getJournalErr != nil {
 		return nil, m.getJournalErr

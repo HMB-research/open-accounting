@@ -1409,6 +1409,78 @@ func (h *Handlers) GetAccount(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, account)
 }
 
+// UpdateAccount updates an editable account.
+// @Summary Update account
+// @Description Update an editable chart-of-accounts row
+// @Tags Accounts
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param accountID path string true "Account ID"
+// @Param request body accounting.UpdateAccountRequest true "Updated account details"
+// @Success 200 {object} accounting.Account
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/accounts/{accountID} [put]
+func (h *Handlers) UpdateAccount(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	accountID := chi.URLParam(r, "accountID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req accounting.UpdateAccountRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if req.Code == "" || req.Name == "" || req.AccountType == "" {
+		respondError(w, http.StatusBadRequest, "Code, name, and account_type are required")
+		return
+	}
+
+	account, err := h.accountingService.UpdateAccount(r.Context(), schemaName, tenantID, accountID, &req)
+	if err != nil {
+		if errors.Is(err, accounting.ErrSystemAccountImmutable) || strings.Contains(err.Error(), "invalid account_type") {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		respondError(w, http.StatusNotFound, "Account not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, account)
+}
+
+// DeleteAccount deactivates an editable account.
+// @Summary Delete account
+// @Description Deactivate an editable chart-of-accounts row while preserving accounting history
+// @Tags Accounts
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param accountID path string true "Account ID"
+// @Success 200 {object} accounting.Account
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/accounts/{accountID} [delete]
+func (h *Handlers) DeleteAccount(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	accountID := chi.URLParam(r, "accountID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	account, err := h.accountingService.DeactivateAccount(r.Context(), schemaName, tenantID, accountID)
+	if err != nil {
+		if errors.Is(err, accounting.ErrSystemAccountImmutable) {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		respondError(w, http.StatusNotFound, "Account not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, account)
+}
+
 // ListJournalEntries returns recent journal entries.
 // @Summary List journal entries
 // @Description List recent journal entries for a tenant

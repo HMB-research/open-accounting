@@ -127,16 +127,14 @@ Each view is tested for:
 | Page Load    | ✅     | Loads correctly                                                               |
 | Data Display | ✅     | Shows 20+ accounts with codes (1000, 1100, etc.) and types (Asset, Liability) |
 | Navigation   | ✅     | Navigation works                                                              |
-| CRUD         | ⚠️     | Read verified, Create/Update/Delete not tested                                |
+| CRUD         | ✅     | Create, update, and soft delete/deactivate verified through demo E2E          |
 | Errors       | ✅     | No errors observed                                                            |
 | Responsive   | ⚠️     | Needs manual verification                                                     |
 
-**E2E Tests:** 4/4 passed
+**E2E Tests:** 2/2 passed
 
-- Displays seeded accounts (Cash, Bank Account EUR)
-- Shows account codes (1000-series)
-- Shows different account types (Asset, Liability)
-- Shows minimum 20+ accounts
+- Displays seeded accounts with workflow controls
+- Creates, edits, and deactivates a custom account
 
 **Overall:** ✅ Working
 
