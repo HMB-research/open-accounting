@@ -104,6 +104,12 @@ The resettable local demo is the authoritative demo verification target unless a
 
 For concrete local server, reset, CORS, and Playwright commands, use `open-accounting-demo-e2e`.
 
+### Test Gate Performance
+
+- Run backend unit tests with Go's default package parallelism: `go test -count=1 -race ./...`.
+- Avoid `-p 1` for unit tests unless a current failure proves shared process state. It materially slows local and CI feedback.
+- Keep DB-backed tests in the tagged integration gate (`make test-integration-coverage`); schema setup and teardown deliberately serialize PostgreSQL DDL there.
+
 ## Demo Mode Reference
 
 ### Credentials

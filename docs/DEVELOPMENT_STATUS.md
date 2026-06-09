@@ -15,9 +15,9 @@
 
 ## Verified Engineering Baseline
 
-Full local baseline last completed on 2026-06-08:
+Full local baseline last completed on 2026-06-08, with the backend unit gate revalidated on 2026-06-09 using Go's default package parallelism:
 
-- `go test -p 1 -count=1 -race -coverprofile=/tmp/open-accounting-unit-coverage.out ./...` passes without requiring PostgreSQL
+- `go test -count=1 -race -coverprofile=/tmp/open-accounting-unit-coverage.out ./...` passes without requiring PostgreSQL
 - `make test-cli-coverage` passes and enforces `cmd/oa` at 100.0% statement coverage
 - `golangci-lint run` passes with 0 issues
 - `DATABASE_URL=postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable make test-integration-coverage` passes against a fresh PostgreSQL database after applying all migrations
