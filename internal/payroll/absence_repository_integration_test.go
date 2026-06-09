@@ -11,6 +11,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/HMB-research/open-accounting/internal/database"
+	"github.com/HMB-research/open-accounting/internal/models"
 	"github.com/HMB-research/open-accounting/internal/testutil"
 )
 
@@ -218,4 +219,28 @@ func TestAbsenceGORMRepository_Integration(t *testing.T) {
 
 func datePtr(t time.Time) *time.Time {
 	return &t
+}
+
+func absenceTypeToModel(t *AbsenceType) *models.AbsenceType {
+	return &models.AbsenceType{
+		ID:                 t.ID,
+		TenantID:           t.TenantID,
+		Code:               t.Code,
+		Name:               t.Name,
+		NameET:             t.NameET,
+		Description:        stringPtrIfNotBlank(t.Description),
+		IsPaid:             t.IsPaid,
+		AffectsSalary:      t.AffectsSalary,
+		RequiresDocument:   t.RequiresDocument,
+		DocumentType:       stringPtrIfNotBlank(t.DocumentType),
+		DefaultDaysPerYear: models.Decimal{Decimal: t.DefaultDaysPerYear},
+		MaxCarryoverDays:   models.Decimal{Decimal: t.MaxCarryoverDays},
+		TSDCode:            stringPtrIfNotBlank(t.TSDCode),
+		EMTACode:           stringPtrIfNotBlank(t.EMTACode),
+		IsSystem:           t.IsSystem,
+		IsActive:           t.IsActive,
+		SortOrder:          t.SortOrder,
+		CreatedAt:          t.CreatedAt,
+		UpdatedAt:          t.UpdatedAt,
+	}
 }

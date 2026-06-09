@@ -9,10 +9,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Keep this aligned with the test schema lifecycle lock so demo reset DDL does
-// not deadlock against concurrent test processes using the same database.
-const demoResetAdvisoryLockKey = demo.ResetAdvisoryLockKey
-
 // DemoStatusResponse represents the demo data status.
 type DemoStatusResponse struct {
 	User              int          `json:"user"`
