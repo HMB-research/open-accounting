@@ -2534,6 +2534,23 @@ Content-Type: application/json
 }
 ```
 
+### Reverse Payment
+
+```http
+POST /tenants/{tenantId}/payments/{paymentId}/reverse
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "payment_date": "2026-03-20T00:00:00Z",
+  "reason": "Duplicate bank import",
+  "reference": "REVERSAL-PMT-00001",
+  "notes": "Correcting duplicate bank statement import"
+}
+```
+
+Creates an auditable offsetting payment instead of deleting the original payment. The original payment is marked with `reversed_by_payment_id`, `reversed_at`, `reversed_by`, and `reversal_reason`; the offsetting payment points back with `reversal_of_payment_id`. Allocated payments mirror the original allocations and reduce the related invoices' paid amounts through the payment workflow.
+
 ### Get Unallocated Payments
 
 ```http

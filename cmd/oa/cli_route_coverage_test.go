@@ -888,6 +888,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 		return commandForMethod(method, map[string]string{"GET": "payments get"})
 	case "/payments/{paymentID}/allocate":
 		return commandForMethod(method, map[string]string{"POST": "payments allocate"})
+	case "/payments/{paymentID}/reverse":
+		return commandForMethod(method, map[string]string{"POST": "payments reverse"})
 	case "/payments/{paymentID}/email-receipt":
 		return commandForMethod(method, map[string]string{"POST": "email payment-receipt"})
 	case "/reports/trial-balance":

@@ -12934,6 +12934,26 @@ func TestCLIPaymentBranches(t *testing.T) {
 			want: "amount must be positive",
 		},
 		{
+			name: "reverse invalid flag",
+			args: []string{"reverse", "--json=maybe"},
+			want: "invalid boolean value",
+		},
+		{
+			name: "reverse missing id",
+			args: []string{"reverse", "--reason", "Duplicate"},
+			want: "id is required",
+		},
+		{
+			name: "reverse missing reason",
+			args: []string{"reverse", "--id", "pay-1"},
+			want: "reason is required",
+		},
+		{
+			name: "reverse invalid date",
+			args: []string{"reverse", "--id", "pay-1", "--reason", "Duplicate", "--date", "2026/03/20"},
+			want: "parse date",
+		},
+		{
 			name: "unallocated invalid flag",
 			args: []string{"unallocated", "--json=maybe"},
 			want: "invalid boolean value",
@@ -13046,6 +13066,40 @@ func TestCLIPaymentBranches(t *testing.T) {
 			assert.Equal(t, "inv-branch-3", req.InvoiceID)
 			assert.True(t, req.Amount.Equal(decimal.RequireFromString("10.50")))
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "allocated", "payment_id": "pay-json"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments/pay-json/reverse":
+			var req payments.ReversePaymentRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-03-20", req.PaymentDate.Format("2006-01-02"))
+			assert.Equal(t, "Duplicate import", req.Reason)
+			assert.Equal(t, "REV-REF", req.Reference)
+			assert.Equal(t, "Correcting duplicate", req.Notes)
+			original := cliPaymentPayload("pay-json", "PMT-00011", payments.PaymentTypeReceived, "contact-branch", "50.25")
+			reversal := cliPaymentPayload("pay-reversal", "OUT-00003", payments.PaymentTypeMade, "contact-branch", "50.25")
+			original["reversed_by_payment_id"] = "pay-reversal"
+			original["reversal_reason"] = "Duplicate import"
+			reversal["reversal_of_payment_id"] = "pay-json"
+			reversal["reversal_reason"] = "Duplicate import"
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"original_payment": original,
+				"reversal_payment": reversal,
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments/pay-text/reverse":
+			var req payments.ReversePaymentRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.True(t, req.PaymentDate.IsZero())
+			assert.Equal(t, "Text reversal", req.Reason)
+			assert.Empty(t, req.Reference)
+			assert.Empty(t, req.Notes)
+			original := cliPaymentPayload("pay-text", "PMT-00010", payments.PaymentTypeReceived, "", "25.00")
+			reversal := cliPaymentPayload("pay-text-reversal", "OUT-00004", payments.PaymentTypeMade, "", "25.00")
+			original["reversed_by_payment_id"] = "pay-text-reversal"
+			reversal["reversal_of_payment_id"] = "pay-text"
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"original_payment": original,
+				"reversal_payment": reversal,
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payments/unallocated":
 			require.Equal(t, "MADE", r.URL.Query().Get("type"))
 			_ = json.NewEncoder(w).Encode([]map[string]any{
@@ -13120,6 +13174,19 @@ func TestCLIPaymentBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"payment_id": "pay-json"`)
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"payments", "reverse", "--id", " pay-json ", "--reason", " Duplicate import ", "--date", "2026-03-20", "--reference", " REV-REF ", "--notes", " Correcting duplicate ", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"original_payment": {`)
+	assert.Contains(t, stdout.String(), `"reversal_payment": {`)
+	assert.Contains(t, stdout.String(), `"payment_number": "OUT-00003"`)
+	assert.Contains(t, stdout.String(), `"reversal_of_payment_id": "pay-json"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payments", "reverse", "--id", " pay-text ", "--reason", " Text reversal "})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Reversed payment PMT-00010 with OUT-00004")
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"payments", "unallocated", "--type", " made ", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"id": "pay-unallocated"`)
@@ -13151,6 +13218,7 @@ func TestCLIPaymentAuthFlagsAndAPIErrors(t *testing.T) {
 	}{
 		{name: "get bad flag", args: []string{"payments", "get", "--bad"}},
 		{name: "allocate bad flag", args: []string{"payments", "allocate", "--bad"}},
+		{name: "reverse bad flag", args: []string{"payments", "reverse", "--bad"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			stdout.Reset()
@@ -13207,6 +13275,11 @@ func TestCLIPaymentAuthFlagsAndAPIErrors(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "inv-error", req.InvoiceID)
 			assert.True(t, req.Amount.Equal(decimal.RequireFromString("25.00")))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments/pay-error/reverse":
+			var req payments.ReversePaymentRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-04-21", req.PaymentDate.Format("2006-01-02"))
+			assert.Equal(t, "Duplicate", req.Reason)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payments/unallocated":
 			assert.Equal(t, "MADE", r.URL.Query().Get("type"))
 		default:
@@ -13229,6 +13302,7 @@ func TestCLIPaymentAuthFlagsAndAPIErrors(t *testing.T) {
 		{name: "sepa export api error", args: []string{"payments", "sepa-export", "--message-id", "MSG-ERROR", "--debtor-name", "Example OU", "--debtor-iban", "EE382200221020145685", "--execution-date", "2026-04-20", "--line", "name=Supplier AS,iban=EE471000001020145685,amount=25.00"}},
 		{name: "get api error", args: []string{"payments", "get", "--id", "pay-error"}},
 		{name: "allocate api error", args: []string{"payments", "allocate", "--id", "pay-error", "--invoice-id", "inv-error", "--amount", "25.00"}},
+		{name: "reverse api error", args: []string{"payments", "reverse", "--id", "pay-error", "--reason", "Duplicate", "--date", "2026-04-21"}},
 		{name: "unallocated api error", args: []string{"payments", "unallocated", "--type", "made"}},
 	}
 	for _, tc := range cases {

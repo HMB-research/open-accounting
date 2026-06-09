@@ -28,6 +28,7 @@ type mockPaymentsRepository struct {
 	listErr       error
 	allocErr      error
 	unallocErr    error
+	reversalErr   error
 }
 
 func newMockPaymentsRepository() *mockPaymentsRepository {
@@ -43,6 +44,26 @@ func (m *mockPaymentsRepository) Create(ctx context.Context, schemaName string, 
 		return m.createErr
 	}
 	m.payments[payment.ID] = payment
+	return nil
+}
+
+func (m *mockPaymentsRepository) CreateReversal(ctx context.Context, schemaName string, originalPaymentID string, reversal *payments.Payment, allocations []payments.PaymentAllocation, reversedAt time.Time, reversedBy string, reason string) error {
+	if m.reversalErr != nil {
+		return m.reversalErr
+	}
+	original, ok := m.payments[originalPaymentID]
+	if !ok || original.TenantID != reversal.TenantID {
+		return payments.ErrPaymentNotFound
+	}
+	if original.ReversedByPaymentID != nil {
+		return payments.ErrPaymentAlreadyReversed
+	}
+	m.payments[reversal.ID] = reversal
+	m.allocations[reversal.ID] = append([]payments.PaymentAllocation(nil), allocations...)
+	original.ReversedByPaymentID = &reversal.ID
+	original.ReversedAt = &reversedAt
+	original.ReversedBy = &reversedBy
+	original.ReversalReason = reason
 	return nil
 }
 
@@ -120,10 +141,18 @@ func (m *mockPaymentsRepository) GetUnallocatedPayments(ctx context.Context, sch
 
 // mockInvoiceServiceForPayments implements payments.InvoiceService
 type mockInvoiceServiceForPayments struct {
-	recordPaymentErr error
+	recordPaymentErr   error
+	recordPaymentCalls []struct {
+		invoiceID string
+		amount    decimal.Decimal
+	}
 }
 
 func (m *mockInvoiceServiceForPayments) RecordPayment(ctx context.Context, tenantID, schemaName, invoiceID string, amount decimal.Decimal) error {
+	m.recordPaymentCalls = append(m.recordPaymentCalls, struct {
+		invoiceID string
+		amount    decimal.Decimal
+	}{invoiceID, amount})
 	return m.recordPaymentErr
 }
 
@@ -391,6 +420,153 @@ func TestCreatePayment(t *testing.T) {
 				assert.NotEmpty(t, result.ID)
 				assert.NotEmpty(t, result.PaymentNumber)
 			}
+		})
+	}
+}
+
+func TestReversePayment(t *testing.T) {
+	tests := []struct {
+		name        string
+		body        map[string]interface{}
+		setupRepo   func(*mockPaymentsRepository)
+		setupTenant func(*mockTenantRepository)
+		wantStatus  int
+		wantErr     string
+	}{
+		{
+			name: "valid reversal",
+			body: map[string]interface{}{
+				"payment_date": "2026-03-20T00:00:00Z",
+				"reason":       "Duplicate bank import",
+			},
+			setupRepo: func(repo *mockPaymentsRepository) {
+				repo.payments["payment-1"] = &payments.Payment{
+					ID:            "payment-1",
+					TenantID:      "tenant-1",
+					PaymentNumber: "PMT-00001",
+					PaymentType:   payments.PaymentTypeReceived,
+					PaymentDate:   time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+					Amount:        decimal.RequireFromString("100.00"),
+					Currency:      "EUR",
+					ExchangeRate:  decimal.NewFromInt(1),
+					BaseAmount:    decimal.RequireFromString("100.00"),
+				}
+				repo.allocations["payment-1"] = []payments.PaymentAllocation{{
+					ID:        "alloc-1",
+					TenantID:  "tenant-1",
+					PaymentID: "payment-1",
+					InvoiceID: "invoice-1",
+					Amount:    decimal.RequireFromString("40.00"),
+				}}
+			},
+			wantStatus: http.StatusCreated,
+		},
+		{
+			name: "missing reason rejected",
+			body: map[string]interface{}{
+				"payment_date": "2026-03-20T00:00:00Z",
+			},
+			setupRepo: func(repo *mockPaymentsRepository) {
+				repo.payments["payment-1"] = &payments.Payment{
+					ID:           "payment-1",
+					TenantID:     "tenant-1",
+					PaymentType:  payments.PaymentTypeReceived,
+					Amount:       decimal.NewFromInt(10),
+					Currency:     "EUR",
+					ExchangeRate: decimal.NewFromInt(1),
+					BaseAmount:   decimal.NewFromInt(10),
+				}
+			},
+			wantStatus: http.StatusBadRequest,
+			wantErr:    "reversal reason is required",
+		},
+		{
+			name: "already reversed rejected",
+			body: map[string]interface{}{
+				"payment_date": "2026-03-20T00:00:00Z",
+				"reason":       "Duplicate",
+			},
+			setupRepo: func(repo *mockPaymentsRepository) {
+				reversedByPaymentID := "payment-2"
+				repo.payments["payment-1"] = &payments.Payment{
+					ID:                  "payment-1",
+					TenantID:            "tenant-1",
+					PaymentType:         payments.PaymentTypeReceived,
+					Amount:              decimal.NewFromInt(10),
+					Currency:            "EUR",
+					ExchangeRate:        decimal.NewFromInt(1),
+					BaseAmount:          decimal.NewFromInt(10),
+					ReversedByPaymentID: &reversedByPaymentID,
+				}
+			},
+			wantStatus: http.StatusConflict,
+			wantErr:    "already reversed",
+		},
+		{
+			name: "period lock rejected",
+			body: map[string]interface{}{
+				"payment_date": "2026-01-15T00:00:00Z",
+				"reason":       "Duplicate",
+			},
+			setupRepo: func(repo *mockPaymentsRepository) {
+				repo.payments["payment-1"] = &payments.Payment{
+					ID:           "payment-1",
+					TenantID:     "tenant-1",
+					PaymentType:  payments.PaymentTypeReceived,
+					Amount:       decimal.NewFromInt(10),
+					Currency:     "EUR",
+					ExchangeRate: decimal.NewFromInt(1),
+					BaseAmount:   decimal.NewFromInt(10),
+				}
+			},
+			setupTenant: func(repo *mockTenantRepository) {
+				lockDate := "2026-01-31"
+				repo.tenants["tenant-1"].Settings.PeriodLockDate = &lockDate
+			},
+			wantStatus: http.StatusConflict,
+			wantErr:    "period locked through 2026-01-31",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, repo, tenantRepo := setupPaymentTestHandlers()
+			tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+				ID:         "tenant-1",
+				SchemaName: "tenant_test",
+			}
+			if tt.setupTenant != nil {
+				tt.setupTenant(tenantRepo)
+			}
+			if tt.setupRepo != nil {
+				tt.setupRepo(repo)
+			}
+
+			body, _ := json.Marshal(tt.body)
+			req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/payments/payment-1/reverse", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "paymentID": "payment-1"})
+			req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+			rr := httptest.NewRecorder()
+			h.ReversePayment(rr, req)
+
+			assert.Equal(t, tt.wantStatus, rr.Code, rr.Body.String())
+			if tt.wantErr != "" {
+				assert.Contains(t, rr.Body.String(), tt.wantErr)
+				return
+			}
+
+			var result payments.PaymentReversalResult
+			require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &result))
+			require.NotNil(t, result.OriginalPayment)
+			require.NotNil(t, result.ReversalPayment)
+			assert.Equal(t, payments.PaymentTypeMade, result.ReversalPayment.PaymentType)
+			assert.Equal(t, result.ReversalPayment.ID, *result.OriginalPayment.ReversedByPaymentID)
+			assert.Equal(t, "payment-1", *result.ReversalPayment.ReversalOfPaymentID)
+			assert.Equal(t, "Duplicate bank import", result.ReversalPayment.ReversalReason)
+			require.Len(t, result.ReversalPayment.Allocations, 1)
+			assert.Equal(t, "invoice-1", result.ReversalPayment.Allocations[0].InvoiceID)
 		})
 	}
 }

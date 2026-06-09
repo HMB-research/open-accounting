@@ -974,6 +974,14 @@ func (c *apiClient) allocatePayment(ctx context.Context, tenantID, paymentID str
 	return resp, nil
 }
 
+func (c *apiClient) reversePayment(ctx context.Context, tenantID, paymentID string, req *payments.ReversePaymentRequest) (*payments.PaymentReversalResult, error) {
+	var resp payments.PaymentReversalResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "payments", paymentID, "reverse"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) listUnallocatedPayments(ctx context.Context, tenantID string, paymentType payments.PaymentType) ([]payments.Payment, error) {
 	values := url.Values{}
 	if paymentType != "" {

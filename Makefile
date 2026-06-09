@@ -108,7 +108,7 @@ deploy-prod-down:
 # Generate API documentation
 swagger:
 	@echo "Generating Swagger documentation..."
-	~/go/bin/swag init -g cmd/api/main.go -o docs --parseDependency
+	GOROOT="$$(go env GOROOT)" ~/go/bin/swag init -g cmd/api/main.go -o docs --parseDependency
 	@echo "Swagger docs generated in docs/"
 
 docs: swagger

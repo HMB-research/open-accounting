@@ -3,6 +3,7 @@ package payments
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/database"
@@ -138,6 +139,106 @@ func (s *Service) Create(ctx context.Context, tenantID, schemaName string, req *
 	return payment, nil
 }
 
+// Reverse creates an auditable offsetting payment for an existing payment.
+func (s *Service) Reverse(ctx context.Context, tenantID, schemaName, paymentID string, req *ReversePaymentRequest) (*PaymentReversalResult, error) {
+	if req == nil {
+		req = &ReversePaymentRequest{}
+	}
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" {
+		return nil, fmt.Errorf("reversal reason is required")
+	}
+
+	original, err := s.GetByID(ctx, tenantID, schemaName, paymentID)
+	if err != nil {
+		return nil, err
+	}
+	if original.ReversalOfPaymentID != nil {
+		return nil, fmt.Errorf("%w: reversal payments cannot be reversed", ErrPaymentReversalNotAllowed)
+	}
+	if original.ReversedByPaymentID != nil {
+		return nil, ErrPaymentAlreadyReversed
+	}
+
+	reversalDate := req.PaymentDate
+	if reversalDate.IsZero() {
+		reversalDate = time.Now()
+	}
+
+	reversalPaymentID := uuid.New().String()
+	reversalType := reversePaymentType(original.PaymentType)
+	seq, err := s.repo.GetNextPaymentNumber(ctx, schemaName, tenantID, reversalType)
+	if err != nil {
+		return nil, fmt.Errorf("generate reversal payment number: %w", err)
+	}
+
+	reference := strings.TrimSpace(req.Reference)
+	if reference == "" {
+		reference = fmt.Sprintf("REVERSAL-%s", original.PaymentNumber)
+	}
+	notes := strings.TrimSpace(req.Notes)
+	if notes == "" {
+		notes = fmt.Sprintf("Reversal of %s: %s", original.PaymentNumber, reason)
+	}
+	reversalOfPaymentID := original.ID
+	now := time.Now()
+	reversal := &Payment{
+		ID:                  reversalPaymentID,
+		TenantID:            tenantID,
+		PaymentNumber:       FormatPaymentNumber(reversalType, seq),
+		PaymentType:         reversalType,
+		ContactID:           original.ContactID,
+		PaymentDate:         reversalDate,
+		Amount:              original.Amount,
+		Currency:            original.Currency,
+		ExchangeRate:        original.ExchangeRate,
+		BaseAmount:          original.BaseAmount,
+		PaymentMethod:       original.PaymentMethod,
+		BankAccount:         original.BankAccount,
+		Reference:           reference,
+		Notes:               notes,
+		ReversalOfPaymentID: &reversalOfPaymentID,
+		ReversalReason:      reason,
+		CreatedAt:           now,
+		CreatedBy:           req.UserID,
+	}
+
+	reversalAllocations := make([]PaymentAllocation, 0, len(original.Allocations))
+	for _, originalAllocation := range original.Allocations {
+		reversalAllocations = append(reversalAllocations, PaymentAllocation{
+			ID:        uuid.New().String(),
+			TenantID:  tenantID,
+			PaymentID: reversal.ID,
+			InvoiceID: originalAllocation.InvoiceID,
+			Amount:    originalAllocation.Amount,
+			CreatedAt: now,
+		})
+	}
+
+	if err := s.repo.CreateReversal(ctx, schemaName, original.ID, reversal, reversalAllocations, now, req.UserID, reason); err != nil {
+		return nil, fmt.Errorf("create payment reversal: %w", err)
+	}
+
+	for _, allocation := range original.Allocations {
+		if s.invoicing != nil {
+			if err := s.invoicing.RecordPayment(ctx, tenantID, schemaName, allocation.InvoiceID, allocation.Amount.Neg()); err != nil {
+				return nil, fmt.Errorf("reverse invoice allocation %s: %w", allocation.InvoiceID, err)
+			}
+		}
+	}
+
+	original.ReversedByPaymentID = &reversal.ID
+	original.ReversedAt = &now
+	original.ReversedBy = &req.UserID
+	original.ReversalReason = reason
+	reversal.Allocations = reversalAllocations
+
+	return &PaymentReversalResult{
+		OriginalPayment: original,
+		ReversalPayment: reversal,
+	}, nil
+}
+
 // GetByID retrieves a payment by ID
 func (s *Service) GetByID(ctx context.Context, tenantID, schemaName, paymentID string) (*Payment, error) {
 	payment, err := s.repo.GetByID(ctx, schemaName, tenantID, paymentID)
@@ -202,4 +303,11 @@ func (s *Service) AllocateToInvoice(ctx context.Context, tenantID, schemaName, p
 // GetUnallocatedPayments returns payments with unallocated amounts
 func (s *Service) GetUnallocatedPayments(ctx context.Context, tenantID, schemaName string, paymentType PaymentType) ([]Payment, error) {
 	return s.repo.GetUnallocatedPayments(ctx, schemaName, tenantID, paymentType)
+}
+
+func reversePaymentType(paymentType PaymentType) PaymentType {
+	if paymentType == PaymentTypeMade {
+		return PaymentTypeReceived
+	}
+	return PaymentTypeMade
 }
