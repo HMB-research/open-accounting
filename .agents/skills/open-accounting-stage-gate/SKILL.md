@@ -43,12 +43,17 @@ Run focused gates first, then broad gates when the stage is stable:
 ```bash
 make test-cli-coverage
 go test -timeout=3m ./docs -count=1
-go test -p 1 -count=1 -race ./...
+go test -count=1 -race ./...
 cd frontend && bun run lint
 cd frontend && bun run check
 cd frontend && bun run test
 cd frontend && bun run build
 ```
+
+Use Go's default package parallelism for backend unit tests. Do not add `-p 1`
+to the unit gate unless a current failure proves shared process state; the
+integration Make targets already isolate DB-backed tests and should stay the
+place for PostgreSQL/DDL serialization.
 
 For repository changes, add and run a focused integration test:
 

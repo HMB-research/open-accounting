@@ -431,7 +431,7 @@ Coverage is tracked in CI and Codecov, but the repository does not currently cla
 
 | Layer | Current Gate |
 |-------|--------------|
-| Backend | `go test -p 1 -race ./...` must pass without PostgreSQL |
+| Backend | `go test -race ./...` must pass without PostgreSQL using Go's default package parallelism |
 | Backend integration | `DATABASE_URL=... make test-integration-coverage` must pass |
 | Frontend | `bun run check` and `bun run test` must pass |
 | E2E | Blocking smoke E2E plus blocking local seeded demo shards; optional remote hosted-demo E2E remains informational |
@@ -440,7 +440,7 @@ Coverage is tracked in CI and Codecov, but the repository does not currently cla
 
 ```bash
 # Unit tests (no database required)
-go test -p 1 -race -coverprofile=/tmp/open-accounting-unit-coverage.out ./...
+go test -race -coverprofile=/tmp/open-accounting-unit-coverage.out ./...
 
 # Integration tests (requires PostgreSQL)
 DATABASE_URL="postgres://..." make test-integration-coverage

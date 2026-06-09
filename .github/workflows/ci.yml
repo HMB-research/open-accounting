@@ -120,7 +120,7 @@ jobs:
         run: go mod download
 
       - name: Run tests
-        run: go test -p 1 -v -race -coverprofile=coverage.out ./...
+        run: go test -v -race -coverprofile=coverage.out ./...
 
       - name: Verify CLI coverage gate
         run: make test-cli-coverage
