@@ -24,6 +24,7 @@ Use this with `open-accounting-stage-gate` when GitHub says the branch has confl
    ```
 4. Resolve toward current product behavior and current tests. Do not keep duplicate legacy branches, stale compatibility helpers, or both versions of a parser/test just to avoid choosing.
 5. If the conflict is in a Svelte component or frontend test, load `open-accounting-frontend-workflow`, run the Svelte MCP autofixer when available, and run the focused component or E2E test that owns the conflicted behavior before broader gates.
+6. If the conflict is in a test file, preserve the newest product expectation and make the test prove the intended workflow rather than merely matching either side of the conflict.
 
 ## Post-Resolution Gates
 

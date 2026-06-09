@@ -15,6 +15,7 @@ Use this skill for architecture, layer boundaries, and general testing decisions
 - `open-accounting-import-mappers`: external import format work, provider/bank-specific mapper boundaries, official sample fixtures, registry parity, and legacy parser removal.
 - `open-accounting-accounting-integrity`: payment reversals, invoice paid-state changes, journal/close correction flows, period locks, evidence blockers, and audit-preserving accounting history changes.
 - `open-accounting-pr-conflict-recovery`: PR merge conflicts, branch rebases/merges, conflicted frontend tests, post-conflict local gates, and follow-up pushes.
+- `open-accounting-skill-maintenance`: capture workflow learnings in repo skills after repeated friction, user preference changes, or new staged-validation patterns.
 
 ## Architecture Context
 
@@ -42,6 +43,7 @@ This repo treats ORM/repository-backed persistence and reusable application code
 - CLI, API, service, and frontend entry points should call the same reusable service/mapper/repository behavior instead of maintaining parallel implementations.
 - For bank, payroll, invoice, or other external imports, put parsing and normalization behind reusable mapper packages. Use a bank/provider-specific mapper boundary when formats differ so additional formats can be added without branching through handlers or CLI commands.
 - For provider-specific import changes, load `open-accounting-import-mappers` and verify the mapper, registry, API/CLI/docs, and user-facing workflow together.
+- When the user asks to improve skills or the work reveals a repeatable process gap, update `.agents/skills` in the same stage using concise, reusable guidance. Prefer updating an existing focused skill; add a new skill only when the trigger and workflow are distinct.
 
 ### Layer Responsibilities
 

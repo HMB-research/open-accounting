@@ -13,8 +13,10 @@ If GitHub reports merge conflicts or the branch cannot be merged cleanly, load `
 
 1. Check `git status --short --branch`; leave unrelated untracked paths alone.
 2. Check the current PR with `gh pr view --json number,url,headRefName,mergeable,isDraft,statusCheckRollup`.
-3. If the branch may already include the requested work, inspect files and PR state before creating new churn.
-4. Select the next weak surface from current evidence, not memory alone:
+3. If a PR already exists or the user asks to create one "for now", keep pushing staged commits to the existing PR instead of creating duplicate PRs.
+4. If GitHub reports conflicts or `mergeable` is not clean, load `open-accounting-pr-conflict-recovery` and resolve that before starting more feature work.
+5. If the branch may already include the requested work, inspect files and PR state before creating new churn.
+6. Select the next weak surface from current evidence, not memory alone:
    - `docs/UI_ISSUES_REPORT.md` for demo/UI workflow gaps.
    - `make test-cli-coverage` for missing CLI/API/docs parity.
    - `docs/api_route_coverage_test.go` failures for API Markdown or Swagger gaps.
@@ -32,6 +34,7 @@ If GitHub reports merge conflicts or the branch cannot be merged cleanly, load `
 - For Svelte route/component changes, load `open-accounting-frontend-workflow`, run the Svelte MCP autofixer when available, and prove the UI behavior with focused assertions before broad gates.
 - For external import formats, load `open-accounting-import-mappers`; prove provider mapper tests, registry routing, API/CLI docs, and any visible UI import workflow in the same stage.
 - For accounting-sensitive correction workflows, load `open-accounting-accounting-integrity`; prove the original record is preserved, the offsetting/void/reopen record is linked, locks are enforced, and derived balances are updated through reusable domain services.
+- If the user asks to improve the repo development flow, load `open-accounting-skill-maintenance` and update the relevant `.agents/skills` files before the stage commit.
 
 ## Local Gates
 
@@ -62,3 +65,4 @@ For user-facing demo workflows, use `open-accounting-demo-e2e` and run the focus
 - Push each successful stage so PR process is preserved.
 - After push, report the commit hash and PR check state separately from local validation.
 - Do not claim deploy/live readiness from local or PR-green evidence.
+- Preserve exact gate evidence in the final status: commands run, focused E2E spec names, PR number, remote workflow/check state, and any unrelated dirty paths left untouched.

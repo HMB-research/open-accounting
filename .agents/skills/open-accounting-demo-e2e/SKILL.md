@@ -16,6 +16,8 @@ Use this with `open-accounting-development` for local demo Playwright checks. Th
    ```
 2. Do not trust an existing `localhost:5173` server until verified. It can be another repo. If uncertain, use a clean port such as `5174`.
 3. Do not trust the Docker Compose API on `localhost:8080` for branch-code verification. It may be a stale image. Use `curl /health` only as liveness, not proof of current source.
+4. If migrations changed recently or the database state is unknown, run the branch migration command against the local Postgres before demo reset.
+5. Track PIDs for any branch API or frontend server started for verification and stop them before final status.
 
 ## Branch API Pattern
 
@@ -36,6 +38,13 @@ Then reset demo data through that branch API:
 ```bash
 curl -fsS -X POST http://localhost:18080/api/demo/reset \
   -H 'X-Demo-Secret: test-demo-secret'
+```
+
+If migration state is uncertain:
+
+```bash
+DATABASE_URL='postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable' \
+go run ./cmd/migrate -direction up
 ```
 
 If using a frontend port other than `5173`, include it in `ALLOWED_ORIGINS` before starting the API. Confirm CORS if auth reports "Unable to connect to server":
