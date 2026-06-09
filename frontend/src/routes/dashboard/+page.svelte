@@ -688,6 +688,7 @@
 	.workspace-copy {
 		position: relative;
 		z-index: 1;
+		min-width: 0;
 		max-width: 46rem;
 		display: flex;
 		flex-direction: column;
@@ -697,6 +698,8 @@
 
 	.workspace-meta {
 		display: flex;
+		min-width: 0;
+		max-width: 100%;
 		align-items: center;
 		gap: 0.75rem;
 		flex-wrap: wrap;
@@ -725,11 +728,14 @@
 	}
 
 	.workspace-slug {
+		min-width: 0;
+		max-width: 100%;
 		font-family: var(--font-mono);
 		font-size: 0.78rem;
 		letter-spacing: 0.06em;
 		text-transform: uppercase;
 		color: var(--color-text-muted);
+		overflow-wrap: anywhere;
 	}
 
 	.workspace-hero h2 {
@@ -737,8 +743,9 @@
 		font-size: clamp(2.8rem, 6vw, 5.1rem);
 		line-height: 0.88;
 		margin-bottom: 0;
-		letter-spacing: -0.04em;
+		letter-spacing: 0;
 		font-weight: 600;
+		overflow-wrap: anywhere;
 	}
 
 	.workspace-hero p {
@@ -749,11 +756,14 @@
 
 	.workspace-rail {
 		display: flex;
+		min-width: 0;
+		max-width: 100%;
 		flex-wrap: wrap;
 		gap: 0.55rem;
 	}
 
 	.workspace-rail span {
+		min-width: 0;
 		padding: 0.45rem 0.8rem;
 		border-radius: 999px;
 		background: rgba(255, 255, 255, 0.65);
@@ -761,10 +771,12 @@
 		font-size: 0.78rem;
 		font-weight: 600;
 		color: var(--color-text-muted);
+		overflow-wrap: anywhere;
 	}
 
 	.workspace-actions {
 		display: flex;
+		min-width: 0;
 		flex-wrap: wrap;
 		gap: 0.75rem;
 		justify-content: flex-start;
@@ -774,11 +786,13 @@
 		position: relative;
 		z-index: 1;
 		display: grid;
+		min-width: 0;
 		gap: 1rem;
 		align-content: start;
 	}
 
 	.workspace-panel {
+		min-width: 0;
 		padding: 1.1rem;
 		border-radius: 1.35rem;
 		border: 1px solid rgba(30, 41, 59, 0.08);
@@ -808,11 +822,13 @@
 
 	.workspace-signal-grid {
 		display: grid;
+		min-width: 0;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 0.85rem;
 	}
 
 	.workspace-signal {
+		min-width: 0;
 		padding: 0.85rem;
 		border-radius: 1rem;
 		background: rgba(255, 255, 255, 0.08);
@@ -834,12 +850,15 @@
 
 	.workspace-chip-row {
 		display: flex;
+		min-width: 0;
 		flex-wrap: wrap;
 		gap: 0.55rem;
 	}
 
 	.workspace-chip {
 		display: inline-flex;
+		min-width: 0;
+		max-width: 100%;
 		align-items: center;
 		padding: 0.55rem 0.85rem;
 		border-radius: 999px;
@@ -848,6 +867,7 @@
 		color: var(--color-primary);
 		font-weight: 600;
 		text-decoration: none;
+		overflow-wrap: anywhere;
 	}
 
 	.workspace-chip:hover {
@@ -940,6 +960,24 @@
 	}
 
 	@media (max-width: 480px) {
+		.workspace-hero {
+			gap: 1rem;
+			padding: 1rem;
+		}
+
+		.workspace-hero h2 {
+			font-size: clamp(2.15rem, 12vw, 2.8rem);
+			line-height: 0.95;
+		}
+
+		.workspace-meta {
+			align-items: flex-start;
+		}
+
+		.workspace-signal-grid {
+			grid-template-columns: 1fr;
+		}
+
 		h1 {
 			font-size: 1.25rem;
 		}
