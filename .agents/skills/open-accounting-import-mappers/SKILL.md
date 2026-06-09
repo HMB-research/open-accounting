@@ -9,7 +9,7 @@ Use this with `open-accounting-development` when an import needs provider-specif
 
 ## Boundaries
 
-- Put parsing and normalization in `internal/<domain>/mappers/<provider>/` when a provider or bank has its own format.
+- Put parsing and normalization in `internal/<domain>/mappers/<bank-or-provider>/` when a provider or bank has its own format. Use one directory per bank/provider, for example `internal/banking/mappers/lhv/`, so additional formats do not grow conditionals in handlers, CLI commands, or generic mappers.
 - Keep shared CSV/header/date helpers in the domain mapper package, not in handlers or CLI commands.
 - Keep format selection and auto-detection in a small registry package such as `internal/banking/mappers/registry`.
 - Services own validation, duplicate handling, and import orchestration after rows are normalized.
@@ -19,10 +19,11 @@ Use this with `open-accounting-development` when an import needs provider-specif
 ## Provider Sample Workflow
 
 1. Fetch the current provider documentation or official sample before changing parser assumptions.
-2. Add the smallest useful fixture under the provider mapper `testdata/` directory.
-3. Note the source in the test or nearby docs using a short source label, for example `LHV Connect Account Statement "Statement data" sample`.
-4. Test the fixture through the provider mapper and the registry, not only through an end-to-end import.
-5. Keep fixtures deterministic and free of private customer data.
+2. Prefer the actual official sample over synthetic data. For LHV, fetch the current report sample from LHV docs before changing LHV assumptions.
+3. Add the smallest useful fixture under the provider mapper `testdata/` directory.
+4. Note the source in the test or nearby docs using a short source label, for example `LHV Connect Account Statement "Statement data" sample`.
+5. Test the fixture through the provider mapper and the registry, not only through an end-to-end import.
+6. Keep fixtures deterministic and free of private customer data.
 
 ## Current Banking Mapper Shape
 
@@ -39,6 +40,7 @@ Key files:
 - `internal/banking/mappers/generic/transactions.go`
 - `internal/banking/mappers/lhv/transactions.go`
 - `internal/banking/mappers/lhv/testdata/account_statement_camt053_official.xml`
+- `internal/banking/mappers/lhv/testdata/account_statement_csv_official.csv`
 - `internal/banking/mappers/registry/transactions.go`
 - `internal/banking/transaction_import.go`
 

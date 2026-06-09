@@ -7,6 +7,8 @@ description: Use when advancing open-accounting in staged PR work, especially CL
 
 Use this after `open-accounting-development` when the task is broader than a single bug fix and the user expects coherent local-green stages committed and pushed.
 
+If GitHub reports merge conflicts or the branch cannot be merged cleanly, load `open-accounting-pr-conflict-recovery` before editing conflicted files.
+
 ## Start From Current State
 
 1. Check `git status --short --branch`; leave unrelated untracked paths alone.
@@ -24,6 +26,7 @@ Use this after `open-accounting-development` when the task is broader than a sin
 - Do not add API-only behavior when the CLI is expected to cover the route; add CLI command, command tests, route mapping, and `docs/CLI.md`.
 - For API changes, update `docs/API.md`, generated Swagger artifacts, and route coverage mappings in the same stage.
 - Prefer reusable services, mappers, and ORM-backed repositories; remove stale direct paths when touching the area.
+- Do not preserve legacy code as a fallback unless the product requirement is explicit and the removal plan is written down. If a stage replaces a parser, mapper, query path, or duplicated entry-point behavior, delete the replaced path in the same stage.
 - Preserve entry-point parity: frontend/API/CLI should call the same service/repository behavior through their normal layers.
 - For external import formats, load `open-accounting-import-mappers`; prove provider mapper tests, registry routing, API/CLI docs, and any visible UI import workflow in the same stage.
 
