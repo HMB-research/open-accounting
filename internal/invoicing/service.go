@@ -177,7 +177,8 @@ func (s *Service) RecordPayment(ctx context.Context, tenantID, schemaName, invoi
 	} else if newAmountPaid.GreaterThan(decimal.Zero) {
 		newStatus = StatusPartiallyPaid
 	} else {
-		newStatus = invoice.Status
+		newAmountPaid = decimal.Zero
+		newStatus = unpaidInvoiceStatus(invoice)
 	}
 
 	if err := s.repo.UpdatePayment(ctx, schemaName, tenantID, invoiceID, newAmountPaid, newStatus); err != nil {
@@ -185,6 +186,16 @@ func (s *Service) RecordPayment(ctx context.Context, tenantID, schemaName, invoi
 	}
 
 	return nil
+}
+
+func unpaidInvoiceStatus(invoice *Invoice) InvoiceStatus {
+	if invoice.Status == StatusDraft || invoice.Status == StatusVoided {
+		return invoice.Status
+	}
+	if time.Now().After(invoice.DueDate) {
+		return StatusOverdue
+	}
+	return StatusSent
 }
 
 // Void voids an invoice

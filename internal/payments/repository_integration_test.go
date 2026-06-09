@@ -194,6 +194,141 @@ func TestGORMRepository_CreateAllocation(t *testing.T) {
 	}
 }
 
+func TestGORMRepository_CreateReversal(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	repo := newPaymentsGORMRepository(t, pool)
+	ctx := context.Background()
+
+	contactID := uuid.New().String()
+	_, err := pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.contacts (id, tenant_id, contact_type, name, created_at, updated_at)
+		VALUES ($1, $2, 'CUSTOMER', 'Reversal Customer', NOW(), NOW())
+	`, contactID, tenant.ID)
+	if err != nil {
+		t.Fatalf("failed to create contact: %v", err)
+	}
+	userID := testutil.CreateTestUser(t, pool, "payments-reversal-test@example.com")
+	invoiceID := uuid.New().String()
+	_, err = pool.Exec(ctx, `
+		INSERT INTO `+tenant.SchemaName+`.invoices
+		(id, tenant_id, invoice_number, invoice_type, contact_id, issue_date, due_date, currency, subtotal, vat_amount, total, amount_paid, status, created_by, created_at, updated_at)
+		VALUES ($1, $2, 'INV-REV-001', 'SALES', $3, NOW(), NOW() + INTERVAL '30 days', 'EUR', 100, 20, 120, 60, 'PARTIALLY_PAID', $4, NOW(), NOW())
+	`, invoiceID, tenant.ID, contactID, userID)
+	if err != nil {
+		t.Fatalf("failed to create invoice: %v", err)
+	}
+
+	original := &Payment{
+		ID:            uuid.New().String(),
+		TenantID:      tenant.ID,
+		PaymentNumber: "PMT-REV-001",
+		PaymentType:   PaymentTypeReceived,
+		ContactID:     &contactID,
+		Amount:        decimal.RequireFromString("120.00"),
+		Currency:      "EUR",
+		ExchangeRate:  decimal.NewFromInt(1),
+		BaseAmount:    decimal.RequireFromString("120.00"),
+		PaymentDate:   time.Now(),
+		CreatedAt:     time.Now(),
+		CreatedBy:     userID,
+	}
+	if err := repo.Create(ctx, tenant.SchemaName, original); err != nil {
+		t.Fatalf("Create original failed: %v", err)
+	}
+	originalAllocation := &PaymentAllocation{
+		ID:        uuid.New().String(),
+		TenantID:  tenant.ID,
+		PaymentID: original.ID,
+		InvoiceID: invoiceID,
+		Amount:    decimal.RequireFromString("60.00"),
+		CreatedAt: time.Now(),
+	}
+	if err := repo.CreateAllocation(ctx, tenant.SchemaName, originalAllocation); err != nil {
+		t.Fatalf("CreateAllocation original failed: %v", err)
+	}
+
+	reversalOfPaymentID := original.ID
+	reversal := &Payment{
+		ID:                  uuid.New().String(),
+		TenantID:            tenant.ID,
+		PaymentNumber:       "OUT-REV-001",
+		PaymentType:         PaymentTypeMade,
+		ContactID:           &contactID,
+		Amount:              original.Amount,
+		Currency:            "EUR",
+		ExchangeRate:        decimal.NewFromInt(1),
+		BaseAmount:          original.BaseAmount,
+		PaymentDate:         time.Now(),
+		Reference:           "REVERSAL-PMT-REV-001",
+		ReversalOfPaymentID: &reversalOfPaymentID,
+		ReversalReason:      "Duplicate bank import",
+		CreatedAt:           time.Now(),
+		CreatedBy:           userID,
+	}
+	reversalAllocations := []PaymentAllocation{{
+		ID:        uuid.New().String(),
+		TenantID:  tenant.ID,
+		PaymentID: reversal.ID,
+		InvoiceID: invoiceID,
+		Amount:    originalAllocation.Amount,
+		CreatedAt: time.Now(),
+	}}
+	reversedAt := time.Now()
+	if err := repo.CreateReversal(ctx, tenant.SchemaName, original.ID, reversal, reversalAllocations, reversedAt, userID, "Duplicate bank import"); err != nil {
+		t.Fatalf("CreateReversal failed: %v", err)
+	}
+
+	retrievedOriginal, err := repo.GetByID(ctx, tenant.SchemaName, tenant.ID, original.ID)
+	if err != nil {
+		t.Fatalf("GetByID original failed: %v", err)
+	}
+	if retrievedOriginal.ReversedByPaymentID == nil || *retrievedOriginal.ReversedByPaymentID != reversal.ID {
+		t.Fatalf("expected original reversed_by_payment_id %s, got %v", reversal.ID, retrievedOriginal.ReversedByPaymentID)
+	}
+	if retrievedOriginal.ReversalReason != "Duplicate bank import" {
+		t.Errorf("expected original reversal reason, got %q", retrievedOriginal.ReversalReason)
+	}
+
+	retrievedReversal, err := repo.GetByID(ctx, tenant.SchemaName, tenant.ID, reversal.ID)
+	if err != nil {
+		t.Fatalf("GetByID reversal failed: %v", err)
+	}
+	if retrievedReversal.ReversalOfPaymentID == nil || *retrievedReversal.ReversalOfPaymentID != original.ID {
+		t.Fatalf("expected reversal_of_payment_id %s, got %v", original.ID, retrievedReversal.ReversalOfPaymentID)
+	}
+	allocations, err := repo.GetAllocations(ctx, tenant.SchemaName, tenant.ID, reversal.ID)
+	if err != nil {
+		t.Fatalf("GetAllocations reversal failed: %v", err)
+	}
+	if len(allocations) != 1 {
+		t.Fatalf("expected one reversal allocation, got %d", len(allocations))
+	}
+	if allocations[0].InvoiceID != invoiceID {
+		t.Errorf("expected invoice allocation %s, got %s", invoiceID, allocations[0].InvoiceID)
+	}
+	if !allocations[0].Amount.Equal(decimal.RequireFromString("60.00")) {
+		t.Errorf("expected allocation amount 60.00, got %s", allocations[0].Amount)
+	}
+
+	err = repo.CreateReversal(ctx, tenant.SchemaName, original.ID, &Payment{
+		ID:            uuid.New().String(),
+		TenantID:      tenant.ID,
+		PaymentNumber: "OUT-REV-002",
+		PaymentType:   PaymentTypeMade,
+		Amount:        original.Amount,
+		Currency:      "EUR",
+		ExchangeRate:  decimal.NewFromInt(1),
+		BaseAmount:    original.BaseAmount,
+		PaymentDate:   time.Now(),
+		CreatedAt:     time.Now(),
+		CreatedBy:     userID,
+	}, nil, time.Now(), userID, "Second reversal")
+	if err != ErrPaymentAlreadyReversed {
+		t.Fatalf("expected ErrPaymentAlreadyReversed, got %v", err)
+	}
+}
+
 func TestGORMRepository_GetNextPaymentNumber(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)

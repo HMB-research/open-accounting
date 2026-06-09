@@ -23,6 +23,7 @@ type MockRepository struct {
 	getNextNumErr       error
 	getAllocErr         error
 	getUnallocatedErr   error
+	createReversalErr   error
 	unallocatedPayments []Payment
 }
 
@@ -39,6 +40,26 @@ func (m *MockRepository) Create(ctx context.Context, schemaName string, payment 
 		return m.createErr
 	}
 	m.payments[payment.ID] = payment
+	return nil
+}
+
+func (m *MockRepository) CreateReversal(ctx context.Context, schemaName string, originalPaymentID string, reversal *Payment, allocations []PaymentAllocation, reversedAt time.Time, reversedBy string, reason string) error {
+	if m.createReversalErr != nil {
+		return m.createReversalErr
+	}
+	original, ok := m.payments[originalPaymentID]
+	if !ok || original.TenantID != reversal.TenantID {
+		return ErrPaymentNotFound
+	}
+	if original.ReversedByPaymentID != nil {
+		return ErrPaymentAlreadyReversed
+	}
+	m.payments[reversal.ID] = reversal
+	m.allocations[reversal.ID] = append([]PaymentAllocation(nil), allocations...)
+	original.ReversedByPaymentID = &reversal.ID
+	original.ReversedAt = &reversedAt
+	original.ReversedBy = &reversedBy
+	original.ReversalReason = reason
 	return nil
 }
 
@@ -753,6 +774,114 @@ func TestService_Create_CallsInvoicing(t *testing.T) {
 	assert.True(t, invoiceSvc.recordPaymentCalls[0].amount.Equal(decimal.NewFromFloat(50)))
 	assert.Equal(t, "inv-2", invoiceSvc.recordPaymentCalls[1].invoiceID)
 	assert.True(t, invoiceSvc.recordPaymentCalls[1].amount.Equal(decimal.NewFromFloat(30)))
+}
+
+func TestService_Reverse(t *testing.T) {
+	repo := NewMockRepository()
+	invoiceSvc := &MockInvoiceService{}
+	service := NewServiceWithRepository(repo, invoiceSvc)
+	ctx := context.Background()
+
+	contactID := "contact-1"
+	original := &Payment{
+		ID:            "pay-1",
+		TenantID:      "tenant-1",
+		PaymentNumber: "PMT-00001",
+		PaymentType:   PaymentTypeReceived,
+		ContactID:     &contactID,
+		PaymentDate:   time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+		Amount:        decimal.RequireFromString("100.00"),
+		Currency:      "EUR",
+		ExchangeRate:  decimal.NewFromInt(1),
+		BaseAmount:    decimal.RequireFromString("100.00"),
+		PaymentMethod: "BANK_TRANSFER",
+		Reference:     "BANK-001",
+		CreatedBy:     "user-1",
+	}
+	repo.payments[original.ID] = original
+	repo.allocations[original.ID] = []PaymentAllocation{{
+		ID:        "alloc-1",
+		TenantID:  "tenant-1",
+		PaymentID: original.ID,
+		InvoiceID: "inv-1",
+		Amount:    decimal.RequireFromString("60.00"),
+	}}
+
+	result, err := service.Reverse(ctx, "tenant-1", "test_schema", original.ID, &ReversePaymentRequest{
+		PaymentDate: time.Date(2026, 3, 20, 0, 0, 0, 0, time.UTC),
+		Reason:      "Duplicate bank import",
+		UserID:      "user-2",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result.OriginalPayment)
+	require.NotNil(t, result.ReversalPayment)
+
+	assert.Equal(t, PaymentTypeMade, result.ReversalPayment.PaymentType)
+	assert.Equal(t, "OUT-00001", result.ReversalPayment.PaymentNumber)
+	assert.Equal(t, original.ID, *result.ReversalPayment.ReversalOfPaymentID)
+	assert.Equal(t, "Duplicate bank import", result.ReversalPayment.ReversalReason)
+	assert.Equal(t, "REVERSAL-PMT-00001", result.ReversalPayment.Reference)
+	assert.Equal(t, "Reversal of PMT-00001: Duplicate bank import", result.ReversalPayment.Notes)
+	assert.Equal(t, result.ReversalPayment.ID, *result.OriginalPayment.ReversedByPaymentID)
+	assert.Equal(t, "user-2", *result.OriginalPayment.ReversedBy)
+	assert.Equal(t, "Duplicate bank import", result.OriginalPayment.ReversalReason)
+	require.Len(t, result.ReversalPayment.Allocations, 1)
+	assert.Equal(t, "inv-1", result.ReversalPayment.Allocations[0].InvoiceID)
+	assert.True(t, result.ReversalPayment.Allocations[0].Amount.Equal(decimal.RequireFromString("60.00")))
+
+	require.Len(t, invoiceSvc.recordPaymentCalls, 1)
+	assert.Equal(t, "inv-1", invoiceSvc.recordPaymentCalls[0].invoiceID)
+	assert.True(t, invoiceSvc.recordPaymentCalls[0].amount.Equal(decimal.RequireFromString("-60.00")))
+}
+
+func TestService_ReverseRejectsInvalidRequests(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("missing reason", func(t *testing.T) {
+		repo := NewMockRepository()
+		service := NewServiceWithRepository(repo, nil)
+		_, err := service.Reverse(ctx, "tenant-1", "test_schema", "pay-1", &ReversePaymentRequest{})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "reversal reason is required")
+	})
+
+	t.Run("already reversed", func(t *testing.T) {
+		repo := NewMockRepository()
+		reversedByPaymentID := "pay-2"
+		repo.payments["pay-1"] = &Payment{
+			ID:                  "pay-1",
+			TenantID:            "tenant-1",
+			PaymentNumber:       "PMT-00001",
+			PaymentType:         PaymentTypeReceived,
+			Amount:              decimal.NewFromInt(10),
+			Currency:            "EUR",
+			ExchangeRate:        decimal.NewFromInt(1),
+			BaseAmount:          decimal.NewFromInt(10),
+			ReversedByPaymentID: &reversedByPaymentID,
+		}
+		service := NewServiceWithRepository(repo, nil)
+		_, err := service.Reverse(ctx, "tenant-1", "test_schema", "pay-1", &ReversePaymentRequest{Reason: "Duplicate"})
+		require.ErrorIs(t, err, ErrPaymentAlreadyReversed)
+	})
+
+	t.Run("reversal payment", func(t *testing.T) {
+		repo := NewMockRepository()
+		reversalOfPaymentID := "pay-original"
+		repo.payments["pay-reversal"] = &Payment{
+			ID:                  "pay-reversal",
+			TenantID:            "tenant-1",
+			PaymentNumber:       "OUT-00001",
+			PaymentType:         PaymentTypeMade,
+			Amount:              decimal.NewFromInt(10),
+			Currency:            "EUR",
+			ExchangeRate:        decimal.NewFromInt(1),
+			BaseAmount:          decimal.NewFromInt(10),
+			ReversalOfPaymentID: &reversalOfPaymentID,
+		}
+		service := NewServiceWithRepository(repo, nil)
+		_, err := service.Reverse(ctx, "tenant-1", "test_schema", "pay-reversal", &ReversePaymentRequest{Reason: "Duplicate"})
+		require.ErrorIs(t, err, ErrPaymentReversalNotAllowed)
+	})
 }
 
 func TestService_Create_RepositoryError(t *testing.T) {

@@ -297,19 +297,6 @@ definitions:
       parent_id:
         type: string
     type: object
-  github_com_HMB-research_open-accounting_internal_accounting.UpdateAccountRequest:
-    properties:
-      account_type:
-        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.AccountType'
-      code:
-        type: string
-      description:
-        type: string
-      name:
-        type: string
-      parent_id:
-        type: string
-    type: object
   github_com_HMB-research_open-accounting_internal_accounting.CreateCostAllocationRequest:
     properties:
       allocation_date:
@@ -795,6 +782,19 @@ definitions:
         type: number
       total_debits:
         type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.UpdateAccountRequest:
+    properties:
+      account_type:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.AccountType'
+      code:
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+      parent_id:
+        type: string
     type: object
   github_com_HMB-research_open-accounting_internal_accounting.UpdateCostCenterRequest:
     properties:
@@ -4030,6 +4030,16 @@ definitions:
         $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payments.PaymentType'
       reference:
         type: string
+      reversal_of_payment_id:
+        type: string
+      reversal_reason:
+        type: string
+      reversed_at:
+        type: string
+      reversed_by:
+        type: string
+      reversed_by_payment_id:
+        type: string
       tenant_id:
         type: string
     type: object
@@ -4048,6 +4058,13 @@ definitions:
       tenant_id:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_payments.PaymentReversalResult:
+    properties:
+      original_payment:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payments.Payment'
+      reversal_payment:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payments.Payment'
+    type: object
   github_com_HMB-research_open-accounting_internal_payments.PaymentType:
     enum:
     - RECEIVED
@@ -4056,6 +4073,17 @@ definitions:
     x-enum-varnames:
     - PaymentTypeReceived
     - PaymentTypeMade
+  github_com_HMB-research_open-accounting_internal_payments.ReversePaymentRequest:
+    properties:
+      notes:
+        type: string
+      payment_date:
+        type: string
+      reason:
+        type: string
+      reference:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_payments.SEPACreditTransferLine:
     properties:
       amount:
@@ -7945,7 +7973,8 @@ paths:
       - Accounts
   /tenants/{tenantID}/accounts/{accountID}:
     delete:
-      description: Deactivate an editable chart-of-accounts row while preserving accounting history
+      description: Deactivate an editable chart-of-accounts row while preserving accounting
+        history
       parameters:
       - description: Tenant ID
         in: path
@@ -14499,6 +14528,62 @@ paths:
       summary: Email payment receipt
       tags:
       - Email
+  /tenants/{tenantID}/payments/{paymentID}/reverse:
+    post:
+      consumes:
+      - application/json
+      description: Create an offsetting payment, mark the original as reversed, and
+        mirror invoice allocation reversals
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Payment ID
+        in: path
+        name: paymentID
+        required: true
+        type: string
+      - description: Reversal details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payments.ReversePaymentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payments.PaymentReversalResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Reverse payment
+      tags:
+      - Payments
   /tenants/{tenantID}/payments/import:
     post:
       consumes:

@@ -2438,67 +2438,6 @@ const docTemplate = `{
             }
         },
         "/tenants/{tenantID}/accounts/{accountID}": {
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Deactivate an editable chart-of-accounts row while preserving accounting history",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Accounts"
-                ],
-                "summary": "Delete account",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Tenant ID",
-                        "name": "tenantID",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Account ID",
-                        "name": "accountID",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.Account"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "error": {
-                                    "type": "string"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "error": {
-                                    "type": "string"
-                                }
-                            }
-                        }
-                    }
-                }
-            },
             "get": {
                 "security": [
                     {
@@ -2589,6 +2528,67 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.UpdateAccountRequest"
                         }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.Account"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deactivate an editable chart-of-accounts row while preserving accounting history",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Accounts"
+                ],
+                "summary": "Delete account",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Account ID",
+                        "name": "accountID",
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -12719,6 +12719,92 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/payments/{paymentID}/reverse": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create an offsetting payment, mark the original as reversed, and mirror invoice allocation reversals",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "Reverse payment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Payment ID",
+                        "name": "paymentID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Reversal details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payments.ReversePaymentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payments.PaymentReversalResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/payroll-runs": {
             "get": {
                 "security": [
@@ -21072,26 +21158,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_HMB-research_open-accounting_internal_accounting.UpdateAccountRequest": {
-            "type": "object",
-            "properties": {
-                "account_type": {
-                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.AccountType"
-                },
-                "code": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "parent_id": {
-                    "type": "string"
-                }
-            }
-        },
         "github_com_HMB-research_open-accounting_internal_accounting.CreateCostAllocationRequest": {
             "type": "object",
             "properties": {
@@ -21826,6 +21892,26 @@ const docTemplate = `{
                 },
                 "total_debits": {
                     "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.UpdateAccountRequest": {
+            "type": "object",
+            "properties": {
+                "account_type": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.AccountType"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parent_id": {
+                    "type": "string"
                 }
             }
         },
@@ -26675,6 +26761,21 @@ const docTemplate = `{
                 "reference": {
                     "type": "string"
                 },
+                "reversal_of_payment_id": {
+                    "type": "string"
+                },
+                "reversal_reason": {
+                    "type": "string"
+                },
+                "reversed_at": {
+                    "type": "string"
+                },
+                "reversed_by": {
+                    "type": "string"
+                },
+                "reversed_by_payment_id": {
+                    "type": "string"
+                },
                 "tenant_id": {
                     "type": "string"
                 }
@@ -26703,6 +26804,17 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_payments.PaymentReversalResult": {
+            "type": "object",
+            "properties": {
+                "original_payment": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payments.Payment"
+                },
+                "reversal_payment": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payments.Payment"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_payments.PaymentType": {
             "type": "string",
             "enum": [
@@ -26713,6 +26825,23 @@ const docTemplate = `{
                 "PaymentTypeReceived",
                 "PaymentTypeMade"
             ]
+        },
+        "github_com_HMB-research_open-accounting_internal_payments.ReversePaymentRequest": {
+            "type": "object",
+            "properties": {
+                "notes": {
+                    "type": "string"
+                },
+                "payment_date": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "reference": {
+                    "type": "string"
+                }
+            }
         },
         "github_com_HMB-research_open-accounting_internal_payments.SEPACreditTransferLine": {
             "type": "object",

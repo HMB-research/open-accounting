@@ -1135,6 +1135,58 @@ func (h *Handlers) AllocatePayment(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"status": "allocated"})
 }
 
+// ReversePayment creates an auditable offsetting payment
+// @Summary Reverse payment
+// @Description Create an offsetting payment, mark the original as reversed, and mirror invoice allocation reversals
+// @Tags Payments
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param paymentID path string true "Payment ID"
+// @Param request body payments.ReversePaymentRequest true "Reversal details"
+// @Success 201 {object} payments.PaymentReversalResult
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
+// @Router /tenants/{tenantID}/payments/{paymentID}/reverse [post]
+func (h *Handlers) ReversePayment(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	paymentID := chi.URLParam(r, "paymentID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req payments.ReversePaymentRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	req.UserID = claims.UserID
+	if req.PaymentDate.IsZero() {
+		req.PaymentDate = time.Now()
+	}
+	if h.rejectLockedPeriod(w, r.Context(), tenantID, req.PaymentDate) {
+		return
+	}
+
+	result, err := h.paymentsService.Reverse(r.Context(), tenantID, schemaName, paymentID, &req)
+	if err != nil {
+		switch {
+		case errors.Is(err, payments.ErrPaymentNotFound):
+			respondError(w, http.StatusNotFound, "Payment not found")
+		case errors.Is(err, payments.ErrPaymentAlreadyReversed):
+			respondError(w, http.StatusConflict, "Payment already reversed")
+		case errors.Is(err, payments.ErrPaymentReversalNotAllowed):
+			respondError(w, http.StatusConflict, err.Error())
+		default:
+			respondError(w, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, result)
+}
+
 // GetUnallocatedPayments returns payments with unallocated balances
 // @Summary Get unallocated payments
 // @Description Get payments with remaining unallocated amounts

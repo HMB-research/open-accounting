@@ -311,7 +311,7 @@ Each view is tested for:
 
 **Known Issues:**
 
-- Payment correction/reversal workflow needs product design and E2E coverage
+- Payment correction/reversal now has API and CLI support through auditable offsetting payments; frontend exposure and E2E coverage remain pending
 
 **Overall:** ✅ Working
 
@@ -338,7 +338,7 @@ Each view is tested for:
 
 **Known Issues:**
 
-- Payment correction/reversal workflow is not exposed yet; accounting-safe reversal should replace destructive delete semantics.
+- Payment correction/reversal has API and CLI support through auditable offsetting payments; frontend exposure and E2E coverage remain pending.
 
 **Overall:** ✅ Working
 

@@ -31,6 +31,7 @@ If GitHub reports merge conflicts or the branch cannot be merged cleanly, load `
 - Preserve entry-point parity: frontend/API/CLI should call the same service/repository behavior through their normal layers.
 - For Svelte route/component changes, load `open-accounting-frontend-workflow`, run the Svelte MCP autofixer when available, and prove the UI behavior with focused assertions before broad gates.
 - For external import formats, load `open-accounting-import-mappers`; prove provider mapper tests, registry routing, API/CLI docs, and any visible UI import workflow in the same stage.
+- For accounting-sensitive correction workflows, load `open-accounting-accounting-integrity`; prove the original record is preserved, the offsetting/void/reopen record is linked, locks are enforced, and derived balances are updated through reusable domain services.
 
 ## Local Gates
 

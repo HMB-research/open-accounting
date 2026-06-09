@@ -300,6 +300,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  payments sepa-export      Export SEPA payment XML")
 	_, _ = fmt.Fprintln(a.stdout, "  payments get              Show one payment")
 	_, _ = fmt.Fprintln(a.stdout, "  payments allocate         Allocate a payment to an invoice")
+	_, _ = fmt.Fprintln(a.stdout, "  payments reverse          Create an auditable payment reversal")
 	_, _ = fmt.Fprintln(a.stdout, "  payments unallocated      List unallocated payments")
 	_, _ = fmt.Fprintln(a.stdout, "  reminders overdue         List overdue invoices for reminders")
 	_, _ = fmt.Fprintln(a.stdout, "  reminders send            Send a reminder for one invoice")
@@ -3479,6 +3480,48 @@ func (a *cliApp) runPayments(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, result)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Allocated %s to invoice %s for payment %s\n", amount.String(), strings.TrimSpace(*invoiceID), strings.TrimSpace(*paymentID))
+		return nil
+
+	case "reverse":
+		fs := flag.NewFlagSet("payments reverse", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		paymentID := fs.String("id", "", "Payment id")
+		reason := fs.String("reason", "", "Reversal reason")
+		paymentDate := fs.String("date", "", "Reversal payment date in YYYY-MM-DD")
+		reference := fs.String("reference", "", "Optional reversal reference")
+		notes := fs.String("notes", "", "Optional reversal notes")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*paymentID) == "" {
+			return errors.New("id is required")
+		}
+		if strings.TrimSpace(*reason) == "" {
+			return errors.New("reason is required")
+		}
+		paymentDateValue := time.Time{}
+		if strings.TrimSpace(*paymentDate) != "" {
+			parsed, err := time.Parse("2006-01-02", strings.TrimSpace(*paymentDate))
+			if err != nil {
+				return fmt.Errorf("parse date: %w", err)
+			}
+			paymentDateValue = parsed
+		}
+
+		result, err := client.reversePayment(ctx, cfg.TenantID, strings.TrimSpace(*paymentID), &payments.ReversePaymentRequest{
+			PaymentDate: paymentDateValue,
+			Reason:      strings.TrimSpace(*reason),
+			Reference:   strings.TrimSpace(*reference),
+			Notes:       strings.TrimSpace(*notes),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Reversed payment %s with %s\n", result.OriginalPayment.PaymentNumber, result.ReversalPayment.PaymentNumber)
 		return nil
 
 	case "unallocated":

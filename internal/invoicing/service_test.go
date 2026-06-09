@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/require"
 )
 
 // MockRepository is a mock implementation of Repository for testing
@@ -652,6 +653,34 @@ func TestService_RecordPayment_FullPayment(t *testing.T) {
 	updated, _ := service.GetByID(ctx, "tenant-1", "public", created.ID)
 	if updated.Status != StatusPaid {
 		t.Errorf("Status = %q, want %q", updated.Status, StatusPaid)
+	}
+}
+
+func TestService_RecordPayment_ReversalRestoresUnpaidStatus(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil)
+
+	created, _ := service.Create(ctx, "tenant-1", "public", &CreateInvoiceRequest{
+		InvoiceType: InvoiceTypeSales,
+		ContactID:   "contact-1",
+		IssueDate:   time.Now(),
+		DueDate:     time.Now().AddDate(0, 0, 14),
+		Lines:       []CreateInvoiceLineRequest{{Description: "Test", Quantity: decimal.NewFromInt(1), UnitPrice: decimal.NewFromFloat(100), VATRate: decimal.NewFromInt(22)}},
+	})
+	service.Send(ctx, "tenant-1", "public", created.ID)
+
+	err := service.RecordPayment(ctx, "tenant-1", "public", created.ID, decimal.NewFromFloat(122.00))
+	require.NoError(t, err)
+	err = service.RecordPayment(ctx, "tenant-1", "public", created.ID, decimal.NewFromFloat(-122.00))
+	require.NoError(t, err)
+
+	updated, _ := service.GetByID(ctx, "tenant-1", "public", created.ID)
+	if !updated.AmountPaid.IsZero() {
+		t.Errorf("AmountPaid = %s, want 0", updated.AmountPaid)
+	}
+	if updated.Status != StatusSent {
+		t.Errorf("Status = %q, want %q", updated.Status, StatusSent)
 	}
 }
 

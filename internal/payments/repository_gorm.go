@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/models"
@@ -36,6 +37,57 @@ func (r *GORMRepository) Create(ctx context.Context, schemaName string, payment 
 		return fmt.Errorf("create payment: %w", err)
 	}
 	return nil
+}
+
+// CreateReversal creates an offsetting payment and marks the original as reversed atomically.
+func (r *GORMRepository) CreateReversal(ctx context.Context, schemaName string, originalPaymentID string, reversal *Payment, allocations []PaymentAllocation, reversedAt time.Time, reversedBy string, reason string) error {
+	db, err := r.tenantTable(ctx, schemaName, "payments")
+	if err != nil {
+		return err
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		paymentsDB, err := database.TenantTable(tx.WithContext(ctx), schemaName, "payments")
+		if err != nil {
+			return err
+		}
+		allocationsDB, err := database.TenantTable(tx.WithContext(ctx), schemaName, "payment_allocations")
+		if err != nil {
+			return err
+		}
+
+		if err := paymentsDB.Create(paymentToModel(reversal)).Error; err != nil {
+			return fmt.Errorf("create reversal payment: %w", err)
+		}
+
+		for i := range allocations {
+			if err := allocationsDB.Create(allocationToModel(&allocations[i])).Error; err != nil {
+				return fmt.Errorf("create reversal allocation: %w", err)
+			}
+		}
+
+		paymentsUpdateDB, err := database.TenantTable(tx.WithContext(ctx), schemaName, "payments")
+		if err != nil {
+			return err
+		}
+		result := paymentsUpdateDB.
+			Model(&models.Payment{}).
+			Where("id = ? AND tenant_id = ? AND reversed_by_payment_id IS NULL", originalPaymentID, reversal.TenantID).
+			Updates(map[string]interface{}{
+				"reversed_by_payment_id": reversal.ID,
+				"reversed_at":            reversedAt,
+				"reversed_by":            reversedBy,
+				"reversal_reason":        reason,
+			})
+		if result.Error != nil {
+			return fmt.Errorf("mark original payment reversed: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return ErrPaymentAlreadyReversed
+		}
+
+		return nil
+	})
 }
 
 // GetByID retrieves a payment by ID
@@ -194,45 +246,55 @@ func (r *GORMRepository) GetUnallocatedPayments(ctx context.Context, schemaName,
 
 func modelToPayment(m *models.Payment) *Payment {
 	return &Payment{
-		ID:             m.ID,
-		TenantID:       m.TenantID,
-		PaymentNumber:  m.PaymentNumber,
-		PaymentType:    PaymentType(m.PaymentType),
-		ContactID:      m.ContactID,
-		PaymentDate:    m.PaymentDate,
-		Amount:         m.Amount.Decimal,
-		Currency:       m.Currency,
-		ExchangeRate:   m.ExchangeRate.Decimal,
-		BaseAmount:     m.BaseAmount.Decimal,
-		PaymentMethod:  m.PaymentMethod,
-		BankAccount:    m.BankAccount,
-		Reference:      m.Reference,
-		Notes:          m.Notes,
-		JournalEntryID: m.JournalEntryID,
-		CreatedAt:      m.CreatedAt,
-		CreatedBy:      m.CreatedBy,
+		ID:                  m.ID,
+		TenantID:            m.TenantID,
+		PaymentNumber:       m.PaymentNumber,
+		PaymentType:         PaymentType(m.PaymentType),
+		ContactID:           m.ContactID,
+		PaymentDate:         m.PaymentDate,
+		Amount:              m.Amount.Decimal,
+		Currency:            m.Currency,
+		ExchangeRate:        m.ExchangeRate.Decimal,
+		BaseAmount:          m.BaseAmount.Decimal,
+		PaymentMethod:       m.PaymentMethod,
+		BankAccount:         m.BankAccount,
+		Reference:           m.Reference,
+		Notes:               m.Notes,
+		JournalEntryID:      m.JournalEntryID,
+		ReversalOfPaymentID: m.ReversalOfPaymentID,
+		ReversedByPaymentID: m.ReversedByPaymentID,
+		ReversedAt:          m.ReversedAt,
+		ReversedBy:          m.ReversedBy,
+		ReversalReason:      m.ReversalReason,
+		CreatedAt:           m.CreatedAt,
+		CreatedBy:           m.CreatedBy,
 	}
 }
 
 func paymentToModel(p *Payment) *models.Payment {
 	return &models.Payment{
-		ID:             p.ID,
-		TenantID:       p.TenantID,
-		PaymentNumber:  p.PaymentNumber,
-		PaymentType:    models.PaymentType(p.PaymentType),
-		ContactID:      p.ContactID,
-		PaymentDate:    p.PaymentDate,
-		Amount:         models.Decimal{Decimal: p.Amount},
-		Currency:       p.Currency,
-		ExchangeRate:   models.Decimal{Decimal: p.ExchangeRate},
-		BaseAmount:     models.Decimal{Decimal: p.BaseAmount},
-		PaymentMethod:  p.PaymentMethod,
-		BankAccount:    p.BankAccount,
-		Reference:      p.Reference,
-		Notes:          p.Notes,
-		JournalEntryID: p.JournalEntryID,
-		CreatedAt:      p.CreatedAt,
-		CreatedBy:      p.CreatedBy,
+		ID:                  p.ID,
+		TenantID:            p.TenantID,
+		PaymentNumber:       p.PaymentNumber,
+		PaymentType:         models.PaymentType(p.PaymentType),
+		ContactID:           p.ContactID,
+		PaymentDate:         p.PaymentDate,
+		Amount:              models.Decimal{Decimal: p.Amount},
+		Currency:            p.Currency,
+		ExchangeRate:        models.Decimal{Decimal: p.ExchangeRate},
+		BaseAmount:          models.Decimal{Decimal: p.BaseAmount},
+		PaymentMethod:       p.PaymentMethod,
+		BankAccount:         p.BankAccount,
+		Reference:           p.Reference,
+		Notes:               p.Notes,
+		JournalEntryID:      p.JournalEntryID,
+		ReversalOfPaymentID: p.ReversalOfPaymentID,
+		ReversedByPaymentID: p.ReversedByPaymentID,
+		ReversedAt:          p.ReversedAt,
+		ReversedBy:          p.ReversedBy,
+		ReversalReason:      p.ReversalReason,
+		CreatedAt:           p.CreatedAt,
+		CreatedBy:           p.CreatedBy,
 	}
 }
 

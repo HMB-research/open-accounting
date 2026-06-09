@@ -653,6 +653,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Post("/payments/sepa-export", h.ExportSEPAPayments)
 				r.Get("/payments/{paymentID}", h.GetPayment)
 				r.Post("/payments/{paymentID}/allocate", h.AllocatePayment)
+				r.Post("/payments/{paymentID}/reverse", h.ReversePayment)
 				r.Get("/payments/unallocated", h.GetUnallocatedPayments)
 
 				// Reports
