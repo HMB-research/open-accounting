@@ -5,6 +5,13 @@ description: Use when developing or debugging open-accounting - covers multi-ten
 
 # Open Accounting Development Guide
 
+## Related Workflow Skills
+
+Use this skill for architecture, layer boundaries, and general testing decisions. Load a focused workflow skill when the task matches:
+
+- `open-accounting-stage-gate`: staged PR work, CLI/API/docs parity, local validation gates, commits, pushes, and PR/CI follow-through.
+- `open-accounting-demo-e2e`: local demo Playwright runs, demo reset, auth setup, branch API verification, localhost port conflicts, and CORS/debugging.
+
 ## Architecture Context
 
 ### Multi-Tenant Data Flow
@@ -87,6 +94,8 @@ The resettable local demo is the authoritative demo verification target unless a
 - Report generation and exports
 - Error states and edge cases
 
+For concrete local server, reset, CORS, and Playwright commands, use `open-accounting-demo-e2e`.
+
 ## Demo Mode Reference
 
 ### Credentials
@@ -135,7 +144,7 @@ E2E tests support parallel execution with isolated demo data:
 
 3. **Check E2E logs**: Review `frontend/playwright-report-demo/` for failure screenshots and traces
 
-4. **Test locally**: `cd frontend && bun run test:e2e:smoke` for the gate smoke suite or `bun run test:e2e` for the full local seeded suite
+4. **Test locally**: use `open-accounting-demo-e2e` for branch-code verification, or `cd frontend && bun run test:e2e:smoke` for the gate smoke suite when the local API is already correct
 
 ## Documentation Checklist
 
@@ -167,6 +176,8 @@ test: add or update tests
 refactor: restructure without behavior change
 chore: maintenance tasks
 ```
+
+For stage commits, pushes, and PR status checks, use `open-accounting-stage-gate`.
 
 ## Error Handling Patterns
 
