@@ -105,21 +105,6 @@ jobs:
     needs: changes
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
 
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - uses: actions/checkout@v6
 
@@ -133,8 +118,6 @@ jobs:
         run: go mod download
 
       - name: Run tests
-        env:
-          DATABASE_URL: postgres://test:test@localhost:5432/test?sslmode=disable
         run: go test -p 1 -v -race -coverprofile=coverage.out ./...
 
       - name: Verify CLI coverage gate
@@ -209,7 +192,7 @@ jobs:
       - name: Run integration tests
         env:
           DATABASE_URL: postgres://test:test@localhost:5432/openaccounting_test?sslmode=disable
-        run: go test -p 1 -v -race -tags=integration -coverprofile=coverage-integration.out $(go list ./... | grep -v /testutil)
+        run: make test-integration-coverage
 
       - name: Upload integration coverage to Codecov
         env:

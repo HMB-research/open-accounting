@@ -30,15 +30,21 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 		"README.md": {
 			"Full local baseline last verified on 2026-06-08",
 			"`make test-cli-coverage`",
+			"`DATABASE_URL=postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable make test-integration-coverage`",
 			"full demo E2E shards are CI gates",
 		},
 		"docs/DEVELOPMENT_STATUS.md": {
 			"Full local baseline last completed on 2026-06-08",
+			"`go test -p 1 -count=1 -race -coverprofile=/tmp/open-accounting-unit-coverage.out ./...` passes without requiring PostgreSQL",
 			"`make test-cli-coverage` passes",
+			"`DATABASE_URL=postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable make test-integration-coverage` passes",
 			"`cd frontend && bun run test` passes with 22 files and 515 tests",
+			"Backend unit tests no longer start PostgreSQL in CI",
 			"Full local seeded demo E2E shards are now blocking in CI",
 		},
 		"docs/ARCHITECTURE.md": {
+			"`go test -p 1 -race ./...` must pass without PostgreSQL",
+			"`DATABASE_URL=... make test-integration-coverage` must pass",
 			"Blocking smoke E2E plus blocking local seeded demo shards",
 		},
 		"docs/demo-e2e-testing.md": {
@@ -73,6 +79,8 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 		"22 files and 510 tests",
 		"251 passed",
 		"259 passed",
+		"`go test -p 1 -count=1 -race -tags=integration $(go list ./... | rg -v /testutil)`",
+		"`go test -tags=integration -race ...` must pass",
 		"Broad demo E2E remains informational",
 		"Blocking smoke E2E plus informational demo shards",
 		"The broader `e2e` job runs the full `demo-chromium` project in shards and is informational.",

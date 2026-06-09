@@ -1,6 +1,6 @@
 # Open Accounting Development Status
 
-> Last updated: 2026-06-08
+> Last updated: 2026-06-09
 > This is the current-state status document. Historical plan docs may be more optimistic than what is verified here.
 
 ## Status Definitions
@@ -17,10 +17,10 @@
 
 Full local baseline last completed on 2026-06-08:
 
-- `DATABASE_URL=postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable go test -p 1 -count=1 -race -coverprofile=/tmp/open-accounting-unit-coverage.out ./...` passes
+- `go test -p 1 -count=1 -race -coverprofile=/tmp/open-accounting-unit-coverage.out ./...` passes without requiring PostgreSQL
 - `make test-cli-coverage` passes and enforces `cmd/oa` at 100.0% statement coverage
 - `golangci-lint run` passes with 0 issues
-- `go test -p 1 -count=1 -race -tags=integration $(go list ./... | rg -v /testutil)` passes against a fresh PostgreSQL database after applying all migrations
+- `DATABASE_URL=postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable make test-integration-coverage` passes against a fresh PostgreSQL database after applying all migrations
 - `cd frontend && bun run lint` passes
 - `cd frontend && bun run check` passes with 0 errors and 0 warnings
 - `cd frontend && bun run test` passes with 22 files and 515 tests
@@ -28,6 +28,7 @@ Full local baseline last completed on 2026-06-08:
 - `cd frontend && bun run test:e2e:smoke` passes against a fresh locally seeded demo environment with 8 passed
 - `cd frontend && bun run test:e2e` passes against a fresh locally seeded demo environment with 260 passed and 12 intentionally skipped reset tests under `CI=true`
 - Frontend lint is now blocking in CI
+- Backend unit tests no longer start PostgreSQL in CI; DB-backed tests run in the tagged integration gate
 - Backend integration tests are now blocking in CI
 - Core accountant smoke E2E is now blocking in CI
 - Full local seeded demo E2E shards are now blocking in CI

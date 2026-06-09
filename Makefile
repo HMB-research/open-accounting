@@ -1,4 +1,4 @@
-.PHONY: all build run test test-cli-coverage clean docker-build docker-up docker-down migrate help
+.PHONY: all build run test test-coverage test-integration test-integration-coverage test-cli-coverage clean docker-build docker-up docker-down migrate help
 
 # Variables
 BINARY_API=api
@@ -27,6 +27,18 @@ test:
 test-coverage:
 	$(GO) test -v -coverprofile=coverage.out ./...
 	$(GO) tool cover -html=coverage.out -o coverage.html
+
+# Run DB-backed integration tests. Packages are discovered from tracked build-tagged tests
+# so local and CI runs do not duplicate every unit-only package.
+test-integration:
+	@packages="$$(git grep -l '^//go:build .*integration' -- '*_test.go' | while IFS= read -r file; do dirname "$$file"; done | sort -u | sed 's#^#./#')"; \
+	if [ -z "$$packages" ]; then echo "No integration test packages found"; exit 0; fi; \
+	$(GO) test -p 1 -v -race -tags=integration $$packages
+
+test-integration-coverage:
+	@packages="$$(git grep -l '^//go:build .*integration' -- '*_test.go' | while IFS= read -r file; do dirname "$$file"; done | sort -u | sed 's#^#./#')"; \
+	if [ -z "$$packages" ]; then echo "No integration test packages found"; exit 0; fi; \
+	$(GO) test -p 1 -v -race -tags=integration -coverprofile=coverage-integration.out $$packages
 
 # Verify the operator CLI stays fully covered.
 test-cli-coverage:
