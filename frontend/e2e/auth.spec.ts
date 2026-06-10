@@ -6,6 +6,9 @@ test.describe('Authentication - Login Page', () => {
 
 	test.beforeEach(async ({ page }) => {
 		await page.goto('/login');
+		await page.waitForLoadState('networkidle').catch(() => {
+			// Vite and background requests can keep the page busy in local runs.
+		});
 	});
 
 	test('should display login page elements', async ({ page }) => {
@@ -49,24 +52,14 @@ test.describe('Authentication - Login Page', () => {
 	});
 
 	test('should show register toggle option', async ({ page }) => {
-		// Should have option to switch to register mode
 		const registerToggle = page.getByRole('button', { name: /register|sign up|create account/i });
-		const hasRegisterToggle = await registerToggle.isVisible().catch(() => false);
+		await expect(registerToggle).toBeVisible();
+		await registerToggle.click();
 
-		// Just verify the toggle exists - clicking may or may not show name field depending on timing
-		if (hasRegisterToggle) {
-			await registerToggle.click();
-			// Wait a moment for state change
-			await page.waitForTimeout(500);
-			// Name field might appear, but don't fail if it doesn't (timing issues in CI)
-			const nameField = page.getByLabel(/name/i);
-			const hasNameField = await nameField.isVisible().catch(() => false);
-			// Test passes if either toggle worked or toggle exists
-			expect(hasNameField || hasRegisterToggle).toBeTruthy();
-		} else {
-			// No register toggle is also acceptable (feature might be disabled)
-			expect(true).toBeTruthy();
-		}
+		await expect(page.getByRole('heading', { name: /create account|register/i })).toBeVisible();
+		await expect(page.getByLabel(/name/i)).toBeVisible();
+		await expect(page.locator('#password')).toHaveAttribute('minlength', '8');
+		await expect(page.getByRole('button', { name: /sign in|login/i })).toBeVisible();
 	});
 });
 
