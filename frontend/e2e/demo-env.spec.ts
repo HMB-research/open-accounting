@@ -38,6 +38,18 @@ async function waitForVisibleContent(page: Page) {
 	await expect(page.locator('main, .main-content, [class*="content"]').first()).toBeVisible({ timeout: 10000 });
 }
 
+async function clickWizardButton(page: Page, name: RegExp) {
+	const button = page.getByRole('button', { name }).first();
+	await expect(button).toBeVisible({ timeout: 10000 });
+	await expect(button).toBeEnabled();
+	await button.click();
+}
+
+async function advanceWizardStep(page: Page, buttonName: RegExp, nextHeading: RegExp) {
+	await clickWizardButton(page, buttonName);
+	await expect(page.getByRole('heading', { name: nextHeading })).toBeVisible({ timeout: 10000 });
+}
+
 // Helper to authenticate as demo user. Use saved auth state for non-auth tests
 // so this smoke file does not re-run the login workflow for every route check.
 async function loginAsDemo(page: Page, testInfo?: TestInfo) {
@@ -454,29 +466,25 @@ test.describe('Demo Environment - Onboarding Wizard', () => {
 			if (await companyNameInput.isVisible()) {
 				await companyNameInput.fill('E2E Test Company');
 			}
-			const continueBtn = page.getByRole('button', { name: /continue|next/i });
-			await continueBtn.click();
-			await page.waitForTimeout(500);
+			await advanceWizardStep(page, /continue|next/i, /branding|invoice settings/i);
 
 			// Step 2: Branding - skip or continue
 			const step2Continue = page.getByRole('button', { name: /continue|next/i });
 			if (await step2Continue.isVisible()) {
-				await step2Continue.click();
-				await page.waitForTimeout(500);
+				await advanceWizardStep(page, /continue|next/i, /first contact/i);
 			}
 
 			// Step 3: First Contact - skip or continue
 			const step3Continue = page.getByRole('button', { name: /skip|continue/i });
 			if (await step3Continue.isVisible()) {
-				await step3Continue.click();
-				await page.waitForTimeout(500);
+				await advanceWizardStep(page, /skip|continue/i, /all set/i);
 			}
 
 			// Step 4: Complete - click "Go to Dashboard"
 			const goToDashboard = page.getByRole('button', { name: /go to dashboard|finish|complete/i });
 			if (await goToDashboard.isVisible()) {
-				await goToDashboard.click();
-				await page.waitForTimeout(1000);
+				await clickWizardButton(page, /go to dashboard|finish|complete/i);
+				await expect(page).toHaveURL(/dashboard/, { timeout: 10000 });
 			}
 
 			// Verify wizard is now hidden
