@@ -256,3 +256,29 @@ Local focused baseline against the branch API showed `demo/payment-reminders.spe
 | `demo/payment-reminders-table.spec.ts` | 1.818s | 2 |
 
 The next CI Playwright artifact should confirm whether the prior payment-reminder shard tail is distributed. The next measured demo E2E candidates are `balance-confirmations`, `invoices`, `data-verification`, and `absences`.
+
+CI run `27308618173` on commit `e54697f` confirmed the prior payment-reminder tail was distributed. The highest single-spec cost shifted to `demo/absences.spec.ts` at 137.300s across 12 micro-tests.
+
+## Follow-up: Absences Workflow Consolidation
+
+Replaced `demo/absences.spec.ts` with workflow-sized files and moved repeated route setup into `demo/absences-utils.ts`:
+
+| New spec | Coverage moved |
+|----------|----------------|
+| `demo/absences-page.spec.ts` | Leave-management shell, request button, year and employee filters, tabs, and records content state |
+| `demo/absences-filters-tabs.spec.ts` | Records/balances tab switching behavior |
+| `demo/absences-modal.spec.ts` | Request-leave modal open, required fields, and close behavior |
+| `demo/absences-selection.spec.ts` | Employee option availability and balances empty-state behavior without a selected employee |
+
+The old file repeated full auth, tenant setup, route navigation, and generic loading waits for 12 separate micro-tests. The new files keep the same user-visible assertions but fold them into 4 workflow tests, so each workflow pays the route setup cost once. Route setup now opens `/employees/absences` with `waitForNetworkIdle: false`, waits for route-owned controls, and then waits for the route's terminal content state (`table.table`, `.empty-state`, or `.alert-error`).
+
+Local focused baseline against the branch API showed `demo/absences.spec.ts` at 21.857s of Playwright result time and `13 passed (12.8s)` including auth setup. A mechanical split that preserved all 12 micro-tests still reported 21.575s, confirming repeated navigation was the cost. After workflow consolidation, the same visible behaviors reported:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/absences-modal.spec.ts` | 2.109s | 1 |
+| `demo/absences-filters-tabs.spec.ts` | 2.104s | 1 |
+| `demo/absences-selection.spec.ts` | 2.090s | 1 |
+| `demo/absences-page.spec.ts` | 2.073s | 1 |
+
+The focused command now reports `5 passed (9.4s)` including the shared `auth-setup` dependency. The next CI Playwright artifact should confirm whether the prior absences shard tail is reduced. The next measured demo E2E candidates are `balance-confirmations`, `data-verification`, and `invoices`.
