@@ -588,6 +588,16 @@ func TestReminderAndCostCenterHandlers(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, rr.Code)
 	assert.Contains(t, rr.Body.String(), "Shared office expense")
 
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/cost-centers/allocations/import", map[string]interface{}{
+		"file_name":   "cost-allocations.csv",
+		"csv_content": "cost_center_code,journal_entry_line_id,amount,allocation_percentage,allocation_date,notes\nADMIN,line-4,42.00,100,2026-01-22,Imported allocation\n",
+	}, nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.ImportCostAllocations(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), `"allocations_imported":1`)
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/cost-centers/allocations?start_date=2026-02-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.ListCostAllocations(rr, req)

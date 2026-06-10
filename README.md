@@ -20,7 +20,7 @@
 >
 > Full local baseline last verified on 2026-06-08. On 2026-06-10, local revalidation covered `go test -count=1 -race ./...`, `make test-cli-coverage`, `go test -timeout=3m ./docs -count=1`, and `cd frontend && bun run test:prepared`; PR CI revalidated `golangci-lint run`, `DATABASE_URL=postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable make test-integration-coverage`, frontend lint/check/test/build, smoke E2E, and the full local seeded demo E2E shards.
 > The `cmd/oa` CLI package is held at 100.0% statement coverage by `make test-cli-coverage`, and local seeded smoke plus full demo E2E shards are CI gates. The optional remote hosted-demo E2E job remains informational.
-> Production hardening, deeper historical cutover tooling beyond the current payroll, tax, commercial history, e-invoice XML, payment, expense, inventory, fixed-asset, bank-transaction, opening-balance, historical-journal, and migration-preflight coverage, deeper accountant exception actions, and automated document retention/reconciliation policy enforcement are still in progress.
+> Production hardening, deeper historical cutover tooling beyond the current payroll, tax, commercial history, e-invoice XML, payment, expense, inventory, fixed-asset, bank-transaction, cost-allocation, opening-balance, historical-journal, and migration-preflight coverage, deeper accountant exception actions, and automated document retention/reconciliation policy enforcement are still in progress.
 
 CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API token once and then uses that token for subsequent reads and mutations.
 
@@ -357,7 +357,7 @@ open-accounting/
 - [x] Tenant admin controls for member API-token inspection and revocation
 - [x] Tenant admin security-event visibility for member auth activity
 - [x] Tenant admin suspension/restoration of member tenant access with session revocation and audit events
-- [x] CSV import for chart of accounts, contacts, employees, invoices, quotes, orders, recurring invoice templates, payments, expenses, bank accounts, bank transactions, cost centers, product categories/warehouses/products/stock, fixed assets, opening balances, and historical journals
+- [x] CSV import for chart of accounts, contacts, employees, invoices, quotes, orders, recurring invoice templates, payments, expenses, bank accounts, bank transactions, cost centers, cost allocations, product categories/warehouses/products/stock, fixed assets, opening balances, and historical journals
 - [x] Migration bundle validation for cutover imports with API and CLI coverage across e-invoice XML, expenses, commercial history, inventory, banking, tax, and fixed assets
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings

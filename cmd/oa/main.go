@@ -452,6 +452,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  cost-centers report       Show cost center budget report")
 	_, _ = fmt.Fprintln(a.stdout, "  cost-centers allocations list   List cost allocations")
 	_, _ = fmt.Fprintln(a.stdout, "  cost-centers allocations create Create a cost allocation")
+	_, _ = fmt.Fprintln(a.stdout, "  cost-centers allocations import Import cost allocations from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  analytics dashboard       Show dashboard summary")
 	_, _ = fmt.Fprintln(a.stdout, "  analytics revenue-expense Show revenue and expense chart data")
 	_, _ = fmt.Fprintln(a.stdout, "  analytics cash-flow       Show cash-flow chart data")
@@ -8394,6 +8395,35 @@ func (a *cliApp) runCostCenterAllocations(ctx context.Context, client *apiClient
 			return printJSON(a.stdout, allocation)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Created cost allocation %s for cost center %s\n", allocation.ID, allocation.CostCenterID)
+		return nil
+
+	case "import":
+		fs := flag.NewFlagSet("cost-centers allocations import", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		filePath := fs.String("file", "", "CSV file path or - for stdin")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*filePath) == "" {
+			return errors.New("file is required")
+		}
+		content, fileName, err := readCSVInput(*filePath)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.importCostAllocations(ctx, tenantID, &accounting.ImportCostAllocationsRequest{
+			CSVContent: content,
+			FileName:   fileName,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Processed %d rows, imported %d cost allocations, skipped %d rows\n", result.RowsProcessed, result.AllocationsImported, result.RowsSkipped)
 		return nil
 
 	default:

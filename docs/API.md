@@ -2380,6 +2380,7 @@ Cost center CSV imports require `code` and `name`. Optional columns include `des
 ```http
 GET /tenants/{tenantId}/cost-centers/allocations?cost_center_id={costCenterId}&start_date=2026-03-01&end_date=2026-03-31
 POST /tenants/{tenantId}/cost-centers/allocations
+POST /tenants/{tenantId}/cost-centers/allocations/import
 Authorization: Bearer <token>
 Content-Type: application/json
 
@@ -2393,7 +2394,18 @@ Content-Type: application/json
 }
 ```
 
-Cost allocations assign a positive journal-entry-line amount to a cost center for budget-vs-actual and cost-center reporting. Listing supports optional `cost_center_id`, `journal_entry_line_id`, `start_date`, and `end_date` filters; returned rows include joined `cost_center_code` and `cost_center_name` when available.
+```http
+POST /tenants/{tenantId}/cost-centers/allocations/import
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "file_name": "cost-allocations.csv",
+  "csv_content": "cost_center_code,journal_entry_line_id,amount,allocation_percentage,allocation_date,notes\nSALES,journal-line-uuid,125.50,50,2026-03-20,Shared office expense\n"
+}
+```
+
+Cost allocations assign a positive journal-entry-line amount to a cost center for budget-vs-actual and cost-center reporting. Listing supports optional `cost_center_id`, `journal_entry_line_id`, `start_date`, and `end_date` filters; returned rows include joined `cost_center_code` and `cost_center_name` when available. Cost allocation CSV imports require `journal_entry_line_id`, `amount`, `allocation_date`, and either `cost_center_id` or `cost_center_code`; optional columns include `allocation_percentage` and `notes`. Import responses include processed, imported, skipped, and row-level error counts.
 
 ### Get, Update, and Delete Cost Center
 

@@ -290,6 +290,94 @@ func TestCostCenterService_ImportCostCentersCSV(t *testing.T) {
 	assert.True(t, child.IsActive)
 }
 
+func TestCostCenterService_ImportCostAllocationsCSV(t *testing.T) {
+	ts := newTestCostCenterService()
+	ctx := context.Background()
+
+	ts.repo.CostCenters["cc-sales"] = &CostCenter{
+		ID:       "cc-sales",
+		TenantID: "tenant-1",
+		Code:     "SALES",
+		Name:     "Sales",
+		IsActive: true,
+	}
+	ts.repo.CostCenters["cc-admin"] = &CostCenter{
+		ID:       "cc-admin",
+		TenantID: "tenant-1",
+		Code:     "ADMIN",
+		Name:     "Administration",
+		IsActive: true,
+	}
+
+	result, err := ts.svc.ImportCostAllocationsCSV(ctx, "test_schema", "tenant-1", &ImportCostAllocationsRequest{
+		FileName: "cost-allocations.csv",
+		CSVContent: "cost_center_code,journal_entry_line_id,amount,allocation_percentage,allocation_date,notes\n" +
+			"SALES,line-1,125.50,50,2026-03-20,Shared rent\n" +
+			"ADMIN,line-2,300.00,,2026-03-21,Admin payroll\n" +
+			"UNKNOWN,line-3,10.00,10,2026-03-22,Missing center\n" +
+			"SALES,line-4,0,10,2026-03-23,Bad amount\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "cost-allocations.csv", result.FileName)
+	assert.Equal(t, 4, result.RowsProcessed)
+	assert.Equal(t, 2, result.AllocationsImported)
+	assert.Equal(t, 2, result.RowsSkipped)
+	require.Len(t, result.Errors, 2)
+	assert.Equal(t, 4, result.Errors[0].Row)
+	assert.Contains(t, result.Errors[0].Message, `cost_center_code "UNKNOWN" was not found`)
+	assert.Equal(t, 5, result.Errors[1].Row)
+	assert.Contains(t, result.Errors[1].Message, "amount must be greater than zero")
+
+	allocations, err := ts.svc.ListCostAllocations(ctx, "test_schema", "tenant-1", CostAllocationFilters{})
+	require.NoError(t, err)
+	require.Len(t, allocations, 2)
+
+	byLine := map[string]CostAllocation{}
+	for _, allocation := range allocations {
+		byLine[allocation.JournalEntryLineID] = allocation
+	}
+
+	salesAllocation := byLine["line-1"]
+	assert.Equal(t, "cc-sales", salesAllocation.CostCenterID)
+	assert.True(t, salesAllocation.Amount.Equal(decimal.RequireFromString("125.50")))
+	require.NotNil(t, salesAllocation.AllocationPercentage)
+	assert.True(t, salesAllocation.AllocationPercentage.Equal(decimal.RequireFromString("50")))
+	assert.Equal(t, time.Date(2026, 3, 20, 0, 0, 0, 0, time.UTC), salesAllocation.AllocationDate)
+	assert.Equal(t, "Shared rent", salesAllocation.Notes)
+
+	adminAllocation := byLine["line-2"]
+	assert.Equal(t, "cc-admin", adminAllocation.CostCenterID)
+	assert.True(t, adminAllocation.Amount.Equal(decimal.RequireFromString("300.00")))
+	assert.Nil(t, adminAllocation.AllocationPercentage)
+}
+
+func TestCostCenterService_ImportCostAllocationsCSVByID(t *testing.T) {
+	ts := newTestCostCenterService()
+	ctx := context.Background()
+
+	ts.repo.CostCenters["cc-direct"] = &CostCenter{
+		ID:       "cc-direct",
+		TenantID: "tenant-1",
+		Code:     "DIRECT",
+		Name:     "Direct costs",
+		IsActive: true,
+	}
+
+	result, err := ts.svc.ImportCostAllocationsCSV(ctx, "test_schema", "tenant-1", &ImportCostAllocationsRequest{
+		CSVContent: "cost_center_id,journal_entry_line_id,amount,allocation_date\n" +
+			"cc-direct,line-1,42.00,2026-04-01\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.AllocationsImported)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Nil(t, result.Errors)
+	assert.Len(t, ts.repo.Allocations["cc-direct"], 1)
+	assert.Equal(t, "line-1", ts.repo.Allocations["cc-direct"][0].JournalEntryLineID)
+}
+
 func TestCostCenterService_GetCostCenter(t *testing.T) {
 	ts := newTestCostCenterService()
 	ctx := context.Background()

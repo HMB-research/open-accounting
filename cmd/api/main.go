@@ -678,6 +678,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/cost-centers/report", h.GetCostCenterReport)
 				r.Get("/cost-centers/allocations", h.ListCostAllocations)
 				r.Post("/cost-centers/allocations", h.CreateCostAllocation)
+				r.Post("/cost-centers/allocations/import", h.ImportCostAllocations)
 				r.Get("/cost-centers/{costCenterID}", h.GetCostCenter)
 				r.Put("/cost-centers/{costCenterID}", h.UpdateCostCenter)
 				r.Delete("/cost-centers/{costCenterID}", h.DeleteCostCenter)

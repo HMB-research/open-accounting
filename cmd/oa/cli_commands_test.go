@@ -10631,6 +10631,7 @@ func TestCLICostCenterCommands(t *testing.T) {
 		"created_at":            "2026-03-20T12:00:00Z",
 	}
 	importFile := writeTempCSV(t, "cost-centers.csv", "code,name,budget_amount\nCC001,Sales,1000.00\n")
+	allocationImportFile := writeTempCSV(t, "cost-allocations.csv", "cost_center_code,journal_entry_line_id,amount,allocation_percentage,allocation_date,notes\nCC001,line-1,125.50,50,2026-03-20,Shared rent\n")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -10681,6 +10682,16 @@ func TestCLICostCenterCommands(t *testing.T) {
 			}
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(allocationPayload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/allocations/import":
+			var req accounting.ImportCostAllocationsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "cost-allocations.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "Shared rent")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed":       1,
+				"allocations_imported": 1,
+				"rows_skipped":         0,
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/cc-1":
 			_ = json.NewEncoder(w).Encode(costCenterPayload)
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/cc-1":
@@ -10792,6 +10803,16 @@ func TestCLICostCenterCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"cost-centers", "allocations", "create", "--cost-center-id", "cc-1", "--journal-entry-line-id", "line-1", "--amount", "125.50", "--allocation-date", "2026-03-20", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"journal_entry_line_id": "line-1"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"cost-centers", "allocations", "import", "--file", allocationImportFile})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Processed 1 rows, imported 1 cost allocations, skipped 0 rows")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"cost-centers", "allocations", "import", "--file", allocationImportFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"allocations_imported": 1`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"cost-centers", "get", "--id", "cc-1"})
@@ -11015,6 +11036,21 @@ func TestCLICostCenterValidationBranches(t *testing.T) {
 			want: "allocation-date is required",
 		},
 		{
+			name: "allocations import bad flag",
+			args: []string{"allocations", "import", "--unknown"},
+			want: "flag provided but not defined",
+		},
+		{
+			name: "allocations import missing file",
+			args: []string{"allocations", "import"},
+			want: "file is required",
+		},
+		{
+			name: "allocations import unreadable file",
+			args: []string{"allocations", "import", "--file", filepath.Join(t.TempDir(), "missing.csv")},
+			want: "no such file",
+		},
+		{
 			name: "get missing id",
 			args: []string{"get"},
 			want: "id is required",
@@ -11113,6 +11149,7 @@ func TestCLICostCenterAPIErrorBranches(t *testing.T) {
 	}))
 
 	importFile := writeTempCSV(t, "cost-centers-error.csv", "code,name,budget_amount\nCC001,Sales,1000.00\n")
+	allocationImportFile := writeTempCSV(t, "cost-allocations-error.csv", "cost_center_code,journal_entry_line_id,amount,allocation_date\nCC001,line-error,10.00,2026-03-20\n")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
@@ -11138,6 +11175,11 @@ func TestCLICostCenterAPIErrorBranches(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "cc-error", req.CostCenterID)
 			assert.Equal(t, "line-error", req.JournalEntryLineID)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/allocations/import":
+			var req accounting.ImportCostAllocationsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "cost-allocations-error.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "line-error")
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/cc-error":
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/cc-error":
 			var req accounting.UpdateCostCenterRequest
@@ -11170,6 +11212,7 @@ func TestCLICostCenterAPIErrorBranches(t *testing.T) {
 		{name: "import API error", args: []string{"cost-centers", "import", "--file", importFile}},
 		{name: "allocation list API error", args: []string{"cost-centers", "allocations", "list", "--cost-center-id", "cc-error"}},
 		{name: "allocation create API error", args: []string{"cost-centers", "allocations", "create", "--cost-center-id", "cc-error", "--journal-entry-line-id", "line-error", "--amount", "10.00", "--allocation-date", "2026-03-20"}},
+		{name: "allocation import API error", args: []string{"cost-centers", "allocations", "import", "--file", allocationImportFile}},
 		{name: "get API error", args: []string{"cost-centers", "get", "--id", "cc-error"}},
 		{name: "update API error", args: []string{"cost-centers", "update", "--id", "cc-error", "--code", "CC002", "--name", "Sales updated", "--active=false"}},
 		{name: "delete API error", args: []string{"cost-centers", "delete", "--id", "cc-error"}},

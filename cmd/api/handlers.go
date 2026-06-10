@@ -3385,6 +3385,41 @@ func (h *Handlers) ImportCostCenters(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, result)
 }
 
+// ImportCostAllocations handles POST /tenants/{tenantID}/cost-centers/allocations/import
+// @Summary Import cost allocations
+// @Description Import historical cost allocation rows from CSV, resolving cost centers by ID or code
+// @Tags Cost Centers
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body accounting.ImportCostAllocationsRequest true "CSV import payload"
+// @Success 200 {object} accounting.ImportCostAllocationsResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/cost-centers/allocations/import [post]
+func (h *Handlers) ImportCostAllocations(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req accounting.ImportCostAllocationsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+
+	result, err := h.costCenterService.ImportCostAllocationsCSV(r.Context(), schemaName, tenantID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // ListCostAllocations handles GET /tenants/{tenantID}/cost-centers/allocations.
 // @Summary List cost allocations
 // @Description List journal-entry-line allocations to cost centers, optionally filtered by cost center, journal line, or allocation date range
