@@ -77,8 +77,6 @@ export default defineConfig({
       name: "demo-chromium",
       testMatch: [
         "**/demo/*.spec.ts",
-        "demo-env.spec.ts",
-        "demo-all-views.spec.ts",
         "auth.spec.ts",
       ],
       testIgnore: "**/demo/auth.setup.ts",

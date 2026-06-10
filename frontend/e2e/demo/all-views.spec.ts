@@ -6,7 +6,7 @@ import {
 	waitForDataOrEmpty,
 	waitForPageReady,
 	waitForRouteReady
-} from './demo/utils';
+} from './utils';
 
 /**
  * Comprehensive E2E Tests for All Demo Views

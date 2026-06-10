@@ -7,7 +7,7 @@ import {
 	loginWithDemoCredentials,
 	navigateTo,
 	waitForPageReady
-} from './demo/utils';
+} from './utils';
 
 /**
  * Live Demo Environment E2E Tests
