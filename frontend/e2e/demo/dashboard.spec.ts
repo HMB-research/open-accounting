@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { ensureAuthenticated, ensureDemoTenant, getDemoCredentials } from './utils';
+import { ensureAuthenticated, ensureDemoTenant, navigateTo } from './utils';
 
 /**
  * Wait for dashboard to finish loading data
@@ -18,10 +18,11 @@ test.describe('Demo Dashboard - Seeded Data Verification', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
+		await navigateTo(page, '/dashboard', testInfo);
 		await waitForDashboardLoaded(page);
 	});
 
-	test('displays organization selector or dashboard content', async ({ page }, testInfo) => {
+	test('displays organization selector or dashboard content', async ({ page }) => {
 		// Find the org selector - tenant selector is a select element
 		const tenantSelector = page.locator('.tenant-selector select, select').first();
 
