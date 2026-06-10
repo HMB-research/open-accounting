@@ -97,7 +97,7 @@ Recommended improvement:
 
 ## Next Stage Candidate
 
-Implement weight-aware integration package sharding first. It targets the current critical path directly and should be measurable with one CI run by comparing the slowest integration shard against the current `integration-test (3, 4)` baseline.
+The integration sharding candidate below has been implemented. The current next candidate is demo Playwright optimization, starting with measured broad specs rather than changing shard counts.
 
 ## Implementation Update
 
@@ -118,3 +118,27 @@ done | scripts/parse-go-test-package-times.sh
 ```
 
 The checked-in weights were refreshed from that run. With the refreshed weights, the greedy assignment projects package-time totals of about 105.2s, 104.5s, 105.1s, and 104.2s across the four integration shards.
+
+Follow-up CI run `27301644898` on commit `0b1625d` completed successfully. Integration shard job times tightened further to 4m00s, 3m50s, 3m33s, and 3m43s. Full demo E2E is now the slowest required PR gate, with shard job times of 5m11s, 5m17s, 4m59s, and 4m51s.
+
+Added `scripts/parse-playwright-spec-times.mjs` so demo E2E optimization can be based on uploaded Playwright JSON artifacts instead of ad hoc artifact inspection:
+
+```bash
+gh run download 27301644898 --pattern 'playwright-results-shard-*' --dir /tmp/playwright-results
+scripts/parse-playwright-spec-times.mjs /tmp/playwright-results/*/demo-test-results.json
+```
+
+The latest artifact aggregation shows these highest-duration spec files:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/all-views.spec.ts` | 308.924s | 24 |
+| `demo/env.spec.ts` | 302.028s | 28 |
+| `demo/mobile.spec.ts` | 159.907s | 15 |
+| `demo/payment-reminders.spec.ts` | 145.037s | 14 |
+| `demo/data-verification.spec.ts` | 138.093s | 13 |
+| `demo/absences.spec.ts` | 133.309s | 12 |
+| `demo/balance-confirmations.spec.ts` | 127.176s | 12 |
+| `demo/invoices.spec.ts` | 118.562s | 10 |
+
+Next demo E2E speed work should start with `demo/all-views.spec.ts` and `demo/env.spec.ts`: reduce repeated full-page navigation, add route-owned readiness selectors where broad waits are hiding route load time, and replace duplicated UI setup with API-backed state checks only where the UI is not the behavior under test.

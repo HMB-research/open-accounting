@@ -237,6 +237,27 @@ done | scripts/parse-go-test-package-times.sh > /tmp/integration-package-weights
 Review the projected shard buckets before replacing
 `scripts/integration-package-weights.tsv`.
 
+## Demo Playwright Spec Timings
+
+CI uploads one `demo-test-results.json` artifact for each full demo E2E shard.
+Aggregate those JSON reporter files before optimizing broad Playwright specs or
+changing shard counts:
+
+```bash
+gh run download <run-id> --pattern 'playwright-results-shard-*' --dir /tmp/playwright-results
+scripts/parse-playwright-spec-times.mjs /tmp/playwright-results/*/demo-test-results.json
+```
+
+The output is sorted by accumulated executed duration:
+
+```text
+spec_file<TAB>seconds<TAB>tests<TAB>attempts
+```
+
+Use the slowest spec files as the first candidates for route-owned readiness
+selectors, fewer repeated full-page navigations, and API-backed state checks
+where the UI is not the behavior under test.
+
 The health check finds the newest `openaccounting_*.dump`, requires a non-empty file, verifies `FILE.sha256`, fails when the backup is older than the configured threshold, and can write Prometheus textfile metrics.
 
 Sync local backups offsite after the backup script writes both the dump and checksum:
