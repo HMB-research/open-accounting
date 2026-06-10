@@ -79,7 +79,7 @@ Is the change in...
 │   └── File: frontend/src/tests/components/*.test.ts
 │
 ├── User-facing workflow? → E2E test
-│   └── Demo flow? → frontend/e2e/demo-*.spec.ts
+│   └── Demo flow? → frontend/e2e/demo/*.spec.ts
 │   └── Regular flow? → frontend/e2e/*.spec.ts
 ```
 
@@ -113,6 +113,7 @@ For concrete local server, reset, CORS, and Playwright commands, use `open-accou
 - Keep DB-backed tests in the tagged integration gate (`make test-integration-coverage`); schema setup and teardown deliberately serialize PostgreSQL DDL there.
 - For slow auth/security tests, prefer injectable bcrypt costs, clocks, token generators, and timing controls over production-cost hashing or sleeps.
 - For integration speedups, reduce repeated tenant schema lifecycle by grouping related repository cases or reusable fixtures while preserving real ORM/Postgres coverage.
+- For integration shard speedups, measure package durations from CI logs before changing shard counts. The current package round-robin can become imbalanced when heavy ORM/Postgres packages cluster on one shard; prefer weight-aware package buckets or reusable tenant fixtures before adding runners.
 - Run frontend Paraglide/SvelteKit-writing gates serially (`check`, `test`, `build`) when executing them locally. Parallel runs can race on generated `frontend/src/lib/paraglide` or `.svelte-kit` files and produce false negatives.
 - In Playwright demo specs, speed up broad view checks with route-owned readiness selectors and shared helpers instead of fixed sleeps. Do not remove shared navigation stability globally unless all dependent specs are refactored to own their route readiness.
 - Keep broad demo Playwright specs inside `frontend/e2e/demo/` so default file-order sharding distributes them with the rest of the demo suite. Root-level broad specs sort after `demo/` and can create a slow tail shard.
