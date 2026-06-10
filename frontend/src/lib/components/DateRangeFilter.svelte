@@ -71,7 +71,12 @@
 		onchange?.(fromDate, toDate);
 	}
 
-	function handleDateChange() {
+	function handleDateChange(field: 'from' | 'to', value: string) {
+		if (field === 'from') {
+			fromDate = value;
+		} else {
+			toDate = value;
+		}
 		selectedPreset = 'CUSTOM';
 		onchange?.(fromDate, toDate);
 	}
@@ -113,7 +118,7 @@
 				id="from-date"
 				type="date"
 				bind:value={fromDate}
-				onchange={handleDateChange}
+				onchange={(e) => handleDateChange('from', e.currentTarget.value)}
 				class="date-input"
 				data-testid="from-date"
 			/>
@@ -124,7 +129,7 @@
 				id="to-date"
 				type="date"
 				bind:value={toDate}
-				onchange={handleDateChange}
+				onchange={(e) => handleDateChange('to', e.currentTarget.value)}
 				class="date-input"
 				data-testid="to-date"
 			/>
