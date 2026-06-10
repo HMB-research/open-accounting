@@ -5,6 +5,7 @@ import {
 	DEMO_URL,
 	ensureAuthenticated,
 	loginWithDemoCredentials,
+	navigateTo,
 	waitForPageReady
 } from './demo/utils';
 
@@ -55,6 +56,7 @@ async function advanceWizardStep(page: Page, buttonName: RegExp, nextHeading: Re
 async function loginAsDemo(page: Page, testInfo?: TestInfo) {
 	if (testInfo) {
 		await ensureAuthenticated(page, testInfo);
+		await navigateTo(page, '/dashboard', testInfo);
 		await waitForDemoShell(page);
 		return;
 	}

@@ -42,6 +42,7 @@ const routeReadySelectors: Record<string, string> = {
 
 async function openDashboard(page: Page, testInfo: TestInfo): Promise<void> {
 	await ensureAuthenticated(page, testInfo);
+	await navigateTo(page, '/dashboard', testInfo);
 	await waitForRouteReady(page, 'h1, .dashboard-header, [data-testid="dashboard"], .summary-grid, .tenant-selector');
 }
 

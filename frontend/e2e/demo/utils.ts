@@ -195,6 +195,13 @@ async function loadAuthState(page: Page, workerIndex: number): Promise<boolean> 
 		}
 
 		const authData = JSON.parse(fs.readFileSync(authFile, 'utf-8'));
+		const hasStoredAccessToken = authData.origins?.some((origin: { localStorage?: { name: string }[] }) =>
+			origin.localStorage?.some((item) => item.name === 'access_token')
+		);
+		if (!hasStoredAccessToken) {
+			console.log(`[Worker ${workerIndex}] Auth file has no access token: ${authFile}`);
+			return false;
+		}
 
 		// Add cookies to the browser context
 		if (authData.cookies && authData.cookies.length > 0) {
@@ -225,20 +232,31 @@ async function loadAuthState(page: Page, workerIndex: number): Promise<boolean> 
 	}
 }
 
+interface EnsureAuthenticatedOptions {
+	verifyDashboard?: boolean;
+}
+
 /**
  * Ensure authentication - try to load saved auth state, fall back to login.
  * This is the preferred way to authenticate in tests for better performance.
  */
-export async function ensureAuthenticated(page: Page, testInfo: TestInfo): Promise<void> {
+export async function ensureAuthenticated(
+	page: Page,
+	testInfo: TestInfo,
+	options: EnsureAuthenticatedOptions = {}
+): Promise<void> {
 	const workerIndex = testInfo.parallelIndex % DEMO_CREDENTIALS.length;
-	const creds = getDemoCredentials(testInfo);
 	const startTime = Date.now();
 
 	// Try to load saved auth state
 	const authLoaded = await loadAuthState(page, workerIndex);
 
 	if (authLoaded) {
-		// Navigate to dashboard to verify auth works
+		if (!options.verifyDashboard) {
+			console.log(`[Worker ${workerIndex}] Session loaded in ${Date.now() - startTime}ms`);
+			return;
+		}
+
 		await page.goto(`${DEMO_URL}/dashboard`);
 		await page.waitForLoadState('domcontentloaded');
 
