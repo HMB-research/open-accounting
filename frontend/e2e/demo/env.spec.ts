@@ -56,7 +56,7 @@ async function advanceWizardStep(page: Page, buttonName: RegExp, nextHeading: Re
 async function loginAsDemo(page: Page, testInfo?: TestInfo) {
 	if (testInfo) {
 		await ensureAuthenticated(page, testInfo);
-		await navigateTo(page, '/dashboard', testInfo);
+		await navigateTo(page, '/dashboard', testInfo, { waitForNetworkIdle: false });
 		await waitForDemoShell(page);
 		return;
 	}

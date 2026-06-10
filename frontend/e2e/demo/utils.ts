@@ -273,8 +273,18 @@ export async function ensureAuthenticated(
 	await loginAsDemo(page, testInfo);
 }
 
-export async function navigateTo(page: Page, path: string, testInfo?: TestInfo): Promise<void> {
+interface NavigateToOptions {
+	waitForNetworkIdle?: boolean;
+}
+
+export async function navigateTo(
+	page: Page,
+	path: string,
+	testInfo?: TestInfo,
+	options: NavigateToOptions = {}
+): Promise<void> {
 	let url = `${DEMO_URL}${path}`;
+	const waitForNetworkIdle = options.waitForNetworkIdle ?? true;
 	// Append tenant ID if testInfo is provided and path doesn't already have query params
 	if (testInfo) {
 		const creds = getDemoCredentials(testInfo);
@@ -301,10 +311,12 @@ export async function navigateTo(page: Page, path: string, testInfo?: TestInfo):
 		// Main content selector might not exist on all pages
 	});
 
-	// Wait for network to settle (API calls to complete)
-	await page.waitForLoadState('networkidle').catch(() => {
-		// Network might not settle in timeout, continue anyway
-	});
+	if (waitForNetworkIdle) {
+		// Wait for network to settle (API calls to complete)
+		await page.waitForLoadState('networkidle').catch(() => {
+			// Network might not settle in timeout, continue anyway
+		});
+	}
 }
 
 /**
@@ -435,9 +447,22 @@ async function waitForLoadingIndicatorsToClear(page: Page, timeout: number): Pro
 	const loadingIndicators = page.locator(
 		'.loading, .loading-spinner, .loading-overlay, .spinner, .animate-spin, [data-loading="true"], .skeleton'
 	);
+	const loadingText = page.getByText(/^Loading\.\.\.$|^Laadimine\.\.\.$/i);
 
 	await expect(async () => {
-		const visibleCount = await loadingIndicators.evaluateAll((elements) => {
+		const visibleCssCount = await loadingIndicators.evaluateAll((elements) => {
+			return elements.filter((element) => {
+				const style = window.getComputedStyle(element);
+				const rect = element.getBoundingClientRect();
+				return (
+					style.display !== 'none' &&
+					style.visibility !== 'hidden' &&
+					rect.width > 0 &&
+					rect.height > 0
+				);
+			}).length;
+		});
+		const visibleTextCount = await loadingText.evaluateAll((elements) => {
 			return elements.filter((element) => {
 				const style = window.getComputedStyle(element);
 				const rect = element.getBoundingClientRect();
@@ -450,7 +475,7 @@ async function waitForLoadingIndicatorsToClear(page: Page, timeout: number): Pro
 			}).length;
 		});
 
-		expect(visibleCount).toBe(0);
+		expect(visibleCssCount + visibleTextCount).toBe(0);
 	}).toPass({ timeout });
 }
 
@@ -469,13 +494,9 @@ export async function waitForDataOrEmpty(
 	const emptyIndicators = page.locator(
 		'.empty-state, [data-testid="empty"], text=/no data|no records|empty|no results/i'
 	);
-	const loadingIndicators = page.locator(
-		'.loading, .spinner, [data-loading="true"], .skeleton'
-	);
-
 	// Wait for loading to complete first
 	try {
-		await loadingIndicators.first().waitFor({ state: 'hidden', timeout: 5000 });
+		await waitForLoadingIndicatorsToClear(page, Math.min(timeout, 10000));
 	} catch {
 		// Loading might have already completed
 	}
