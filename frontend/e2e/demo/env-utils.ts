@@ -38,9 +38,7 @@ export async function advanceWizardStep(page: Page, buttonName: RegExp, nextHead
 
 export async function loginAsDemoEnv(page: Page, testInfo?: TestInfo) {
 	if (testInfo) {
-		await ensureAuthenticated(page, testInfo);
-		await navigateTo(page, '/dashboard', testInfo, { waitForNetworkIdle: false });
-		await waitForDemoShell(page);
+		await openDemoEnvDashboard(page, testInfo);
 		return;
 	}
 
@@ -48,7 +46,23 @@ export async function loginAsDemoEnv(page: Page, testInfo?: TestInfo) {
 	await waitForDemoShell(page);
 }
 
-export async function navigateToEnvPage(page: Page, path: string) {
+export async function prepareDemoEnvSession(page: Page, testInfo: TestInfo) {
+	await ensureAuthenticated(page, testInfo);
+}
+
+export async function openDemoEnvDashboard(page: Page, testInfo: TestInfo) {
+	await prepareDemoEnvSession(page, testInfo);
+	await navigateTo(page, '/dashboard', testInfo, { waitForNetworkIdle: false });
+	await waitForDemoShell(page);
+}
+
+export async function navigateToEnvPage(page: Page, path: string, testInfo?: TestInfo) {
+	if (testInfo) {
+		await navigateTo(page, path, testInfo, { waitForNetworkIdle: false });
+		await waitForVisibleContent(page);
+		return;
+	}
+
 	const separator = path.includes('?') ? '&' : '?';
 	const url = `${DEMO_URL}${path}${separator}tenant=${DEMO_TENANT_ID}`;
 	await page.goto(url);
