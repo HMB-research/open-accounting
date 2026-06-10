@@ -1,0 +1,30 @@
+# Last refreshed from CI run 27273825703 on 2026-06-10.
+# Format: package<TAB>seconds
+./cmd/api	15.194
+./cmd/migrate	4.361
+./internal/accounting	40.999
+./internal/analytics	23.442
+./internal/apitoken	4.048
+./internal/assets	18.933
+./internal/auth	1.471
+./internal/banking	39.421
+./internal/contacts	30.805
+./internal/database	1.032
+./internal/demo	1.222
+./internal/documents	3.037
+./internal/email	21.017
+./internal/expenses	2.103
+./internal/inventory	19.795
+./internal/invoicing	15.572
+./internal/orders	11.320
+./internal/payments	9.682
+./internal/payroll	22.913
+./internal/plugin	4.273
+./internal/quotes	11.050
+./internal/recurring	14.701
+./internal/reports	2.054
+./internal/scheduler	3.884
+./internal/tax	12.824
+./internal/tenant	15.198
+./internal/testutil	2.077
+./internal/webhooks	2.021

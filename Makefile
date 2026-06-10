@@ -9,7 +9,7 @@ COVERAGE_PROFILE ?= coverage.out
 CLI_COVERAGE_PROFILE ?= coverage-cli.out
 
 INTEGRATION_PACKAGE_LIST = git grep -l '^//go:build .*integration' -- '*_test.go' | while IFS= read -r file; do dirname "$$file"; done | sort -u | sed 's|^|./|'
-INTEGRATION_PACKAGE_SHARD = awk -v shard="$(INTEGRATION_SHARD)" -v shards="$(INTEGRATION_SHARDS)" 'BEGIN { if ((shard == "") != (shards == "")) { print "INTEGRATION_SHARD and INTEGRATION_SHARDS must be set together" > "/dev/stderr"; exit 2 } if (shards != "" && (shard < 1 || shards < 1 || shard > shards)) { print "invalid integration shard " shard "/" shards > "/dev/stderr"; exit 2 } } shards == "" || (((NR - 1) % shards) + 1 == shard) { print }'
+INTEGRATION_PACKAGE_SHARD = scripts/select-integration-packages.sh
 
 # Default target
 all: build
@@ -41,7 +41,8 @@ test-backend-coverage:
 
 # Run DB-backed integration tests. Packages are discovered from tracked build-tagged tests
 # so local and CI runs do not duplicate every unit-only package. Set
-# INTEGRATION_SHARD and INTEGRATION_SHARDS to run one shard of the same package set.
+# INTEGRATION_SHARD and INTEGRATION_SHARDS to run one weight-balanced shard of the same
+# package set.
 test-integration:
 	@packages="$$( $(INTEGRATION_PACKAGE_LIST) | $(INTEGRATION_PACKAGE_SHARD) )"; \
 	status=$$?; \

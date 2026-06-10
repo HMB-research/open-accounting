@@ -447,8 +447,10 @@ DATABASE_URL="postgres://..." make test-integration-coverage
 ```
 
 In CI, the integration gate runs the same Make target across four shards by
-setting `INTEGRATION_SHARD` and `INTEGRATION_SHARDS`. Local runs omit those
-variables to execute the full tagged package set in one process.
+setting `INTEGRATION_SHARD` and `INTEGRATION_SHARDS`. Package selection is weight-aware through
+`scripts/select-integration-packages.sh` and `scripts/integration-package-weights.tsv`, so slower
+ORM/Postgres packages are spread across shards instead of assigned by package-list position. Local
+runs omit shard variables to execute the full tagged package set in one process.
 
 ### Integration Test Structure
 

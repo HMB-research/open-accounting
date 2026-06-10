@@ -56,6 +56,10 @@ to the unit gate unless a current failure proves shared process state; the
 integration Make targets already isolate DB-backed tests and should stay the
 place for PostgreSQL/DDL serialization.
 
+For Make target dry-runs, pass Makefile variables on the command line, for
+example `make GO=echo test-integration-coverage`. Environment assignments such
+as `GO=echo make ...` do not override variables assigned inside the Makefile.
+
 Use `make test-backend-coverage` for backend stage closeout. It runs the full
 race-enabled Go test suite once and verifies the 100% `cmd/oa` coverage
 invariant from the same coverage profile, avoiding a duplicate CLI package test
