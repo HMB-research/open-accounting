@@ -70,6 +70,19 @@ bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium 
 
 The config starts the frontend server only. Start the API separately first.
 
+## Timing Review
+
+Before optimizing broad demo specs or changing shard counts, download the CI
+`playwright-results-shard-*` artifacts and aggregate the JSON reporter files:
+
+```bash
+gh run download <run-id> --pattern 'playwright-results-shard-*' --dir /tmp/playwright-results
+scripts/parse-playwright-spec-times.mjs /tmp/playwright-results/*/demo-test-results.json
+```
+
+Start with the highest-duration spec files, and keep setup/auth timing separate
+from route-specific test timing when deciding what to refactor.
+
 ## Assertion Discipline
 
 - Prefer API waits and visible UI states over fixed sleeps.
