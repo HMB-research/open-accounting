@@ -109,6 +109,8 @@ For concrete local server, reset, CORS, and Playwright commands, use `open-accou
 - Run backend unit tests with Go's default package parallelism: `go test -count=1 -race ./...`.
 - Avoid `-p 1` for unit tests unless a current failure proves shared process state. It materially slows local and CI feedback.
 - Keep DB-backed tests in the tagged integration gate (`make test-integration-coverage`); schema setup and teardown deliberately serialize PostgreSQL DDL there.
+- Run frontend Paraglide/SvelteKit-writing gates serially (`check`, `test`, `build`) when executing them locally. Parallel runs can race on generated `frontend/src/lib/paraglide` or `.svelte-kit` files and produce false negatives.
+- In Playwright demo specs, speed up broad view checks with route-owned readiness selectors and shared helpers instead of fixed sleeps. Do not remove shared navigation stability globally unless all dependent specs are refactored to own their route readiness.
 
 ## Demo Mode Reference
 

@@ -74,6 +74,8 @@ The config starts the frontend server only. Start the API separately first.
 
 - Prefer API waits and visible UI states over fixed sleeps.
 - For demo route readiness, add or reuse shared helpers such as `waitForRouteReady(page, '<route-owned selector>')` in `frontend/e2e/demo/utils.ts`; do not add `page.waitForTimeout(...)` after `navigateTo`.
+- Keep shared navigation waits stable until every dependent spec owns its route readiness. Removing `networkidle` from `navigateTo` globally can make unrelated E2E specs race route data loading.
+- When using comma-separated readiness selectors, wait for any matching visible element, not `.first()`. Scope route selectors to owned content such as `main h1` or route panels so hidden layout navigation links cannot satisfy or block readiness.
 - Assert mutation responses and rendered UI, not only that a page did not crash.
 - Use unique test data for creates so seeded demo records cannot satisfy assertions.
 - Scope generic controls such as selects and buttons to the route panel or filter bar that owns them.
