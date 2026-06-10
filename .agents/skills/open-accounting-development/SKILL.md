@@ -106,7 +106,7 @@ For concrete local server, reset, CORS, and Playwright commands, use `open-accou
 
 ### Test Gate Performance
 
-- Run backend unit tests with Go's default package parallelism: `go test -count=1 -race ./...`.
+- Run backend stage closeout with `make test-backend-coverage`; it uses Go's default package parallelism, runs the race-enabled suite once, and verifies the 100% `cmd/oa` coverage invariant from the same profile.
 - Avoid `-p 1` for unit tests unless a current failure proves shared process state. It materially slows local and CI feedback.
 - Measure focused gate timings before optimizing so the stage can report before/after evidence.
 - Prefer focused package/test commands during the inner loop; reserve full `make test-integration-coverage` for stage closeout or CI because the full local integration gate can take around 11 minutes.

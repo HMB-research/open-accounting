@@ -30,6 +30,7 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 		"README.md": {
 			"Full local baseline last verified on 2026-06-08",
 			"On 2026-06-10, local revalidation covered",
+			"`make test-backend-coverage`",
 			"`make test-cli-coverage`",
 			"`go test -timeout=3m ./docs -count=1`",
 			"`DATABASE_URL=postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable make test-integration-coverage`",
@@ -37,8 +38,8 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 		},
 		"docs/DEVELOPMENT_STATUS.md": {
 			"Full local baseline last completed on 2026-06-08. On 2026-06-10, the current branch was revalidated locally",
-			"`go test -count=1 -race -coverprofile=/tmp/open-accounting-unit-coverage.out ./...` passes without requiring PostgreSQL",
-			"`make test-cli-coverage` passes",
+			"`make test-backend-coverage` passes without requiring PostgreSQL",
+			"`make test-cli-coverage` passes as the focused CLI-only coverage gate",
 			"`go test -timeout=3m ./docs -count=1` passes",
 			"`DATABASE_URL=postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable make test-integration-coverage` passes",
 			"`cd frontend && bun run test:prepared` passes with 22 files and 517 tests",
