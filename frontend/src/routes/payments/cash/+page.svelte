@@ -304,7 +304,7 @@
 					<tbody>
 						{#each payments as payment (payment.id)}
 							<tr>
-								<td class="number" data-label="Number">
+								<td class="number" data-label={m.payments_number()}>
 									<div class="cell-stack">
 										<span class="cell-primary">{payment.payment_number}</span>
 										{#if isReversalPayment(payment)}
@@ -314,16 +314,16 @@
 										{/if}
 									</div>
 								</td>
-								<td class="payment-type" data-label="Type">
+								<td class="payment-type" data-label={m.accounts_accountType()}>
 									<StatusBadge status={payment.payment_type} config={typeConfig} />
 								</td>
-								<td class="cell-muted hide-mobile" data-label="Contact">{getContactName(payment.contact_id)}</td>
-								<td class="date" data-label="Date">{formatDate(payment.payment_date)}</td>
-								<td class="amount" data-label="Amount">{formatCurrency(payment.amount)}</td>
-								<td class="reference hide-mobile" data-label="Reference">
-									<span class="cell-ellipsis">{payment.reference || '-'}</span>
+								<td class="cell-muted" data-label={m.payments_contact()}>{getContactName(payment.contact_id)}</td>
+								<td class="date" data-label={m.common_date()}>{formatDate(payment.payment_date)}</td>
+								<td class="amount" data-label={m.common_amount()}>{formatCurrency(payment.amount)}</td>
+								<td class="reference" data-label={m.payments_reference()}>
+									<span class="cell-ellipsis" title={payment.reference || undefined}>{payment.reference || '-'}</span>
 								</td>
-								<td class="actions actions-cell" data-label="Actions">
+								<td class="actions actions-cell" data-label={m.common_actions()}>
 									<div class="actions-stack">
 										{#if canReversePayment(payment)}
 											<button type="button" class="btn btn-secondary btn-small" onclick={() => openReversePayment(payment)}>
@@ -579,19 +579,19 @@
 	}
 
 	.cash-payments-table {
-		min-width: 1040px;
+		min-width: 1000px;
 	}
 
 	.cash-payments-table .col-number {
-		width: 12%;
-	}
-
-	.cash-payments-table .col-type {
 		width: 13%;
 	}
 
+	.cash-payments-table .col-type {
+		width: 14%;
+	}
+
 	.cash-payments-table .col-contact {
-		width: 16%;
+		width: 17%;
 	}
 
 	.cash-payments-table .col-date {
@@ -603,16 +603,82 @@
 	}
 
 	.cash-payments-table .col-reference {
-		width: 29%;
+		width: 23%;
 	}
 
 	.cash-payments-table .col-actions {
-		width: 8%;
+		width: 11%;
+	}
+
+	.cash-payments-table th,
+	.cash-payments-table td {
+		padding-inline: 0.9rem;
+	}
+
+	.cash-payments-table tbody tr {
+		height: 4.15rem;
+	}
+
+	.cash-payments-table .number .cell-primary,
+	.cash-payments-table .reference .cell-ellipsis,
+	.cash-payments-table .date,
+	.cash-payments-table .amount {
+		font-size: 0.86rem;
+	}
+
+	.cash-payments-table .number .cell-primary {
+		white-space: nowrap;
+	}
+
+	.cash-payments-table .cell-muted {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.cash-payments-table .payment-type :global(.badge) {
+		min-width: 7.2rem;
+		justify-content: center;
+		font-weight: 650;
+	}
+
+	.cash-payments-table .reference .cell-ellipsis {
+		max-width: 100%;
+		color: #334155;
+	}
+
+	.cash-payments-table .actions-stack {
+		justify-content: flex-end;
+	}
+
+	.cash-payments-table .btn-small {
+		min-width: 4.2rem;
+		justify-content: center;
 	}
 
 	@media (max-width: 768px) {
 		.cash-payments-table {
 			min-width: 0;
+		}
+
+		.cash-payments-table tbody tr {
+			height: auto;
+		}
+
+		.cash-payments-table th,
+		.cash-payments-table td {
+			padding-inline: 0;
+		}
+
+		.cash-payments-table .payment-type :global(.badge) {
+			min-width: 0;
+		}
+
+		.cash-payments-table .cell-muted {
+			max-width: 62%;
+			text-align: right;
+			white-space: normal;
+			overflow-wrap: anywhere;
 		}
 	}
 
