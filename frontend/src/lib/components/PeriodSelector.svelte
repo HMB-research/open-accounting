@@ -15,6 +15,7 @@
 	 * ```
 	 */
 	import * as m from '$lib/paraglide/messages.js';
+	import { calculateDateRange } from '$lib/utils/dates';
 
 	/** Available period types */
 	type Period = 'THIS_MONTH' | 'LAST_MONTH' | 'THIS_QUARTER' | 'THIS_YEAR' | 'CUSTOM';
@@ -43,35 +44,12 @@
 	let showCustom = $derived(value === 'CUSTOM');
 
 	function calculateDates(period: Period): { start: string; end: string } {
-		const now = new Date();
-		const year = now.getFullYear();
-		const month = now.getMonth();
-
-		switch (period) {
-			case 'THIS_MONTH':
-				return {
-					start: new Date(year, month, 1).toISOString().slice(0, 10),
-					end: new Date(year, month + 1, 0).toISOString().slice(0, 10)
-				};
-			case 'LAST_MONTH':
-				return {
-					start: new Date(year, month - 1, 1).toISOString().slice(0, 10),
-					end: new Date(year, month, 0).toISOString().slice(0, 10)
-				};
-			case 'THIS_QUARTER':
-				const quarterStart = Math.floor(month / 3) * 3;
-				return {
-					start: new Date(year, quarterStart, 1).toISOString().slice(0, 10),
-					end: new Date(year, quarterStart + 3, 0).toISOString().slice(0, 10)
-				};
-			case 'THIS_YEAR':
-				return {
-					start: new Date(year, 0, 1).toISOString().slice(0, 10),
-					end: new Date(year, 11, 31).toISOString().slice(0, 10)
-				};
-			default:
-				return { start: startDate, end: endDate };
+		if (period === 'CUSTOM') {
+			return { start: startDate, end: endDate };
 		}
+
+		const range = calculateDateRange(period);
+		return { start: range.from, end: range.to };
 	}
 
 	function handlePeriodChange(newPeriod: Period) {
@@ -84,7 +62,12 @@
 		onchange?.(value, startDate, endDate);
 	}
 
-	function handleDateChange() {
+	function handleDateChange(field: 'start' | 'end', dateValue: string) {
+		if (field === 'start') {
+			startDate = dateValue;
+		} else {
+			endDate = dateValue;
+		}
 		onchange?.(value, startDate, endDate);
 	}
 
@@ -117,7 +100,7 @@
 			<input
 				type="date"
 				bind:value={startDate}
-				onchange={handleDateChange}
+				onchange={(e) => handleDateChange('start', e.currentTarget.value)}
 				class="date-input"
 				data-testid="date-start"
 			/>
@@ -125,7 +108,7 @@
 			<input
 				type="date"
 				bind:value={endDate}
-				onchange={handleDateChange}
+				onchange={(e) => handleDateChange('end', e.currentTarget.value)}
 				class="date-input"
 				data-testid="date-end"
 			/>

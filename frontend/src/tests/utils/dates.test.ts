@@ -36,6 +36,11 @@ describe('Date Utilities', () => {
 			expect(toISODate(date)).toBe('2024-06-15');
 		});
 
+		it('preserves local calendar dates created for date inputs', () => {
+			const date = new Date(2026, 5, 1);
+			expect(toISODate(date)).toBe('2026-06-01');
+		});
+
 		it('handles beginning of year', () => {
 			const date = new Date('2024-01-01T12:00:00Z');
 			expect(toISODate(date)).toBe('2024-01-01');
@@ -74,6 +79,10 @@ describe('Date Utilities', () => {
 			const result = getStartOfMonth(new Date());
 			expect(result).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 		});
+
+		it('returns the local first day of the given month', () => {
+			expect(getStartOfMonth(new Date(2026, 5, 10))).toBe('2026-06-01');
+		});
 	});
 
 	describe('getEndOfMonth', () => {
@@ -88,6 +97,10 @@ describe('Date Utilities', () => {
 		it('returns a valid ISO date', () => {
 			const result = getEndOfMonth(new Date());
 			expect(result).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+		});
+
+		it('returns the local last day of the given month', () => {
+			expect(getEndOfMonth(new Date(2026, 5, 10))).toBe('2026-06-30');
 		});
 	});
 
