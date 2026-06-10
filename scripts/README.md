@@ -220,6 +220,23 @@ scripts/db-backup-health.sh \
   --status-file /var/lib/node_exporter/textfile_collector/openaccounting_backup.prom
 ```
 
+---
+
+## Integration Test Timing Weights
+
+CI integration shards use `scripts/integration-package-weights.tsv` to keep the
+slow ORM/Postgres packages balanced across the four `integration-test` jobs.
+Regenerate the TSV from successful GitHub Actions job logs:
+
+```bash
+for job in <integration-job-id-1> <integration-job-id-2> <integration-job-id-3> <integration-job-id-4>; do
+  gh run view <run-id> --job "$job" --log
+done | scripts/parse-go-test-package-times.sh > /tmp/integration-package-weights.tsv
+```
+
+Review the projected shard buckets before replacing
+`scripts/integration-package-weights.tsv`.
+
 The health check finds the newest `openaccounting_*.dump`, requires a non-empty file, verifies `FILE.sha256`, fails when the backup is older than the configured threshold, and can write Prometheus textfile metrics.
 
 Sync local backups offsite after the backup script writes both the dump and checksum:
