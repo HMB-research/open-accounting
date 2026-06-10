@@ -168,3 +168,29 @@ Split `demo/env.spec.ts` into workflow-sized files:
 | `demo/env-performance.spec.ts` | Login and dashboard reload timing checks |
 
 The split preserves the same 28 demo tests. `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium --list e2e/demo/env-*.spec.ts` reports those 28 tests plus the shared `auth-setup` dependency. The next CI Playwright artifact should be used to confirm whether the former `env.spec.ts` slow tail is now distributed across shards.
+
+## Follow-up: Mobile Spec Split
+
+CI run `27305782206` on commit `ab1d583` confirmed the former `demo/env.spec.ts` slow tail was distributed, and shifted the highest single-spec cost to `demo/mobile.spec.ts` at 155.472s across 15 tests. The same artifact showed shard 3 carrying `demo/mobile.spec.ts`, `demo/invoices.spec.ts`, and most `demo/payment-reminders.spec.ts`, so mobile remained one of the next measured E2E distribution targets.
+
+Split `demo/mobile.spec.ts` into workflow-sized files and moved repeated mobile route helpers into `demo/mobile-utils.ts`:
+
+| New spec | Coverage moved |
+|----------|----------------|
+| `demo/mobile-navigation.spec.ts` | Mobile drawer visibility, grouped navigation, link close behavior, nested sales navigation |
+| `demo/mobile-layout.spec.ts` | Mobile table usability, dashboard layout, horizontal overflow checks, tablet layout |
+| `demo/mobile-forms.spec.ts` | Mobile contact form access and touch target sizing |
+
+The split preserves the same 15 mobile demo tests. Route setup now uses route-owned readiness selectors with `waitForNetworkIdle: false` for these mobile checks, avoiding broad network-idle waits once the route shell is visible.
+
+Local focused baseline against the branch API showed `demo/mobile.spec.ts` at 28.169s of Playwright result time. After the split, the same coverage reported:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/mobile-navigation.spec.ts` | 6.736s | 4 |
+| `demo/mobile-forms.spec.ts` | 6.655s | 2 |
+| `demo/mobile-layout.spec.ts` | 3.649s | 9 |
+
+The focused command still reports 16 tests including the shared `auth-setup` dependency. The next CI Playwright artifact should verify whether the prior mobile shard tail is reduced in the required PR gate.
+
+During the local frontend gate, `src/tests/utils/dates.test.ts` exposed a timezone-sensitive assertion: `getTodayISO()` returns the local calendar date, but the test compared it to `new Date().toISOString().slice(0, 10)`, which is UTC. Around midnight in `Europe/Tallinn`, that produced `2026-06-11` vs `2026-06-10`. The test now computes the expected value through the same local `toISODate(new Date())` helper so the gate is stable across local timezone boundaries.

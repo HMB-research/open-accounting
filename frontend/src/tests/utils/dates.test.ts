@@ -25,7 +25,7 @@ describe('Date Utilities', () => {
 
 		it('returns correct date', () => {
 			const result = getTodayISO();
-			const expected = new Date().toISOString().slice(0, 10);
+			const expected = toISODate(new Date());
 			expect(result).toBe(expected);
 		});
 	});
