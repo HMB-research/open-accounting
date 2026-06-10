@@ -18,13 +18,23 @@ export async function openMobileRoute(page: Page, path: string, testInfo: TestIn
 	await waitForRouteReady(page, routeReadySelectors[path] ?? 'main h1, main, [role="main"]');
 }
 
-export async function openMobileDrawer(page: Page) {
-	const mobileMenuButton = page.getByRole('button', {
+function mobileMenuButton(page: Page) {
+	return page.getByRole('button', {
 		name: /toggle menu/i
 	});
+}
 
-	await expect(mobileMenuButton).toBeVisible();
-	await mobileMenuButton.click();
+export async function expectMobileMenuButtonVisible(page: Page): Promise<void> {
+	await page
+		.getByText(/^Loading\.\.\.$|^Laadimine\.\.\.$/i)
+		.waitFor({ state: 'hidden', timeout: 10000 })
+		.catch(() => {});
+	await expect(mobileMenuButton(page)).toBeVisible({ timeout: 10000 });
+}
+
+export async function openMobileDrawer(page: Page) {
+	await expectMobileMenuButtonVisible(page);
+	await mobileMenuButton(page).click();
 
 	const drawer = page.locator('.mobile-nav');
 	await expect(drawer).toBeVisible();
