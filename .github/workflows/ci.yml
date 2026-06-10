@@ -411,6 +411,15 @@ jobs:
           path: frontend/playwright-report-demo/
           retention-days: 7
 
+      - name: Upload Playwright smoke timing data
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: playwright-smoke-results-${{ github.run_attempt }}
+          path: frontend/demo-test-results.json
+          if-no-files-found: warn
+          retention-days: 14
+
   # E2E tests run against local database with seeded demo data
   # Sharded across 4 runners for parallel execution.
   # This local seeded suite is a required PR gate; only the remote hosted-demo
@@ -545,6 +554,15 @@ jobs:
           path: frontend/playwright-report-demo/
           retention-days: 7
 
+      - name: Upload Playwright timing data
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: playwright-results-shard-${{ matrix.shard }}-${{ github.run_attempt }}
+          path: frontend/demo-test-results.json
+          if-no-files-found: warn
+          retention-days: 14
+
   # Remote demo E2E tests are optional and only run when explicitly configured.
   # This keeps main green when no hosted demo environment exists.
   e2e-demo:
@@ -625,8 +643,17 @@ jobs:
         if: failure()
         with:
           name: playwright-demo-report
-          path: frontend/playwright-report/
+          path: frontend/playwright-report-demo/
           retention-days: 7
+
+      - name: Upload Playwright timing data
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: playwright-demo-results-${{ github.run_attempt }}
+          path: frontend/demo-test-results.json
+          if-no-files-found: warn
+          retention-days: 14
 
   docker:
     runs-on: ubuntu-latest
