@@ -13,6 +13,7 @@ describe("API Client - Core Functionality", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -132,6 +133,8 @@ describe("API Client - Core Functionality", () => {
     });
 
     it("should throw generic error if no error message", async () => {
+      vi.useFakeTimers();
+
       // Mock 4 responses (initial + 3 retries) for 5xx error with retry logic
       const errorResponse = {
         ok: false,
@@ -144,10 +147,14 @@ describe("API Client - Core Functionality", () => {
         .mockResolvedValueOnce(errorResponse)
         .mockResolvedValueOnce(errorResponse);
 
-      await expect(api.register("bad@email", "pass", "Name")).rejects.toThrow(
-        "Request failed",
-      );
-    }, 30000); // Increase timeout to account for retry delays
+      const request = api.register("bad@email", "pass", "Name");
+      const assertion = expect(request).rejects.toThrow("Request failed");
+
+      await vi.runAllTimersAsync();
+
+      await assertion;
+      expect(mockFetch).toHaveBeenCalledTimes(4);
+    });
   });
 
   describe("Decimal Parsing", () => {
