@@ -11,24 +11,30 @@ const __dirname = path.dirname(__filename);
 // Auth state directory - must match utils.ts and playwright.demo.config.ts
 const AUTH_DIR = path.join(__dirname, "..", "..", ".auth");
 
-// Authenticate all 4 demo users and save their auth state
+// Authenticate the demo users needed by the current worker count and save their auth state.
 // This runs once before any test workers start
-setup("authenticate all demo users", async ({ browser }) => {
+setup("authenticate demo users", async ({ browser }, testInfo) => {
   // Ensure auth directory exists
   if (!fs.existsSync(AUTH_DIR)) {
     fs.mkdirSync(AUTH_DIR, { recursive: true });
   }
 
+  const authWorkerCount = Math.min(
+    Math.max(testInfo.config.workers, 1),
+    DEMO_CREDENTIALS.length,
+  );
+  const authCredentials = DEMO_CREDENTIALS.slice(0, authWorkerCount);
+
   console.log(
-    `[Auth Setup] Authenticating all ${DEMO_CREDENTIALS.length} demo users...`,
+    `[Auth Setup] Authenticating ${authCredentials.length}/${DEMO_CREDENTIALS.length} demo users for ${testInfo.config.workers} worker(s)...`,
   );
 
   await Promise.all(
-    DEMO_CREDENTIALS.map(async (creds, workerIndex) => {
+    authCredentials.map(async (creds, workerIndex) => {
       const authFile = path.join(AUTH_DIR, `worker-${workerIndex}.json`);
 
       console.log(
-        `[Auth Setup] Authenticating demo user ${workerIndex + 1}/${DEMO_CREDENTIALS.length}: ${creds.email}...`,
+        `[Auth Setup] Authenticating demo user ${workerIndex + 1}/${authCredentials.length}: ${creds.email}...`,
       );
 
       // Create a new context for each user
@@ -61,6 +67,6 @@ setup("authenticate all demo users", async ({ browser }) => {
   );
 
   console.log(
-    `[Auth Setup] All ${DEMO_CREDENTIALS.length} demo users authenticated successfully`,
+    `[Auth Setup] ${authCredentials.length} demo user auth state(s) saved successfully`,
   );
 });
