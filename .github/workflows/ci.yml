@@ -333,6 +333,14 @@ jobs:
         working-directory: frontend
         run: bun install --frozen-lockfile
 
+      - name: Restore Playwright browser cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/bun.lock') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
       - name: Install Playwright browsers
         working-directory: frontend
         run: bunx playwright install --with-deps chromium
@@ -458,6 +466,14 @@ jobs:
         working-directory: frontend
         run: bun install --frozen-lockfile
 
+      - name: Restore Playwright browser cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/bun.lock') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
       - name: Install Playwright browsers
         working-directory: frontend
         run: bunx playwright install --with-deps chromium
@@ -558,6 +574,14 @@ jobs:
       - name: Install dependencies
         working-directory: frontend
         run: bun install --frozen-lockfile
+
+      - name: Restore Playwright browser cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/bun.lock') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
 
       - name: Install Playwright browsers
         working-directory: frontend
