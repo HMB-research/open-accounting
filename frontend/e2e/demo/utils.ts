@@ -443,11 +443,21 @@ export async function waitForRouteReady(
 	}).toPass({ timeout });
 }
 
-async function waitForLoadingIndicatorsToClear(page: Page, timeout: number): Promise<void> {
+interface WaitForLoadingOptions {
+	includePlainText?: boolean;
+}
+
+async function waitForLoadingIndicatorsToClear(
+	page: Page,
+	timeout: number,
+	options: WaitForLoadingOptions = {}
+): Promise<void> {
 	const loadingIndicators = page.locator(
 		'.loading, .loading-spinner, .loading-overlay, .spinner, .animate-spin, [data-loading="true"], .skeleton'
 	);
-	const loadingText = page.getByText(/^Loading\.\.\.$|^Laadimine\.\.\.$/i);
+	const loadingText = options.includePlainText
+		? page.getByText(/^Loading\.\.\.$|^Laadimine\.\.\.$/i)
+		: null;
 
 	await expect(async () => {
 		const visibleCssCount = await loadingIndicators.evaluateAll((elements) => {
@@ -462,18 +472,20 @@ async function waitForLoadingIndicatorsToClear(page: Page, timeout: number): Pro
 				);
 			}).length;
 		});
-		const visibleTextCount = await loadingText.evaluateAll((elements) => {
-			return elements.filter((element) => {
-				const style = window.getComputedStyle(element);
-				const rect = element.getBoundingClientRect();
-				return (
-					style.display !== 'none' &&
-					style.visibility !== 'hidden' &&
-					rect.width > 0 &&
-					rect.height > 0
-				);
-			}).length;
-		});
+		const visibleTextCount = loadingText
+			? await loadingText.evaluateAll((elements) => {
+					return elements.filter((element) => {
+						const style = window.getComputedStyle(element);
+						const rect = element.getBoundingClientRect();
+						return (
+							style.display !== 'none' &&
+							style.visibility !== 'hidden' &&
+							rect.width > 0 &&
+							rect.height > 0
+						);
+					}).length;
+				})
+			: 0;
 
 		expect(visibleCssCount + visibleTextCount).toBe(0);
 	}).toPass({ timeout });
@@ -496,7 +508,9 @@ export async function waitForDataOrEmpty(
 	);
 	// Wait for loading to complete first
 	try {
-		await waitForLoadingIndicatorsToClear(page, Math.min(timeout, 10000));
+		await waitForLoadingIndicatorsToClear(page, Math.min(timeout, 10000), {
+			includePlainText: true
+		});
 	} catch {
 		// Loading might have already completed
 	}
