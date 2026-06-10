@@ -71,17 +71,17 @@ test.describe('Demo Leave Management - Page Structure Verification', () => {
 
 		// Click second tab (balances)
 		await tabs.nth(1).click();
-		await page.waitForTimeout(300);
 
 		// Second tab should now be active
 		await expect(tabs.nth(1)).toHaveClass(/active/);
+		await expect(page.locator('table, .empty-state').first()).toBeVisible({ timeout: 5000 });
 
 		// Click first tab (records)
 		await tabs.first().click();
-		await page.waitForTimeout(300);
 
 		// First tab should now be active
 		await expect(tabs.first()).toHaveClass(/active/);
+		await expect(page.locator('table, .empty-state').first()).toBeVisible({ timeout: 5000 });
 	});
 
 	test('shows empty state or records table', async ({ page }) => {
@@ -178,7 +178,7 @@ test.describe('Demo Leave Management - Employee Selection', () => {
 
 		// Switch to balances tab
 		await tabs.nth(1).click();
-		await page.waitForTimeout(500);
+		await expect(tabs.nth(1)).toHaveClass(/active/);
 
 		// Without employee selected, should show message to select employee or empty state
 		await expect(async () => {
