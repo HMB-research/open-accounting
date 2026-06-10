@@ -42,13 +42,13 @@ const routeReadySelectors: Record<string, string> = {
 
 async function openDashboard(page: Page, testInfo: TestInfo): Promise<void> {
 	await ensureAuthenticated(page, testInfo);
-	await navigateTo(page, '/dashboard', testInfo);
+	await navigateTo(page, '/dashboard', testInfo, { waitForNetworkIdle: false });
 	await waitForRouteReady(page, 'h1, .dashboard-header, [data-testid="dashboard"], .summary-grid, .tenant-selector');
 }
 
 async function openDemoRoute(page: Page, path: string, testInfo: TestInfo): Promise<void> {
 	await ensureAuthenticated(page, testInfo);
-	await navigateTo(page, path, testInfo);
+	await navigateTo(page, path, testInfo, { waitForNetworkIdle: false });
 	await waitForRouteReady(page, routeReadySelectors[path] ?? 'main, [class*="content"], .container');
 }
 
@@ -180,11 +180,11 @@ test.describe('Demo All Views - Accounting', () => {
 		await expect(content).toBeVisible();
 
 		// Should show contacts
-		const hasHeading = await page.getByRole('heading', { name: /contact|customer|supplier/i }).isVisible().catch(() => false);
-		const hasData = await page.getByText(/techstart|nordic|baltic|greentech/i).first().isVisible().catch(() => false);
-		const hasEmptyState = await page.getByText(/no.*contact|create.*first/i).isVisible().catch(() => false);
+		const hasHeading = await page.getByRole('heading', { level: 1, name: /contacts/i }).isVisible().catch(() => false);
+		const hasSeededData = await page.getByText(/techstart|nordic|baltic|greentech/i).first().isVisible().catch(() => false);
+		const { hasData, isEmpty } = await waitForDataOrEmpty(page, 10000);
 
-		expect(hasHeading || hasData || hasEmptyState).toBeTruthy();
+		expect(hasHeading || hasSeededData || hasData || isEmpty).toBeTruthy();
 	});
 
 	test('Reports page loads', async ({ page }, testInfo) => {
