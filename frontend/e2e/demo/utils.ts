@@ -465,7 +465,22 @@ export async function waitForRouteReady(
 	timeout = 10000
 ): Promise<void> {
 	await page.waitForLoadState('domcontentloaded', { timeout });
-	await expect(page.locator(readySelector).first()).toBeVisible({ timeout });
+	await expect(async () => {
+		const visibleCount = await page.locator(readySelector).evaluateAll((elements) => {
+			return elements.filter((element) => {
+				const style = window.getComputedStyle(element);
+				const rect = element.getBoundingClientRect();
+				return (
+					style.display !== 'none' &&
+					style.visibility !== 'hidden' &&
+					rect.width > 0 &&
+					rect.height > 0
+				);
+			}).length;
+		});
+
+		expect(visibleCount).toBeGreaterThan(0);
+	}).toPass({ timeout });
 }
 
 async function waitForLoadingIndicatorsToClear(page: Page, timeout: number): Promise<void> {

@@ -33,7 +33,7 @@ const routeReadySelectors: Record<string, string> = {
 	'/banking': 'h1, #bank-account-selector, table, .empty-state',
 	'/banking/import': 'h1, input[type="file"], .dropzone',
 	'/tax': 'h1, select, .declarations-list',
-	'/settings': 'h1, .settings-grid, .settings-card, a[href*="settings"]',
+	'/settings': 'main h1, main .settings-grid, main .settings-card',
 	'/settings/company': 'h1, form, input',
 	'/settings/email': 'h1, form, .tabs',
 	'/settings/plugins': 'h1, .plugins-grid, .plugin-card, .empty-state',
