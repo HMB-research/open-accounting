@@ -230,3 +230,29 @@ Local focused baseline against the branch API showed `demo/env-dashboard-routes.
 | `demo/env-report-settings-routes.spec.ts` | 2.427s | 3 |
 
 The next CI Playwright artifact should confirm whether the prior environment-route shard tail is distributed. If it is, the next measured demo E2E candidates are `payment-reminders`, `data-verification`, `absences`, and `invoices`.
+
+CI run `27307960847` on commit `b2c5be6` confirmed the former `demo/env-dashboard-routes.spec.ts` entry was distributed, and shifted the highest single-spec cost to `demo/payment-reminders.spec.ts` at 138.290s across 14 tests.
+
+## Follow-up: Payment Reminders Spec Split
+
+Split `demo/payment-reminders.spec.ts` into workflow-sized files and moved repeated route/data helpers into `demo/payment-reminders-utils.ts`:
+
+| New spec | Coverage moved |
+|----------|----------------|
+| `demo/payment-reminders-page.spec.ts` | Heading, refresh/back controls, summary and empty/list state checks |
+| `demo/payment-reminders-selection.spec.ts` | Invoice checkbox selection and send-button availability checks |
+| `demo/payment-reminders-modal.spec.ts` | Send reminder modal open, close, and custom-message checks |
+| `demo/payment-reminders-table.spec.ts` | Table headers and overdue badge checks |
+
+The split preserves the same 14 payment-reminder demo tests. Route setup now opens `/invoices/reminders` with `waitForNetworkIdle: false` and waits for a route-owned heading or terminal reminder data state; data-dependent tests still wait for `.summary-card`, `.empty-state`, or `.alert-error` before asserting tables, badges, or modal controls.
+
+Local focused baseline against the branch API showed `demo/payment-reminders.spec.ts` at 23.536s of Playwright result time. After the split, the same coverage reported:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/payment-reminders-modal.spec.ts` | 5.954s | 3 |
+| `demo/payment-reminders-selection.spec.ts` | 4.688s | 4 |
+| `demo/payment-reminders-page.spec.ts` | 2.679s | 5 |
+| `demo/payment-reminders-table.spec.ts` | 1.818s | 2 |
+
+The next CI Playwright artifact should confirm whether the prior payment-reminder shard tail is distributed. The next measured demo E2E candidates are `balance-confirmations`, `invoices`, `data-verification`, and `absences`.
