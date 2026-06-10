@@ -1,12 +1,73 @@
-import { test, expect } from '@playwright/test';
-import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
+import { test, expect, type Page, type TestInfo } from '@playwright/test';
+import { ensureAuthenticated, navigateTo, ensureDemoTenant, waitForRouteReady } from './utils';
+
+const balanceLoadedState = '.summary-card, .empty-state, .alert-error';
+const summaryRequestPattern = /\/api\/v1\/tenants\/[^/]+\/reports\/balance-confirmations\?/;
+
+async function openBalanceConfirmationsPage(page: Page, testInfo: TestInfo): Promise<void> {
+	await navigateTo(page, '/reports/balance-confirmations', testInfo);
+	await waitForRouteReady(page, 'h1');
+}
+
+async function waitForBalanceDataState(page: Page): Promise<void> {
+	await expect(page.locator(balanceLoadedState).first()).toBeVisible({ timeout: 15000 });
+}
+
+async function generateBalanceSummary(page: Page): Promise<void> {
+	const responsePromise = page
+		.waitForResponse(
+			(response) =>
+				summaryRequestPattern.test(response.url()) && response.request().method() === 'GET',
+			{ timeout: 15000 }
+		)
+		.catch(() => null);
+
+	await page.locator('button.btn-primary').click();
+	await responsePromise;
+	await waitForBalanceDataState(page);
+}
+
+async function hasVisibleError(page: Page): Promise<boolean> {
+	return page.locator('.alert-error').isVisible().catch(() => false);
+}
+
+async function hasBalanceSummary(page: Page): Promise<boolean> {
+	await waitForBalanceDataState(page);
+	if (await hasVisibleError(page)) {
+		return false;
+	}
+	return page.locator('.summary-card').isVisible().catch(() => false);
+}
+
+async function hasBalanceTable(page: Page): Promise<boolean> {
+	if (!(await hasBalanceSummary(page))) {
+		return false;
+	}
+	return page.locator('table.table').first().isVisible().catch(() => false);
+}
+
+async function expectTerminalBalanceState(page: Page): Promise<void> {
+	await expect(page.locator('.empty-state, .alert-error').first()).toBeVisible();
+}
+
+async function openFirstContactDetailModalIfAvailable(page: Page): Promise<boolean> {
+	if (!(await hasBalanceTable(page))) {
+		await expectTerminalBalanceState(page);
+		return false;
+	}
+
+	const viewButton = page.locator('tbody button.btn-sm').first();
+	await expect(viewButton).toBeVisible();
+	await viewButton.click();
+	await expect(page.locator('.modal')).toBeVisible({ timeout: 5000 });
+	return true;
+}
 
 test.describe('Demo Balance Confirmations - Page Structure', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
-		await navigateTo(page, '/reports/balance-confirmations', testInfo);
-		await page.waitForLoadState('networkidle');
+		await openBalanceConfirmationsPage(page, testInfo);
 	});
 
 	test('displays balance confirmations page heading', async ({ page }) => {
@@ -19,8 +80,6 @@ test.describe('Demo Balance Confirmations - Page Structure', () => {
 	test('has balance type selector with receivable and payable options', async ({ page }) => {
 		const typeSelect = page.locator('select#balanceType');
 		await expect(typeSelect).toBeVisible({ timeout: 10000 });
-
-		// Check options exist
 		await expect(typeSelect.locator('option[value="RECEIVABLE"]')).toBeAttached();
 		await expect(typeSelect.locator('option[value="PAYABLE"]')).toBeAttached();
 	});
@@ -41,44 +100,33 @@ test.describe('Demo Balance Confirmations - Receivables', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
-		await navigateTo(page, '/reports/balance-confirmations', testInfo);
-		await page.waitForLoadState('networkidle');
+		await openBalanceConfirmationsPage(page, testInfo);
 	});
 
 	test('generates receivables summary by default', async ({ page }) => {
-		// Click generate button
-		const generateBtn = page.locator('button.btn-primary');
-		await generateBtn.click();
-		await page.waitForTimeout(1000);
+		await waitForBalanceDataState(page);
 
-		// Should show summary section, empty state, or error (API may fail for some tenants)
-		const hasSummary = await page.locator('.summary-card').isVisible().catch(() => false);
-		const hasEmptyState = await page
-			.getByText(/no outstanding|ei leitud/i)
-			.isVisible()
-			.catch(() => false);
-		const hasError = await page.getByText(/failed|error|viga/i).isVisible().catch(() => false);
+		if (await hasBalanceSummary(page)) {
+			await expect(page.locator('.summary-card h2')).toHaveText(
+				/accounts receivable|nõuete kokkuvõte/i
+			);
+			return;
+		}
 
-		expect(hasSummary || hasEmptyState || hasError).toBeTruthy();
+		await expectTerminalBalanceState(page);
 	});
 
 	test('shows summary statistics when data exists', async ({ page }) => {
-		// Generate report
-		const generateBtn = page.locator('button.btn-primary');
-		await generateBtn.click();
-		await page.waitForTimeout(1000);
+		if (await hasBalanceSummary(page)) {
+			const summaryCard = page.locator('.summary-card');
+			const summaryContent = await summaryCard.textContent();
+			expect(summaryContent).toMatch(/total balance|kokku saldo/i);
+			expect(summaryContent).toMatch(/number of contacts|kontaktide arv/i);
+			expect(summaryContent).toMatch(/number of invoices|arvete arv/i);
+			return;
+		}
 
-		// Check for summary statistics (or error/empty state)
-		const pageContent = await page.content();
-		const hasStatistics =
-			pageContent.includes('Total Balance') ||
-			pageContent.includes('Kokku saldo') ||
-			pageContent.includes('Number of Contacts') ||
-			pageContent.includes('Kontaktide arv');
-		const hasNoData = pageContent.includes('No outstanding') || pageContent.includes('ei leitud');
-		const hasError = pageContent.includes('Failed') || pageContent.includes('error');
-
-		expect(hasStatistics || hasNoData || hasError).toBeTruthy();
+		await expectTerminalBalanceState(page);
 	});
 });
 
@@ -86,30 +134,21 @@ test.describe('Demo Balance Confirmations - Payables', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
-		await navigateTo(page, '/reports/balance-confirmations', testInfo);
-		await page.waitForLoadState('networkidle');
+		await openBalanceConfirmationsPage(page, testInfo);
 	});
 
 	test('can switch to payables view', async ({ page }) => {
-		// Select payables
-		const typeSelect = page.locator('select#balanceType');
-		await typeSelect.selectOption('PAYABLE');
+		await page.locator('select#balanceType').selectOption('PAYABLE');
+		await generateBalanceSummary(page);
 
-		// Generate report
-		const generateBtn = page.locator('button.btn-primary');
-		await generateBtn.click();
-		await page.waitForTimeout(1000);
+		if (await hasBalanceSummary(page)) {
+			await expect(page.locator('.summary-card h2')).toHaveText(
+				/accounts payable|kohustuste kokkuvõte/i
+			);
+			return;
+		}
 
-		// Should show payables summary, empty state, or error (API may fail for some tenants)
-		const pageContent = await page.content();
-		const hasPayablesContent =
-			pageContent.includes('Accounts Payable') ||
-			pageContent.includes('Kohustuste') ||
-			pageContent.includes('No outstanding') ||
-			pageContent.includes('ei leitud');
-		const hasError = pageContent.includes('Failed') || pageContent.includes('error');
-
-		expect(hasPayablesContent || hasError).toBeTruthy();
+		await expectTerminalBalanceState(page);
 	});
 });
 
@@ -117,27 +156,19 @@ test.describe('Demo Balance Confirmations - Date Filtering', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
-		await navigateTo(page, '/reports/balance-confirmations', testInfo);
-		await page.waitForLoadState('networkidle');
+		await openBalanceConfirmationsPage(page, testInfo);
 	});
 
 	test('can change as of date and regenerate', async ({ page }) => {
-		// Set a past date
-		const dateInput = page.locator('input#asOfDate');
-		await dateInput.fill('2024-12-31');
+		await page.locator('input#asOfDate').fill('2024-12-31');
+		await generateBalanceSummary(page);
 
-		// Generate report
-		const generateBtn = page.locator('button.btn-primary');
-		await generateBtn.click();
-		await page.waitForTimeout(1000);
-
-		// Should show the selected date in summary
-		const summaryCard = page.locator('.summary-card');
-		const hasDate = await summaryCard.isVisible().catch(() => false);
-		if (hasDate) {
-			const content = await summaryCard.textContent();
-			expect(content).toContain('2024-12-31');
+		if (await hasBalanceSummary(page)) {
+			await expect(page.locator('.summary-card .as-of-date')).toContainText('2024-12-31');
+			return;
 		}
+
+		await expectTerminalBalanceState(page);
 	});
 });
 
@@ -145,58 +176,22 @@ test.describe('Demo Balance Confirmations - Contact Details', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
-		await navigateTo(page, '/reports/balance-confirmations', testInfo);
-		await page.waitForLoadState('networkidle');
+		await openBalanceConfirmationsPage(page, testInfo);
 	});
 
 	test('can view contact detail modal when contacts exist', async ({ page }) => {
-		// Generate report
-		const generateBtn = page.locator('button.btn-primary');
-		await generateBtn.click();
-		await page.waitForTimeout(1000);
-
-		// Check if any view details buttons exist
-		const viewButtons = page.locator('button:has-text("View Details"), button:has-text("Vaata")');
-		const buttonCount = await viewButtons.count();
-
-		if (buttonCount > 0) {
-			// Click first view details button
-			await viewButtons.first().click();
-			await page.waitForTimeout(500);
-
-			// Modal should appear
-			const modal = page.locator('.modal');
-			await expect(modal).toBeVisible({ timeout: 5000 });
-
-			// Modal should have invoice details
-			const modalContent = await modal.textContent();
+		if (await openFirstContactDetailModalIfAvailable(page)) {
+			const modalContent = await page.locator('.modal').textContent();
 			expect(modalContent).toMatch(/invoice|arve/i);
 		}
 	});
 
 	test('modal can be closed', async ({ page }) => {
-		// Generate report
-		const generateBtn = page.locator('button.btn-primary');
-		await generateBtn.click();
-		await page.waitForTimeout(1000);
-
-		// Check if any view details buttons exist
-		const viewButtons = page.locator('button:has-text("View Details"), button:has-text("Vaata")');
-		const buttonCount = await viewButtons.count();
-
-		if (buttonCount > 0) {
-			// Click first view details button
-			await viewButtons.first().click();
-			await page.waitForTimeout(500);
-
-			// Close modal
+		if (await openFirstContactDetailModalIfAvailable(page)) {
 			const closeBtn = page.locator('.btn-close');
+			await expect(closeBtn).toBeVisible();
 			await closeBtn.click();
-			await page.waitForTimeout(500);
-
-			// Modal should be hidden
-			const modal = page.locator('.modal');
-			await expect(modal).not.toBeVisible();
+			await expect(page.locator('.modal')).not.toBeVisible();
 		}
 	});
 });
@@ -205,45 +200,28 @@ test.describe('Demo Balance Confirmations - Table Display', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
-		await navigateTo(page, '/reports/balance-confirmations', testInfo);
-		await page.waitForLoadState('networkidle');
+		await openBalanceConfirmationsPage(page, testInfo);
 	});
 
 	test('displays table with proper headers when contacts exist', async ({ page }) => {
-		// Generate report
-		const generateBtn = page.locator('button.btn-primary');
-		await generateBtn.click();
-		await page.waitForTimeout(1000);
+		const table = page.locator('table.table').first();
 
-		// Check if table exists
-		const table = page.locator('table.table');
-		const tableVisible = await table.isVisible().catch(() => false);
-
-		if (tableVisible) {
-			// Check for expected column headers
-			const tableContent = await table.textContent();
-			const hasContactColumn = tableContent?.match(/contact|kontakt/i);
-			const hasBalanceColumn = tableContent?.match(/balance|saldo/i);
-
-			expect(hasContactColumn || hasBalanceColumn).toBeTruthy();
+		if (await hasBalanceTable(page)) {
+			const tableHeader = await table.locator('thead').textContent();
+			expect(tableHeader).toMatch(/contact|kontakt/i);
+			expect(tableHeader).toMatch(/balance|saldo/i);
+			return;
 		}
+
+		await expectTerminalBalanceState(page);
 	});
 
 	test('shows total row in table footer when data exists', async ({ page }) => {
-		// Generate report
-		const generateBtn = page.locator('button.btn-primary');
-		await generateBtn.click();
-		await page.waitForTimeout(1000);
+		if (await hasBalanceTable(page)) {
+			await expect(page.locator('table.table tfoot .total-row').first()).toBeVisible();
+			return;
+		}
 
-		// Check for total row
-		const totalRow = page.locator('.total-row');
-		const totalRowVisible = await totalRow.isVisible().catch(() => false);
-
-		// Either total row exists, there's no data, or there's an error
-		const emptyState = page.locator('.empty-state');
-		const emptyVisible = await emptyState.isVisible().catch(() => false);
-		const hasError = await page.getByText(/failed|error/i).isVisible().catch(() => false);
-
-		expect(totalRowVisible || emptyVisible || hasError).toBeTruthy();
+		await expectTerminalBalanceState(page);
 	});
 });
