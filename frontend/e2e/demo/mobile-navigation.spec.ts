@@ -1,5 +1,10 @@
 import { expect, test } from '@playwright/test';
-import { openMobileDrawer, openMobileRoute, prepareMobileDemo } from './mobile-utils';
+import {
+	expectMobileMenuButtonVisible,
+	openMobileDrawer,
+	openMobileRoute,
+	prepareMobileDemo
+} from './mobile-utils';
 
 test.describe('Mobile Navigation', () => {
 	test.use({ viewport: { width: 375, height: 667 } });
@@ -11,10 +16,7 @@ test.describe('Mobile Navigation', () => {
 	test('should have accessible navigation on mobile', async ({ page }, testInfo) => {
 		await openMobileRoute(page, '/dashboard', testInfo);
 
-		const mobileMenuButton = page.getByRole('button', {
-			name: /toggle menu/i
-		});
-		await expect(mobileMenuButton).toBeVisible();
+		await expectMobileMenuButtonVisible(page);
 
 		const drawer = await openMobileDrawer(page);
 		await expect(drawer.getByRole('link', { name: /^Dashboard$/i })).toBeVisible();
