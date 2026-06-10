@@ -106,3 +106,15 @@ Implemented weight-aware integration package selection in `scripts/select-integr
 The weights were refreshed from CI run `27273825703`, where count-based sharding produced package-time totals of about 106.3s, 66.0s, 90.5s, and 91.7s. The greedy weight-aware assignment projects package-time totals of about 88.4s, 88.8s, 89.0s, and 88.3s across the same four shards.
 
 The Make targets remain unchanged for callers: local `make test-integration-coverage` still runs the full integration package set, while CI sets `INTEGRATION_SHARD` and `INTEGRATION_SHARDS` to select one balanced shard.
+
+Follow-up CI run `27274687441` on commit `9743dfd` completed successfully with integration shard job times of 4m48s, 4m14s, 4m01s, and 3m36s, replacing the earlier 5m41s slow-tail shard.
+
+Added `scripts/parse-go-test-package-times.sh` so future refreshes can be regenerated from GitHub Actions logs:
+
+```bash
+for job in 80552847747 80552847725 80552847854 80552847833; do
+  gh run view 27274687441 --job "$job" --log
+done | scripts/parse-go-test-package-times.sh
+```
+
+The checked-in weights were refreshed from that run. With the refreshed weights, the greedy assignment projects package-time totals of about 105.2s, 104.5s, 105.1s, and 104.2s across the four integration shards.
