@@ -287,12 +287,14 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+		min-width: 0;
 	}
 
 	.logo {
 		font-size: 1.25rem;
 		font-weight: 700;
 		color: var(--color-primary);
+		min-width: 0;
 	}
 
 	.logo:hover {
@@ -595,8 +597,16 @@
 
 	/* Mobile responsive */
 	@media (max-width: 768px) {
+		.nav-links {
+			display: none !important;
+			width: 0;
+			min-width: 0;
+			overflow: hidden;
+		}
+
 		.mobile-menu-btn {
 			display: block;
+			flex: 0 0 auto;
 		}
 
 		.main-content {
