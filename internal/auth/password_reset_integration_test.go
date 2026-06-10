@@ -12,20 +12,27 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/HMB-research/open-accounting/internal/database"
+	"github.com/HMB-research/open-accounting/internal/models"
 	"github.com/HMB-research/open-accounting/internal/testutil"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"gorm.io/gorm"
 )
 
 func TestPasswordResetServiceLifecycleAndCooldown(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
+	db := newPasswordResetTestDB(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "password-reset@example.com")
 
-	oldHash, err := bcrypt.GenerateFromPassword([]byte("oldpassword123"), 12)
+	oldHash, err := bcrypt.GenerateFromPassword([]byte("oldpassword123"), bcrypt.MinCost)
 	require.NoError(t, err)
-	_, err = pool.Exec(context.Background(), `UPDATE users SET password_hash = $2 WHERE id = $1`, userID, string(oldHash))
-	require.NoError(t, err)
+	require.NoError(t, db.WithContext(context.Background()).
+		Model(&models.User{}).
+		Where("id = ?", userID).
+		Update("password_hash", string(oldHash)).Error)
 
 	now := time.Now().UTC().Truncate(time.Second)
-	service := NewPasswordResetService(pool)
+	service := NewPasswordResetService(pool, WithPasswordResetHashCost(bcrypt.MinCost))
 	service.now = func() time.Time { return now }
 	service.generateRawToken = func() (string, error) { return "reset-token-1", nil }
 
@@ -48,10 +55,13 @@ func TestPasswordResetServiceLifecycleAndCooldown(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, userID, resetUserID)
 
-	var storedHash string
-	err = pool.QueryRow(ctx, `SELECT password_hash FROM users WHERE id = $1`, userID).Scan(&storedHash)
+	var updatedUser models.User
+	err = db.WithContext(ctx).
+		Select("password_hash").
+		Where("id = ?", userID).
+		Take(&updatedUser).Error
 	require.NoError(t, err)
-	assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(storedHash), []byte("newpassword123")))
+	assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(updatedUser.PasswordHash), []byte("newpassword123")))
 
 	_, err = service.ResetPassword(ctx, result.Token, "anotherpassword123")
 	assert.ErrorIs(t, err, ErrPasswordResetTokenInvalid)
@@ -59,15 +69,18 @@ func TestPasswordResetServiceLifecycleAndCooldown(t *testing.T) {
 
 func TestPasswordResetServiceRejectsExpiredAndSamePassword(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
+	db := newPasswordResetTestDB(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "password-reset-expired@example.com")
 
-	oldHash, err := bcrypt.GenerateFromPassword([]byte("oldpassword123"), 12)
+	oldHash, err := bcrypt.GenerateFromPassword([]byte("oldpassword123"), bcrypt.MinCost)
 	require.NoError(t, err)
-	_, err = pool.Exec(context.Background(), `UPDATE users SET password_hash = $2 WHERE id = $1`, userID, string(oldHash))
-	require.NoError(t, err)
+	require.NoError(t, db.WithContext(context.Background()).
+		Model(&models.User{}).
+		Where("id = ?", userID).
+		Update("password_hash", string(oldHash)).Error)
 
 	now := time.Now().UTC().Truncate(time.Second)
-	service := NewPasswordResetService(pool)
+	service := NewPasswordResetService(pool, WithPasswordResetHashCost(bcrypt.MinCost))
 	service.now = func() time.Time { return now }
 	service.generateRawToken = func() (string, error) { return "reset-token-expired", nil }
 
@@ -87,9 +100,12 @@ func TestPasswordResetServiceRejectsExpiredAndSamePassword(t *testing.T) {
 
 func TestPasswordResetServiceDoesNotIssueForUnknownOrDisabledUsers(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
+	db := newPasswordResetTestDB(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "password-reset-disabled@example.com")
-	_, err := pool.Exec(context.Background(), `UPDATE users SET is_active = false WHERE id = $1`, userID)
-	require.NoError(t, err)
+	require.NoError(t, db.WithContext(context.Background()).
+		Model(&models.User{}).
+		Where("id = ?", userID).
+		Update("is_active", false).Error)
 
 	service := NewPasswordResetService(pool)
 	service.generateRawToken = func() (string, error) {
@@ -105,4 +121,12 @@ func TestPasswordResetServiceDoesNotIssueForUnknownOrDisabledUsers(t *testing.T)
 	require.NoError(t, err)
 	assert.False(t, result.Issued)
 	assert.False(t, result.Throttled)
+}
+
+func newPasswordResetTestDB(t *testing.T, pool *pgxpool.Pool) *gorm.DB {
+	t.Helper()
+
+	db, err := database.NewGormDBFromPool(context.Background(), pool)
+	require.NoError(t, err)
+	return db
 }

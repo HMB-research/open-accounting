@@ -22,6 +22,7 @@ const (
 	defaultPasswordResetTokenTTL     = time.Hour
 	defaultPasswordResetCooldown     = 5 * time.Minute
 	defaultPasswordResetTokenEntropy = 32
+	defaultPasswordResetHashCost     = 12
 )
 
 // ErrPasswordResetTokenInvalid is returned for missing, expired, or already-used reset tokens.
@@ -37,6 +38,22 @@ type PasswordResetRequestResult struct {
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
+// PasswordResetServiceOption configures PasswordResetService.
+type PasswordResetServiceOption func(*PasswordResetService)
+
+// WithPasswordResetHashCost overrides the bcrypt cost used for new reset-password hashes.
+func WithPasswordResetHashCost(cost int) PasswordResetServiceOption {
+	return func(s *PasswordResetService) {
+		if cost < bcrypt.MinCost {
+			cost = bcrypt.MinCost
+		}
+		if cost > bcrypt.MaxCost {
+			cost = bcrypt.MaxCost
+		}
+		s.passwordHashCost = cost
+	}
+}
+
 // PasswordResetService manages one-time password reset tokens.
 type PasswordResetService struct {
 	db               *gorm.DB
@@ -44,21 +61,27 @@ type PasswordResetService struct {
 	tokenTTL         time.Duration
 	requestCooldown  time.Duration
 	generateRawToken func() (string, error)
+	passwordHashCost int
 }
 
 // NewPasswordResetService creates a PostgreSQL-backed password reset service.
-func NewPasswordResetService(pool *pgxpool.Pool) *PasswordResetService {
+func NewPasswordResetService(pool *pgxpool.Pool, opts ...PasswordResetServiceOption) *PasswordResetService {
 	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
 	if err != nil {
 		panic(fmt.Errorf("create password reset GORM repository: %w", err))
 	}
-	return &PasswordResetService{
+	service := &PasswordResetService{
 		db:               gormDB,
 		now:              time.Now,
 		tokenTTL:         defaultPasswordResetTokenTTL,
 		requestCooldown:  defaultPasswordResetCooldown,
 		generateRawToken: generatePasswordResetToken,
+		passwordHashCost: defaultPasswordResetHashCost,
 	}
+	for _, opt := range opts {
+		opt(service)
+	}
+	return service
 }
 
 // RequestPasswordReset creates a new one-time reset token for an active user.
@@ -185,7 +208,7 @@ func (s *PasswordResetService) ResetPassword(ctx context.Context, resetToken, ne
 			return fmt.Errorf("new password must be different from current password")
 		}
 
-		newHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), 12)
+		newHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), s.passwordHashCost)
 		if err != nil {
 			return fmt.Errorf("hash password: %w", err)
 		}
