@@ -196,3 +196,37 @@ The focused command still reports 16 tests including the shared `auth-setup` dep
 During the local frontend gate, `src/tests/utils/dates.test.ts` exposed a timezone-sensitive assertion: `getTodayISO()` returns the local calendar date, but the test compared it to `new Date().toISOString().slice(0, 10)`, which is UTC. Around midnight in `Europe/Tallinn`, that produced `2026-06-11` vs `2026-06-10`. The test now computes the expected value through the same local `toISODate(new Date())` helper so the gate is stable across local timezone boundaries.
 
 CI run `27306627274` exposed that the first mobile split was too aggressive about skipping `networkidle` for mobile navigation tests: the route heading was visible while the dashboard still showed `Loading...`, so the mobile nav shell had not rendered yet. The mobile drawer helper now waits for plain loading text to disappear before asserting the `toggle menu` button. The focused local `mobile-navigation.spec.ts` and full `mobile-*.spec.ts` suites pass after that adjustment.
+
+CI run `27307133267` on commit `8db6847` completed successfully after the mobile nav-shell fix. The highest-duration demo specs in its uploaded Playwright artifacts were:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/env-dashboard-routes.spec.ts` | 168.709s | 11 |
+| `demo/payment-reminders.spec.ts` | 142.869s | 14 |
+| `demo/data-verification.spec.ts` | 141.321s | 13 |
+| `demo/absences.spec.ts` | 123.533s | 12 |
+| `demo/invoices.spec.ts` | 121.062s | 10 |
+
+## Follow-up: Environment Route Split
+
+Split `demo/env-dashboard-routes.spec.ts` into route-sized files and moved route setup through reusable helpers in `demo/env-utils.ts`:
+
+| New spec | Coverage moved |
+|----------|----------------|
+| `demo/env-dashboard.spec.ts` | Dashboard selector, summary cards, and navigation shell checks |
+| `demo/env-invoice-routes.spec.ts` | Invoices navigation, list, and create-form access checks |
+| `demo/env-contact-routes.spec.ts` | Contacts navigation and list checks |
+| `demo/env-report-settings-routes.spec.ts` | Reports navigation/load checks and settings navigation |
+
+The split preserves the same 11 route tests. Direct route-load checks now authenticate the worker session and go straight to the target route with `waitForNetworkIdle: false`; only tests that explicitly validate sidebar navigation start from the dashboard first.
+
+Local focused baseline against the branch API showed `demo/env-dashboard-routes.spec.ts` at 19.979s of Playwright result time. After the split, the same coverage reported:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/env-invoice-routes.spec.ts` | 6.422s | 3 |
+| `demo/env-dashboard.spec.ts` | 4.993s | 3 |
+| `demo/env-contact-routes.spec.ts` | 3.751s | 2 |
+| `demo/env-report-settings-routes.spec.ts` | 2.427s | 3 |
+
+The next CI Playwright artifact should confirm whether the prior environment-route shard tail is distributed. If it is, the next measured demo E2E candidates are `payment-reminders`, `data-verification`, `absences`, and `invoices`.
