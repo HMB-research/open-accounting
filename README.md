@@ -18,8 +18,8 @@
 > **⚠️ Development Status**
 > This project is under active development and not yet production-ready. APIs may change, and features may be incomplete. Contributions and feedback welcome!
 >
-> Full local baseline last verified on 2026-06-08. On 2026-06-10, local revalidation covered `go test -count=1 -race ./...`, `make test-cli-coverage`, `go test -timeout=3m ./docs -count=1`, and `cd frontend && bun run test:prepared`; PR CI revalidated `golangci-lint run`, `DATABASE_URL=postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable make test-integration-coverage`, frontend lint/check/test/build, smoke E2E, and the full local seeded demo E2E shards.
-> The `cmd/oa` CLI package is held at 100.0% statement coverage by `make test-cli-coverage`, and local seeded smoke plus full demo E2E shards are CI gates. The optional remote hosted-demo E2E job remains informational.
+> Full local baseline last verified on 2026-06-08. On 2026-06-10, local revalidation covered `make test-backend-coverage`, `make test-cli-coverage`, `go test -timeout=3m ./docs -count=1`, and `cd frontend && bun run test:prepared`; PR CI revalidated `golangci-lint run`, `DATABASE_URL=postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable make test-integration-coverage`, frontend lint/check/test/build, smoke E2E, and the full local seeded demo E2E shards.
+> The `cmd/oa` CLI package is held at 100.0% statement coverage by `make test-backend-coverage` in the backend CI gate and `make test-cli-coverage` for focused CLI changes. Local seeded smoke plus full demo E2E shards are CI gates. The optional remote hosted-demo E2E job remains informational.
 > Production hardening, deeper historical cutover tooling beyond the current payroll, tax, commercial history, e-invoice XML, payment, expense, inventory, fixed-asset, bank-transaction, cost-allocation, opening-balance, historical-journal, and migration-preflight coverage, deeper accountant exception actions, and automated document retention/reconciliation policy enforcement are still in progress.
 
 CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API token once and then uses that token for subsequent reads and mutations.
@@ -386,6 +386,7 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 # Development workflow
 git checkout -b feature/your-feature
 make test                    # Run tests
+make test-backend-coverage   # Run backend tests and enforce CLI coverage
 make lint                    # Check code style
 git commit -m "feat: your feature"
 git push origin feature/your-feature

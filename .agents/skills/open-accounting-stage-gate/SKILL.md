@@ -41,19 +41,25 @@ If GitHub reports merge conflicts or the branch cannot be merged cleanly, load `
 Run focused gates first, then broad gates when the stage is stable:
 
 ```bash
-make test-cli-coverage
+make test-backend-coverage
+make test-cli-coverage  # focused CLI-only gate when cmd/oa changed during the inner loop
 go test -timeout=3m ./docs -count=1
-go test -count=1 -race ./...
 cd frontend && bun run lint
-cd frontend && bun run check
-cd frontend && bun run test
-cd frontend && bun run build
+cd frontend && bun run paraglide
+cd frontend && bun run check:prepared
+cd frontend && bun run test:prepared
+cd frontend && bun run build:prepared
 ```
 
 Use Go's default package parallelism for backend unit tests. Do not add `-p 1`
 to the unit gate unless a current failure proves shared process state; the
 integration Make targets already isolate DB-backed tests and should stay the
 place for PostgreSQL/DDL serialization.
+
+Use `make test-backend-coverage` for backend stage closeout. It runs the full
+race-enabled Go test suite once and verifies the 100% `cmd/oa` coverage
+invariant from the same coverage profile, avoiding a duplicate CLI package test
+pass in CI and local closeout.
 
 For repository changes, add and run a focused integration test:
 

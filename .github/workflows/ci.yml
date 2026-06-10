@@ -119,11 +119,8 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out ./...
-
-      - name: Verify CLI coverage gate
-        run: make test-cli-coverage
+      - name: Run backend tests and verify CLI coverage
+        run: make test-backend-coverage
 
       - name: Upload coverage to Codecov
         env:

@@ -1,10 +1,12 @@
-.PHONY: all build run test test-coverage test-integration test-integration-coverage test-cli-coverage clean docker-build docker-up docker-down migrate help
+.PHONY: all build run test test-coverage test-backend-coverage test-integration test-integration-coverage test-cli-coverage verify-cli-coverage clean docker-build docker-up docker-down migrate help
 
 # Variables
 BINARY_API=api
 BINARY_MIGRATE=migrate
 GO=go
 DOCKER_COMPOSE=docker-compose
+COVERAGE_PROFILE ?= coverage.out
+CLI_COVERAGE_PROFILE ?= coverage-cli.out
 
 INTEGRATION_PACKAGE_LIST = git grep -l '^//go:build .*integration' -- '*_test.go' | while IFS= read -r file; do dirname "$$file"; done | sort -u | sed 's|^|./|'
 INTEGRATION_PACKAGE_SHARD = awk -v shard="$(INTEGRATION_SHARD)" -v shards="$(INTEGRATION_SHARDS)" 'BEGIN { if ((shard == "") != (shards == "")) { print "INTEGRATION_SHARD and INTEGRATION_SHARDS must be set together" > "/dev/stderr"; exit 2 } if (shards != "" && (shard < 1 || shards < 1 || shard > shards)) { print "invalid integration shard " shard "/" shards > "/dev/stderr"; exit 2 } } shards == "" || (((NR - 1) % shards) + 1 == shard) { print }'
@@ -28,8 +30,14 @@ test:
 
 # Run tests with coverage
 test-coverage:
-	$(GO) test -v -coverprofile=coverage.out ./...
-	$(GO) tool cover -html=coverage.out -o coverage.html
+	$(GO) test -v -coverprofile=$(COVERAGE_PROFILE) ./...
+	$(GO) tool cover -html=$(COVERAGE_PROFILE) -o coverage.html
+
+# Run the backend gate once and enforce the operator CLI coverage invariant
+# from the same profile. This avoids rerunning cmd/oa after the full test pass.
+test-backend-coverage:
+	$(GO) test -v -race -coverprofile=$(COVERAGE_PROFILE) ./...
+	scripts/verify-cli-coverage.sh $(COVERAGE_PROFILE)
 
 # Run DB-backed integration tests. Packages are discovered from tracked build-tagged tests
 # so local and CI runs do not duplicate every unit-only package. Set
@@ -50,9 +58,11 @@ test-integration-coverage:
 
 # Verify the operator CLI stays fully covered.
 test-cli-coverage:
-	$(GO) test ./cmd/oa -coverprofile=coverage-cli.out -count=1
-	$(GO) tool cover -func=coverage-cli.out | awk '$$3 ~ /%/ { pct=$$3; gsub(/%/, "", pct); if (pct+0 < 100) { print; failed=1 } } END { if (failed) exit 1 }'
-	@echo "cmd/oa coverage is 100%"
+	$(GO) test ./cmd/oa -coverprofile=$(CLI_COVERAGE_PROFILE) -count=1
+	scripts/verify-cli-coverage.sh $(CLI_COVERAGE_PROFILE)
+
+verify-cli-coverage:
+	scripts/verify-cli-coverage.sh $(COVERAGE_PROFILE)
 
 # Lint code
 lint:
@@ -66,7 +76,7 @@ fmt:
 # Clean build artifacts
 clean:
 	rm -rf bin/
-	rm -f coverage.out coverage.html coverage-cli.out
+	rm -f coverage.out coverage.html coverage-cli.out coverage-integration.out
 
 # Docker commands
 docker-build:
@@ -150,6 +160,7 @@ help:
 	@echo "  make run            - Run API server locally"
 	@echo "  make test           - Run tests"
 	@echo "  make test-coverage  - Run tests with coverage report"
+	@echo "  make test-backend-coverage - Run backend tests and enforce CLI coverage"
 	@echo "  make test-cli-coverage - Enforce 100% cmd/oa coverage"
 	@echo "  make lint           - Run linter"
 	@echo "  make fmt            - Format code"

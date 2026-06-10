@@ -18,13 +18,20 @@ go build -o oa ./cmd/oa
 
 ## Coverage gate
 
-The CLI package is expected to stay at 100% statement coverage. Before changing `cmd/oa`, run:
+The CLI package is expected to stay at 100% statement coverage. The backend CI
+gate enforces this from the same coverage profile with:
+
+```bash
+make test-backend-coverage
+```
+
+Before changing `cmd/oa`, run the focused CLI-only gate:
 
 ```bash
 make test-cli-coverage
 ```
 
-The target writes `coverage-cli.out`, fails if any `cmd/oa` function is below 100.0%, and is cleaned by `make clean`.
+The focused target writes `coverage-cli.out`, fails if any `cmd/oa` function is below 100.0%, and is cleaned by `make clean`.
 
 ## Operational checks
 
