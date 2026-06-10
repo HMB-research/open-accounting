@@ -1,16 +1,16 @@
 # Frontend Test Coverage Status
 
 > Last Updated: 2026-06-10
-> Unit Tests: 531 tests across 26 files
+> Unit Tests: 546 tests across 30 files
 > E2E Tests: 33 demo spec files plus 1 blocking smoke spec
 
 ## Quick Stats
 
 | Metric | Current | Target |
 |--------|---------|--------|
-| Unit Test Files | 26 | Keep current with new shared UI and API-client behavior |
-| Unit Tests | 531 | Keep increasing with every frontend workflow change |
-| Component Inventory | 15/19 shared components tested | 19/19 |
+| Unit Test Files | 30 | Keep current with new shared UI and API-client behavior |
+| Unit Tests | 546 | Keep increasing with every frontend workflow change |
+| Component Inventory | 19/19 shared components tested | Maintain |
 | Utility Coverage | dates, formatting, tenant tested | Maintain |
 | Store Coverage | auth store tested | Maintain |
 
@@ -20,14 +20,18 @@
 
 | Component | Status | Notes |
 |-----------|--------|-------|
+| `ActivityFeed` | Tested | Loading, empty, relative time, and amount display |
 | `AccountantPortfolioPanel` | Tested | Cross-tenant review rollup and empty state |
 | `AccountantReviewPanel` | Tested | Review queues, follow-up updates, reminders |
+| `ContactFormModal` | Tested | Create, edit, API errors, and cancel close |
 | `DateRangeFilter` | Tested | Presets, manual range edits, clear action |
 | `DocumentManager` | Tested | Upload, download, delete, evidence approval |
 | `DocumentReviewQueuePanel` | Tested | Review queue, filters, retention metadata |
 | `ErrorAlert` | Tested | Display logic and accessibility attributes |
 | `ExportButton` | Tested | Menu behavior, CSV escaping, PDF print action |
+| `FormModal` | Tested | Dialog content, footer, backdrop, and Escape close |
 | `LanguageSelector` | Tested | Locale switching and labels |
+| `LineItemsEditor` | Tested | Add/remove lines, totals, discounts, and immutable edits |
 | `OnboardingWizard` | Tested | Required fields, setup steps, completion |
 | `PeriodSelector` | Tested | Shared period ranges and custom date edits |
 | `SetupCenter` | Tested | Setup progress and guided setup action |
@@ -36,12 +40,7 @@
 | `WorkflowHero` | Tested | Rendered action surface |
 | `YearEndClosePanel` | Tested | Ready, complete, and blocked close states |
 
-Remaining shared component gaps:
-
-- `ActivityFeed`
-- `ContactFormModal`
-- `FormModal`
-- `LineItemsEditor`
+All tracked shared components currently have focused component tests.
 
 ### Utilities, Stores, And API Client
 
@@ -105,6 +104,7 @@ Run Paraglide/SvelteKit-writing gates serially. `check`, `test`, and `build` can
 
 | Date | Change | Tests Added |
 |------|--------|-------------|
+| 2026-06-10 | Completed shared component inventory coverage for activity feed, contact modal, generic modal, and line-item editor; removed non-reactive line-item bindings | 15 tests |
 | 2026-06-10 | Added shared UI control coverage for date ranges, periods, export, and status badges; fixed local-date range formatting | 10 tests |
 | 2026-06-10 | Refreshed frontend test inventory from the current tree | 0 |
 | 2026-01-23 | Migrated test commands from npm to bun | 0 |
