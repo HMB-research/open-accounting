@@ -80,6 +80,7 @@ The config starts the frontend server only. Start the API separately first.
 - Use unique test data for creates so seeded demo records cannot satisfy assertions.
 - Scope generic controls such as selects and buttons to the route panel or filter bar that owns them.
 - When filtering records, assert both the expected visible row and at least one expected absent row.
+- Keep shared auth and tenant helpers state-based. Tenant setup should skip selection when the current option is already correct, and should not wait for `networkidle` when no matching tenant option exists. Remove deprecated demo helper fallbacks instead of preserving compatibility paths.
 
 ## Failure Triage
 

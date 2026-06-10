@@ -297,46 +297,20 @@ export async function ensureDemoTenant(page: Page, testInfo: TestInfo): Promise<
 	const selector = page.locator('select').first();
 
 	if (await selector.isVisible()) {
+		const currentValue = await selector.inputValue().catch(() => '');
 		const options = await selector.locator('option').all();
 		for (const option of options) {
 			const text = await option.textContent();
 			if (text && text.toLowerCase().includes(creds.tenantSlug)) {
 				const value = await option.getAttribute('value');
 				if (value) {
+					if (currentValue === value) return;
 					await selector.selectOption(value);
+					await expect(selector).toHaveValue(value);
+					await page.waitForLoadState('domcontentloaded');
 					break;
 				}
 			}
-		}
-		await page.waitForLoadState('networkidle');
-	}
-}
-
-// Keep backward-compatible exports for gradual migration
-// NOTE: Using demo2 for tests, demo1 is reserved for end users
-export const DEMO_EMAIL = 'demo2@example.com';
-export const DEMO_PASSWORD = 'demo12345';
-
-/**
- * @deprecated Use ensureDemoTenant instead
- */
-export async function ensureAcmeTenant(page: Page): Promise<void> {
-	const selector = page.locator('select').first();
-	if (await selector.isVisible()) {
-		const currentValue = await selector.inputValue();
-		if (!currentValue.includes('demo')) {
-			const options = await selector.locator('option').all();
-			for (const option of options) {
-				const text = await option.textContent();
-				if (text && /demo/i.test(text)) {
-					const value = await option.getAttribute('value');
-					if (value) {
-						await selector.selectOption(value);
-						break;
-					}
-				}
-			}
-			await page.waitForLoadState('networkidle');
 		}
 	}
 }
@@ -396,50 +370,6 @@ export async function waitForTableData(
 		const rows = await tableBody.locator('tr').count();
 		expect(rows).toBeGreaterThanOrEqual(minRows);
 	}).toPass({ timeout });
-}
-
-/**
- * Wait for a modal to be fully visible and ready for interaction.
- * @param page - Playwright page object
- * @param timeout - Maximum wait time in ms (default: 10000)
- */
-export async function waitForModalReady(page: Page, timeout = 10000): Promise<void> {
-	// Wait for modal container
-	const modal = page.locator('[role="dialog"], .modal, [data-testid="modal"]');
-	await modal.waitFor({ state: 'visible', timeout });
-
-	// Wait for any loading indicators inside the modal to disappear
-	const loadingIndicator = modal.locator('.loading, .spinner, [data-loading="true"]');
-	if (await loadingIndicator.isVisible().catch(() => false)) {
-		await loadingIndicator.waitFor({ state: 'hidden', timeout });
-	}
-
-	// Small delay for animations to complete
-	await page.waitForTimeout(100);
-}
-
-/**
- * Wait for a form submission to complete.
- * Waits for network activity to settle and checks for success/error indicators.
- * @param page - Playwright page object
- * @param timeout - Maximum wait time in ms (default: 10000)
- */
-export async function waitForFormSubmission(page: Page, timeout = 10000): Promise<void> {
-	// Wait for network to settle after form submission
-	await page.waitForLoadState('networkidle', { timeout });
-
-	// Check if there's a success toast/message
-	const successIndicator = page.locator('.toast-success, .alert-success, [data-testid="success-message"]');
-	const errorIndicator = page.locator('.toast-error, .alert-error, [data-testid="error-message"]');
-
-	// Wait a bit for any toast to appear
-	await page.waitForTimeout(200);
-
-	// If error indicator is visible, throw an error
-	if (await errorIndicator.isVisible().catch(() => false)) {
-		const errorText = await errorIndicator.textContent().catch(() => 'Unknown error');
-		throw new Error(`Form submission failed: ${errorText}`);
-	}
 }
 
 /**
