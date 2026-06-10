@@ -393,7 +393,7 @@
 					}
 				}}
 			>
-				{#each tenants as membership}
+				{#each tenants as membership (membership.tenant.id)}
 					<option value={membership.tenant.id} selected={selectedTenant?.id === membership.tenant.id}>
 						{membership.tenant.name}
 					</option>
@@ -603,10 +603,14 @@
 </div>
 
 {#if showCreateTenant}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => (showCreateTenant = false)} role="presentation">
-		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-org-title" tabindex="-1">
+	<div class="modal-backdrop" role="presentation">
+		<button
+			type="button"
+			class="modal-dismiss"
+			aria-label={m.common_close()}
+			onclick={() => (showCreateTenant = false)}
+		></button>
+		<div class="modal card" role="dialog" aria-modal="true" aria-labelledby="create-org-title" tabindex="-1">
 			<h2 id="create-org-title">{m.modal_createOrganization()}</h2>
 			<form onsubmit={createTenant}>
 				<div class="form-group">
@@ -1105,6 +1109,11 @@
 		grid-template-columns: 2fr 1fr;
 		gap: 1.5rem;
 		margin-bottom: 1.5rem;
+		min-width: 0;
+	}
+
+	.analytics-section > :global(*) {
+		min-width: 0;
 	}
 
 	@media (max-width: 1024px) {
@@ -1116,6 +1125,8 @@
 	.chart-card {
 		margin-bottom: 1.5rem;
 		background: linear-gradient(180deg, rgba(255, 255, 255, 0.8), rgba(255, 251, 244, 0.92));
+		min-width: 0;
+		max-width: 100%;
 	}
 
 	.cash-flow-card {
@@ -1142,7 +1153,18 @@
 	}
 
 	.chart-container {
+		position: relative;
+		width: 100%;
+		min-width: 0;
+		max-width: 100%;
 		height: 300px;
+		overflow: hidden;
+	}
+
+	.chart-container :global(canvas) {
+		display: block;
+		width: 100% !important;
+		max-width: 100% !important;
 	}
 
 	.cash-flow-summary {
@@ -1207,7 +1229,18 @@
 		z-index: 100;
 	}
 
+	.modal-dismiss {
+		position: absolute;
+		inset: 0;
+		border: 0;
+		padding: 0;
+		background: transparent;
+		cursor: pointer;
+	}
+
 	.modal {
+		position: relative;
+		z-index: 1;
 		width: 100%;
 		max-width: 400px;
 		margin: 1rem;
