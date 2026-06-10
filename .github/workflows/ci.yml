@@ -274,17 +274,21 @@ jobs:
         working-directory: frontend
         run: bun run lint
 
+      - name: Generate frontend localization
+        working-directory: frontend
+        run: bun run paraglide
+
       - name: Type check
         working-directory: frontend
-        run: bun run check
+        run: bun run check:prepared
 
       - name: Run unit tests
         working-directory: frontend
-        run: bun run test
+        run: bun run test:prepared
 
       - name: Build
         working-directory: frontend
-        run: bun run build
+        run: bun run build:prepared
 
   # E2E tests run against local database with seeded demo data
   e2e-smoke:
