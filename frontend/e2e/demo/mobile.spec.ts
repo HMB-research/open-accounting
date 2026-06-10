@@ -19,6 +19,19 @@ test.describe("Mobile Navigation", () => {
     await ensureDemoTenant(page, testInfo);
   });
 
+  async function openMobileDrawer(page: Parameters<typeof navigateTo>[0]) {
+    const mobileMenuButton = page.getByRole("button", {
+      name: /toggle menu/i,
+    });
+
+    await expect(mobileMenuButton).toBeVisible();
+    await mobileMenuButton.click();
+
+    const drawer = page.locator(".mobile-nav");
+    await expect(drawer).toBeVisible();
+    return drawer;
+  }
+
   test("should have accessible navigation on mobile", async ({
     page,
   }, testInfo) => {
@@ -26,23 +39,29 @@ test.describe("Mobile Navigation", () => {
 
     await waitForPageReady(page);
 
-    // Look for mobile navigation trigger (hamburger menu)
-    const mobileNavTrigger = page.locator(
-      '[aria-label*="menu"], .hamburger, .mobile-menu-trigger, .mobile-menu-btn, button[aria-expanded]',
-    );
+    const mobileMenuButton = page.getByRole("button", {
+      name: /toggle menu/i,
+    });
+    await expect(mobileMenuButton).toBeVisible();
 
-    // Either hamburger exists OR navigation is visible
-    const nav = page.getByRole("navigation");
-    const hasHamburger = await mobileNavTrigger.isVisible().catch(() => false);
-    const hasVisibleNav = await nav.isVisible().catch(() => false);
-
-    // Dashboard heading proves page loaded successfully
-    const hasHeading = await page
-      .getByRole("heading", { name: /dashboard/i })
-      .isVisible()
-      .catch(() => false);
-
-    expect(hasHamburger || hasVisibleNav || hasHeading).toBeTruthy();
+    const drawer = await openMobileDrawer(page);
+    await expect(
+      drawer.getByRole("link", { name: /^Dashboard$/i }),
+    ).toBeVisible();
+    await expect(
+      drawer.getByRole("link", { name: /^Reports$/i }),
+    ).toBeVisible();
+    await expect(
+      drawer.getByRole("button", { name: /financial/i }),
+    ).toBeVisible();
+    await expect(drawer.getByRole("button", { name: /sales/i })).toBeVisible();
+    await expect(
+      drawer.getByRole("button", { name: /payments/i }),
+    ).toBeVisible();
+    await expect(
+      drawer.getByRole("button", { name: /payroll/i }),
+    ).toBeVisible();
+    await expect(drawer.getByRole("button", { name: /admin/i })).toBeVisible();
   });
 
   test("should open mobile menu when hamburger clicked", async ({
@@ -50,45 +69,61 @@ test.describe("Mobile Navigation", () => {
   }, testInfo) => {
     await navigateTo(page, "/dashboard", testInfo);
 
-    const hamburger = page
-      .locator(
-        '[aria-label*="menu"], .hamburger, .mobile-menu-trigger, .mobile-menu-btn',
-      )
-      .first();
-
-    if (await hamburger.isVisible()) {
-      await hamburger.click();
-      // Navigation links should be visible
-      await expect(
-        page.getByRole("link", { name: /dashboard/i }).first(),
-      ).toBeVisible();
-    }
+    const drawer = await openMobileDrawer(page);
+    await drawer.getByRole("button", { name: /sales/i }).click();
+    await expect(
+      drawer.getByRole("link", { name: /^Invoices$/i }),
+    ).toBeVisible();
+    await expect(
+      drawer.getByRole("link", { name: /^Contacts$/i }),
+    ).toBeVisible();
+    await expect(drawer.getByRole("link", { name: /^Quotes$/i })).toBeVisible();
+    await expect(drawer.getByRole("link", { name: /^Orders$/i })).toBeVisible();
   });
 
   test("should close menu when link is clicked", async ({ page }, testInfo) => {
     await navigateTo(page, "/dashboard", testInfo);
 
-    const hamburger = page
-      .locator(
-        '[aria-label*="menu"], .hamburger, .mobile-menu-trigger, .mobile-menu-btn',
-      )
-      .first();
+    const drawer = await openMobileDrawer(page);
+    await drawer.getByRole("link", { name: /^Reports$/i }).click();
 
-    if (await hamburger.isVisible()) {
-      await hamburger.click();
-      // Click a navigation link
-      const invoicesLink = page
-        .locator(".mobile-nav a, nav a")
-        .filter({ hasText: /invoices/i })
-        .first();
-      if (await invoicesLink.isVisible()) {
-        await invoicesLink.click();
-        // Should navigate
-        await expect(page).toHaveURL(/invoices/i);
-      }
-    }
+    await expect(page).toHaveURL(/\/reports/);
+    await expect(
+      page.getByRole("heading", { name: /reports/i }).first(),
+    ).toBeVisible();
+    await expect(drawer).toBeHidden();
+  });
+
+  test("should navigate through nested mobile menu links", async ({
+    page,
+  }, testInfo) => {
+    await navigateTo(page, "/dashboard", testInfo);
+
+    const drawer = await openMobileDrawer(page);
+    await drawer.getByRole("button", { name: /sales/i }).click();
+    await drawer.getByRole("link", { name: /^Invoices$/i }).click();
+
+    await expect(page).toHaveURL(/\/invoices/);
+    await expect(
+      page.getByRole("heading", { level: 1, name: /^Invoices$/i }),
+    ).toBeVisible();
+    await expect(drawer).toBeHidden();
   });
 });
+
+async function expectNoHorizontalOverflow(
+  page: Parameters<typeof navigateTo>[0],
+) {
+  const { scrollWidth, viewportWidth } = await page.evaluate(() => ({
+    scrollWidth: Math.max(
+      document.body.scrollWidth,
+      document.documentElement.scrollWidth,
+    ),
+    viewportWidth: window.innerWidth,
+  }));
+
+  expect(scrollWidth).toBeLessThanOrEqual(viewportWidth);
+}
 
 test.describe("Mobile Tables", () => {
   test.use({ viewport: { width: 375, height: 667 } });
@@ -118,6 +153,7 @@ test.describe("Mobile Tables", () => {
     await expect(
       page.getByRole("heading", { name: /contacts/i }),
     ).toBeVisible();
+    await expectNoHorizontalOverflow(page);
   });
 
   test("should not have horizontal page scroll on invoices", async ({
@@ -125,9 +161,7 @@ test.describe("Mobile Tables", () => {
   }, testInfo) => {
     await navigateTo(page, "/invoices", testInfo);
 
-    // Check that body doesn't overflow horizontally
-    const bodyWidth = await page.evaluate(() => document.body.scrollWidth);
-    expect(bodyWidth).toBeLessThanOrEqual(375);
+    await expectNoHorizontalOverflow(page);
   });
 });
 
@@ -244,14 +278,7 @@ test.describe("Mobile Dashboard", () => {
   }, testInfo) => {
     await navigateTo(page, "/dashboard", testInfo);
 
-    const { scrollWidth, viewportWidth } = await page.evaluate(() => ({
-      scrollWidth: Math.max(
-        document.body.scrollWidth,
-        document.documentElement.scrollWidth,
-      ),
-      viewportWidth: window.innerWidth,
-    }));
-    expect(scrollWidth).toBeLessThanOrEqual(viewportWidth);
+    await expectNoHorizontalOverflow(page);
   });
 });
 

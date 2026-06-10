@@ -1,6 +1,6 @@
 # UI Views Issues Report
 
-> Last Updated: 2026-05-30
+> Last Updated: 2026-06-10
 > Original full UI sweep: 2026-01-12 against the Railway Demo Environment
 > Current capability source of truth: [DEVELOPMENT_STATUS.md](./DEVELOPMENT_STATUS.md)
 >
@@ -860,7 +860,7 @@ _None identified_
 
 ### Minor Issues (Polish/UX)
 
-1. **Responsive Design** - All views need manual mobile viewport verification
+1. **Responsive Design** - Automated demo coverage now verifies the mobile navigation drawer, nested mobile links, and horizontal overflow checks for dashboard, invoices, and contacts; full per-view mobile workflow verification is still ongoing
 2. **E2E Test Infrastructure** - Demo users (demo1-4@example.com) not seeded in Railway, blocking automated E2E tests for some pages
 
 ### Known Feature Gaps (Not Bugs)
@@ -873,6 +873,7 @@ _None identified_
 
 | Date       | Tester | Changes                                                                                                                                             |
 | ---------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-06-10 | Codex  | Strengthened mobile demo E2E coverage for the mobile drawer, nested route navigation, and core-route horizontal overflow checks                     |
 | 2026-06-08 | Codex  | Replaced soft `/inventory` checks with product, warehouse, category, filter, create/delete, transfer, and stock lot metadata E2E coverage           |
 | 2026-06-08 | Codex  | Replaced soft `/banking/import` checks with real LHV CSV preview/import E2E coverage and updated the UI audit evidence                              |
 | 2026-05-30 | Codex  | Corrected stale inventory limitations against current repository evidence; stock and warehouse workflows now exist outside this historical UI sweep |
