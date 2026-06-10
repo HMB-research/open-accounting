@@ -98,3 +98,11 @@ Recommended improvement:
 ## Next Stage Candidate
 
 Implement weight-aware integration package sharding first. It targets the current critical path directly and should be measurable with one CI run by comparing the slowest integration shard against the current `integration-test (3, 4)` baseline.
+
+## Implementation Update
+
+Implemented weight-aware integration package selection in `scripts/select-integration-packages.sh`, backed by `scripts/integration-package-weights.tsv`.
+
+The weights were refreshed from CI run `27273825703`, where count-based sharding produced package-time totals of about 106.3s, 66.0s, 90.5s, and 91.7s. The greedy weight-aware assignment projects package-time totals of about 88.4s, 88.8s, 89.0s, and 88.3s across the same four shards.
+
+The Make targets remain unchanged for callers: local `make test-integration-coverage` still runs the full integration package set, while CI sets `INTEGRATION_SHARD` and `INTEGRATION_SHARDS` to select one balanced shard.

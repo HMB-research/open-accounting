@@ -172,11 +172,49 @@ func TestWorkflowIntegrationShardsMatchMakefile(t *testing.T) {
 	makefile := string(makefilePayload)
 	for _, snippet := range []string{
 		"INTEGRATION_PACKAGE_SHARD",
-		"INTEGRATION_SHARD and INTEGRATION_SHARDS must be set together",
+		"scripts/select-integration-packages.sh",
 		"test-integration-coverage:",
 	} {
 		if !strings.Contains(makefile, snippet) {
 			t.Fatalf("Makefile missing integration shard snippet %q", snippet)
+		}
+	}
+
+	selectorPayload, err := os.ReadFile(filepath.Join("..", "scripts", "select-integration-packages.sh"))
+	if err != nil {
+		t.Fatalf("read integration shard selector: %v", err)
+	}
+	selector := string(selectorPayload)
+	for _, snippet := range []string{
+		"INTEGRATION_SHARD and INTEGRATION_SHARDS must be set together",
+		"INTEGRATION_PACKAGE_WEIGHTS",
+		"scripts/integration-package-weights.tsv",
+	} {
+		if !strings.Contains(selector, snippet) {
+			t.Fatalf("integration shard selector missing snippet %q", snippet)
+		}
+	}
+
+	weightsPayload, err := os.ReadFile(filepath.Join("..", "scripts", "integration-package-weights.tsv"))
+	if err != nil {
+		t.Fatalf("read integration package weights: %v", err)
+	}
+	if !strings.Contains(string(weightsPayload), "./internal/accounting") {
+		t.Fatal("integration package weights missing expected package entries")
+	}
+
+	architecturePayload, err := os.ReadFile("ARCHITECTURE.md")
+	if err != nil {
+		t.Fatalf("read architecture docs: %v", err)
+	}
+	architecture := string(architecturePayload)
+	for _, snippet := range []string{
+		"Package selection is weight-aware",
+		"`scripts/select-integration-packages.sh`",
+		"`scripts/integration-package-weights.tsv`",
+	} {
+		if !strings.Contains(architecture, snippet) {
+			t.Fatalf("architecture docs missing integration shard snippet %q", snippet)
 		}
 	}
 }
