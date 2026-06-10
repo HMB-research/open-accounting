@@ -1,6 +1,6 @@
 # Open Accounting Development Status
 
-> Last updated: 2026-06-09
+> Last updated: 2026-06-10
 > This is the current-state status document. Historical plan docs may be more optimistic than what is verified here.
 
 ## Status Definitions
@@ -15,15 +15,16 @@
 
 ## Verified Engineering Baseline
 
-Full local baseline last completed on 2026-06-08, with the backend unit gate revalidated on 2026-06-09 using Go's default package parallelism:
+Full local baseline last completed on 2026-06-08. On 2026-06-10, the current branch was revalidated locally for backend unit/race, CLI coverage, documentation, and frontend unit tests; PR CI revalidated lint, integration shards, frontend lint/check/test/build, smoke E2E, build, and full local seeded demo E2E shards:
 
 - `go test -count=1 -race -coverprofile=/tmp/open-accounting-unit-coverage.out ./...` passes without requiring PostgreSQL
 - `make test-cli-coverage` passes and enforces `cmd/oa` at 100.0% statement coverage
+- `go test -timeout=3m ./docs -count=1` passes
 - `golangci-lint run` passes with 0 issues
 - `DATABASE_URL=postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable make test-integration-coverage` passes against a fresh PostgreSQL database after applying all migrations
 - `cd frontend && bun run lint` passes
 - `cd frontend && bun run check` passes with 0 errors and 0 warnings
-- `cd frontend && bun run test` passes with 22 files and 515 tests
+- `cd frontend && bun run test:prepared` passes with 22 files and 517 tests
 - `cd frontend && bun run build` passes, with the existing large-chunk warning
 - `cd frontend && bun run test:e2e:smoke` passes against a fresh locally seeded demo environment with 8 passed
 - `cd frontend && bun run test:e2e` passes against a fresh locally seeded demo environment with 260 passed and 12 intentionally skipped reset tests under `CI=true`
@@ -74,7 +75,7 @@ Still not done:
 ## What The Project Can Honestly Claim Today
 
 - Open Accounting is a broad, real codebase with working accounting, invoicing, payroll, banking, and multi-tenant foundations.
-- The local backend, frontend, tagged backend integration, smoke E2E, and full local demo E2E baselines were green in the last full local baseline on 2026-06-08.
+- The local backend, frontend, tagged backend integration, smoke E2E, and full local demo E2E baselines were green in the last full local baseline on 2026-06-08, with current branch local unit/docs/frontend checks and PR CI revalidated on 2026-06-10.
 - The project now includes a working Go CLI and tenant-scoped API tokens for scriptable reads and writes; the `cmd/oa` package is verified at 100.0% statement coverage by `make test-cli-coverage`, which is a blocking CI gate. Payment correction is handled through auditable offsetting reversals in API, CLI, payments UI, and cash-payments UI instead of destructive deletion.
 - Historical payroll run/payslip import, leave-balance import, KMD history import, quote/order history import, recurring invoice template import, payment history import, bank-account import, bank transaction import with LHV CSV, LHV camt.053, generic mappers, and statement account/currency validation, cost center/product category/warehouse/product master/stock import with lot/serial/expiry metadata, fixed-asset import, historical journal import, and manual Estonian e-invoice XML import are now available through API and CLI, with migration preflight coverage for e-invoice XML parsing/contact/payment references, but broader incumbent-system cutover is still incomplete.
 - The project is still not production-ready for accounting firms that need full historical cutover tooling, year-end reversal/reopen tooling, document retention controls, and hardened operations.

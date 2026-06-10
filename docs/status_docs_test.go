@@ -29,16 +29,19 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 	required := map[string][]string{
 		"README.md": {
 			"Full local baseline last verified on 2026-06-08",
+			"On 2026-06-10, local revalidation covered",
 			"`make test-cli-coverage`",
+			"`go test -timeout=3m ./docs -count=1`",
 			"`DATABASE_URL=postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable make test-integration-coverage`",
 			"full demo E2E shards are CI gates",
 		},
 		"docs/DEVELOPMENT_STATUS.md": {
-			"Full local baseline last completed on 2026-06-08, with the backend unit gate revalidated on 2026-06-09 using Go's default package parallelism",
+			"Full local baseline last completed on 2026-06-08. On 2026-06-10, the current branch was revalidated locally",
 			"`go test -count=1 -race -coverprofile=/tmp/open-accounting-unit-coverage.out ./...` passes without requiring PostgreSQL",
 			"`make test-cli-coverage` passes",
+			"`go test -timeout=3m ./docs -count=1` passes",
 			"`DATABASE_URL=postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable make test-integration-coverage` passes",
-			"`cd frontend && bun run test` passes with 22 files and 515 tests",
+			"`cd frontend && bun run test:prepared` passes with 22 files and 517 tests",
 			"Backend unit tests no longer start PostgreSQL in CI",
 			"Backend integration tests are sharded in CI",
 			"Full local seeded demo E2E runs across four blocking CI shards",
@@ -54,7 +57,7 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 			"The separate `e2e-demo` job targets an externally hosted demo and remains optional/informational",
 		},
 		"docs/FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md": {
-			"verified repository baseline as of 2026-06-08",
+			"including the last full local baseline and current branch revalidation dates",
 			"Testing and coverage status changed materially after this comparison was first drafted.",
 		},
 		".agents/skills/open-accounting-development/SKILL.md": {
@@ -79,6 +82,7 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 		"21 files and 493 tests",
 		"22 files and 509 tests",
 		"22 files and 510 tests",
+		"22 files and 515 tests",
 		"251 passed",
 		"259 passed",
 		"`go test -p 1 -count=1 -race ./...`",

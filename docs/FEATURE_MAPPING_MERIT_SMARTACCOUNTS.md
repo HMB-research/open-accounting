@@ -2,7 +2,7 @@
 
 This document maps features from [Merit Aktiva](https://www.merit.ee/en/) and [SmartAccounts](https://www.smartaccounts.eu/en/) to Open Accounting, identifying implementation status, gaps, and blockers.
 
-This is a competitive-gap document, not the authoritative current-state status page. For the verified repository baseline as of 2026-06-08, use [DEVELOPMENT_STATUS.md](./DEVELOPMENT_STATUS.md). Statuses here evaluate parity depth, not just whether some feature exists in code.
+This is a competitive-gap document, not the authoritative current-state status page. For the verified repository baseline, including the last full local baseline and current branch revalidation dates, use [DEVELOPMENT_STATUS.md](./DEVELOPMENT_STATUS.md). Statuses here evaluate parity depth, not just whether some feature exists in code.
 
 ## Executive Summary
 
