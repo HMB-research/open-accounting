@@ -40,4 +40,9 @@ cd frontend && bun run lint
 cd frontend && bun run test
 ```
 
+Run Paraglide/SvelteKit-writing gates serially. In this repo `check`, `test`,
+and `build` can compile Paraglide or touch `.svelte-kit`; running them in
+parallel can fail with filesystem races such as `ENOTEMPTY` while removing
+`frontend/src/lib/paraglide`.
+
 For demo workflows, start the branch API with `open-accounting-demo-e2e` and run the affected focused Playwright spec before committing.
