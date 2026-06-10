@@ -438,6 +438,41 @@ definitions:
       row:
         type: integer
     type: object
+  github_com_HMB-research_open-accounting_internal_accounting.ImportCostAllocationsRequest:
+    properties:
+      csv_content:
+        type: string
+      file_name:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.ImportCostAllocationsResult:
+    properties:
+      allocations_imported:
+        type: integer
+      errors:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ImportCostAllocationsRowError'
+        type: array
+      file_name:
+        type: string
+      rows_processed:
+        type: integer
+      rows_skipped:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.ImportCostAllocationsRowError:
+    properties:
+      cost_center_code:
+        type: string
+      cost_center_id:
+        type: string
+      journal_entry_line_id:
+        type: string
+      message:
+        type: string
+      row:
+        type: integer
+    type: object
   github_com_HMB-research_open-accounting_internal_accounting.ImportCostCentersRequest:
     properties:
       csv_content:
@@ -10426,6 +10461,43 @@ paths:
       security:
       - BearerAuth: []
       summary: Create cost allocation
+      tags:
+      - Cost Centers
+  /tenants/{tenantID}/cost-centers/allocations/import:
+    post:
+      consumes:
+      - application/json
+      description: Import historical cost allocation rows from CSV, resolving cost
+        centers by ID or code
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: CSV import payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ImportCostAllocationsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ImportCostAllocationsResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Import cost allocations
       tags:
       - Cost Centers
   /tenants/{tenantID}/cost-centers/import:

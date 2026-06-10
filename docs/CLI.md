@@ -712,12 +712,13 @@ go run ./cmd/oa cost-centers allocations create \
   --allocation-percentage 50 \
   --allocation-date 2026-03-20 \
   --notes "Shared office expense"
+go run ./cmd/oa cost-centers allocations import --file ./cost-allocations.csv
 go run ./cmd/oa cost-centers allocations list --cost-center-id <cost-center-id> --start 2026-03-01 --end 2026-03-31
 go run ./cmd/oa cost-centers report --start 2026-03-01 --end 2026-03-31 --csv --output cost-centers.csv
 go run ./cmd/oa cost-centers delete --id <cost-center-id>
 ```
 
-Budget periods are `MONTHLY`, `QUARTERLY`, and `ANNUAL`. Cost center CSV imports require `code` and `name`, with optional `parent_code`, `budget_amount`, `budget_period`, `status`, and `is_active`. Cost allocations assign positive journal-entry-line amounts to cost centers and can be filtered by cost center, journal entry line, and allocation date range. Cost center reports support `--csv`, `--xlsx`, `--pdf`, and `--output`. Use `--json` on cost-center read and mutation commands for automation.
+Budget periods are `MONTHLY`, `QUARTERLY`, and `ANNUAL`. Cost center CSV imports require `code` and `name`, with optional `parent_code`, `budget_amount`, `budget_period`, `status`, and `is_active`. Cost allocations assign positive journal-entry-line amounts to cost centers and can be filtered by cost center, journal entry line, and allocation date range. Cost allocation CSV imports require `journal_entry_line_id`, `amount`, `allocation_date`, and either `cost_center_id` or `cost_center_code`; optional columns include `allocation_percentage` and `notes`. Cost center reports support `--csv`, `--xlsx`, `--pdf`, and `--output`. Use `--json` on cost-center read, mutation, and import commands for automation.
 
 ## Analytics
 

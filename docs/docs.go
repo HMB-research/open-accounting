@@ -5954,6 +5954,63 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/cost-centers/allocations/import": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Import historical cost allocation rows from CSV, resolving cost centers by ID or code",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Cost Centers"
+                ],
+                "summary": "Import cost allocations",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "CSV import payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ImportCostAllocationsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ImportCostAllocationsResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/cost-centers/import": {
             "post": {
                 "security": [
@@ -21368,6 +21425,60 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "name": {
+                    "type": "string"
+                },
+                "row": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.ImportCostAllocationsRequest": {
+            "type": "object",
+            "properties": {
+                "csv_content": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.ImportCostAllocationsResult": {
+            "type": "object",
+            "properties": {
+                "allocations_imported": {
+                    "type": "integer"
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.ImportCostAllocationsRowError"
+                    }
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "rows_processed": {
+                    "type": "integer"
+                },
+                "rows_skipped": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.ImportCostAllocationsRowError": {
+            "type": "object",
+            "properties": {
+                "cost_center_code": {
+                    "type": "string"
+                },
+                "cost_center_id": {
+                    "type": "string"
+                },
+                "journal_entry_line_id": {
+                    "type": "string"
+                },
+                "message": {
                     "type": "string"
                 },
                 "row": {

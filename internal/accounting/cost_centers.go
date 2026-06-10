@@ -93,6 +93,30 @@ type ImportCostCentersRowError struct {
 	Message string `json:"message"`
 }
 
+// ImportCostAllocationsRequest contains CSV payload for cost allocation migration.
+type ImportCostAllocationsRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+}
+
+// ImportCostAllocationsResult summarizes a cost allocation CSV import.
+type ImportCostAllocationsResult struct {
+	FileName            string                          `json:"file_name,omitempty"`
+	RowsProcessed       int                             `json:"rows_processed"`
+	AllocationsImported int                             `json:"allocations_imported"`
+	RowsSkipped         int                             `json:"rows_skipped"`
+	Errors              []ImportCostAllocationsRowError `json:"errors,omitempty"`
+}
+
+// ImportCostAllocationsRowError describes a row-level cost allocation import failure.
+type ImportCostAllocationsRowError struct {
+	Row                int    `json:"row"`
+	CostCenterID       string `json:"cost_center_id,omitempty"`
+	CostCenterCode     string `json:"cost_center_code,omitempty"`
+	JournalEntryLineID string `json:"journal_entry_line_id,omitempty"`
+	Message            string `json:"message"`
+}
+
 // UpdateCostCenterRequest is the request to update a cost center
 type UpdateCostCenterRequest struct {
 	Code         string           `json:"code"`
