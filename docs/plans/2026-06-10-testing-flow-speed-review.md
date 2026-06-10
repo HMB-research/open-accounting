@@ -141,4 +141,30 @@ The latest artifact aggregation shows these highest-duration spec files:
 | `demo/balance-confirmations.spec.ts` | 127.176s | 12 |
 | `demo/invoices.spec.ts` | 118.562s | 10 |
 
-Next demo E2E speed work should start with `demo/all-views.spec.ts` and `demo/env.spec.ts`: reduce repeated full-page navigation, add route-owned readiness selectors where broad waits are hiding route load time, and replace duplicated UI setup with API-backed state checks only where the UI is not the behavior under test.
+Next demo E2E speed work should start with `demo/all-views.spec.ts` and the split `demo/env-*.spec.ts` files: reduce repeated full-page navigation, add route-owned readiness selectors where broad waits are hiding route load time, and replace duplicated UI setup with API-backed state checks only where the UI is not the behavior under test.
+
+## Follow-up: Environment Spec Split
+
+CI run `27304974475` on commit `50e7bb1` completed successfully after the latest integration weight refresh. The integration shard job times were 3m58s, 3m51s, 3m55s, and 3m27s, while full demo E2E remained the slowest required PR gate with shard job times of 4m16s, 5m08s, 4m58s, and 4m17s.
+
+The Playwright artifact aggregation from that run still showed the environment smoke file as the largest single spec:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/env.spec.ts` | 300.820s | 28 |
+| `demo/mobile.spec.ts` | 161.262s | 15 |
+| `demo/data-verification.spec.ts` | 141.807s | 13 |
+| `demo/payment-reminders.spec.ts` | 133.090s | 14 |
+| `demo/absences.spec.ts` | 132.083s | 12 |
+
+Split `demo/env.spec.ts` into workflow-sized files:
+
+| New spec | Coverage moved |
+|----------|----------------|
+| `demo/env-health-auth.spec.ts` | Health checks and login/logout behavior |
+| `demo/env-dashboard-routes.spec.ts` | Dashboard, invoices, contacts, reports, settings route smoke checks |
+| `demo/env-responsive-errors.spec.ts` | Mobile/tablet viewport checks and unauthenticated/error-route behavior |
+| `demo/env-onboarding.spec.ts` | Onboarding wizard visibility, form, step, and completion checks |
+| `demo/env-performance.spec.ts` | Login and dashboard reload timing checks |
+
+The split preserves the same 28 demo tests. `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium --list e2e/demo/env-*.spec.ts` reports those 28 tests plus the shared `auth-setup` dependency. The next CI Playwright artifact should be used to confirm whether the former `env.spec.ts` slow tail is now distributed across shards.
