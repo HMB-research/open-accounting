@@ -283,10 +283,7 @@ export async function navigateTo(page: Page, path: string, testInfo?: TestInfo):
 		// Main content selector might not exist on all pages
 	});
 
-	// Wait for network to settle (API calls to complete)
-	await page.waitForLoadState('networkidle').catch(() => {
-		// Network might not settle in timeout, continue anyway
-	});
+	// Route-specific tests should wait for their own loaded selector or API response.
 }
 
 /**
