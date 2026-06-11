@@ -101,7 +101,7 @@ test.describe('Bank Import View', () => {
 		await ensureDemoTenant(page, testInfo);
 	});
 
-	test('renders import settings, account presets, and LHV preview', async ({ page }, testInfo) => {
+	test('previews and imports an LHV statement into the banking ledger', async ({ page }, testInfo) => {
 		await openBankImport(page, testInfo);
 
 		await expect(page.getByRole('heading', { name: 'Import Settings' })).toBeVisible();
@@ -126,17 +126,11 @@ test.describe('Bank Import View', () => {
 			'LHV CAMT.053'
 		]);
 
-		const { description } = await uploadLHVStatement(page, testInfo);
+		const { description, displayAmount } = await uploadLHVStatement(page, testInfo);
 
 		await expect(page.getByRole('columnheader', { name: 'Col 0' })).toBeVisible();
 		await expect(page.getByText('Showing first 2 rows')).toBeVisible();
 		await expect(page.getByText(description)).toBeVisible();
-	});
-
-	test('imports an LHV statement and displays the transaction', async ({ page }, testInfo) => {
-		await openBankImport(page, testInfo);
-
-		const { description, displayAmount } = await uploadLHVStatement(page, testInfo);
 
 		const importResponsePromise = page.waitForResponse(isBankImportResponse);
 		const alertPromise = page.waitForEvent('dialog');
