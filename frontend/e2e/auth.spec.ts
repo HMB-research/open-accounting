@@ -19,7 +19,7 @@ test.describe('Authentication - Login Page', () => {
 	const registerToggleButton = (page: Page) =>
 		page.locator('.toggle-mode').getByRole('button', { name: /create account|register|loo konto/i });
 
-	test('validates login form controls and register mode requirements', async ({ page }) => {
+	test('validates login controls, invalid credentials, and demo password constraints', async ({ page }) => {
 		await openLoginPage(page);
 
 		await expect(emailInput(page)).toBeVisible();
@@ -40,9 +40,7 @@ test.describe('Authentication - Login Page', () => {
 		await expect(nameInput(page)).toBeVisible();
 		await expect(passwordInput(page)).toHaveAttribute('minlength', '8');
 		await expect(submitButton(page)).toContainText(/create account|register|loo konto/i);
-	});
 
-	test('shows invalid credential errors without leaving login', async ({ page }) => {
 		await openLoginPage(page);
 
 		await emailInput(page).fill('invalid@example.com');
@@ -62,10 +60,6 @@ test.describe('Authentication - Login Page', () => {
 
 		await expect(page.locator('.alert-error, [role="alert"]')).toContainText(/.+/);
 		await expect(page).toHaveURL(/login/i);
-	});
-
-	test('accepts demo password length in login mode', async ({ page }) => {
-		await openLoginPage(page);
 
 		await emailInput(page).fill('demo1@example.com');
 		await passwordInput(page).fill('demo12345');
