@@ -646,3 +646,58 @@ The highest remaining single-spec costs from run `27329103415` are:
 | `demo/bank-import.spec.ts` | 55.604s | 5 |
 
 The next measured demo E2E candidates are `fixed-assets`, `journal`, `env-onboarding`, `recurring`, `cash-flow`, and `bank-import`.
+
+CI run `27329365124` on commit `4616329` completed successfully and showed
+`demo/bank-import.spec.ts` as the highest remaining measured demo spec. It also
+showed one retry in the import mutation workflow:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/bank-import.spec.ts` | 84.114s | 5 | 6 |
+| `demo/fixed-assets.spec.ts` | 64.119s | 6 | 6 |
+| `demo/journal.spec.ts` | 61.428s | 4 | 4 |
+| `demo/env-onboarding.spec.ts` | 57.149s | 5 | 5 |
+| `demo/recurring.spec.ts` | 54.303s | 5 | 5 |
+| `demo/tsd.spec.ts` | 53.466s | 5 | 5 |
+| `demo/payroll.spec.ts` | 52.251s | 5 | 5 |
+| `demo/quotes.spec.ts` | 52.020s | 4 | 4 |
+
+The flaky attempt failed while waiting for the imported transaction row after
+the POST succeeded and the browser had navigated back to banking. The retry
+passed, so the weak point was route readiness: the test waited for URL state,
+then asserted rendered transaction data before the banking ledger transaction
+request was owned by the test.
+
+## Follow-up: Bank Import Spec Consolidation
+
+Consolidated `demo/bank-import.spec.ts` from five repeated route tests into two
+workflow checks:
+
+| Workflow | Coverage |
+|----------|----------|
+| Import settings and preview | Import page shell, bank-account selector, preset options, duplicate toggle, disabled import button, LHV CSV upload, preview columns, and enabled import button |
+| LHV statement import | Import POST response, imported/skipped counts, success dialog, banking ledger reload, rendered imported row, contact name, amount, and unmatched status |
+
+The route helpers now open `/banking/import` and `/banking` with
+`waitForNetworkIdle: false`, then wait for route-owned bank account,
+transaction, and import API responses. The import test no longer relies on a
+URL-only wait before looking for the transaction row.
+
+Local focused baseline against the branch API showed:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/bank-import.spec.ts` | 10.771s | 5 |
+
+The baseline focused command reported `6 passed (11.4s)` including the shared
+`auth-setup` dependency. After consolidation, the same coverage reported:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/bank-import.spec.ts` | 2.543s | 2 |
+
+The focused command reported `3 passed (8.8s)` including the shared
+`auth-setup` dependency. The next CI Playwright artifact should confirm whether
+the prior bank-import shard tail and retry are gone. The next measured demo E2E
+candidates from run `27329365124` are `fixed-assets`, `journal`,
+`env-onboarding`, `recurring`, `tsd`, `payroll`, and `quotes`.
