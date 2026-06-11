@@ -1019,3 +1019,43 @@ The next CI artifact should confirm the remote spec-level reduction. Remaining
 measured consolidation targets are `env-onboarding`, `recurring`,
 `vat-returns`, `quotes`, `salary-calculator`, `payroll`, `tsd`, and
 `mobile-navigation`.
+
+## 2026-06-11 Recurring Invoice Spec Consolidation
+
+CI run `27336098300` confirmed the email settings consolidation and measured
+`demo/recurring.spec.ts` at 67.136s across five tests, making it the largest
+remaining single demo spec in that artifact set.
+
+The first four recurring tests repeated the same authentication, tenant
+selection, and `/recurring` route load, then accepted either seeded rows or an
+empty state. The demo seed always creates three recurring templates, so those
+checks were both slower than necessary and less strict than the product
+contract.
+
+The spec now keeps two user-facing checks:
+
+- one deterministic seeded-table check for the three demo recurring templates,
+  including contact, frequency, generated count, and active status;
+- one create/edit/pause/resume/delete lifecycle check.
+
+Route setup now waits for the recurring-invoices and active-contact API
+responses, opens `/recurring` without the broad `networkidle` wait, and waits
+for recurring table rows as the route-owned ready state.
+
+Local branch-API proof after the consolidation:
+
+| Command | Result |
+|---------|--------|
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/recurring.spec.ts --workers=4` | 3 passed in 8.5s, including `auth-setup` |
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/recurring.spec.ts --workers=4 --repeat-each=5` | 11 passed in 12.3s, including `auth-setup` |
+
+Reporter timing from the final repeat-run `frontend/demo-test-results.json`:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/recurring.spec.ts` | 15.427s | 10 | 10 |
+| `demo/auth.setup.ts` | 2.635s | 1 | 1 |
+
+The next CI artifact should confirm the remote spec-level reduction. Remaining
+measured consolidation targets are `env-onboarding`, `vat-returns`, `quotes`,
+`salary-calculator`, `payroll`, `tsd`, and `mobile-navigation`.
