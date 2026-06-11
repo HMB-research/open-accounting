@@ -531,3 +531,15 @@ Local focused baseline against the branch API showed `auth.spec.ts` at 12.119s a
 | `auth.spec.ts` | 4.435s | 3 |
 
 The focused command now reports `4 passed (8.4s)` including the shared `auth-setup` dependency. The login page still keeps its local `networkidle` readiness wait because clicking before Svelte hydration can turn the submit into a native page reload instead of an API-backed login attempt. The next CI Playwright artifact should confirm whether the prior auth shard tail is reduced. The next measured demo E2E candidates are `bank-import`, `plugins-settings`, `payments`, and `fixed-assets`.
+
+CI run `27327274971` on commit `f8b4413` confirmed the prior auth tail was reduced. `auth.spec.ts` reported 33.333s across three tests, down from the prior 69.242s across eight tests. The highest remaining single-spec costs shifted to:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/payments.spec.ts` | 61.792s | 6 |
+| `demo/cash-flow.spec.ts` | 59.235s | 6 |
+| `demo/bank-import.spec.ts` | 59.154s | 5 |
+| `demo/fixed-assets.spec.ts` | 58.870s | 6 |
+| `demo/plugins-settings.spec.ts` | 58.502s | 6 |
+
+The next measured demo E2E candidates are `payments`, `cash-flow`, `bank-import`, `fixed-assets`, and `plugins-settings`.
