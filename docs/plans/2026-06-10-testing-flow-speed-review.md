@@ -310,3 +310,29 @@ Local focused baseline against the branch API showed `demo/data-verification.spe
 | `demo/data-verification-api.spec.ts` | 0.028s | 1 |
 
 The focused command now reports `6 passed (11.2s)` including the shared `auth-setup` dependency. The next CI Playwright artifact should confirm whether the prior data-verification shard tail is distributed. The next measured demo E2E candidates are `balance-confirmations`, `tax-overview`, and `invoices`.
+
+CI run `27315694773` on commit `352a98d` confirmed the prior data-verification tail was distributed. The five replacement data-verification specs totaled about 90.822s, down from the prior 134.689s single-spec cost. The highest remaining single-spec cost shifted to `demo/balance-confirmations.spec.ts` at 120.974s across 12 micro-tests.
+
+## Follow-up: Balance Confirmations Workflow Consolidation
+
+Replaced `demo/balance-confirmations.spec.ts` with workflow-sized files and moved repeated route/data helpers into `demo/balance-confirmations-utils.ts`:
+
+| New spec | Coverage moved |
+|----------|----------------|
+| `demo/balance-confirmations-page.spec.ts` | Heading, balance-type selector, as-of date input, generate button, and terminal result state |
+| `demo/balance-confirmations-summary.spec.ts` | Default receivables summary heading, statistics, table headers, and total row when data exists |
+| `demo/balance-confirmations-filters.spec.ts` | Payables switch and as-of date regeneration behavior |
+| `demo/balance-confirmations-modal.spec.ts` | Contact detail modal open, invoice content, and close behavior |
+
+The old file repeated auth, tenant setup, route navigation, and summary loading for 12 separate micro-tests. The replacement keeps the same user-visible behaviors but folds them into 4 workflow tests. Route setup now opens `/reports/balance-confirmations` with `waitForNetworkIdle: false`, waits for route-owned controls, and then waits for the route's terminal content state (`.summary-card`, `.empty-state`, or `.alert-error`).
+
+Local focused baseline against the branch API showed `demo/balance-confirmations.spec.ts` at 20.587s of Playwright result time and `13 passed (13.1s)` including auth setup. After workflow consolidation, the same visible behaviors reported:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/balance-confirmations-filters.spec.ts` | 2.552s | 1 |
+| `demo/balance-confirmations-summary.spec.ts` | 2.335s | 1 |
+| `demo/balance-confirmations-modal.spec.ts` | 1.408s | 1 |
+| `demo/balance-confirmations-page.spec.ts` | 1.338s | 1 |
+
+The focused command now reports `5 passed (10.2s)` including the shared `auth-setup` dependency. The next CI Playwright artifact should confirm whether the prior balance-confirmations shard tail is reduced. The next measured demo E2E candidates are `tax-overview`, `invoices`, and `cash-payments`.
