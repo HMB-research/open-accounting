@@ -74,7 +74,7 @@ test.describe('Demo Recurring Invoices - Seed Data Verification', () => {
 		await openRecurring(page, testInfo);
 	});
 
-	test('displays seeded recurring invoice details', async ({ page }) => {
+	test('displays seeded recurring invoice details and manages a template', async ({ page }) => {
 		await expect(page.getByRole('heading', { name: /recurring invoices/i })).toBeVisible();
 		await expect(page.getByRole('button', { name: /new recurring invoice/i })).toBeVisible();
 		await expect(page.locator('table tbody tr')).toHaveCount(seededRecurringTemplates.length);
@@ -87,9 +87,7 @@ test.describe('Demo Recurring Invoices - Seed Data Verification', () => {
 			await expect(row.locator('td').nth(4)).toHaveText(template.generatedCount);
 			await expect(row.locator('td').nth(6)).toContainText(/active/i);
 		}
-	});
 
-	test('creates, edits, pauses, resumes, and deletes a recurring invoice template', async ({ page }) => {
 		const suffix = `${Date.now()}`;
 		const initialName = `E2E recurring ${suffix}`;
 		const updatedName = `E2E recurring updated ${suffix}`;
