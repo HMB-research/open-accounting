@@ -7,6 +7,7 @@
     type EmploymentType,
     type ImportEmployeesResult,
   } from "$lib/api";
+  import { dateInputToApiTimestamp } from "$lib/utils/dates";
   import Decimal from "decimal.js";
   import * as m from "$lib/paraglide/messages.js";
   import StatusBadge, {
@@ -93,7 +94,7 @@
         phone: newPhone || undefined,
         address: newAddress || undefined,
         bank_account: newBankAccount || undefined,
-        start_date: newStartDate,
+        start_date: dateInputToApiTimestamp(newStartDate),
         position: newPosition || undefined,
         department: newDepartment || undefined,
         employment_type: newEmploymentType,
@@ -319,7 +320,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each filteredEmployees as employee}
+          {#each filteredEmployees as employee (employee.id)}
             <tr class:inactive={!employee.is_active}>
               <td class="name" data-label={m.employees_name()}>
                 {#if employee.employee_number}
@@ -375,7 +376,6 @@
 </div>
 
 {#if showImportEmployees}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="modal-backdrop" onclick={closeImportModal} role="presentation">
     <div
@@ -482,7 +482,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {#each importResult.errors as rowError}
+                  {#each importResult.errors as rowError (rowError.row)}
                     <tr>
                       <td data-label={m.employees_importRow()}
                         >{rowError.row}</td
@@ -513,7 +513,6 @@
 {/if}
 
 {#if showCreateEmployee}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
     class="modal-backdrop"

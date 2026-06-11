@@ -1414,3 +1414,67 @@ measured consolidation targets from run `27344509177` are `mobile-navigation`,
 `payments`, `tsd`, `employees`, `banking`, and
 `payment-reminders-selection`; `auth.setup` remains separate shared setup
 overhead.
+
+CI run `27345224201` confirmed the remote reduction on commit
+`ab93556c0af338e55dc7b7d6aa418e86e7ebd0a2`:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/journal.spec.ts` | 16.287s | 1 | 1 |
+| `demo/employees.spec.ts` | 49.055s | 4 | 4 |
+| `demo/mobile-navigation.spec.ts` | 46.609s | 4 | 4 |
+| `demo/settings.spec.ts` | 44.560s | 3 | 3 |
+| `demo/tsd.spec.ts` | 44.290s | 5 | 5 |
+
+Compared with run `27344509177`, `demo/journal.spec.ts` dropped from
+57.557s across four tests to 16.287s as one workflow test. The next
+route-specific consolidation target is `demo/employees.spec.ts`.
+
+## 2026-06-11 Employees Spec Consolidation
+
+CI run `27345224201` measured `demo/employees.spec.ts` at 49.055s across four
+page-structure tests, making it the largest remaining route-specific demo spec
+in that artifact set.
+
+The old spec repeated authentication, tenant selection, `/employees`
+navigation, generic network-idle waiting, and table visibility checks before
+four shallow assertions. The spec now uses one route-owned workflow check that:
+
+- opens `/employees` once and waits for the active employees API response;
+- verifies the seeded active employee count and details from the API response,
+  including employee number, email, position, department, basic exemption, and
+  funded pension rate;
+- verifies the active-only checkbox, search control, search filtering, and the
+  absence of inactive `Kivi, Liisa` from the default active list;
+- opens the employee import dialog and verifies the file input plus CSV
+  template control; and
+- creates a unique part-time employee, asserting the create API response and
+  rendered row details.
+
+The stronger create workflow exposed a real frontend/API contract bug: the
+employees route sent the HTML date input value (`YYYY-MM-DD`) directly as
+`start_date`, but the backend create handler decodes into Go `time.Time` and
+requires an RFC3339 timestamp. The route now uses the shared
+`dateInputToApiTimestamp()` helper before calling `api.createEmployee()`, and
+the local API log showed the employee POST moving from `400 Invalid request
+body` to `201`.
+
+Local branch-API proof after the consolidation:
+
+| Command | Result |
+|---------|--------|
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/employees.spec.ts --workers=4` | 2 passed in 8.2s, including `auth-setup` |
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/employees.spec.ts --workers=4 --repeat-each=5` | 6 passed in 12.3s, including `auth-setup` |
+
+Reporter timing from the repeat-run `frontend/demo-test-results.json`:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/employees.spec.ts` | 10.884s | 5 | 5 |
+| `demo/auth.setup.ts` | 3.246s | 1 | 1 |
+
+The next CI artifact should confirm the remote spec-level reduction. Remaining
+measured consolidation targets from run `27345224201` are
+`mobile-navigation`, `settings`, `tsd`, `banking`, and
+`payment-reminders-selection`; `auth.setup` remains separate shared setup
+overhead.
