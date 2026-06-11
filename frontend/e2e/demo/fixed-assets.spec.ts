@@ -65,7 +65,7 @@ test.describe("Fixed Assets View", () => {
     await ensureDemoTenant(page, testInfo);
   });
 
-  test("renders seeded asset controls and table details", async ({
+  test("renders seeded asset details and filters by status", async ({
     page,
   }, testInfo) => {
     const assets = await openAssets(page, testInfo);
@@ -93,10 +93,6 @@ test.describe("Fixed Assets View", () => {
     await expect(rows.filter({ hasText: "New Monitor Setup" })).toContainText(
       /draft/i,
     );
-  });
-
-  test("filters assets by status", async ({ page }, testInfo) => {
-    await openAssets(page, testInfo);
 
     const draftAssetsResponsePromise = page.waitForResponse((response) => {
       if (!isAssetsListResponse(response)) return false;
