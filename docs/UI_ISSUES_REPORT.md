@@ -659,17 +659,18 @@ Each view is tested for:
 | Criteria     | Status | Notes                                              |
 | ------------ | ------ | -------------------------------------------------- |
 | Page Load    | ✅     | Page renders with "VAT Returns" heading            |
-| Data Display | ✅     | Shows tenant selection prompt as expected          |
+| Data Display | ✅     | Generated tenant KMD declarations render in list and detail views |
 | Navigation   | ✅     | Dashboard link visible                             |
-| CRUD         | ⚠️     | Need tenant + E2E for full verification            |
-| Errors       | ✅     | No errors - shows "Select a tenant from Dashboard" |
+| CRUD         | ✅     | Tenant-scoped KMD generation and XML export verified by demo E2E |
+| Errors       | ✅     | No errors observed during tenant-scoped generation/export |
 | Responsive   | ⚠️     | Needs manual verification                          |
 
 **Features Verified:**
 
 - VAT Returns interface
-- Tenant selection workflow prompt
-- Client-side rendering ready
+- Tenant-scoped KMD declaration generation
+- Declaration totals and row detail rendering
+- XML export/download via `/tax/kmd/{year}/{month}/xml`
 
 **Overall:** ✅ Working
 
@@ -910,6 +911,7 @@ _None identified_
 
 | Date       | Tester | Changes                                                                                                                                             |
 | ---------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-06-11 | Codex  | Strengthened `/vat-returns` demo E2E coverage for tenant-scoped KMD generation, detail totals, row rendering, and XML export download               |
 | 2026-06-11 | Codex  | Added `/banking` demo E2E coverage for bank account creation and imported transaction-to-payment reconciliation                                      |
 | 2026-06-11 | Codex  | Added `/tsd` demo E2E coverage for XML/CSV export and manual submitted status with EMTA reference refresh                                            |
 | 2026-06-11 | Codex  | Added `/payroll` demo E2E lifecycle coverage for create, calculate, approve, payslip review, and generated TSD declaration verification              |
