@@ -25893,7 +25893,13 @@ const docTemplate = `{
         "github_com_HMB-research_open-accounting_internal_inventory.TransferStockRequest": {
             "type": "object",
             "properties": {
+                "expiry_date": {
+                    "type": "string"
+                },
                 "from_warehouse_id": {
+                    "type": "string"
+                },
+                "lot_number": {
                     "type": "string"
                 },
                 "notes": {
@@ -25903,6 +25909,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "quantity": {
+                    "type": "string"
+                },
+                "serial_number": {
                     "type": "string"
                 },
                 "to_warehouse_id": {

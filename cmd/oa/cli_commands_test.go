@@ -9128,6 +9128,9 @@ func TestCLIInventoryCommands(t *testing.T) {
 			assert.Equal(t, "wh-1", req.FromWarehouseID)
 			assert.Equal(t, "wh-2", req.ToWarehouseID)
 			assert.Equal(t, "3", req.Quantity)
+			assert.Equal(t, "LOT-2026-01", req.LotNumber)
+			assert.Equal(t, "SN-001", req.SerialNumber)
+			assert.Equal(t, "2027-01-31", req.ExpiryDate)
 			assert.Equal(t, "Move to branch", req.Notes)
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "transferred"})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/reserve":
@@ -9362,7 +9365,7 @@ func TestCLIInventoryCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"adjustments_imported": 1`)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"inventory", "transfer", "--product-id", "prod-1", "--from-warehouse-id", "wh-1", "--to-warehouse-id", "wh-2", "--quantity", "3.00", "--notes", "Move to branch", "--json"})
+	err = app.run(context.Background(), []string{"inventory", "transfer", "--product-id", "prod-1", "--from-warehouse-id", "wh-1", "--to-warehouse-id", "wh-2", "--quantity", "3.00", "--lot-number", "LOT-2026-01", "--serial-number", "SN-001", "--expiry-date", "2027-01-31", "--notes", "Move to branch", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"status": "transferred"`)
 
@@ -9459,6 +9462,11 @@ func TestCLIInventoryValidationBranches(t *testing.T) {
 			name: "transfer missing quantity",
 			args: []string{"transfer", "--product-id", "prod-1", "--from-warehouse-id", "wh-1", "--to-warehouse-id", "wh-2"},
 			want: "quantity is required",
+		},
+		{
+			name: "transfer invalid expiry date",
+			args: []string{"transfer", "--product-id", "prod-1", "--from-warehouse-id", "wh-1", "--to-warehouse-id", "wh-2", "--quantity", "1", "--expiry-date", "2026/01/31"},
+			want: "parse expiry-date",
 		},
 		{
 			name: "reserve missing warehouse",

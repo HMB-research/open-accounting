@@ -7386,6 +7386,9 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		fromWarehouseID := fs.String("from-warehouse-id", "", "Source warehouse id")
 		toWarehouseID := fs.String("to-warehouse-id", "", "Destination warehouse id")
 		quantityFlag := fs.String("quantity", "", "Quantity to transfer")
+		lotNumber := fs.String("lot-number", "", "Lot or batch number")
+		serialNumber := fs.String("serial-number", "", "Serial number")
+		expiryDate := fs.String("expiry-date", "", "Lot expiry date in YYYY-MM-DD")
 		notes := fs.String("notes", "", "Transfer notes")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
@@ -7404,12 +7407,18 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
+		if _, err := parseOptionalDate("expiry-date", *expiryDate); err != nil {
+			return err
+		}
 
 		result, err := client.transferStock(ctx, cfg.TenantID, &inventory.TransferStockRequest{
 			ProductID:       strings.TrimSpace(*productID),
 			FromWarehouseID: strings.TrimSpace(*fromWarehouseID),
 			ToWarehouseID:   strings.TrimSpace(*toWarehouseID),
 			Quantity:        quantity.String(),
+			LotNumber:       strings.TrimSpace(*lotNumber),
+			SerialNumber:    strings.TrimSpace(*serialNumber),
+			ExpiryDate:      strings.TrimSpace(*expiryDate),
 			Notes:           strings.TrimSpace(*notes),
 		})
 		if err != nil {
