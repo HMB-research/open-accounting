@@ -1,17 +1,42 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type TestInfo } from "@playwright/test";
 import {
   ensureAuthenticated,
   navigateTo,
   ensureDemoTenant,
-  waitForPageReady,
+  waitForRouteReady,
 } from "./utils";
 
-async function waitForEmailSettingsReady(page: Page) {
-  await waitForPageReady(page);
-  await page
-    .getByText(/^Loading\.\.\.$/)
-    .waitFor({ state: "hidden", timeout: 10000 })
-    .catch(() => {});
+async function openEmailSettings(page: Page, testInfo: TestInfo) {
+  const smtpLoaded = page.waitForResponse((response) => {
+    const path = new URL(response.url()).pathname;
+    return (
+      response.request().method() === "GET" &&
+      path.endsWith("/settings/smtp") &&
+      response.status() === 200
+    );
+  });
+  const templatesLoaded = page.waitForResponse((response) => {
+    const path = new URL(response.url()).pathname;
+    return (
+      response.request().method() === "GET" &&
+      path.endsWith("/email-templates") &&
+      response.status() === 200
+    );
+  });
+  const logLoaded = page.waitForResponse((response) => {
+    const path = new URL(response.url()).pathname;
+    return (
+      response.request().method() === "GET" &&
+      path.endsWith("/email-log") &&
+      response.status() === 200
+    );
+  });
+
+  await navigateTo(page, "/settings/email", testInfo, {
+    waitForNetworkIdle: false,
+  });
+  await Promise.all([smtpLoaded, templatesLoaded, logLoaded]);
+  await waitForRouteReady(page, "main h1, .tabs, #smtp_host");
   await expect(
     page.getByRole("heading", { name: /email|smtp|mail/i }).first(),
   ).toBeVisible();
@@ -19,54 +44,28 @@ async function waitForEmailSettingsReady(page: Page) {
 }
 
 test.describe("Email Settings View", () => {
-  test.beforeEach(async ({ page }, testInfo) => {
-    await ensureAuthenticated(page, testInfo);
-    await ensureDemoTenant(page, testInfo);
-  });
-
-  test("displays email settings page with correct structure", async ({
+  test("displays SMTP settings structure and controls", async ({
     page,
   }, testInfo) => {
-    await navigateTo(page, "/settings/email", testInfo);
-    await waitForEmailSettingsReady(page);
-
-    await expect(page.getByRole("button", { name: /smtp/i })).toBeVisible();
-    await expect(page.locator("form")).toBeVisible();
-  });
-
-  test("has SMTP configuration form", async ({ page }, testInfo) => {
-    await navigateTo(page, "/settings/email", testInfo);
-    await waitForEmailSettingsReady(page);
-
-    await expect(page.locator("#smtp_host")).toBeVisible();
-    await expect(page.locator("#smtp_port")).toBeVisible();
-    await expect(page.locator("#smtp_username")).toBeVisible();
-    await expect(page.locator("#smtp_from_email")).toBeVisible();
-  });
-
-  test("has tabs for SMTP, Templates, and Log", async ({ page }, testInfo) => {
-    await navigateTo(page, "/settings/email", testInfo);
-    await waitForEmailSettingsReady(page);
+    await ensureAuthenticated(page, testInfo);
+    await ensureDemoTenant(page, testInfo);
+    await openEmailSettings(page, testInfo);
 
     const tabs = page.locator(".tabs");
     await expect(tabs.getByRole("button", { name: /smtp/i })).toBeVisible();
     await expect(tabs.getByRole("button", { name: /template/i })).toBeVisible();
     await expect(tabs.getByRole("button", { name: /log/i })).toBeVisible();
-  });
 
-  test("has save button", async ({ page }, testInfo) => {
-    await navigateTo(page, "/settings/email", testInfo);
-    await waitForEmailSettingsReady(page);
+    const form = page.locator("form").first();
+    await expect(form).toBeVisible();
+    await expect(page.locator("#smtp_host")).toBeVisible();
+    await expect(page.locator("#smtp_port")).toBeVisible();
+    await expect(page.locator("#smtp_username")).toBeVisible();
+    await expect(page.locator("#smtp_from_email")).toBeVisible();
 
     await expect(
-      page.getByRole("button", { name: /save|update|apply/i }).first(),
+      form.getByRole("button", { name: /save|update|apply/i }).first(),
     ).toBeVisible();
-  });
-
-  test("has test connection button", async ({ page }, testInfo) => {
-    await navigateTo(page, "/settings/email", testInfo);
-    await waitForEmailSettingsReady(page);
-
     await expect(page.locator("#test_email")).toBeVisible();
     await expect(
       page.getByRole("button", { name: /test|send test/i }),
