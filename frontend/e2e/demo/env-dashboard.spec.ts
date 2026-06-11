@@ -6,14 +6,10 @@ test.describe('Demo Environment - Dashboard', () => {
 		await loginAsDemoEnv(page, testInfo);
 	});
 
-	test('Dashboard displays organization selector', async ({ page }) => {
+	test('Dashboard displays organization selector, summaries, and navigation shell', async ({ page }) => {
 		await waitForVisibleContent(page);
 		const orgSelector = page.locator('main .tenant-selector select').first();
 		await expect(orgSelector).toBeVisible({ timeout: 10000 });
-	});
-
-	test('Dashboard shows summary cards', async ({ page }) => {
-		await waitForVisibleContent(page);
 
 		const summarySection = page.locator('.summary-grid, .stats, [class*="summary"]').first();
 		const hasSummary = await summarySection.isVisible({ timeout: 15000 }).catch(() => false);
@@ -24,9 +20,7 @@ test.describe('Demo Environment - Dashboard', () => {
 			const dashboardContent = page.locator('main, .dashboard, [class*="content"]').first();
 			await expect(dashboardContent).toBeVisible();
 		}
-	});
 
-	test('Navigation sidebar is present', async ({ page }) => {
 		await waitForDemoShell(page);
 		const navItems = ['dashboard', 'invoice', 'contact', 'report'];
 		const visibleItems = await Promise.all(
