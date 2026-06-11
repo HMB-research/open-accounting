@@ -544,7 +544,7 @@ Each view is tested for:
 | Page Load    | ✅     | TSD Declarations page renders                                  |
 | Data Display | ✅     | Year selector (2022-2026), 6-step workflow displayed           |
 | Navigation   | ✅     | Navigation visible                                             |
-| CRUD         | ⚠️     | Read verified, need E2E for XML export/submission              |
+| CRUD         | ✅     | XML/CSV export and manual submitted status with EMTA reference verified through demo E2E |
 | Errors       | ✅     | Shows "Automatic e-MTA submission is not yet available" notice |
 | Responsive   | ⚠️     | Needs manual verification                                      |
 
@@ -560,6 +560,15 @@ Each view is tested for:
   5. Upload to e-MTA portal manually
   6. Record submission reference number
 - Clear notice about manual e-MTA submission requirement
+- XML and CSV export actions
+- Manual "mark submitted" status transition with EMTA reference refresh
+
+**E2E Tests:** 1 consolidated workflow passed
+
+- Lists seeded 2024 TSD declarations and verifies totals/statuses
+- Exports XML and CSV for a declaration
+- Opens, cancels, then completes manual submission for a draft declaration
+- Verifies refreshed submitted status and EMTA reference in the table
 
 **Overall:** ✅ Working
 
@@ -894,6 +903,7 @@ _None identified_
 
 | Date       | Tester | Changes                                                                                                                                             |
 | ---------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-06-11 | Codex  | Added `/tsd` demo E2E coverage for XML/CSV export and manual submitted status with EMTA reference refresh                                            |
 | 2026-06-11 | Codex  | Added `/payroll` demo E2E lifecycle coverage for create, calculate, approve, payslip review, and generated TSD declaration verification              |
 | 2026-06-11 | Codex  | Added `/employees/absences` demo E2E coverage for leave request lifecycle, balance initialization, balance CSV import, and document-number display   |
 | 2026-06-11 | Codex  | Added employee lifecycle UI and demo E2E coverage for create, edit, deactivate, reactivate, and active-only filtering from `/employees`              |

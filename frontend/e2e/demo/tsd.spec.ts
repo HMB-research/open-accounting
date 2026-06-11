@@ -79,6 +79,17 @@ function waitForTSDExportResponse(page: Page, declaration: TSDDeclarationRespons
 	}, { timeout: apiResponseTimeout });
 }
 
+function waitForTSDSubmitResponse(page: Page, declaration: TSDDeclarationResponse) {
+	return page.waitForResponse((response) => {
+		return (
+			response.request().method() === 'POST' &&
+			response.status() === 200 &&
+			new RegExp(`/api/v1/tenants/[^/]+/tsd/${declaration.period_year}/${declaration.period_month}/submit$`)
+				.test(responsePath(response.url()))
+		);
+	}, { timeout: apiResponseTimeout });
+}
+
 async function waitForTSDLoaded(page: Page): Promise<void> {
 	await waitForRouteReady(page, 'table tbody tr, .empty-state', routeLoadTimeout);
 	await expect(page.getByText(/^Loading\.\.\.$|^Laadimine\.\.\.$/i)).toHaveCount(0, {
@@ -156,9 +167,40 @@ test.describe('Demo TSD Declarations', () => {
 		const submitDialog = page.getByRole('dialog');
 		await expect(submitDialog).toBeVisible();
 		await expect(submitDialog.getByRole('heading', { name: /mark.*tsd|märgi.*tsd/i })).toBeVisible();
-		await expect(submitDialog.getByLabel(/emta|e-mta|reference|viite/i)).toBeVisible();
+		const referenceInput = submitDialog.getByLabel(/emta|e-mta|reference|viite/i);
+		await expect(referenceInput).toBeVisible();
 		await submitDialog.getByRole('button', { name: /cancel|tühista/i }).click();
 		await expect(submitDialog).toBeHidden();
+
+		await draftRow.getByRole('button', { name: /mark.*submitted|märgi.*esitatuks/i }).click();
+		await expect(submitDialog).toBeVisible();
+		const emtaReference = `EMTA-E2E-${Date.now()}`;
+		await referenceInput.fill(emtaReference);
+
+		const submitResponsePromise = waitForTSDSubmitResponse(page, declarations[draftIndex]);
+		const refreshResponsePromise = waitForTSDListResponse(page, demoTsdYear);
+		await submitDialog.getByRole('button', { name: /mark.*submitted|märgi.*esitatuks/i }).click();
+
+		const submitResponse = await submitResponsePromise;
+		expect(submitResponse.ok()).toBeTruthy();
+		expect(submitResponse.request().postDataJSON()).toMatchObject({
+			emta_reference: emtaReference
+		});
+
+		const refreshedDeclarations = (await (await refreshResponsePromise).json()) as TSDDeclarationResponse[];
+		const submittedDeclaration = refreshedDeclarations.find(
+			(declaration) =>
+				declaration.period_year === declarations[draftIndex].period_year &&
+				declaration.period_month === declarations[draftIndex].period_month
+		);
+		expect(submittedDeclaration?.status).toBe('SUBMITTED');
+		expect(submittedDeclaration?.emta_reference).toBe(emtaReference);
+
+		await expect(submitDialog).toBeHidden();
+		await waitForTSDLoaded(page);
+		await expect(rows.nth(draftIndex)).toContainText(statusPattern('SUBMITTED'));
+		await expect(rows.nth(draftIndex)).toContainText(emtaReference);
+		await expect(rows.nth(draftIndex).getByRole('button', { name: /mark.*submitted|märgi.*esitatuks/i })).toHaveCount(0);
 
 		await expect(page.locator('.workflow-steps li')).toHaveCount(6);
 		await expect(page.locator('.workflow-info')).toContainText(/xml|e-mta|emta|tsd/i);
