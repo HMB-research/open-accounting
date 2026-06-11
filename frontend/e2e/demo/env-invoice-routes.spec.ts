@@ -1,8 +1,8 @@
 import { test, expect } from '@playwright/test';
-import { loginAsDemoEnv, navigateToEnvPage, prepareDemoEnvSession } from './env-utils';
+import { loginAsDemoEnv, navigateToEnvPage } from './env-utils';
 
 test.describe('Demo Environment - Invoices', () => {
-	test('Can navigate to invoices page', async ({ page }, testInfo) => {
+	test('navigates invoices, displays the list, and opens create form', async ({ page }, testInfo) => {
 		await loginAsDemoEnv(page, testInfo);
 
 		const invoicesLink = page.getByRole('link', { name: /invoice/i }).first();
@@ -16,11 +16,6 @@ test.describe('Demo Environment - Invoices', () => {
 			await navigateToEnvPage(page, '/invoices', testInfo);
 			await expect(page).toHaveURL(/invoice/);
 		}
-	});
-
-	test('Invoices list displays', async ({ page }, testInfo) => {
-		await prepareDemoEnvSession(page, testInfo);
-		await navigateToEnvPage(page, '/invoices', testInfo);
 
 		const content = page.locator('main, [class*="content"], .container').first();
 		await expect(content).toBeVisible();
@@ -34,11 +29,6 @@ test.describe('Demo Environment - Invoices', () => {
 		const hasHeading = await page.getByRole('heading', { level: 1, name: /^invoices$/i }).isVisible().catch(() => false);
 
 		expect(hasInvoices || hasEmptyState || hasHeading).toBeTruthy();
-	});
-
-	test('Can access create invoice form', async ({ page }, testInfo) => {
-		await prepareDemoEnvSession(page, testInfo);
-		await navigateToEnvPage(page, '/invoices', testInfo);
 
 		const createButton = page
 			.getByRole('link', { name: /new|create|add/i })
