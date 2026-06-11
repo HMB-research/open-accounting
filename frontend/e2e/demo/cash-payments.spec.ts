@@ -55,13 +55,26 @@ async function openCashPayments(page: Page, testInfo: TestInfo) {
 			response.status() === 200
 	);
 
-	await navigateTo(page, '/payments/cash', testInfo);
+	await navigateTo(page, '/payments/cash', testInfo, { waitForNetworkIdle: false });
 	await Promise.all([paymentsLoaded, contactsLoaded]);
 	await waitForCashPaymentsLoaded(page);
 }
 
 function cashPaymentRow(page: Page, paymentNumber: string) {
 	return page.locator('table tbody tr').filter({ hasText: paymentNumber });
+}
+
+async function expectCashPaymentsShell(page: Page) {
+	await expect(page.getByRole('heading', { name: /cash/i })).toBeVisible();
+	await expect(page.locator('.summary-card.received')).toContainText(/total received/i);
+	await expect(page.locator('.summary-card.made')).toContainText(/total paid/i);
+	await expect(page.locator('.summary-card.balance')).toContainText(/cash balance/i);
+	await expect(page.getByRole('button', { name: /new cash payment/i })).toBeVisible();
+
+	const filterSelect = page.locator('.filters select').first();
+	await expect(filterSelect).toBeVisible();
+	await expect(filterSelect.locator('option')).toHaveCount(3);
+	await expect(page.locator('table, .empty-state').first()).toBeVisible();
 }
 
 async function selectTypeFilter(page: Page, type: '' | 'RECEIVED' | 'MADE') {
@@ -123,33 +136,9 @@ test.describe('Cash Payments View', () => {
 		await openCashPayments(page, testInfo);
 	});
 
-	test('displays cash payments page with correct structure', async ({ page }) => {
-		await expect(page.getByRole('heading', { name: /cash/i })).toBeVisible();
-		await expect(page.locator('.summary-card.received')).toContainText(/total received/i);
-		await expect(page.locator('.summary-card.made')).toContainText(/total paid/i);
-		await expect(page.locator('.summary-card.balance')).toContainText(/cash balance/i);
-	});
+	test('renders the cash ledger, records cash movements, and filters by type', async ({ page }) => {
+		await expectCashPaymentsShell(page);
 
-	test('has new payment button', async ({ page }) => {
-		await expect(page.getByRole('button', { name: /new cash payment/i })).toBeVisible();
-	});
-
-	test('has payment type filter', async ({ page }) => {
-		const filterSelect = page.locator('.filters select').first();
-		await expect(filterSelect).toBeVisible();
-		await expect(filterSelect.locator('option')).toHaveCount(3);
-	});
-
-	test('displays table or empty state after cash payments load', async ({ page }) => {
-		const table = page.locator('table');
-		const emptyState = page.locator('.empty-state');
-		const hasTable = await table.isVisible().catch(() => false);
-		const hasEmpty = await emptyState.isVisible().catch(() => false);
-
-		expect(hasTable || hasEmpty).toBe(true);
-	});
-
-	test('records cash in and cash out payments and filters by type', async ({ page }) => {
 		const suffix = Date.now();
 		const cashInReference = `E2E-CASH-IN-${suffix}`;
 		const cashOutReference = `E2E-CASH-OUT-${suffix}`;
