@@ -958,3 +958,31 @@ are:
 | `demo/tsd.spec.ts` | 52.877s | 5 | 5 |
 | `demo/salary-calculator.spec.ts` | 52.846s | 5 | 5 |
 | `demo/mobile-navigation.spec.ts` | 45.838s | 4 | 4 |
+
+## 2026-06-11 CI Build Parallelization
+
+CI run `27334608216` on commit `f87ac9f` confirmed the auth retry fix and left
+the PR gate green. The slowest required jobs in that run were:
+
+| Job | Duration |
+|-----|----------|
+| `e2e (1, 4)` | 4m21s |
+| `integration-test (1, 4)` | 4m02s |
+| `e2e-smoke` | 2m29s |
+| `test` | 2m09s |
+| `frontend` | 1m39s |
+| `build` | 39s |
+
+The `build` job was still configured to wait for `test`, `lint`, and all
+integration shards before compiling the backend binaries. Because it only
+checks the current source can build and uploads binaries for inspection, it does
+not need to be serialized after the test matrix. Branch protection still
+requires every check to pass independently.
+
+The CI graph now runs `build` after `changes` with the same backend/CI path
+filter. This should remove the previous 39s post-integration tail from PR runs
+where backend or CI files changed.
+
+The next measured speed targets remain spec-level demo E2E consolidation:
+`env-onboarding`, `recurring`, `vat-returns`, `email-settings`, `quotes`,
+`salary-calculator`, `payroll`, `tsd`, and `mobile-navigation`.
