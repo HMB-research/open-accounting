@@ -39,7 +39,7 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 		},
 		"docs/DEVELOPMENT_STATUS.md": {
 			"Full local baseline last completed on 2026-06-08. On 2026-06-11, the current branch was revalidated locally",
-			"PR #62 CI run `27364049917` at commit `23f91bd`",
+			"PR #62 CI run `27364700539` at commit `2d55632`",
 			"`make test-backend-coverage` passes without requiring PostgreSQL",
 			"`make test-cli-coverage` passes as the focused CLI-only coverage gate",
 			"`go test -timeout=3m ./docs -count=1` passes",
@@ -82,6 +82,8 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 		"Full local baseline last verified on 2026-05-28",
 		"Full local baseline last completed on 2026-05-28",
 		"verified repository baseline as of 2026-04-24",
+		"PR #62 CI run `27364049917` at commit `23f91bd`",
+		"PR #62 CI run `27363638201`",
 		"21 files and 493 tests",
 		"22 files and 517 tests",
 		"22 files and 509 tests",

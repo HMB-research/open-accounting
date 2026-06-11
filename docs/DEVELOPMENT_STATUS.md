@@ -15,7 +15,7 @@
 
 ## Verified Engineering Baseline
 
-Full local baseline last completed on 2026-06-08. On 2026-06-11, the current branch was revalidated locally for focused CLI coverage, documentation, and recent frontend stage gates; PR #62 CI run `27364049917` at commit `23f91bd` revalidated lint, backend tests, integration shards, frontend lint/check/test/build, smoke E2E, build, and all four seeded demo E2E shards:
+Full local baseline last completed on 2026-06-08. On 2026-06-11, the current branch was revalidated locally for focused CLI coverage, documentation, and recent frontend stage gates; PR #62 CI run `27364700539` at commit `2d55632` revalidated lint, backend tests, integration shards, frontend lint/check/test/build, smoke E2E, build, and all four seeded demo E2E shards:
 
 - `make test-backend-coverage` passes without requiring PostgreSQL and enforces `cmd/oa` at 100.0% statement coverage from the same backend coverage profile
 - `make test-cli-coverage` passes as the focused CLI-only coverage gate
