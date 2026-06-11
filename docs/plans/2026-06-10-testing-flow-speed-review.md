@@ -382,3 +382,29 @@ Local focused baseline against the branch API showed `demo/cost-centers.spec.ts`
 | `demo/cost-centers-page.spec.ts` | 1.213s | 1 |
 
 The focused command now reports `3 passed (10.9s)` including the shared `auth-setup` dependency. The next CI Playwright artifact should confirm whether the prior cost-centers shard tail is reduced. The next measured demo E2E candidates are `tax-overview`, `fixed-assets`, and `cash-payments`.
+
+CI run `27324099955` on commit `9e592f4` confirmed the prior cost-centers tail was reduced. The two replacement cost-center specs totaled about 20.097s, down from the prior 86.009s single-spec cost. The highest remaining single-spec cost shifted to `demo/inventory.spec.ts` at 99.776s across 6 tests and 9 attempts, with retries in filter and transfer workflows.
+
+## Follow-up: Inventory Workflow Consolidation
+
+Replaced `demo/inventory.spec.ts` with workflow-sized files and moved repeated route/API helpers into `demo/inventory-utils.ts`:
+
+| New spec | Coverage moved |
+|----------|----------------|
+| `demo/inventory-page.spec.ts` | Inventory heading, product filters, seeded product controls, warehouses tab, and product categories tab |
+| `demo/inventory-filters.spec.ts` | Search, type, and category product filters with query-specific response waits |
+| `demo/inventory-product.spec.ts` | Product create modal, field payload, rendered row, and delete behavior |
+| `demo/inventory-stock.spec.ts` | Test-owned product stock adjustment with lot/serial/expiry metadata, movements modal, and warehouse transfer |
+
+The old file repeated auth, tenant setup, route navigation, product loading, and tab/modal opening for 6 separate tests. It also mutated the seeded `PROD-001` product in the stock metadata and transfer tests, which made CI retries slower and risked retry-state coupling. The replacement keeps the same visible workflows but creates a test-owned product for stock mutation and combines stock metadata plus transfer into one user workflow.
+
+Local focused baseline against the branch API showed `demo/inventory.spec.ts` at 12.083s of Playwright result time and `7 passed (10.6s)` including auth setup. After workflow consolidation, the same visible behaviors reported:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/inventory-stock.spec.ts` | 3.488s | 1 |
+| `demo/inventory-product.spec.ts` | 2.782s | 1 |
+| `demo/inventory-filters.spec.ts` | 2.623s | 1 |
+| `demo/inventory-page.spec.ts` | 2.602s | 1 |
+
+The focused command now reports `5 passed (10.3s)` including the shared `auth-setup` dependency. The next CI Playwright artifact should confirm whether inventory retries are gone and whether the next measured demo E2E candidates remain `fixed-assets`, `all-views`, `tax-overview`, and `cash-payments`.
