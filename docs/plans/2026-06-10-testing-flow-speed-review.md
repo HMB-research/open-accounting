@@ -282,3 +282,31 @@ Local focused baseline against the branch API showed `demo/absences.spec.ts` at 
 | `demo/absences-page.spec.ts` | 2.073s | 1 |
 
 The focused command now reports `5 passed (9.4s)` including the shared `auth-setup` dependency. The next CI Playwright artifact should confirm whether the prior absences shard tail is reduced. The next measured demo E2E candidates are `balance-confirmations`, `data-verification`, and `invoices`.
+
+CI run `27312564983` on commit `c563114` confirmed the prior absences tail was reduced. The four replacement absences specs totaled about 43.095s, down from the prior 137.300s single-spec cost. The highest remaining single-spec cost shifted to `demo/data-verification.spec.ts` at 134.689s across 13 tests.
+
+## Follow-up: Data Verification Workflow Split
+
+Replaced `demo/data-verification.spec.ts` with route-group workflow files and moved repeated route verification into `demo/data-verification-utils.ts`:
+
+| New spec | Coverage moved |
+|----------|----------------|
+| `demo/data-verification-core.spec.ts` | Dashboard, accounts, and journal page-load/error checks |
+| `demo/data-verification-receivables.spec.ts` | Contacts, invoices, and payments page-load/error checks |
+| `demo/data-verification-payroll-tax.spec.ts` | Employees, payroll, and TSD page-load/error checks |
+| `demo/data-verification-operations.spec.ts` | Recurring invoices, banking, and reports page-load/error checks |
+| `demo/data-verification-api.spec.ts` | Demo API seeded-data count checks |
+
+The old file repeated auth, tenant setup, default `networkidle`, and generic loading checks for 12 separate page tests. The replacement keeps all 12 route visits and the API count check, but each route group pays session setup once and uses route-owned readiness selectors with `waitForNetworkIdle: false`. The helper also checks that no visible `.alert-error` is present on every verified route, extending the previous dashboard-only error-alert assertion.
+
+Local focused baseline against the branch API showed `demo/data-verification.spec.ts` at 24.623s of Playwright result time and `14 passed (13.2s)` including auth setup. After the split, the same route/API coverage reported:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/data-verification-receivables.spec.ts` | 3.332s | 1 |
+| `demo/data-verification-core.spec.ts` | 2.883s | 1 |
+| `demo/data-verification-operations.spec.ts` | 2.076s | 1 |
+| `demo/data-verification-payroll-tax.spec.ts` | 0.974s | 1 |
+| `demo/data-verification-api.spec.ts` | 0.028s | 1 |
+
+The focused command now reports `6 passed (11.2s)` including the shared `auth-setup` dependency. The next CI Playwright artifact should confirm whether the prior data-verification shard tail is distributed. The next measured demo E2E candidates are `balance-confirmations`, `tax-overview`, and `invoices`.
