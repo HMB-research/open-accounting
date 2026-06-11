@@ -11,6 +11,7 @@
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
 	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
+	import { dateInputToApiTimestamp } from '$lib/utils/dates';
 
 	let payrollRuns = $state<PayrollRun[]>([]);
 	let isLoading = $state(true);
@@ -82,7 +83,7 @@
 			const run = await api.createPayrollRun(tenantId, {
 				period_year: newYear,
 				period_month: newMonth,
-				payment_date: newPaymentDate || undefined,
+				payment_date: newPaymentDate ? dateInputToApiTimestamp(newPaymentDate) : undefined,
 				notes: newNotes || undefined
 			});
 			payrollRuns = [...payrollRuns, run].sort(
@@ -103,12 +104,32 @@
 		importResult = null;
 	}
 
+	function closeCreateRun() {
+		showCreateRun = false;
+	}
+
 	function closeImportHistory() {
 		showImportHistory = false;
 		importError = '';
 		importFileName = '';
 		importCSVContent = '';
 		importResult = null;
+	}
+
+	function closePayslips() {
+		showPayslips = false;
+	}
+
+	function closeOnBackdropClick(event: MouseEvent, close: () => void) {
+		if (event.target === event.currentTarget) {
+			close();
+		}
+	}
+
+	function closeOnEscape(event: KeyboardEvent, close: () => void) {
+		if (event.key === 'Escape') {
+			close();
+		}
 	}
 
 	function resetForm() {
@@ -200,7 +221,8 @@
 		if (!tenantId) return;
 
 		try {
-			const updated = await api.approvePayroll(tenantId, run.id);
+			await api.approvePayroll(tenantId, run.id);
+			const updated = await api.getPayrollRun(tenantId, run.id);
 			payrollRuns = payrollRuns.map((r) => (r.id === updated.id ? updated : r));
 		} catch (err) {
 			error = err instanceof Error ? err.message : m.payroll_failedToApprove();
@@ -289,7 +311,7 @@
 		<div class="filter-row">
 			<label class="label" for="yearFilter">{m.payroll_year()}</label>
 			<select class="input" id="yearFilter" bind:value={filterYear} onchange={handleYearChange}>
-				{#each Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i) as year}
+				{#each Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i) as year (year)}
 					<option value={year}>{year}</option>
 				{/each}
 			</select>
@@ -334,7 +356,7 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each payrollRuns as run}
+					{#each payrollRuns as run (run.id)}
 						<tr>
 							<td class="period" data-label={m.payroll_period()}>{getMonthName(run.period_month)} {run.period_year}</td>
 							<td data-label={m.payroll_status()}>
@@ -396,12 +418,14 @@
 </div>
 
 {#if showCreateRun}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => (showCreateRun = false)} role="presentation">
+	<div
+		class="modal-backdrop"
+		onclick={(event) => closeOnBackdropClick(event, closeCreateRun)}
+		onkeydown={(event) => closeOnEscape(event, closeCreateRun)}
+		role="presentation"
+	>
 		<div
 			class="modal card"
-			onclick={(e) => e.stopPropagation()}
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby="create-run-title"
@@ -413,7 +437,7 @@
 					<div class="form-group">
 						<label class="label" for="year">{m.payroll_year()} *</label>
 						<select class="input" id="year" bind:value={newYear} required>
-							{#each Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i + 1) as year}
+							{#each Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i + 1) as year (year)}
 								<option value={year}>{year}</option>
 							{/each}
 						</select>
@@ -421,7 +445,7 @@
 					<div class="form-group">
 						<label class="label" for="month">{m.payroll_month()} *</label>
 						<select class="input" id="month" bind:value={newMonth} required>
-							{#each months as month}
+							{#each months as month (month)}
 								<option value={month}>{getMonthName(month)}</option>
 							{/each}
 						</select>
@@ -446,7 +470,7 @@
 				</div>
 
 				<div class="modal-actions">
-					<button type="button" class="btn btn-secondary" onclick={() => (showCreateRun = false)}>
+					<button type="button" class="btn btn-secondary" onclick={closeCreateRun}>
 						{m.common_cancel()}
 					</button>
 					<button type="submit" class="btn btn-primary">{m.payroll_create()}</button>
@@ -457,12 +481,14 @@
 {/if}
 
 {#if showImportHistory}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={closeImportHistory} role="presentation">
+	<div
+		class="modal-backdrop"
+		onclick={(event) => closeOnBackdropClick(event, closeImportHistory)}
+		onkeydown={(event) => closeOnEscape(event, closeImportHistory)}
+		role="presentation"
+	>
 		<div
 			class="modal card import-modal"
-			onclick={(e) => e.stopPropagation()}
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby="import-payroll-history-title"
@@ -535,7 +561,7 @@
 						<div class="import-errors">
 							<h4>{m.payroll_importRowErrors()}</h4>
 							<ul>
-								{#each importResult.errors as rowError}
+								{#each importResult.errors as rowError (`${rowError.row}-${rowError.message}`)}
 									<li>
 										<strong>{m.payroll_importRow({ row: rowError.row.toString() })}</strong>
 										{#if rowError.period_year && rowError.period_month}
@@ -562,12 +588,14 @@
 {/if}
 
 {#if showPayslips && selectedRun}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => (showPayslips = false)} role="presentation">
+	<div
+		class="modal-backdrop"
+		onclick={(event) => closeOnBackdropClick(event, closePayslips)}
+		onkeydown={(event) => closeOnEscape(event, closePayslips)}
+		role="presentation"
+	>
 		<div
 			class="modal modal-wide card"
-			onclick={(e) => e.stopPropagation()}
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby="payslips-title"
@@ -597,7 +625,7 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each payslips as payslip}
+							{#each payslips as payslip (payslip.id)}
 								<tr>
 									<td class="employee-name">
 										{#if payslip.employee}
@@ -644,7 +672,7 @@
 			{/if}
 
 			<div class="modal-actions">
-				<button type="button" class="btn btn-secondary" onclick={() => (showPayslips = false)}>
+				<button type="button" class="btn btn-secondary" onclick={closePayslips}>
 					{m.payroll_close()}
 				</button>
 			</div>

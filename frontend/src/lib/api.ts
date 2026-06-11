@@ -2329,7 +2329,7 @@ class ApiClient {
   }
 
   async approvePayroll(tenantId: string, runId: string) {
-    return this.request<PayrollRun>(
+    return this.request<{ status: string }>(
       "POST",
       `/api/v1/tenants/${tenantId}/payroll-runs/${runId}/approve`,
     );
