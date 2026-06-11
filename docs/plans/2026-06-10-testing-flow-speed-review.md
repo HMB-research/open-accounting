@@ -1181,6 +1181,11 @@ Reporter timing from the final repeat-run `frontend/demo-test-results.json`:
 | `demo/vat-returns.spec.ts` | 7.618s | 5 | 5 |
 | `demo/auth.setup.ts` | 2.635s | 1 | 1 |
 
-The next CI artifact should confirm the remote spec-level reduction. Remaining
-measured consolidation targets are `salary-calculator`, `payroll`, `tsd`, and
-`mobile-navigation`.
+Remote CI run `27339522291` confirmed the reduction after commit `554e9b3`:
+
+| Spec | Previous CI timing | New CI timing |
+|------|--------------------|---------------|
+| `demo/vat-returns.spec.ts` | 56.382s, 6 tests | 10.817s, 1 test |
+
+The remaining measured consolidation targets are `tsd`, `payroll`,
+`salary-calculator`, `auth.setup`, and `mobile-navigation`.
