@@ -1142,3 +1142,45 @@ Reporter timing from the final repeat-run `frontend/demo-test-results.json`:
 The next CI artifact should confirm the remote spec-level reduction. Remaining
 measured consolidation targets are `vat-returns`, `salary-calculator`,
 `payroll`, `tsd`, and `mobile-navigation`.
+
+## 2026-06-11 VAT Returns Spec Consolidation
+
+CI run `27338617256` measured `demo/vat-returns.spec.ts` at 56.382s across six
+tests, making it the largest remaining route-specific demo spec in that
+artifact set.
+
+The old spec repeated authentication, tenant setup, navigation, and generic
+page readiness before six page-structure checks. It also did not exercise the
+primary VAT declaration workflow. The spec now uses one workflow check that:
+
+- verifies the VAT page heading, generate panel, declaration panel, year
+  options, month options, and enabled generate button;
+- opens `/vat-returns` with `waitForNetworkIdle: false` and waits for the
+  route-owned KMD list API response plus visible page panels;
+- generates a KMD declaration for a deterministic period, using a repeat-index
+  month to keep local stress repeats from fighting the same period;
+- asserts the generation API response, declaration list row, status badge,
+  detail panel, summary amounts, XML export control, and KMD rows table shell.
+
+KMD generation upserts by tenant/year/month, so the workflow is safe to rerun.
+The demo seed's journal lines currently do not include VAT rates, so the test
+asserts generated totals and detail rendering instead of inventing a seeded VAT
+row expectation.
+
+Local branch-API proof after the consolidation:
+
+| Command | Result |
+|---------|--------|
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/vat-returns.spec.ts --workers=4` | 2 passed in 7.7s, including `auth-setup` |
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/vat-returns.spec.ts --workers=4 --repeat-each=5` | 6 passed in 9.6s, including `auth-setup` |
+
+Reporter timing from the final repeat-run `frontend/demo-test-results.json`:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/vat-returns.spec.ts` | 7.618s | 5 | 5 |
+| `demo/auth.setup.ts` | 2.635s | 1 | 1 |
+
+The next CI artifact should confirm the remote spec-level reduction. Remaining
+measured consolidation targets are `salary-calculator`, `payroll`, `tsd`, and
+`mobile-navigation`.
