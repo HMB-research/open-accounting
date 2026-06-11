@@ -1577,3 +1577,63 @@ Remaining measured consolidation targets from run `27350669422` are `tsd`,
 `payments`, `mobile-navigation`, `payment-reminders-selection`,
 `env-health-auth`, and `banking`; `auth.setup` remains separate shared setup
 overhead.
+
+## 2026-06-11 TSD Spec Consolidation
+
+CI run `27350669422` measured `demo/tsd.spec.ts` at 55.012s across five
+page-structure/export/status tests, making it the largest route-specific demo
+spec in that artifact set.
+
+The old spec repeated authentication, `/tsd` navigation, network-idle waits,
+and generic table-or-empty checks before separate shallow assertions. The spec
+now uses one workflow check that:
+
+- opens `/tsd` once and waits for the initial TSD list response plus route-owned
+  loaded UI state;
+- selects the seeded 2024 TSD year and verifies the returned declarations,
+  periods, statuses, row count, and tax totals rendered in the table;
+- verifies XML and CSV export buttons by asserting the matching export API
+  responses; and
+- opens the manual submission dialog for a draft declaration, verifies the
+  e-MTA reference control, and cancels without mutating seeded data.
+
+The stronger workflow also records a follow-up parity gap: the frontend sends a
+`year` query through `api.listTSD()`, but the backend `ListTSD` handler currently
+returns all tenant TSD declarations. The seeded demo data keeps the workflow
+green because the TSD declarations are in the expected year, but full filter
+parity should be handled as a separate API/CLI/docs stage.
+
+Local branch-API proof after the consolidation:
+
+| Command | Result |
+|---------|--------|
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/tsd.spec.ts --workers=1` | 2 passed in 7.3s, including `auth-setup` |
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium --shard=4/4 --workers=4` | 21 passed and 12 skipped in 17.0s, including `auth-setup` |
+
+Local closeout gates also passed: `make test-backend-coverage`,
+`go test -timeout=3m ./docs -count=1`, `bun run lint`, `bun run paraglide`,
+`bun run check:prepared`, `bun run test:prepared`, `bun run build:prepared`,
+and `git diff --check`.
+
+Remote proof: CI run `27351566945` on commit
+`b1a964bec1370656ca1c23c863464c3d732f8285` passed all checks, including the
+four full demo E2E shards. The timing artifact confirmed the TSD reduction:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/tsd.spec.ts` | 14.678s | 1 | 1 |
+| `demo/mobile-navigation.spec.ts` | 49.308s | 4 | 4 |
+| `demo/env-health-auth.spec.ts` | 41.902s | 6 | 6 |
+| `demo/payments.spec.ts` | 39.763s | 3 | 3 |
+| `demo/payment-reminders-modal.spec.ts` | 37.181s | 3 | 3 |
+| `demo/contacts.spec.ts` | 36.721s | 3 | 3 |
+| `demo/banking.spec.ts` | 36.495s | 4 | 4 |
+| `demo/payment-reminders-selection.spec.ts` | 36.312s | 4 | 4 |
+
+Compared with run `27350669422`, `demo/tsd.spec.ts` dropped from 55.012s
+across five tests to 14.678s as one workflow test. The next measured
+route-specific consolidation targets are `demo/mobile-navigation.spec.ts`,
+`demo/payments.spec.ts`, `demo/payment-reminders-modal.spec.ts`,
+`demo/contacts.spec.ts`, `demo/banking.spec.ts`, and
+`demo/payment-reminders-selection.spec.ts`; `auth.setup` remains separate shared
+setup overhead.
