@@ -59,7 +59,7 @@ test.describe("Demo Cash Flow Statement", () => {
     await ensureDemoTenant(page, testInfo);
   });
 
-  test("renders report controls and loaded statement sections", async ({
+  test("renders report controls, statement sections, and regenerates a changed period", async ({
     page,
   }, testInfo) => {
     await openCashFlowReport(page, testInfo);
@@ -94,12 +94,7 @@ test.describe("Demo Cash Flow Statement", () => {
     await expect(report).toContainText(
       /net change|opening cash|closing cash|raha muutus|raha perioodi/i,
     );
-  });
 
-  test("regenerates the report for a changed period", async ({
-    page,
-  }, testInfo) => {
-    await openCashFlowReport(page, testInfo);
     await page.locator("input#startDate").fill("2026-01-01");
     await page.locator("input#endDate").fill("2026-12-31");
 
@@ -110,9 +105,6 @@ test.describe("Demo Cash Flow Statement", () => {
         url.searchParams.get("start_date") === "2026-01-01" &&
         url.searchParams.get("end_date") === "2026-12-31"
       );
-    });
-    const generateButton = page.getByRole("button", {
-      name: /generate|genereeri/i,
     });
     await generateButton.click();
     const regeneratedReport = await regeneratedReportPromise;
