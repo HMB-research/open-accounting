@@ -872,3 +872,39 @@ The next practical speed work is:
    artifact/runtime spread suggests this setup cost is now large enough to be
    the next workflow-level target, but it should follow spec-level retry and
    repeated-navigation cleanup.
+
+CI run `27332761413` on commit `728c3f1` kept the PR gate green after this
+docs follow-up. Because the CI change filter compares the whole PR diff against
+`main`, even a docs-only follow-up commit on this branch still reran backend,
+frontend, integration, smoke, and full demo E2E gates. That is useful for PR
+confidence, but it is also a workflow-speed cost to revisit separately from
+test runtime optimization.
+
+The latest uploaded Playwright artifacts from that run show the current
+highest single-file demo E2E candidates:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/recurring.spec.ts` | 59.693s | 5 | 5 |
+| `demo/env-onboarding.spec.ts` | 57.651s | 5 | 5 |
+| `demo/quotes.spec.ts` | 55.229s | 4 | 4 |
+| `demo/payroll.spec.ts` | 53.560s | 5 | 5 |
+| `demo/tsd.spec.ts` | 51.831s | 5 | 5 |
+| `demo/env-dashboard.spec.ts` | 51.771s | 3 | 4 |
+| `demo/mobile-navigation.spec.ts` | 50.650s | 4 | 4 |
+| `demo/env-health-auth.spec.ts` | 50.175s | 6 | 6 |
+| `demo/salary-calculator.spec.ts` | 49.939s | 5 | 5 |
+| `demo/env-performance.spec.ts` | 45.618s | 2 | 3 |
+| `demo/env-responsive-errors.spec.ts` | 40.614s | 4 | 5 |
+
+Three environment specs passed only after retry:
+
+| Spec | Test | Failure |
+|------|------|---------|
+| `demo/env-dashboard.spec.ts` | Dashboard displays organization selector | Timed out waiting for the expected dashboard selector |
+| `demo/env-performance.spec.ts` | Dashboard reload is responsive | Timed out waiting for the expected dashboard-ready selector |
+| `demo/env-responsive-errors.spec.ts` | Tablet viewport works | Timed out waiting for `nav.navbar, .mobile-menu-btn` |
+
+The next stage should fix this environment readiness cluster first, then resume
+measured consolidation with `recurring`, `env-onboarding`, `quotes`, `payroll`,
+`tsd`, and `mobile-navigation`.
