@@ -6,6 +6,11 @@ async function openPluginsPage(page: Page, testInfo: TestInfo): Promise<void> {
 	await waitForRouteReady(page, 'h1');
 }
 
+async function openAdminPluginsPage(page: Page, testInfo: TestInfo): Promise<void> {
+	await navigateTo(page, '/admin/plugins', testInfo, { waitForNetworkIdle: false });
+	await waitForRouteReady(page, 'main h1, main .plugins-grid, main .plugin-card, main .empty-state');
+}
+
 test.describe('Plugins Settings View', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await ensureAuthenticated(page, testInfo);
@@ -72,5 +77,12 @@ test.describe('Plugins Settings View', () => {
 		}
 
 		await expect(pluginCards.first().locator('.plugin-actions')).toBeVisible();
+	});
+
+	test('loads the admin plugins route', async ({ page }, testInfo) => {
+		await openAdminPluginsPage(page, testInfo);
+
+		await expect(page.getByRole('heading', { name: /plugin|admin/i }).first()).toBeVisible();
+		await expect(page.locator('main .plugins-grid, main .plugin-card, main .empty-state').first()).toBeVisible();
 	});
 });
