@@ -1,71 +1,100 @@
-import { test, expect } from '@playwright/test';
-import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
+import { test, expect } from "@playwright/test";
+import {
+  ensureAuthenticated,
+  navigateTo,
+  ensureDemoTenant,
+  waitForRouteReady,
+} from "./utils";
 
-/**
- * Wait for salary calculator page to be ready
- */
-async function waitForCalculatorReady(page: import('@playwright/test').Page) {
-	await expect(async () => {
-		const isLoading = await page.getByText(/^Loading\.\.\.$/i).first().isVisible().catch(() => false);
-		expect(isLoading).toBe(false);
-	}).toPass({ timeout: 15000 });
+function responsePath(responseUrl: string): string {
+  return new URL(responseUrl).pathname;
 }
 
-test.describe('Demo Salary Calculator - Page Structure', () => {
-	test.beforeEach(async ({ page }, testInfo) => {
-		await ensureAuthenticated(page, testInfo);
-		await ensureDemoTenant(page, testInfo);
-		await navigateTo(page, '/payroll/calculator', testInfo);
-		await waitForCalculatorReady(page);
-	});
+async function openSalaryCalculator(
+  page: import("@playwright/test").Page,
+  testInfo: import("@playwright/test").TestInfo,
+) {
+  const initialPreviewResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      responsePath(response.url()).endsWith("/payroll/tax-preview") &&
+      response.status() === 200,
+  );
+  await navigateTo(page, "/payroll/calculator", testInfo, {
+    waitForNetworkIdle: false,
+  });
+  await waitForRouteReady(page, "main h1, .container h1");
+  await initialPreviewResponse;
+}
 
-	test('displays salary calculator page heading', async ({ page }) => {
-		await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 10000 });
-	});
+test.describe("Demo Salary Calculator", () => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    await ensureAuthenticated(page, testInfo);
+    await ensureDemoTenant(page, testInfo);
+  });
 
-	test('has gross salary input field', async ({ page }) => {
-		await expect(async () => {
-			const hasInput = await page.locator('input[type="number"], input#grossSalary').first().isVisible().catch(() => false);
-			expect(hasInput).toBeTruthy();
-		}).toPass({ timeout: 10000 });
-	});
+  test("calculates salary preview from route controls", async ({
+    page,
+  }, testInfo) => {
+    await openSalaryCalculator(page, testInfo);
 
-	test('has pension rate dropdown', async ({ page }) => {
-		// Check for pension rate dropdown
-		await expect(async () => {
-			const hasSelect = await page.locator('select').first().isVisible().catch(() => false);
-			expect(hasSelect).toBeTruthy();
-		}).toPass({ timeout: 10000 });
-	});
-});
+    await expect(
+      page.getByRole("heading", {
+        name: /Salary Calculator|Palgakalkulaator/i,
+      }),
+    ).toBeVisible();
 
-test.describe('Demo Salary Calculator - Calculations', () => {
-	test.beforeEach(async ({ page }, testInfo) => {
-		await ensureAuthenticated(page, testInfo);
-		await ensureDemoTenant(page, testInfo);
-		await navigateTo(page, '/payroll/calculator', testInfo);
-		await waitForCalculatorReady(page);
-	});
+    const grossSalaryInput = page.locator("input#grossSalary");
+    const basicExemptionInput = page.locator("input#basicExemption");
+    const pensionRateSelect = page.locator("select#pensionRate");
+    const applyBasicExemptionCheckbox = page.locator(
+      'label.checkbox-label input[type="checkbox"]',
+    );
+    const resultsSection = page.locator(".results-section");
 
-	test('shows calculation sections', async ({ page }) => {
-		// Check for calculation result sections
-		await expect(async () => {
-			const hasContent = await page.locator('.card, .result-breakdown, table').first().isVisible().catch(() => false);
-			const hasHeading = await page.getByRole('heading').first().isVisible().catch(() => false);
-			expect(hasContent || hasHeading).toBeTruthy();
-		}).toPass({ timeout: 10000 });
-	});
+    await expect(grossSalaryInput).toBeVisible();
+    await expect(basicExemptionInput).toBeVisible();
+    await expect(pensionRateSelect).toBeVisible();
+    await expect(applyBasicExemptionCheckbox).toBeChecked();
+    await expect(
+      resultsSection.getByRole("heading", { name: /Results|Tulemused/i }),
+    ).toBeVisible();
 
-	test('can enter salary value', async ({ page }) => {
-		// Wait for input to be visible
-		const grossSalaryInput = page.locator('input[type="number"], input#grossSalary').first();
-		await expect(grossSalaryInput).toBeVisible({ timeout: 10000 });
+    await grossSalaryInput.fill("3000");
+    await basicExemptionInput.fill("500");
+    const recalculationResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        responsePath(response.url()).endsWith("/payroll/tax-preview") &&
+        response.status() === 200,
+    );
+    await pensionRateSelect.selectOption("0.04");
 
-		// Clear and enter a salary
-		await grossSalaryInput.fill('3000');
+    const response = await recalculationResponse;
+    const responseBody = await response.json();
+    expect(responseBody).toEqual(
+      expect.objectContaining({
+        gross_salary: 3000,
+        basic_exemption: 500,
+        taxable_income: 2500,
+        income_tax: 550,
+        funded_pension: 120,
+        net_salary: 2282,
+        total_employer_cost: 4014,
+      }),
+    );
 
-		// Value should be entered
-		const value = await grossSalaryInput.inputValue();
-		expect(value).toBe('3000');
-	});
+    await expect(grossSalaryInput).toHaveValue("3000");
+    await expect(basicExemptionInput).toHaveValue("500");
+    await expect(pensionRateSelect).toHaveValue("0.04");
+    await expect(
+      resultsSection.getByText("3000.00 EUR", { exact: true }).first(),
+    ).toBeVisible();
+    await expect(
+      resultsSection.getByText("500.00 EUR", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      resultsSection.getByText("2282.00 EUR", { exact: true }),
+    ).toBeVisible();
+  });
 });

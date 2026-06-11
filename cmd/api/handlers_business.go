@@ -3709,15 +3709,17 @@ func (h *Handlers) GetPayslipPDF(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
-// @Param request body object{gross_salary=number,apply_basic_exemption=bool,funded_pension_rate=number} true "Calculation parameters"
+// @Param request body object{gross_salary=number,apply_basic_exemption=bool,basic_exemption_amount=number,funded_pension_rate=number} true "Calculation parameters"
 // @Success 200 {object} payroll.TaxCalculation
 // @Failure 400 {object} object{error=string}
 // @Router /tenants/{tenantID}/payroll/tax-preview [post]
 func (h *Handlers) CalculateTaxPreview(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		GrossSalary         decimal.Decimal `json:"gross_salary"`
-		ApplyBasicExemption bool            `json:"apply_basic_exemption"`
-		FundedPensionRate   decimal.Decimal `json:"funded_pension_rate"`
+		GrossSalary          decimal.Decimal  `json:"gross_salary"`
+		ApplyBasicExemption  *bool            `json:"apply_basic_exemption"`
+		BasicExemption       *decimal.Decimal `json:"basic_exemption"`
+		BasicExemptionAmount *decimal.Decimal `json:"basic_exemption_amount"`
+		FundedPensionRate    decimal.Decimal  `json:"funded_pension_rate"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		respondError(w, http.StatusBadRequest, "Invalid request body")
@@ -3729,7 +3731,24 @@ func (h *Handlers) CalculateTaxPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	calc := payroll.CalculateTaxPreview(req.GrossSalary, req.ApplyBasicExemption, req.FundedPensionRate)
+	applyBasicExemption := req.ApplyBasicExemption != nil && *req.ApplyBasicExemption
+	basicExemption := decimal.Zero
+	if req.ApplyBasicExemption == nil || applyBasicExemption {
+		switch {
+		case req.BasicExemptionAmount != nil:
+			basicExemption = *req.BasicExemptionAmount
+		case req.BasicExemption != nil:
+			basicExemption = *req.BasicExemption
+		case applyBasicExemption:
+			basicExemption = payroll.DefaultBasicExemption
+		}
+	}
+	if basicExemption.IsNegative() {
+		respondError(w, http.StatusBadRequest, "Basic exemption must be zero or greater")
+		return
+	}
+
+	calc := payroll.CalculateEstonianTaxes(req.GrossSalary, basicExemption, req.FundedPensionRate)
 	respondJSON(w, http.StatusOK, calc)
 }
 

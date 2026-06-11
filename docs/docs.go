@@ -13466,6 +13466,9 @@ const docTemplate = `{
                                 "apply_basic_exemption": {
                                     "type": "boolean"
                                 },
+                                "basic_exemption_amount": {
+                                    "type": "number"
+                                },
                                 "funded_pension_rate": {
                                     "type": "number"
                                 },

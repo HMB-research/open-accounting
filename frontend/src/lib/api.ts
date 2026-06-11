@@ -2353,7 +2353,8 @@ class ApiClient {
   async calculateTaxPreview(
     tenantId: string,
     grossSalary: string,
-    basicExemption?: string,
+    applyBasicExemption?: boolean,
+    basicExemptionAmount?: string,
     fundedPensionRate?: string,
   ) {
     return this.request<TaxCalculation>(
@@ -2361,7 +2362,8 @@ class ApiClient {
       `/api/v1/tenants/${tenantId}/payroll/tax-preview`,
       {
         gross_salary: grossSalary,
-        basic_exemption: basicExemption,
+        apply_basic_exemption: applyBasicExemption,
+        basic_exemption_amount: basicExemptionAmount,
         funded_pension_rate: fundedPensionRate,
       },
     );
