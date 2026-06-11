@@ -1355,3 +1355,62 @@ The next CI artifact should confirm the remote spec-level reduction. Remaining
 measured consolidation targets from run `27343538734` are `journal`, `tsd`,
 `mobile-navigation`, `env-health-auth`, and `payment-reminders-selection`;
 `auth.setup` remains separate shared setup overhead.
+
+CI run `27344509177` confirmed the remote reduction on commit
+`ffc0500aec056eb34b8745be96e3c4599a1f42f0`:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/payroll.spec.ts` | 12.868s | 1 | 1 |
+| `demo/journal.spec.ts` | 57.557s | 4 | 4 |
+| `demo/auth.setup.ts` | 49.987s | 4 | 4 |
+| `demo/mobile-navigation.spec.ts` | 46.708s | 4 | 4 |
+| `demo/payments.spec.ts` | 45.525s | 3 | 3 |
+
+Compared with run `27343538734`, `demo/payroll.spec.ts` dropped from
+61.893s across five tests to 12.868s as one workflow test. The next
+route-specific consolidation target is `demo/journal.spec.ts`.
+
+## 2026-06-11 Journal Spec Consolidation
+
+CI run `27344509177` measured `demo/journal.spec.ts` at 57.557s across four
+page-structure and lifecycle tests, making it the largest remaining
+route-specific demo spec in that artifact set.
+
+The old spec repeated authentication, tenant selection, `/journal` navigation,
+account loading, and journal-entry loading before three shallow page-structure
+checks plus one create/post/void lifecycle check.
+
+The spec now uses one route-owned workflow check that:
+
+- opens `/journal` once and waits for the active accounts and
+  `journal-entries?limit=50` API responses;
+- verifies the journal heading, new-entry action, opening-balance import action,
+  seeded entry-card count, and first seeded card details from the API response;
+- opens the opening-balance import dialog and verifies the CSV file input and
+  template download control;
+- creates a balanced manual journal entry and asserts the created API payload
+  plus rendered debit and credit rows;
+- posts the draft entry and asserts the `status: posted` API response; and
+- voids the posted entry, asserting the reversal response and rendered void
+  state with the test-owned reason.
+
+Local branch-API proof after the consolidation:
+
+| Command | Result |
+|---------|--------|
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/journal.spec.ts --workers=4` | 2 passed in 8.3s, including `auth-setup` |
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/journal.spec.ts --workers=4 --repeat-each=5` | 6 passed in 14.3s, including `auth-setup` |
+
+Reporter timing from the repeat-run `frontend/demo-test-results.json`:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/journal.spec.ts` | 11.022s | 5 | 5 |
+| `demo/auth.setup.ts` | 5.994s | 1 | 1 |
+
+The next CI artifact should confirm the remote spec-level reduction. Remaining
+measured consolidation targets from run `27344509177` are `mobile-navigation`,
+`payments`, `tsd`, `employees`, `banking`, and
+`payment-reminders-selection`; `auth.setup` remains separate shared setup
+overhead.
