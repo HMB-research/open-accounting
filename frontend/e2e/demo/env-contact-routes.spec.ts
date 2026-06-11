@@ -1,8 +1,8 @@
 import { test, expect } from '@playwright/test';
-import { loginAsDemoEnv, navigateToEnvPage, prepareDemoEnvSession, waitForVisibleContent } from './env-utils';
+import { loginAsDemoEnv, navigateToEnvPage, waitForVisibleContent } from './env-utils';
 
 test.describe('Demo Environment - Contacts', () => {
-	test('Can navigate to contacts page', async ({ page }, testInfo) => {
+	test('navigates to contacts and displays the contacts list', async ({ page }, testInfo) => {
 		await loginAsDemoEnv(page, testInfo);
 
 		const contactsLink = page.getByRole('link', { name: /contact|customer|client/i }).first();
@@ -16,11 +16,9 @@ test.describe('Demo Environment - Contacts', () => {
 			await navigateToEnvPage(page, '/contacts', testInfo);
 			await expect(page).toHaveURL(/contact/);
 		}
-	});
 
-	test('Contacts list displays', async ({ page }, testInfo) => {
-		await prepareDemoEnvSession(page, testInfo);
 		await navigateToEnvPage(page, '/contacts', testInfo);
+		await expect(page).toHaveURL(/contact/);
 
 		const content = page.locator('main, [class*="content"]').first();
 		await expect(content).toBeVisible();
