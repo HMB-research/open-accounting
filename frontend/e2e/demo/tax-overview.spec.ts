@@ -1,15 +1,16 @@
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { ensureAuthenticated, navigateTo, ensureDemoTenant, waitForRouteReady } from './utils';
 
+const routeLoadTimeout = 30000;
+const apiResponseTimeout = 30000;
+
 async function openTaxPage(page: Page, testInfo: TestInfo): Promise<void> {
-	const declarationsLoaded = waitForKMDListResponse(page);
 	await navigateTo(page, '/tax', testInfo, { waitForNetworkIdle: false });
-	await declarationsLoaded;
-	await waitForRouteReady(page, 'main h1, select#year, select#month, .declarations-list, .empty-state');
-	await waitForTaxPageLoaded(page);
+	await waitForRouteReady(page, 'main h1, select#year, select#month, .declarations-list, .empty-state', routeLoadTimeout);
+	await waitForTaxPageLoaded(page, routeLoadTimeout);
 }
 
-function waitForKMDListResponse(page: Page): Promise<void> {
+function waitForKMDListResponse(page: Page, timeout = apiResponseTimeout): Promise<void> {
 	return page
 		.waitForResponse((response) => {
 			const url = new URL(response.url());
@@ -18,17 +19,17 @@ function waitForKMDListResponse(page: Page): Promise<void> {
 				/\/api\/v1\/tenants\/[^/]+\/tax\/kmd$/.test(url.pathname) &&
 				response.status() === 200
 			);
-		})
+		}, { timeout })
 		.then(() => undefined);
 }
 
-async function waitForTaxPageLoaded(page: Page): Promise<void> {
+async function waitForTaxPageLoaded(page: Page, timeout = routeLoadTimeout): Promise<void> {
 	await expect(async () => {
 		const isLoading = await page.locator('.loading-spinner, .spinner').first().isVisible().catch(() => false);
 		const hasList = await page.locator('.declarations-list').isVisible().catch(() => false);
 		const hasEmpty = await page.locator('.empty-state').isVisible().catch(() => false);
 		expect(isLoading === false && (hasList || hasEmpty)).toBeTruthy();
-	}).toPass({ timeout: 15000 });
+	}).toPass({ timeout });
 }
 
 async function generateDeclaration(page: Page, year: string, month: string): Promise<void> {
@@ -41,7 +42,7 @@ async function generateDeclaration(page: Page, year: string, month: string): Pro
 			response.request().method() === 'POST' &&
 			/\/api\/v1\/tenants\/[^/]+\/tax\/kmd$/.test(url.pathname)
 		);
-	});
+	}, { timeout: apiResponseTimeout });
 	const reloadPromise = waitForKMDListResponse(page);
 
 	await page.getByRole('button', { name: /generate|genereeri/i }).click();

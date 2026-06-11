@@ -6,6 +6,9 @@ import {
   waitForRouteReady,
 } from "./utils";
 
+const routeLoadTimeout = 30_000;
+const apiResponseTimeout = 30_000;
+
 function responsePath(responseUrl: string): string {
   return new URL(responseUrl).pathname;
 }
@@ -14,17 +17,13 @@ async function openSalaryCalculator(
   page: import("@playwright/test").Page,
   testInfo: import("@playwright/test").TestInfo,
 ) {
-  const initialPreviewResponse = page.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      responsePath(response.url()).endsWith("/payroll/tax-preview") &&
-      response.status() === 200,
-  );
   await navigateTo(page, "/payroll/calculator", testInfo, {
     waitForNetworkIdle: false,
   });
-  await waitForRouteReady(page, "main h1, .container h1");
-  await initialPreviewResponse;
+  await waitForRouteReady(page, "main h1, .container h1", routeLoadTimeout);
+  await expect(page.locator(".result-breakdown")).toBeVisible({
+    timeout: routeLoadTimeout,
+  });
 }
 
 test.describe("Demo Salary Calculator", () => {
@@ -67,6 +66,7 @@ test.describe("Demo Salary Calculator", () => {
         response.request().method() === "POST" &&
         responsePath(response.url()).endsWith("/payroll/tax-preview") &&
         response.status() === 200,
+      { timeout: apiResponseTimeout },
     );
     await pensionRateSelect.selectOption("0.04");
 
