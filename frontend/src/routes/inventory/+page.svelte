@@ -1,14 +1,21 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { api, type Product, type ProductCategory, type Warehouse, type ProductType, type ProductStatus, type StockLevel, type InventoryMovement, type MovementType } from '$lib/api';
+	import {
+		api,
+		type Product,
+		type ProductCategory,
+		type Warehouse,
+		type ProductType,
+		type ProductStatus,
+		type StockLevel,
+		type InventoryMovement,
+		type MovementType,
+		type InventoryValuationReport,
+		type InventoryValuationMethod
+	} from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
-	import {
-		formatCurrency,
-		formatDate,
-		formStringValue,
-		optionalFormStringValue
-	} from '$lib/utils/formatting';
+	import { formatCurrency, formatDate, formStringValue, optionalFormStringValue } from '$lib/utils/formatting';
 
 	type Tab = 'products' | 'warehouses' | 'categories';
 
@@ -32,9 +39,14 @@
 	let showCreateCategory = $state(false);
 	let showAdjustStock = $state(false);
 	let showTransferStock = $state(false);
+	let showStockLevels = $state(false);
+	let showStockReservation = $state(false);
+	let showValuation = $state(false);
 	let showMovements = $state(false);
 	let selectedProduct = $state<Product | null>(null);
+	let stockLevels = $state<StockLevel[]>([]);
 	let movements = $state<InventoryMovement[]>([]);
+	let valuationReport = $state<InventoryValuationReport | null>(null);
 
 	// New product form
 	let newProductName = $state('');
@@ -75,6 +87,16 @@
 	let transferToWarehouseId = $state('');
 	let transferNotes = $state('');
 
+	// Stock reservation form
+	let stockReservationMode = $state<'reserve' | 'release'>('reserve');
+	let stockReservationWarehouseId = $state('');
+	let stockReservationQuantity = $state('');
+	let stockReservationReason = $state('');
+
+	// Inventory valuation filters
+	let valuationWarehouseId = $state('');
+	let valuationMethod = $state<InventoryValuationMethod>('standard-cost');
+
 	$effect(() => {
 		const tenantId = $page.url.searchParams.get('tenant');
 		if (tenantId) {
@@ -86,6 +108,9 @@
 		if (e.key !== 'Escape') return;
 
 		if (showAdjustStock) showAdjustStock = false;
+		if (showStockLevels) showStockLevels = false;
+		if (showStockReservation) showStockReservation = false;
+		if (showValuation) showValuation = false;
 		if (showMovements) showMovements = false;
 	}
 
@@ -223,7 +248,7 @@
 
 		try {
 			await api.deleteProduct(tenantId, productId);
-			products = products.filter(p => p.id !== productId);
+			products = products.filter((p) => p.id !== productId);
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to delete product';
 		}
@@ -237,7 +262,7 @@
 
 		try {
 			await api.deleteWarehouse(tenantId, warehouseId);
-			warehouses = warehouses.filter(w => w.id !== warehouseId);
+			warehouses = warehouses.filter((w) => w.id !== warehouseId);
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to delete warehouse';
 		}
@@ -251,7 +276,7 @@
 
 		try {
 			await api.deleteProductCategory(tenantId, categoryId);
-			categories = categories.filter(c => c.id !== categoryId);
+			categories = categories.filter((c) => c.id !== categoryId);
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to delete category';
 		}
@@ -323,6 +348,89 @@
 		}
 	}
 
+	async function loadStockLevels(tenantId: string, productId: string) {
+		stockLevels = (await api.getProductStockLevels(tenantId, productId)) ?? [];
+	}
+
+	async function openStockLevels(product: Product) {
+		const tenantId = $page.url.searchParams.get('tenant');
+		if (!tenantId) return;
+
+		selectedProduct = product;
+		try {
+			await loadStockLevels(tenantId, product.id);
+			showStockLevels = true;
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to load stock levels';
+		}
+	}
+
+	function openStockReservation(product: Product, mode: 'reserve' | 'release') {
+		selectedProduct = product;
+		stockReservationMode = mode;
+		stockReservationWarehouseId = warehouses.length > 0 ? warehouses[0].id : '';
+		stockReservationQuantity = '';
+		stockReservationReason = '';
+		showStockReservation = true;
+	}
+
+	async function submitStockReservation(e: Event) {
+		e.preventDefault();
+		const tenantId = $page.url.searchParams.get('tenant');
+		if (!tenantId || !selectedProduct) return;
+
+		try {
+			const payload = {
+				product_id: selectedProduct.id,
+				warehouse_id: stockReservationWarehouseId,
+				quantity: formStringValue(stockReservationQuantity),
+				reason: stockReservationReason || undefined
+			};
+			if (stockReservationMode === 'reserve') {
+				await api.reserveStock(tenantId, payload);
+			} else {
+				await api.releaseStock(tenantId, payload);
+			}
+			showStockReservation = false;
+			await loadStockLevels(tenantId, selectedProduct.id);
+			await loadData(tenantId);
+		} catch (err) {
+			error =
+				err instanceof Error ? err.message : stockReservationMode === 'reserve' ? 'Failed to reserve stock' : 'Failed to release stock';
+		}
+	}
+
+	async function loadValuation(tenantId: string) {
+		valuationReport = await api.getInventoryValuation(tenantId, {
+			warehouse_id: valuationWarehouseId || undefined,
+			method: valuationMethod
+		});
+	}
+
+	async function openValuation() {
+		const tenantId = $page.url.searchParams.get('tenant');
+		if (!tenantId) return;
+
+		try {
+			await loadValuation(tenantId);
+			showValuation = true;
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to load inventory valuation';
+		}
+	}
+
+	async function refreshValuation(e: Event) {
+		e.preventDefault();
+		const tenantId = $page.url.searchParams.get('tenant');
+		if (!tenantId) return;
+
+		try {
+			await loadValuation(tenantId);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to load inventory valuation';
+		}
+	}
+
 	async function openMovements(product: Product) {
 		const tenantId = $page.url.searchParams.get('tenant');
 		if (!tenantId) return;
@@ -338,36 +446,57 @@
 
 	function getProductTypeLabel(type: ProductType): string {
 		switch (type) {
-			case 'GOODS': return m.inventory_typeGoods();
-			case 'SERVICE': return m.inventory_typeService();
+			case 'GOODS':
+				return m.inventory_typeGoods();
+			case 'SERVICE':
+				return m.inventory_typeService();
 		}
 	}
 
 	function getProductStatusLabel(status: ProductStatus): string {
 		switch (status) {
-			case 'ACTIVE': return m.inventory_statusActive();
-			case 'INACTIVE': return m.inventory_statusInactive();
+			case 'ACTIVE':
+				return m.inventory_statusActive();
+			case 'INACTIVE':
+				return m.inventory_statusInactive();
 		}
 	}
 
 	function getMovementTypeLabel(type: MovementType): string {
 		switch (type) {
-			case 'IN': return m.inventory_movementIn();
-			case 'OUT': return m.inventory_movementOut();
-			case 'ADJUSTMENT': return m.inventory_movementAdjustment();
-			case 'TRANSFER': return m.inventory_movementTransfer();
+			case 'IN':
+				return m.inventory_movementIn();
+			case 'OUT':
+				return m.inventory_movementOut();
+			case 'ADJUSTMENT':
+				return m.inventory_movementAdjustment();
+			case 'TRANSFER':
+				return m.inventory_movementTransfer();
+		}
+	}
+
+	function getValuationMethodLabel(method: string): string {
+		switch (method) {
+			case 'WEIGHTED_AVERAGE':
+			case 'weighted-average':
+				return m.inventory_weightedAverage();
+			case 'FIFO':
+			case 'fifo':
+				return m.inventory_fifo();
+			default:
+				return m.inventory_standardCost();
 		}
 	}
 
 	function getCategoryName(categoryId: string | undefined): string {
 		if (!categoryId) return '-';
-		const category = categories.find(c => c.id === categoryId);
+		const category = categories.find((c) => c.id === categoryId);
 		return category?.name || '-';
 	}
 
 	function getWarehouseName(warehouseId: string | undefined): string {
 		if (!warehouseId) return '-';
-		const warehouse = warehouses.find(w => w.id === warehouseId);
+		const warehouse = warehouses.find((w) => w.id === warehouseId);
 		return warehouse?.name || '-';
 	}
 
@@ -378,12 +507,14 @@
 	}
 
 	function isLowStock(product: Product): boolean {
-		const current = typeof product.current_stock === 'object' && 'toNumber' in product.current_stock
-			? product.current_stock.toNumber()
-			: Number(product.current_stock || 0);
-		const minLevel = typeof product.min_stock_level === 'object' && 'toNumber' in product.min_stock_level
-			? product.min_stock_level.toNumber()
-			: Number(product.min_stock_level || 0);
+		const current =
+			typeof product.current_stock === 'object' && 'toNumber' in product.current_stock
+				? product.current_stock.toNumber()
+				: Number(product.current_stock || 0);
+		const minLevel =
+			typeof product.min_stock_level === 'object' && 'toNumber' in product.min_stock_level
+				? product.min_stock_level.toNumber()
+				: Number(product.min_stock_level || 0);
 		return minLevel > 0 && current <= minLevel;
 	}
 </script>
@@ -400,13 +531,13 @@
 	</div>
 
 	<div class="tabs">
-		<button class="tab" class:active={activeTab === 'products'} onclick={() => activeTab = 'products'}>
+		<button class="tab" class:active={activeTab === 'products'} onclick={() => (activeTab = 'products')}>
 			{m.inventory_products()}
 		</button>
-		<button class="tab" class:active={activeTab === 'warehouses'} onclick={() => activeTab = 'warehouses'}>
+		<button class="tab" class:active={activeTab === 'warehouses'} onclick={() => (activeTab = 'warehouses')}>
 			{m.inventory_warehouses()}
 		</button>
-		<button class="tab" class:active={activeTab === 'categories'} onclick={() => activeTab = 'categories'}>
+		<button class="tab" class:active={activeTab === 'categories'} onclick={() => (activeTab = 'categories')}>
 			{m.inventory_categories()}
 		</button>
 	</div>
@@ -419,7 +550,10 @@
 		<p>{m.common_loading()}</p>
 	{:else if activeTab === 'products'}
 		<div class="page-actions">
-			<button class="btn btn-primary" onclick={() => showCreateProduct = true}>
+			<button class="btn btn-secondary" onclick={openValuation}>
+				{m.inventory_inventoryValuation()}
+			</button>
+			<button class="btn btn-primary" onclick={() => (showCreateProduct = true)}>
 				+ {m.inventory_newProduct()}
 			</button>
 		</div>
@@ -439,7 +573,7 @@
 				</select>
 				<select class="input" bind:value={filterCategory} onchange={handleFilter}>
 					<option value="">{m.inventory_filterByCategory()}</option>
-					{#each categories as category}
+					{#each categories as category (category.id)}
 						<option value={category.id}>{category.name}</option>
 					{/each}
 				</select>
@@ -470,13 +604,15 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each products as product}
+							{#each products as product (product.id)}
 								<tr class:low-stock={isLowStock(product)}>
 									<td data-label={m.inventory_code()}>{product.code}</td>
 									<td data-label={m.inventory_productName()}>{product.name}</td>
 									<td class="hide-mobile" data-label={m.inventory_productType()}>{getProductTypeLabel(product.product_type)}</td>
 									<td class="hide-mobile" data-label={m.inventory_category()}>{getCategoryName(product.category_id)}</td>
-									<td class="amount text-right" data-label={m.inventory_salesPrice()}>{product.sales_price ? formatCurrency(product.sales_price) : '-'}</td>
+									<td class="amount text-right" data-label={m.inventory_salesPrice()}
+										>{product.sales_price ? formatCurrency(product.sales_price) : '-'}</td
+									>
 									<td class="text-right" data-label={m.inventory_currentStock()}>
 										{formatNumber(product.current_stock)}
 										{#if isLowStock(product)}
@@ -486,6 +622,23 @@
 									<td class="actions hide-mobile" data-label={m.common_actions()}>
 										<button class="btn btn-small" onclick={() => openAdjustStock(product)} title={m.inventory_adjustStock()}>
 											{m.inventory_adjustStock()}
+										</button>
+										<button class="btn btn-small" onclick={() => openStockLevels(product)} title={m.inventory_stockLevels()}>
+											{m.inventory_stockLevels()}
+										</button>
+										<button
+											class="btn btn-small"
+											onclick={() => openStockReservation(product, 'reserve')}
+											title={m.inventory_reserveStock()}
+										>
+											{m.inventory_reserveStock()}
+										</button>
+										<button
+											class="btn btn-small"
+											onclick={() => openStockReservation(product, 'release')}
+											title={m.inventory_releaseStock()}
+										>
+											{m.inventory_releaseStock()}
 										</button>
 										{#if warehouses.length >= 2}
 											<button class="btn btn-small" onclick={() => openTransferStock(product)} title={m.inventory_transferStock()}>
@@ -508,7 +661,7 @@
 		{/if}
 	{:else if activeTab === 'warehouses'}
 		<div class="page-actions">
-			<button class="btn btn-primary" onclick={() => showCreateWarehouse = true}>
+			<button class="btn btn-primary" onclick={() => (showCreateWarehouse = true)}>
 				+ {m.inventory_newWarehouse()}
 			</button>
 		</div>
@@ -532,7 +685,7 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each warehouses as warehouse}
+							{#each warehouses as warehouse (warehouse.id)}
 								<tr>
 									<td data-label={m.inventory_warehouseCode()}>{warehouse.code}</td>
 									<td data-label={m.inventory_warehouseName()}>{warehouse.name}</td>
@@ -565,7 +718,7 @@
 		{/if}
 	{:else if activeTab === 'categories'}
 		<div class="page-actions">
-			<button class="btn btn-primary" onclick={() => showCreateCategory = true}>
+			<button class="btn btn-primary" onclick={() => (showCreateCategory = true)}>
 				+ {m.inventory_newCategory()}
 			</button>
 		</div>
@@ -586,7 +739,7 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each categories as category}
+							{#each categories as category (category.id)}
 								<tr>
 									<td data-label={m.common_name()}>{category.name}</td>
 									<td data-label={m.common_description()}>{category.description || '-'}</td>
@@ -608,8 +761,15 @@
 {#if showCreateProduct}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => showCreateProduct = false} role="presentation">
-		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-product-title" tabindex="-1">
+	<div class="modal-backdrop" onclick={() => (showCreateProduct = false)} role="presentation">
+		<div
+			class="modal card"
+			onclick={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="create-product-title"
+			tabindex="-1"
+		>
 			<h2 id="create-product-title">{m.inventory_newProduct()}</h2>
 			<form onsubmit={createProduct}>
 				<div class="form-row">
@@ -635,7 +795,7 @@
 						<label class="label" for="product-category">{m.inventory_category()}</label>
 						<select class="input" id="product-category" bind:value={newProductCategoryId}>
 							<option value="">-</option>
-							{#each categories as category}
+							{#each categories as category (category.id)}
 								<option value={category.id}>{category.name}</option>
 							{/each}
 						</select>
@@ -685,7 +845,7 @@
 				</div>
 
 				<div class="modal-actions">
-					<button type="button" class="btn btn-secondary" onclick={() => showCreateProduct = false}>
+					<button type="button" class="btn btn-secondary" onclick={() => (showCreateProduct = false)}>
 						{m.common_cancel()}
 					</button>
 					<button type="submit" class="btn btn-primary">{m.inventory_createProduct()}</button>
@@ -698,8 +858,15 @@
 {#if showCreateWarehouse}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => showCreateWarehouse = false} role="presentation">
-		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-warehouse-title" tabindex="-1">
+	<div class="modal-backdrop" onclick={() => (showCreateWarehouse = false)} role="presentation">
+		<div
+			class="modal card"
+			onclick={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="create-warehouse-title"
+			tabindex="-1"
+		>
 			<h2 id="create-warehouse-title">{m.inventory_newWarehouse()}</h2>
 			<form onsubmit={createWarehouse}>
 				<div class="form-row">
@@ -726,7 +893,7 @@
 				</div>
 
 				<div class="modal-actions">
-					<button type="button" class="btn btn-secondary" onclick={() => showCreateWarehouse = false}>
+					<button type="button" class="btn btn-secondary" onclick={() => (showCreateWarehouse = false)}>
 						{m.common_cancel()}
 					</button>
 					<button type="submit" class="btn btn-primary">{m.inventory_createWarehouse()}</button>
@@ -739,8 +906,15 @@
 {#if showCreateCategory}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => showCreateCategory = false} role="presentation">
-		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-category-title" tabindex="-1">
+	<div class="modal-backdrop" onclick={() => (showCreateCategory = false)} role="presentation">
+		<div
+			class="modal card"
+			onclick={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="create-category-title"
+			tabindex="-1"
+		>
 			<h2 id="create-category-title">{m.inventory_newCategory()}</h2>
 			<form onsubmit={createCategory}>
 				<div class="form-group">
@@ -754,7 +928,7 @@
 				</div>
 
 				<div class="modal-actions">
-					<button type="button" class="btn btn-secondary" onclick={() => showCreateCategory = false}>
+					<button type="button" class="btn btn-secondary" onclick={() => (showCreateCategory = false)}>
 						{m.common_cancel()}
 					</button>
 					<button type="submit" class="btn btn-primary">{m.inventory_createCategory()}</button>
@@ -765,9 +939,24 @@
 {/if}
 
 {#if showAdjustStock && selectedProduct}
-	<div class="modal-backdrop" onclick={() => showAdjustStock = false} onkeydown={(e) => e.key === 'Escape' && (showAdjustStock = false)} role="presentation">
-		<div class="modal card" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showAdjustStock = false)} role="dialog" aria-modal="true" aria-labelledby="adjust-stock-title" tabindex="-1">
-			<h2 id="adjust-stock-title">{m.inventory_adjustStock()}: {selectedProduct.name}</h2>
+	<div
+		class="modal-backdrop"
+		onclick={() => (showAdjustStock = false)}
+		onkeydown={(e) => e.key === 'Escape' && (showAdjustStock = false)}
+		role="presentation"
+	>
+		<div
+			class="modal card"
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => e.key === 'Escape' && (showAdjustStock = false)}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="adjust-stock-title"
+			tabindex="-1"
+		>
+			<h2 id="adjust-stock-title">
+				{m.inventory_adjustStock()}: {selectedProduct.name}
+			</h2>
 			<form onsubmit={adjustStock}>
 				<div class="form-group">
 					<label class="label" for="adjust-warehouse">{m.inventory_warehouses()} *</label>
@@ -781,7 +970,15 @@
 				<div class="form-row">
 					<div class="form-group">
 						<label class="label" for="adjust-quantity">{m.inventory_quantity()} *</label>
-						<input class="input" type="number" step="0.01" id="adjust-quantity" bind:value={adjustQuantity} required placeholder="Positive to add, negative to remove" />
+						<input
+							class="input"
+							type="number"
+							step="0.01"
+							id="adjust-quantity"
+							bind:value={adjustQuantity}
+							required
+							placeholder="Positive to add, negative to remove"
+						/>
 					</div>
 					<div class="form-group">
 						<label class="label" for="adjust-cost">{m.inventory_unitCost()}</label>
@@ -810,7 +1007,7 @@
 				</div>
 
 				<div class="modal-actions">
-					<button type="button" class="btn btn-secondary" onclick={() => showAdjustStock = false}>
+					<button type="button" class="btn btn-secondary" onclick={() => (showAdjustStock = false)}>
 						{m.common_cancel()}
 					</button>
 					<button type="submit" class="btn btn-primary">{m.inventory_adjustStock()}</button>
@@ -823,15 +1020,24 @@
 {#if showTransferStock && selectedProduct}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => showTransferStock = false} role="presentation">
-		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="transfer-stock-title" tabindex="-1">
-			<h2 id="transfer-stock-title">{m.inventory_transferStock()}: {selectedProduct.name}</h2>
+	<div class="modal-backdrop" onclick={() => (showTransferStock = false)} role="presentation">
+		<div
+			class="modal card"
+			onclick={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="transfer-stock-title"
+			tabindex="-1"
+		>
+			<h2 id="transfer-stock-title">
+				{m.inventory_transferStock()}: {selectedProduct.name}
+			</h2>
 			<form onsubmit={transferStock}>
 				<div class="form-row">
 					<div class="form-group">
 						<label class="label" for="transfer-from">{m.inventory_fromWarehouse()} *</label>
 						<select class="input" id="transfer-from" bind:value={transferFromWarehouseId} required>
-							{#each warehouses as warehouse}
+							{#each warehouses as warehouse (warehouse.id)}
 								<option value={warehouse.id}>{warehouse.name}</option>
 							{/each}
 						</select>
@@ -839,7 +1045,7 @@
 					<div class="form-group">
 						<label class="label" for="transfer-to">{m.inventory_toWarehouse()} *</label>
 						<select class="input" id="transfer-to" bind:value={transferToWarehouseId} required>
-							{#each warehouses as warehouse}
+							{#each warehouses as warehouse (warehouse.id)}
 								<option value={warehouse.id}>{warehouse.name}</option>
 							{/each}
 						</select>
@@ -857,7 +1063,7 @@
 				</div>
 
 				<div class="modal-actions">
-					<button type="button" class="btn btn-secondary" onclick={() => showTransferStock = false}>
+					<button type="button" class="btn btn-secondary" onclick={() => (showTransferStock = false)}>
 						{m.common_cancel()}
 					</button>
 					<button type="submit" class="btn btn-primary">{m.inventory_transferStock()}</button>
@@ -867,10 +1073,223 @@
 	</div>
 {/if}
 
+{#if showStockLevels && selectedProduct}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<div class="modal-backdrop" onclick={() => (showStockLevels = false)} role="presentation">
+		<div
+			class="modal modal-large card"
+			onclick={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="stock-levels-title"
+			tabindex="-1"
+		>
+			<h2 id="stock-levels-title">
+				{m.inventory_stockLevels()}: {selectedProduct.name}
+			</h2>
+
+			{#if stockLevels.length === 0}
+				<p class="empty-message">{m.inventory_noStockLevels()}</p>
+			{:else}
+				<div class="table-container">
+					<table class="table">
+						<thead>
+							<tr>
+								<th>{m.inventory_warehouses()}</th>
+								<th class="text-right">{m.inventory_onHandQty()}</th>
+								<th class="text-right">{m.inventory_reservedQty()}</th>
+								<th class="text-right">{m.inventory_availableQty()}</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each stockLevels as level (level.id)}
+								<tr>
+									<td>{getWarehouseName(level.warehouse_id)}</td>
+									<td class="text-right">{formatNumber(level.quantity)}</td>
+									<td class="text-right">{formatNumber(level.reserved_qty)}</td>
+									<td class="text-right">{formatNumber(level.available_qty)}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+
+			<div class="modal-actions">
+				<button type="button" class="btn btn-secondary" onclick={() => (showStockLevels = false)}>
+					{m.common_close()}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if showStockReservation && selectedProduct}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<div class="modal-backdrop" onclick={() => (showStockReservation = false)} role="presentation">
+		<div
+			class="modal card"
+			onclick={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="stock-reservation-title"
+			tabindex="-1"
+		>
+			<h2 id="stock-reservation-title">
+				{stockReservationMode === 'reserve' ? m.inventory_reserveStock() : m.inventory_releaseStock()}: {selectedProduct.name}
+			</h2>
+			<form onsubmit={submitStockReservation}>
+				<div class="form-group">
+					<label class="label" for="stock-reservation-warehouse">{m.inventory_warehouses()} *</label>
+					<select class="input" id="stock-reservation-warehouse" bind:value={stockReservationWarehouseId} required>
+						{#each warehouses as warehouse (warehouse.id)}
+							<option value={warehouse.id}>{warehouse.name}</option>
+						{/each}
+					</select>
+				</div>
+
+				<div class="form-group">
+					<label class="label" for="stock-reservation-quantity">{m.inventory_quantity()} *</label>
+					<input
+						class="input"
+						type="number"
+						step="0.01"
+						min="0.01"
+						id="stock-reservation-quantity"
+						bind:value={stockReservationQuantity}
+						required
+					/>
+				</div>
+
+				<div class="form-group">
+					<label class="label" for="stock-reservation-reason">{m.inventory_reason()}</label>
+					<textarea class="input" id="stock-reservation-reason" bind:value={stockReservationReason} rows="2"></textarea>
+				</div>
+
+				<div class="modal-actions">
+					<button type="button" class="btn btn-secondary" onclick={() => (showStockReservation = false)}>
+						{m.common_cancel()}
+					</button>
+					<button type="submit" class="btn btn-primary">
+						{stockReservationMode === 'reserve' ? m.inventory_reserveStock() : m.inventory_releaseStock()}
+					</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
+
+{#if showValuation}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<div class="modal-backdrop" onclick={() => (showValuation = false)} role="presentation">
+		<div
+			class="modal modal-large card"
+			onclick={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="valuation-title"
+			tabindex="-1"
+		>
+			<h2 id="valuation-title">{m.inventory_inventoryValuation()}</h2>
+			<form class="valuation-filters" onsubmit={refreshValuation}>
+				<div class="form-row">
+					<div class="form-group">
+						<label class="label" for="valuation-warehouse">{m.inventory_warehouses()}</label>
+						<select class="input" id="valuation-warehouse" bind:value={valuationWarehouseId}>
+							<option value="">{m.inventory_allWarehouses()}</option>
+							{#each warehouses as warehouse (warehouse.id)}
+								<option value={warehouse.id}>{warehouse.name}</option>
+							{/each}
+						</select>
+					</div>
+					<div class="form-group">
+						<label class="label" for="valuation-method">{m.inventory_valuationMethod()}</label>
+						<select class="input" id="valuation-method" bind:value={valuationMethod}>
+							<option value="standard-cost">{m.inventory_standardCost()}</option>
+							<option value="weighted-average">{m.inventory_weightedAverage()}</option>
+							<option value="fifo">{m.inventory_fifo()}</option>
+						</select>
+					</div>
+				</div>
+				<div class="modal-actions modal-actions-left">
+					<button type="submit" class="btn btn-secondary">{m.inventory_refreshValuation()}</button>
+				</div>
+			</form>
+
+			{#if valuationReport}
+				<div class="valuation-summary">
+					<span>{m.inventory_valuationMethod()}: {getValuationMethodLabel(valuationReport.valuation_method)}</span>
+					<span>{m.inventory_totalQuantity()}: {formatNumber(valuationReport.total_quantity)}</span>
+					<span>{m.inventory_totalReserved()}: {formatNumber(valuationReport.total_reserved)}</span>
+					<span>{m.inventory_totalAvailable()}: {formatNumber(valuationReport.total_available)}</span>
+					<span>{m.inventory_totalValue()}: {formatCurrency(valuationReport.total_value)}</span>
+				</div>
+
+				{#if valuationReport.lines.length === 0}
+					<p class="empty-message">{m.inventory_noValuationLines()}</p>
+				{:else}
+					<div class="table-container">
+						<table class="table">
+							<thead>
+								<tr>
+									<th>{m.inventory_productName()}</th>
+									<th>{m.inventory_warehouses()}</th>
+									<th class="text-right">{m.inventory_onHandQty()}</th>
+									<th class="text-right">{m.inventory_reservedQty()}</th>
+									<th class="text-right">{m.inventory_availableQty()}</th>
+									<th class="text-right">{m.inventory_unitCost()}</th>
+									<th class="text-right">{m.inventory_totalValue()}</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each valuationReport.lines as line (`${line.product_id}-${line.warehouse_id || 'all'}`)}
+									<tr>
+										<td>{line.product_code} {line.product_name}</td>
+										<td>{line.warehouse_name || '-'}</td>
+										<td class="text-right">{formatNumber(line.quantity)}</td>
+										<td class="text-right">{formatNumber(line.reserved_qty)}</td>
+										<td class="text-right">{formatNumber(line.available_qty)}</td>
+										<td class="text-right">{formatCurrency(line.unit_cost)}</td>
+										<td class="text-right">{formatCurrency(line.inventory_value)}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
+			{/if}
+
+			<div class="modal-actions">
+				<button type="button" class="btn btn-secondary" onclick={() => (showValuation = false)}>
+					{m.common_close()}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
 {#if showMovements && selectedProduct}
-	<div class="modal-backdrop" onclick={() => showMovements = false} onkeydown={(e) => e.key === 'Escape' && (showMovements = false)} role="presentation">
-		<div class="modal modal-large card" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showMovements = false)} role="dialog" aria-modal="true" aria-labelledby="movements-title" tabindex="-1">
-			<h2 id="movements-title">{m.inventory_movements()}: {selectedProduct.name}</h2>
+	<div
+		class="modal-backdrop"
+		onclick={() => (showMovements = false)}
+		onkeydown={(e) => e.key === 'Escape' && (showMovements = false)}
+		role="presentation"
+	>
+		<div
+			class="modal modal-large card"
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => e.key === 'Escape' && (showMovements = false)}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="movements-title"
+			tabindex="-1"
+		>
+			<h2 id="movements-title">
+				{m.inventory_movements()}: {selectedProduct.name}
+			</h2>
 
 			{#if movements.length === 0}
 				<p class="empty-message">{m.inventory_noMovements()}</p>
@@ -914,7 +1333,7 @@
 			{/if}
 
 			<div class="modal-actions">
-				<button type="button" class="btn btn-secondary" onclick={() => showMovements = false}>
+				<button type="button" class="btn btn-secondary" onclick={() => (showMovements = false)}>
 					{m.common_close()}
 				</button>
 			</div>
@@ -954,6 +1373,8 @@
 	.page-actions {
 		display: flex;
 		justify-content: flex-end;
+		gap: 0.75rem;
+		flex-wrap: wrap;
 		margin-bottom: 1rem;
 	}
 
@@ -1022,6 +1443,23 @@
 
 	.modal-large {
 		max-width: 900px;
+	}
+
+	.modal-actions-left {
+		justify-content: flex-start;
+	}
+
+	.valuation-filters {
+		margin-bottom: 1rem;
+	}
+
+	.valuation-summary {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem 1.5rem;
+		margin-bottom: 1rem;
+		color: var(--text-secondary);
+		font-size: 0.9rem;
 	}
 
 	.empty-message {

@@ -3718,6 +3718,135 @@ describe("API Client - Core Functionality", () => {
     });
   });
 
+  describe("Inventory Stock Operations", () => {
+    beforeEach(() => {
+      api.setTokens("access-token-123", "refresh-token-456");
+    });
+
+    it("should reserve stock", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "level-1",
+          product_id: "product-1",
+          warehouse_id: "warehouse-1",
+          quantity: "5",
+          reserved_qty: "2",
+          available_qty: "3",
+        }),
+      });
+
+      const result = await api.reserveStock("tenant-123", {
+        product_id: "product-1",
+        warehouse_id: "warehouse-1",
+        quantity: "2",
+        reason: "Sales allocation",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/inventory/reserve"),
+        expect.objectContaining({
+          method: "POST",
+          headers: expect.objectContaining({
+            Authorization: "Bearer access-token-123",
+            "Content-Type": "application/json",
+          }),
+          body: JSON.stringify({
+            product_id: "product-1",
+            warehouse_id: "warehouse-1",
+            quantity: "2",
+            reason: "Sales allocation",
+          }),
+        }),
+      );
+      expect(result.reserved_qty).toBeInstanceOf(Decimal);
+      expect(result.reserved_qty.toString()).toBe("2");
+    });
+
+    it("should release reserved stock", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "level-1",
+          product_id: "product-1",
+          warehouse_id: "warehouse-1",
+          quantity: "5",
+          reserved_qty: "1",
+          available_qty: "4",
+        }),
+      });
+
+      const result = await api.releaseStock("tenant-123", {
+        product_id: "product-1",
+        warehouse_id: "warehouse-1",
+        quantity: "1",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/inventory/release"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            product_id: "product-1",
+            warehouse_id: "warehouse-1",
+            quantity: "1",
+          }),
+        }),
+      );
+      expect(result.available_qty).toBeInstanceOf(Decimal);
+      expect(result.available_qty.toString()).toBe("4");
+    });
+
+    it("should get inventory valuation with filters", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          tenant_id: "tenant-123",
+          warehouse_id: "warehouse-1",
+          valuation_method: "WEIGHTED_AVERAGE",
+          lines: [
+            {
+              product_id: "product-1",
+              product_code: "PRD-1",
+              product_name: "Widget",
+              warehouse_id: "warehouse-1",
+              warehouse_name: "Main Warehouse",
+              quantity: "5",
+              reserved_qty: "2",
+              available_qty: "3",
+              unit_cost: "10.50",
+              inventory_value: "52.50",
+            },
+          ],
+          total_quantity: "5",
+          total_reserved: "2",
+          total_available: "3",
+          total_value: "52.50",
+          generated_at: "2026-06-12T00:00:00Z",
+        }),
+      });
+
+      const result = await api.getInventoryValuation("tenant-123", {
+        warehouse_id: "warehouse-1",
+        method: "weighted-average",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/inventory/valuation?warehouse_id=warehouse-1&method=weighted-average",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result.total_value).toBeInstanceOf(Decimal);
+      expect(result.total_value.toString()).toBe("52.5");
+      expect(result.lines[0].available_qty).toBeInstanceOf(Decimal);
+      expect(result.lines[0].available_qty.toString()).toBe("3");
+    });
+  });
+
   describe("Token Refresh Flow", () => {
     it("should refresh token on 401 and retry request", async () => {
       api.setTokens("old-token", "valid-refresh-token");
