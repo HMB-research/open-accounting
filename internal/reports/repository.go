@@ -304,6 +304,15 @@ func balanceConfirmationInvoiceStatuses() []string {
 	}
 }
 
+func contactStatementInvoiceStatuses() []string {
+	return []string{
+		string(models.InvoiceStatusSent),
+		string(models.InvoiceStatusPartiallyPaid),
+		string(models.InvoiceStatusPaid),
+		string(models.InvoiceStatusOverdue),
+	}
+}
+
 // GetContact retrieves contact details
 func (r *GORMRepository) GetContact(ctx context.Context, schemaName, tenantID, contactID string) (ContactInfo, error) {
 	contactsTable, err := r.tenantTable(ctx, schemaName, "contacts", "c")
@@ -350,7 +359,7 @@ func (r *GORMRepository) sumInvoiceStatementAmountBefore(ctx context.Context, sc
 		Where("i.tenant_id = ?", tenantID).
 		Where("i.contact_id = ?", contactID).
 		Where("i.invoice_type = ?", invoiceType).
-		Where("i.status <> ?", models.InvoiceStatusVoided).
+		Where("i.status IN ?", contactStatementInvoiceStatuses()).
 		Where("i.issue_date < ?", startDate).
 		Scan(&row).Error; err != nil {
 		return decimal.Zero, fmt.Errorf("query contact statement invoice opening balance: %w", err)
@@ -415,7 +424,7 @@ func (r *GORMRepository) getContactStatementInvoiceEntries(ctx context.Context, 
 		Where("i.tenant_id = ?", tenantID).
 		Where("i.contact_id = ?", contactID).
 		Where("i.invoice_type = ?", invoiceType).
-		Where("i.status <> ?", models.InvoiceStatusVoided).
+		Where("i.status IN ?", contactStatementInvoiceStatuses()).
 		Where("i.issue_date >= ? AND i.issue_date <= ?", startDate, endDate).
 		Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("query contact statement invoices: %w", err)
